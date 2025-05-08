@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --jamaican-green: #009B3A;
+    --jamaican-yellow: #FED100;
+    --jamaican-black: #000000;
+    --dark-gray: #333333;
+    --light-gray: #f8f8f8;
+  }
+
+  body {
+    @apply overflow-x-hidden;
+  }
+
+  h1, h2, h3, h4, h5 {
+    @apply font-display font-bold;
+  }
+}
+
+@layer components {
+  .container {
+    @apply w-full max-w-7xl mx-auto px-4;
+  }
+
+  .btn {
+    @apply inline-block px-6 py-3 bg-jamaica-green text-white font-semibold rounded-full 
+           transition-all duration-300 border-2 border-jamaica-green hover:bg-transparent 
+           hover:text-jamaica-green;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border-2 border-white text-white hover:bg-white hover:text-jamaica-green;
+  }
+
+  .section {
+    @apply py-20;
+  }
+
+  .section-title {
+    @apply text-center mb-16 relative;
+  }
+
+  .section-title h2 {
+    @apply text-4xl md:text-5xl text-dark-gray inline-block relative z-10;
+  }
+
+  .section-title h2::after {
+    @apply content-[''] absolute w-1/2 h-1 bg-jamaica-green bottom-[-10px] left-1/4;
+  }
+
+  .section-title span {
+    @apply absolute text-6xl md:text-7xl text-jamaica-green/10 top-[-30px] left-1/2 
+           transform -translate-x-1/2 z-0 font-extrabold tracking-wider;
+  }
+
+  .jamaican-flag-animation {
+    @apply absolute top-5 right-5 w-24 h-12 z-10 flex flex-col overflow-hidden rounded 
+           shadow-lg;
+  }
+
+  .flag-stripe {
+    @apply flex-1;
+  }
+
+  .flag-stripe:nth-child(1) {
+    @apply bg-jamaica-green;
+  }
+
+  .flag-stripe:nth-child(2) {
+    @apply bg-jamaica-yellow;
+  }
+
+  .flag-stripe:nth-child(3) {
+    @apply bg-jamaica-green;
+  }
+
+  .flag-stripe:nth-child(4) {
+    @apply bg-jamaica-black absolute w-full h-full animate-flag-wave;
+  }
+} 
