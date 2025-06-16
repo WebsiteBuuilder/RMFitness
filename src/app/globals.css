@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
   :root {
     --jamaican-green: #009B3A;
     --jamaican-yellow: #FED100;

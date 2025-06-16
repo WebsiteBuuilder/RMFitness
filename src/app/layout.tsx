@@ -1,3 +1,4 @@
+import React from 'react'
 import { Montserrat, Poppins } from 'next/font/google'
 import './globals.css'
 import Navigation from '@/components/Navigation'
@@ -29,6 +30,7 @@ export default function RootLayout({
     <html lang="en" className={`${montserrat.variable} ${poppins.variable}`}>
       <head>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+        <link rel="icon" type="image/png" href="/images/rm-fitness-logo.png" />
       </head>
       <body className={`${poppins.className} text-dark-gray antialiased`}>
         <Navigation />

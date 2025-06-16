@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Script from 'next/script'
+import { FaTiktok } from 'react-icons/fa'
 
 export default function SocialFeed() {
   const [activeTab, setActiveTab] = useState<'instagram' | 'tiktok'>('instagram')
@@ -137,17 +138,58 @@ export default function SocialFeed() {
           
           {activeTab === 'tiktok' && (
             <div className="tiktok-feed">
-              <blockquote 
-                className="tiktok-embed" 
-                cite="https://www.tiktok.com/@rm.fitness8" 
-                data-unique-id="rm.fitness8"
-                data-embed-type="creator" 
-                style={{ maxWidth: "780px", minWidth: "288px" }}
-              >
-                <section>
-                  <a target="_blank" href="https://www.tiktok.com/@rm.fitness8?refer=creator_embed">@rm.fitness8</a>
-                </section>
-              </blockquote>
+              <div className="mb-10">
+                <h4 className="text-xl font-bold mb-4">Featured Videos</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* First Video - Updated ID */}
+                  <div className="aspect-[9/16]">
+                    <iframe 
+                      src="https://www.tiktok.com/embed/v2/7484046687221157175"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none',
+                        borderRadius: '8px',
+                      }}
+                      allowFullScreen
+                      title="TikTok Video 1"
+                    ></iframe>
+                  </div>
+                  
+                  {/* Second Video - Updated ID */}
+                  <div className="aspect-[9/16]">
+                    <iframe 
+                      src="https://www.tiktok.com/embed/v2/7460715267358838021"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none',
+                        borderRadius: '8px',
+                      }}
+                      allowFullScreen
+                      title="TikTok Video 2"
+                    ></iframe>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Profile Feed Link */}
+              <div className="mt-10">
+                <h4 className="text-xl font-bold mb-4">Follow Our Channel</h4>
+                <div className="w-full flex justify-center">
+                  <a 
+                    href="https://www.tiktok.com/@rm.fitness8" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-6 py-3 bg-black text-white font-semibold rounded-full hover:bg-gray-800 transition-colors"
+                  >
+                    <FaTiktok className="mr-2" /> @rm.fitness8
+                  </a>
+                </div>
+                <div className="mt-6 text-center text-gray-600">
+                  <p>View our complete collection of workouts and fitness tips on TikTok</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -156,21 +198,21 @@ export default function SocialFeed() {
       {/* Instagram JS */}
       <Script
         id="instagram-embed"
-        strategy="lazyOnload"
+        strategy="afterInteractive"
         src="//www.instagram.com/embed.js"
       />
       
       {/* TikTok JS */}
       <Script
         id="tiktok-embed"
-        strategy="lazyOnload"
+        strategy="afterInteractive"
         src="https://www.tiktok.com/embed.js"
       />
     </section>
   )
 }
 
-// Add this to fix TypeScript errors
+// Ensure global types are minimal and correct
 declare global {
   interface Window {
     instgrm?: {

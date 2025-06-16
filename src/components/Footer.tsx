@@ -1,6 +1,7 @@
 "use client"
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { FaWhatsapp, FaTiktok, FaInstagram, FaMapMarkerAlt, FaPhoneAlt, FaEnvelope } from 'react-icons/fa'
 
 export default function Footer() {
@@ -10,7 +11,15 @@ export default function Footer() {
         <div className="grid md:grid-cols-3 gap-12">
           {/* Company Info */}
           <div>
-            <h3 className="text-2xl font-bold mb-6">R&M Fitness</h3>
+            <div className="flex items-center mb-6">
+              <div className="h-20 w-20 bg-white rounded-lg">
+                <img
+                  src="/images/rm-fitness-logo.png"
+                  alt="R&M Fitness Logo"
+                  className="w-full h-full object-contain p-2"
+                />
+              </div>
+            </div>
             <p className="mb-4">
               Transform your body and life with expert personal training in Trelawny, Jamaica. 
               Join us for a fitness journey that combines professional guidance with Jamaican energy.

@@ -4,6 +4,83 @@ import Link from 'next/link'
 import { FaDumbbell, FaHeart, FaUsers, FaLeaf, FaAppleAlt, FaRunning, FaTiktok, FaMapMarkerAlt, FaPhoneAlt, FaEnvelope, FaClock, FaWhatsapp } from 'react-icons/fa'
 import SocialFeed from '@/components/SocialFeed'
 
+// Helper Components
+function Feature({ icon, title, description }: {
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="text-2xl text-jamaica-green">
+        {icon}
+      </div>
+      <div>
+        <h4 className="font-semibold mb-1">{title}</h4>
+        <p className="text-sm text-gray-600">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+// Data
+const services = [
+  {
+    title: "Personal Training",
+    description: "One-on-one personalized training sessions tailored to your specific fitness goals, whether it's weight loss, muscle gain, or overall fitness improvement.",
+    image: "/images/personal-training.jpg",
+    cta: "Book Session"
+  },
+  {
+    title: "Nutrition Coaching",
+    description: "Comprehensive nutrition plans incorporating local Jamaican superfoods and international nutrition science to complement your fitness routine.",
+    image: "/images/nutrition.jpg",
+    cta: "Get Plan"
+  },
+  {
+    title: "Group Training",
+    description: "Energetic small group sessions that combine the benefits of personal attention with the motivation of group dynamics.",
+    image: "/images/group-training.jpg",
+    cta: "Join Group"
+  }
+]
+
+const testimonials = [
+  {
+    name: "Sarah Johnson",
+    achievement: "Lost 30 lbs in 6 months",
+    quote: "R&M Fitness completely transformed my approach to health and fitness. The personalized training program was exactly what I needed!"
+  },
+  {
+    name: "Marcus Brown",
+    achievement: "Gained 15 lbs muscle mass",
+    quote: "The combination of expert guidance and motivation helped me achieve my muscle gain goals. Highly recommended!"
+  },
+  {
+    name: "Lisa Thompson",
+    achievement: "Completed first marathon",
+    quote: "From barely running a mile to finishing a marathon - the training and nutrition guidance made it all possible!"
+  }
+]
+
+function ContactDetail({ icon, title, content }: {
+  icon: React.ReactNode
+  title: string
+  content: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="w-12 h-12 rounded-full bg-jamaica-green flex items-center justify-center text-white text-xl">
+        {icon}
+      </div>
+      <div>
+        <h4 className="font-semibold mb-1">{title}</h4>
+        <div className="text-gray-600">{content}</div>
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   return (
     <main>
@@ -135,36 +212,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Gallery Section */}
-      <section className="section bg-light-gray" id="gallery">
-        <div className="container">
-          <div className="section-title">
-            <span>GALLERY</span>
-            <h2>Training in Action</h2>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {galleryImages.map((image, index) => (
-              <div 
-                key={index}
-                className="relative aspect-square group overflow-hidden rounded-xl"
-              >
-                <Image
-                  src={image.src}
-                  alt={image.alt}
-                  fill
-                  className="object-cover transition-transform group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="absolute bottom-4 left-4 text-white">
-                    <p className="text-sm">{image.caption}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Social Feed Section */}
       <SocialFeed />
 
@@ -184,16 +231,17 @@ export default function Home() {
                 TikTok Transformations
               </h3>
               <div className="aspect-[9/16] w-full max-w-sm mx-auto">
-                <blockquote 
-                  className="tiktok-embed" 
-                  cite="https://www.tiktok.com/@rm.fitness8/video/7338475883894775045"
-                  data-video-id="7338475883894775045"
-                >
-                  <section>
-                    <a target="_blank" href="https://www.tiktok.com/@rm.fitness8">@rm.fitness8</a>
-                  </section>
-                </blockquote>
-                <script async src="https://www.tiktok.com/embed.js"></script>
+                <iframe 
+                  src="https://www.tiktok.com/embed/v2/7501538994484710711"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    borderRadius: '8px',
+                  }}
+                  allowFullScreen
+                  title="TikTok Video Testimonial"
+                ></iframe>
               </div>
             </div>
 
@@ -246,8 +294,8 @@ export default function Home() {
                   icon={<FaPhoneAlt />}
                   title="Phone"
                   content={
-                    <a href="tel:+18761234567" className="hover:text-jamaica-green">
-                      +1 (876) 123-4567
+                    <a href="tel:+18765627980" className="hover:text-jamaica-green">
+                      +1 (876) 562-7980
                     </a>
                   }
                 />
@@ -335,7 +383,7 @@ export default function Home() {
 
         {/* WhatsApp Button */}
         <a
-          href="https://wa.me/+18761234567"
+          href="https://wa.me/+18765627980"
           className="fixed bottom-8 right-8 w-16 h-16 bg-[#25D366] rounded-full flex items-center justify-center text-white text-2xl shadow-lg hover:scale-110 transition-transform z-50"
           target="_blank"
           rel="noopener noreferrer"
@@ -344,113 +392,5 @@ export default function Home() {
         </a>
       </section>
     </main>
-  )
-}
-
-function Feature({ icon, title, description }: {
-  icon: React.ReactNode
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex items-start gap-4">
-      <div className="text-2xl text-jamaica-green">
-        {icon}
-      </div>
-      <div>
-        <h4 className="font-semibold mb-1">{title}</h4>
-        <p className="text-sm text-gray-600">{description}</p>
-      </div>
-    </div>
-  )
-}
-
-const services = [
-  {
-    title: "Personal Training",
-    description: "One-on-one personalized training sessions tailored to your specific fitness goals, whether it's weight loss, muscle gain, or overall fitness improvement.",
-    image: "/images/personal-training.jpg",
-    cta: "Book Session"
-  },
-  {
-    title: "Nutrition Coaching",
-    description: "Comprehensive nutrition plans incorporating local Jamaican superfoods and international nutrition science to complement your fitness routine.",
-    image: "/images/nutrition.jpg",
-    cta: "Get Plan"
-  },
-  {
-    title: "Group Training",
-    description: "Energetic small group sessions that combine the benefits of personal attention with the motivation of group dynamics.",
-    image: "/images/group-training.jpg",
-    cta: "Join Group"
-  }
-]
-
-const galleryImages = [
-  {
-    src: "/images/gallery-1.jpg",
-    alt: "Weight Training",
-    caption: "Building strength with proper form"
-  },
-  {
-    src: "/images/gallery-2.jpg",
-    alt: "Cardio Session",
-    caption: "High-intensity cardio workout"
-  },
-  {
-    src: "/images/gallery-3.jpg",
-    alt: "Stretching",
-    caption: "Flexibility and mobility training"
-  },
-  {
-    src: "/images/gallery-4.jpg",
-    alt: "Nutrition",
-    caption: "Healthy meal preparation"
-  },
-  {
-    src: "/images/gallery-5.jpg",
-    alt: "Group Training",
-    caption: "Motivating group session"
-  },
-  {
-    src: "/images/gallery-6.jpg",
-    alt: "Beach Workout",
-    caption: "Training in paradise"
-  }
-]
-
-const testimonials = [
-  {
-    name: "Sarah Johnson",
-    achievement: "Lost 30 lbs in 6 months",
-    quote: "R&M Fitness completely transformed my approach to health and fitness. The personalized training program was exactly what I needed!"
-  },
-  {
-    name: "Marcus Brown",
-    achievement: "Gained 15 lbs muscle mass",
-    quote: "The combination of expert guidance and motivation helped me achieve my muscle gain goals. Highly recommended!"
-  },
-  {
-    name: "Lisa Thompson",
-    achievement: "Completed first marathon",
-    quote: "From barely running a mile to finishing a marathon - the training and nutrition guidance made it all possible!"
-  }
-]
-
-function ContactDetail({ icon, title, content }: {
-  icon: React.ReactNode
-  title: string
-  content: React.ReactNode
-}) {
-  return (
-    <div className="flex items-start gap-4">
-      <div className="w-12 h-12 rounded-full bg-jamaica-green flex items-center justify-center text-white text-xl">
-        {icon}
-      </div>
-      <div>
-        <h4 className="font-semibold mb-1">{title}</h4>
-        <div className="text-gray-600">{content}</div>
-      </div>
-    </div>
   )
 } 
