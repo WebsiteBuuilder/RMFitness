@@ -972,9 +972,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (now.has('Destiny Board') && BOARD.every((n) => now.has(n))) e.endDuel(p, 'Destiny Board spells F-I-N-A-L!');
     },
     *onLeaveField(e, _fc, p) {
-      for (const c of stOf(e, p).filter((x) => BOARD.includes(x.name))) yield* e.sendToGrave(c.uid, 'used');
+      for (const c of stOf(e, p).filter((x) => BOARD.includes(x.name))) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
     },
   };
+  // A "Spirit Message" leaving the field takes the board and the other messages with it.
+  for (const n of BOARD)
+    E[n] = {
+      *onLeaveField(e, _fc, p) {
+        for (const c of stOf(e, p).filter((x) => boardCard(x))) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
+      },
+    };
 
   E['Destiny End Dragoon'] = {
     ignition: {

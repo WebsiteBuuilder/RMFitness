@@ -122,6 +122,8 @@ export interface EffectDef {
     /** The effect, at resolution. link.payload.ctx holds what it responded to. */
     run(e: Engine, card: Card, p: Pid, link: ChainLink): Step;
   };
+  /** During each End Phase while this card is in its owner's Graveyard (Speed Duel only). */
+  onEndPhaseInGrave?(e: Engine, card: Card, owner: Pid): Step;
   /** An ignition effect used from the Graveyard during your Main Phase. */
   graveIgnition?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
   /** Inflicts piercing battle damage when attacking a Defense Position monster. */
