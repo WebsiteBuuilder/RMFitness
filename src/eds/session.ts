@@ -15,9 +15,11 @@ export interface Seat {
   mode?: GameMode;
   /** Speed Duel: the Skill they bring */
   skill?: string | null;
+  /** Speed Duel: their cards' rarity tiers (card leveling), for the other player to see */
+  rarity?: Record<string, number>;
 }
 
-export type LobbyAction = { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null };
+export type LobbyAction = { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number> };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -70,7 +72,7 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity };
       return;
     }
     try {

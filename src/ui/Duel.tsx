@@ -207,7 +207,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
         {c ? (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'}`}>
-            <CardImg name={c.name} back={!visible} />
+            <CardImg name={c.name} back={!visible} owner={c.owner} />
             {c.faceUp && kind === 'm' && (
               <div class="fstat">
                 {c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)}
@@ -480,7 +480,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="opp-hand">
         {opp.hand.map((c) => (
           <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name)}>
-            <CardImg name={c.name} back={!oppHandShown} />
+            <CardImg name={c.name} back={!oppHandShown} owner={c.owner} />
           </div>
         ))}
       </div>
@@ -530,7 +530,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="hand">
         {me.hand.map((c) => (
           <div key={c.uid} data-uid={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
-            <CardImg name={c.name} back={!canAct} />
+            <CardImg name={c.name} back={!canAct} owner={c.owner} />
           </div>
         ))}
         {me.hand.length === 0 && <div class="hint">No cards in hand</div>}

@@ -1,6 +1,6 @@
 // Speed Duel: the second game. Its own menu, decks (Speed Duel cards only), Skills,
 // computer opponents and record, sharing profiles and the duel screen with EDS.
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
 import type { Profile } from '../eds/save';
 import { getSkill } from '../eds/skills';
@@ -31,6 +31,9 @@ import { playBlip } from './sound';
 import { ShadowRealmScreen } from '../art/ShadowRealmScreen';
 import { ArtLab } from '../art/ArtLab';
 import { sealedCards } from '../art/shadow';
+import { CardLevels, levelHeadline } from '../level/CardLevels';
+import { cardLevels } from '../level/leveling';
+import { showProfileLevels } from '../level/view';
 
 export type SpeedLinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -50,7 +53,7 @@ export function speedOpponents(): SpeedOpponent[] {
   });
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels';
 
 export function SpeedHub({
   profile,
@@ -71,6 +74,9 @@ export function SpeedHub({
   const [editing, setEditing] = useState<string | null>(null);
   const deck = activeDeck(save);
   const problems = deck ? speedDeckProblems(deck) : ['Build a deck first'];
+  // Card pictures on these screens show this profile's card rarities.
+  showProfileLevels(cardLevels(save));
+  useEffect(() => () => showProfileLevels(null), []);
 
   if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...save, decks: [d], active: d.id })} onExit={onExit} />;
 
@@ -83,6 +89,8 @@ export function SpeedHub({
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
   if (sub === 'art') return <ArtLab onBack={() => setSub('menu')} />;
   if (sub === 'shadow') return <ShadowRealmScreen save={save} onBack={() => setSub('menu')} />;
+  if (sub === 'levels') return <CardLevels save={save} deckNames={[...new Set(save.decks.flatMap((d) => [...d.main, ...d.extra]))]} onBack={() => setSub('menu')} />;
+  const headline = levelHeadline(save);
   const sealed = sealedCards(save);
   if (sub === 'link') return <SpeedLink problems={problems} onPick={onLink} onBack={() => setSub('menu')} />;
 
@@ -104,11 +112,20 @@ export function SpeedHub({
         <p class="hint">Speed Duel cards only. 4000 LP, 4-card hands, 3 Monster and 3 Spell/Trap Zones, no Main Phase 2, and one Skill per Duel.</p>
         {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}. Fix it in Decks.</div>}
         {sealed.length > 0 && <div class="warn">{sealed.map((x) => x.name).join(', ')} {sealed.length === 1 ? 'is' : 'are'} sealed in the Shadow Realm. Win a duel to free {sealed.length === 1 ? 'it' : 'one'}.</div>}
+        {headline && (
+          <div class="lv-banner">
+            ★ {headline}
+            <button class="chip" onClick={() => setSub('levels')}>
+              See card levels
+            </button>
+          </div>
+        )}
         <Menu
           items={[
             { label: 'Duel the Computer', note: 'Yugi, Kaiba, Joey, Mai and more', onPick: () => setSub('cpu') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
+            { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
             { label: 'Record', onPick: () => setSub('record') },
             { label: '3D Card Viewer', note: "watch any card's summon and attack", onPick: () => setSub('art') },
             { label: 'Shadow Realm', note: sealed.length ? `${sealed.length} card${sealed.length === 1 ? '' : 's'} sealed` : 'who got sent there', onPick: () => setSub('shadow') },

@@ -6,6 +6,7 @@ import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCa
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
 import { getEffect, setNameResolver, type Trigger } from './effects';
 import { getSkill } from './skills';
+import { noteLevelEvent } from '../level/leveling';
 
 export type Choice = { picks: number[] } | 'cancel' | 'pass' | true | false;
 export type Step = Generator<Prompt, void, Choice>;
@@ -66,6 +67,8 @@ export class Engine {
   private resolving = 0;
   /** set while battle destruction is applied, so "destroyed by battle" effects can tell */
   private battleKill = false;
+  /** the card whose chain link is resolving (card leveling credits it) */
+  private levelSource: number | null = null;
 
   /** The rule set of this duel (EDS for duels recorded before Speed Duel existed). */
   get rules(): Rules {
@@ -184,6 +187,7 @@ export class Engine {
     const list = (this.state.events ??= []);
     list.push(ev);
     if (list.length > 40) list.splice(0, list.length - 40);
+    if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
 
   // ---------- lookups ----------
@@ -1432,9 +1436,11 @@ export class Engine {
 
   private *resolveChain(): Step {
     this.resolving++;
+    const prevSource = this.levelSource;
     try {
       while (this.state.chain.length > 0 && this.state.winner === null) {
         const link = this.state.chain.pop()!;
+        this.levelSource = link.card.uid;
         const eff = getEffect(link.card.name);
         const effectLink = (link.payload as { effect?: string } | undefined)?.effect;
         if (effectLink) {
@@ -1457,6 +1463,7 @@ export class Engine {
       }
     } finally {
       this.resolving--;
+      this.levelSource = prevSource;
     }
     this.state.chain = [];
     yield* this.damageWindow(false);

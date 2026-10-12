@@ -1,12 +1,25 @@
 import { useState } from 'preact/hooks';
 import { card, imageUrl } from '../eds/db';
+import type { Pid } from '../eds/types';
+import { TIERS, meterOf, tierIndex } from '../level/leveling';
+import { profileXpOf, rarityFor } from '../level/view';
 
-/** Card picture with a drawn fallback when the image is missing. */
-export function CardImg({ name, back = false, class: cls = '' }: { name: string; back?: boolean; class?: string }) {
+/** Card picture with a drawn fallback when the image is missing. `owner` picks whose rarity a duel card shows. */
+export function CardImg({ name, back = false, class: cls = '', owner }: { name: string; back?: boolean; class?: string; owner?: Pid }) {
   const [broken, setBroken] = useState(false);
   if (back) return <div class={`cimg cback ${cls}`} />;
+  // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
+  const tier = TIERS[rarityFor(name, owner)];
+  if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
+  const fx = tier.id !== 'N' && <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={tier.short} />;
   const url = broken ? null : imageUrl(name);
-  if (url) return <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(true)} />;
+  if (url)
+    return (
+      <>
+        <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(true)} />
+        {fx}
+      </>
+    );
   const info = card(name);
   const kind = info?.kind ?? 'monster';
   const sub = info?.sub ?? 'Normal';
@@ -18,6 +31,7 @@ export function CardImg({ name, back = false, class: cls = '' }: { name: string;
           {info.atk}/{info.def}
         </div>
       )}
+      {fx}
     </div>
   );
 }
@@ -40,12 +54,31 @@ export function CardInfoPanel({ name }: { name: string }) {
                 ATK/{info.atk} DEF/{info.def}
               </div>
             )}
+            <LevelLine name={name} />
             <p class="cinfo-desc">{info.desc}</p>
             {info.n !== undefined && <div class="cinfo-num">No. {String(info.n).padStart(3, '0')}{info.password ? ` · Password ${info.password}` : ''}</div>}
           </>
         ) : (
           <p class="cinfo-desc">Card data not loaded yet.</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Card leveling (Speed Duel screens only): this profile's rarity and meter for the card. */
+function LevelLine({ name }: { name: string }) {
+  const xp = profileXpOf(name);
+  if (xp === null || card(name)?.sub === 'Skill') return null;
+  const i = tierIndex(xp);
+  const t = TIERS[i];
+  const next = TIERS[i + 1];
+  return (
+    <div class={`cinfo-lv lv-t-${t.id}`}>
+      <span class={`lv-chip lv-${t.id}`}>{t.id === 'GL' ? 'UR✦' : t.id === 'RO' ? 'UR♛' : t.short}</span> {t.name}
+      <span class="lv-why"> · {next ? `${xp}/${next.at} to ${next.name}` : 'top rarity'}</span>
+      <div class="lv-meter">
+        <i style={{ width: `${Math.round(meterOf(xp) * 100)}%` }} />
       </div>
     </div>
   );
