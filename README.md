@@ -1,68 +1,39 @@
-# RM Fitness - Personal Training Website
+# Speed Duel Online
 
-A modern, responsive website for Rupert Bowen, a personal trainer based in Trelawny, Jamaica. Built with Next.js, TypeScript, and Tailwind CSS.
+A free browser game for two people to duel with Yu-Gi-Oh! Speed Duel cards and Skills on
+phones or computers. This is the **manual table** baseline: the game keeps both screens in
+sync, tracks life points, phases and the log, and you move the cards yourself. Rule
+enforcement is layered on later.
 
-## Features
+Play: open the site, one player creates a room and shares the 4-letter code, the other
+joins. "Hotseat" plays both seats on one device.
 
-- 📱 Fully responsive design
-- 🎨 Modern UI with Jamaican-inspired color scheme
-- 💪 Detailed service offerings
-- 📸 Social media integration (TikTok & Instagram)
-- 📞 WhatsApp integration for easy contact
-- 🗺️ Google Maps integration
-- ⚡ Fast loading and optimized performance
+## How it works
 
-## Tech Stack
+- `src/game/` is the engine: every action is an event in an append-only log and the table
+  is the replay of that log (`reducer.ts`). Undo skips an event; rejoining replays the log.
+- `src/sync/` carries the log between players: `local.ts` (hotseat, saved on the device),
+  `peer.ts` (direct phone-to-phone over WebRTC, no account) and `firebase.ts` (Firebase
+  Realtime Database, used automatically when `firebaseConfig.ts` has a config).
+- `src/ui/` is the Preact interface: lobby, board, tap-then-action-sheet controls.
+- `src/data/starterDecks.json` holds the six 2019 Speed Duel Starter Decks.
+- `public/cards/` is the card database and images, produced by `scripts/fetch_cards.py`
+  (run by the "Update card database" workflow). Images are re-hosted once, as the card
+  database's terms ask, and never fetched from players' phones.
 
-- Next.js 14
-- TypeScript
-- Tailwind CSS
-- React Icons
-- Framer Motion
+## Development
 
-## Getting Started
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/rmfitness.git
-cd rmfitness
-```
-
-2. Install dependencies:
 ```bash
 npm install
+npm run dev        # local server
+npm run build      # type-check + production build into dist/
+npm run check-decks
 ```
 
-3. Start the development server:
-```bash
-npm run dev
-```
+Deploys to GitHub Pages from `main` through `.github/workflows/pages.yml`.
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+## Known limits of this first slice
 
-## Project Structure
-
-```
-rmfitness/
-├── src/
-│   ├── app/              # Next.js app directory
-│   │   ├── page.tsx      # Homepage
-│   │   ├── about/        # About page
-│   │   ├── services/     # Services page
-│   │   ├── testimonials/ # Testimonials page
-│   │   └── contact/      # Contact page
-│   └── components/       # Reusable components
-├── public/              # Static assets
-└── package.json        # Project dependencies
-```
-
-## Customization
-
-- Update social media links in `src/components/Navigation.tsx` and `src/components/Footer.tsx`
-- Modify WhatsApp number in contact buttons
-- Add your own images to the `public` directory
-- Customize colors in `tailwind.config.js`
-
-## License
-
-This project is licensed under the MIT License. 
+- The full event log is shared with both players, so hidden information (deck order, hand)
+  is hidden by the interface, not by the transport. Private branches come in Slice 1B.
+- Drag and drop is not in yet; tap a card, then tap the zone.
