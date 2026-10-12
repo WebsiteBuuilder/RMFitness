@@ -4,8 +4,9 @@
 import type { ChainCtx, Choice, Engine, Step } from './engine';
 import { other } from './engine';
 import type { Card, ChainLink, FieldCard, Pid, Prompt } from './types';
+import { installMore } from './effects2';
 
-export type Trigger = 'main' | 'summon' | 'attack' | 'spell' | 'trap';
+export type Trigger = 'main' | 'summon' | 'attack' | 'spell' | 'trap' | 'damage' | 'destroyed';
 
 export interface EffectDef {
   /** May this card be activated now? (trigger 'main' = from hand/set during own Main Phase) */
@@ -26,13 +27,13 @@ export interface EffectDef {
   /** Bonus this face-up card (monster or Field Spell) gives to a monster, or undefined. */
   aura?(e: Engine, src: FieldCard, target: FieldCard, srcController: Pid): { atk: number; def: number } | undefined;
   /** After this monster is Normal/Flip Summoned face-up. */
-  onSummon?(e: Engine, m: FieldCard, controller: Pid): Step;
+  onSummon?(e: Engine, m: FieldCard, controller: Pid, kind?: 'normal' | 'flip'): Step;
   /** Ignition effect usable once per turn during the controller's Main Phase. */
-  ignition?: { can(e: Engine, m: FieldCard, p: Pid): boolean; run(e: Engine, m: FieldCard, p: Pid): Step };
+  ignition?: { can(e: Engine, m: FieldCard, p: Pid): boolean; run(e: Engine, m: FieldCard, p: Pid): Step; repeat?: boolean };
   onPositionChange?(e: Engine, m: FieldCard, p: Pid): Step;
   /** A price to attack (Spirit of the Books etc.). */
   attackCost?: { can(e: Engine, m: FieldCard, p: Pid): boolean; pay(e: Engine, m: FieldCard, p: Pid): Step };
-  directAttack?: boolean;
+  directAttack?: boolean | ((e: Engine, m: FieldCard, p: Pid) => boolean);
   /** After this attacker inflicted battle damage. */
   onBattleDamage?(e: Engine, attacker: FieldCard, p: Pid): Step;
   /** After battle, when this monster was attacked (face-down ones are flipped before damage). */
@@ -50,20 +51,79 @@ export interface EffectDef {
   hostCannotAttack?(e: Engine, equip: FieldCard, host: FieldCard): boolean;
   /** A face-up card of the attacker's controller, after battle damage was dealt (Robbin' Goblin). */
   onBattleDamageDealt?(e: Engine, card: FieldCard, attacker: FieldCard, p: Pid): Step;
+  /** Replaces the printed ATK/DEF (Relinquished, Hourglass of Courage, Goddess of Whim). */
+  baseStats?(e: Engine, m: FieldCard): { atk: number; def: number } | undefined;
+  /** Sent from the Deck to the Graveyard by the opponent's effect (Penguin Knight). */
+  onMilledByOpponent?(e: Engine, card: Card, owner: Pid): Step;
+  /** This card was discarded from the hand (Electric Snake, Minar). */
+  onDiscarded?(e: Engine, card: Card, owner: Pid, byOpponent: boolean): Step;
+  /** An active Spell/Trap watching every discard (Magical Thorn, Forced Requisition). */
+  onAnyDiscard?(e: Engine, card: FieldCard, controller: Pid, discarder: Pid): Step;
+  /** An active Spell/Trap watching draws outside the Draw Phase (Appropriate). */
+  onDraw?(e: Engine, card: FieldCard, controller: Pid, drawer: Pid, n: number): void;
+  /** A face-up monster watching every Summon (Mysterious Puppeteer, Kotodama). */
+  onAnySummon?(e: Engine, watcher: FieldCard, watcherController: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
+  /** Control of this face-up monster moved (Ameba, Griggle). */
+  onControlChange?(e: Engine, m: FieldCard, from: Pid, to: Pid): void;
+  /** During its owner's Standby Phase while in the Graveyard (Sinister Serpent). */
+  onStandbyInGrave?(e: Engine, card: Card, owner: Pid): Step;
+  /** Special Summon procedure from the hand (Gate Guardian, Toons). */
+  summonProc?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
+  /** Effect used from the hand (Thunder Dragon, Cocoon of Evolution). */
+  handIgnition?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
+  /** A cost paid before a Spell/Trap is activated from the Main Phase. Return false to stop. */
+  activateCost?: { can(e: Engine, card: Card, p: Pid): boolean; pay(e: Engine, card: Card, p: Pid): Generator<Prompt, boolean | void, Choice> };
+  /** Total Defense Shogun attacks from Defense Position. */
+  attackInDefense?: boolean;
+  /** This monster cannot attack right now (Toon on its Summon turn, Gods). */
+  cannotAttack?(e: Engine, m: FieldCard, p: Pid): boolean;
+  /** An active Spell/Trap charging a price for every attack (Toll, Gravekeeper's Servant). */
+  attackTax?: { can(e: Engine, card: FieldCard, m: FieldCard, attacker: Pid): boolean; pay(e: Engine, card: FieldCard, m: FieldCard, attacker: Pid): Step };
+  /** Which monsters this attacker may target. */
+  targetFilter?(e: Engine, m: FieldCard, target: FieldCard): boolean;
+  /** Face-down monster attacked: return true when it takes over the battle (Kiseitai, Blast Sphere). */
+  interceptAttack?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Generator<Prompt, boolean, Choice>;
+  /** Before damage calculation, when attacked (Kazejin, Sanga, Suijin). */
+  onBeingAttacked?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Step;
+  /** DEF multiplier during damage calculation (Dark Artist). */
+  defenseMult?(e: Engine, target: FieldCard, attacker: FieldCard): number;
+  /** Destroy this uid instead when the monster would be destroyed by battle (Relinquished). */
+  battleSubstitute?(e: Engine, m: FieldCard): number | undefined;
+  /** An equip reacting after its host battled (Sword of Dragon's Soul). */
+  hostAfterBattle?(e: Engine, equip: FieldCard, host: FieldCard, target: FieldCard | null): Step;
+  /** ATK added while attacking (Insect Soldiers of the Sky). */
+  attackBonus?(e: Engine, attacker: FieldCard, target: FieldCard | null): number;
+  /** Can stand in for any one Fusion Material (Beastking of the Swamps). */
+  fusionSub?: boolean;
+  /** Equip adding ATK only while its host attacks (Metalmorph). */
+  hostAttackBonus?(e: Engine, equip: FieldCard, host: FieldCard, target: FieldCard | null): number;
 }
 
 const E: Record<string, EffectDef> = {};
 const LOWER: Record<string, EffectDef> = {};
+const CACHE = new Map<string, EffectDef | null>();
 let indexed = 0;
+let resolveNames: (name: string) => string[] = () => [];
+/** The engine tells us the other names a card goes by (EDS name vs. today's name). */
+export function setNameResolver(fn: (name: string) => string[]) {
+  resolveNames = fn;
+  CACHE.clear();
+}
 function reindex() {
   for (const k of Object.keys(E)) LOWER[k.toLowerCase()] = E[k];
   indexed = Object.keys(E).length;
+  CACHE.clear();
 }
 export function getEffect(name: string): EffectDef | undefined {
   const hit = E[name];
   if (hit) return hit;
   if (indexed !== Object.keys(E).length) reindex();
-  return LOWER[name.toLowerCase()];
+  const cached = CACHE.get(name);
+  if (cached !== undefined) return cached ?? undefined;
+  let found: EffectDef | undefined = LOWER[name.toLowerCase()];
+  if (!found) for (const n of resolveNames(name)) if ((found = E[n] ?? LOWER[n.toLowerCase()])) break;
+  CACHE.set(name, found ?? null);
+  return found;
 }
 export function hasEffect(name: string): boolean {
   return !!getEffect(name);
@@ -683,7 +743,7 @@ delete E['Ultimate Offering'];
 // =====================================================================
 
 const ctrl = (e: Engine, m: FieldCard): Pid => e.controller(m.uid) ?? m.owner;
-const race = (r: string) => (e: Engine, m: FieldCard) => e.info(m.name).race === r;
+const race = (r: string) => (e: Engine, m: FieldCard) => e.raceOf(m) === r;
 const attr = (a: string) => (e: Engine, m: FieldCard) => e.info(m.name).attribute === a;
 const countField = (e: Engine, test: (m: FieldCard) => boolean) => allMonsters(e).filter((m) => m.faceUp && test(m)).length;
 const spellsOnField = (e: Engine, p: Pid) => [...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])];
@@ -734,7 +794,7 @@ E['Mystical Moon'] = equipFor(race('Beast-Warrior'), () => ({ atk: 300, def: 300
 E['Raise Body Heat'] = equipFor(race('Dinosaur'), () => ({ atk: 300, def: 300 }));
 E['Winged Trumpeter'] = equipFor(race('Fairy'), () => ({ atk: 300, def: 300 }));
 E['Horn of Light'] = equip(() => ({ atk: 0, def: 800 }));
-E['Paralyzing Potion'] = equipFor((e, m) => e.info(m.name).race !== 'Machine', () => ({ atk: 0, def: 0 }), { hostCannotAttack: () => true });
+E['Paralyzing Potion'] = equipFor((e, m) => e.raceOf(m) !== 'Machine', () => ({ atk: 0, def: 0 }), { hostCannotAttack: () => true });
 
 // ---------- Field Spells ----------
 function fieldSpell(bonus: (e: Engine, m: FieldCard) => { atk: number; def: number } | undefined): EffectDef {
@@ -753,7 +813,7 @@ function fieldSpell(bonus: (e: Engine, m: FieldCard) => { atk: number; def: numb
 }
 const raceField = (races: string[], minus: string[] = []) =>
   fieldSpell((e, m) => {
-    const r = e.info(m.name).race ?? '';
+    const r = e.raceOf(m) ?? '';
     if (races.includes(r)) return { atk: 200, def: 200 };
     if (minus.includes(r)) return { atk: -200, def: -200 };
     return undefined;
@@ -773,12 +833,12 @@ E['Molten Destruction'] = attrField('FIRE');
 E['Chorus of Sanctuary'] = fieldSpell((_e, m) => (m.pos === 'def' ? { atk: 0, def: 500 } : undefined));
 
 // ---------- monsters whose ATK depends on the board ----------
-E['Machine King'] = { selfBonus: (e) => ({ atk: 100 * countField(e, (m) => e.info(m.name).race === 'Machine'), def: 0 }) };
+E['Machine King'] = { selfBonus: (e) => ({ atk: 100 * countField(e, (m) => e.raceOf(m) === 'Machine'), def: 0 }) };
 E['Shadow Ghoul'] = { selfBonus: (e, m) => ({ atk: 100 * e.player(ctrl(e, m)).gy.filter((c) => isMonster(e, c)).length, def: 0 }) };
 E['Buster Blader'] = {
   selfBonus: (e, m) => {
     const opp = e.player(other(ctrl(e, m)));
-    const n = e.monsters(other(ctrl(e, m))).filter((x) => e.info(x.name).race === 'Dragon').length + opp.gy.filter((c) => e.info(c.name).race === 'Dragon').length;
+    const n = e.monsters(other(ctrl(e, m))).filter((x) => e.raceOf(x) === 'Dragon').length + opp.gy.filter((c) => e.info(c.name).race === 'Dragon').length;
     return { atk: 500 * n, def: 0 };
   },
 };
@@ -795,7 +855,7 @@ E['Dark Magician Girl'] = {
 };
 E['Flash Assailant'] = { selfBonus: (e, m) => ({ atk: -400 * e.player(ctrl(e, m)).hand.length, def: -400 * e.player(ctrl(e, m)).hand.length }) };
 E['Insect Queen'] = {
-  selfBonus: (e) => ({ atk: 200 * countField(e, (m) => e.info(m.name).race === 'Insect'), def: 0 }),
+  selfBonus: (e) => ({ atk: 200 * countField(e, (m) => e.raceOf(m) === 'Insect'), def: 0 }),
   attackCost: {
     can: (e, m, p) => e.monsters(p).some(notThisCard(m)),
     *pay(e, m, p) {
@@ -1076,7 +1136,7 @@ E['Crass Clown'] = {
 };
 E['Dragon Seeker'] = {
   *onSummon(e, m, p) {
-    const targets = allMonsters(e).filter((x) => x.faceUp && x.uid !== m.uid && e.info(x.name).race === 'Dragon');
+    const targets = allMonsters(e).filter((x) => x.faceUp && x.uid !== m.uid && e.raceOf(x) === 'Dragon');
     const picks = yield* e.select(p, 'Dragon Seeker: destroy which Dragon?', e.optionsFor(targets), 1, 1);
     if (picks && targets[picks[0]]) yield* e.destroy([targets[picks[0]].uid]);
   },
@@ -1226,10 +1286,10 @@ const wipe = (test: (e: Engine, m: FieldCard) => boolean, label: string): Effect
     yield* e.destroy(targets.map((m) => m.uid));
   },
 });
-E['Warrior Elimination'] = wipe((e, m) => e.info(m.name).race === 'Warrior', 'Warriors');
-E['Eradicating Aerosol'] = wipe((e, m) => e.info(m.name).race === 'Insect', 'Insects');
-E['Acid Rain'] = wipe((e, m) => m.faceUp && e.info(m.name).race === 'Machine', 'Machines');
-E['Breath of Light'] = wipe((e, m) => m.faceUp && e.info(m.name).race === 'Rock', 'Rock monsters');
+E['Warrior Elimination'] = wipe((e, m) => e.raceOf(m) === 'Warrior', 'Warriors');
+E['Eradicating Aerosol'] = wipe((e, m) => e.raceOf(m) === 'Insect', 'Insects');
+E['Acid Rain'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Machine', 'Machines');
+E['Breath of Light'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Rock', 'Rock monsters');
 E['Eternal Rest'] = wipe((_e, m) => m.equips.length > 0, 'equipped monsters');
 E['Tribute to the Doomed'] = {
   canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some(notThisCard(c)) && allMonsters(e).length > 0,
@@ -1387,15 +1447,23 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
   for (const fusion of ps.fusion) {
     const ids = e.fusionMaterials(fusion.name);
     if (!ids) continue;
-    const mats = ids.map((id) => pool.filter((c) => e.info(c.name).id === id));
-    if (!assignable(mats)) continue;
+    // Beastking of the Swamps & co. can stand in for any one material.
+    const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
+    const mats = ids.map((id) => [...pool.filter((c) => e.info(c.name).id === id), ...subs.filter((c) => e.info(c.name).id !== id)]);
+    if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
   }
   return out;
 }
-function assignable(mats: Card[][], used: number[] = []): boolean {
+/** Can each material slot get its own card, with at most one substitute standing in? */
+function assignable(e: Engine, mats: Card[][], ids: number[], used: number[] = [], subbed = false): boolean {
   if (mats.length === 0) return true;
-  return mats[0].some((c) => !used.includes(c.uid) && assignable(mats.slice(1), [...used, c.uid]));
+  return mats[0].some((c) => {
+    if (used.includes(c.uid)) return false;
+    const asSub = e.info(c.name).id !== ids[0];
+    if (asSub && subbed) return false;
+    return assignable(e, mats.slice(1), ids.slice(1), [...used, c.uid], subbed || asSub);
+  });
 }
 E['Polymerization'] = {
   canActivate: (e, _c, p, t) => isMain(t) && fusionPlans(e, p).length > 0,
@@ -1405,8 +1473,11 @@ E['Polymerization'] = {
     if (!picks) return false;
     const plan = plans[picks[0]];
     const chosen: number[] = [];
-    for (const cands of plan.mats) {
-      const free = cands.filter((c) => !chosen.includes(c.uid));
+    for (let i = 0; i < plan.mats.length; i++) {
+      const cands = plan.mats[i];
+      const ids = e.fusionMaterials(plan.fusion.name)!;
+      const subTaken = chosen.some((u, j) => e.info(e.find(u)?.card.name ?? '').id !== ids[j]);
+      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && e.info(c.name).id !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || e.info(c.name).id !== ids[i]));
       if (free.length === 0) return false;
       if (free.length === 1) {
         chosen.push(free[0].uid);
@@ -1600,4 +1671,8 @@ E['Backup Soldier'] = {
   },
 };
 
+installMore(E, { equip, equipFor, attachTo, fieldSpell, attrField, ritualSpell, wipe, fusionPlans });
+
 export const SCRIPTED = Object.keys(E);
+/** The effect table itself, for tests that instrument it. */
+export const EFFECT_TABLE = E;

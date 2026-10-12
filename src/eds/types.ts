@@ -32,12 +32,16 @@ export interface CardInfo {
   /** EDS card number (001-819) and password when known */
   n?: number;
   password?: string | null;
+  /** the name the card had in EDS when it differs from today's */
+  alias?: string;
 }
 
 export interface Card {
   uid: number;
   name: string;
   owner: Pid;
+  /** a Token: it vanishes instead of going anywhere when it leaves the field */
+  token?: boolean;
 }
 
 export interface FieldCard extends Card {
@@ -55,9 +59,11 @@ export interface FieldCard extends Card {
   equippedTo?: number;
   /** a continuous spell/trap or equip that is "active" after resolving */
   active?: boolean;
-  /** the flip effect of this face-down monster has not been used yet */
-  token?: boolean;
   counters: number;
+  /** small per-card numbers card scripts keep (turn marks, chosen stats...) */
+  tags?: Record<string, number>;
+  /** destroyed during the End Phase of this turn number (Zone Eater, Steel Scorpion...) */
+  doomAt?: number;
   /** cards stolen by Change of Heart go back at the End Phase */
   returnAtEnd?: Pid;
   /** Swords of Revealing Light: turns remaining */
@@ -154,6 +160,8 @@ export interface DuelState {
   firstTurn: boolean;
   skipDraw: boolean;
   uidCounter: number;
+  /** lasting duel-wide effects card scripts set (declared names/types, skipped phases...) */
+  fx: Record<string, any>;
 }
 
 /** What a player may ask the engine to do. */
@@ -166,6 +174,7 @@ export type Action =
   | { type: 'CHANGE_POS'; player: Pid; uid: number }
   | { type: 'ATTACK'; player: Pid; uid: number; target: number | null }
   | { type: 'MONSTER_EFFECT'; player: Pid; uid: number }
+  | { type: 'SPECIAL'; player: Pid; uid: number }
   | { type: 'NEXT_PHASE'; player: Pid }
   | { type: 'END_TURN'; player: Pid }
   | { type: 'CHOOSE'; player: Pid; picks: number[] }

@@ -12,6 +12,9 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip, playWin, unlockAudio } from './sound';
 
+/** The Egyptian Gods come in packs but cannot be used, as in EDS. */
+const GODS = new Set(['Obelisk the Tormentor', 'Slifer the Sky Dragon', 'The Winged Dragon of Ra']);
+
 export function Title({ onStart, hasSave }: { onStart: () => void; hasSave: boolean }) {
   return (
     <div class="title" onClick={() => (unlockAudio(), onStart())}>
@@ -347,6 +350,8 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
     playBlip();
   };
   const isFusion = (n: string) => card(n)?.sub === 'Fusion';
+  /** Ticket cards and the Egyptian Gods are keepsakes in EDS: they cannot go in a Deck. */
+  const keepsake = (n: string) => card(n)?.sub === 'Ticket' || GODS.has(n);
   const copies = (n: string) => save.main.filter((x) => x === n).length + save.side.filter((x) => x === n).length + save.fusion.filter((x) => x === n).length;
   const dbKnown = allCards().length > 0;
 
@@ -388,9 +393,10 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
         <Win title={sel} class="msgwin">
           <Menu
             items={[
+              ...(keepsake(sel) ? [{ label: 'A keepsake: it cannot be used in a Duel', disabled: true, onPick: () => {} }] : []),
               ...(tab !== 'trunk' ? [{ label: 'To Trunk', onPick: () => move(sel, tab, 'trunk') }] : []),
-              ...(tab !== 'main' && !isFusion(sel) ? [{ label: 'To Main Deck', disabled: copies(sel) >= 3, onPick: () => move(sel, tab, 'main') }] : []),
-              ...(tab !== 'side' ? [{ label: 'To Side Deck', disabled: copies(sel) >= 3 || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
+              ...(tab !== 'main' && !isFusion(sel) && !keepsake(sel) ? [{ label: 'To Main Deck', disabled: copies(sel) >= 3, onPick: () => move(sel, tab, 'main') }] : []),
+              ...(tab !== 'side' && !keepsake(sel) ? [{ label: 'To Side Deck', disabled: copies(sel) >= 3 || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
               ...(tab !== 'fusion' && isFusion(sel) ? [{ label: 'To Fusion Deck', disabled: copies(sel) >= 3 || save.fusion.length >= 20, onPick: () => move(sel, tab, 'fusion') }] : []),
               { label: 'Card Info', onPick: () => setInfo(sel) },
             ]}

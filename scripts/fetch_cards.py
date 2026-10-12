@@ -127,6 +127,19 @@ def wiki(params: dict) -> dict:
         return {}
 
 
+def crop_card(im: "Image.Image") -> "Image.Image":
+    """Yugipedia's EDS images are whole GBA screens; keep just the card on the left."""
+    w, h = im.size
+    if w <= h:
+        return im
+    olive = lambda p: p[0] > 120 and p[1] > 120 and p[2] < 110
+    cols = [x for x in range(w // 2) if sum(olive(im.getpixel((x, y))) for y in range(h)) > h // 5]
+    rows = [y for y in range(h) if sum(olive(im.getpixel((x, y))) for x in range(w // 2)) > w // 15]
+    if not cols or not rows:
+        return im
+    return im.crop((max(0, cols[0] - 2), max(0, rows[0] - 2), min(w, cols[-1] + 3), min(h, rows[-1] + 3)))
+
+
 def ticket_card(entry: dict) -> tuple[dict, bytes | None]:
     """EDS-only Ticket cards are not in YGOPRODeck: take their art from yugipedia's EDS page."""
     page = f"{entry['name']} (EDS)"
@@ -172,7 +185,7 @@ def main() -> int:
             path = IMG_DIR / f"{card['id']}.webp"
             if raw and not path.exists():
                 try:
-                    im = Image.open(io.BytesIO(raw)).convert("RGB")
+                    im = crop_card(Image.open(io.BytesIO(raw)).convert("RGB"))
                     h = round(im.height * IMG_WIDTH / im.width)
                     im.resize((IMG_WIDTH, h), Image.LANCZOS).save(path, "WEBP", quality=IMG_QUALITY, method=6)
                 except Exception as e:  # noqa: BLE001

@@ -11,10 +11,11 @@ for (const r of raw) {
   let sub = 'Normal';
   if (t === 'Spell Card') (kind = 'spell'), (sub = r.race ?? 'Normal');
   else if (t === 'Trap Card') (kind = 'trap'), (sub = r.race ?? 'Normal');
+  else if (t === 'Ticket Card') (kind = 'spell'), (sub = 'Ticket');
   else if (/Fusion/.test(t)) sub = 'Fusion';
   else if (/Ritual/.test(t)) sub = 'Ritual';
   else if (/Effect|Flip|Spirit|Toon|Union/.test(t)) sub = 'Effect';
-  const info: CardInfo = { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password };
+  const info: CardInfo = { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias };
   DB.set(info.name, info);
   DB.set(info.name.toLowerCase(), info);
   if (r.alias) (DB.set(r.alias, info), DB.set(r.alias.toLowerCase(), info));

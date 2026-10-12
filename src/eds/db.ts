@@ -40,10 +40,13 @@ function toInfo(r: RawCard): CardInfo {
   } else if (t === 'Trap Card') {
     kind = 'trap';
     sub = r.race ?? 'Normal';
+  } else if (t === 'Ticket Card') {
+    kind = 'spell';
+    sub = 'Ticket';
   } else if (/Fusion/.test(t)) sub = 'Fusion';
   else if (/Ritual/.test(t)) sub = 'Ritual';
   else if (/Effect|Flip|Tuner|Spirit|Toon|Union|Gemini/.test(t)) sub = 'Effect';
-  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password };
+  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias };
 }
 
 export async function loadDb(): Promise<boolean> {
