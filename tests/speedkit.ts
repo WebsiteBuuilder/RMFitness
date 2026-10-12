@@ -39,7 +39,7 @@ for (const r of JSON.parse(readFileSync('public/cards/cards.json', 'utf8')) as a
   if (r.alias) (DB.set(r.alias, info), DB.set(r.alias.toLowerCase(), info));
 }
 for (const r of JSON.parse(readFileSync('public/cards/speed.json', 'utf8')) as any[]) {
-  const known = byId.get(r.id);
+  const known = byId.get(r.id) ?? (r.type !== 'Skill Card' && DB.get(r.name)?.name === r.name ? DB.get(r.name) : undefined);
   if (known && r.type !== 'Skill Card') {
     known.speed = true;
     if (!DB.has(r.name)) (DB.set(r.name, known), DB.set(r.name.toLowerCase(), known));
