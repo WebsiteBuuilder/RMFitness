@@ -19,6 +19,8 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
+import { whenArtIdle } from '../art/cues';
+import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -123,8 +125,11 @@ export function App() {
   };
 
   const startSpeedCpu = (o: SpeedOpponent) => {
-    const deck = speedSave ? activeDeck(speedSave) : null;
-    if (!save || !deck || speedDeckProblems(deck).length > 0) return;
+    const full = speedSave ? activeDeck(speedSave) : null;
+    if (!save || !full || !speedSave || speedDeckProblems(full).length > 0) return;
+    // Cards sealed in the Shadow Realm sit this duel out, on both sides.
+    const deck = unsealedDeck(speedSave, full);
+    o = { ...o, main: unsealedCpuMain(speedSave, o.name, o.main) };
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
     ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill });
@@ -172,8 +177,14 @@ export function App() {
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
     if (gameOf() === 'speed') {
       // Speed Duel keeps its own record; no booster packs or calendar days.
-      if (speedSave) setSpeedSave(withSpeedResult(speedSave, mine, oppName));
-      if (hotseat && p2Profile && p2Profile !== profile?.id) writeSpeedSave(p2Profile, withSpeedResult(loadSpeedSave(p2Profile), mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', save.name));
+      // Overkill finish: the loser is sent to the Shadow Realm and their best monster is sealed.
+      const sr = session ? shadowRealmOf(session.engine.state) : null;
+      if (sr) recordShadow(sr);
+      if (speedSave) setSpeedSave(withShadow(withSpeedResult(speedSave, mine, oppName), mine, sr, mySeat, oppName, cpu).save);
+      if (hotseat && p2Profile && p2Profile !== profile?.id) {
+        const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
+        writeSpeedSave(p2Profile, withShadow(withSpeedResult(loadSpeedSave(p2Profile), theirs, save.name), theirs, sr, mySeat === 0 ? 1 : 0, save.name, false).save);
+      }
       session?.close();
       setSession(null);
       setP2Profile(null);
@@ -290,12 +301,17 @@ export function App() {
   const others = (): SeatProfile[] =>
     loadProfiles()
       .filter((p) => p.id !== profile.id)
-      .map((p) => ({ profile: p, save: loadSave(p.id), speed: { deck: activeDeck(loadSpeedSave(p.id)) } }));
+      .map((p) => {
+        const ss = loadSpeedSave(p.id);
+        const d = activeDeck(ss);
+        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d) } };
+      });
 
-  const myDeck = speedSave ? activeDeck(speedSave) : null;
+  const myFullDeck = speedSave ? activeDeck(speedSave) : null;
+  const myDeck = speedSave && myFullDeck ? unsealedDeck(speedSave, myFullDeck) : null;
   const entries: Partial<Record<GameMode, SeatEntry>> = {
     eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
-    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, problems: speedDeckProblems(myDeck) } } : {}),
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, problems: speedDeckProblems(myFullDeck!) } } : {}),
   };
 
   switch (screen) {
@@ -389,8 +405,10 @@ function Running({
       return;
     }
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    const t = setTimeout(() => session.send(action), quick ? 350 : 800);
-    return () => clearTimeout(t);
+    // ...and never in the middle of a 3D cinematic.
+    let t = 0;
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action), quick ? 350 : 800)));
+    return () => (stopWaiting(), clearTimeout(t));
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
   if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;

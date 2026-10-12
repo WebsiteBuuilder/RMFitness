@@ -2,7 +2,7 @@
 // Everything that needs a decision from a player is written as a generator that
 // yields a Prompt; the engine parks the generator until the answer arrives.
 
-import type { Action, Card, CardInfo, ChainLink, DuelState, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SelectOption } from './types';
+import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SelectOption } from './types';
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
 import { getEffect, setNameResolver, type Trigger } from './effects';
 import { getSkill } from './skills';
@@ -45,6 +45,7 @@ export function emptyState(): DuelState {
     winReason: '',
     log: [],
     lastEvent: null,
+    events: [],
     attackedThisTurn: [],
     firstTurn: true,
     skipDraw: false,
@@ -177,8 +178,12 @@ export class Engine {
     this.state.log.push({ turn: this.state.turn, player, text });
   }
 
-  event(kind: string, extra: { uid?: number; player?: Pid; amount?: number } = {}) {
-    this.state.lastEvent = { kind, ...extra, seq: ++this.seq };
+  event(kind: string, extra: Omit<EngineEvent, 'kind' | 'seq'> = {}) {
+    const ev = { kind, ...extra, seq: ++this.seq };
+    this.state.lastEvent = ev;
+    const list = (this.state.events ??= []);
+    list.push(ev);
+    if (list.length > 40) list.splice(0, list.length - 40);
   }
 
   // ---------- lookups ----------
@@ -581,8 +586,11 @@ export class Engine {
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
     if (amount <= 0) return;
     const ps = this.player(player);
+    const from = ps.lp;
     ps.lp = Math.max(0, ps.lp - amount);
-    this.event('damage', { player, amount });
+    // The finishing blow and how far past 0 it went (the Shadow Realm reads this).
+    if (ps.lp <= 0 && this.state.winner === null) this.state.fx.finalBlow = { player, amount, from, turn: this.state.turn };
+    this.event('damage', { player, amount, from });
     this.log(player, `${ps.name} takes ${amount} damage (${ps.lp} LP)`);
     if (ps.lp <= 0) this.endDuel(other(player), `${ps.name}'s Life Points hit 0`);
   }
@@ -1707,7 +1715,7 @@ export class Engine {
     this.state.attackedThisTurn.push(uid);
     this.state.fx.battleNo = (this.state.fx.battleNo ?? 0) + 1;
     this.state.battle = { attacker: uid, target: targetUid };
-    this.event('attack', { uid, player });
+    this.event('attack', { uid, player, target: targetUid });
     const targetName = targetUid !== null ? (this.fieldCard(targetUid)!.faceUp ? this.fieldCard(targetUid)!.name : 'a face-down monster') : 'directly';
     this.log(player, `${m.name} attacks ${targetName}`);
     yield* this.responseWindow('attack', { uid, targetUid: targetUid ?? undefined });

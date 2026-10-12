@@ -144,6 +144,19 @@ export interface ChainLink {
   payload?: unknown;
 }
 
+/** Something that just happened, for animations: summon, set, flip, activate, attack, hit, damage, to-gy, win... */
+export interface EngineEvent {
+  kind: string;
+  uid?: number;
+  player?: Pid;
+  amount?: number;
+  /** attack: the monster attacked (null for a direct attack) */
+  target?: number | null;
+  /** damage: Life Points before the hit */
+  from?: number;
+  seq: number;
+}
+
 export interface LogLine {
   turn: number;
   player: Pid | null;
@@ -167,7 +180,9 @@ export interface DuelState {
   winReason: string;
   log: LogLine[];
   /** cards drawn/moved recently for the UI to animate */
-  lastEvent: { kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null;
+  lastEvent: EngineEvent | null;
+  /** the most recent events, oldest first (the 3D art engine plays them in order) */
+  events?: EngineEvent[];
   /** attacks declared this turn (uids) */
   attackedThisTurn: number[];
   firstTurn: boolean;

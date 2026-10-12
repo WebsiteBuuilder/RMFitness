@@ -1,0 +1,328 @@
+/* 3D art engine overlay: the canvas plus crisp DOM text on top of it. */
+.art-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.art-stage.on {
+  pointer-events: auto;
+}
+.art-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.art-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.art-skip {
+  position: absolute;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  right: 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+}
+
+/* the result window stays hidden while the finishing cinematic plays */
+.art-finishing .duel .msgwin,
+.art-finishing .duel .tresult {
+  visibility: hidden;
+}
+
+/* the 3D Spell/Trap cinematic replaces the Touch screen's flat card spotlight */
+.art3d-on .duel .tspot {
+  display: none;
+}
+
+/* name cards and attack calls */
+.art-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 16px;
+  color: #fff;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 45%, #000 55%) 18%, color-mix(in srgb, var(--c) 45%, #000 55%) 82%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--c) 70%, #fff 30%);
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 70%, #fff 30%);
+  animation: art-banner var(--d) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  text-shadow: 0 0 12px var(--c), 0 2px 2px #000;
+}
+.art-banner b {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+}
+.art-banner span {
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.9;
+  letter-spacing: 0.04em;
+}
+.art-banner.big b {
+  font-size: 25px;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.art-banner.pos-bottom {
+  bottom: 18%;
+}
+.art-banner.pos-top {
+  top: 14%;
+}
+.art-banner.pos-mid {
+  top: 46%;
+}
+@keyframes art-banner {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px) skewX(-12deg);
+  }
+  12% {
+    opacity: 1;
+    transform: none;
+  }
+  82% {
+    opacity: 1;
+    transform: translateX(6px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(40px) skewX(8deg);
+  }
+}
+
+/* damage numbers */
+.art-number {
+  position: absolute;
+  left: 50%;
+  font-size: calc(34px * var(--s));
+  font-weight: 900;
+  color: #fff;
+  -webkit-text-stroke: 2px var(--c);
+  text-shadow: 0 0 18px var(--c), 0 4px 4px #000;
+  animation: art-number var(--d) ease-out forwards;
+}
+.art-number.side-bottom {
+  bottom: 24%;
+}
+.art-number.side-top {
+  top: 22%;
+}
+@keyframes art-number {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(2.2);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-24px);
+  }
+}
+
+.art-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, var(--c) 0%, transparent 75%);
+  mix-blend-mode: screen;
+  animation: art-flash var(--d) ease-out forwards;
+}
+@keyframes art-flash {
+  0% {
+    opacity: var(--s);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Shadow Realm captions */
+.art-caption {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  text-align: center;
+  color: #fff;
+  font-weight: 800;
+  animation: art-caption var(--d) ease-out forwards;
+}
+.art-caption.overkill {
+  top: 12%;
+  font-size: 30px;
+  font-style: italic;
+  color: #ffd75a;
+  text-shadow: 0 0 16px #ff4fd8, 0 3px 3px #000;
+  letter-spacing: 0.06em;
+}
+.art-caption.shadow {
+  bottom: 26%;
+  font-size: 22px;
+  text-shadow: 0 0 18px #9a3cff, 0 0 4px #000;
+}
+.art-caption.sealed {
+  bottom: 17%;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffc8f2;
+  text-shadow: 0 0 10px #9a3cff, 0 2px 2px #000;
+}
+@keyframes art-caption {
+  0% {
+    opacity: 0;
+    transform: scale(1.3);
+    filter: blur(6px);
+  }
+  15% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* after the finish: who went to the Shadow Realm (stays with the result window) */
+.art-plaque {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 13px;
+  color: #f6e8ff;
+  background: linear-gradient(135deg, rgba(60, 10, 90, 0.92), rgba(20, 0, 40, 0.92));
+  border: 1px solid #9a3cff;
+  box-shadow: 0 0 18px rgba(154, 60, 255, 0.6);
+}
+.art-plaque b {
+  color: #ffd75a;
+}
+
+/* Shadow Realm page */
+.sr-h {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  color: #d8b0ff;
+}
+.sr-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sr-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.sr-card .cimg {
+  width: 48px;
+  flex: none;
+  filter: grayscale(0.6) hue-rotate(220deg) brightness(0.8);
+  box-shadow: 0 0 10px #9a3cff;
+}
+.sr-card em {
+  color: #ffd75a;
+  font-style: normal;
+}
+.sr-log li b {
+  color: #d8b0ff;
+}
+
+/* 3D Card Viewer */
+.artlab {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 35%, #1a2058, #05060f 75%);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.artlab .art-layer {
+  pointer-events: none;
+}
+.artlab-panel {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  max-width: 520px;
+  margin: 0 auto;
+  font-family: 'Silkscreen', 'Courier New', monospace;
+}
+.artlab-panel .win-body {
+  padding: 8px;
+}
+.artlab-now {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.artlab-now span {
+  color: var(--dim);
+  font-size: 10px;
+}
+.artlab-q {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  font: inherit;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--dim);
+  background: #0a0d2a;
+  color: #fff;
+}
+.artlab-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 160px;
+  overflow: auto;
+  margin-top: 4px;
+}
+.artlab-list button {
+  text-align: left;
+  padding: 7px 6px;
+  font: inherit;
+  font-size: 12px;
+  background: none;
+  color: #fff;
+  border: none;
+  border-bottom: 1px solid #ffffff18;
+}
+.artlab-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.artlab .art-canvas,
+.artlab .art-layer {
+  height: calc(100% - 250px);
+  bottom: auto;
+}

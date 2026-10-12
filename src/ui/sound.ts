@@ -64,3 +64,8 @@ export function playWin() {
   if (!ctx) return;
   [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.12, i * 0.14));
 }
+
+/** The shared audio context (null until the first tap), for the 3D art engine's sounds. */
+export function audioContext(): AudioContext | null {
+  return ctx;
+}
