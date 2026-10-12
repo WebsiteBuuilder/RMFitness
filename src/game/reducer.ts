@@ -368,6 +368,42 @@ export function apply(prev: GameState, e: LoggedEvent): GameState {
       log(s, e, `${pName(s, e.player)} revealed "${f.card.name}" from their ${zoneLabel(f.loc)}`);
       return s;
     }
+    case 'BATTLE': {
+      const atk = findCard(s, e.attacker);
+      if (!atk) return prev;
+      const tgt = e.target ? findCard(s, e.target) : null;
+      const who = pName(s, e.player);
+      if (!e.result) {
+        log(s, e, `${who}: "${atk.card.name}" attacks ${tgt ? (tgt.card.faceDown ? 'a face-down monster' : `"${tgt.card.name}"`) : 'directly'}`);
+        return s;
+      }
+      const r = e.result;
+      if (tgt && r.flipTarget && tgt.card.faceDown) {
+        tgt.card.faceDown = false;
+        replaceCard(s, tgt.card);
+      }
+      const parts: string[] = [`${who}: "${atk.card.name}" attacks ${tgt ? `"${tgt.card.name}"` : 'directly'}`];
+      if (r.damageTo !== null && r.damage > 0) {
+        const p = s.players[r.damageTo];
+        const before = p.lp;
+        p.lp = Math.max(0, p.lp - r.damage);
+        parts.push(`${pName(s, r.damageTo)} takes ${r.damage} (${before} → ${p.lp} LP)`);
+        if (p.lp === 0 && s.winner === null) s.winner = other(r.damageTo);
+      }
+      if (tgt && r.destroyTarget) {
+        const got = take(s, tgt.card.iid);
+        if (got && !got.card.token) put(s, { ...got.card, faceDown: false, defense: false, counters: 0 }, { player: got.card.owner, zone: 'gy' });
+        parts.push(`"${tgt.card.name}" destroyed`);
+      }
+      if (r.destroyAttacker) {
+        const got = take(s, atk.card.iid);
+        if (got && !got.card.token) put(s, { ...got.card, faceDown: false, defense: false, counters: 0 }, { player: got.card.owner, zone: 'gy' });
+        parts.push(`"${atk.card.name}" destroyed`);
+      }
+      log(s, e, parts.join('; '));
+      if (s.winner !== null && !s.log.some((l) => l.text.endsWith('wins the Duel!'))) log(s, e, `${pName(s, s.winner)} wins the Duel!`);
+      return s;
+    }
     case 'WAIT':
       s.waitFlag = e.player;
       log(s, e, `${pName(s, e.player)}: WAIT, I respond!`);

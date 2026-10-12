@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks';
 import type { CardInst } from '../game/types';
 import { cardById, cardImageUrl } from '../data/cards';
 
@@ -8,13 +9,34 @@ interface Props {
   size?: 'zone' | 'hand' | 'list' | 'big';
   selected?: boolean;
   flash?: boolean;
+  dragging?: boolean;
   onClick?: () => void;
+  onPointerDown?: (e: PointerEvent) => void;
 }
 
-export function CardView({ card, canPeek = false, size = 'zone', selected, flash, onClick }: Props) {
-  const hidden = card.faceDown && !canPeek;
+/** Card art with a text fallback when the image is missing or fails to load. */
+export function CardFace({ card, hidden }: { card: CardInst; hidden: boolean }) {
+  const [broken, setBroken] = useState(false);
   const data = cardById(card.cardId);
-  const img = hidden ? null : cardImageUrl(card.cardId);
+  const img = hidden || broken ? null : cardImageUrl(card.cardId);
+  if (hidden) return <div class="card-back" />;
+  if (img) return <img src={img} alt={card.name} draggable={false} onError={() => setBroken(true)} />;
+  return (
+    <div class={`card-text frame-${data?.frame ?? 'token'}`}>
+      <div class="card-text-name">{card.name}</div>
+      {data?.atk !== undefined && (
+        <div class="card-text-stats">
+          {data.level !== undefined ? `★${data.level} ` : ''}
+          {data.atk}/{data.def ?? '-'}
+        </div>
+      )}
+      {!data && card.token && <div class="card-text-stats">Token</div>}
+    </div>
+  );
+}
+
+export function CardView({ card, canPeek = false, size = 'zone', selected, flash, dragging, onClick, onPointerDown }: Props) {
+  const hidden = card.faceDown && !canPeek;
   const cls = [
     'card',
     `card-${size}`,
@@ -23,28 +45,14 @@ export function CardView({ card, canPeek = false, size = 'zone', selected, flash
     hidden ? 'hidden-face' : '',
     selected ? 'selected' : '',
     flash ? 'summon-flash' : '',
+    dragging ? 'dragging' : '',
     card.token ? 'token' : '',
   ]
     .filter(Boolean)
     .join(' ');
   return (
-    <div class={cls} onClick={onClick} role={onClick ? 'button' : undefined}>
-      {hidden ? (
-        <div class="card-back" />
-      ) : img ? (
-        <img src={img} alt={card.name} loading="lazy" draggable={false} />
-      ) : (
-        <div class="card-text">
-          <div class="card-text-name">{card.name}</div>
-          {data?.atk !== undefined && (
-            <div class="card-text-stats">
-              {data.level !== undefined ? `★${data.level} ` : ''}
-              {data.atk}/{data.def ?? '-'}
-            </div>
-          )}
-          {!data && card.token && <div class="card-text-stats">Token</div>}
-        </div>
-      )}
+    <div class={cls} data-iid={card.iid} onClick={onClick} onPointerDown={onPointerDown} role={onClick ? 'button' : undefined}>
+      <CardFace card={card} hidden={hidden} />
       {card.faceDown && canPeek && <div class="peek-tag">SET</div>}
       {card.counters > 0 && <div class="counter-badge">{card.counters}</div>}
     </div>

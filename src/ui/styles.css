@@ -823,3 +823,167 @@ input:focus {
     --card-w: 64px;
   }
 }
+
+/* ---------- Drag and drop ---------- */
+.card {
+  touch-action: none;
+}
+.hand .card {
+  touch-action: pan-x;
+}
+.card.dragging {
+  opacity: 0.35;
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%, -60%) scale(1.15) rotate(-3deg);
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.7));
+  width: var(--card-w);
+}
+.board.dragging-on .zone.empty,
+.board.dragging-on .pile {
+  border-style: dashed;
+}
+.side-bar.hot {
+  border-color: var(--red);
+  box-shadow: 0 0 14px rgba(255, 77, 94, 0.6);
+}
+.pile.hot {
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(70, 211, 255, 0.55);
+}
+.hand-hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  padding-bottom: 4px;
+}
+
+/* ---------- Sheet card preview ---------- */
+.sheet-preview {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.card-big {
+  width: 112px;
+  flex: none;
+}
+.sheet-preview-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  max-height: 150px;
+  overflow-y: auto;
+}
+.sheet-preview-text p {
+  margin: 0;
+}
+.battle-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- Lobby thumbnails ---------- */
+.deck-thumbs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.thumb {
+  width: 100%;
+  aspect-ratio: 59 / 86;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+  background: var(--bg2);
+}
+.deck-thumbs .thumb {
+  width: 34px;
+}
+.thumb-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 8px;
+  padding: 2px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.thumb-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.thumb-name {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.2;
+  text-align: center;
+}
+.deck-group {
+  margin-bottom: 14px;
+}
+.deck-group-title {
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.skill-preview {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.skill-preview .thumb {
+  width: 64px;
+  flex: none;
+}
+
+/* ---------- Hotseat hand-over ---------- */
+.pass-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: radial-gradient(ellipse at center, #1a2440, var(--bg) 70%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+}
+.pass-title {
+  color: var(--cyan);
+  letter-spacing: 4px;
+  font-weight: 700;
+}
+.pass-name {
+  font-size: 26px;
+  font-weight: 800;
+}
+.card-text.frame-spell {
+  background: linear-gradient(180deg, #1d7a6a, #0f3f38);
+}
+.card-text.frame-trap {
+  background: linear-gradient(180deg, #8a2a62, #45142f);
+}
+.card-text.frame-effect {
+  background: linear-gradient(180deg, #a0522d, #4a2412);
+}
+.card-text.frame-normal {
+  background: linear-gradient(180deg, #b8923a, #5a4414);
+}
+.card-text.frame-fusion {
+  background: linear-gradient(180deg, #6a3fa0, #2d1a48);
+}
+.card-text.frame-ritual {
+  background: linear-gradient(180deg, #3b6fb8, #1b3358);
+}

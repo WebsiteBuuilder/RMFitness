@@ -118,6 +118,15 @@ export type GameEvent =
   | { type: 'DICE'; player: PlayerId; value: number }
   | { type: 'COIN'; player: PlayerId; heads: boolean }
   | { type: 'REVEAL'; player: PlayerId; iid: string }
+  | {
+      type: 'BATTLE';
+      player: PlayerId;
+      attacker: string;
+      /** null = direct attack */
+      target: string | null;
+      /** when set, the game applies the outcome; otherwise only the declaration is logged */
+      result?: { destroyAttacker: boolean; destroyTarget: boolean; damageTo: PlayerId | null; damage: number; flipTarget: boolean };
+    }
   | { type: 'WAIT'; player: PlayerId }
   | { type: 'WAIT_CLEAR'; player: PlayerId }
   | { type: 'UNDO'; player: PlayerId; target: number }

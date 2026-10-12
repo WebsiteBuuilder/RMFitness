@@ -5,7 +5,7 @@ import { PHASES, PHASE_LABEL } from '../game/types';
 import { findCard, lastUndoable, zoneLabel } from '../game/reducer';
 import { randomSeed } from '../game/rng';
 import { cardById, cardImageUrl } from '../data/cards';
-import { CardView } from './CardView';
+import { CardFace, CardView } from './CardView';
 import { Action, Modal, Sheet } from './Sheet';
 import { playAlert, playHit, playSummon, unlockAudio } from './sound';
 
@@ -13,6 +13,7 @@ type SheetState =
   | { kind: 'card'; iid: string }
   | { kind: 'pile'; player: PlayerId; zone: 'deck' }
   | { kind: 'lp'; player: PlayerId }
+  | { kind: 'battle'; attacker: string; target: string | null }
   | { kind: 'menu' }
   | null;
 
@@ -27,12 +28,58 @@ interface Targeting {
   zone: 'm' | 's';
   faceDown: boolean;
   defense: boolean;
-  /** token placement instead of a move */
   token?: boolean;
+}
+
+/** A drop target on the table, encoded in data-drop as "zone:index:player". */
+interface Drop {
+  zone: ZoneName | 'player';
+  index: number;
+  player: PlayerId;
+}
+
+interface Drag {
+  iid: string;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+  active: boolean;
+  over: string | null;
 }
 
 function other(p: PlayerId): PlayerId {
   return p === 0 ? 1 : 0;
+}
+
+function dropKey(d: Drop): string {
+  return `${d.zone}:${d.index}:${d.player}`;
+}
+
+function parseDrop(key: string): Drop {
+  const [zone, index, player] = key.split(':');
+  return { zone: zone as Drop['zone'], index: Number(index), player: Number(player) as PlayerId };
+}
+
+function isMonster(card: CardInst): boolean {
+  const d = cardById(card.cardId);
+  return d ? /Monster/i.test(d.type) : card.token || card.cardId === null;
+}
+function isTrap(card: CardInst): boolean {
+  return /Trap/i.test(cardById(card.cardId)?.type ?? '');
+}
+function isFieldSpell(card: CardInst): boolean {
+  const d = cardById(card.cardId);
+  return !!d && /Spell/i.test(d.type) && /Field/i.test(d.race ?? '');
+}
+function isExtraType(card: CardInst): boolean {
+  return /Fusion|Synchro|XYZ|Xyz|Link/i.test(cardById(card.cardId)?.type ?? '');
+}
+function atkOf(card: CardInst): number {
+  return cardById(card.cardId)?.atk ?? 0;
+}
+function defOf(card: CardInst): number {
+  return cardById(card.cardId)?.def ?? 0;
 }
 
 export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { session: Session; view: SessionView; mySeat: PlayerId; hotseat: boolean; onSwap: () => void; onLeave: () => void }) {
@@ -44,9 +91,14 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
   const [targeting, setTargeting] = useState<Targeting | null>(null);
   const [locked, setLocked] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [passScreen, setPassScreen] = useState(false);
+  const dragRef = useRef<Drag | null>(null);
+  const suppressTap = useRef(false);
   const seenSummon = useRef<number>(-1);
   const seenLp = useRef<[number, number] | null>(null);
   const seenWait = useRef<PlayerId | null>(null);
+  const seenTurn = useRef<number>(state.turn);
 
   const send = (ev: Parameters<Session['send']>[0]) => {
     unlockAudio();
@@ -73,7 +125,7 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     };
   }, []);
 
-  // Summon flash and sound, LP hit sound, Wait alert.
+  // Summon flash and sound, LP hit sound, Wait alert, hotseat hand-over.
   useEffect(() => {
     const s = state.lastSummon;
     if (s && s.seq !== seenSummon.current) {
@@ -85,7 +137,11 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     seenLp.current = lp;
     if (state.waitFlag !== null && state.waitFlag !== seenWait.current && state.waitFlag !== mySeat) playAlert();
     seenWait.current = state.waitFlag;
-  }, [state, mySeat]);
+    if (hotseat && state.turn !== seenTurn.current) {
+      seenTurn.current = state.turn;
+      setPassScreen(true);
+    }
+  }, [state, mySeat, hotseat]);
 
   useEffect(() => {
     if (!toast) return;
@@ -95,11 +151,7 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
 
   const myUndo = useMemo(() => lastUndoable(events, mySeat), [events, mySeat]);
 
-  const canSee = (card: CardInst, loc: Loc) => {
-    if (!card.faceDown) return true;
-    if (hotseat) return loc.player === mySeat;
-    return loc.player === mySeat;
-  };
+  const canSee = (card: CardInst, loc: Loc) => !card.faceDown || loc.player === mySeat;
 
   const move = (iid: string, to: Loc, faceDown?: boolean, defense?: boolean) => {
     send({ type: 'MOVE', player: mySeat, iid, to, faceDown, defense });
@@ -114,11 +166,137 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     setModal(null);
   };
 
-  const onSlotTap = (player: PlayerId, zone: 'm' | 's', index: number, card: CardInst | null) => {
-    if (locked && !targeting) {
+  // ---------- drops (shared by drag and by tap-targeting) ----------
+
+  /** Handles a card landing on a drop target. Returns a message when nothing happened. */
+  const dropCard = (iid: string, d: Drop): string | null => {
+    const f = findCard(state, iid);
+    if (!f) return null;
+    const { card, loc } = f;
+    const p = state.players[d.player];
+    if (d.zone === 'm' || d.zone === 's') {
+      const arr = d.zone === 'm' ? p.monsters : p.spells;
+      const occupant = arr[d.index];
+      if (occupant && occupant.iid === iid) return null;
+      if (occupant) {
+        // Dropping a monster onto an opponent's monster declares an attack.
+        if (d.zone === 'm' && loc.zone === 'm' && loc.player === mySeat && d.player !== mySeat && isMonster(card)) {
+          setSheet({ kind: 'battle', attacker: iid, target: occupant.iid });
+          return null;
+        }
+        return 'That zone is taken';
+      }
+      if (d.zone === 'm' && !isMonster(card)) return 'Only monsters go in Monster Zones';
+      if (d.zone === 's' && isMonster(card)) return 'Spells and Traps go in the Spell/Trap Zones';
+      if (loc.zone === 'm' || loc.zone === 's' || loc.zone === 'field' || loc.zone === 'skill') {
+        move(iid, { player: d.player, zone: d.zone, index: d.index }, card.faceDown, d.zone === 'm' ? card.defense : false);
+      } else if (d.zone === 'm') {
+        move(iid, { player: d.player, zone: 'm', index: d.index }, false, false);
+      } else {
+        const faceDown = isTrap(card);
+        move(iid, { player: d.player, zone: 's', index: d.index }, faceDown, false);
+      }
+      return null;
+    }
+    if (d.zone === 'field') {
+      if (p.field && p.field.iid !== iid) return 'The Field Zone is taken';
+      if (!isFieldSpell(card) && loc.zone !== 'field') return 'Only Field Spells go in the Field Zone';
+      move(iid, { player: d.player, zone: 'field' }, card.faceDown && loc.zone === 'field' ? card.faceDown : false);
+      return null;
+    }
+    if (d.zone === 'player') {
+      if (loc.zone === 'm' && loc.player === mySeat && d.player !== mySeat && isMonster(card)) {
+        setSheet({ kind: 'battle', attacker: iid, target: null });
+        return null;
+      }
+      return null;
+    }
+    if (d.zone === 'deck') {
+      if (isExtraType(card)) return 'Extra Deck monsters go back to the Extra Deck';
+      move(iid, { player: card.owner, zone: 'deck', place: 'top' });
+      return null;
+    }
+    if (d.zone === 'extra') {
+      if (!isExtraType(card)) return 'Only Fusion monsters go in the Extra Deck';
+      move(iid, { player: card.owner, zone: 'extra' });
+      return null;
+    }
+    if (d.zone === 'gy' || d.zone === 'banished' || d.zone === 'hand') {
+      move(iid, { player: card.owner, zone: d.zone });
+      return null;
+    }
+    return null;
+  };
+
+  // ---------- pointer drag ----------
+
+  const onCardPointerDown = (iid: string) => (e: PointerEvent) => {
+    if (locked || targeting) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const f = findCard(state, iid);
+    if (!f) return;
+    // Opponent's hidden cards cannot be dragged; everything on the table can (manual table).
+    if (f.loc.zone === 'hand' && f.loc.player !== mySeat) return;
+    const d: Drag = { iid, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, over: null };
+    dragRef.current = d;
+    const el = e.currentTarget as HTMLElement;
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const onMove = (ev: PointerEvent) => {
+      const cur = dragRef.current;
+      if (!cur) return;
+      const dx = ev.clientX - cur.startX;
+      const dy = ev.clientY - cur.startY;
+      if (!cur.active && Math.hypot(dx, dy) < 10) return;
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      const target = under?.closest<HTMLElement>('[data-drop]')?.dataset.drop ?? null;
+      const next = { ...cur, x: ev.clientX, y: ev.clientY, active: true, over: target };
+      dragRef.current = next;
+      setDrag(next);
+    };
+    const finish = (ev: PointerEvent, cancelled: boolean) => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onCancel);
+      const cur = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!cur) return;
+      if (cur.active) {
+        suppressTap.current = true;
+        setTimeout(() => (suppressTap.current = false), 300);
+        if (cancelled) return;
+        const under = document.elementFromPoint(ev.clientX, ev.clientY);
+        const key = under?.closest<HTMLElement>('[data-drop]')?.dataset.drop;
+        if (key) {
+          const msg = dropCard(cur.iid, parseDrop(key));
+          if (msg) setToast(msg);
+        }
+      }
+    };
+    const onUp = (ev: PointerEvent) => finish(ev, false);
+    const onCancel = (ev: PointerEvent) => finish(ev, true);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onCancel);
+  };
+
+  const tapCard = (iid: string) => {
+    if (suppressTap.current) return;
+    if (locked) {
       setToast('Board is locked');
       return;
     }
+    setSheet({ kind: 'card', iid });
+  };
+
+  // ---------- taps on zones ----------
+
+  const onSlotTap = (player: PlayerId, zone: 'm' | 's', index: number, card: CardInst | null) => {
+    if (suppressTap.current) return;
     if (targeting) {
       if (card) {
         setToast('That zone is taken');
@@ -136,23 +314,21 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
       move(targeting.iid, { player, zone, index }, targeting.faceDown, targeting.defense);
       return;
     }
-    if (card) setSheet({ kind: 'card', iid: card.iid });
+    if (card) tapCard(card.iid);
   };
 
   const onSingleTap = (player: PlayerId, zone: 'field' | 'skill', card: CardInst | null) => {
+    if (suppressTap.current) return;
     if (targeting) {
       setToast('Pick a zone on the field');
       return;
     }
-    if (locked) {
-      setToast('Board is locked');
-      return;
-    }
-    if (card) setSheet({ kind: 'card', iid: card.iid });
+    if (card) tapCard(card.iid);
     else if (zone === 'field') setToast(`${player === mySeat ? 'Your' : "Opponent's"} Field Zone is empty`);
   };
 
   const onPileTap = (player: PlayerId, zone: 'deck' | 'gy' | 'banished' | 'extra' | 'hand') => {
+    if (suppressTap.current) return;
     if (targeting) {
       setToast('Pick a zone on the field, or cancel');
       return;
@@ -173,7 +349,9 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     setModal({ kind: 'browse', player, zone });
   };
 
-  const cardActions = (iid: string): { title: string; subtitle: string; actions: Action[] } | null => {
+  // ---------- sheets ----------
+
+  const cardActions = (iid: string): { title: string; subtitle: string; card: CardInst; visible: boolean; actions: Action[] } | null => {
     const f = findCard(state, iid);
     if (!f) return null;
     const { card, loc } = f;
@@ -183,26 +361,22 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     const a: Action[] = [];
     const toOwner = (zone: ZoneName, place?: 'top' | 'bottom'): Loc => ({ player: card.owner, zone, place });
     const z = loc.zone;
-    const isMonsterCard = () => {
-      const d = cardById(card.cardId);
-      return d ? /Monster/i.test(d.type) : true;
-    };
-    const isField = () => /Field/i.test(cardById(card.cardId)?.race ?? '') && /Spell/i.test(cardById(card.cardId)?.type ?? '');
 
     if (z === 'hand' || z === 'gy' || z === 'banished' || z === 'extra' || z === 'deck') {
-      if (isMonsterCard() && !card.token) {
+      if (isMonster(card) && !card.token) {
         a.push({ label: 'Summon (Attack)', tone: 'primary', onPick: () => startTargeting({ iid, zone: 'm', faceDown: false, defense: false }) });
         a.push({ label: 'Set (face-down Defense)', onPick: () => startTargeting({ iid, zone: 'm', faceDown: true, defense: true }) });
         a.push({ label: 'Special Summon (Defense)', onPick: () => startTargeting({ iid, zone: 'm', faceDown: false, defense: true }) });
       } else if (!card.token) {
-        if (isField()) a.push({ label: 'Activate in Field Zone', tone: 'primary', onPick: () => move(iid, toOwner('field'), false) });
-        a.push({ label: 'Activate (face-up)', tone: isField() ? undefined : 'primary', onPick: () => startTargeting({ iid, zone: 's', faceDown: false, defense: false }) });
+        if (isFieldSpell(card)) a.push({ label: 'Activate in Field Zone', tone: 'primary', onPick: () => move(iid, toOwner('field'), false) });
+        a.push({ label: 'Activate (face-up)', tone: isFieldSpell(card) ? undefined : 'primary', onPick: () => startTargeting({ iid, zone: 's', faceDown: false, defense: false }) });
         a.push({ label: 'Set (face-down)', onPick: () => startTargeting({ iid, zone: 's', faceDown: true, defense: false }) });
       }
       if (z === 'hand') a.push({ label: 'Reveal to opponent', onPick: () => (send({ type: 'REVEAL', player: mySeat, iid }), setSheet(null)) });
     }
     if (z === 'm') {
-      a.push({ label: card.defense ? 'Change to Attack Position' : 'Change to Defense Position', tone: 'primary', onPick: () => (send({ type: 'POSITION', player: mySeat, iid }), setSheet(null)) });
+      if (loc.player === mySeat && !card.faceDown) a.push({ label: 'Attack…', tone: 'primary', onPick: () => setSheet({ kind: 'battle', attacker: iid, target: opp.monsters.find((m) => m)?.iid ?? null }) });
+      a.push({ label: card.defense ? 'Change to Attack Position' : 'Change to Defense Position', tone: loc.player === mySeat && !card.faceDown ? undefined : 'primary', onPick: () => (send({ type: 'POSITION', player: mySeat, iid }), setSheet(null)) });
       a.push({ label: card.faceDown ? 'Flip face-up (Flip Summon)' : 'Flip face-down', onPick: () => (send({ type: 'FLIP', player: mySeat, iid }), setSheet(null)) });
       a.push({ label: 'Move to another Monster Zone', onPick: () => startTargeting({ iid, zone: 'm', faceDown: card.faceDown, defense: card.defense }) });
     }
@@ -224,16 +398,15 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
       if (z !== 'gy') a.push({ label: 'To Graveyard', onPick: () => move(iid, toOwner('gy')) });
       if (z !== 'banished') a.push({ label: 'Banish', onPick: () => move(iid, toOwner('banished')) });
       if (z !== 'hand') a.push({ label: 'To hand', onPick: () => move(iid, toOwner('hand')) });
-      const extraType = /Fusion|Synchro|XYZ|Xyz|Link/i.test(cardById(card.cardId)?.type ?? '');
-      if (extraType && z !== 'extra') a.push({ label: 'To Extra Deck', onPick: () => move(iid, toOwner('extra')) });
-      if (!extraType && z !== 'deck') {
+      if (isExtraType(card) && z !== 'extra') a.push({ label: 'To Extra Deck', onPick: () => move(iid, toOwner('extra')) });
+      if (!isExtraType(card) && z !== 'deck') {
         a.push({ label: 'To top of Deck', onPick: () => move(iid, toOwner('deck', 'top')) });
         a.push({ label: 'To bottom of Deck', onPick: () => move(iid, toOwner('deck', 'bottom')) });
       }
     }
     if (card.token) a.push({ label: 'Remove token', tone: 'danger', onPick: () => move(iid, toOwner('gy')) });
-    if (visible && card.cardId !== null) a.push({ label: 'Read card', onPick: () => (setSheet(null), setModal({ kind: 'read', iid })) });
-    return { title, subtitle, actions: a };
+    if (visible && card.cardId !== null) a.push({ label: 'Read full card', onPick: () => (setSheet(null), setModal({ kind: 'read', iid })) });
+    return { title, subtitle, card, visible, actions: a };
   };
 
   const deckActions = (): Action[] => {
@@ -275,15 +448,103 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
     { label: 'Leave duel', tone: 'danger', onPick: onLeave },
   ];
 
+  /** Battle calculator: what happens if `attacker` attacks `target` (or directly). */
+  const battle = (attackerIid: string, targetIid: string | null) => {
+    const a = findCard(state, attackerIid);
+    if (!a) return null;
+    const t = targetIid ? findCard(state, targetIid) : null;
+    const atk = atkOf(a.card);
+    const result = { destroyAttacker: false, destroyTarget: false, damageTo: null as PlayerId | null, damage: 0, flipTarget: false };
+    let text: string;
+    if (!t) {
+      result.damageTo = other(mySeat);
+      result.damage = atk;
+      text = `Direct attack for ${atk} damage.`;
+    } else if (t.card.defense) {
+      const def = defOf(t.card);
+      result.flipTarget = t.card.faceDown;
+      if (atk > def) {
+        result.destroyTarget = true;
+        text = `ATK ${atk} beats DEF ${def}: "${t.card.name}" is destroyed, no damage.`;
+      } else if (atk < def) {
+        result.damageTo = mySeat;
+        result.damage = def - atk;
+        text = `ATK ${atk} is under DEF ${def}: you take ${def - atk} damage.`;
+      } else text = `ATK ${atk} equals DEF ${def}: nothing is destroyed.`;
+    } else {
+      const tAtk = atkOf(t.card);
+      if (atk > tAtk) {
+        result.destroyTarget = true;
+        result.damageTo = other(mySeat);
+        result.damage = atk - tAtk;
+        text = `ATK ${atk} vs ATK ${tAtk}: "${t.card.name}" is destroyed, ${opp.name} takes ${atk - tAtk}.`;
+      } else if (atk < tAtk) {
+        result.destroyAttacker = true;
+        result.damageTo = mySeat;
+        result.damage = tAtk - atk;
+        text = `ATK ${atk} vs ATK ${tAtk}: "${a.card.name}" is destroyed, you take ${tAtk - atk}.`;
+      } else {
+        result.destroyAttacker = true;
+        result.destroyTarget = true;
+        text = `ATK ${atk} vs ATK ${tAtk}: both monsters are destroyed.`;
+      }
+    }
+    return { a, t, atk, text, result };
+  };
+
   const sheetContent = (() => {
     if (!sheet) return null;
     if (sheet.kind === 'card') {
       const c = cardActions(sheet.iid);
       if (!c) return null;
-      return <Sheet title={c.title} subtitle={c.subtitle} actions={c.actions} onClose={() => setSheet(null)} />;
+      const data = cardById(c.card.cardId);
+      return (
+        <Sheet title={c.title} subtitle={c.subtitle} actions={c.actions} onClose={() => setSheet(null)}>
+          <div class="sheet-preview">
+            <div class="card card-big">
+              <CardFace card={c.card} hidden={!c.visible} />
+            </div>
+            {c.visible && data && (
+              <div class="sheet-preview-text">
+                <div class="read-meta">
+                  {data.type}
+                  {data.attribute ? ` · ${data.attribute}` : ''}
+                  {data.level !== undefined ? ` · Lv ${data.level}` : ''}
+                  {data.atk !== undefined ? ` · ${data.atk} / ${data.def ?? '-'}` : ''}
+                </div>
+                <p>{data.desc}</p>
+              </div>
+            )}
+          </div>
+        </Sheet>
+      );
     }
     if (sheet.kind === 'pile') return <Sheet title="Your Deck" subtitle={`${me.deck.length} cards`} actions={deckActions()} onClose={() => setSheet(null)} />;
     if (sheet.kind === 'lp') return <Sheet title={`${state.players[sheet.player].name}: ${state.players[sheet.player].lp} LP`} subtitle="Tap an amount" actions={lpActions(sheet.player)} onClose={() => setSheet(null)} />;
+    if (sheet.kind === 'battle') {
+      const b = battle(sheet.attacker, sheet.target);
+      if (!b) return null;
+      const targets = opp.monsters.filter((m): m is CardInst => !!m);
+      const actions: Action[] = [
+        { label: 'Apply result', tone: 'primary', onPick: () => (send({ type: 'BATTLE', player: mySeat, attacker: sheet.attacker, target: sheet.target, result: b.result }), setSheet(null)) },
+        { label: 'Just declare (handle it by hand)', onPick: () => (send({ type: 'BATTLE', player: mySeat, attacker: sheet.attacker, target: sheet.target }), setSheet(null)) },
+      ];
+      return (
+        <Sheet title={`"${b.a.card.name}" attacks`} subtitle={b.text} actions={actions} onClose={() => setSheet(null)}>
+          <div class="battle-pick">
+            <button class={`chip ${sheet.target === null ? 'on' : ''}`} onClick={() => setSheet({ ...sheet, target: null })}>
+              Direct attack
+            </button>
+            {targets.map((m) => (
+              <button key={m.iid} class={`chip ${sheet.target === m.iid ? 'on' : ''}`} onClick={() => setSheet({ ...sheet, target: m.iid })}>
+                {m.faceDown ? 'Face-down monster' : `${m.name} (${m.defense ? 'DEF ' + defOf(m) : 'ATK ' + atkOf(m)})`}
+              </button>
+            ))}
+          </div>
+          <p class="hint">The result uses printed ATK/DEF. If an effect changes the numbers, pick "Just declare" and adjust LP yourself.</p>
+        </Sheet>
+      );
+    }
     return <Sheet title="Menu" actions={menuActions()} onClose={() => setSheet(null)} />;
   })();
 
@@ -348,10 +609,13 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
   })();
 
   const turnMine = state.turnPlayer === mySeat;
+  const dragCard = drag?.active ? findCard(state, drag.iid)?.card ?? null : null;
+
+  const sideProps = { mySeat, state, targeting, drag, canSee, onSlotTap, onSingleTap, onPileTap, onCardPointerDown, statusDot: status };
 
   return (
-    <div class={`board ${targeting ? 'targeting' : ''}`}>
-      <Side p={opp} pid={other(mySeat)} top mySeat={mySeat} state={state} targeting={targeting} canSee={canSee} onSlotTap={onSlotTap} onSingleTap={onSingleTap} onPileTap={onPileTap} onLp={() => setSheet({ kind: 'lp', player: other(mySeat) })} statusDot={status} />
+    <div class={`board ${targeting ? 'targeting' : ''} ${drag?.active ? 'dragging-on' : ''}`}>
+      <Side p={opp} pid={other(mySeat)} top {...sideProps} onLp={() => setSheet({ kind: 'lp', player: other(mySeat) })} />
 
       <div class="center-bar">
         <div class="phase-bar">
@@ -363,8 +627,11 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
         </div>
         <div class="center-tools">
           <div class="turn-tag">
-            Turn {state.turn} · {turnMine ? 'Your turn' : `${opp.name}'s turn`}
+            T{state.turn} · {turnMine ? 'Your turn' : `${opp.name}'s turn`}
           </div>
+          <button class="tool-btn" onClick={() => send({ type: 'DRAW', player: mySeat, n: 1 })} disabled={me.deck.length === 0}>
+            Draw
+          </button>
           <button class="tool-btn" onClick={() => setModal({ kind: 'log' })}>
             Log
           </button>
@@ -380,15 +647,21 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
         </div>
       </div>
 
-      <Side p={me} pid={mySeat} top={false} mySeat={mySeat} state={state} targeting={targeting} canSee={canSee} onSlotTap={onSlotTap} onSingleTap={onSingleTap} onPileTap={onPileTap} onLp={() => setSheet({ kind: 'lp', player: mySeat })} statusDot={status} />
+      <Side p={me} pid={mySeat} top={false} {...sideProps} onLp={() => setSheet({ kind: 'lp', player: mySeat })} />
 
-      <div class="hand">
+      <div class="hand" data-drop={dropKey({ zone: 'hand', index: 0, player: mySeat })}>
         {me.hand.map((c) => (
-          <CardView key={c.iid} card={c} canPeek size="hand" selected={targeting?.iid === c.iid} onClick={() => (locked ? setToast('Board is locked') : setSheet({ kind: 'card', iid: c.iid }))} />
+          <CardView key={c.iid} card={c} canPeek size="hand" selected={targeting?.iid === c.iid} dragging={drag?.active && drag.iid === c.iid} onClick={() => tapCard(c.iid)} onPointerDown={onCardPointerDown(c.iid)} />
         ))}
         {me.hand.length === 0 && <div class="hint hand-empty">Your hand is empty</div>}
       </div>
+      <div class="hand-hint">Drag a card onto a zone, or tap it for options</div>
 
+      {dragCard && drag && (
+        <div class="drag-ghost card card-hand" style={{ left: drag.x, top: drag.y }}>
+          <CardFace card={dragCard} hidden={false} />
+        </div>
+      )}
       {targeting && (
         <div class="target-banner">
           {targeting.token ? 'Tap an empty Monster Zone for the token' : `Tap an empty ${targeting.zone === 'm' ? 'Monster' : 'Spell/Trap'} Zone`}
@@ -410,6 +683,13 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
           </button>
         </div>
       )}
+      {passScreen && hotseat && (
+        <div class="pass-screen" onClick={() => setPassScreen(false)}>
+          <div class="pass-title">Turn {state.turn}</div>
+          <div class="pass-name">Pass the phone to {state.players[state.turnPlayer].name}</div>
+          <div class="hint">Tap when ready</div>
+        </div>
+      )}
       {status !== 'connected' && session.adapter.kind !== 'local' && <div class={`conn-banner status-${status}`}>{detail}</div>}
       {toast && <div class="toast">{toast}</div>}
       {sheetContent}
@@ -418,52 +698,82 @@ export function Board({ session, view, mySeat, hotseat, onSwap, onLeave }: { ses
   );
 }
 
-function Pile({ label, count, onClick, dim }: { label: string; count: number; onClick: () => void; dim?: boolean }) {
+function Pile({ label, count, onClick, dim, drop, hot }: { label: string; count: number; onClick: () => void; dim?: boolean; drop?: string; hot?: boolean }) {
   return (
-    <button class={`pile ${count === 0 ? 'empty' : ''} ${dim ? 'dim' : ''}`} onClick={onClick}>
+    <button class={`pile ${count === 0 ? 'empty' : ''} ${dim ? 'dim' : ''} ${hot ? 'hot' : ''}`} onClick={onClick} data-drop={drop}>
       <span class="pile-count">{count}</span>
       <span class="pile-label">{label}</span>
     </button>
   );
 }
 
-function Side({ p, pid, top, mySeat, state, targeting, canSee, onSlotTap, onSingleTap, onPileTap, onLp, statusDot }: { p: PlayerState; pid: PlayerId; top: boolean; mySeat: PlayerId; state: SessionView['state']; targeting: Targeting | null; canSee: (c: CardInst, l: Loc) => boolean; onSlotTap: (player: PlayerId, zone: 'm' | 's', index: number, card: CardInst | null) => void; onSingleTap: (player: PlayerId, zone: 'field' | 'skill', card: CardInst | null) => void; onPileTap: (player: PlayerId, zone: 'deck' | 'gy' | 'banished' | 'extra' | 'hand') => void; onLp: () => void; statusDot: string }) {
+interface SideProps {
+  p: PlayerState;
+  pid: PlayerId;
+  top: boolean;
+  mySeat: PlayerId;
+  state: SessionView['state'];
+  targeting: Targeting | null;
+  drag: Drag | null;
+  canSee: (c: CardInst, l: Loc) => boolean;
+  onSlotTap: (player: PlayerId, zone: 'm' | 's', index: number, card: CardInst | null) => void;
+  onSingleTap: (player: PlayerId, zone: 'field' | 'skill', card: CardInst | null) => void;
+  onPileTap: (player: PlayerId, zone: 'deck' | 'gy' | 'banished' | 'extra' | 'hand') => void;
+  onCardPointerDown: (iid: string) => (e: PointerEvent) => void;
+  onLp: () => void;
+  statusDot: string;
+}
+
+function Side({ p, pid, top, mySeat, state, targeting, drag, canSee, onSlotTap, onSingleTap, onPileTap, onCardPointerDown, onLp, statusDot }: SideProps) {
   const mine = pid === mySeat;
+  const over = drag?.active ? drag.over : null;
   const slot = (zone: 'm' | 's', i: number) => {
     const card = zone === 'm' ? p.monsters[i] : p.spells[i];
-    const hot = targeting && targeting.zone === zone && !card;
+    const key = dropKey({ zone, index: i, player: pid });
+    const hot = (targeting && targeting.zone === zone && !card) || over === key;
     return (
-      <div key={`${zone}${i}`} class={`zone ${zone === 'm' ? 'zone-m' : 'zone-s'} ${hot ? 'hot' : ''} ${!card ? 'empty' : ''}`} onClick={() => onSlotTap(pid, zone, i, card)}>
-        {card ? <CardView card={card} canPeek={canSee(card, { player: pid, zone, index: i })} flash={state.lastSummon?.iid === card.iid && state.lastSummon.seq >= state.log.length - 3} /> : <span class="zone-label">{zone === 'm' ? 'M' : 'S/T'}</span>}
+      <div key={key} class={`zone ${zone === 'm' ? 'zone-m' : 'zone-s'} ${hot ? 'hot' : ''} ${!card ? 'empty' : ''}`} data-drop={key} onClick={() => onSlotTap(pid, zone, i, card)}>
+        {card ? (
+          <CardView card={card} canPeek={canSee(card, { player: pid, zone, index: i })} flash={state.lastSummon?.iid === card.iid && state.lastSummon.seq >= state.log.length - 3} dragging={drag?.active && drag.iid === card.iid} onPointerDown={onCardPointerDown(card.iid)} />
+        ) : (
+          <span class="zone-label">{zone === 'm' ? 'M' : 'S/T'}</span>
+        )}
       </div>
     );
   };
   const single = (zone: 'field' | 'skill') => {
     const card = zone === 'field' ? p.field : p.skill;
+    const key = dropKey({ zone, index: 0, player: pid });
     return (
-      <div class={`zone zone-${zone} ${!card ? 'empty' : ''}`} onClick={() => onSingleTap(pid, zone, card)}>
-        {card ? <CardView card={card} canPeek={canSee(card, { player: pid, zone })} /> : <span class="zone-label">{zone === 'field' ? 'Field' : 'Skill'}</span>}
+      <div class={`zone zone-${zone} ${!card ? 'empty' : ''} ${over === key ? 'hot' : ''}`} data-drop={zone === 'field' ? key : undefined} onClick={() => onSingleTap(pid, zone, card)}>
+        {card ? <CardView card={card} canPeek={canSee(card, { player: pid, zone })} onPointerDown={zone === 'field' ? onCardPointerDown(card.iid) : undefined} /> : <span class="zone-label">{zone === 'field' ? 'Field' : 'Skill'}</span>}
       </div>
     );
+  };
+  const pile = (zone: 'deck' | 'extra' | 'gy', label: string, count: number) => {
+    const key = dropKey({ zone, index: 0, player: pid });
+    return <Pile label={label} count={count} onClick={() => onPileTap(pid, zone)} dim={!mine} drop={mine ? key : undefined} hot={over === key} />;
   };
   const monsters = [0, 1, 2].map((i) => slot('m', i));
   const spells = [0, 1, 2].map((i) => slot('s', i));
   const rowFar = (
     <div class="zone-row">
-      {top ? <Pile label="Deck" count={p.deck.length} onClick={() => onPileTap(pid, 'deck')} dim /> : <Pile label="Extra" count={p.extra.length} onClick={() => onPileTap(pid, 'extra')} />}
+      {top ? pile('deck', 'Deck', p.deck.length) : pile('extra', 'Extra', p.extra.length)}
       {spells}
-      {top ? <Pile label="Extra" count={p.extra.length} onClick={() => onPileTap(pid, 'extra')} dim /> : <Pile label="Deck" count={p.deck.length} onClick={() => onPileTap(pid, 'deck')} />}
+      {top ? pile('extra', 'Extra', p.extra.length) : pile('deck', 'Deck', p.deck.length)}
     </div>
   );
   const rowNear = (
     <div class="zone-row">
-      {top ? <Pile label="GY" count={p.gy.length} onClick={() => onPileTap(pid, 'gy')} /> : single('field')}
+      {top ? pile('gy', 'GY', p.gy.length) : single('field')}
       {monsters}
-      {top ? single('field') : <Pile label="GY" count={p.gy.length} onClick={() => onPileTap(pid, 'gy')} />}
+      {top ? single('field') : pile('gy', 'GY', p.gy.length)}
     </div>
   );
+  const playerKey = dropKey({ zone: 'player', index: 0, player: pid });
+  const banishKey = dropKey({ zone: 'banished', index: 0, player: pid });
   const bar = (
-    <div class={`side-bar ${mine ? 'mine' : 'theirs'} ${state.turnPlayer === pid ? 'active' : ''}`}>
+    <div class={`side-bar ${mine ? 'mine' : 'theirs'} ${state.turnPlayer === pid ? 'active' : ''} ${over === playerKey ? 'hot' : ''}`} data-drop={mine ? undefined : playerKey}>
       <div class="side-name">
         {!mine && <span class={`dot dot-${statusDot}`} />}
         {p.name || `Player ${pid + 1}`}
@@ -473,7 +783,7 @@ function Side({ p, pid, top, mySeat, state, targeting, canSee, onSlotTap, onSing
       </button>
       <div class="side-chips">
         {!mine && <span class="chip static">Hand {p.hand.length}</span>}
-        <button class="chip" onClick={() => onPileTap(pid, 'banished')}>
+        <button class={`chip ${over === banishKey ? 'on' : ''}`} data-drop={mine ? banishKey : undefined} onClick={() => onPileTap(pid, 'banished')}>
           Banished {p.banished.length}
         </button>
         {single('skill')}
