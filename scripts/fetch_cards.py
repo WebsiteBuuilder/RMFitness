@@ -85,12 +85,21 @@ def compact(c: dict, entry: dict) -> dict:
     return out
 
 
+entry_password: dict = {}
+
+
 def lookup(name: str, overrides: dict, cache: dict) -> dict | None:
     key = norm(name)
     if key in cache:
         return cache[key]
     found = None
-    if name in overrides:
+    pw = entry_password.get(key)
+    if pw and pw.isdigit():
+        # The 8-digit password printed on the card is the passcode YGOPRODeck uses as its id,
+        # which survives every rename (Bell of Destruction -> Ring of Destruction, etc.).
+        res = api({"id": int(pw)})
+        found = res[0] if res else None
+    if not found and name in overrides:
         ov = overrides[name]
         found = (api({"id": ov}) if isinstance(ov, int) else api({"name": ov})) or []
         found = found[0] if found else None
@@ -114,6 +123,9 @@ def main() -> int:
     missing: list[str] = []
     cache: dict = {}
     seen_ids: set[int] = set()
+    for entry in entries:
+        if entry.get("password"):
+            entry_password[norm(entry["name"])] = entry["password"]
     for i, entry in enumerate(entries):
         name = entry["name"]
         found = lookup(name, overrides, cache)

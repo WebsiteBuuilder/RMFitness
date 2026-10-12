@@ -965,3 +965,41 @@ p {
     --card-h: 93px;
   }
 }
+
+/* fit five zones plus the side column on a narrow phone */
+.rows {
+  min-width: 0;
+}
+.zone {
+  min-width: 0;
+  width: 100%;
+}
+.sidebox {
+  width: 44px;
+  flex: none;
+}
+.pile-stack {
+  width: 34px;
+  height: 48px;
+}
+.z-f {
+  width: 34px;
+}
+.center {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.phasebtns .gbtn {
+  font-size: 10px;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .turninfo {
+    display: none;
+  }
+  .ph {
+    font-size: 8px;
+    padding: 2px;
+  }
+}
