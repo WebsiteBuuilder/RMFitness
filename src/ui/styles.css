@@ -80,7 +80,11 @@ p {
 .loading {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 16px;
   min-height: 100dvh;
+  padding: 0 16px;
+  text-align: center;
 }
 .blink {
   animation: blink 1s steps(2) infinite;
