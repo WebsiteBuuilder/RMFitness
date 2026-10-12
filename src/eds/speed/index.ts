@@ -7,6 +7,7 @@ import { install as b00 } from './cards-00';
 import { install as b01 } from './cards-01';
 import { install as b02 } from './cards-02';
 import { install as b03 } from './cards-03';
+import { install as b04 } from './cards-04';
 import { install as b05 } from './cards-05';
 import { install as b06 } from './cards-06';
 import { install as b07 } from './cards-07';
@@ -20,6 +21,7 @@ const BATCHES: [string, Installer][] = [
   ['01', b01],
   ['02', b02],
   ['03', b03],
+  ['04', b04],
   ['05', b05],
   ['06', b06],
   ['07', b07],

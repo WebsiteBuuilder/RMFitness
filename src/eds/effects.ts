@@ -1046,8 +1046,10 @@ E['Invader of the Throne'] = {
     const picks = yield* e.select(controller, 'Invader of the Throne: switch control with which monster?', e.optionsFor(targets, true), 1, 1, true);
     if (!picks || !targets[picks[0]]) return;
     const t = targets[picks[0]];
-    const a = e.find(m.uid)!;
-    const b = e.find(t.uid)!;
+    const a = e.find(m.uid);
+    const b = e.find(t.uid);
+    // Something may have moved either monster while the choice was open (a control change).
+    if (!a || !b || a.loc.zone !== 'mz' || b.loc.zone !== 'mz' || e.controller(m.uid) !== controller || e.controller(t.uid) !== opp) return;
     e.player(controller).mz[a.loc.index] = t;
     e.player(opp).mz[b.loc.index] = m;
     m.posChanged = t.posChanged = true;
