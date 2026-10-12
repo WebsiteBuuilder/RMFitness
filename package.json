@@ -1,31 +1,22 @@
 {
-  "name": "rmfitness",
+  "name": "speed-duel-online",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "deploy": "git add . && git commit -m \"Deploy updates\" && git push origin main && railway up"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check-decks": "node scripts/check-decks.mjs"
   },
   "dependencies": {
-    "next": "14.1.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-icons": "^5.0.1",
-    "@heroicons/react": "^2.1.1",
-    "framer-motion": "^11.0.3"
+    "firebase": "^11.0.0",
+    "peerjs": "^1.5.4",
+    "preact": "^10.24.0"
   },
   "devDependencies": {
-    "@types/node": "^20.11.16",
-    "@types/react": "^18.2.52",
-    "@types/react-dom": "^18.2.18",
-    "autoprefixer": "^10.4.17",
-    "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.3.3",
-    "eslint": "^8.56.0",
-    "eslint-config-next": "14.1.0"
+    "@preact/preset-vite": "^2.9.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
   }
-} 
+}

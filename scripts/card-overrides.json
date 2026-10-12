@@ -1,0 +1,5 @@
+{
+  "_comment": "Passcodes to force into or out of the Speed Duel pool when the API lags a set or mis-tags a card.",
+  "add": [],
+  "remove": []
+}

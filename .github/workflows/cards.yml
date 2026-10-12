@@ -1,0 +1,40 @@
+name: Update card database
+
+# Snapshots the Speed Duel card pool, Skill Cards and card images into the
+# repository, so the game never calls the card API from players' phones.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - run: python scripts/fetch_cards.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/check-decks.mjs
+        continue-on-error: true
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/cards
+          if git diff --cached --quiet; then
+            echo "No card changes."
+          else
+            git commit -m "Update card database ($(date -u +%Y-%m-%d))"
+            git push
+          fi
