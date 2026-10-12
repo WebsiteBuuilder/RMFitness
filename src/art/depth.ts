@@ -12,8 +12,14 @@ export interface ArtData {
   art: HTMLCanvasElement;
   /** the whole card, for card-shaped panels */
   full: HTMLCanvasElement;
-  /** DEPTH_SIZE² depth values 0..255 (subject high, background low) */
+  /** DEPTH_SIZE² depth values 0..255 (subject high, background low), guessed in the browser */
   depth: Uint8Array;
+  /**
+   * The prebuilt figure map when the card has one (public/cards/fig, made by
+   * scripts/build-figures.py): RGB = relief, alpha = the subject cut out of its
+   * background. Much cleaner than the guessed depth.
+   */
+  relief: HTMLImageElement | null;
   /** three main colors of the art, most striking first (0xRRGGBB) */
   palette: number[];
 }
@@ -167,12 +173,38 @@ export function analyse(px: Uint8ClampedArray, n: number): { depth: Uint8Array; 
   return { depth, palette };
 }
 
+const BASE = import.meta.env?.BASE_URL ?? '/';
+let figIndex: Promise<Record<string, number[]>> | null = null;
+/** Which cards have a prebuilt figure map, with the subject's three main colors. */
+function figures(): Promise<Record<string, number[]>> {
+  figIndex ??= fetch(`${BASE}cards/fig/index.json`)
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => ({}));
+  return figIndex;
+}
+
+async function relief(name: string): Promise<{ img: HTMLImageElement; palette: number[] } | null> {
+  const id = card(name)?.id;
+  if (!id) return null;
+  const palette = (await figures())[id];
+  if (!palette) return null;
+  try {
+    const img = await loadImage(`${BASE}cards/fig/${id}.webp`);
+    await img.decode?.().catch(() => {});
+    return { img, palette };
+  } catch {
+    return null;
+  }
+}
+
 async function build(name: string): Promise<ArtData> {
   const url = imageUrl(name);
+  const fig = relief(name);
   let full: HTMLCanvasElement;
   try {
     if (!url) throw new Error('no image');
     const img = await loadImage(url);
+    await img.decode?.().catch(() => {});
     full = canvas(img.naturalWidth || 300, img.naturalHeight || 437);
     full.getContext('2d')!.drawImage(img, 0, 0, full.width, full.height);
   } catch {
@@ -184,11 +216,13 @@ async function build(name: string): Promise<ArtData> {
   const sh = full.height * ART_BOX.h;
   const art = canvas(256, 256);
   art.getContext('2d')!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
+  const pre = await fig;
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
-  return { art, full, depth, palette };
+  return { art, full, depth, relief: null, palette };
 }
 
 /** Art data for a card, built once and cached (the last 40 cards). */

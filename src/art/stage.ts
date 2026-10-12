@@ -4,7 +4,7 @@
 // CardPanel (a flat card: backs, spells, traps), Particles (one pooled GPU
 // sprite system), Ribbon (beams, bolts, slashes, tendrils) and Ring (summoning
 // circles, shockwaves, the Shadow Realm eye).
-import { AddEquation, BufferAttribute, CustomBlending, BufferGeometry, CanvasTexture, DataTexture, DoubleSide, LinearFilter, Mesh, NormalBlending, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry, Points, RedFormat, Scene, ShaderMaterial, Vector3, WebGLRenderer } from 'three';
+import { AddEquation, BufferAttribute, CustomBlending, BufferGeometry, CanvasTexture, DataTexture, DoubleSide, LinearFilter, Mesh, NormalBlending, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry, Points, RedFormat, Scene, ShaderMaterial, Texture, Vector3, WebGLRenderer } from 'three';
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
 
 export type Quality = 'full' | 'fast';
@@ -79,6 +79,8 @@ void main(){
 
 const FIG_FRAG = /* glsl */ `
 uniform sampler2D uArt;
+uniform sampler2D uDepth;
+uniform float uMatte;
 uniform float uReveal;
 uniform float uOpacity;
 uniform float uTint;
@@ -93,7 +95,8 @@ ${NOISE_GLSL}
 void main(){
   vec4 col = texture2D(uArt, vUv);
   float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.07, vUv.y) * smoothstep(0.0, 0.07, 1.0 - vUv.y);
-  float subj = smoothstep(0.22, 0.5, vD);
+  // prebuilt figure maps carry the cut-out subject in alpha; otherwise guess it from depth
+  float subj = mix(smoothstep(0.22, 0.5, vD), smoothstep(0.3, 0.7, texture2D(uDepth, vUv).a), uMatte);
   float a = edge * mix(1.0, subj, uCut);
   float n = vnoise(vUv * 9.0 + uTime * 0.3) * 0.28;
   float r = uReveal * 1.35 - (vUv.y * 0.95 + n);
@@ -116,7 +119,7 @@ export class Figure implements Fx {
   mesh: Mesh;
   mat: ShaderMaterial;
   private tex: CanvasTexture;
-  private depthTex: DataTexture;
+  private depthTex: DataTexture | Texture;
   alive = true;
   time = Math.random() * 10;
 
@@ -146,10 +149,11 @@ export class Figure implements Fx {
     this.tex = new CanvasTexture(art.art);
     this.tex.minFilter = LinearFilter;
     this.tex.generateMipmaps = false;
-    this.depthTex = new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
+    this.depthTex = art.relief ? new Texture(art.relief) : new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
     this.depthTex.flipY = true;
     this.depthTex.magFilter = LinearFilter;
     this.depthTex.minFilter = LinearFilter;
+    this.depthTex.generateMipmaps = false;
     this.depthTex.needsUpdate = true;
     this.mat = new ShaderMaterial({
       vertexShader: FIG_VERT,
@@ -162,6 +166,7 @@ export class Figure implements Fx {
         uArt: { value: this.tex },
         uDepth: { value: this.depthTex },
         uDepthAmt: { value: depthAmt },
+        uMatte: { value: art.relief ? 1 : 0 },
         uShatter: { value: 0 },
         uTime: { value: 0 },
         uWave: { value: 1 },
