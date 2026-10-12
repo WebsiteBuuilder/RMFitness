@@ -1040,6 +1040,13 @@ export class Engine {
         if (m.faceUp && eff?.onEndPhase && this.fieldCard(m.uid)) yield* eff.onEndPhase(this, m, p);
       }
     }
+    // Speed Duel: "During the End Phase, if this card is in the GY" (Hysteric Sign).
+    if (this.speed)
+      for (const p of [tp, other(tp)])
+        for (const c of this.player(p).gy.slice()) {
+          const h = getEffect(c.name)?.onEndPhaseInGrave;
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+        }
     // Delayed destruction (Zone Eater, Steel Scorpion, Swordsman from a Distant Land).
     const doomed = [...this.monsters(0), ...this.monsters(1)].filter((m) => m.doomAt !== undefined && m.doomAt <= this.state.turn);
     if (doomed.length) {
