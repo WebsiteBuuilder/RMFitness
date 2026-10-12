@@ -3,7 +3,8 @@
 import { useState } from 'preact/hooks';
 import { allCards, card, cardByPassword } from '../eds/db';
 import { PACKS, RARITY_SHORT, openPack, packByName, type PackCard } from '../eds/packs';
-import { MONTHS, WEEKDAYS, addToTrunk, calendarDate, totalCards, type SaveFile } from '../eds/save';
+import { MONTHS, WEEKDAYS, addToTrunk, calendarDate, deckProblems, totalCards, type SaveFile } from '../eds/save';
+import { DUELISTS, STAGE_WINS_NEEDED, displayName, isUnlocked, lockReason, stageReached, type Duelist } from '../eds/campaign';
 import { STARTER_BLURB, STARTER_COLORS, buildStarterDeck, type StarterColor } from '../eds/starter';
 import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
@@ -97,31 +98,44 @@ export function MainMenu({ save, onPick }: { save: SaveFile; onPick: (c: MenuCho
   );
 }
 
-const TIERS: [string, string[]][] = [
-  ['Stage 1', ['Tristan Taylor', 'Téa Gardner', 'Yugi Muto', 'Bakura Ryou', 'Joey Wheeler']],
-  ['Stage 2', ['Rex Raptor', 'Espa Roba', 'Weevil Underwood', 'Mako Tsunami', 'Mai Valentine']],
-  ['Stage 3', ['Rare Hunter', 'Arkana', 'Strings', 'Umbra & Lumis', 'Marik Ishtar']],
-  ['Stage 4', ['Seto Kaiba', 'Ishizu Ishtar', 'Shadi', 'Yami Bakura', 'Yami Yugi']],
-  ['Stage 5', ['Duel Computer', 'Simon', 'Maximillion Pegasus', 'Trusdale']],
-];
+const STAGE_NAMES = ['', 'Stage 1', 'Stage 2', 'Stage 3', 'Stage 4', 'Stage 5'];
 
-export function Campaign({ save, onBack }: { save: SaveFile; onBack: () => void }) {
+export function Campaign({ save, onBack, onDuel }: { save: SaveFile; onBack: () => void; onDuel: (d: Duelist) => void }) {
+  const [pick, setPick] = useState<Duelist | null>(null);
+  const reached = stageReached(save);
+  const problems = deckProblems(save);
   return (
     <div class="screen">
       <Win title="Campaign" onClose={onBack}>
-        <p class="hint">The computer duelists are the next thing being built. Their names and stages are the real ones; you can already see your record against each.</p>
-        {TIERS.map(([tier, names]) => (
-          <div key={tier} class="tier">
-            <div class="tier-name">{tier}</div>
+        {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}. Fix it in Deck Edit first.</div>}
+        <p class="hint">Beat every duelist in a stage {STAGE_WINS_NEEDED[Math.min(reached + 1, 5)]} times to open the next stage. Each win earns a booster pack.</p>
+        {[1, 2, 3, 4, 5].map((t) => (
+          <div key={t} class="tier">
+            <div class="tier-name">
+              {STAGE_NAMES[t]}
+              {t > reached ? ' · locked' : ''}
+            </div>
             <Menu
-              items={names.map((n) => {
-                const r = save.record[n];
-                return { label: n, disabled: true, note: r ? `W${r.w} L${r.l} D${r.d}` : 'W0 L0 D0' };
+              items={DUELISTS.filter((d) => d.tier === t).map((d) => {
+                const r = save.record[d.name];
+                const open = isUnlocked(save, d);
+                return { label: displayName(d.name), disabled: !open || problems.length > 0, selected: pick?.name === d.name, note: open ? `W${r?.w ?? 0} L${r?.l ?? 0} D${r?.d ?? 0}` : lockReason(save, d), onPick: () => setPick(d) };
               })}
             />
           </div>
         ))}
       </Win>
+      {pick && (
+        <Overlay onClose={() => setPick(null)}>
+          <Win title={displayName(pick.name)} onClose={() => setPick(null)}>
+            <p>
+              {STAGE_NAMES[pick.tier]} duelist · {pick.deck.length}-card deck{pick.fusion.length ? ` + ${pick.fusion.length} Fusion` : ''}.
+            </p>
+            <p class="hint">Record: W{save.record[pick.name]?.w ?? 0} L{save.record[pick.name]?.l ?? 0} D{save.record[pick.name]?.d ?? 0}</p>
+            <Menu items={[{ label: 'Duel!', onPick: () => onDuel(pick) }, { label: 'Back', onPick: () => setPick(null) }]} />
+          </Win>
+        </Overlay>
+      )}
     </div>
   );
 }

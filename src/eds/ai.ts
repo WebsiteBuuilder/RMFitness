@@ -1,0 +1,154 @@
+// The computer duelist. It plays by the same rules through the same actions a
+// human would send, with simple but sensible priorities like the GBA opponents.
+import type { Engine } from './engine';
+import { other } from './engine';
+import { getEffect } from './effects';
+import type { Action, FieldCard, Pid } from './types';
+
+const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts']);
+
+export function aiAction(e: Engine, me: Pid): Action | null {
+  const s = e.state;
+  if (s.winner !== null) return null;
+  const opp = other(me);
+  const my = e.player(me);
+  const their = e.player(opp);
+  const prompt = s.prompt;
+
+  if (prompt) {
+    if (prompt.player !== me) return null;
+    if (prompt.kind === 'yesno') return { type: 'YES', player: me };
+    if (prompt.kind === 'response') {
+      // Respond with the first legal set card: the engine already filtered to useful moments.
+      return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
+    }
+    // Selection: rank options by context.
+    const picks = rankOptions(e, me, prompt.title, prompt.options).slice(0, Math.max(prompt.min, Math.min(prompt.max, prompt.min || 1)));
+    if (picks.length < prompt.min && prompt.cancel) return { type: 'CANCEL', player: me };
+    return { type: 'CHOOSE', player: me, picks };
+  }
+
+  if (s.turnPlayer !== me) return null;
+  const myMonsters = e.monsters(me);
+  const theirMonsters = e.monsters(opp);
+  const theirBest = Math.max(0, ...theirMonsters.map((m) => (m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1200)));
+
+  if (e.inMainPhase()) {
+    // 1. Draw / heal / burn spells.
+    for (const c of my.hand) {
+      if (GOOD_ANYTIME.has(c.name) && e.canActivateMain(me, c.uid)) {
+        if (c.name === 'Swords of Revealing Light' && theirMonsters.length === 0) continue;
+        return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      }
+    }
+    // 2. Board wipes when behind on the board.
+    for (const c of my.hand) {
+      if ((c.name === 'Raigeki' || c.name === 'Dark Hole' || c.name === "Harpie's Feather Duster" || c.name === 'Heavy Storm') && e.canActivateMain(me, c.uid)) {
+        const myBest = Math.max(0, ...myMonsters.map((m) => e.atkOf(m)));
+        if (c.name === 'Raigeki' && theirMonsters.length >= 1 && theirBest >= myBest) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+        if (c.name === 'Dark Hole' && theirMonsters.length > myMonsters.length && theirBest >= myBest) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+        if ((c.name === "Harpie's Feather Duster" || c.name === 'Heavy Storm') && e.spells(opp).length >= 2 && e.spells(me).length === 0) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      }
+    }
+    // 3. Revive the best monster in a graveyard.
+    for (const c of my.hand) {
+      if ((c.name === 'Monster Reborn' || c.name === 'Premature Burial' || c.name === 'Change of Heart' || c.name === 'Snatch Steal') && e.canActivateMain(me, c.uid)) {
+        if (c.name === 'Change of Heart' || c.name === 'Snatch Steal') {
+          if (theirMonsters.some((m) => m.faceUp && e.atkOf(m) >= 1500)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+          continue;
+        }
+        const pool = c.name === 'Monster Reborn' ? [...my.gy, ...their.gy] : my.gy;
+        if (pool.some((g) => (e.info(g.name).atk ?? 0) >= 1800)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      }
+    }
+    // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
+    if (!my.normalSummoned) {
+      const candidates = my.hand.filter((c) => e.canNormalSummon(me, c)).map((c) => ({ c, info: e.info(c.name) }));
+      candidates.sort((a, b) => (b.info.atk ?? 0) - (a.info.atk ?? 0));
+      const myBest = Math.max(0, ...myMonsters.map((m) => e.atkOf(m)));
+      for (const { c, info } of candidates) {
+        const need = e.tributesNeeded(info.level ?? 1);
+        if (need > 0 && (info.atk ?? 0) < myBest + 600) continue; // not worth the tribute
+        if (need > myMonsters.length) continue;
+        const zone = freeZone(my.mz);
+        if (zone < 0 && need === 0) break;
+        const atk = info.atk ?? 0;
+        const def = info.def ?? 0;
+        const flip = !!getEffect(c.name)?.flip;
+        // Set weak or flip monsters; summon anything that can fight.
+        if (flip || (atk < theirBest && def >= atk)) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: false };
+        if (atk >= theirBest || theirMonsters.length === 0) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'atk', faceUp: true };
+        return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: def > atk };
+      }
+    }
+    // 5. Flip Summon strong face-down monsters; switch positions sensibly.
+    for (const m of myMonsters) {
+      const fresh = m.placedTurn !== s.turn && !m.posChanged && !m.attacked;
+      if (!fresh) continue;
+      if (!m.faceUp && (e.atkOf(m) >= theirBest || getEffect(m.name)?.flip)) return { type: 'FLIP_SUMMON', player: me, uid: m.uid };
+      if (m.faceUp && m.pos === 'def' && e.atkOf(m) > theirBest && s.phase === 'M1') return { type: 'CHANGE_POS', player: me, uid: m.uid };
+      if (m.faceUp && m.pos === 'atk' && e.atkOf(m) < theirBest && e.defOf(m) > e.atkOf(m) && s.phase === 'M2') return { type: 'CHANGE_POS', player: me, uid: m.uid };
+    }
+    // 6. Equip the strongest monster.
+    for (const c of my.hand) {
+      const info = e.info(c.name);
+      if (info.kind === 'spell' && info.sub === 'Equip' && myMonsters.some((m) => m.faceUp) && e.canActivateMain(me, c.uid)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+    }
+    // 7. Set traps and quick-plays face-down.
+    for (const c of my.hand) {
+      const info = e.info(c.name);
+      if ((info.kind === 'trap' || (info.kind === 'spell' && info.sub === 'Quick-Play')) && getEffect(c.name) && e.canSet(me, c)) return { type: 'SET_ST', player: me, uid: c.uid, zone: freeZone(my.sz) };
+    }
+    // 8. Move on.
+    if (s.phase === 'M1' && !s.firstTurn && myMonsters.some((m) => e.canAttackWith(me, { ...m }) || (m.faceUp && m.pos === 'atk' && !m.attacked))) return { type: 'NEXT_PHASE', player: me };
+    return { type: 'END_TURN', player: me };
+  }
+
+  if (s.phase === 'BP') {
+    for (const m of myMonsters) {
+      if (!e.canAttackWith(me, m)) continue;
+      const atk = e.atkOf(m);
+      if (theirMonsters.length === 0) return { type: 'ATTACK', player: me, uid: m.uid, target: null };
+      // Best target: a monster we beat, preferring the biggest attack-position one; face-downs when we are strong.
+      const beatable = theirMonsters.filter((t) => (t.faceUp ? (t.pos === 'atk' ? atk > e.atkOf(t) : atk > e.defOf(t)) : atk >= 1600));
+      if (beatable.length) {
+        beatable.sort((a, b) => score(e, b) - score(e, a));
+        return { type: 'ATTACK', player: me, uid: m.uid, target: beatable[0].uid };
+      }
+    }
+    return { type: 'NEXT_PHASE', player: me };
+  }
+  return { type: 'NEXT_PHASE', player: me };
+}
+
+function score(e: Engine, t: FieldCard): number {
+  if (!t.faceUp) return 500;
+  return t.pos === 'atk' ? e.atkOf(t) + 1000 : e.defOf(t);
+}
+
+function freeZone(zones: (FieldCard | null)[]): number {
+  return zones.findIndex((z) => z === null);
+}
+
+/** Orders prompt options from best to worst for the computer, by what the prompt is for. */
+function rankOptions(e: Engine, me: Pid, title: string, options: { label: string; uid?: number; loc?: { player: Pid; zone: string } }[]): number[] {
+  const idx = options.map((_, i) => i);
+  const val = (i: number) => {
+    const o = options[i];
+    const name = o.label;
+    const info = e.info(name);
+    const atk = info.atk ?? 0;
+    const theirs = o.loc?.player !== undefined && o.loc.player !== me;
+    const fc = o.uid !== undefined ? e.fieldCard(o.uid) : null;
+    const power = fc ? Math.max(e.atkOf(fc), e.defOf(fc)) : atk;
+    if (/Tribute|discard|Discard|Hand limit/i.test(title)) return -power; // give up the weakest
+    if (/destroy|Destroy|Take control|Snatch|Trap Hole/i.test(title)) return theirs ? power : -power - 5000;
+    if (/Special Summon|Return which|add a monster/i.test(title)) return power;
+    if (/Equip/i.test(title)) return power;
+    if (/return up to/i.test(title)) return theirs ? power : -power - 5000;
+    return power;
+  };
+  idx.sort((a, b) => val(b) - val(a));
+  return idx;
+}
+
