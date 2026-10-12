@@ -294,6 +294,8 @@ export class Engine {
   untargetable(m: FieldCard): boolean {
     if (m.faceUp && this.effectOn(m)?.cannotBeTargeted?.(this, m, this.actor)) return true;
     if (m.faceUp && this.speed && this.shielded(m, 'target')) return true;
+    // Speed Duel: "your opponent cannot target it until the end of their turn" that outlasts its source (Abyss Prop - Wild Wagon).
+    if (m.faceUp && this.speed && (m.tags?.oppNoTargetUntil ?? -1) >= this.state.turn && this.actor !== this.controller(m.uid)) return true;
     return m.faceUp && this.raceOf(m) === 'Dragon' && [...this.monsters(0), ...this.monsters(1)].some((x) => x.faceUp && x.name === 'Lord of D.');
   }
 
@@ -577,6 +579,8 @@ export class Engine {
   }
 
   damage(player: Pid, amount: number) {
+    // Speed Duel: "any damage you take this turn is halved" (Crystal Brilliance).
+    if (amount > 0 && (this.state.fx.halfDamage as number[] | undefined)?.[player] === this.state.turn) amount = Math.floor(amount / 2);
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
     if (amount <= 0) return;
@@ -1871,6 +1875,15 @@ export class Engine {
       const eq = this.fieldCard(uid);
       const h = eq ? getEffect(eq.name)?.hostAfterBattle : undefined;
       if (eq && h) yield* this.as(player, h(this, eq, attacker, target));
+    }
+    // Speed Duel: face-up Spells/Traps that react after every battle (Amazoness Onslaught, Battleguard Rage).
+    for (const p of [player, opp]) {
+      for (const c of this.activeSpells(p)) {
+        const h = getEffect(c.name)?.afterAnyBattle;
+        const kind = this.info(c.name).kind;
+        if (!h || this.state.winner !== null || !this.fieldCard(c.uid) || (kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
+        yield* this.as(p, h(this, c, p, attacker, target));
+      }
     }
     // Time Machine and other "destroyed by battle" responses.
     for (const b of before) {
