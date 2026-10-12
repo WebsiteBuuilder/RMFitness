@@ -1,7 +1,9 @@
 // Link Battle: create or join an online room, or play on one phone.
 import { useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
-import type { Pid } from '../eds/types';
+import type { GameMode, Pid } from '../eds/types';
+import { speedDeckProblems, type SpeedDeck } from '../eds/speedSave';
+import { guestSpeedDeck } from './Speed';
 import { deckProblems, type Profile, type SaveFile } from '../eds/save';
 import { Avatar } from './Profiles';
 import { buildStarterDeck, STARTER_COLORS } from '../eds/starter';
@@ -42,32 +44,100 @@ export function LinkMenu({ save, onPick, onBack }: { save: SaveFile; onPick: (c:
 export interface SeatProfile {
   profile: Profile;
   save: SaveFile | null;
+  /** their Speed Duel deck, when they have one */
+  speed?: { deck: SpeedDeck | null };
 }
 
-export function Lobby({ session, view, mySeat, hotseat, save, others = [], onSeatProfile, onLeave }: { session: DuelSession; view: SessionView; mySeat: Pid; hotseat: boolean; save: SaveFile; others?: SeatProfile[]; onSeatProfile?: (id: string | null) => void; onLeave: () => void }) {
+/** What a player brings to the table for one of the two games. */
+export interface SeatEntry {
+  name: string;
+  deck: string[];
+  fusion: string[];
+  skill?: string | null;
+  problems: string[];
+}
+
+const GAME_NAME: Record<GameMode, string> = { eds: 'Eternal Duelist Soul', speed: 'Speed Duel' };
+
+export function Lobby({
+  session,
+  view,
+  mySeat,
+  hotseat,
+  mode,
+  entries,
+  others = [],
+  onSeatProfile,
+  onLeave,
+}: {
+  session: DuelSession;
+  view: SessionView;
+  mySeat: Pid;
+  hotseat: boolean;
+  /** the game this player chose before opening the room */
+  mode: GameMode;
+  /** this player's deck for each game they can play */
+  entries: Partial<Record<GameMode, SeatEntry>>;
+  others?: SeatProfile[];
+  onSeatProfile?: (id: string | null) => void;
+  onLeave: () => void;
+}) {
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
   const [guestName, setGuestName] = useState('');
+  // The host decides the game; a guest follows whatever the host readied for.
+  const roomMode: GameMode = mySeat === 0 || !seats[0].ready ? mode : (seats[0].mode ?? 'eds');
+  const mine = entries[roomMode];
   const bothReady = seats[0].ready && seats[1].ready;
-  const iAmReady = seats[mySeat].ready;
+  const sameGame = (seats[0].mode ?? 'eds') === (seats[1].mode ?? 'eds');
+  const iAmReady = seats[mySeat].ready && (seats[mySeat].mode ?? 'eds') === roomMode;
 
-  const ready = () => session.send({ type: 'JOIN', player: mySeat, name: save.name, deck: save.main, fusion: save.fusion });
+  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null });
+  const ready = () => mine && mine.problems.length === 0 && join(mySeat, mine);
   const readyGuest = () => {
-    const color = STARTER_COLORS[Math.floor(Math.random() * 3)];
     onSeatProfile?.(null);
-    session.send({ type: 'JOIN', player: 1, name: guestName.trim() || 'Player 2', deck: buildStarterDeck(color, randomSeed()), fusion: [] });
+    const name = guestName.trim() || 'Player 2';
+    if (roomMode === 'speed') {
+      const d = guestSpeedDeck();
+      join(1, { name, deck: d.main, fusion: d.extra, skill: d.skill, problems: [] });
+    } else {
+      const color = STARTER_COLORS[Math.floor(Math.random() * 3)];
+      join(1, { name, deck: buildStarterDeck(color, randomSeed()), fusion: [], problems: [] });
+    }
   };
-  const readyProfile = ({ profile, save: s }: SeatProfile) => {
-    if (!s || deckProblems(s).length > 0) return;
-    onSeatProfile?.(profile.id);
-    session.send({ type: 'JOIN', player: 1, name: profile.alias, deck: s.main, fusion: s.fusion });
+  const seatFor = (o: SeatProfile): SeatEntry | null => {
+    if (roomMode === 'speed') {
+      const d = o.speed?.deck;
+      return d ? { name: o.profile.alias, deck: d.main, fusion: d.extra, skill: d.skill, problems: speedDeckProblems(d) } : null;
+    }
+    return o.save ? { name: o.profile.alias, deck: o.save.main, fusion: o.save.fusion, problems: deckProblems(o.save) } : null;
   };
-  const seatNote = (o: SeatProfile) => (!o.save ? 'no deck yet: pick a Starter Deck first' : deckProblems(o.save).length > 0 ? 'deck not ready: fix it in Deck Edit' : `${o.save.main.length} cards · W ${o.save.wins} L ${o.save.losses}`);
-  const start = () => session.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [seats[0].name, seats[1].name], decks: [seats[0].deck, seats[1].deck], fusions: [seats[0].fusion, seats[1].fusion] });
+  const readyProfile = (o: SeatProfile) => {
+    const e = seatFor(o);
+    if (!e || e.problems.length > 0) return;
+    onSeatProfile?.(o.profile.id);
+    join(1, e);
+  };
+  const seatNote = (o: SeatProfile) => {
+    const e = seatFor(o);
+    if (!e) return roomMode === 'speed' ? 'no Speed Duel deck yet' : 'no deck yet: pick a Starter Deck first';
+    if (e.problems.length > 0) return 'deck not ready: fix it in Deck Edit';
+    return roomMode === 'speed' ? `${e.deck.length} cards${e.skill ? ` · ${e.skill}` : ''}` : `${e.deck.length} cards · W ${o.save?.wins ?? 0} L ${o.save?.losses ?? 0}`;
+  };
+  const start = () =>
+    session.send({
+      type: 'START',
+      first: Math.random() < 0.5 ? 0 : 1,
+      seed: randomSeed(),
+      names: [seats[0].name, seats[1].name],
+      decks: [seats[0].deck, seats[1].deck],
+      fusions: [seats[0].fusion, seats[1].fusion],
+      ...(roomMode === 'speed' ? { mode: 'speed' as const, skills: [seats[0].skill ?? null, seats[1].skill ?? null] as [string | null, string | null] } : {}),
+    });
 
   return (
     <div class="screen">
-      <Win title={code ? `Room ${code}` : 'Play on this phone'} onClose={onLeave}>
+      <Win title={code ? `Room ${code} · ${GAME_NAME[roomMode]}` : `Play on this phone · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
         {code && <p class={`status s-${status}`}>{detail || status}</p>}
         {code && session.adapter.isHost && status === 'waiting' && (
           <p>
@@ -80,11 +150,23 @@ export function Lobby({ session, view, mySeat, hotseat, save, others = [], onSea
         <div class="seats">
           {([0, 1] as Pid[]).map((s) => (
             <div key={s} class={`seat ${seats[s].ready ? 'on' : ''}`}>
-              {seats[s].ready ? `${seats[s].name} · ${seats[s].deck.length} cards ✓` : `Player ${s + 1}: not ready`}
+              {seats[s].ready ? `${seats[s].name} · ${seats[s].deck.length} cards${seats[s].mode === 'speed' ? ' · Speed Duel' : ''} ✓` : `Player ${s + 1}: not ready`}
             </div>
           ))}
         </div>
-        {!iAmReady && <Menu items={[{ label: `Ready with ${save.name}'s deck (${save.main.length} cards)`, onPick: ready }]} />}
+        {!iAmReady &&
+          (mine ? (
+            mine.problems.length > 0 ? (
+              <div class="warn">
+                Your {GAME_NAME[roomMode]} deck is not ready: {mine.problems[0]}.
+              </div>
+            ) : (
+              <Menu items={[{ label: `Ready with ${mine.name}'s ${GAME_NAME[roomMode]} deck (${mine.deck.length} cards)`, onPick: ready }]} />
+            )
+          ) : (
+            <div class="warn">This room is a {GAME_NAME[roomMode]}. Build a {GAME_NAME[roomMode]} deck first.</div>
+          ))}
+        {bothReady && !sameGame && <div class="warn">The two players readied for different games. Player 2, tap Ready again.</div>}
         {hotseat && seats[0].ready && !seats[1].ready && (
           <div>
             {others.length > 0 && (
@@ -92,7 +174,8 @@ export function Lobby({ session, view, mySeat, hotseat, save, others = [], onSea
                 <p class="p2-head">Player 2: who's dueling?</p>
                 <div class="p2-list">
                   {others.map((o) => {
-                    const ok = !!o.save && deckProblems(o.save).length === 0;
+                    const e = seatFor(o);
+                    const ok = !!e && e.problems.length === 0;
                     return (
                       <button key={o.profile.id} class="p2-pick" disabled={!ok} onClick={() => readyProfile(o)}>
                         <Avatar p={o.profile} size="small" />
@@ -114,7 +197,7 @@ export function Lobby({ session, view, mySeat, hotseat, save, others = [], onSea
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && (session.adapter.isHost ? <Menu items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
     </div>
   );

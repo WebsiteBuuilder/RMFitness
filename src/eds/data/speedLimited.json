@@ -1,0 +1,9 @@
+{
+  "name": "July 2026 Speed Duel Forbidden & Limited List",
+  "forbidden": ["My Precious Queen!"],
+  "limited": {
+    "1": ["Battle City Bestie", "Cocoon of Ultra Evolution", "Twisted Personality", "Fossil Warrior Skull Knight", "Banisher of the Radiance", "Fossil Dyna Pachycephalo", "Golden Ladybug", "Submarineroid", "Monster Reborn", "Mystical Space Typhoon", "Offerings to the Doomed", "Swords of Revealing Light", "Amazoness Onslaught", "Floodgate Trap Hole", "Nightmare Wheel", "Zoma the Spirit"],
+    "2": ["Ever Faithful Companions", "Heart of a Warrior", "Armed Dragon LV10 White", "Joker's Knight", "Lava Golem", "Magikuriboh", "Red-Eyes Baby Dragon", "Parasite Paranoid", "Allure of Darkness", "Amazoness Call", "Cup of Ace", "Foolish Burial", "Mirage of Nightmare", "Reinforcement of the Army", "Supply Squad", "Time Stream"],
+    "3": ["As I Predicted...!", "See Me Rolling", "Amazoness Princess", "Cyber Angel Benten", "D.D. Warrior Lady", "Doomcaliber Knight", "Gearfried the Iron Knight", "Mudora the Sword Oracle", "Neo-Spacian Grand Mole", "Snipe Hunter", "Tribe-Infecting Virus", "Volcanic Shell", "Vortex Trooper", "Book of Moon", "Cosmic Cyclone", "Enemy Controller", "Blast with Chain", "Exchange of the Spirit", "Paleozoic Canadia", "Quaking Mirror Force", "Sakuretsu Armor", "Survival's End", "Wall of Disruption", "Widespread Ruin"]
+  }
+}

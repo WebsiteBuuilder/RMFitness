@@ -4,6 +4,10 @@ import type { Engine } from './engine';
 import { other } from './engine';
 import { getEffect } from './effects';
 import type { Action, FieldCard, Pid } from './types';
+import { getSkill } from './skills';
+
+/** Speed Duel moves the computer already tried this turn (so a cancelled effect is not retried forever). */
+const TRIED = new Set<string>();
 
 const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
 /** Cards that destroy a class of monsters: worth it when they hit more of theirs than ours. */
@@ -119,6 +123,27 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       if (m.name === 'Relinquished' && theirMonsters.some((t) => e.atkOf(t) >= 1500)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
       if (m.name === 'Monster Eye' && my.lp > 3000 && !my.hand.some((c) => c.name === 'Polymerization')) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
       if (m.name === 'Catapult Turtle' && their.lp <= Math.max(...myMonsters.filter((x) => x.uid !== m.uid).map((x) => Math.floor(e.atkOf(x) / 2)), 0)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+    }
+    // Speed Duel: the computer plays the modern cards generically (each move tried once per turn).
+    if (e.speed) {
+      const tryOnce = (key: string) => {
+        const k = `${s.seed}:${s.turn}:${key}`;
+        if (TRIED.has(k)) return false;
+        TRIED.add(k);
+        if (TRIED.size > 500) TRIED.clear();
+        return true;
+      };
+      const sk = my.skill ? getSkill(my.skill) : undefined;
+      if (e.canUseSkill(me) && sk?.ai !== false && (typeof sk?.ai !== 'function' || sk.ai(e, me)) && tryOnce(`skill${me}`)) return { type: 'SKILL', player: me };
+      for (const c of my.hand) if (e.canSpecialProc(me, c) && tryOnce(`sp${c.uid}`)) return { type: 'SPECIAL', player: me, uid: c.uid };
+      for (const c of my.hand) {
+        const info = e.info(c.name);
+        if (info.kind === 'spell' && info.sub !== 'Equip' && e.canActivateMain(me, c.uid) && tryOnce(`act${c.uid}`)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      }
+      for (const m of myMonsters) if (e.canUseMonsterEffect(me, m) && tryOnce(`eff${m.uid}`)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+      for (const c of my.hand) if (e.canUseMonsterEffect(me, c) && tryOnce(`heff${c.uid}`)) return { type: 'MONSTER_EFFECT', player: me, uid: c.uid };
+      for (const c of my.gy) if (e.canUseGraveEffect(me, c.uid) && tryOnce(`gy${c.uid}`)) return { type: 'GRAVE_EFFECT', player: me, uid: c.uid };
+      for (const c of [...my.sz, my.field]) if (c && c.faceUp && e.canUseMonsterEffect(me, c) && tryOnce(`st${c.uid}`)) return { type: 'MONSTER_EFFECT', player: me, uid: c.uid };
     }
     // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
     if (!my.normalSummoned) {

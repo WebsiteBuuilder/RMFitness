@@ -1,6 +1,6 @@
 name: Update card database
 
-# Snapshots the Eternal Duelist Soul card pool and card images into the
+# Snapshots the Eternal Duelist Soul and Speed Duel card pools and card images into the
 # repository, so the game never calls the card API from players' phones.
 on:
   workflow_dispatch:
@@ -22,6 +22,7 @@ jobs:
           python-version: '3.12'
       - run: pip install pillow
       - run: python scripts/fetch_cards.py
+      - run: python scripts/fetch_speed_cards.py
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"

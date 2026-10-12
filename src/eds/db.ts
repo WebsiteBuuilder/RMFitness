@@ -18,6 +18,8 @@ interface RawCard {
   password?: string | null;
   /** legacy (EDS-era) name when YGOPRODeck renamed the card */
   alias?: string;
+  /** Skill Cards: whose Skill it is */
+  character?: string;
 }
 
 const BASE = import.meta.env.BASE_URL;
@@ -29,6 +31,13 @@ let loaded = false;
 
 export function norm(name: string): string {
   return name.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+/** A monster with no effect at all: Normal Monsters, Fusions that only list materials, plain Ritual Monsters. */
+export function isVanilla(r: { type: string; desc: string }): boolean {
+  if (r.type === 'Normal Monster' || r.type === 'Ritual Monster') return true;
+  if (r.type !== 'Fusion Monster') return false;
+  return r.desc.replace(/^("[^"]+")(\s*\+\s*"[^"]+")+/, '').trim() === '';
 }
 
 function toInfo(r: RawCard): CardInfo {
@@ -44,10 +53,13 @@ function toInfo(r: RawCard): CardInfo {
   } else if (t === 'Ticket Card') {
     kind = 'spell';
     sub = 'Ticket';
-  } else if (/Fusion/.test(t)) sub = 'Fusion';
+  } else if (t === 'Skill Card') {
+    kind = 'spell';
+    sub = 'Skill';
+  } else if (/XYZ|Synchro|Link/.test(t)) sub = t.includes('XYZ') ? 'Xyz' : t.includes('Synchro') ? 'Synchro' : 'Link'; else if (/Fusion/.test(t)) sub = 'Fusion';
   else if (/Ritual/.test(t)) sub = 'Ritual';
   else if (/Effect|Flip|Tuner|Spirit|Toon|Union|Gemini/.test(t)) sub = 'Effect';
-  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias };
+  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias, character: r.character, vanilla: isVanilla(r) };
 }
 
 /** Changes with every deploy, so phones never reuse a card list from an older version of the site. */
@@ -87,6 +99,67 @@ export async function loadDb(): Promise<boolean> {
   return true;
 }
 
+// ---------- Speed Duel card pool ----------
+let speedLoaded = false;
+/** The Speed Duel list has about 1,500 cards and 100+ Skills. */
+const looksLikeSpeed = (list: unknown): list is RawCard[] => Array.isArray(list) && list.length >= 1000 && list.every((r) => r && typeof r.name === 'string') && list.some((r) => r.type === 'Skill Card');
+
+async function fetchSpeed(query: string, cache: RequestCache): Promise<RawCard[] | null> {
+  try {
+    const res = await fetch(`${BASE}cards/speed.json?v=${query}`, { cache });
+    if (!res.ok) return null;
+    const list: unknown = await res.json();
+    return looksLikeSpeed(list) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Adds the Speed Duel cards and Skills to the card database (cards also in EDS keep their EDS entry). */
+export function addSpeedCards(list: RawCard[]) {
+  for (const r of list) {
+    const known = byId.get(r.id);
+    if (known && r.type !== 'Skill Card') {
+      known.speed = true;
+      if (known.name !== r.name && !DB.has(r.name)) (DB.set(r.name, known), DB.set(norm(r.name), known));
+      continue;
+    }
+    const info = { ...toInfo(r), speed: true };
+    if (!DB.has(info.name)) DB.set(info.name, info);
+    if (!DB.has(norm(info.name))) DB.set(norm(info.name), info);
+    byId.set(info.id, info);
+    if (r.img === false) noImage.add(r.id);
+  }
+}
+
+export async function loadSpeedDb(): Promise<boolean> {
+  if (speedLoaded) return true;
+  if (!loaded && !(await loadDb())) return false;
+  const list = (await fetchSpeed(BUILD, 'no-cache')) ?? (await fetchSpeed(`${BUILD}-${Date.now()}`, 'reload'));
+  if (!list) return false;
+  addSpeedCards(list);
+  speedLoaded = true;
+  return true;
+}
+
+export function speedDbLoaded(): boolean {
+  return speedLoaded;
+}
+
+/** Every card in the Speed Duel pool (no Skills), sorted by name. */
+export function speedCards(): CardInfo[] {
+  const seen = new Set<number>();
+  return [...DB.values()]
+    .filter((c) => c.speed && c.sub !== 'Skill' && (seen.has(c.id) ? false : (seen.add(c.id), true)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Every Skill Card. */
+export function skillCards(): CardInfo[] {
+  const seen = new Set<number>();
+  return [...DB.values()].filter((c) => c.sub === 'Skill' && (seen.has(c.id) ? false : (seen.add(c.id), true))).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function dbLoaded(): boolean {
   return loaded;
 }
@@ -102,13 +175,15 @@ export function imageUrl(name: string): string | null {
 }
 
 export function cardByPassword(pw: string): CardInfo | undefined {
-  return [...DB.values()].find((c) => c.password === pw) ?? byId.get(Number(pw));
+  // EDS passwords only: Speed Duel-only cards cannot be typed into the EDS trunk.
+  const hit = [...DB.values()].find((c) => c.password === pw) ?? byId.get(Number(pw));
+  return hit && hit.n !== undefined ? hit : undefined;
 }
 
 /** All EDS cards sorted by their in-game number (falls back to name). */
 export function allCards(): CardInfo[] {
   const seen = new Set<number>();
   return [...DB.values()]
-    .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
+    .filter((c) => c.n !== undefined && (seen.has(c.id) ? false : (seen.add(c.id), true)))
     .sort((a, b) => (a.n ?? 9999) - (b.n ?? 9999) || a.name.localeCompare(b.name));
 }
