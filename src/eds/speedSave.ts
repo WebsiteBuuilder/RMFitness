@@ -173,7 +173,18 @@ export function starterSkill(s: Starter): string | null {
   return null;
 }
 
-/** A deck built from a starter, keeping only cards the game can play. */
+/**
+ * A deck built from a starter, keeping only cards the game can play. When cards had to
+ * come out, it tops the Main Deck back up to 20 with more copies of the starter's own
+ * cards (never past 3 copies or a Limited card).
+ */
 export function deckFromStarter(s: Starter): SpeedDeck {
-  return { id: newDeckId(), name: s.character, main: s.main.filter((n) => !unplayableReason(n)), extra: s.extra.filter((n) => !unplayableReason(n)), skill: starterSkill(s) };
+  const main = s.main.filter((n) => !unplayableReason(n));
+  const pool = [...new Set(main)].filter((n) => !limitStatus(n));
+  for (let i = 0; main.length < MAIN_MIN && pool.length; i = (i + 1) % pool.length) {
+    const n = pool[i];
+    if (main.filter((x) => x === n).length < COPIES) main.push(n);
+    else if (pool.every((x) => main.filter((y) => y === x).length >= COPIES)) break;
+  }
+  return { id: newDeckId(), name: s.character, main, extra: s.extra.filter((n) => !unplayableReason(n)), skill: starterSkill(s) };
 }

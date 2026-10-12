@@ -1089,6 +1089,8 @@ export class Engine {
       m.defMod = 0;
       m.effectUsed = false;
     }
+    // Speed Duel: Spell/Trap ignition effects are once per turn, not once per duel.
+    if (this.speed) for (const q of [0, 1] as Pid[]) for (const c of [...this.player(q).sz, this.player(q).field]) if (c) c.effectUsed = false;
     this.player(prev).normalSummoned = false;
     s.attackedThisTurn = [];
     s.firstTurn = false;

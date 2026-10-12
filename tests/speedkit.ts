@@ -172,7 +172,7 @@ export function playDuel(decks: [string[], string[]], extras: [string[], string[
     n++;
     const cards = everyCard(e).filter((c) => !c.token);
     const uids = new Set(cards.map((c) => c.uid));
-    if (uids.size !== cards.length) fail = `duplicated card after ${JSON.stringify(act)}; log: ${tail()}`;
+    if (uids.size !== cards.length) fail = `duplicated card ${cards.filter((c, i) => cards.findIndex((d) => d.uid === c.uid) !== i).map((c) => `${c.name}@${e.find(c.uid)?.loc.zone}`).join(', ')} after ${JSON.stringify(act)}; log: ${tail()}`;
     else if (cards.length !== startCount) fail = `card count ${startCount} -> ${cards.length} after ${JSON.stringify(act)}; log: ${tail()}`;
     for (const q of [0, 1] as Pid[]) {
       if (!Number.isFinite(e.player(q).lp)) fail = `LP became ${e.player(q).lp}`;

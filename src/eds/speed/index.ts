@@ -4,9 +4,29 @@
 import type { EffectDef } from '../effects';
 import type { SpeedHelpers } from './helpers';
 import { install as b00 } from './cards-00';
+import { install as b01 } from './cards-01';
+import { install as b02 } from './cards-02';
+import { install as b03 } from './cards-03';
+import { install as b05 } from './cards-05';
+import { install as b06 } from './cards-06';
+import { install as b07 } from './cards-07';
+import { install as b08 } from './cards-08';
+import { install as b09 } from './cards-09';
+import { install as b10 } from './cards-10';
 
 type Installer = (table: Record<string, EffectDef>, h: SpeedHelpers) => void;
-const BATCHES: [string, Installer][] = [['00', b00]];
+const BATCHES: [string, Installer][] = [
+  ['00', b00],
+  ['01', b01],
+  ['02', b02],
+  ['03', b03],
+  ['05', b05],
+  ['06', b06],
+  ['07', b07],
+  ['08', b08],
+  ['09', b09],
+  ['10', b10],
+];
 
 /** Which batch file scripted each Speed Duel card (tests focus on one batch with it). */
 export const SPEED_BATCH: Record<string, string> = {};
