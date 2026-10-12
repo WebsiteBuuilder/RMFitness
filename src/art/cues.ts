@@ -30,7 +30,7 @@ export type Cue =
   | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster' }
   | { kind: 'skill'; player: Pid; name: string }
   | { kind: 'attack'; attacker: CardRef; target: CardRef | null; defender: Pid }
-  | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid }
+  | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid; dmg?: { player: Pid; amount: number } }
   | { kind: 'damage'; player: Pid; amount: number }
   | { kind: 'destroy'; card: CardRef }
   | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null };
@@ -68,16 +68,41 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
   if (!f) return old ?? null;
   const faceUp = f.field ? f.field.faceUp : true;
   const known = faceUp || f.controller === viewer;
-  return { uid, name: known ? f.card.name : '', faceUp, controller: f.controller, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' };
+  return live({ uid, name: known ? f.card.name : '', faceUp, controller: f.controller, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' }, host);
+}
+
+/**
+ * Makes `rect` follow the card on screen: the board can show the card's old
+ * place (its hand, say) when the cue is made and its new zone a moment later,
+ * once the cinematic lands and the board catches up.
+ */
+function live(c: CardRef, host: HTMLElement | null): CardRef {
+  let last = c.rect;
+  return Object.defineProperty(c, 'rect', {
+    enumerable: true,
+    configurable: true,
+    get: () => (last = rectOf(c.uid, host ?? (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'))) ?? last),
+  });
+}
+
+/** A battle's damage plays with the blow that dealt it (one moment, not two). */
+export function coalesce(cues: Cue[]): Cue[] {
+  const out: Cue[] = [];
+  for (const c of cues) {
+    const prev = out[out.length - 1];
+    if (c.kind === 'damage' && prev?.kind === 'hit' && !prev.dmg) out[out.length - 1] = { ...prev, dmg: { player: c.player, amount: c.amount } };
+    else out.push(c);
+  }
+  return out;
 }
 
 /** Remembers every monster on the field and where it is drawn. */
-export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | null): FieldMemo {
+export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | null, prev?: FieldMemo): FieldMemo {
   const m: FieldMemo = new Map();
   for (const p of [0, 1] as Pid[])
     for (const c of state.players[p].mz) {
       if (!c) continue;
-      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, rect: rectOf(c.uid, host), def: c.pos === 'def' });
+      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, rect: rectOf(c.uid, host) ?? prev?.get(c.uid)?.rect ?? null, def: c.pos === 'def' });
     }
   return m;
 }

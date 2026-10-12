@@ -11,6 +11,7 @@ import { card as cardInfo } from '../eds/db';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
+import { LpCount } from '../art/flow';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -319,7 +320,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         )}
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
-          {ps.lp}
+          <LpCount value={ps.lp} />
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
         {top && (

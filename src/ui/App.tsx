@@ -407,7 +407,7 @@ function Running({
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
     // ...and never in the middle of a 3D cinematic.
     let t = 0;
-    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action), quick ? 350 : 800)));
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action), quick ? 150 : 300)));
     return () => (stopWaiting(), clearTimeout(t));
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
   if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
