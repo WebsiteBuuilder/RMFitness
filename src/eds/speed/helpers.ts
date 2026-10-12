@@ -55,8 +55,9 @@ export const info = (e: Engine, c: Card | string) => e.info(typeof c === 'string
 export const isMonster = (e: Engine, c: Card) => info(e, c).kind === 'monster';
 export const isSpell = (e: Engine, c: Card) => info(e, c).kind === 'spell';
 export const isTrap = (e: Engine, c: Card) => info(e, c).kind === 'trap';
-export const levelOf = (e: Engine, c: Card) => info(e, c).level ?? 0;
-export const attrOf = (e: Engine, c: Card) => info(e, c).attribute ?? '';
+/** Level/Attribute, including what a Trap Monster took on while it is on the field (Copy Knight, Swamp Mirrorer). */
+export const levelOf = (e: Engine, c: Card) => ('faceUp' in c && e.state.fx.declLevel?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx.declLevel[c.uid] : info(e, c).level ?? 0);
+export const attrOf = (e: Engine, c: Card) => ('faceUp' in c && e.state.fx.declAttr?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx.declAttr[c.uid] : info(e, c).attribute ?? '');
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
 export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);
@@ -216,6 +217,14 @@ export function currentBattle(e: Engine): { attacker: FieldCard | null; target: 
 /** Negates the activation of a chain link (Counter Traps, "negate the activation"). */
 export function negateLink(e: Engine, link: ChainLink | undefined, by: Pid) {
   if (!link) return;
+  // Constellar Belt: the activation of LIGHT monsters' effects cannot be negated.
+  const fx = (link.payload as { effect?: string } | undefined)?.effect;
+  const m = fx ? e.fieldCard(link.card.uid) : null;
+  const light = fx && (m ? e.controller(m.uid) !== null && m.faceUp && attrOf(e, m) === 'LIGHT' : info(e, link.card).kind === 'monster' && attrOf(e, link.card) === 'LIGHT');
+  if (light && e.liveST().some((x) => x.c.name === 'Constellar Belt')) {
+    e.log(by, `Constellar Belt: ${link.card.name}'s activation cannot be negated`);
+    return;
+  }
   link.negated = true;
   e.log(by, `${link.card.name} is negated`);
 }

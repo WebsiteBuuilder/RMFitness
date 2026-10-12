@@ -1630,6 +1630,8 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         yield* mr.resolve!(e, link, p);
         const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
         if (m) tag(m).reborn = 1;
+        // Speed Duel, Millennium Revelation: a Ra revived with Monster Reborn this turn goes to the GY in the End Phase.
+        if (m && m.name === 'The Winged Dragon of Ra' && e.state.fx.revelation?.[p] === e.state.turn) tag(m).sendAtEnd = e.state.turn;
       },
     };
   }

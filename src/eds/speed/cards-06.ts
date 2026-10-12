@@ -680,12 +680,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Cerulean Skyfire: face-down Spells you control can be used for Hamon's summon too.
+  const hamonCost = (e: Engine, p: Pid) => {
+    const skyfire = e.liveST().some((x) => x.p === p && x.c.name === 'Cerulean Skyfire');
+    return e.spells(p).filter((s) => isSpell(e, s) && ((s.faceUp && info(e, s).sub === 'Continuous') || (skyfire && !s.faceUp)));
+  };
   E['Hamon, Lord of Striking Thunder'] = {
     cannotNormalSummon: true,
     summonProc: {
-      can: (e, _c, p) => freeMZ(e, p) && e.spells(p).filter((s) => s.faceUp && isSpell(e, s) && info(e, s).sub === 'Continuous').length >= 3,
+      can: (e, _c, p) => freeMZ(e, p) && hamonCost(e, p).length >= 3,
       *run(e, c, p) {
-        const list = e.spells(p).filter((s) => s.faceUp && isSpell(e, s) && info(e, s).sub === 'Continuous');
+        const list = hamonCost(e, p);
         const chosen = yield* pick(e, p, 'Hamon: send which 3 Continuous Spells to the GY?', list, 3, 3, true);
         if (!chosen) return;
         for (const s of chosen) yield* e.sendToGrave(s.uid, 'cost');

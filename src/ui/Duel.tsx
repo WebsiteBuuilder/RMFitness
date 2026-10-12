@@ -143,7 +143,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (info?.kind === 'monster') {
         const ok = e.canNormalSummon(acting, selCard);
         const zone = me.mz.findIndex((z) => z === null);
-        commands.push({ label: 'Summon', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
+        commands.push({ label: 'Summon', disabled: !ok || !e.canNormalSummon(acting, selCard, true), onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
         commands.push({ label: 'Set', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'def', faceUp: false }) });
         const eff = getEffect(selCard.name);
         if (eff?.summonProc) commands.push({ label: 'Special Summon', disabled: !e.canSpecialProc(acting, selCard), onPick: () => send({ type: 'SPECIAL', player: acting, uid: selCard.uid }) });
@@ -172,7 +172,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
         if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos || !e.canChangePosition(acting, m), onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
-        else commands.push({ label: 'Flip Summon', disabled: !fresh, onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
+        else commands.push({ label: 'Flip Summon', disabled: !fresh || e.summonBlocked(acting, m, 'flip', 'mz'), onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
       }
     }
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && !selField.faceUp && myTurn) {
