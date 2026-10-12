@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
-import { PHASES } from '../eds/types';
 import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
@@ -50,6 +49,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [info, setInfo] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
@@ -242,8 +242,15 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           </button>
         )}
         {ps.fusion.length > 0 && (
-          <button class="pile small" onClick={() => p === acting && setPile({ title: 'Fusion Deck', cards: ps.fusion })}>
-            <span>Fusion {ps.fusion.length}</span>
+          <button class="pile small" onClick={() => p === acting && setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion })}>
+            <span>
+              {e.speed ? 'Extra' : 'Fusion'} {ps.fusion.length}
+            </span>
+          </button>
+        )}
+        {ps.skill && (
+          <button class={`pile small skillbtn ${ps.skillRevealed ? 'up' : ''} ${p === acting && e.canUseSkill(acting) && canAct ? 'ready' : ''}`} onClick={() => setSkillOf(p)}>
+            <span>Skill</span>
           </button>
         )}
       </div>
@@ -332,7 +339,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     );
   };
 
-  const nextPhaseLabel = state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? 'Main 2' : state.phase === 'M2' ? 'End Phase' : 'Next';
+  const nextPhaseLabel = state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? (e.rules.mainPhase2 ? 'Main 2' : 'End Phase') : state.phase === 'M2' ? 'End Phase' : 'Next';
 
   // Card info, piles, log, menu and the hotseat hand-over screen look the same in both styles.
   const overlays = (
@@ -354,13 +361,50 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 {pile.cards
                   .slice()
                   .reverse()
-                  .map((c) => (
-                    <button key={c.uid} class="gcard" onClick={() => setInfo(c.name)}>
-                      <CardImg name={c.name} />
-                      <span>{c.name}</span>
-                    </button>
-                  ))}
+                  .map((c) =>
+                    canAct && !prompt && e.canUseGraveEffect(acting, c.uid) ? (
+                      <div key={c.uid} class="gcard">
+                        <button onClick={() => setInfo(c.name)}>
+                          <CardImg name={c.name} />
+                          <span>{c.name}</span>
+                        </button>
+                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'GRAVE_EFFECT', player: acting, uid: c.uid }))}>
+                          Effect
+                        </button>
+                      </div>
+                    ) : (
+                      <button key={c.uid} class="gcard" onClick={() => setInfo(c.name)}>
+                        <CardImg name={c.name} />
+                        <span>{c.name}</span>
+                      </button>
+                    ),
+                  )}
               </div>
+            )}
+          </Win>
+        </Overlay>
+      )}
+      {skillOf !== null && (
+        <Overlay onClose={() => setSkillOf(null)}>
+          <Win title={skillOf === acting ? 'Your Skill' : `${state.players[skillOf].name}'s Skill`} onClose={() => setSkillOf(null)}>
+            {skillOf === acting || state.players[skillOf].skillRevealed ? (
+              <>
+                <CardInfoPanel name={state.players[skillOf].skill ?? ''} />
+                {skillOf === acting && canAct && (
+                  <Menu
+                    items={[
+                      {
+                        label: 'Use Skill',
+                        disabled: !e.canUseSkill(acting),
+                        note: state.players[skillOf].skillUses ? `used ${state.players[skillOf].skillUses}×` : undefined,
+                        onPick: () => (setSkillOf(null), send({ type: 'SKILL', player: acting })),
+                      },
+                    ]}
+                  />
+                )}
+              </>
+            ) : (
+              <p>Face-down. It flips over when they use it.</p>
             )}
           </Win>
         </Overlay>
@@ -412,7 +456,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openMenu: () => setShowMenu(true), setShowLog, onFinished }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished }}
         overlays={overlays}
       />
     );
@@ -420,7 +464,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
 
   return (
-    <div class={`duel ${canAct ? '' : 'spectate'}`}>
+    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
       <div class="pbar top">
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
@@ -443,7 +487,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
           <div class="center">
             <div class="phases">
-              {PHASES.map((p) => (
+              {e.phases().map((p) => (
                 <span key={p} class={`ph ${state.phase === p ? 'on' : ''} ${p === 'BP' && state.firstTurn ? 'off' : ''}`}>
                   {PHASE_SHORT[p]}
                 </span>

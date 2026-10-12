@@ -3,10 +3,12 @@
 
 import type { ChainCtx, Choice, Engine, Step } from './engine';
 import { other } from './engine';
-import type { Card, ChainLink, FieldCard, Pid, Prompt } from './types';
+import type { Card, ChainLink, FieldCard, Pid, Prompt, ZoneName } from './types';
 import { installMore } from './effects2';
+import { installSpeed } from './speed';
 
-export type Trigger = 'main' | 'summon' | 'attack' | 'spell' | 'trap' | 'damage' | 'destroyed';
+/** Response-window moments. 'special' and 'effect' only open in Speed Duel. */
+export type Trigger = 'main' | 'summon' | 'attack' | 'spell' | 'trap' | 'damage' | 'destroyed' | 'special' | 'effect';
 
 export interface EffectDef {
   /** May this card be activated now? (trigger 'main' = from hand/set during own Main Phase) */
@@ -29,7 +31,7 @@ export interface EffectDef {
   /** After this monster is Normal/Flip Summoned face-up. */
   onSummon?(e: Engine, m: FieldCard, controller: Pid, kind?: 'normal' | 'flip'): Step;
   /** Ignition effect usable once per turn during the controller's Main Phase. */
-  ignition?: { can(e: Engine, m: FieldCard, p: Pid): boolean; run(e: Engine, m: FieldCard, p: Pid): Step; repeat?: boolean };
+  ignition?: { can(e: Engine, m: FieldCard, p: Pid): boolean; run(e: Engine, m: FieldCard, p: Pid): Step; repeat?: boolean; /** Speed Duel puts monster ignition effects on a chain the opponent can respond to (run happens at resolution); false opts out */ chain?: boolean };
   onPositionChange?(e: Engine, m: FieldCard, p: Pid): Step;
   /** A price to attack (Spirit of the Books etc.). */
   attackCost?: { can(e: Engine, m: FieldCard, p: Pid): boolean; pay(e: Engine, m: FieldCard, p: Pid): Step };
@@ -61,7 +63,7 @@ export interface EffectDef {
   onAnyDiscard?(e: Engine, card: FieldCard, controller: Pid, discarder: Pid): Step;
   /** An active Spell/Trap watching draws outside the Draw Phase (Appropriate). */
   onDraw?(e: Engine, card: FieldCard, controller: Pid, drawer: Pid, n: number): void;
-  /** A face-up monster watching every Summon (Mysterious Puppeteer, Kotodama). */
+  /** A face-up monster watching every Summon (Mysterious Puppeteer, Kotodama). In Speed Duel, active Spells/Traps may watch too. */
   onAnySummon?(e: Engine, watcher: FieldCard, watcherController: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
   /** Control of this face-up monster moved (Ameba, Griggle). */
   onControlChange?(e: Engine, m: FieldCard, from: Pid, to: Pid): void;
@@ -97,6 +99,51 @@ export interface EffectDef {
   fusionSub?: boolean;
   /** Equip adding ATK only while its host attacks (Metalmorph). */
   hostAttackBonus?(e: Engine, equip: FieldCard, host: FieldCard, target: FieldCard | null): number;
+
+  // ---------- Speed Duel hooks (the EDS scripts never use these) ----------
+  /** After this monster is Special Summoned face-up. */
+  onSpecialSummon?(e: Engine, m: FieldCard, controller: Pid): Step;
+  /** After this card is sent to the Graveyard from anywhere (hand, Deck, field). `from` is the zone it left. */
+  onSentToGrave?(e: Engine, card: Card, owner: Pid, from: ZoneName, reason: string): Step;
+  /** After this card was destroyed on the field (by battle or by a card effect) and is in the Graveyard. */
+  onDestroyed?(e: Engine, card: Card, controller: Pid, byBattle: boolean): Step;
+  /**
+   * A Quick Effect, or an optional "when ...: you can" trigger, offered in response windows
+   * (summons, attacks, activations, damage). `from` is where the card must be (default: face-up on the field).
+   * Once per turn per card unless `repeat`.
+   */
+  quick?: {
+    from?: 'field' | 'hand' | 'gy';
+    label?: string;
+    repeat?: boolean;
+    can(e: Engine, card: Card, p: Pid, trigger: Trigger, ctx: ChainCtx): boolean;
+    /** Costs and targets when activated (discard this card, pay LP, pick a target into link.targetUid). Return false to back out. */
+    cost?(e: Engine, card: Card, p: Pid, link: ChainLink, ctx: ChainCtx): Generator<Prompt, boolean | void, Choice>;
+    /** The effect, at resolution. link.payload.ctx holds what it responded to. */
+    run(e: Engine, card: Card, p: Pid, link: ChainLink): Step;
+  };
+  /** An ignition effect used from the Graveyard during your Main Phase. */
+  graveIgnition?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
+  /** Inflicts piercing battle damage when attacking a Defense Position monster. */
+  piercing?: boolean | ((e: Engine, m: FieldCard) => boolean);
+  /** Cannot be destroyed by battle (while face-up). */
+  battleProof?(e: Engine, m: FieldCard): boolean;
+  /** Cannot be destroyed by card effects (while face-up). */
+  effectProof?(e: Engine, m: FieldCard): boolean;
+  /** Cannot be targeted by card effects. `by` is the player whose effect is targeting (null when unknown). */
+  cannotBeTargeted?(e: Engine, m: FieldCard, by: Pid | null): boolean;
+  /** Its controller takes no battle damage from battles involving this monster. */
+  noBattleDamage?(e: Engine, m: FieldCard): boolean;
+  /**
+   * Protection this face-up card (monster, active Spell/Trap, Field Spell, Equip) gives to `target`:
+   * 'battle' = cannot be destroyed by battle, 'effect' = by card effects, 'target' = cannot be targeted.
+   * `srcController` controls this card. Asked right before the destruction/targeting happens.
+   */
+  shields?(e: Engine, src: FieldCard, target: FieldCard, how: 'battle' | 'effect' | 'target', srcController: Pid): boolean;
+  /** The opponent's monsters cannot choose this face-up monster as an attack target. */
+  cannotBeAttacked?(e: Engine, m: FieldCard, attacker: FieldCard): boolean;
+  /** How many attacks this monster may make each Battle Phase (default 1). */
+  attacks?(e: Engine, m: FieldCard): number;
 }
 
 const E: Record<string, EffectDef> = {};
@@ -999,8 +1046,10 @@ E['Invader of the Throne'] = {
     const picks = yield* e.select(controller, 'Invader of the Throne: switch control with which monster?', e.optionsFor(targets, true), 1, 1, true);
     if (!picks || !targets[picks[0]]) return;
     const t = targets[picks[0]];
-    const a = e.find(m.uid)!;
-    const b = e.find(t.uid)!;
+    const a = e.find(m.uid);
+    const b = e.find(t.uid);
+    // Something may have moved either monster while the choice was open (a control change).
+    if (!a || !b || a.loc.zone !== 'mz' || b.loc.zone !== 'mz' || e.controller(m.uid) !== controller || e.controller(t.uid) !== opp) return;
     e.player(controller).mz[a.loc.index] = t;
     e.player(opp).mz[b.loc.index] = m;
     m.posChanged = t.posChanged = true;
@@ -1672,6 +1721,8 @@ E['Backup Soldier'] = {
 };
 
 installMore(E, { equip, equipFor, attachTo, fieldSpell, attrField, ritualSpell, wipe, fusionPlans });
+// Speed Duel cards that are not part of the EDS list.
+installSpeed(E, { equip, equipFor, attachTo, fieldSpell, ritualSpell, fusionPlans, polymerization: E['Polymerization'] });
 
 export const SCRIPTED = Object.keys(E);
 /** The effect table itself, for tests that instrument it. */

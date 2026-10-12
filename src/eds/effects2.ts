@@ -550,6 +550,8 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         const mi = op.mz.indexOf(t);
         if (mi < 0) return;
         for (const u of t.equips.slice()) yield* e.sendToGrave(u, 'used');
+        // An equip leaving can take the monster with it (Limit Reverse, Premature Burial).
+        if (op.mz[mi] !== t || e.player(p).sz[zone] !== null) return;
         op.mz[mi] = null;
         t.faceUp = true;
         t.active = true;

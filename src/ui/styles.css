@@ -1367,7 +1367,7 @@ p {
 }
 .trow {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr));
   gap: 5px;
 }
 .tz,
@@ -1883,4 +1883,70 @@ p {
   .thcard + .thcard {
     margin-left: calc(-74px * var(--overlap, 0));
   }
+.tskill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--dim);
+  color: var(--dim);
+}
+.tskill.up {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.tskill.ready {
+  color: #1a1000;
+  background: linear-gradient(#f7c948, #c98f12);
+  border-color: #fff2b8;
+  box-shadow: 0 0 10px #f7c94888;
+}
+/* Speed Duel's three-zone field is narrower, so keep its cards a sensible size */
+.duel.touch.speed .tmat {
+  max-width: 360px;
+}
+
+/* ---------- Speed Duel ---------- */
+.skillbtn {
+  border: 1px solid var(--dim);
+  color: var(--dim);
+}
+.skillbtn.up {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.skillbtn.ready {
+  color: #000;
+  background: var(--gold);
+  animation: blink 1.2s steps(2) infinite;
+}
+.gcard .geff {
+  margin-top: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+.sd-deckhead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--panel);
+  border-top: 2px solid var(--border);
+  font-size: 10px;
+}
+.sd-deckhead .chip {
+  white-space: nowrap;
+}
+.crow.off {
+  opacity: 0.45;
+}
+.cardlist .more {
+  display: block;
+  margin: 10px auto;
+}
+/* Speed Duel: 3 Monster and 3 Spell/Trap Zones, centred. */
+.duel.speed .row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 72%;
+  margin: 0 auto;
 }

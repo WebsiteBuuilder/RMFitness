@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { loadDb } from '../eds/db';
+import { loadDb, loadSpeedDb } from '../eds/db';
+import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpeedSave, type SpeedSave } from '../eds/speedSave';
+import type { GameMode } from '../eds/types';
+import { SpeedHub, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
 import { DuelSession, useDuelSession } from '../eds/session';
-import { addToTrunk, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
+import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
@@ -12,12 +15,12 @@ import { PeerAdapter } from '../sync/peer';
 import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
-import { LinkMenu, Lobby, type LinkChoice, type SeatProfile } from './Link';
+import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
 
-type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack';
+type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
 function makeOnline(code: string, isHost: boolean): SyncAdapter {
   return FirebaseAdapter.available() ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
@@ -50,6 +53,11 @@ export function App() {
   /** the profile sitting in Player 2's seat of a hotseat duel, if any */
   const [p2Profile, setP2Profile] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Speed Duel: this profile's decks and record, and which game the current duel belongs to */
+  const [speedSave, setSpeedSaveState] = useState<SpeedSave | null>(null);
+  const [duelMode, setDuelMode] = useState<GameMode>('eds');
+  const [speedReady, setSpeedReady] = useState(false);
+  const [speedFailed, setSpeedFailed] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<string | null>(() => {
     const code = new URLSearchParams(location.search).get('join');
     return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
@@ -58,7 +66,15 @@ export function App() {
   const [dbFailed, setDbFailed] = useState(false);
   const tryLoadDb = () => {
     setDbFailed(false);
-    void loadDb().then((ok) => (ok ? setDbReady(true) : setDbFailed(true)));
+    void loadDb().then((ok) => {
+      if (!ok) return setDbFailed(true);
+      setDbReady(true);
+      tryLoadSpeed();
+    });
+  };
+  const tryLoadSpeed = () => {
+    setSpeedFailed(false);
+    void loadSpeedDb().then((ok) => (ok ? setSpeedReady(true) : setSpeedFailed(true)));
   };
   useEffect(tryLoadDb, []);
 
@@ -67,10 +83,16 @@ export function App() {
     if (profile) writeSave(profile.id, s);
   };
 
+  const setSpeedSave = (s: SpeedSave) => {
+    setSpeedSaveState(s);
+    if (profile) writeSpeedSave(profile.id, s);
+  };
+
   const pickProfile = (p: Profile) => {
     const s = loadSave(p.id);
     setProfile(p);
     setSaveState(s);
+    setSpeedSaveState(loadSpeedSave(p.id));
     setScreen(!s ? 'intro' : pendingJoin ? 'link' : 'menu');
   };
 
@@ -79,6 +101,7 @@ export function App() {
     setSession(null);
     setProfile(null);
     setSaveState(null);
+    setSpeedSaveState(null);
     setConfirmDelete(false);
     setScreen('profiles');
   };
@@ -94,14 +117,33 @@ export function App() {
     setCpu(true);
     setMySeat(0);
     setP2Profile(null);
+    setDuelMode('eds');
     setSession(ses);
     setScreen('duel');
   };
 
-  const openSession = (c: LinkChoice) => {
+  const startSpeedCpu = (o: SpeedOpponent) => {
+    const deck = speedSave ? activeDeck(speedSave) : null;
+    if (!save || !deck || speedDeckProblems(deck).length > 0) return;
+    session?.close();
+    const ses = new DuelSession(new MemoryAdapter());
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill });
+    ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill });
+    ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] });
+    setHotseat(false);
+    setCpu(true);
+    setMySeat(0);
+    setP2Profile(null);
+    setDuelMode('speed');
+    setSession(ses);
+    setScreen('duel');
+  };
+
+  const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds') => {
     session?.close();
     setCpu(false);
     setP2Profile(null);
+    setDuelMode(mode);
     if (c.mode === 'hotseat') {
       setHotseat(true);
       setMySeat(0);
@@ -114,16 +156,30 @@ export function App() {
     setScreen('duel');
   };
 
+  /** The game the duel on screen belongs to (a guest follows the host's game). */
+  const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
+
   const leaveDuel = () => {
+    const mode = gameOf();
     session?.close();
     setSession(null);
     setP2Profile(null);
-    setScreen('menu');
+    setScreen(mode === 'speed' ? 'speed' : 'menu');
   };
 
   const finishDuel = (winner: Pid | 'draw', oppName: string) => {
     if (!save) return leaveDuel();
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
+    if (gameOf() === 'speed') {
+      // Speed Duel keeps its own record; no booster packs or calendar days.
+      if (speedSave) setSpeedSave(withSpeedResult(speedSave, mine, oppName));
+      if (hotseat && p2Profile && p2Profile !== profile?.id) writeSpeedSave(p2Profile, withSpeedResult(loadSpeedSave(p2Profile), mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', save.name));
+      session?.close();
+      setSession(null);
+      setP2Profile(null);
+      setScreen('speed');
+      return;
+    }
     const next = withResult(save, mine, oppName);
     setSave(next);
     // Hotseat with a second profile: Player 2's own save gets the result too.
@@ -181,6 +237,7 @@ export function App() {
     if (c === 'delete') return setConfirmDelete(true);
     if (c === 'switch') return switchProfile();
     if (c === 'controls') return setSave({ ...save, controls: save.controls === 'touch' ? 'classic' : 'touch' });
+    if (c === 'speed' && profile) setSpeedSaveState(loadSpeedSave(profile.id));
     setScreen(c);
   };
 
@@ -233,7 +290,13 @@ export function App() {
   const others = (): SeatProfile[] =>
     loadProfiles()
       .filter((p) => p.id !== profile.id)
-      .map((p) => ({ profile: p, save: loadSave(p.id) }));
+      .map((p) => ({ profile: p, save: loadSave(p.id), speed: { deck: activeDeck(loadSpeedSave(p.id)) } }));
+
+  const myDeck = speedSave ? activeDeck(speedSave) : null;
+  const entries: Partial<Record<GameMode, SeatEntry>> = {
+    eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, problems: speedDeckProblems(myDeck) } } : {}),
+  };
 
   switch (screen) {
     case 'campaign':
@@ -249,10 +312,26 @@ export function App() {
     case 'pack':
       return <PackOpen save={save} onSave={setSave} onDone={() => setScreen('menu')} />;
     case 'link':
-      return <LinkMenu save={save} onPick={openSession} onBack={() => setScreen('menu')} />;
+      return <LinkMenu save={save} onPick={(c) => openSession(c, 'eds')} onBack={() => setScreen('menu')} />;
+    case 'speed':
+      if (!speedReady)
+        return speedFailed ? (
+          <div class="loading">
+            <p>Couldn't load the Speed Duel cards. Check the connection and try again.</p>
+            <button class="gbtn" onClick={tryLoadSpeed}>
+              Try again
+            </button>
+            <button class="gbtn" onClick={() => setScreen('menu')}>
+              Back
+            </button>
+          </div>
+        ) : (
+          <div class="loading">Loading Speed Duel cards…</div>
+        );
+      return <SpeedHub profile={profile} save={speedSave ?? loadSpeedSave(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />;
     case 'duel':
       if (!session) return menu;
-      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} save={save} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />;
+      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />;
     default:
       return menu;
   }
@@ -270,7 +349,8 @@ function Running({
   hotseat,
   cpu,
   mySeat,
-  save,
+  mode,
+  entries,
   others,
   onSeatProfile,
   controlsFor,
@@ -282,7 +362,8 @@ function Running({
   hotseat: boolean;
   cpu: boolean;
   mySeat: Pid;
-  save: SaveFile;
+  mode: GameMode;
+  entries: Partial<Record<GameMode, SeatEntry>>;
   others: SeatProfile[];
   onSeatProfile: (id: string | null) => void;
   controlsFor: (p: Pid) => ControlStyle;
@@ -311,7 +392,7 @@ function Running({
     const t = setTimeout(() => session.send(action), quick ? 350 : 800);
     return () => clearTimeout(t);
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} save={save} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
+  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />;
 }
