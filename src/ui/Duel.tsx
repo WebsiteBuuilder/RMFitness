@@ -312,7 +312,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
       <div class="opp-hand">
         {opp.hand.map((c) => (
           <div key={c.uid} class={`hcard back ${anim?.uid === c.uid ? 'anim-draw' : ''}`}>
-            <CardImg name={c.name} back={!hotseat || true} />
+            <CardImg name={c.name} back />
           </div>
         ))}
       </div>
