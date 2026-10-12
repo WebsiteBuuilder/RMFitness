@@ -43,19 +43,32 @@ type SpanFn = (k: number, dt: number) => void;
 /** A scripted cinematic: callbacks at moments and over spans of time (seconds). */
 export class Timeline implements Fx {
   t = 0;
-  private items: { t0: number; t1: number; fn: SpanFn; done: boolean }[] = [];
+  /** playback speed: the Animation speed setting times this cinematic's own scaling */
+  rate = 1;
+  /** called at the commit marker: the moment the board catches up with the cinematic */
+  onCommit: (() => void) | null = null;
+  private items: { t0: number; t1: number; fn: SpanFn; done: boolean; cosmetic: boolean }[] = [];
   owned: Fx[] = [];
   constructor(
     public duration: number,
     private stage: Stage,
   ) {}
-  at(t: number, fn: () => void) {
-    this.items.push({ t0: t, t1: t, fn: () => fn(), done: false });
+  /**
+   * A callback at one moment. Cosmetic ones (banners, flashes, sounds, shakes,
+   * numbers, bursts) are dropped when the cinematic is skipped; pass
+   * `cosmetic = false` for steps that change what stays on stage.
+   */
+  at(t: number, fn: () => void, cosmetic = true) {
+    this.items.push({ t0: t, t1: t, fn: () => fn(), done: false, cosmetic });
     return this;
   }
   span(t0: number, t1: number, fn: SpanFn) {
-    this.items.push({ t0, t1, fn, done: false });
+    this.items.push({ t0, t1, fn, done: false, cosmetic: false });
     return this;
+  }
+  /** Marks the impact or landing: the duel board shows the new state from here on. */
+  commit(t: number) {
+    return this.at(t, () => this.onCommit?.(), false);
   }
   /** Adds an object that belongs to this cinematic (removed when it ends). */
   own<T extends Fx>(f: T): T {
@@ -63,6 +76,7 @@ export class Timeline implements Fx {
     return this.stage.add(f as T & { mesh?: never });
   }
   update(dt: number) {
+    dt *= this.rate;
     this.t += dt;
     for (const it of this.items) {
       if (it.done || this.t < it.t0) continue;
@@ -72,12 +86,12 @@ export class Timeline implements Fx {
     }
     return this.t < this.duration;
   }
-  /** Jumps to the end (tap to skip): every pending step lands in its final state. */
+  /** Jumps to the end (tap to skip): every pending step lands in its final state, without its banners, flashes, sounds or shakes. */
   finish() {
     for (const it of this.items) {
       if (it.done) continue;
-      it.fn(1, 0);
       it.done = true;
+      if (!it.cosmetic) it.fn(1, 0);
     }
     this.t = this.duration;
   }
@@ -113,10 +127,36 @@ interface Colors {
 
 const SLOW_KINDS = new Set(['summon', 'attack', 'hit', 'win']);
 
+/** A cue waiting to play: `batch` groups the cues of one engine update (one chain), `scale` speeds up a repeat. */
+interface Queued {
+  cue: Cue;
+  batch: number;
+  scale: number;
+}
+
+/** How much faster a cinematic plays when it flows straight into the next one of its chain. */
+function flowRate(cue: Cue, next: Queued | undefined, batch: number): number {
+  const same = next && next.batch === batch ? next.cue.kind : null;
+  if (cue.kind === 'attack') return same === 'hit' ? 1.6 : 1.25;
+  if (cue.kind === 'hit') return 1.25;
+  if (cue.kind === 'destroy' || cue.kind === 'damage') return same ? 1.4 : 1.2;
+  return 1;
+}
+
 export class Director {
   stage: Stage;
-  private queue: Cue[] = [];
+  private queue: Queued[] = [];
   private current: Timeline | null = null;
+  /** the chain (event batch) the current cinematic belongs to; -1 when none */
+  private curBatch = -1;
+  /** after a skip, figures left on stage fade at once */
+  private fastFade = false;
+  /** Animation speed setting: 1, 1.5 or 2 */
+  timeScale = 1;
+  /** a chain reached its impact or landing */
+  onCommit: ((batch: number) => void) | null = null;
+  /** a chain is over (played, skipped, cleared or failed) */
+  onBatchEnd: ((batch: number) => void) | null = null;
   private actors = new Map<number, Actor>();
   private idleFor = 0;
   private bgTarget = 0;
@@ -159,33 +199,78 @@ export class Director {
     return this.queue.length > 0 || this.current !== null || this.actors.size > 0;
   }
 
-  push(cues: Cue[]) {
-    if (!cues.length) return;
-    if (this.stage.lost) {
-      this.onIdle?.();
+  /** Playback speed of what is on now (for the DOM banners' timing). */
+  get rate() {
+    return this.current?.rate ?? this.timeScale;
+  }
+
+  /** Plays one chain: the cues of one engine update. `scales` speeds single cinematics up (2 = half as long). */
+  push(cues: Cue[], batch = 0, scales?: number[]) {
+    if (!cues.length || this.skipAll || this.stage.lost) {
+      // nothing to show (or no WebGL right now): the board catches up at once
+      this.onBatchEnd?.(batch);
+      if (this.stage.lost) this.onIdle?.();
       return;
     }
     // A long backlog (reconnect, a burst of moves): keep only what matters most.
-    this.queue.push(...cues);
-    if (this.queue.length > 10) this.queue = this.queue.filter((c) => SLOW_KINDS.has(c.kind) || c.kind === 'damage' || c.kind === 'destroy').slice(-10);
+    const before = new Set(this.queue.map((q) => q.batch));
+    this.queue.push(...cues.map((cue, i) => ({ cue, batch, scale: scales?.[i] ?? 1 })));
+    if (this.queue.length > 10) {
+      this.queue = this.queue.filter((q) => SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'damage' || q.cue.kind === 'destroy').slice(-10);
+      const left = new Set(this.queue.map((q) => q.batch));
+      for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
+    }
+    this.fastFade = false;
     this.onBusy?.();
     this.stage.start();
     if (!this.current) this.next();
   }
 
-  /** Tap: finish the current cinematic now. */
+  /** Tap: skip the whole current chain (every cue of the same event batch). */
   skip() {
-    if (this.current) {
-      this.current.finish();
-    }
+    this.fastFade = true;
+    const b = this.curBatch;
+    if (b >= 0) this.queue = this.queue.filter((q) => q.batch !== b);
+    this.endCurrent(true);
+    if (!this.current && !this.queue.length) this.stage.particles.clear();
   }
 
-  /** Long press or leaving: drop everything. */
+  /** Long press / double tap: skip everything queued, and whatever arrives until the queue has drained. */
+  skipEverything() {
+    this.skipAll = true;
+    this.fastFade = true;
+    const rest = [...new Set(this.queue.map((q) => q.batch))];
+    this.queue = [];
+    this.endCurrent(true);
+    for (const b of rest) this.onBatchEnd?.(b);
+    this.stage.particles.clear();
+  }
+
+  /** Ends the cinematic on stage (finishing it first when skipped), reports a finished chain, starts the next. */
+  private endCurrent(skipped: boolean) {
+    const tl = this.current;
+    if (!tl) return;
+    if (skipped) tl.finish();
+    tl.dispose();
+    this.current = null;
+    const b = this.curBatch;
+    if (b >= 0 && !this.queue.some((q) => q.batch === b)) {
+      this.curBatch = -1;
+      this.onBatchEnd?.(b);
+    }
+    this.next();
+  }
+
+  /** Leaving (or 3D turned off): drop everything. */
   clear() {
+    const rest = [...new Set([this.curBatch, ...this.queue.map((q) => q.batch)])].filter((b) => b >= 0);
     this.queue = [];
     this.current?.finish();
     this.current?.dispose();
     this.current = null;
+    this.curBatch = -1;
+    this.skipAll = false;
+    for (const b of rest) this.onBatchEnd?.(b);
     for (const a of this.actors.values()) this.dropActor(a);
     this.actors.clear();
     this.stage.clear();
@@ -206,22 +291,21 @@ export class Director {
 
   private frame(dt: number) {
     // Backdrop eases toward what the current cinematic wants.
-    const want = this.current ? this.bgTarget : this.actors.size ? 0.6 : 0;
-    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * 7));
+    // (the battle figures' backdrop fades with them, not after them)
+    const want = this.current ? this.bgTarget : this.actors.size && !this.fastFade && this.idleFor < 0.3 ? 0.6 : 0;
+    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * (this.fastFade ? 20 : 7)));
+    if (this.fastFade && !this.current && this.bg < 0.03) this.bg = 0;
     this.stage.backdrop.u.uOpacity.value = this.bg;
     if (this.current) {
       this.watchdog += dt;
-      if (!this.current.update(dt) || this.watchdog > this.current.duration + 3) {
-        this.current.dispose();
-        this.current = null;
-        this.next();
-      }
+      if (!this.current.update(dt) || this.watchdog > this.current.duration / this.current.rate + 3) this.endCurrent(false);
       return;
     }
-    // Nothing playing: battle figures linger a moment, then fade away.
+    // Nothing playing: battle figures linger a moment, then fade away (at once after a skip).
     this.idleFor += dt;
-    if (this.actors.size && this.idleFor > 0.55) {
-      const k = clamp01((this.idleFor - 0.55) / 0.35);
+    const linger = this.fastFade ? 0 : 0.3;
+    if (this.actors.size && this.idleFor > linger) {
+      const k = clamp01((this.idleFor - linger) / (this.fastFade ? 0.15 : 0.25));
       for (const a of this.actors.values()) {
         if (a.fig) a.fig.u.uOpacity.value = Math.min(a.fig.u.uOpacity.value, 1 - k);
         if (a.back) a.back.u.uOpacity.value = Math.min(a.back.u.uOpacity.value, 1 - k);
@@ -231,43 +315,47 @@ export class Director {
         this.actors.clear();
       }
     }
-    if (!this.actors.size && this.bg < 0.01 && !this.stage.particles.active) {
+    if (!this.actors.size && this.bg < 0.03 && (!this.stage.particles.active || this.fastFade || this.idleFor > 0.7)) {
+      this.stage.particles.clear();
       this.stage.backdrop.u.uOpacity.value = 0;
       this.stage.stop();
+      this.skipAll = false;
+      this.fastFade = false;
       this.onIdle?.();
     }
   }
 
   private next() {
     this.watchdog = 0;
-    const cue = this.queue.shift();
-    if (!cue) {
+    const item = this.queue.shift();
+    if (!item) {
       this.idleFor = 0;
       return;
     }
     this.idleFor = 0;
+    this.fastFade = false;
+    this.curBatch = item.batch;
     const placeholder = new Timeline(99, this.stage);
     this.current = placeholder;
-    this.build(cue)
+    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch);
+    this.build(item.cue)
       .then((tl) => {
         if (this.current !== placeholder) {
           tl?.dispose();
           return;
         }
         if (!tl) {
-          this.current = null;
-          this.next();
+          this.endCurrent(false);
           return;
         }
+        tl.rate = rate;
+        tl.onCommit = () => this.onCommit?.(item.batch);
         this.current = tl;
-        if (this.skipAll) tl.finish();
+        if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
         console.warn('art engine: cinematic failed', err);
-        if (this.current === placeholder) {
-          this.current = null;
-          this.next();
-        }
+        if (this.current === placeholder) this.endCurrent(false);
       });
   }
 
@@ -376,7 +464,7 @@ export class Director {
       case 'attack':
         return this.attack(cue.attacker, cue.target, cue.defender);
       case 'hit':
-        return this.hit(cue.attacker, cue.target, cue.defender);
+        return this.hit(cue.attacker, cue.target, cue.defender, cue.dmg);
       case 'damage':
         return this.damage(cue.player, cue.amount);
       case 'destroy':
@@ -596,7 +684,9 @@ export class Director {
       fig.mesh.scale.setScalar(size * lerp(1, 0.3, easeIn(k)));
       fig.u.uOpacity.value = 1 - easeIn(k);
     });
-    tl.at(D, () => this.resetCam());
+    tl.at(D, () => this.resetCam(), false);
+    // the monster has landed: its card appears in its zone
+    tl.commit(Math.min(D - 0.4, showAt + 0.5));
     return tl;
   }
 
@@ -647,15 +737,19 @@ export class Director {
           have.back.u.uOpacity.value = 1 - k;
         }
       });
-      tl.at(0.35, () => {
-        if (have.back) this.stage.remove(have.back);
-        have.back = null;
-        have.fig = fig;
-        have.name = c.name;
-        have.prof = prof;
-        have.art = art;
-        this.place(have);
-      });
+      tl.at(
+        0.35,
+        () => {
+          if (have.back) this.stage.remove(have.back);
+          have.back = null;
+          have.fig = fig;
+          have.name = c.name;
+          have.prof = prof;
+          have.art = art;
+          this.place(have);
+        },
+        false,
+      );
       fig.u.uOpacity.value = 0;
       this.place({ ...have, fig, back: null });
       tl.span(0.35, 0.7, (k) => {
@@ -734,7 +828,7 @@ export class Director {
       ring.u.uOpacity.value = 1 - k;
     });
     tl.span(0, D, (k) => this.cam(lerp(prof.camYaw * 0.6, 0, k), -0.2, lerp(0, 0.6, easeOut(k))));
-    tl.at(D, () => this.resetCam());
+    tl.at(D, () => this.resetCam(), false);
     return tl;
   }
 
@@ -823,9 +917,13 @@ export class Director {
         }
       }
     });
-    tl.at(0.4, () => {
-      for (const act of [att, tgt]) if (act) ((act as Actor & { fresh?: boolean }).fresh = false, this.place(act), this.setOpacity(act, 1));
-    });
+    tl.at(
+      0.4,
+      () => {
+        for (const act of [att, tgt]) if (act) ((act as Actor & { fresh?: boolean }).fresh = false, this.place(act), this.setOpacity(act, 1));
+      },
+      false,
+    );
     // direct attack: the opponent's side lights up as the target
     if (!tgt) {
       const s = this.spot(this.side(defender));
@@ -854,7 +952,7 @@ export class Director {
   }
 
   /** The blow lands: the attacker's own attack style travels to its target. */
-  private async hit(a: CardRef | null, t: CardRef | null, defender: Pid): Promise<Timeline> {
+  private async hit(a: CardRef | null, t: CardRef | null, defender: Pid, dmg?: { player: Pid; amount: number }): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
     const att = a ? (this.actors.get(a.uid) ?? (await this.actor(a, this.side(a.controller)))) : null;
@@ -880,7 +978,10 @@ export class Director {
       this.ui.flash(col.light, tgt ? 0.35 : 0.6);
       st.particles.emit({ x: T.x, y: T.y, burst: 5 * U, life: 0.6, size: 0.12 * U, color: col.light, drag: 3 }, Math.round(80 * (st.quality === 'full' ? 1 : 0.5)));
       st.particles.emit({ x: T.x, y: T.y, burst: 3 * U, life: 0.9, size: 0.18 * U, color: col.main, drag: 2 }, 40);
+      // the battle damage lands with the blow
+      if (dmg) this.ui.number({ text: `-${dmg.amount}`, color: 0xff4a4a, side: this.side(dmg.player) === 'near' ? 'bottom' : 'top', size: 1 + Math.min(1, dmg.amount / 3000) * 1.2 });
     });
+    tl.commit(travel);
     const wave = tl.own(new Ring(2.4 * U, col.main, prof.glyphs, { inner: 0.86, outer: 0.92 }));
     wave.mesh.position.set(T.x, T.y, 0.1);
     wave.u.uOpacity.value = 0;
@@ -896,7 +997,7 @@ export class Director {
       });
     }
     tl.span(0, D, (k) => this.cam(lerp(prof.camYaw * 0.8, -prof.camYaw * 0.3, k), lerp(A.y > T.y ? 0.6 : -0.6, 0, k) * 0.6, lerp(0.6, 0.9, k)));
-    tl.at(D, () => this.resetCam());
+    tl.at(D, () => this.resetCam(), false);
     return tl;
   }
 
@@ -910,6 +1011,7 @@ export class Director {
       this.ui.flash(0xff2020, 0.15 + k * 0.35);
       st.shake(0.25 + k * 0.7);
     });
+    tl.commit(0);
     return tl;
   }
 
@@ -956,13 +1058,18 @@ export class Director {
       }
       if (act?.back) act.back.u.uOpacity.value = 1 - k;
     });
-    tl.at(0.9, () => {
-      if (act) {
-        this.dropActor(act);
-        this.actors.delete(act.uid);
-        act = null;
-      }
-    });
+    tl.at(
+      0.9,
+      () => {
+        if (act) {
+          this.dropActor(act);
+          this.actors.delete(act.uid);
+          act = null;
+        }
+      },
+      false,
+    );
+    tl.commit(0.3);
     return tl;
   }
 
@@ -1067,11 +1174,15 @@ export class Director {
     tl.at(2.3, () => this.ui.caption(`${sr.loserName} has been sent to the Shadow Realm!`, 3.2, 'shadow'));
     if (sr.sealed) tl.at(4.0, () => this.ui.caption(`${sr.sealed} is sealed away until ${sr.loserName} wins a duel.`, 2.2, 'sealed'));
     tl.span(0, D, (k) => this.cam(Math.sin(k * 3) * 0.6, lerp(-0.3, 0.2, k), lerp(0, 1.4, easeInOut(k))));
-    tl.at(D, () => {
-      this.resetCam();
-      for (const a of this.actors.values()) this.dropActor(a);
-      this.actors.clear();
-    });
+    tl.at(
+      D,
+      () => {
+        this.resetCam();
+        for (const a of this.actors.values()) this.dropActor(a);
+        this.actors.clear();
+      },
+      false,
+    );
     return tl;
   }
 }
