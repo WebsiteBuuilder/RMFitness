@@ -1,5 +1,7 @@
 /* Card Shop: Duel Chips bar, booster packs, the pack reveal, the binder. */
 .shop-bar {
+  width: 100%;
+  flex-wrap: wrap;
   display: flex;
   gap: 14px;
   align-items: center;
@@ -220,7 +222,7 @@
 }
 .rv-new {
   right: 3px;
-  top: 3px;
+  bottom: 3px;
   color: #7dffa0;
   animation: rv-pop 0.4s ease-out 0.35s both;
 }
@@ -246,9 +248,12 @@
   object-fit: cover;
 }
 .bcount,
-.brar {
+.brar,
+.bcost,
+.bnew {
   position: absolute;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.3;
   padding: 0 3px;
   border-radius: 2px;
   background: #000c;
@@ -259,7 +264,28 @@
 }
 .brar {
   left: 2px;
+  bottom: 2px;
+}
+.bcost {
+  right: 2px;
   top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--gold);
+}
+.bcost .dchip {
+  width: 10px;
+  height: 10px;
+}
+.bcost.no {
+  color: var(--dim);
+  filter: grayscale(1);
+}
+.bnew {
+  right: 2px;
+  top: 2px;
+  color: #7dffa0;
 }
 .brar.rr { color: #e4e9f2; }
 .brar.rsr { color: #bfe0ff; }
@@ -335,4 +361,165 @@
   .crown.hot {
     animation: none !important;
   }
+}
+
+/* ---- round 2: labels, progress, drama ---- */
+.shop-q {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--dim);
+  color: var(--dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.today {
+  border-top: 1px dashed var(--dim);
+  padding-top: 6px;
+}
+.next-set {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 2px 8px;
+  font-size: 12px;
+}
+.next-set .bar {
+  height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #06091c;
+}
+.next-set .bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), #fff3b0);
+}
+.pack.tearable:active {
+  animation: pack-tear 0.25s ease-in forwards;
+}
+@keyframes pack-tear {
+  to { transform: scale(1.12) rotate(-3deg); filter: brightness(2); }
+}
+.reveal.flash::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  animation: hit-flash 0.9s ease-out forwards;
+  z-index: 5;
+}
+.reveal.flash.rsr::before { background: radial-gradient(circle, #e8f2ffcc 0%, transparent 70%); }
+.reveal.flash.rur::before { background: radial-gradient(circle, #ffe08acc 0%, transparent 70%); }
+.reveal.flash.rscr::before { background: conic-gradient(from 0deg, #ff8cf0aa, #6ce3ffaa, #ffe08aaa, #ff8cf0aa); }
+@keyframes hit-flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.rv.hit .rv-in {
+  transition-duration: 0.9s;
+}
+.rv.hit.up {
+  animation: hit-pop 0.9s ease-out;
+  z-index: 3;
+}
+@keyframes hit-pop {
+  40% { transform: scale(1.18); }
+}
+.reveal.summary {
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.reveal.summary .binder {
+  width: 100%;
+}
+.crafted {
+  display: inline-block;
+  animation: crafted 0.8s ease-out;
+}
+@keyframes crafted {
+  0% { transform: scale(0.6) rotateY(180deg); filter: brightness(3); }
+  100% { transform: none; filter: none; }
+}
+.good {
+  color: var(--green);
+}
+.loss-line {
+  color: #ffb1b1;
+  font-size: 12px;
+}
+.bet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
+}
+.bet-grid .bcard.on {
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
+}
+.seat-bets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.seat-bet {
+  border: 1px solid #f7c94866;
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  font-size: 12px;
+  min-width: 0;
+}
+.seat-bet .cimg {
+  width: 44px;
+}
+.seat-bet .ok {
+  color: var(--green);
+}
+.news-cards {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 6px 0;
+}
+.news-cards .nc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  animation: rv-deal 0.4s ease-out both;
+}
+.news-cards .cimg {
+  width: 70px;
+}
+.news-cards .nc.won .cimg {
+  box-shadow: 0 0 0 2px var(--gold), 0 0 14px #ffd56acc;
+}
+.news-cards .nc.lost .cimg {
+  filter: grayscale(0.8) brightness(0.7);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal.flash::before,
+  .rv.hit.up,
+  .crafted,
+  .news-cards .nc {
+    animation: none !important;
+  }
+}
+.bcard.nocard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--dim);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.stake-pick {
+  max-height: 320px;
 }

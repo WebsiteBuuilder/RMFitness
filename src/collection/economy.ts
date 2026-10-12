@@ -17,7 +17,7 @@ import { openPack, rarityOf, unlockedSets, type Rarity } from './sets';
 export const SHARDS_PER_CHIP = 10;
 export const WELCOME_PACKS = 3;
 export const RIVAL_PACKS_PER_DAY = 3;
-/** a win against another player only pays a chip when the duel lasted this many turns */
+/** a win against another player only pays prizes when the duel lasted this many turns */
 export const RIVAL_MIN_TURNS = 3;
 export const LOOK_UP_COST = 3;
 export const CRAFT_COST: Record<Rarity, number> = { Common: 1, Rare: 2, 'Super Rare': 4, 'Ultra Rare': 6, 'Secret Rare': 8 };
@@ -66,7 +66,8 @@ export const dayKey = (now = Date.now()) => {
 
 function daily(s: SpeedSave, now: number): Daily {
   const d = E(s).daily;
-  return d && d.day === dayKey(now) ? d : { day: dayKey(now), cpu: [], rivalPacks: 0, rivalChip: false };
+  // Setting the phone's clock back doesn't start a fresh day.
+  return d && d.day >= dayKey(now) ? d : { day: dayKey(now), cpu: [], rivalPacks: 0, rivalChip: false };
 }
 
 const countsOf = (list: string[]) => {
@@ -87,7 +88,21 @@ export function migrate(s: SpeedSave): SpeedSave {
     if (d.open) continue;
     for (const [n, c] of Object.entries(countsOf(deckCards(d)))) collection[n] = Math.max(collection[n] ?? 0, Math.min(c, COPIES));
   }
-  return { ...s, collection, econ: 1, packs: packsOf(s) + WELCOME_PACKS } as EconSave;
+  return { ...s, collection, econ: 1, packs: packsOf(s) + (claimWelcome() ? WELCOME_PACKS : 0) } as EconSave;
+}
+
+/** Welcome packs go to the first 2 profiles on a phone, so new profiles aren't a pack farm. */
+const WELCOME_KEY = 'eds.speed.welcomed';
+export const WELCOME_PROFILES = 2;
+function claimWelcome(): boolean {
+  try {
+    const n = Number(localStorage.getItem(WELCOME_KEY) ?? 0);
+    if (n >= WELCOME_PROFILES) return false;
+    localStorage.setItem(WELCOME_KEY, String(n + 1));
+  } catch {
+    /* storage blocked (tests): no limit */
+  }
+  return true;
 }
 
 /** The first deck of a new profile: its cards (and Skill) become theirs. */
@@ -148,6 +163,26 @@ export function breakExtras(s: SpeedSave): { save: SpeedSave; shards: number } {
   return { save: cashShards({ ...s, collection, shards: shardsOf(s) + gained } as EconSave), shards: gained };
 }
 
+/** Breaks every spare copy: what no deck uses, keeping one of each card. Returns null when there's nothing to break. */
+export function breakAllSpares(s: SpeedSave): { save: SpeedSave; copies: number; shards: number } | null {
+  let next = s;
+  let copies = 0;
+  for (const n of Object.keys(s.collection ?? {})) {
+    while (owned(next, n) > 1 && spareCopies(next, n) > 0) {
+      next = breakCopy(next, n)!;
+      copies++;
+    }
+  }
+  if (!copies) return null;
+  return { save: next, copies, shards: shardsOf(next) - shardsOf(s) + (chipsOf(next) - chipsOf(s)) * SHARDS_PER_CHIP };
+}
+
+/** What a profile can still win today: computer duelists not yet beaten, rival packs, the rival chip. */
+export function todaysPrizes(s: SpeedSave, cpus: string[], now = Date.now()): { cpu: string[]; rivalPacks: number; rivalChip: boolean } {
+  const d = daily(s, now);
+  return { cpu: cpus.filter((c) => !d.cpu.includes(c)), rivalPacks: RIVAL_PACKS_PER_DAY - d.rivalPacks, rivalChip: !d.rivalChip };
+}
+
 /** Breaks one spare copy into shards. */
 export function breakCopy(s: SpeedSave, name: string): SpeedSave | null {
   if (spareCopies(s, name) < 1) return null;
@@ -163,7 +198,7 @@ export const craftCost = (name: string) => CRAFT_COST[rarityOf(name)];
 export function cantCraft(s: SpeedSave, name: string): string | null {
   const c = card(name);
   if (!c || !c.speed) return 'not a Speed Duel card';
-  if (owned(s, name) >= (c.sub === 'Skill' ? 1 : COPIES)) return c.sub === 'Skill' ? 'you have this Skill' : `you have ${COPIES}`;
+  if (owned(s, name) >= (c.sub === 'Skill' ? 1 : COPIES)) return c.sub === 'Skill' ? 'you own this Skill' : `you own the most (${COPIES})`;
   if (chipsOf(s) < craftCost(name)) return `needs ${craftCost(name)} Duel Chips`;
   return null;
 }
@@ -235,14 +270,15 @@ export function rivalResult(s: SpeedSave, r: RivalDuel, now = Date.now()): { sav
   rivals[r.opp] = rec;
   let next = { ...s, rivals } as EconSave as SpeedSave;
   const lines: string[] = [];
-  if (r.result === 'w' && r.counts) {
+  // A quick surrender doesn't pay: prizes need a real duel of a few turns.
+  if (r.result === 'w' && r.counts && r.turns >= RIVAL_MIN_TURNS) {
     const d = { ...daily(s, now) };
     if (d.rivalPacks < RIVAL_PACKS_PER_DAY) {
       d.rivalPacks++;
       next = withPacks(next, 1);
       lines.push(`A booster pack for beating ${r.opp}`);
     }
-    if (!d.rivalChip && r.turns >= RIVAL_MIN_TURNS && chipsOf(next) < CHIP_CAP) {
+    if (!d.rivalChip && chipsOf(next) < CHIP_CAP) {
       d.rivalChip = true;
       next = withChips(next, 1);
       lines.push("A Duel Chip: today's win over a rival");

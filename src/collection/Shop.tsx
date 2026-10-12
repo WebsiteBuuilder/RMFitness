@@ -2,53 +2,108 @@
 // craft cards with Duel Chips, lift a card's look one rarity step, break spare copies.
 import { useMemo, useState } from 'preact/hooks';
 import { card, speedCards, skillCards } from '../eds/db';
-import { CHIP_CAP, COPIES, owned, type SpeedSave } from '../eds/speedSave';
+import { CHIP_CAP, COPIES, owned, unplayableReason, type SpeedSave } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from '../ui/CardImg';
 import { Menu, Overlay, Win } from '../ui/Window';
-import { playBlip } from '../ui/sound';
+import { playBlip, playSummon, playWin } from '../ui/sound';
 import { RarityChip } from '../level/CardLevels';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import {
   BREAK_SHARDS,
   LOOK_UP_COST,
+  RIVAL_MIN_TURNS,
   SHARDS_PER_CHIP,
+  breakAllSpares,
+  breakCopy,
   cantCraft,
   cantLookUp,
   chipsOf,
   copiesInDecks,
   craft,
   craftCost,
-  breakCopy,
   lookUp,
   openOwnedPack,
   packsOf,
   shardsOf,
   sortForBinder,
   spareCopies,
+  todaysPrizes,
   type Opened,
 } from './economy';
-import { RARITY_SHORT, WINS_PER_SET, boosterSets, rarityIn, rarityOf, shortSetName, unlockedSets } from './sets';
+import { RARITIES, RARITY_SHORT, WINS_PER_SET, boosterSets, rarityIn, rarityOf, shortSetName, unlockedSets, type Rarity } from './sets';
 import './shop.css';
 
 type Tab = 'packs' | 'binder' | 'craft';
 const PAGE = 60;
+const RCLASS: Record<string, string> = { Common: 'rc', Rare: 'rr', 'Super Rare': 'rsr', 'Ultra Rare': 'rur', 'Secret Rare': 'rscr' };
+const isHit = (r: Rarity) => r !== 'Common' && r !== 'Rare';
+const buzz = (ms: number | number[]) => {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* not supported */
+  }
+};
 
-export function ChipBar({ save }: { save: SpeedSave }) {
+/** Duel Chips, shards and packs, labelled. Tap for how to earn each and what's left today. */
+export function ChipBar({ save, cpus = [] }: { save: SpeedSave; cpus?: string[] }) {
+  const [help, setHelp] = useState(false);
+  const left = todaysPrizes(save, cpus);
   return (
-    <div class="shop-bar">
-      <span class="shop-chip" title="Duel Chips">
-        <i class="dchip" /> {chipsOf(save)}/{CHIP_CAP}
-      </span>
-      <span title="Shards: 10 make a Duel Chip">◆ {shardsOf(save)}/{SHARDS_PER_CHIP}</span>
-      <span title="Unopened packs">🂠 {packsOf(save)}</span>
-    </div>
+    <>
+      <button class="shop-bar" onClick={() => (playBlip(), setHelp(true))} aria-label="Duel Chips, shards and packs: tap for details">
+        <span class="shop-chip">
+          <i class="dchip" /> Chips {chipsOf(save)}/{CHIP_CAP}
+        </span>
+        <span>◆ Shards {shardsOf(save)}/{SHARDS_PER_CHIP}</span>
+        <span>🂠 Packs {packsOf(save)}</span>
+        <span class="shop-q">?</span>
+      </button>
+      {help && (
+        <Overlay onClose={() => setHelp(false)}>
+          <Win title="Chips, shards and packs" onClose={() => setHelp(false)}>
+            <p>
+              <i class="dchip" /> <b>Duel Chips</b> craft cards and lift a card's look. You can hold {CHIP_CAP}. They come slowly: your first 3-star win on each campaign duel, each Labyrinth boss, one win a day over your brother, and shards.
+            </p>
+            <p>
+              ◆ <b>Shards</b> come from breaking spare copies. {SHARDS_PER_CHIP} make a chip.
+            </p>
+            <p>
+              🂠 <b>Packs</b> come from your first win against each computer duelist each day, up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns), and the campaign.
+            </p>
+            <p class="today">
+              <b>Still to win today:</b> {left.cpu.length ? `a pack from ${left.cpu.length} computer duelist${left.cpu.length === 1 ? '' : 's'}` : 'every computer duelist is beaten'}, {left.rivalPacks} rival pack{left.rivalPacks === 1 ? '' : 's'}
+              {left.rivalChip ? ' and the rival chip' : ''}.
+            </p>
+            <Menu items={[{ label: 'OK', onPick: () => setHelp(false) }]} />
+          </Win>
+        </Overlay>
+      )}
+    </>
   );
 }
 
 export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>(packsOf(save) > 0 ? 'packs' : 'binder');
-  const [opened, setOpened] = useState<Opened | null>(null);
+  const [opened, setOpened] = useState<Opened[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
+  const [n, setN] = useState(0);
+  const show = (o: Opened[]) => (setN(n + 1), setOpened(o));
+
+  /** Opens up to `count` packs of a set in a row. */
+  const openSome = (from: SpeedSave, set: string, count: number) => {
+    const out: Opened[] = [];
+    let cur = from;
+    for (let i = 0; i < count; i++) {
+      const o = openOwnedPack(cur, set, Date.now() + i * 7919);
+      if (!o) break;
+      out.push(o);
+      cur = o.save;
+    }
+    if (!out.length) return;
+    onSave(cur);
+    show(out);
+  };
 
   return (
     <div class="screen deckedit shop">
@@ -63,88 +118,137 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
         </button>
       </div>
       <ChipBar save={save} />
-      {tab === 'packs' && <Packs save={save} onOpen={(o) => (onSave(o.save), setOpened(o))} />}
-      {tab === 'binder' && <Binder save={save} names={Object.keys(save.collection ?? {})} onPick={setSel} empty="No cards yet. Open a pack!" />}
+      {tab === 'packs' && <Packs save={save} onOpen={(set, all) => openSome(save, set, all ? packsOf(save) : 1)} />}
+      {tab === 'binder' && <MyCards save={save} onSave={onSave} onPick={setSel} />}
       {tab === 'craft' && <CraftList save={save} onPick={setSel} />}
       {sel && <CardSheet save={save} name={sel} onSave={onSave} onClose={() => setSel(null)} />}
-      {opened && (
-        <PackReveal
-          opened={opened}
-          canAgain={packsOf(opened.save) > 0}
-          onAgain={() => {
-            const o = openOwnedPack(opened.save, opened.set!);
-            if (o) (onSave(o.save), setOpened(o));
-          }}
-          onDone={() => setOpened(null)}
-        />
-      )}
+      {opened &&
+        (opened.length === 1 ? (
+          <PackReveal
+            key={n}
+            opened={opened[0]}
+            left={packsOf(opened[0].save)}
+            onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? packsOf(opened[0].save) : 1)}
+            onDone={() => setOpened(null)}
+          />
+        ) : (
+          <PackSummary key={n} opened={opened} onDone={() => setOpened(null)} />
+        ))}
     </div>
   );
 }
 
-function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (o: Opened) => void }) {
+/** How many of a set's cards the profile owns. */
+const completion = (save: SpeedSave, cards: [string, Rarity][]) => {
+  const names = [...new Set(cards.map(([n]) => n))];
+  return { have: names.filter((n) => owned(save, n) > 0).length, of: names.length };
+};
+
+function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: boolean) => void }) {
   const all = boosterSets();
   const open = unlockedSets(save.wins);
-  const nextIn = WINS_PER_SET - (save.wins % WINS_PER_SET);
+  const toNext = WINS_PER_SET - (save.wins % WINS_PER_SET);
+  const [pick, setPick] = useState<string | null>(null);
   return (
     <div class="cardlist">
       <p class="hint">
-        {packsOf(save) > 0 ? `You have ${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open. Pick a set:` : 'No packs to open. Win them in duels: your first win against each computer duelist each day, up to 3 wins a day against your brother, and the campaign.'}
+        {packsOf(save) > 0 ? `You have ${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open. Pick a set:` : 'No packs to open. Win them in duels (tap the bar above to see how).'}
       </p>
+      {open.length < all.length && (
+        <div class="next-set">
+          <span>
+            Next set: <b>{shortSetName(all[open.length].name)}</b> in {toNext} win{toNext === 1 ? '' : 's'}
+          </span>
+          <span class="bar">
+            <i style={{ width: `${((WINS_PER_SET - toNext) / WINS_PER_SET) * 100}%` }} />
+          </span>
+        </div>
+      )}
       <div class="pack-grid">
         {all.map((s, i) => {
           const unlocked = i < open.length;
+          const c = completion(save, s.cards);
           return (
             <button
               key={s.name}
               class={`pack ${unlocked ? '' : 'locked'} p${i % 6}`}
               disabled={!unlocked || packsOf(save) < 1}
-              onClick={() => {
-                const o = openOwnedPack(save, s.name);
-                if (o) onOpen(o);
-              }}
+              onClick={() => (playBlip(), packsOf(save) > 1 ? setPick(s.name) : onOpen(s.name, false))}
             >
               <span class="pack-logo">SPEED DUEL</span>
               <span class="pack-name">{shortSetName(s.name)}</span>
-              <span class="pack-note">{unlocked ? `${s.cards.length} cards` : i === open.length ? `unlocks in ${nextIn} win${nextIn === 1 ? '' : 's'}` : 'locked'}</span>
+              <span class="pack-note">{unlocked ? `${c.have}/${c.of} owned` : i === open.length ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
             </button>
           );
         })}
       </div>
-      <p class="hint">A pack has 5 cards: 4 Commons and one Rare or better. A new set unlocks every {WINS_PER_SET} wins. Copies past 3 break into shards by themselves.</p>
+      <p class="hint">A pack has 5 cards: 4 Commons and a Super Rare or better, hiding somewhere among them. Copies past 3 break into shards by themselves.</p>
+      {pick && (
+        <Overlay onClose={() => setPick(null)}>
+          <Win title={shortSetName(pick)} onClose={() => setPick(null)}>
+            <Menu
+              items={[
+                { label: 'Open 1 pack', onPick: () => (setPick(null), onOpen(pick, false)) },
+                { label: `Open all ${packsOf(save)}`, note: 'see every card at once', onPick: () => (setPick(null), onOpen(pick, true)) },
+              ]}
+            />
+          </Win>
+        </Overlay>
+      )}
     </div>
   );
 }
 
-const RCLASS: Record<string, string> = { Common: 'rc', Rare: 'rr', 'Super Rare': 'rsr', 'Ultra Rare': 'rur', 'Secret Rare': 'rscr' };
-
-function PackReveal({ opened, canAgain, onAgain, onDone }: { opened: Opened; canAgain: boolean; onAgain: () => void; onDone: () => void }) {
+function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: number; onAgain: (all: boolean) => void; onDone: () => void }) {
   const [torn, setTorn] = useState(false);
   const [flipped, setFlipped] = useState<boolean[]>(() => opened.cards.map(() => false));
+  const [flash, setFlash] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const key = opened.cards.join('|') + opened.save.created + (opened.save as { packs?: number }).packs;
+  const rar = opened.cards.map((n) => rarityIn(opened.set, n));
   const all = flipped.every(Boolean);
+  const flipOne = (i: number, cur: boolean[]) => {
+    const r = rar[i];
+    if (isHit(r)) {
+      setFlash(RCLASS[r]);
+      window.setTimeout(() => setFlash(null), 900);
+      buzz(r === 'Secret Rare' ? [60, 40, 120] : r === 'Ultra Rare' ? [50, 30, 80] : 40);
+      playWin();
+    } else playBlip();
+    return cur.map((f, j) => f || j === i);
+  };
   const flip = (i: number) => {
     if (flipped[i]) return setInfo(opened.cards[i]);
+    setFlipped(flipOne(i, flipped));
+  };
+  // Flip all: the Commons first, then a beat, then the hit.
+  const flipAll = () => {
+    const commons = flipped.map((f, i) => f || !isHit(rar[i]));
     playBlip();
-    setFlipped(flipped.map((f, j) => f || j === i));
+    setFlipped(commons);
+    const hits = rar.map((r, i) => (isHit(r) && !flipped[i] ? i : -1)).filter((i) => i >= 0);
+    if (hits.length) window.setTimeout(() => setFlipped((cur) => hits.reduce((c, i) => flipOne(i, c), cur)), 700);
+  };
+  const tear = () => {
+    playSummon();
+    buzz(30);
+    setTorn(true);
   };
   return (
     <Overlay>
-      <div class="reveal" key={key}>
+      <div class={`reveal ${flash ? `flash ${flash}` : ''}`}>
         {!torn ? (
-          <button class="pack big" onClick={() => (playBlip(), setTorn(true))}>
+          <button class="pack big tearable" onClick={tear}>
             <span class="pack-logo">SPEED DUEL</span>
             <span class="pack-name">{shortSetName(opened.set ?? '')}</span>
-            <span class="pack-note">tap to open</span>
+            <span class="pack-note">tap to tear it open</span>
           </button>
         ) : (
           <>
             <div class="reveal-row">
               {opened.cards.map((n, i) => {
-                const r = rarityIn(opened.set, n);
+                const r = rar[i];
                 return (
-                  <button key={i} class={`rv ${flipped[i] ? 'up' : ''} ${RCLASS[r]}`} style={{ animationDelay: `${i * 90}ms` }} onClick={() => flip(i)}>
+                  <button key={i} class={`rv ${flipped[i] ? 'up' : ''} ${RCLASS[r]} ${isHit(r) ? 'hit' : ''}`} style={{ animationDelay: `${i * 90}ms` }} onClick={() => flip(i)}>
                     <span class="rv-in">
                       <span class="rv-back">
                         <CardImg name={n} back />
@@ -163,8 +267,12 @@ function PackReveal({ opened, canAgain, onAgain, onDone }: { opened: Opened; can
             <Menu
               items={
                 all
-                  ? [...(canAgain ? [{ label: 'Open another', onPick: onAgain }] : []), { label: 'Done', onPick: onDone }]
-                  : [{ label: 'Flip all', onPick: () => (playBlip(), setFlipped(opened.cards.map(() => true))) }]
+                  ? [
+                      ...(left > 0 ? [{ label: 'Open another', note: `${left} left`, onPick: () => onAgain(false) }] : []),
+                      ...(left > 1 ? [{ label: `Open all ${left}`, onPick: () => onAgain(true) }] : []),
+                      { label: 'Done', onPick: onDone },
+                    ]
+                  : [{ label: 'Flip all', onPick: flipAll }]
               }
             />
           </>
@@ -181,48 +289,145 @@ function PackReveal({ opened, canAgain, onAgain, onDone }: { opened: Opened; can
   );
 }
 
-function Binder({ save, names, onPick, empty }: { save: SpeedSave; names: string[]; onPick: (n: string) => void; empty: string }) {
-  const [q, setQ] = useState('');
-  const [limit, setLimit] = useState(PAGE);
-  const list = useMemo(() => sortForBinder(names.filter((n) => card(n) && n.toLowerCase().includes(q.toLowerCase()))), [names, q]);
+/** Several packs opened at once: every card in one grid, best first. */
+function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void }) {
+  const set = opened[0].set;
+  const fresh = new Set(opened.flatMap((o) => o.fresh));
+  const cards = opened.flatMap((o) => o.cards).sort((a, b) => RARITIES.indexOf(rarityIn(set, b)) - RARITIES.indexOf(rarityIn(set, a)));
+  const shards = opened.reduce((t, o) => t + o.shards, 0);
   return (
-    <div class="cardlist">
-      <div class="filters">
-        <input class="search" placeholder="Search name" value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
+    <Overlay>
+      <div class="reveal summary">
+        <p>
+          <b>{opened.length} packs</b> of {shortSetName(set ?? '')}: {fresh.size} new card{fresh.size === 1 ? '' : 's'}
+          {shards ? `, ${shards} shards from extra copies` : ''}.
+        </p>
+        <div class="binder">
+          {cards.map((n, i) => (
+            <span key={i} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]}`}>
+              <CardImg name={n} />
+              <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
+              {fresh.has(n) && <span class="bnew">NEW</span>}
+            </span>
+          ))}
+        </div>
+        <Menu items={[{ label: 'Done', onPick: onDone }]} />
       </div>
-      <p class="hint">{list.length ? `${list.length} cards` : empty}</p>
+    </Overlay>
+  );
+}
+
+function Grid({ save, names, onPick, empty, cost }: { save: SpeedSave; names: string[]; onPick: (n: string) => void; empty: string; cost?: boolean }) {
+  const [limit, setLimit] = useState(PAGE);
+  return (
+    <>
+      <p class="hint">{names.length ? `${names.length} cards` : empty}</p>
       <div class="binder">
-        {list.slice(0, limit).map((n) => (
+        {names.slice(0, limit).map((n) => (
           <button key={n} class="bcard" onClick={() => onPick(n)}>
             <CardImg name={n} />
             {owned(save, n) > 0 && <span class="bcount">×{owned(save, n)}</span>}
             <span class={`brar ${RCLASS[rarityOf(n)]}`}>{RARITY_SHORT[rarityOf(n)]}</span>
+            {cost && (
+              <span class={`bcost ${chipsOf(save) >= craftCost(n) ? '' : 'no'}`}>
+                <i class="dchip" />
+                {craftCost(n)}
+              </span>
+            )}
           </button>
         ))}
       </div>
-      {list.length > limit && (
+      {names.length > limit && (
         <button class="gbtn more" onClick={() => setLimit(limit + PAGE)}>
-          Show more ({list.length - limit} left)
+          Show more ({names.length - limit} left)
         </button>
+      )}
+    </>
+  );
+}
+
+function MyCards({ save, onSave, onPick }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onPick: (n: string) => void }) {
+  const [q, setQ] = useState('');
+  const [sure, setSure] = useState(false);
+  const names = useMemo(() => sortForBinder(Object.keys(save.collection ?? {}).filter((n) => card(n) && n.toLowerCase().includes(q.toLowerCase()))), [save, q]);
+  const spares = breakAllSpares(save);
+  return (
+    <div class="cardlist">
+      <div class="filters">
+        <input class="search" placeholder="Search name" value={q} onInput={(ev) => setQ((ev.target as HTMLInputElement).value)} />
+        {spares && (
+          <button class="chip" onClick={() => setSure(true)}>
+            Break spares
+          </button>
+        )}
+      </div>
+      <Grid save={save} names={names} onPick={onPick} empty="No cards yet. Open a pack!" />
+      {sure && spares && (
+        <Confirm
+          title="Break all spares?"
+          text={`${spares.copies} cop${spares.copies === 1 ? 'y' : 'ies'} no deck uses become ${spares.shards} shards. You keep at least one of every card.`}
+          yes="Break them"
+          onYes={() => (playBlip(), onSave(spares.save), setSure(false))}
+          onNo={() => setSure(false)}
+        />
       )}
     </div>
   );
 }
 
 function CraftList({ save, onPick }: { save: SpeedSave; onPick: (n: string) => void }) {
-  const names = useMemo(() => [...speedCards(), ...skillCards()].map((c) => c.name).filter((n) => owned(save, n) < (card(n)?.sub === 'Skill' ? 1 : COPIES)), [save]);
+  const [q, setQ] = useState('');
+  const [afford, setAfford] = useState(false);
+  const [rar, setRar] = useState<Rarity | null>(null);
+  const all = useMemo(() => [...speedCards(), ...skillCards()].map((c) => c.name).filter((n) => !unplayableReason(n) || card(n)?.sub === 'Skill'), []);
+  const names = all.filter(
+    (n) =>
+      owned(save, n) < (card(n)?.sub === 'Skill' ? 1 : COPIES) &&
+      (!afford || chipsOf(save) >= craftCost(n)) &&
+      (!rar || rarityOf(n) === rar) &&
+      (!q || n.toLowerCase().includes(q.toLowerCase())),
+  );
   return (
-    <>
-      <p class="hint shop-pad">
-        Craft any Speed Duel card with Duel Chips: Common 1, Rare 2, Super Rare 4, Ultra Rare and Skills 6, Secret Rare 8. Chips come slowly: your first 3-star win on each campaign duel, Labyrinth bosses, one win over your brother a day, and shards.
-      </p>
-      <Binder save={save} names={names} onPick={onPick} empty="You own 3 of everything!" />
-    </>
+    <div class="cardlist">
+      <p class="hint">Craft any card the game can play. Common 1 chip, Rare 2, Super Rare 4, Ultra Rare and Skills 6, Secret Rare 8.</p>
+      <div class="filters">
+        <input class="search" placeholder="Search name" value={q} onInput={(ev) => setQ((ev.target as HTMLInputElement).value)} />
+        <button class={`chip ${afford ? 'on' : ''}`} onClick={() => setAfford(!afford)}>
+          Can afford
+        </button>
+      </div>
+      <div class="filters">
+        {RARITIES.filter((r) => r !== 'Rare').map((r) => (
+          <button key={r} class={`chip ${rar === r ? 'on' : ''}`} onClick={() => setRar(rar === r ? null : r)}>
+            {RARITY_SHORT[r]}
+          </button>
+        ))}
+      </div>
+      <Grid save={save} names={names} onPick={onPick} empty={afford ? 'Nothing you can afford yet.' : 'You own 3 of everything!'} cost />
+    </div>
+  );
+}
+
+function Confirm({ title, text, yes, onYes, onNo }: { title: string; text: string; yes: string; onYes: () => void; onNo: () => void }) {
+  return (
+    <Overlay onClose={onNo}>
+      <Win title={title} onClose={onNo}>
+        <p>{text}</p>
+        <Menu
+          items={[
+            { label: yes, onPick: onYes },
+            { label: 'Cancel', onPick: onNo },
+          ]}
+        />
+      </Win>
+    </Overlay>
   );
 }
 
 function CardSheet({ save, name, onSave, onClose }: { save: SpeedSave; name: string; onSave: (s: SpeedSave) => void; onClose: () => void }) {
   const [info, setInfo] = useState(false);
+  const [ask, setAsk] = useState<null | { title: string; text: string; yes: string; run: () => SpeedSave | null }>(null);
+  const [done, setDone] = useState<string | null>(null);
   const have = owned(save, name);
   const used = copiesInDecks(save, name);
   const xp = cardLevels(save)[name] ?? 0;
@@ -230,12 +435,15 @@ function CardSheet({ save, name, onSave, onClose }: { save: SpeedSave; name: str
   const r = rarityOf(name);
   const noCraft = cantCraft(save, name);
   const noLook = cantLookUp(save, name);
-  const act = (next: SpeedSave | null) => next && (playBlip(), onSave(next));
+  const cost = craftCost(name);
+  const nextLook = TIERS[Math.min(t + 1, TIERS.length - 1)].name;
   return (
     <Overlay onClose={onClose}>
       <Win title={name} onClose={onClose}>
         <div class="sheet">
-          <CardImg name={name} />
+          <span class={done ? 'crafted' : ''} key={done ?? ''}>
+            <CardImg name={name} />
+          </span>
           <div>
             <p>
               {r} · you own {have}
@@ -246,17 +454,55 @@ function CardSheet({ save, name, onSave, onClose }: { save: SpeedSave; name: str
                 Look: <RarityChip xp={xp} /> {TIERS[t].name}
               </p>
             )}
+            {done && <p class="good">{done}</p>}
           </div>
         </div>
         <Menu
           items={[
-            { label: `Craft one · ${craftCost(name)} Duel Chip${craftCost(name) > 1 ? 's' : ''}`, disabled: !!noCraft, note: noCraft ?? undefined, onPick: () => act(craft(save, name)) },
-            ...(have > 0 ? [{ label: `Lift its look to ${TIERS[Math.min(t + 1, TIERS.length - 1)].name} · ${LOOK_UP_COST} chips`, disabled: !!noLook, note: noLook ?? 'the look only, never its stats', onPick: () => act(lookUp(save, name)) }] : []),
-            ...(have > 0 ? [{ label: `Break a spare copy · +${BREAK_SHARDS[r]} shards`, disabled: spareCopies(save, name) < 1, note: spareCopies(save, name) < 1 ? 'your decks use every copy' : undefined, onPick: () => act(breakCopy(save, name)) }] : []),
+            {
+              label: `Craft one · ${cost} chip${cost > 1 ? 's' : ''}`,
+              disabled: !!noCraft,
+              note: noCraft ?? undefined,
+              onPick: () => setAsk({ title: 'Craft it?', text: `Spend ${cost} of your ${chipsOf(save)} Duel Chips on ${name}?`, yes: `Craft · ${cost} chip${cost > 1 ? 's' : ''}`, run: () => craft(save, name) }),
+            },
+            ...(have > 0
+              ? [
+                  {
+                    label: `Lift its look to ${nextLook} · ${LOOK_UP_COST} chips`,
+                    disabled: !!noLook,
+                    note: noLook ?? 'the look only, never its stats',
+                    onPick: () => setAsk({ title: 'Lift its look?', text: `Spend ${LOOK_UP_COST} of your ${chipsOf(save)} Duel Chips to show ${name} as ${nextLook}? Its stats never change.`, yes: `Lift · ${LOOK_UP_COST} chips`, run: () => lookUp(save, name) }),
+                  },
+                  {
+                    label: `Break a spare copy · +${BREAK_SHARDS[r]} shards`,
+                    disabled: spareCopies(save, name) < 1,
+                    note: spareCopies(save, name) < 1 ? 'your decks use every copy' : undefined,
+                    onPick: () => setAsk({ title: 'Break a copy?', text: `Break one ${name} into ${BREAK_SHARDS[r]} shards? You'll have ${have - 1} left.`, yes: 'Break it', run: () => breakCopy(save, name) }),
+                  },
+                ]
+              : []),
             { label: 'Card Info', onPick: () => setInfo(true) },
           ]}
         />
       </Win>
+      {ask && (
+        <Confirm
+          title={ask.title}
+          text={ask.text}
+          yes={ask.yes}
+          onNo={() => setAsk(null)}
+          onYes={() => {
+            const next = ask.run();
+            if (next) {
+              playWin();
+              buzz(40);
+              onSave(next);
+              setDone(ask.title === 'Craft it?' ? 'Crafted!' : ask.title === 'Lift its look?' ? 'Looking sharp!' : 'Broken into shards.');
+            }
+            setAsk(null);
+          }}
+        />
+      )}
       {info && (
         <Overlay onClose={() => setInfo(false)}>
           <Win title="Card Info" onClose={() => setInfo(false)}>

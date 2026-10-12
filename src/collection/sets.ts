@@ -148,7 +148,13 @@ export function openPack(setName: string | undefined, pool: string[] = [], seed 
   const out: string[] = [];
   const commons = byRarity('Common');
   const fallback = set.cards.map(([n]) => n).filter((n) => card(n));
-  for (let i = 0; i < PACK_SIZE - 1; i++) out.push(pick(commons.length ? commons : fallback));
+  // No card twice among a pack's Commons (when the set has enough of them).
+  const left = [...(commons.length ? commons : fallback)];
+  for (let i = 0; i < PACK_SIZE - 1; i++) {
+    const n = pick(left);
+    out.push(n);
+    if (left.length > PACK_SIZE) left.splice(left.indexOf(n), 1);
+  }
   // The top slot rolls a rarity.
   let roll = next() * 100;
   let want: Rarity = 'Rare';
@@ -170,6 +176,9 @@ export function openPack(setName: string | undefined, pool: string[] = [], seed 
     }
   }
   while (out.length < PACK_SIZE) out.push(pick(fallback));
+  // The hit lands in a random spot, so every flip could be it.
+  const hit = out.pop()!;
+  out.splice(Math.floor(next() * PACK_SIZE), 0, hit);
   return out;
 }
 

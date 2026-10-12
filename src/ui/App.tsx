@@ -3,7 +3,7 @@ import { loadDb, loadSpeedDb } from '../eds/db';
 import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpeedSave, type SpeedSave } from '../eds/speedSave';
 import type { GameMode } from '../eds/types';
 import { SpeedHub, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
-import { DuelSession, useDuelSession } from '../eds/session';
+import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
 import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
@@ -19,13 +19,14 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
+import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, withLevels } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { collectionProblems, cpuWinPrize, migrate, rivalResult } from '../collection/economy';
+import { collectionProblems, cpuWinPrize, crownHolder, migrate, rivalResult } from '../collection/economy';
 import { loadSets } from '../collection/sets';
-import { settleStakes, staked, stakesFor } from '../collection/stakes';
+import { rescueFirst, settleStakes, settleTicket, staked, stakesFor, withTicket } from '../collection/stakes';
 import { other } from '../eds/engine';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
@@ -68,6 +69,7 @@ export function App() {
   const [speedFailed, setSpeedFailed] = useState(false);
   /** what the last Speed Duel won or lost (packs, chips, bets), shown over the Speed menu */
   const [speedNews, setSpeedNews] = useState<string[]>([]);
+  const [newsCards, setNewsCards] = useState<{ won: string[]; lost: string[] }>({ won: [], lost: [] });
   const [pendingJoin, setPendingJoin] = useState<string | null>(() => {
     const code = new URLSearchParams(location.search).get('join');
     return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
@@ -103,9 +105,17 @@ export function App() {
   };
 
   /** A profile's Speed Duel save, moved onto the collection economy the first time. */
-  const speedSaveOf = (id: string) => {
+  const speedSaveOf = (id: string, settleLeft = false) => {
     const raw = loadSpeedSave(id);
-    const s = migrate(raw);
+    let s = migrate(raw);
+    // A Link Battle this profile walked out of (the app was closed) counts as a loss.
+    const left = settleLeft && !session ? settleTicket(s) : null;
+    if (left) {
+      s = rivalResult(left.save, { result: 'l', opp: left.opp, turns: 0, counts: false }).save;
+      s = withSpeedResult(s, 'l', left.opp);
+      setSpeedNews(left.lines);
+      setNewsCards({ won: [], lost: [] });
+    }
     if (s !== raw) writeSpeedSave(id, s);
     return s;
   };
@@ -114,7 +124,7 @@ export function App() {
     const s = loadSave(p.id);
     setProfile(p);
     setSaveState(s);
-    setSpeedSaveState(speedSaveOf(p.id));
+    setSpeedSaveState(speedSaveOf(p.id, true));
     setScreen(!s ? 'intro' : pendingJoin ? 'link' : 'menu');
   };
 
@@ -187,7 +197,10 @@ export function App() {
   /** On one phone, leaving a Speed Duel asks which player is giving up. */
   const [whoQuits, setWhoQuits] = useState(false);
 
-  const leaveDuel = (quitter?: Pid) => {
+  /** the session whose result was already written (a duel settles once) */
+  const settled = useRef<DuelSession | null>(null);
+
+  const leaveDuel = (quitter?: Pid): void => {
     const mode = gameOf();
     // Leaving a Speed Duel against another player counts as a loss: surrender first, so
     // bets and prizes settle on both phones.
@@ -195,6 +208,11 @@ export function App() {
     if (mode === 'speed' && !cpu && session && st?.started && st.winner === null) {
       if (hotseat && quitter === undefined) return setWhoQuits(true);
       setWhoQuits(false);
+      // The other phone is gone: whoever stayed wins (the one who left loses on their phone).
+      if (!hotseat && session.status !== 'connected') {
+        const opp = st.players[other(mySeat)].name;
+        return finishDuel(mySeat, opp === 'Téa Gardner' ? 'Tea Gardner' : opp);
+      }
       const loser = quitter ?? mySeat;
       session.send({ type: 'SURRENDER', player: loser });
       const opp = st.players[other(mySeat)].name;
@@ -207,7 +225,9 @@ export function App() {
     setScreen(mode === 'speed' ? 'speed' : 'menu');
   };
 
-  const finishDuel = (winner: Pid | 'draw', oppName: string) => {
+  const finishDuel = (winner: Pid | 'draw', oppName: string): void => {
+    if (session && settled.current === session) return;
+    settled.current = session;
     if (!save) return leaveDuel();
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
     if (gameOf() === 'speed') {
@@ -221,6 +241,7 @@ export function App() {
       // The collection: packs and chips won, bets and rescues between two players.
       const seats = session?.seats;
       const news: string[] = [];
+      const cards = { won: [] as string[], lost: [] as string[] };
       const prizes = (s: SpeedSave, seat: Pid, result: 'w' | 'l' | 'd', opp: string): SpeedSave => {
         if (cpu) {
           if (result !== 'w') return s;
@@ -230,17 +251,24 @@ export function App() {
         }
         if (!st || !seats || !seats[other(seat)].stakes?.profile) return s;
         const bet = settleStakes(s, seat, st, [seats[0], seats[1]], winner);
+        const before = crownHolder(s, opp);
         const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes) });
-        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines] : rv.lines.map((l) => `${seats[seat].name}: ${l}`)));
+        const after = crownHolder(rv.save, opp);
+        if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
+        if (seat === mySeat) (cards.won.push(...bet.won), cards.lost.push(...bet.lost));
+        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines] : [...bet.lines, ...rv.lines].map((l) => `${seats[seat].name}: ${l}`)));
         return rv.save;
       };
-      if (speedSave) setSpeedSave(lv(prizes(withShadow(withSpeedResult(speedSave, mine, oppName), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat));
+      // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".
+      const first = (s: SpeedSave, seat: Pid) => (!cpu && st && seats ? rescueFirst(s, seat, st, [seats[0], seats[1]], winner) : s);
+      if (speedSave) setSpeedSave(withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), null));
       if (hotseat && p2Profile && p2Profile !== profile?.id) {
         const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
         const seat2 = other(mySeat);
-        writeSpeedSave(p2Profile, lv(prizes(withShadow(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2));
+        writeSpeedSave(p2Profile, lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2));
       }
       setSpeedNews(news);
+      setNewsCards(cards);
       session?.close();
       setSession(null);
       setP2Profile(null);
@@ -304,7 +332,7 @@ export function App() {
     if (c === 'delete') return setConfirmDelete(true);
     if (c === 'switch') return switchProfile();
     if (c === 'controls') return setSave({ ...save, controls: save.controls === 'touch' ? 'classic' : 'touch' });
-    if (c === 'speed' && profile) setSpeedSaveState(speedSaveOf(profile.id));
+    if (c === 'speed' && profile) setSpeedSaveState(speedSaveOf(profile.id, true));
     setScreen(c);
   };
 
@@ -406,6 +434,22 @@ export function App() {
           {speedNews.length > 0 && (
             <Overlay onClose={() => setSpeedNews([])}>
               <Win title="After the duel" onClose={() => setSpeedNews([])}>
+                {newsCards.won.length + newsCards.lost.length > 0 && (
+                  <div class="news-cards">
+                    {newsCards.won.map((n, i) => (
+                      <span key={`w${i}`} class="nc won">
+                        <CardImg name={n} />
+                        won
+                      </span>
+                    ))}
+                    {newsCards.lost.map((n, i) => (
+                      <span key={`l${i}`} class="nc lost">
+                        <CardImg name={n} />
+                        lost
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <ul class="prize-lines">
                   {speedNews.map((l, i) => (
                     <li key={i}>{l}</li>
@@ -435,7 +479,7 @@ export function App() {
           </Overlay>
         );
       }
-      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} />;
+      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats) => speedSave && staked(seats[0].stakes, seats[1].stakes) && setSpeedSave(withTicket(speedSave, { seat: mySeat, seats: [seats[0], seats[1]], at: Date.now() }))} />;
     default:
       return menu;
   }
@@ -462,6 +506,7 @@ function Running({
   onControls,
   onLeave,
   onFinished,
+  onStarted,
 }: {
   session: DuelSession;
   hotseat: boolean;
@@ -476,8 +521,13 @@ function Running({
   onControls: (p: Pid, c: ControlStyle) => void;
   onLeave: () => void;
   onFinished: (winner: Pid | 'draw', opp: string) => void;
+  /** a Link Battle with stakes just started (keep a ticket in case the app is closed) */
+  onStarted?: (seats: SessionView['seats']) => void;
 }) {
   const view = useDuelSession(session);
+  useEffect(() => {
+    if (view.state.started && view.state.winner === null && !cpu && !hotseat && view.state.rules?.mode === 'speed') onStarted?.(view.seats);
+  }, [view.state.started]);
   const cpuStreak = useRef(0);
   // The computer takes its turn a beat after each change, so the player can follow along.
   useEffect(() => {

@@ -109,7 +109,10 @@ export function SpeedHub({
         </div>
         <div>
           Deck: {deck ? `${deck.name} (${deck.main.length})` : 'none'}
-          {deck?.skill ? ` · Skill: ${deck.skill}` : ''} · W {save.wins} L {save.losses} D {save.draws}
+          {deck?.skill ? ` · Skill: ${deck.skill}` : ''}
+        </div>
+        <div>
+          Wins {save.wins} · Losses {save.losses} · Draws {save.draws}
         </div>
         {crown && (
           <div>
@@ -118,7 +121,7 @@ export function SpeedHub({
           </div>
         )}
       </div>
-      <ChipBar save={save} />
+      <ChipBar save={save} cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))} />
       <Win title="Speed Duel">
         <p class="hint">Speed Duel cards only. 4000 LP, 4-card hands, 3 Monster and 3 Spell/Trap Zones, no Main Phase 2, and one Skill per Duel.</p>
         {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}. Fix it in Decks.</div>}

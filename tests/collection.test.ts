@@ -26,7 +26,8 @@ import {
   withPacks,
 } from '../src/collection/economy';
 import { PACK_SIZE, boosterSets, openPack, rarityIn, rarityOf, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
-import { anteProblem, settleStakes, staked, stakesFor, type StakeSeat } from '../src/collection/stakes';
+import { anteProblem, rescueFirst, settleStakes, settleTicket, staked, stakesFor, withTicket, type StakeSeat } from '../src/collection/stakes';
+import { sealedCards, withShadow } from '../src/art/shadow';
 import { cardLevels, tierIndex } from '../src/level/leveling';
 import { DB, PLAYABLE } from './speedkit';
 
@@ -75,15 +76,16 @@ setSets(fake);
 ok(boosterSets().map((s) => s.code).join() === 'OLD,NEW', 'Starter Decks are not sold as packs');
 ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlocks every 4 wins');
 {
-  let tops = 0;
+  let good = 0;
+  const spots = new Set<number>();
   for (let seed = 1; seed <= 200; seed++) {
     const p = openPack('Speed Duel: Older Box', [], seed);
-    if (p.length !== PACK_SIZE) ok(false, 'a pack has 5 cards');
-    const commons = p.slice(0, 4).every((n) => rarityIn('Speed Duel: Older Box', n) === 'Common');
-    if (!commons) ok(false, 'the first 4 cards are Commons');
-    if (rarityIn('Speed Duel: Older Box', p[4]) !== 'Common') tops++;
+    const commons = p.filter((n) => rarityIn('Speed Duel: Older Box', n) === 'Common');
+    if (p.length === PACK_SIZE && commons.length === 4 && new Set(commons).size === 4) good++;
+    spots.add(p.findIndex((n) => rarityIn('Speed Duel: Older Box', n) !== 'Common'));
   }
-  ok(tops === 200, "the 5th card is the set's best rarity available (Super or Secret here)");
+  ok(good === 200, 'a pack is 4 different Commons and one Super Rare or better');
+  ok(spots.size === PACK_SIZE, 'the hit can land in any of the 5 spots');
   ok(rarityOf(names[21]) === 'Secret Rare' && rarityOf(names[0]) === 'Common', "a card's rarity comes from its printing");
   const p = openPack(undefined, [], 5);
   ok(p.length === PACK_SIZE, 'a pack with no set named picks one');
@@ -162,16 +164,30 @@ ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlo
   const e = new Engine(DB);
   e.apply({ type: 'START', first: 0, seed: 3, names: ['Jammy', 'Bro'], decks: [Array(20).fill(B), Array(20).fill(A)], fusions: [[], []], mode: 'speed', skills: [null, null] });
   e.apply({ type: 'SURRENDER', player: 1 });
-  const jam = { ...newSpeedSave(), collection: { [B]: 3 }, sealed: [{ name: B, by: 'Bro', at: 1 }] } as SpeedSave;
-  const bro = { ...newSpeedSave(), collection: { [A]: 3 } } as SpeedSave;
+  const jam = { ...newSpeedSave(), collection: { [B]: 3 }, sealed: [{ name: C, by: 'Kaiba', at: 0 }, { name: B, by: 'Bro', at: 1 }] } as SpeedSave;
+  const bro = { ...newSpeedSave(), collection: { [A]: 3 }, decks: [deck([A, A])] } as SpeedSave;
   const seats: [StakeSeat, StakeSeat] = [
     { name: 'Jammy', stakes: stakesFor(jam, false) },
     { name: 'Bro', stakes: stakesFor(bro, false) },
   ];
-  const w = settleStakes(jam, 0, e.state, seats);
+  ok(seats[1].stakes!.prizes!.join() === A, "the prize is the loser's strongest spare monster");
+  const freed = withShadow(rescueFirst(jam, 0, e.state, seats), 'w', null, 0, 'Bro', false).save;
+  const w = settleStakes(freed, 0, e.state, seats);
   const l = settleStakes(bro, 1, e.state, seats);
-  ok(!(w.save as { sealed: unknown[] }).sealed.length, 'the rescued card leaves the Shadow Realm');
-  ok(owned(w.save, A) === 1 && owned(l.save, A) === 2, "the rescuer takes a copy of the loser's strongest monster");
+  ok(sealedCards(w.save).map((x) => x.name).join() === C, 'the win frees the rescued card, not the one sealed longest');
+  ok(owned(w.save, A) === 1 && owned(l.save, A) === 2, 'the rescuer takes a spare copy from the loser');
+  ok(settleStakes({ ...bro, decks: [deck([A, A, A])] } as SpeedSave, 1, e.state, seats).save.collection![A] === 3, 'a copy a deck uses is never taken');
+}
+{
+  // Closing the app mid-duel: the ticket settles as a loss next time.
+  const bro = withChips({ ...newSpeedSave(), collection: { [C]: 1 } } as SpeedSave, 3);
+  const seats: [StakeSeat, StakeSeat] = [
+    { name: 'Jammy', stakes: stakesFor(newSpeedSave(), false) },
+    { name: 'Bro', stakes: stakesFor(bro, false, { card: C, chips: 2 }) },
+  ];
+  const t = settleTicket(withTicket(bro, { seat: 1, seats, at: 1 }))!;
+  ok(!!t && owned(t.save, C) === 0 && chipsOf(t.save) === 1, 'a duel walked out of costs the bet');
+  ok(settleTicket(t.save) === null, 'and settles only once');
 }
 
 setSets(null);
