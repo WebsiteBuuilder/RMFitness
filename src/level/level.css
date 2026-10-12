@@ -274,3 +274,118 @@ div.cimg.ctext.lvr {
   font-size: 11px;
   margin: 4px 0;
 }
+
+/* ---------- Overframe: the top rarity, the art breaks out of the card ---------- */
+.lvr-of {
+  position: relative;
+  display: block;
+}
+.lvr-of:not([class*='-img']) {
+  width: 100%;
+  height: 100%;
+}
+.lvr-of > .cimg {
+  width: 100%;
+  height: 100%;
+}
+img.cimg.lvr-OF {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
+  animation: lvr-over-rim 3s linear infinite;
+}
+.lvr-of > .lvr-fx {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.lvr-fx-OF {
+  background:
+    radial-gradient(circle at 25% 20%, #ffffff55 0 5%, transparent 6%),
+    radial-gradient(circle at 70% 60%, #ffffff40 0 4%, transparent 5%),
+    conic-gradient(from 0deg, #ff6ad540, #ffd56a40, #6cff9e40, #6ce3ff48, #b06cff40, #ff6ad540);
+  background-size: 100% 100%, 100% 100%, 240% 240%;
+  animation: lvr-holo 3.2s linear infinite;
+  mix-blend-mode: soft-light;
+}
+.lvr-fx-OF::before {
+  content: '';
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(115deg, transparent 30%, #ff9df488 43%, #ffffff 50%, #7af0ff88 57%, transparent 70%);
+  transform: translateX(-60%);
+  animation: lvr-sweep 1.9s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+/* the tier chip shows wherever an Overframe card sits in a slot (bottom-left, clear of the art) */
+.lvr-of:not([class*='-img']) > .lvr-chip {
+  display: block;
+  position: absolute;
+  bottom: 14%;
+  left: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font: 900 7px/11px system-ui, sans-serif;
+  letter-spacing: 0.4px;
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 6px #ff5ad8;
+  z-index: 2;
+  pointer-events: none;
+}
+.lvr-chip {
+  display: none;
+}
+/* the art itself, lifted out over the frame */
+.lvr-pop {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  clip-path: inset(18.5% 11.5% 27% 11.5% round 2px);
+  transform-origin: 50% 73%;
+  transform: translateY(-16%) scale(1.2);
+  filter: drop-shadow(0 6px 4px #000d) drop-shadow(0 0 5px #ff9df4cc);
+  pointer-events: none;
+  z-index: 1;
+  animation: lvr-pop-float 3s ease-in-out infinite;
+}
+@keyframes lvr-pop-float {
+  50% {
+    transform: translateY(-19%) scale(1.23);
+  }
+}
+@keyframes lvr-over-rim {
+  0% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
+  }
+  33% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ffd56a, 0 0 14px #ff5ad8, 0 2px 6px #000a;
+  }
+  66% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #4fe0ff, 0 0 14px #ffd56a, 0 2px 6px #000a;
+  }
+  100% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
+  }
+}
+.lv-chip.lv-OF {
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 8px #ff5ad8;
+}
+.lv-t-OF .lv-meter > i {
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvr-pop,
+  img.cimg.lvr-OF {
+    animation: none !important;
+  }
+}
+/* a breakout card in hand rises over the player bar */
+.thcard:has(> .lvr-of),
+.hcard:has(> .lvr-of) {
+  z-index: 4;
+}

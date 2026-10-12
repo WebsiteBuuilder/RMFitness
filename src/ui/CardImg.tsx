@@ -13,6 +13,16 @@ export function CardImg({ name, back = false, class: cls = '', owner }: { name: 
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
   const fx = tier.id !== 'N' && <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={tier.short} />;
   const url = broken ? null : imageUrl(name);
+  // Overframe: the picture gets its own box so the art can break out of the frame anywhere it shows.
+  if (url && tier.id === 'OF')
+    return (
+      <span class={`lvr-of ${cls.replace(/\blvr(-OF)?\b/g, '')}`}>
+        <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(true)} />
+        {fx}
+        <b class="lvr-pop" style={{ backgroundImage: `url("${url}")` }} />
+        <i class="lvr-chip">OVER</i>
+      </span>
+    );
   if (url)
     return (
       <>

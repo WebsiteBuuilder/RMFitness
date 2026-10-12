@@ -17,8 +17,8 @@ const ok = (c: boolean, msg: string) => {
 const deedsOf = (e: Engine, p: Pid, name: string): Deeds | undefined => e.state.fx.lvl?.s[p][name];
 
 // ---------- rarities ----------
-ok(TIERS.map((t) => t.id).join() === 'N,R,SR,UR,GL,RO', 'rarities climb N → R → SR → UR → Glossy → Royal');
-ok(tierOf(0).id === 'N' && tierOf(59).id === 'N' && tierOf(60).id === 'R' && tierOf(99999).id === 'RO', 'the meter maps to the right rarity');
+ok(TIERS.map((t) => t.id).join() === 'N,R,SR,UR,GL,RO,OF', 'rarities climb N → R → SR → UR → Glossy → Royal → Overframe');
+ok(tierOf(0).id === 'N' && tierOf(59).id === 'N' && tierOf(60).id === 'R' && tierOf(3999).id === 'RO' && tierOf(99999).id === 'OF', 'the meter maps to the right rarity');
 ok(meterOf(130) === 0.5 && meterOf(99999) === 1, 'the meter shows progress to the next rarity');
 ok(addXp(70, 0, 50) === 60, 'drains stop at the start of the rarity already reached');
 ok(addXp(40, 0, 50) === 0, 'and never go below zero');

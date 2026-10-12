@@ -4,7 +4,8 @@
 // attack, effect damage, the finishing blow). Dying on the field or being
 // banished drains a little, but never below the rarity the card already reached.
 // The meter climbs through Master Duel's rarities: N, R, SR, UR, then the
-// Glossy and Royal finishes. It is a look only: ATK, DEF and effects never change.
+// Glossy and Royal finishes, and tops out at Overframe, where the card's art
+// breaks out of its frame. It is a look only: ATK, DEF and effects never change.
 //
 // The engine calls noteLevelEvent for every event of a Speed Duel, so the tally
 // lives in the duel state (state.fx.lvl) and both phones in a Link Battle count
@@ -15,7 +16,7 @@ import type { SpeedSave } from '../eds/speedSave';
 
 // ---------- rarities ----------
 export interface Tier {
-  id: 'N' | 'R' | 'SR' | 'UR' | 'GL' | 'RO';
+  id: 'N' | 'R' | 'SR' | 'UR' | 'GL' | 'RO' | 'OF';
   short: string;
   name: string;
   /** meter points needed to reach it */
@@ -29,6 +30,7 @@ export const TIERS: Tier[] = [
   { id: 'UR', short: 'UR', name: 'Ultra Rare', at: 500 },
   { id: 'GL', short: 'UR', name: 'Glossy Ultra Rare', at: 1100 },
   { id: 'RO', short: 'UR', name: 'Royal Ultra Rare', at: 2200 },
+  { id: 'OF', short: 'OVER', name: 'Overframe', at: 4000 },
 ];
 
 export function tierIndex(xp: number): number {
