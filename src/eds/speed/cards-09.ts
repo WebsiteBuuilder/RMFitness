@@ -975,7 +975,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   const scrumOn = (e: E9, p: Pid) => e.monsters(p).filter((m) => m.faceUp && m.pos === 'def').length >= 2;
   E['Scrum Force'] = contTrap({
-    shields: (e, _src, target, how, srcCtl) => how !== 'battle' && target.pos === 'def' && ctrl(e, target) === srcCtl && e.actor === other(srcCtl) && scrumOn(e, srcCtl),
+    shields: (e, src, target, how, srcCtl) => how !== 'battle' && target.uid !== src.uid && e.find(target.uid)?.loc.zone === 'mz' && target.pos === 'def' && ctrl(e, target) === srcCtl && e.actor === other(srcCtl) && scrumOn(e, srcCtl),
+    // "If this card would be destroyed by card effect, you can destroy 1 card in your Spell & Trap Zone instead" (always used).
+    effectProof(e, m) {
+      if (!m.active || e.find(m.uid)?.loc.zone !== 'sz') return false;
+      const p = ctrl(e, m);
+      const sub = e.spells(p).find((c) => c.uid !== m.uid);
+      if (!sub) return false;
+      e.log(p, `${sub.faceUp ? sub.name : 'A Set card'} is destroyed instead of Scrum Force`);
+      const g = e.sendToGrave(sub.uid, 'destroyed');
+      for (let r = g.next(undefined as never); !r.done; r = g.next(false)) {
+        /* drained */
+      }
+      return true;
+    },
   });
 
   E['Sea Koala'] = {

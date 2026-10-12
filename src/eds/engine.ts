@@ -261,6 +261,9 @@ export class Engine {
       if (fx.dnaRace && fx.dnaSource && this.fieldCard(fx.dnaSource)?.active && m.faceUp) return fx.dnaRace;
       const ctl = this.controller(m.uid);
       if (ctl !== null && this.monsters(ctl).some((x) => x.faceUp && x.name === 'Parasite Paracide' && x.owner !== ctl)) return 'Insect';
+      // A Trap Card Special Summoned as a monster (Quantum Cat, Zoma the Spirit) has the Type its script gave it.
+      const trap = (this.state.fx.trapMonster as Record<number, { race?: string }> | undefined)?.[m.uid];
+      if (trap?.race && this.find(m.uid)?.loc.zone === 'mz') return trap.race;
     }
     return this.info(m.name).race ?? '';
   }
@@ -442,6 +445,17 @@ export class Engine {
     this.event('activate', { uid: card.uid, player: controller });
     this.log(controller, `${ps.name} places ${name} on the field`);
     return fc;
+  }
+
+  /** Runs a check on behalf of a player (so "cannot be targeted by your opponent's effects" knows who is targeting). */
+  private withActor<T>(p: Pid, fn: () => T): T {
+    const prev = this.actor;
+    this.actor = p;
+    try {
+      return fn();
+    } finally {
+      this.actor = prev;
+    }
   }
 
   /** Runs a card effect on behalf of a player (so "your opponent's effect" checks work). */
@@ -1350,14 +1364,14 @@ export class Engine {
         const fc = f.card as FieldCard;
         if (fc.faceUp) return false;
       } else if (f.loc.zone !== 'hand') return false;
-      return eff.canActivate ? eff.canActivate(this, f.card, player, 'main', {}) : true;
+      return eff.canActivate ? this.withActor(player, () => eff.canActivate!(this, f.card, player, 'main', {})) : true;
     }
     if (info.kind === 'trap') {
       if (f.loc.zone !== 'sz' || this.trapsSealed()) return false;
       const fc = f.card as FieldCard;
       if (fc.faceUp || fc.placedTurn === this.state.turn) return false;
       if (info.sub === 'Counter') return false;
-      return eff.canActivate ? eff.canActivate(this, f.card, player, 'main', {}) : true;
+      return eff.canActivate ? this.withActor(player, () => eff.canActivate!(this, f.card, player, 'main', {})) : true;
     }
     return false;
   }
@@ -1410,7 +1424,10 @@ export class Engine {
     this.event('activate', { uid: fc.uid, player });
     this.log(player, `${this.player(player).name} activates ${fc.name}`);
     if (eff.activate) {
+      const prev = this.actor;
+      this.actor = player;
       const ok = yield* eff.activate(this, link, player, ctx);
+      this.actor = prev;
       if (ok === false) {
         // No legal target after all: the card fizzles and goes to the GY.
         yield* this.afterResolve(link);
@@ -1523,7 +1540,10 @@ export class Engine {
           const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player: responder, label: fc.name, negated: false };
           this.event('activate', { uid: fc.uid, player: responder });
           this.log(responder, `${this.player(responder).name} activates ${fc.name}`);
+          const prev = this.actor;
+          this.actor = responder;
           const ok = eff.activate ? yield* eff.activate(this, link, responder, ctx) : true;
+          this.actor = prev;
           if (ok === false) {
             yield* this.afterResolve(link);
           } else {
@@ -1622,7 +1642,7 @@ export class Engine {
       if (info.kind === 'trap' && (fc.placedTurn === this.state.turn || this.trapsSealed())) continue;
       if (info.kind === 'spell' && info.sub !== 'Quick-Play') continue;
       if (info.kind === 'spell' && fc.placedTurn === this.state.turn) continue;
-      if (eff.canActivate(this, fc, player, trigger, ctx)) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
+      if (this.withActor(player, () => eff.canActivate!(this, fc, player, trigger, ctx))) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
     }
     return out;
   }
