@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check-decks": "node scripts/check-decks.mjs",
-    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts"
+    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts && tsx tests/cont-eds.test.ts"
   },
   "dependencies": {
     "firebase": "^11.0.0",

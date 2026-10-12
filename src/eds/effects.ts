@@ -1632,9 +1632,9 @@ E['Horn of Heaven'] = {
   },
 };
 E['Spellbinding Circle'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp),
+  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp && !e.untargetable(m)),
   *activate(e, link, p) {
-    const targets = e.monsters(other(p)).filter((m) => m.faceUp);
+    const targets = e.monsters(other(p)).filter((m) => m.faceUp && !e.untargetable(m));
     const picks = yield* e.select(p, 'Spellbinding Circle: bind which monster?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
