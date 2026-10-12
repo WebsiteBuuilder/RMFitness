@@ -735,9 +735,10 @@ for (const mode of modesOf('Spellbinding Circle')) {
     const sc = d.setST(0, 'Spellbinding Circle');
     const gem = d.put(1, 'Gemini Elf');
     d.endTurn();
+    const lp = A.lp;
     d.attack(1, gem, null, respondWith('Spellbinding Circle', 0));
     check(d.active(sc.uid), `${mode} Spellbinding Circle: activated when the opponent attacks, stays face-up`);
-    check(A.lp === 8000, `${mode} Spellbinding Circle: the bound monster's attack is stopped`);
+    check(A.lp === lp, `${mode} Spellbinding Circle: the bound monster's attack is stopped`);
     d.endTurn();
     if (how === 'battle') {
       const bewd = d.put(0, 'Blue-Eyes White Dragon');
