@@ -32,7 +32,11 @@ export interface SpeedSave {
    * feature adds to the same place.
    */
   collection?: Record<string, number>;
+  /** Duel Chips held (at most CHIP_CAP) */
+  chips?: number;
 }
+
+export const CHIP_CAP = 30;
 
 export const MAIN_MIN = 20;
 export const MAIN_MAX = 30;

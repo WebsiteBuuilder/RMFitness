@@ -60,8 +60,10 @@ export interface Run {
   nextDuel?: { me?: SeatSetup; cpu?: SeatSetup; text: string; prize?: 'relic' };
   /** a choice waiting on the player (cards after a win, a shop, an event) */
   pending?: Pending;
-  /** a stop started but not finished (its duel was cut off): replayed */
+  /** a duel stop you are on whose duel hasn't been played yet */
   inDuel?: string;
+  /** set while that duel is actually being played: if the app closes mid-duel, it counts as lost */
+  staked?: boolean;
   over?: 'won' | 'lost';
   step: number;
 }
@@ -96,8 +98,8 @@ const FLOOR_CHAPTERS: [number, number][] = [
   [6, 7],
 ];
 /** Who guards each floor, and who the tougher elite duels come from. */
-const floorBosses = (f: number) => (f === 0 ? bossesOf(2, 2) : f === 1 ? bossesOf(4, 5) : [...bossesOf(7, 7), ...CHAPTERS.filter((c) => c.postgame).flatMap((c) => c.nodes)]);
-const floorElites = (f: number) => (f === 0 ? [...bossesOf(1, 1).map((n) => n.duelist), ...regularsOf(3, 3)] : f === 1 ? bossesOf(2, 3).map((n) => n.duelist) : bossesOf(4, 6).map((n) => n.duelist));
+const floorBosses = (f: number) => (f === 0 ? bossesOf(1, 2) : f === 1 ? bossesOf(4, 5) : [...bossesOf(7, 7), ...CHAPTERS.filter((c) => c.postgame).flatMap((c) => c.nodes)]);
+const floorElites = (f: number) => (f === 0 ? regularsOf(3, 3) : f === 1 ? bossesOf(2, 3).map((n) => n.duelist) : bossesOf(4, 6).map((n) => n.duelist));
 
 export function duelistById(id: string): CpuDuelist | undefined {
   for (const c of CHAPTERS) for (const n of c.nodes) if (n.duelist.id === id) return n.duelist;
@@ -132,6 +134,12 @@ export const EVENTS: RunEvent[] = [
   { id: 'ring', title: 'The Thief King', who: 'Yami Bakura', art: 'Dark Necrofear', text: '"Your soul for a trinket. A fair trade, wouldn\'t you say?"', choices: [{ label: 'Trade a heart', note: 'lose 1 heart, gain a relic' }, { label: 'Refuse', note: 'nothing happens' }] },
   { id: 'graveyard', title: 'The Card Graveyard', who: 'Bonz', art: 'Call of the Haunted', text: 'Discarded cards lie everywhere. Some of them still hum with power.', choices: [{ label: 'Bury a card', note: 'remove a card from your deck, +20 Duel Points' }, { label: 'Dig for one', note: 'a random card from this floor' }] },
   { id: 'mai', title: "Mai's Perfume", who: 'Mai Valentine', art: 'Harpie Lady', text: '"I\'ll distract your next opponent. Don\'t make me regret it."', choices: [{ label: 'Accept', note: 'next opponent starts at 3000 LP' }, { label: 'Decline', note: '+15 Duel Points' }] },
+  { id: 'shadi', title: "Shadi's Scales", who: 'Shadi', art: 'Spirit of the Pharaoh', text: '"Your heart will be weighed. Is it lighter than a feather?"', choices: [{ label: 'Be judged', note: 'a coin toss: a Millennium relic, or lose a heart' }, { label: 'Bow and leave', note: 'nothing happens' }] },
+  { id: 'tea', title: 'Friendship Speech', who: 'Téa Gardner', art: 'Dark Magician Girl', text: '"You don\'t have to do this alone! Here, take this for the road."', choices: [{ label: 'Thank her', note: 'a heart back (or +30 Duel Points at full hearts)' }, { label: 'Ask for a card', note: 'a card from the next floor' }] },
+  { id: 'tristan', title: 'Tristan\'s Shortcut', who: 'Tristan Taylor', art: 'Cyber Commander', text: '"I know a shortcut. Probably. Mostly. Trust me!"', choices: [{ label: 'Follow him', note: 'next opponent starts at 3000 LP, but you start at 3500' }, { label: 'Stay on the path', note: '+10 Duel Points' }] },
+  { id: 'duke', title: 'Dungeon Dice', who: 'Duke Devlin', art: 'Orgoth the Relentless', text: '"Roll me for it. Double or nothing on your Duel Points."', choices: [{ label: 'Roll the dice', note: 'a coin toss: double your Duel Points or lose them' }, { label: 'Pass', note: 'nothing happens' }] },
+  { id: 'rebecca', title: 'Rebecca\'s Deck Check', who: 'Rebecca Hawkins', art: 'White Magician Pikeru', text: '"Your deck is a mess! Let me fix it. Grandpa taught me."', choices: [{ label: 'Let her', note: 'cut 2 cards from your deck' }, { label: 'No way', note: '+15 Duel Points' }] },
+  { id: 'noah', title: 'Virtual World Glitch', who: 'Noah Kaiba', art: 'Shinato, King of a Higher Plane', text: 'The walls flicker. A data stream offers to copy something you already have.', choices: [{ label: 'Copy a card', note: 'one more copy of a random card in your deck' }, { label: 'Walk on', note: 'nothing happens' }] },
   { id: 'kaiba', title: 'Kaiba Corp Prototype', who: 'Seto Kaiba', art: 'Blue-Eyes White Dragon', text: '"Test my new Duel Disk. If it explodes, that\'s your problem."', choices: [{ label: 'Try it', note: 'next duel: draw 2 more for your opening hand, but start at 3000 LP' }, { label: 'No thanks', note: 'nothing happens' }] },
 ];
 export const eventById = (id: string) => EVENTS.find((e) => e.id === id)!;
@@ -158,6 +166,9 @@ export const UPGRADES: { id: string; name: string; text: string; price: number }
   { id: 'draft', name: 'Keen Eye', text: 'See one more card when you pick after a win.', price: 60 },
   { id: 'relic', name: 'Lucky Charm', text: 'Start every run with a random relic.', price: 120 },
   { id: 'lp', name: 'Thick Skin', text: 'Start every duel in a run with 300 more LP.', price: 70 },
+  { id: 'merchant', name: 'Regular Customer', text: 'Shops cost 15% less.', price: 90 },
+  { id: 'secondwind', name: 'Second Wind', text: 'A heart back whenever you win a Millennium relic.', price: 110 },
+  { id: 'scout', name: 'Duelist Scout', text: 'Start every run with an extra card from floor 2 in your deck.', price: 150 },
 ];
 
 // ---------- making a run ----------
@@ -183,6 +194,7 @@ function makeFloor(next: () => number, floor: number, curse: number): Floor {
   const pickOf = <T,>(a: T[]) => a[Math.floor(next() * a.length)];
   const eliteOdds = curse >= 2 ? 0.2 : 0.12;
   const usedFoes = new Set<string>();
+  const usedEvents = new Set<string>();
   const foe = (list: CpuDuelist[]) => {
     const fresh = list.filter((d) => !usedFoes.has(d.id));
     const d = pickOf(fresh.length ? fresh : list);
@@ -205,7 +217,11 @@ function makeFloor(next: () => number, floor: number, curse: number): Floor {
       if (kind === 'duel') stop.foe = foe(regulars);
       if (kind === 'elite') stop.foe = foe(elitePool);
       if (kind === 'boss') stop.foe = pickOf(bosses).duelist.id;
-      if (kind === 'event') stop.event = pickOf(EVENTS).id;
+      if (kind === 'event') {
+        const fresh = EVENTS.filter((ev) => !usedEvents.has(ev.id));
+        stop.event = pickOf(fresh.length ? fresh : EVENTS).id;
+        usedEvents.add(stop.event);
+      }
       row.push(stop);
     }
     rows.push(row);
@@ -234,9 +250,13 @@ export interface NewRunOptions {
   curse: number;
   upgrades: string[];
   daily?: string;
+  /** a Millennium Item earned on the Road, carried in as a starting relic */
+  bring?: string;
 }
 
 export function newRun(o: NewRunOptions): Run {
+  // The Daily is the same run for everyone: no upgrades, no carried Item, Curse 0.
+  if (o.daily) o = { ...o, upgrades: [], curse: 0, bring: undefined };
   const next = rng(o.seed);
   const st = STARTERS.find((s) => s.character === o.starter) ?? STARTERS[0];
   const d = deckFromStarter(st);
@@ -245,17 +265,24 @@ export function newRun(o: NewRunOptions): Run {
   if (o.curse >= 6) hearts -= 1;
   const relics: string[] = [];
   if (o.upgrades.includes('relic')) relics.push(COMMON_RELICS[Math.floor(next() * COMMON_RELICS.length)]);
+  if (o.bring && relic(o.bring)?.millennium) relics.push(o.bring);
+  // Duelist Scout: one card from floor 2's decks joins the starting deck.
+  const scouted = (() => {
+    if (!o.upgrades.includes('scout')) return null;
+    const pool = floorPool(1).filter((n) => !floorExtra.has(n) && card(n)?.kind === 'monster');
+    return pool.length ? pool[Math.floor(next() * pool.length)] : null;
+  })();
   const run: Run = {
     id: `run${o.seed.toString(36)}${Date.now().toString(36)}`,
     seed: o.seed,
     daily: o.daily,
     starter: st.character,
-    main: d.main,
+    main: scouted ? [...d.main, scouted] : d.main,
     extra: d.extra,
     skill: d.skill,
     hearts,
     maxHearts: hearts,
-    dp: o.upgrades.includes('dp') ? 50 : 0,
+    dp: 30 + (o.upgrades.includes('dp') ? 50 : 0),
     relics,
     curse: o.curse,
     floors,
@@ -311,6 +338,7 @@ function shopItems(r: Run, upgrades: string[]): ShopItem[] {
   const next = stepRng(r, 11);
   let mult = 1 + (cursed(r, 3) ? 0.25 : 0);
   for (const name of r.relics) mult -= (relic(name)?.discount ?? 0) / 100;
+  if (upgrades.includes('merchant')) mult -= 0.15;
   const price = (p: number) => Math.round((p * mult) / 5) * 5;
   const cards = draftOptions(r, upgrades, r.floor, true).slice(0, 2).concat(draftOptions({ ...r, step: r.step + 50 }, upgrades, r.floor).slice(0, 2));
   const items: ShopItem[] = [...new Set(cards)].map((name, i) => ({ kind: 'card' as const, name, price: price(i < 2 ? PRICES.rare : PRICES.card) }));
@@ -368,7 +396,8 @@ export function duelFor(r: Run, upgrades: string[]): { foe: CpuDuelist; me: Seat
   const meParts: (SeatSetup | undefined)[] = r.relics.map((n) => relic(n)?.me);
   const cpuParts: (SeatSetup | undefined)[] = r.relics.map((n) => relic(n)?.cpu);
   if (upgrades.includes('lp')) meParts.push({ lp: 4300 });
-  if (s.kind === 'elite' || s.kind === 'boss') {
+  // Floor 1's elites and boss play without their Duel Condition: a 20-card starter needs a chance.
+  if ((s.kind === 'elite' || s.kind === 'boss') && r.floor > 0) {
     const cond = conditionOf(foe.id);
     if (cond) {
       meParts.push(cond.player);
@@ -393,24 +422,31 @@ export function duelFor(r: Run, upgrades: string[]): { foe: CpuDuelist; me: Seat
   return { foe, me: mergeSetups(meParts), cpu: mergeSetups(cpuParts), notes };
 }
 
+/** The duel is starting: from now on, closing the app counts as losing it. */
+export const stake = (r: Run): Run => (r.inDuel ? { ...r, staked: true } : r);
+
 /** Writes a run duel's result. A loss costs a heart; a win opens the card pick. */
 export function afterDuel(r: Run, result: 'w' | 'l' | 'd', upgrades: string[]): Run {
   const s = r.inDuel ? stopById(r, r.inDuel) : null;
   if (!s) return r;
-  const base: Run = { ...r, inDuel: undefined, step: r.step + 1 };
+  const base: Run = { ...r, inDuel: undefined, staked: undefined, step: r.step + 1 };
   if (result !== 'w') {
     const hearts = r.hearts - 1;
+    // A lost wager is gone; any other boon waits for the next duel.
+    const nextDuel = r.nextDuel?.prize ? undefined : r.nextDuel;
     // A lost duel still moves you on (no retrying the same foe), unless the run is over.
     if (hearts <= 0) return { ...base, hearts: 0, over: 'lost', nextDuel: undefined };
-    if (s.kind === 'boss') return { ...base, hearts, inDuel: s.id, nextDuel: undefined };
-    return { ...base, hearts, nextDuel: undefined };
+    if (s.kind === 'boss') return { ...base, hearts, inDuel: s.id, nextDuel };
+    return { ...base, hearts, nextDuel };
   }
   let dp = s.kind === 'boss' ? 80 : s.kind === 'elite' ? 50 : 30;
   for (const n of r.relics) dp += relic(n)?.dp ?? 0;
+  // A won wager pays its relic straight away, so an elite's or boss's relic can't crowd it out.
   const prize = r.nextDuel?.prize === 'relic' ? randomRelic(base, 5) : undefined;
   const heal = s.kind === 'boss' && r.relics.some((n) => relic(n)?.bossHeal);
-  const millennium = s.kind === 'boss' || s.kind === 'elite' ? randomRelic(base, 9, s.kind === 'boss') : prize;
-  const won: Run = { ...base, wins: r.wins + 1, nextDuel: undefined };
+  const withPrize = prize ? withRelic(base, prize) : base;
+  const millennium = s.kind === 'boss' || s.kind === 'elite' ? randomRelic(withPrize, 9, s.kind === 'boss') : prize;
+  const won: Run = { ...withPrize, wins: r.wins + 1, nextDuel: undefined };
   return { ...won, pending: { kind: 'draft', options: draftOptions(won, upgrades, r.floor, s.kind !== 'duel'), dp, heal, relic: millennium } };
 }
 
@@ -454,6 +490,7 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
       let x: Run = { ...r, dp: r.dp + p.dp, pending: undefined };
       if (p.heal) x.hearts = Math.min(x.maxHearts, x.hearts + 1);
       if (p.relic) x = withRelic(x, p.relic);
+      if (upgrades.includes('secondwind') && relic(p.relic ?? '')?.millennium) x.hearts = Math.min(x.maxHearts, x.hearts + 1);
       if (c.pick) x = addCard(x, c.pick);
       return x.pending ? x : done(x);
     }
@@ -487,7 +524,8 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
         case 'ring':
           return done(accept && x.hearts > 1 ? withRelic({ ...x, hearts: x.hearts - 1 }, randomRelic(x, 13)) : x);
         case 'graveyard': {
-          if (accept) return { ...x, dp: x.dp + 20, pending: { kind: 'remove' } };
+          // Nothing to bury at 20 cards, so nothing is paid.
+          if (accept) return x.main.length > 20 ? { ...x, dp: x.dp + 20, pending: { kind: 'remove' } } : done(x);
           const dug = draftOptions(x, upgrades, x.floor)[0];
           const y = dug ? addCard(x, dug) : x;
           return y.pending ? y : done(y);
@@ -496,10 +534,41 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
           return done(accept ? { ...x, nextDuel: { cpu: { lp: 3000 }, text: "Mai's Perfume: your opponent starts at 3000 LP" } } : { ...x, dp: x.dp + 15 });
         case 'kaiba':
           return done(accept ? { ...x, nextDuel: { me: { openingHand: 2, lp: 3000 }, text: 'Kaiba Corp Prototype: 2 extra cards, 3000 LP' } } : x);
+        case 'shadi': {
+          if (!accept) return done(x);
+          const heads = stepRng(x, 17)() < 0.5;
+          if (heads) return done(withRelic(x, randomRelic(x, 19, true)));
+          const hearts = x.hearts - 1;
+          return done(hearts <= 0 ? { ...x, hearts: 0, over: 'lost' } : { ...x, hearts });
+        }
+        case 'tea':
+          if (!accept) {
+            const gift = draftOptions(x, upgrades, x.floor, true)[0];
+            const y = gift ? addCard(x, gift) : x;
+            return y.pending ? y : done(y);
+          }
+          return done(x.hearts < x.maxHearts ? { ...x, hearts: x.hearts + 1 } : { ...x, dp: x.dp + 30 });
+        case 'tristan':
+          return done(accept ? { ...x, nextDuel: { me: { lp: 3500 }, cpu: { lp: 3000 }, text: "Tristan's Shortcut: you 3500 LP, them 3000" } } : { ...x, dp: x.dp + 10 });
+        case 'duke':
+          if (!accept) return done(x);
+          return done(stepRng(x, 23)() < 0.5 ? { ...x, dp: x.dp * 2 } : { ...x, dp: 0 });
+        case 'rebecca':
+          if (!accept) return done({ ...x, dp: x.dp + 15 });
+          return { ...x, pending: { kind: 'remove', then: { kind: 'remove' } } };
+        case 'noah': {
+          if (!accept) return done(x);
+          const can = [...new Set(x.main)].filter((n) => x.main.filter((m) => m === n).length < COPIES);
+          const pick = can[Math.floor(stepRng(x, 29)() * can.length)];
+          const y = pick ? addCard(x, pick) : x;
+          return y.pending ? y : done(y);
+        }
       }
       return done(x);
     }
     case 'rest': {
+      // Nothing to do here (hearts full or cursed, deck at 20): just move on.
+      if (c.kind === 'leave') return done({ ...r, pending: undefined });
       if (c.kind !== 'rest') return r;
       if (c.option === 'heal' && !cursed(r, 8)) return done({ ...r, pending: undefined, hearts: Math.min(r.maxHearts, r.hearts + 1) });
       return { ...r, pending: { kind: 'remove' } };

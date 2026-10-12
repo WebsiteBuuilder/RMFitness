@@ -46,7 +46,9 @@ export type Reward =
   | { kind: 'item'; name: string }
   | { kind: 'title'; name: string }
   | { kind: 'pack'; set?: string }
-  | { kind: 'shards'; n: number };
+  | { kind: 'shards'; n: number }
+  /** Duel Chips: the scarce currency the collection feature spends (capped) */
+  | { kind: 'chips'; n: number };
 
 /** What a finished duel looked like, for stars, rewards and run scoring. */
 export interface DuelOutcome {
@@ -73,4 +75,20 @@ export interface CpuDuelSpec {
   cpu: { name: string; main: string[]; extra: string[]; skill: string | null; setup?: SeatSetup };
   first: 'me' | 'cpu' | 'coin';
   context: DuelContext;
+  /** what the VS splash and the in-duel goal chip show */
+  vs?: VsInfo;
+}
+
+export interface VsInfo {
+  /** BOSS DUEL, ELITE DUEL, PRACTICE... */
+  label: string;
+  /** card art for each side */
+  mePortrait: string;
+  cpuPortrait: string;
+  cpuTitle: string;
+  line: string;
+  /** Duel Conditions and run effects in play */
+  notes: string[];
+  /** the star goals, if any */
+  goals: string[];
 }

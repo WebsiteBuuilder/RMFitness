@@ -110,36 +110,42 @@ export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string,
   const firstWin = !old[0];
   const d = deckOf(node.duelist);
   const theirCards = [...d.main, ...d.extra];
-  const next = rng(seed);
+  const next = rng(seed + 1);
   const pickFrom = (list: string[]) => list[Math.floor(next() * list.length)];
 
   const rewards: Reward[] = [];
-  // Every win: one card from their deck you don't have 3 of yet.
-  const want = wanted(speed, theirCards);
-  if (want.length) rewards.push({ kind: 'card', name: pickFrom(want) });
+  // Rewards come from firsts only (first win, new stars), never from replays.
   if (firstWin) {
-    for (const s of node.duelist.signature) rewards.push({ kind: 'card', name: s });
+    // Signature cards you already hold three of are skipped: a deck can't use a 4th.
+    for (const s of node.duelist.signature) if (owned(speed, s) < COPIES) rewards.push({ kind: 'card', name: s });
+    rewards.push({ kind: 'pack' });
     if (node.boss) {
       if (node.duelist.skill) rewards.push({ kind: 'skill', name: node.duelist.skill });
-      rewards.push({ kind: 'item', name: chapter.item }, { kind: 'pack' });
+      rewards.push({ kind: 'item', name: chapter.item });
       if (chapter.postgame) rewards.push({ kind: 'title', name: 'King of Games' });
       else rewards.push({ kind: 'title', name: `Keeper of the ${chapter.item}` });
     }
   }
-  // Each new 2nd or 3rd star: choose one of three of their cards.
+  // The first time all three stars are lit: one Duel Chip.
+  if (stars.every(Boolean) && !old.every(Boolean)) rewards.push({ kind: 'chips', n: 1 });
+  const chapterPool = chapter.nodes.flatMap((n) => expand(n.duelist.main));
+  const g = grant(speed, solo, rewards, chapterPool, seed);
+  // Each new 2nd or 3rd star: choose one of three of their cards. Drawn after this duel's
+  // other rewards land, so a pick never offers a card you just got your third copy of,
+  // and the two picks never offer the same card.
   const picks: string[][] = [];
+  const offered = new Set<string>();
   for (let i = 1; i < 3; i++) {
     if (!newStars[i]) continue;
-    const pool = wanted(speed, theirCards);
+    const pool = wanted(g.speed, theirCards).filter((n) => !offered.has(n));
     const three: string[] = [];
     while (three.length < 3 && three.length < pool.length) {
       const n = pickFrom(pool);
       if (!three.includes(n)) three.push(n);
     }
+    three.forEach((n) => offered.add(n));
     if (three.length) picks.push(three);
   }
-  const chapterPool = chapter.nodes.flatMap((n) => expand(n.duelist.main));
-  const g = grant(speed, solo, rewards, chapterPool, seed);
   const campaign = { ...g.solo.campaign, stars: { ...g.solo.campaign.stars, [nodeId]: stars }, wins: { ...g.solo.campaign.wins, [nodeId]: (g.solo.campaign.wins[nodeId] ?? 0) + 1 } };
   const cleared = firstWin && node.boss ? chapter : null;
   if (cleared) campaign.cleared = chapter.id;

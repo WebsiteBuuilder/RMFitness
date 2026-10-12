@@ -2,7 +2,7 @@
 // profile's one Speed Duel collection; Items and titles on the trophy shelf; Soul Fragments
 // in the Labyrinth. A pack is opened by whatever pack opener is registered, so a later
 // card-earning feature (real Speed Duel sets) can take packs over without touching this.
-import { withCards, type SpeedSave } from '../speedSave';
+import { CHIP_CAP, withCards, type SpeedSave } from '../speedSave';
 import { rng } from '../rng';
 import type { SoloSave } from './save';
 import type { Reward } from './types';
@@ -36,6 +36,7 @@ export function grant(speed: SpeedSave, solo: SoloSave, rewards: Reward[], pool:
   const lines: string[] = [];
   const cards: string[] = [];
   let campaign = solo.campaign;
+  let chips = speed.chips ?? 0;
   let labyrinth = solo.labyrinth;
   for (const r of rewards) {
     switch (r.kind) {
@@ -61,11 +62,17 @@ export function grant(speed: SpeedSave, solo: SoloSave, rewards: Reward[], pool:
         if (!campaign.titles.includes(r.name)) campaign = { ...campaign, titles: [...campaign.titles, r.name] };
         lines.push(`Title: ${r.name}`);
         break;
+      case 'chips':
+        chips = Math.min(CHIP_CAP, chips + r.n);
+        lines.push(`${r.n} Duel Chip${r.n === 1 ? '' : 's'}`);
+        break;
       case 'shards':
         labyrinth = { ...labyrinth, fragments: labyrinth.fragments + r.n };
         lines.push(`${r.n} Soul Fragments`);
         break;
     }
   }
-  return { speed: cards.length ? withCards(speed, cards) : speed, solo: { ...solo, campaign, labyrinth }, lines, cards };
+  let out = cards.length ? withCards(speed, cards) : speed;
+  if (chips !== (speed.chips ?? 0)) out = { ...out, chips };
+  return { speed: out, solo: { ...solo, campaign, labyrinth }, lines, cards };
 }

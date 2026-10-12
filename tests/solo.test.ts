@@ -8,7 +8,7 @@ import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems } from '../s
 import { getSkill } from '../src/eds/skills';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { chapterOpen, deckOf, nodeOpen, roadDeckProblems, settleCampaign, startRoad } from '../src/eds/speedCampaign/campaign';
-import { CURSES, afterDuel, choose, duelFor, enter, newRun, reachable, readResultCode, resultCode, stopById, summaryOf, type Run } from '../src/eds/speedCampaign/labyrinth';
+import { CURSES, afterDuel, choose, stake, duelFor, enter, newRun, reachable, readResultCode, resultCode, stopById, summaryOf, type Run } from '../src/eds/speedCampaign/labyrinth';
 import { deckCode, readDeckCode } from '../src/eds/speedCampaign/deckCode';
 import { newSoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
@@ -176,6 +176,49 @@ for (let s = 1; s <= 40; s++) {
   const o = { result: 'l' as const, myLp: 0, myStartLp: 4000, oppLp: 100, turns: 9, usedSkill: true, myMonsters: 0 };
   const r = settleSolo({ kind: 'labyrinth', runId: run.id, stopId: run.inDuel! }, o, newSpeedSave(), solo);
   ok(r.solo.labyrinth.run!.hearts === run.hearts - 1, 'a lost Labyrinth duel costs a heart');
+}
+
+// ---------- review fixes ----------
+{
+  // The Daily ignores upgrades, carried Items and Curses.
+  const d1 = newRun({ starter: STARTERS[0].character, seed: 9, curse: 5, upgrades: ['heart', 'relic', 'dp', 'scout'], daily: '2026-10-12', bring: 'Millennium Eye' });
+  const d2 = newRun({ starter: STARTERS[0].character, seed: 9, curse: 0, upgrades: [], daily: '2026-10-12' });
+  ok(d1.curse === 0 && d1.hearts === 3 && d1.relics.length === 0 && d1.dp === d2.dp && d1.main.length === d2.main.length, 'daily run ignores upgrades, Items and Curses');
+  // Scout adds a card; a carried Item is a starting relic.
+  const sc = newRun({ starter: STARTERS[0].character, seed: 9, curse: 0, upgrades: ['scout'], bring: 'Millennium Eye' });
+  ok(sc.main.length === d2.main.length + 1, 'Duelist Scout adds a card');
+  ok(sc.relics.includes('Millennium Eye'), 'a Road Item can be carried in');
+  // A duel marked as being played that never reported back is a loss.
+  let r = newRun({ starter: STARTERS[1].character, seed: 31, curse: 0, upgrades: [] });
+  r = enter(r, reachable(r).find((x) => x.kind === 'duel')!.id, []);
+  const st = stake(r);
+  ok(!!st.staked, 'stake marks the duel');
+  const lost = afterDuel(st, 'l', []);
+  ok(lost.hearts === r.hearts - 1 && !lost.staked && !lost.inDuel, 'abandoned duel costs a heart');
+  // A boon survives a loss; a wager does not.
+  const boon = afterDuel({ ...st, nextDuel: { cpu: { lp: 3000 }, text: 'boon' } }, 'l', []);
+  ok(boon.nextDuel?.text === 'boon', 'boon kept after a loss');
+  const wager = afterDuel({ ...st, nextDuel: { me: { lp: 2000 }, text: 'wager', prize: 'relic' } }, 'l', []);
+  ok(!wager.nextDuel, 'wager lost after a loss');
+  // Rest can always be left; the graveyard pays nothing at 20 cards.
+  const rest: Run = { ...r, inDuel: undefined, pending: { kind: 'rest' }, hearts: r.maxHearts };
+  ok(!choose(rest, { kind: 'leave' }, []).pending, 'rest can be left');
+  const grave: Run = { ...r, inDuel: undefined, pending: { kind: 'event', event: 'graveyard' }, main: r.main.slice(0, 20) };
+  const g2 = choose(grave, { kind: 'event', option: 0 }, []);
+  ok(g2.dp === grave.dp && !g2.pending, 'graveyard pays nothing at 20 cards');
+}
+{
+  // Star picks never offer a card you'd hold a 4th copy of, and two picks never repeat.
+  let speed = newSpeedSave();
+  let solo = newSoloSave();
+  const sr = startRoad(speed, solo, STARTERS[0].character);
+  speed = sr.speed;
+  solo = sr.solo;
+  const node = CHAPTERS[0].nodes[0];
+  const won = settleCampaign(speed, solo, node.id, { result: 'w', myLp: 4000, myStartLp: 4000, oppLp: 0, turns: 1, usedSkill: false, myMonsters: 3 }, 5);
+  const offered = won.picks.flat();
+  ok(new Set(offered).size === offered.length, 'picks do not repeat');
+  ok(offered.every((n) => (won.speed.collection?.[n] ?? 0) < 3), 'picks are cards you can still use');
 }
 
 // ---------- real duels: every computer deck under its Duel Condition ----------

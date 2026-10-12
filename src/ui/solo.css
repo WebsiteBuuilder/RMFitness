@@ -365,6 +365,186 @@
   color: #ffe6a3;
   font-weight: 700;
 }
+.so-goals div.new span {
+  display: inline-block;
+  animation: so-star-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.so-goals div.new:nth-child(2) span {
+  animation-delay: 0.25s;
+}
+.so-goals div.new:nth-child(3) span {
+  animation-delay: 0.5s;
+}
+@keyframes so-star-pop {
+  0% { transform: scale(0) rotate(-90deg); opacity: 0; }
+  60% { transform: scale(1.8) rotate(10deg); opacity: 1; text-shadow: 0 0 16px #ffd76a; }
+  100% { transform: scale(1) rotate(0); }
+}
+/* Rewards flip over one at a time. */
+.so-cards.reveal .so-card {
+  animation: so-flip 0.55s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+@keyframes so-flip {
+  0% { transform: perspective(500px) rotateY(180deg) scale(0.7); opacity: 0; filter: brightness(3); }
+  60% { opacity: 1; filter: brightness(1.6); box-shadow: 0 0 22px rgba(242, 193, 78, 0.7); }
+  100% { transform: none; filter: none; }
+}
+.so-card { position: relative; }
+.so-card i {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(8, 12, 28, 0.85);
+  color: #c9d3f5;
+}
+.so-card i.new {
+  background: var(--so-gold);
+  color: #241a00;
+}
+/* The next duel on the road. */
+.so-node.next {
+  border-color: var(--so-gold);
+  box-shadow: 0 0 16px rgba(242, 193, 78, 0.35);
+  animation: so-pulse 1.6s ease-in-out infinite;
+}
+.so-continue {
+  margin-bottom: 8px;
+}
+/* VS splash */
+.so.vs {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-content: center;
+  align-items: center;
+  gap: 10px 6px;
+  padding: calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 18px);
+  background: radial-gradient(ellipse at 20% 40%, rgba(62, 120, 255, 0.35), transparent 55%), radial-gradient(ellipse at 80% 40%, rgba(220, 60, 90, 0.35), transparent 55%), #060914;
+  overflow: hidden;
+  animation: so-fade 0.25s ease-out both;
+}
+.vs-label {
+  grid-column: 1 / -1;
+  margin-bottom: 18px;
+  justify-self: center;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--so-gold2);
+  color: var(--so-gold);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  text-align: center;
+}
+.vs-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  min-width: 0;
+}
+.vs-side b {
+  font-size: 16px;
+}
+.vs-side span {
+  font-size: 11.5px;
+  color: #9fb0e0;
+}
+.vs-side.me { animation: vs-in-l 0.5s cubic-bezier(0.2, 1.2, 0.4, 1) both; }
+.vs-side.cpu { animation: vs-in-r 0.5s cubic-bezier(0.2, 1.2, 0.4, 1) both; }
+.vs-art {
+  width: min(38vw, 170px);
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  border: 2px solid #3e6cff;
+  box-shadow: 0 0 28px rgba(62, 108, 255, 0.5);
+}
+.vs-side.cpu .vs-art {
+  border-color: #dc3c5a;
+  box-shadow: 0 0 28px rgba(220, 60, 90, 0.5);
+}
+.vs-art .cimg {
+  position: absolute;
+  width: 136%;
+  left: -18%;
+  top: -40%;
+  height: auto;
+}
+.vs-mark {
+  font-size: 44px;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--so-gold);
+  text-shadow: 0 0 18px rgba(242, 193, 78, 0.8), 3px 3px 0 #5a2a00;
+  animation: vs-slam 0.6s 0.35s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
+.vs-line {
+  grid-column: 1 / -1;
+  margin: 0;
+  text-align: center;
+  font-style: italic;
+  color: #d9e0ff;
+  animation: so-fade 0.4s 0.6s both;
+}
+.vs-notes, .vs-goals {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  animation: so-fade 0.4s 0.8s both;
+}
+.vs-notes div {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(143, 59, 85, 0.35);
+  border: 1px solid #8f3b55;
+  text-align: center;
+}
+.vs-goals div span { color: var(--so-gold); }
+.vs-go {
+  grid-column: 1 / -1;
+  animation: so-fade 0.4s 0.9s both;
+}
+@keyframes vs-in-l { from { transform: translateX(-60vw); } }
+@keyframes vs-in-r { from { transform: translateX(60vw); } }
+@keyframes vs-slam { 0% { transform: scale(4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes so-fade { from { opacity: 0; transform: translateY(6px); } }
+/* The goals chip on the duel screen. */
+.so-hud {
+  position: fixed;
+  z-index: 40;
+  right: 6px;
+  top: calc(env(safe-area-inset-top) + 64px);
+  max-width: min(70vw, 360px);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(8, 12, 28, 0.82);
+  border: 1px solid rgba(242, 193, 78, 0.6);
+  color: #ffe6a3;
+  font: 600 11px/1.3 system-ui, sans-serif;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.so-hud.open {
+  border-radius: 12px;
+  padding: 8px 12px;
+  opacity: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-hud .n { color: #ffb3c4; }
 .so-quote {
   font-style: italic;
   color: #d9e0ff;
@@ -791,7 +971,7 @@
   top: 0;
   transform: translateX(-50%);
   height: 64px;
-  width: 84px;
+  width: min(84px, calc((100vw - 64px) / 4 - 6px));
   min-height: 64px;
   border-radius: 14px;
   border: 1px solid var(--so-line);

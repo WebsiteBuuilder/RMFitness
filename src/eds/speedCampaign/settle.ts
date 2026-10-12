@@ -1,8 +1,9 @@
 // After a solo duel: writes its result into the right mode and says what to show.
 import type { SpeedSave } from '../speedSave';
 import { settleCampaign, type Settled } from './campaign';
-import { afterDuel, better, summaryOf, type Run, type RunSummary } from './labyrinth';
+import { afterDuel, better, stopById, summaryOf, type Run, type RunSummary } from './labyrinth';
 import type { SoloSave } from './save';
+import { grant } from './rewards';
 import type { DuelContext, DuelOutcome } from './types';
 
 export type SoloReport =
@@ -41,6 +42,12 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   const run = solo.labyrinth.run;
   if (!run || run.id !== ctx.runId) return { speed, solo, report: { kind: 'labyrinth', outcome: o, run, ended: null } };
   const next = afterDuel(run, o.result, solo.labyrinth.upgrades);
+  // Beating a Labyrinth boss pays a Duel Chip to the profile.
+  const stop = run.inDuel ? stopById(run, run.inDuel) : null;
+  if (o.result === 'w' && stop?.kind === 'boss') {
+    const g = grant(speed, solo, [{ kind: 'chips', n: 1 }]);
+    speed = g.speed;
+  }
   if (next.over) {
     const done = endRun(solo, next);
     return { speed, solo: done.solo, report: { kind: 'labyrinth', outcome: o, run: next, ended: done.summary } };

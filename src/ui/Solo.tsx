@@ -1,22 +1,22 @@
 // Speed Duel solo modes: The Millennium Road (story campaign), the Duel Labyrinth
 // (roguelite runs) and Practice Duels. Master Duel-style screens over the shared duel.
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { card } from '../eds/db';
 import { loadProfiles, type Profile } from '../eds/save';
-import { STARTERS, activeDeck, deckFromStarter, loadSpeedSave, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
+import { STARTERS, activeDeck, deckFromStarter, loadSpeedSave, owned as ownedCopies, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { CHAPTERS, DEALER_CONDITIONS, type CampaignNode, type Chapter } from '../eds/speedCampaign/roster';
 import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, roadDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
 import { deckCode, readDeckCode } from '../eds/speedCampaign/deckCode';
-import { CURSES, EVENTS, UPGRADES, choose, dailySeed, dailyStarter, duelFor, duelistById, enter, eventById, reachable, readResultCode, resultCode, stopById, todayString, newRun, type Choice, type Run, type RunSummary, type Stop } from '../eds/speedCampaign/labyrinth';
+import { CURSES, EVENTS, UPGRADES, afterDuel, choose, stake, dailySeed, dailyStarter, duelFor, duelistById, enter, eventById, reachable, readResultCode, resultCode, stopById, todayString, newRun, type Choice, type Run, type RunSummary, type Stop } from '../eds/speedCampaign/labyrinth';
 import { STAR_TEXT } from '../eds/speedCampaign/outcome';
 import { relic } from '../eds/speedCampaign/relics';
 import { loadSolo, writeSolo, type SoloSave } from '../eds/speedCampaign/save';
 import { endRun, type SoloReport } from '../eds/speedCampaign/settle';
-import type { CpuDuelSpec, CpuDuelist } from '../eds/speedCampaign/types';
+import type { CpuDuelSpec, CpuDuelist, VsInfo } from '../eds/speedCampaign/types';
 import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { SpeedDeckEdit, speedOpponents } from './Speed';
-import { playBlip } from './sound';
+import { buzz, playBlip, playFanfare, playLose, playStar, playVs } from './sound';
 import './solo.css';
 
 export type SoloMode = 'campaign' | 'labyrinth' | 'practice';
@@ -42,16 +42,140 @@ export function Solo(p: Props) {
     setSoloState(s);
     writeSolo(p.profile.id, s);
   };
-  const ctx = { ...p, solo, setSolo };
-  if (p.mode === 'practice') return <Practice {...ctx} />;
-  if (p.mode === 'labyrinth') return <Labyrinth {...ctx} />;
-  return <Road {...ctx} />;
+  const [vs, setVs] = useState<CpuDuelSpec | null>(null);
+  useBackGesture();
+  /** The duel really starts (after the VS splash). */
+  const go = (spec: CpuDuelSpec) => {
+    setVs(null);
+    // From here, closing the app mid-duel counts as losing a Labyrinth duel.
+    const run = solo.labyrinth.run;
+    if (spec.context.kind === 'labyrinth' && run) setSolo({ ...solo, labyrinth: { ...solo.labyrinth, run: stake(run) } });
+    p.onDuel(spec);
+  };
+  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec) => (spec.vs ? setVs(spec) : go(spec)) };
+  return (
+    <>
+      {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : <Road {...ctx} />}
+      {vs && <VsSplash spec={vs} onGo={() => go(vs)} onCancel={() => setVs(null)} />}
+    </>
+  );
+}
+
+// ---------- the phone's back gesture ----------
+// Each open sheet (and each screen's back arrow) registers what Back does; the newest wins.
+const backStack: (() => void)[] = [];
+function useBack(fn: () => void) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    const h = () => ref.current();
+    backStack.push(h);
+    return () => {
+      const i = backStack.lastIndexOf(h);
+      if (i >= 0) backStack.splice(i, 1);
+    };
+  }, []);
+}
+
+/** Android's back gesture closes the open sheet or goes back one screen instead of leaving the app. */
+function useBackGesture() {
+  useEffect(() => {
+    history.pushState({ solo: 1 }, '');
+    const onPop = () => {
+      history.pushState({ solo: 1 }, '');
+      backStack[backStack.length - 1]?.();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if ((history.state as { solo?: number } | null)?.solo) history.back();
+    };
+  }, []);
+}
+
+/** The strongest monster in a deck, for its portrait. */
+const ace = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
+
+// ---------- the VS splash ----------
+function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => void; onCancel: () => void }) {
+  const v = spec.vs!;
+  useBack(onCancel);
+  useEffect(() => {
+    playVs();
+    buzz([40, 60, 90]);
+  }, []);
+  return (
+    <div class="so vs" onClick={onGo}>
+      <div class="vs-label">{v.label}</div>
+      <div class="vs-side me">
+        <div class="vs-art">
+          <CardImg name={v.mePortrait} />
+        </div>
+        <b>{spec.me.name}</b>
+      </div>
+      <div class="vs-mark">VS</div>
+      <div class="vs-side cpu">
+        <div class="vs-art">
+          <CardImg name={v.cpuPortrait} />
+        </div>
+        <b>{spec.cpu.name}</b>
+        <span>{v.cpuTitle}</span>
+      </div>
+      <p class="vs-line">“{v.line}”</p>
+      {v.notes.length > 0 && (
+        <div class="vs-notes">
+          {v.notes.map((n) => (
+            <div key={n}>{n}</div>
+          ))}
+        </div>
+      )}
+      {v.goals.length > 0 && (
+        <div class="vs-goals">
+          {v.goals.map((g) => (
+            <div key={g}>
+              <span>★</span> {g}
+            </div>
+          ))}
+        </div>
+      )}
+      <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), onGo())}>
+        Duel!
+      </button>
+    </div>
+  );
+}
+
+/** A small chip on the duel screen with the Duel Conditions and star goals in play. */
+export function SoloHud({ vs }: { vs?: VsInfo }) {
+  const [open, setOpen] = useState(false);
+  if (!vs || (vs.notes.length === 0 && vs.goals.length === 0)) return null;
+  return (
+    <div class={`so-hud ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
+      {open ? (
+        <>
+          {vs.notes.map((n) => (
+            <div key={n} class="n">
+              {n}
+            </div>
+          ))}
+          {vs.goals.map((g) => (
+            <div key={g} class="g">
+              ★ {g}
+            </div>
+          ))}
+        </>
+      ) : (
+        <span>{vs.goals.length ? `★ ${vs.goals.length} goals` : ''}{vs.goals.length && vs.notes.length ? ' · ' : ''}{vs.notes.length ? `${vs.notes.length} rule${vs.notes.length > 1 ? 's' : ''}` : ''}</span>
+      )}
+    </div>
+  );
 }
 
 type Ctx = Props & { solo: SoloSave; setSolo: (s: SoloSave) => void };
 
 // ---------- small pieces ----------
 function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBack: () => void; right?: preact.ComponentChildren }) {
+  useBack(onBack);
   return (
     <div class="so-top">
       <button class="so-back" onClick={onBack} aria-label="Back">
@@ -67,6 +191,8 @@ function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBac
 }
 
 function Sheet({ title, onClose, children, wide }: { title?: string; onClose?: () => void; children: preact.ComponentChildren; wide?: boolean }) {
+  // Back closes the sheet; a sheet you must answer just ignores it.
+  useBack(() => onClose?.());
   return (
     <div class="so-shade" onClick={onClose}>
       <div class={`so-sheet ${wide ? 'wide' : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -127,17 +253,25 @@ function Portrait({ d, size = 'm' }: { d: Pick<CpuDuelist, 'portrait' | 'name'>;
   );
 }
 
-function CardRow({ names, onPick, picked }: { names: string[]; onPick?: (n: string) => void; picked?: string | null }) {
+function CardRow({ names, onPick, picked, reveal, own }: { names: string[]; onPick?: (n: string) => void; picked?: string | null; reveal?: boolean; own?: (n: string) => number }) {
   const [info, setInfo] = useState<string | null>(null);
+  // Revealed cards flip over one at a time, each with a sparkle.
+  useEffect(() => {
+    if (reveal) names.forEach((_, i) => playStar(0.35 + i * 0.3));
+  }, []);
   return (
     <>
-      <div class="so-cards">
-        {names.map((n, i) => (
-          <button key={`${n}${i}`} class={`so-card ${picked === n ? 'on' : ''}`} onClick={() => (onPick ? onPick(n) : setInfo(n))}>
-            <CardImg name={n} />
-            <span>{n}</span>
-          </button>
-        ))}
+      <div class={`so-cards ${reveal ? 'reveal' : ''}`}>
+        {names.map((n, i) => {
+          const have = own?.(n);
+          return (
+            <button key={`${n}${i}`} class={`so-card ${picked === n ? 'on' : ''}`} style={reveal ? { animationDelay: `${0.35 + i * 0.3}s` } : undefined} onClick={() => (onPick ? onPick(n) : setInfo(n))}>
+              <CardImg name={n} />
+              <span>{n}</span>
+              {have !== undefined && <i class={have === 0 ? 'new' : ''}>{have === 0 ? 'NEW' : `own ${have}`}</i>}
+            </button>
+          );
+        })}
       </div>
       {info && (
         <Sheet title="Card Info" onClose={() => setInfo(null)}>
@@ -175,6 +309,10 @@ function DeckListView({ main, extra }: { main: string[]; extra: string[] }) {
 }
 
 function ResultBanner({ result }: { result: 'w' | 'l' | 'd' }) {
+  useEffect(() => {
+    if (result === 'w') (playFanfare(), buzz([30, 50, 30, 50, 120]));
+    else (playLose(), buzz(250));
+  }, []);
   return <div class={`so-result ${result}`}>{result === 'w' ? 'VICTORY' : result === 'l' ? 'DEFEAT' : 'DRAW'}</div>;
 }
 
@@ -237,6 +375,7 @@ function Practice(p: Ctx) {
       cpu: { name: foe.name, main: foe.main, extra: foe.extra, skill: prefs.cpuSkill === 'none' ? null : foe.skill, setup: { ...(cond?.cpu ?? {}), lp: lp(prefs.cpuLp, cond?.cpu?.lp) } },
       first: cond?.cpuFirst && prefs.first === 'coin' ? 'cpu' : prefs.first,
       context: { kind: 'practice', oppId: foe.id, deckId: myDeck.id, first: prefs.first, conditions: prefs.conditions },
+      vs: { label: 'PRACTICE DUEL', mePortrait: ace(myDeck.main), cpuPortrait: foe.portrait, cpuTitle: foe.title, line: 'Nothing rides on this one. Show me what that deck can do.', notes: cond ? [cond.text] : [], goals: [] },
     });
   };
 
@@ -247,7 +386,7 @@ function Practice(p: Ctx) {
 
   return (
     <div class="screen so">
-      <Top title="Practice Duel" sub="nothing here counts for your record, the Shadow Realm or card levels" onBack={p.onExit} />
+      <Top title="Practice Duel" sub="test any deck · nothing here counts" onBack={p.onExit} />
       <div class="so-body">
         <div class="so-vs">
           <div class="so-vs-side">
@@ -423,6 +562,7 @@ function Road(p: Ctx) {
   /** the result screens after a duel: 0 result, then one per star pick, then the chapter clear */
   const [stage, setStage] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
+  const scrolled = useRef(false);
 
   if (!c.starter) return <RoadStart {...p} />;
   if (editing && c.deck)
@@ -440,6 +580,16 @@ function Road(p: Ctx) {
   const problems = deck ? roadDeckProblems(speed, deck) : ['No road deck'];
   const owned = Object.values(speed.collection ?? {}).reduce((a, b) => a + b, 0);
   const allIds = CHAPTERS.flatMap((x) => x.nodes.map((n) => n.id));
+  // The first duel you haven't won yet: the road's next stop.
+  const nextUp = (() => {
+    for (const x of CHAPTERS) for (let i = 0; i < x.nodes.length; i++) if (nodeOpen(solo, x, i) && !(c.wins[x.nodes[i].id] ?? 0)) return { chapter: x, node: x.nodes[i] };
+    return null;
+  })();
+  const scrollTo = (el: HTMLElement | null) => {
+    if (!el || scrolled.current) return;
+    scrolled.current = true;
+    setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
+  };
 
   const duel = (node: CampaignNode) => {
     // The Masked Dealer deals a different Duel Condition every duel.
@@ -452,6 +602,7 @@ function Road(p: Ctx) {
       cpu: { name: n.duelist.name, main: d.main, extra: d.extra, skill: d.skill, setup: n.condition?.cpu },
       first: n.condition?.cpuFirst ? 'cpu' : 'coin',
       context: { kind: 'campaign', nodeId: n.id },
+      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: n.condition ? [n.condition.text] : [], goals: STAR_TEXT(n.goal) },
     });
   };
 
@@ -498,9 +649,9 @@ function Road(p: Ctx) {
           <p>{c.titles.length ? c.titles.join(' · ') : 'None yet. Bosses give you titles.'}</p>
           <div class="so-group">Collection</div>
           <p>
-            {owned} cards owned. Every win on the road adds cards from your opponent's deck. Your road deck can only use cards you own.
+            {owned} cards owned. Your first win over each duelist gives you their signature cards and a pack, and new stars let you pick from their deck. Your road deck can only use cards you own.
           </p>
-          <p class="so-dim">Millennium Items you win here also show up as relics in the Duel Labyrinth.</p>
+          <p class="so-dim">Millennium Items you win here can be brought into a Duel Labyrinth run as a starting relic.</p>
         </div>
       ) : (
         <div class="so-body">
@@ -522,12 +673,18 @@ function Road(p: Ctx) {
             </div>
             <p class="so-blurb">{ch.blurb}</p>
           </div>
+          {nextUp && (
+            <Btn kind="gold" onClick={() => (setChId(nextUp.chapter.id), setSel(nextUp.node))}>
+              Continue the road: {nextUp.node.duelist.name}
+            </Btn>
+          )}
           <div class="so-path">
             {ch.nodes.map((n, i) => {
               const open = nodeOpen(solo, ch, i);
               const wins = c.wins[n.id] ?? 0;
+              const isNext = nextUp?.node.id === n.id;
               return (
-                <button key={n.id} class={`so-node ${n.boss ? 'boss' : ''} ${open ? '' : 'locked'} ${wins ? 'won' : ''}`} disabled={!open} onClick={() => setSel(n)}>
+                <button key={n.id} ref={isNext ? scrollTo : undefined} class={`so-node ${n.boss ? 'boss' : ''} ${open ? '' : 'locked'} ${wins ? 'won' : ''} ${isNext ? 'next' : ''}`} disabled={!open} onClick={() => setSel(n)}>
                   <Portrait d={n.duelist} size={n.boss ? 'm' : 's'} />
                   <div class="so-node-t">
                     <b>{open ? n.duelist.name : '???'}</b>
@@ -621,7 +778,7 @@ function Road(p: Ctx) {
               {rep.settled.cards.length > 0 && (
                 <>
                   <div class="so-group">Added to your collection</div>
-                  <CardRow names={rep.settled.cards} />
+                  <CardRow names={rep.settled.cards} reveal />
                 </>
               )}
               {rep.settled.lines
@@ -643,7 +800,7 @@ function Road(p: Ctx) {
       {rep && stage >= 1 && stage <= pickList.length && (
         <Sheet>
           <div class="so-group">New star! Choose one card to keep</div>
-          <CardRow names={pickList[stage - 1]} picked={picked} onPick={setPicked} />
+          <CardRow names={pickList[stage - 1]} picked={picked} onPick={setPicked} own={(n) => ownedCopies(speed, n)} />
           <Btn
             kind="gold"
             disabled={!picked}
@@ -673,7 +830,7 @@ function ChapterClear({ ch, onDone }: { ch: Chapter; onDone: () => void }) {
         </div>
         <h3>{ch.item}</h3>
         <p>{relic(ch.item)?.text ?? ch.itemText}</p>
-        <p class="so-dim">It's also a relic you can find in the Duel Labyrinth now.</p>
+        <p class="so-dim">You can now bring it into the Duel Labyrinth as a starting relic.</p>
         {next && <p>Next: {next.postgame ? 'a challenger waits beyond the road...' : `Chapter ${next.n}, ${next.title}`}</p>}
       </div>
       <Btn kind="gold" onClick={onDone}>
@@ -777,6 +934,9 @@ function RivalSheet(p: Ctx & { deck: SpeedDeck | null; problems: string[]; onClo
 const STOP_ICON: Record<Stop['kind'], string> = { duel: '⚔', elite: '☠', shop: '🛒', event: '?', rest: '☾', treasure: '◆', boss: '♛' };
 const STOP_NAME: Record<Stop['kind'], string> = { duel: 'Duel', elite: 'Elite duel', shop: 'Card Shop', event: 'Wager', rest: 'Rest', treasure: 'Treasure', boss: 'Floor boss' };
 
+/** Where a stop sits across its row (percent): spread edge to edge so narrow phones keep a gap. */
+const mapX = (col: number, width: number) => ((col + 0.5) / width) * 100;
+
 function Hearts({ n, max }: { n: number; max: number }) {
   return (
     <span class="so-hearts">
@@ -794,6 +954,11 @@ function Labyrinth(p: Ctx) {
   const lab = solo.labyrinth;
   const run = lab.run;
   const [ended, setEnded] = useState<RunSummary | null>(p.report?.kind === 'labyrinth' ? p.report.ended : null);
+  // A duel still marked as being played means the app closed mid-duel: that duel is lost.
+  const [walkedOut] = useState(() => !!run?.staked && !p.report);
+  useEffect(() => {
+    if (walkedOut && run?.staked) setRun(afterDuel(run, 'l', run.daily ? [] : lab.upgrades));
+  }, []);
   const setRun = (r: Run) => {
     if (r.over) {
       const done = endRun(solo, r);
@@ -805,7 +970,7 @@ function Labyrinth(p: Ctx) {
   };
   if (ended) return <RunEnd {...p} s={ended} onDone={() => (setEnded(null), p.onReportSeen())} />;
   if (!run) return <LabyrinthStart {...p} />;
-  return <RunView {...p} run={run} setRun={setRun} />;
+  return <RunView {...p} run={run} setRun={setRun} walkedOut={walkedOut} />;
 }
 
 function LabyrinthStart(p: Ctx) {
@@ -814,10 +979,12 @@ function LabyrinthStart(p: Ctx) {
   const [sheet, setSheet] = useState<'new' | 'daily' | 'upgrades' | 'history' | 'compare' | null>(null);
   const [starter, setStarter] = useState(STARTERS[0].character);
   const [curse, setCurse] = useState(0);
+  const [bring, setBring] = useState<string | null>(null);
+  const items = solo.campaign.items;
   const [code, setCode] = useState('');
   const today = todayString();
   const doneToday = lab.history.find((h) => h.daily === today);
-  const begin = (o: { starter: string; seed: number; daily?: string; curse: number }) => {
+  const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string }) => {
     const run = newRun({ ...o, upgrades: lab.upgrades });
     setSolo({ ...solo, labyrinth: { ...lab, run } });
   };
@@ -878,14 +1045,32 @@ function LabyrinthStart(p: Ctx) {
             </>
           )}
           {lab.curseUnlocked === 0 && <p class="so-dim">Clear a run to unlock Curses: harder runs that pay more.</p>}
-          <Btn kind="gold" onClick={() => begin({ starter, seed: randomSeed(), curse })}>
+          <div class="so-group">Bring a Millennium Item</div>
+          {items.length === 0 ? (
+            <p class="so-dim">Millennium Items you win on The Millennium Road can be brought in here as a starting relic.</p>
+          ) : (
+            <>
+              <div class="so-chips">
+                <button class={`so-chip ${!bring ? 'on' : ''}`} onClick={() => setBring(null)}>
+                  None
+                </button>
+                {items.map((it) => (
+                  <button key={it} class={`so-chip ${bring === it ? 'on' : ''}`} onClick={() => setBring(it)}>
+                    {it}
+                  </button>
+                ))}
+              </div>
+              {bring && <p class="so-dim">{relic(bring)?.text}</p>}
+            </>
+          )}
+          <Btn kind="gold" onClick={() => begin({ starter, seed: randomSeed(), curse, bring: bring ?? undefined })}>
             Enter the Labyrinth
           </Btn>
         </Sheet>
       )}
       {sheet === 'daily' && (
         <Sheet title={`Daily Labyrinth · ${today}`} onClose={() => setSheet(null)}>
-          <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Play it, then text your result code to your brother.</p>
+          <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Upgrades, Items and Curses stay home, so it's a fair race. Play it, then text your result code to your brother.</p>
           {doneToday ? (
             <>
               <p>
@@ -973,14 +1158,15 @@ function LabyrinthStart(p: Ctx) {
   );
 }
 
-function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
+function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: boolean }) {
   const { run, setRun } = p;
-  const up = p.solo.labyrinth.upgrades;
+  // The Daily ignores upgrades so both brothers play the same run.
+  const up = run.daily ? [] : p.solo.labyrinth.upgrades;
   const [peek, setPeek] = useState<Stop | null>(null);
   const [showDeck, setShowDeck] = useState(false);
   const [relicInfo, setRelicInfo] = useState<string | null>(null);
   const [quit, setQuit] = useState(false);
-  const [lost, setLost] = useState(p.report?.kind === 'labyrinth' && p.report.outcome.result !== 'w' && !p.report.ended);
+  const [lost, setLost] = useState(!!p.walkedOut || (p.report?.kind === 'labyrinth' && p.report.outcome.result !== 'w' && !p.report.ended));
   const can = reachable(run);
   const floor = run.floors[run.floor];
   const act = (c: Choice) => setRun(choose(run, c, up));
@@ -989,11 +1175,13 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
     const d = duelFor(run, up);
     if (!d) return;
     const deck = deckOf(d.foe);
+    const kind = stopById(run, run.inDuel!)?.kind;
     p.onDuel({
       me: { name: p.name, main: run.main, extra: run.extra, skill: run.skill, setup: d.me },
       cpu: { name: d.foe.name, main: deck.main, extra: deck.extra, skill: deck.skill, setup: d.cpu },
       first: 'coin',
       context: { kind: 'labyrinth', runId: run.id, stopId: run.inDuel! },
+      vs: { label: `FLOOR ${run.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(run.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(run.relics.length ? [`Relics: ${run.relics.join(', ')}`] : [])], goals: [] },
     });
   };
 
@@ -1032,7 +1220,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
                   const to = stopById(run, id)!;
                   const R = floor.rows.length;
                   const y = (row: number) => ((R - 1 - row + 0.5) / R) * 100;
-                  const x = (col: number, width: number) => ((col + 1) / (width + 1)) * 100;
+                  const x = mapX;
                   const walked = run.visited.includes(st.id) && run.visited.includes(id);
                   return <line key={st.id + id} class={walked ? 'walked' : ''} x1={x(st.col, row.length)} y1={y(r)} x2={x(to.col, floor.rows[to.row].length)} y2={y(to.row)} vector-effect="non-scaling-stroke" />;
                 }),
@@ -1050,7 +1238,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
                   const here = run.at === st.id;
                   const foe = st.foe ? duelistById(st.foe) : null;
                   return (
-                    <button key={st.id} style={{ left: `${((st.col + 1) / (row.length + 1)) * 100}%` }} class={`so-stop k-${st.kind} ${live ? 'live' : ''} ${seen ? 'seen' : ''} ${here ? 'here' : ''}`} disabled={!live} onClick={() => setPeek(st)}>
+                    <button key={st.id} style={{ left: `${mapX(st.col, row.length)}%` }} class={`so-stop k-${st.kind} ${live ? 'live' : ''} ${seen ? 'seen' : ''} ${here ? 'here' : ''}`} disabled={!live} onClick={() => setPeek(st)}>
                       <span class="so-stop-i">{STOP_ICON[st.kind]}</span>
                       <span class="so-stop-n">{foe ? foe.name : STOP_NAME[st.kind]}</span>
                     </button>
@@ -1151,7 +1339,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
                 </div>
               </div>
               {ev.choices.map((c, i) => (
-                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={ev.id === 'ring' && i === 0 && run.hearts <= 1} onClick={() => act({ kind: 'event', option: i })}>
+                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={i === 0 && ((ev.id === 'ring' && run.hearts <= 1) || (ev.id === 'graveyard' && run.main.length <= 20) || (ev.id === 'rebecca' && run.main.length <= 21))} onClick={() => act({ kind: 'event', option: i })}>
                   {c.label} · {c.note}
                 </Btn>
               ))}
@@ -1167,7 +1355,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
           <Btn disabled={run.main.length <= 20} onClick={() => act({ kind: 'rest', option: 'cut' })}>
             Train: cut a card from your deck
           </Btn>
-          {run.hearts >= run.maxHearts && run.main.length <= 20 && <Btn onClick={() => act({ kind: 'rest', option: 'cut' })}>Move on</Btn>}
+          {(run.hearts >= run.maxHearts || run.curse >= 8) && run.main.length <= 20 && <Btn onClick={() => act({ kind: 'leave' })}>Move on</Btn>}
         </Sheet>
       )}
       {pend?.kind === 'remove' && <PickFromDeck title="Cut a card" note={run.main.length <= 20 ? 'Your Main Deck is at 20, the minimum.' : 'Tap a card to remove one copy.'} run={run} onPick={(n) => act({ kind: 'remove', card: n })} />}
@@ -1211,6 +1399,8 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void }) {
           <p class="so-center">
             You lost a heart. <Hearts n={run.hearts} max={run.maxHearts} />
           </p>
+          {p.walkedOut && <p class="so-center so-dim">The app closed during your last duel, so it counts as a loss.</p>}
+          {run.nextDuel && <p class="so-center so-dim">Still waiting for your next duel: {run.nextDuel.text}.</p>}
           {inDuel?.kind === 'boss' && <p class="so-center so-dim">The floor boss blocks the way. Try again when you're ready.</p>}
           <Btn kind="gold" onClick={() => (setLost(false), p.onReportSeen())}>
             Continue

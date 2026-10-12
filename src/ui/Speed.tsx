@@ -104,8 +104,8 @@ export function SpeedHub({
           items={[
             { label: 'The Millennium Road', note: 'story campaign: earn cards, beat the bosses', onPick: () => onSolo('campaign') },
             { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
-            { label: 'Duel the Computer', note: 'Yugi, Kaiba, Joey, Mai and more', onPick: () => setSub('cpu') },
-            { label: 'Practice Duel', note: "test any deck; doesn't count", onPick: () => onSolo('practice') },
+            { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
+            { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Record', onPick: () => setSub('record') },

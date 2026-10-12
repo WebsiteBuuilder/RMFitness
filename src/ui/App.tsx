@@ -19,7 +19,7 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
-import { Solo, type SoloMode } from './Solo';
+import { SoloHud, Solo, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
@@ -399,7 +399,12 @@ export function App() {
       return <SpeedHub onSolo={setSoloMode} profile={profile} save={speedSave ?? loadSpeedSave(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />;
     case 'duel':
       if (!session) return menu;
-      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />;
+      return (
+        <>
+          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />
+          {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
+        </>
+      );
     default:
       return menu;
   }
