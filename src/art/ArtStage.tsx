@@ -191,7 +191,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
 
   // Monsters standing on their cards: every face-up monster on the field.
   const standing: BoardMonster[] = [];
-  if (enabled && setting !== "off")
+  if (enabled && setting !== "off" && state.winner === null)
     for (const p of [0, 1] as Pid[])
       for (const c of state.players[p].mz)
         if (c?.faceUp)

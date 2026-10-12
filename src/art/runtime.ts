@@ -309,7 +309,7 @@ export class Director {
 
   private figure(art: ArtData, size: number, prof: ArtProfile, glow: number) {
     const segs = this.stage.quality === 'full' ? 56 : 32;
-    return new Figure(art, size, segs, glow, size * (0.22 + prof.depth * 0.3));
+    return new Figure(art, size, segs, glow, size * (0.22 + prof.depth * 0.3), { rim: art.palette[0], edge: prof.tier >= 2 ? 1 : 0 });
   }
 
   private dropActor(a: Actor) {

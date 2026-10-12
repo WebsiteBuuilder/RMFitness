@@ -102,6 +102,13 @@ float vnoise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.
 `;
 
 // ---------------------------------------------------------------- Figure
+// A figure is the card art on a subdivided plane pushed out by its relief map.
+// It is lit like a solid: normals come from the relief (central differences), a
+// warm key light from the upper left front, a palette-tinted fresnel rim, a hemi
+// ambient and a cheap relief AO. A second draw of the same mesh and program
+// (uWall = 1), pushed back and darkened with the matte dilated, is the slab's
+// side wall when the camera swings round; a ContactShadow sits under the feet.
+// Both are children of figure.mesh, so they come and go with it.
 const FIG_VERT = /* glsl */ `
 attribute vec3 aCenter;
 attribute vec3 rnd;
@@ -110,20 +117,38 @@ uniform float uDepthAmt;
 uniform float uShatter;
 uniform float uTime;
 uniform float uWave;
+uniform float uMatte;
+uniform float uWall;
+uniform float uThick;
+uniform float uGrid;
 varying vec2 vUv;
 varying float vD;
+varying vec3 vViewPos;
+varying vec3 vNx;
+varying vec3 vNy;
+varying vec3 vNz;
+float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
 void main(){
   vUv = uv;
-  float d = texture2D(uDepth, uv).r;
+  float d = rel(uv);
   vD = d;
+  if (uMatte > 0.5) {
+    // keep the silhouette on a plateau: the vertices just outside the subject take
+    // its depth, so the steep skirt falls where the matte is already transparent
+    // instead of smearing the art across a stretched edge
+    float g = uGrid;
+    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
+    d = max(d, m * 0.9);
+  }
   vec3 p = position;
-  p.z += d * uDepthAmt;
+  // the back of the slab: flatter, a little behind
+  p.z += uWall > 0.5 ? d * uDepthAmt * 0.35 - uThick : d * uDepthAmt;
   // living art: the subject breathes and sways a little
   p.z += sin(uTime * 2.0 + p.y * 3.0) * 0.015 * d;
   p.x += sin(uTime * 1.3 + p.y * 2.0) * 0.01 * d * uWave;
   if (uShatter > 0.0) {
     vec3 c = aCenter;
-    c.z += texture2D(uDepth, c.xy + 0.5).r * uDepthAmt;
+    c.z += rel(c.xy + 0.5) * uDepthAmt;
     vec3 local = p - c;
     float s = uShatter;
     vec3 dir = normalize(vec3(c.xy * 2.2 + (rnd.xy - 0.5) * 1.6, 0.5 + rnd.z));
@@ -134,7 +159,12 @@ void main(){
     c.y -= s * s * 1.6;
     p = c + local;
   }
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  vNx = normalMatrix * vec3(1.0, 0.0, 0.0);
+  vNy = normalMatrix * vec3(0.0, 1.0, 0.0);
+  vNz = normalMatrix * vec3(0.0, 0.0, 1.0);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  vViewPos = mv.xyz;
+  gl_Position = projectionMatrix * mv;
 }`;
 
 const FIG_FRAG = /* glsl */ `
@@ -148,24 +178,79 @@ uniform float uCut;
 uniform float uShatter;
 uniform float uTime;
 uniform float uDark;
+uniform float uWall;
+uniform float uHQ;
+uniform float uEdge;
+uniform float uLight;
+uniform vec2 uTexel;
 uniform vec3 uGlow;
+uniform vec3 uRim;
 varying vec2 vUv;
 varying float vD;
+varying vec3 vViewPos;
+varying vec3 vNx;
+varying vec3 vNy;
+varying vec3 vNz;
 ${NOISE_GLSL}
+float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
 void main(){
   vec4 col = texture2D(uArt, vUv);
+  vec4 dm = texture2D(uDepth, vUv);
   float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.07, vUv.y) * smoothstep(0.0, 0.07, 1.0 - vUv.y);
+  float ma = dm.a;
+  float guess = vD;
+  if (uWall > 0.5) {
+    // the wall's matte is dilated ~1.5 px so it also rims the figure with a dark outline
+    vec2 t = uTexel * 1.5;
+    ma = max(ma, max(max(texture2D(uDepth, vUv + vec2(t.x, 0.0)).a, texture2D(uDepth, vUv - vec2(t.x, 0.0)).a), max(texture2D(uDepth, vUv + vec2(0.0, t.y)).a, texture2D(uDepth, vUv - vec2(0.0, t.y)).a)));
+    guess += 0.06;
+  }
   // prebuilt figure maps carry the cut-out subject in alpha; otherwise guess it from depth
-  float subj = mix(smoothstep(0.22, 0.5, vD), smoothstep(0.3, 0.7, texture2D(uDepth, vUv).a), uMatte);
+  float subj = mix(smoothstep(0.22, 0.5, guess), smoothstep(0.35, 0.65, ma), uMatte);
   float a = edge * mix(1.0, subj, uCut);
   float n = vnoise(vUv * 9.0 + uTime * 0.3) * 0.28;
   float r = uReveal * 1.35 - (vUv.y * 0.95 + n);
   float vis = smoothstep(0.0, 0.03, r);
   float rim = (1.0 - smoothstep(0.0, 0.1, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999);
   vec3 c = col.rgb;
-  float subjEdge = (1.0 - abs(subj * 2.0 - 1.0)) * uCut;
-  float scan = 0.5 + 0.5 * sin(vUv.y * 160.0 - uTime * 6.0);
-  c += uGlow * subjEdge * (0.55 + 0.25 * scan);
+  if (uWall > 0.5) {
+    c = c * 0.16 + uRim * 0.05;
+    a *= 1.0 - smoothstep(0.0, 0.12, uShatter);
+  } else {
+    // normals from the relief (central differences, tamed so painted detail stays painted)
+    vec2 t = uTexel * 1.5;
+    float hl = rel(vUv - vec2(t.x, 0.0));
+    float hr = rel(vUv + vec2(t.x, 0.0));
+    float hd = rel(vUv - vec2(0.0, t.y));
+    float hu = rel(vUv + vec2(0.0, t.y));
+    vec3 on = normalize(vec3((hl - hr) * 0.16, (hd - hu) * 0.16, t.x * 2.0));
+    vec3 N = normalize(on.x * vNx + on.y * vNy + on.z * vNz);
+    if (!gl_FrontFacing) N = -N;
+    vec3 V = normalize(-vViewPos);
+    vec3 L = vec3(-0.45, 0.64, 0.62);
+    float dif = max(dot(N, L), 0.0);
+    float hemi = 0.5 + 0.5 * N.y;
+    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.2);
+    float ao = 1.0;
+    float spec = 0.0;
+    if (uHQ > 0.5) {
+      // cheap AO: darker where the relief sits below its wider neighbourhood
+      vec2 w = uTexel * 6.0;
+      float nb = (rel(vUv + w) + rel(vUv - w) + rel(vUv + vec2(w.x, -w.y)) + rel(vUv + vec2(-w.x, w.y))) * 0.25;
+      ao = clamp(1.0 - max(0.0, nb - dm.r) * 3.0, 0.5, 1.0);
+      spec = pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * 0.22;
+    }
+    vec3 lit = c * (vec3(0.42, 0.44, 0.52) * ao * (0.75 + 0.5 * hemi) + vec3(1.0, 0.9, 0.74) * dif * 0.82 * mix(1.0, ao, 0.5));
+    lit += vec3(1.0, 0.95, 0.85) * spec * ao;
+    lit += uRim * fres * 1.25 * (0.4 + 0.6 * subj);
+    // a palette glow just inside the silhouette (big monsters)
+    float inner = smoothstep(0.35, 0.6, ma) * (1.0 - smoothstep(0.6, 0.97, ma)) * uMatte;
+    lit += uRim * inner * uEdge * 0.9;
+    c = mix(c, lit, uLight);
+    float subjEdge = (1.0 - abs(subj * 2.0 - 1.0)) * uCut;
+    float scan = 0.5 + 0.5 * sin(vUv.y * 160.0 - uTime * 6.0);
+    c += uGlow * subjEdge * (0.55 + 0.25 * scan);
+  }
   c = mix(c, vec3(1.0), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
   c += uGlow * rim * 2.2;
@@ -175,21 +260,158 @@ void main(){
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
 
+/** Where a figure's subject stands in its art (uv: 0..1, v up), measured once per art. */
+export interface Footprint {
+  /** horizontal center of the feet */
+  u: number;
+  /** the lowest point of the subject */
+  v: number;
+  /** the subject's width at its feet */
+  w: number;
+  /** the subject's bounding box */
+  top: number;
+  left: number;
+  right: number;
+  /** relief 0..1 around the feet */
+  relief: number;
+}
+
+const FOOTPRINTS = new WeakMap<ArtData, Footprint>();
+const FP_N = 64;
+
+/** The subject's footprint (one small read of the relief or guessed depth, cached per art). */
+export function footprint(art: ArtData): Footprint {
+  const have = FOOTPRINTS.get(art);
+  if (have) return have;
+  let n = FP_N;
+  let mask: Float32Array;
+  let rel: Float32Array;
+  try {
+    if (art.relief) {
+      const c = document.createElement('canvas');
+      c.width = c.height = n;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(art.relief, 0, 0, n, n);
+      const px = g.getImageData(0, 0, n, n).data;
+      mask = new Float32Array(n * n);
+      rel = new Float32Array(n * n);
+      for (let i = 0; i < n * n; i++) {
+        mask[i] = px[i * 4 + 3] / 255;
+        rel[i] = px[i * 4] / 255;
+      }
+    } else {
+      n = DEPTH_SIZE;
+      mask = new Float32Array(n * n);
+      rel = new Float32Array(n * n);
+      for (let i = 0; i < n * n; i++) {
+        rel[i] = art.depth[i] / 255;
+        mask[i] = rel[i] > 0.4 ? 1 : 0;
+      }
+    }
+  } catch {
+    const fp = { u: 0.5, v: 0.08, w: 0.5, top: 0.92, left: 0.2, right: 0.8, relief: 0.5 };
+    FOOTPRINTS.set(art, fp);
+    return fp;
+  }
+  // rows top to bottom (image space); a row counts once it has a few subject pixels
+  const minCount = Math.max(2, Math.round(n * 0.03));
+  let top = -1;
+  let bottom = -1;
+  let left = n;
+  let right = -1;
+  for (let y = 0; y < n; y++) {
+    let cnt = 0;
+    for (let x = 0; x < n; x++)
+      if (mask[y * n + x] > 0.5) {
+        cnt++;
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+      }
+    if (cnt >= minCount) {
+      if (top < 0) top = y;
+      bottom = y;
+    }
+  }
+  let fp: Footprint;
+  if (bottom < 0) fp = { u: 0.5, v: 0.08, w: 0.5, top: 0.92, left: 0.2, right: 0.8, relief: 0.5 };
+  else {
+    const band = Math.max(1, Math.round((bottom - top) * 0.1));
+    let sx = 0;
+    let cnt = 0;
+    let rs = 0;
+    let fl = n;
+    let fr = -1;
+    for (let y = bottom - band; y <= bottom; y++)
+      for (let x = 0; x < n; x++) {
+        const i = y * n + x;
+        if (mask[i] <= 0.5) continue;
+        sx += x;
+        rs += rel[i];
+        cnt++;
+        fl = Math.min(fl, x);
+        fr = Math.max(fr, x);
+      }
+    fp = {
+      u: cnt ? (sx / cnt + 0.5) / n : 0.5,
+      v: 1 - (bottom + 1) / n,
+      w: cnt ? Math.max(0.12, (fr - fl + 1) / n) : 0.4,
+      top: 1 - top / n,
+      left: left / n,
+      right: (right + 1) / n,
+      relief: cnt ? rs / cnt : 0.5,
+    };
+  }
+  FOOTPRINTS.set(art, fp);
+  return fp;
+}
+
+/**
+ * Figure detail, set by the stage's quality governor: 0 = no side wall, no AO or
+ * specular (fewest texture taps); 1 = side wall; 2 = everything.
+ */
+let figureDetail = 2;
+
+/** A palette color made bright enough to light a rim (full value, a little toward white). */
+export function rimColor(hex: number, out = new Vector3()): Vector3 {
+  setRgb(out, hex);
+  const m = Math.max(out.x, out.y, out.z);
+  if (m > 0.001) out.multiplyScalar(1 / m);
+  else out.set(1, 1, 1);
+  return out.lerp(WHITE, 0.25);
+}
+const WHITE = new Vector3(1, 1, 1);
+export function setFigureDetail(level: number) {
+  figureDetail = level;
+}
+
+export interface FigureOptions {
+  /** rim light color (0xRRGGBB); defaults to the glow color. Use the art's palette[0]. */
+  rim?: number;
+  /** 0..1 palette glow just inside the silhouette (monster tier >= 2) */
+  edge?: number;
+}
+
 export class Figure implements Fx {
   mesh: Mesh;
   mat: ShaderMaterial;
+  /** the slab's dark back (a child of mesh); hidden at low detail */
+  wall: Mesh;
+  private wallMat: ShaderMaterial;
+  /** the soft shadow under its feet (a child of mesh) */
+  shadow: ContactShadow;
+  /** 0..1 how much shadow to show (set 0 while it flies or orbits off the ground) */
+  shadowAmt = 1;
+  /** where the subject stands in the art */
+  foot: Footprint;
+  /** fixed detail (0..2), or null to follow the stage's governor */
+  detail: number | null = null;
+  private appliedDetail = -1;
   private tex: CanvasTexture;
   private depthTex: DataTexture | Texture;
   alive = true;
   time = Math.random() * 10;
 
-  constructor(
-    art: ArtData,
-    size: number,
-    segs: number,
-    glow: number,
-    depthAmt: number,
-  ) {
+  constructor(art: ArtData, size: number, segs: number, glow: number, depthAmt: number, opts: FigureOptions = {}) {
     const geo = new PlaneGeometry(1, 1, segs, segs).toNonIndexed();
     const pos = geo.getAttribute('position');
     const n = pos.count;
@@ -198,10 +420,16 @@ export class Figure implements Fx {
     for (let t = 0; t < n; t += 3) {
       const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
       const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
-      const r = [Math.random(), Math.random(), Math.random()];
+      const r0 = Math.random();
+      const r1 = Math.random();
+      const r2 = Math.random();
       for (let k = 0; k < 3; k++) {
-        centroid.set([cx, cy, 0], (t + k) * 3);
-        rnd.set(r, (t + k) * 3);
+        const i = (t + k) * 3;
+        centroid[i] = cx;
+        centroid[i + 1] = cy;
+        rnd[i] = r0;
+        rnd[i + 1] = r1;
+        rnd[i + 2] = r2;
       }
     }
     geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
@@ -215,18 +443,61 @@ export class Figure implements Fx {
     this.depthTex.minFilter = LinearFilter;
     this.depthTex.generateMipmaps = false;
     this.depthTex.needsUpdate = true;
-    this.mat = material('figure', { uArt: this.tex, uDepth: this.depthTex, uDepthAmt: depthAmt, uMatte: art.relief ? 1 : 0, uGlow: rgb(glow) });
+    const texN = art.relief ? art.relief.naturalWidth || 256 : DEPTH_SIZE;
+    this.mat = material('figure', {
+      uArt: this.tex,
+      uDepth: this.depthTex,
+      uDepthAmt: depthAmt,
+      uMatte: art.relief ? 1 : 0,
+      uGlow: rgb(glow),
+      uRim: rimColor(opts.rim ?? glow),
+      uEdge: opts.edge ?? 0,
+      uTexel: new Vector2(1 / texN, 1 / texN),
+      uGrid: 1 / segs,
+    });
     this.mesh = new Mesh(geo, this.mat);
     this.mesh.scale.setScalar(size);
+    // the wall: same geometry and program; it shares every uniform but its own uWall
+    this.wallMat = material('figure', {});
+    const shared: Record<string, IUniform> = { ...this.mat.uniforms, uWall: { value: 1 } };
+    this.wallMat.uniforms = shared;
+    this.wall = new Mesh(geo, this.wallMat);
+    this.wall.renderOrder = -1;
+    this.mesh.add(this.wall);
+    // the contact shadow, flat on the ground under the feet
+    this.foot = footprint(art);
+    const f = this.foot;
+    this.shadow = new ContactShadow();
+    const sw = Math.max(0.3, f.w * 1.35);
+    const sm = this.shadow.mesh;
+    sm.scale.set(sw, sw * 0.9, 1);
+    sm.rotation.x = -1.2;
+    sm.position.set(f.u - 0.5, f.v - 0.5 + 0.01, f.relief * depthAmt * 0.45);
+    sm.renderOrder = -2;
+    this.mesh.add(sm);
+    this.applyDetail();
   }
 
   get u() {
     return this.mat.uniforms as Record<string, { value: any }>;
   }
 
+  private applyDetail() {
+    const d = this.detail ?? figureDetail;
+    if (d === this.appliedDetail) return;
+    this.appliedDetail = d;
+    this.wall.visible = d >= 1;
+    this.u.uHQ.value = d >= 2 ? 1 : 0;
+  }
+
   update(dt: number) {
     this.time += dt;
-    this.u.uTime.value = this.time;
+    const u = this.u;
+    u.uTime.value = this.time;
+    this.applyDetail();
+    const s = this.shadow.u;
+    s.uOpacity.value = this.shadowAmt * u.uOpacity.value * clamp01(1 - u.uShatter.value * 4) * clamp01(u.uReveal.value * 3) * (1 - u.uTint.value * 0.6);
+    s.uTime.value = this.time;
     return this.alive;
   }
 
@@ -234,8 +505,60 @@ export class Figure implements Fx {
     this.mesh.removeFromParent();
     this.mesh.geometry.dispose();
     this.mat.dispose();
+    this.wallMat.dispose();
+    this.shadow.dispose();
     this.tex.dispose();
     this.depthTex.dispose();
+  }
+}
+
+// ---------------------------------------------------------------- ContactShadow
+const SHADOW_FRAG = /* glsl */ `
+uniform float uOpacity;
+uniform float uDark;
+uniform vec3 uRing;
+uniform float uRingAmt;
+uniform float uTime;
+varying vec2 vUv;
+void main(){
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  // soft dark core (strongest right under the feet) plus a wide penumbra
+  float core = 1.0 - smoothstep(0.0, 0.55, r);
+  float pen = 1.0 - smoothstep(0.25, 1.0, r);
+  float sh = (core * core * 0.55 + pen * 0.35) * uDark;
+  // optional glowing base disc (field figures): a bright ring and a faint fill
+  float ring = exp(-pow((r - 0.78) / 0.06, 2.0)) * (0.8 + 0.2 * sin(uTime * 2.4));
+  float fill = (1.0 - smoothstep(0.55, 0.8, r)) * 0.18;
+  vec3 g = uRing * (ring + fill) * uRingAmt;
+  float a = sh * uOpacity;
+  gl_FragColor = vec4(g * uOpacity, a);
+}`;
+
+/**
+ * A soft elliptical shadow on the ground (and, with uRingAmt, a glowing base disc).
+ * Premultiplied: the dark part darkens what is under it, the ring adds light.
+ * Every Figure has one as figure.shadow; it can also stand alone.
+ */
+export class ContactShadow implements Fx {
+  mesh: Mesh;
+  mat: ShaderMaterial;
+  alive = true;
+  constructor(ring = 0xffffff, ringAmt = 0) {
+    this.mat = material('shadow', { uRing: rgb(ring), uRingAmt: ringAmt });
+    this.mesh = new Mesh(new PlaneGeometry(1, 1), this.mat);
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  update(dt: number) {
+    this.u.uTime.value += dt;
+    return this.alive;
+  }
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mat.dispose();
   }
 }
 
@@ -757,8 +1080,8 @@ void main(){
  * holding the program in every renderer that compiled it (prewarm), disposing an
  * instance never deletes the program and the next cinematic links nothing.
  */
-export type MaterialKind = 'figure' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'bright' | 'kawase' | 'composite';
-export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'bright', 'kawase', 'composite'];
+export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'bright' | 'kawase' | 'composite';
+export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'bright', 'kawase', 'composite'];
 
 const uniforms = (o: Record<string, unknown>) => {
   const r: Record<string, IUniform> = {};
@@ -776,7 +1099,37 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       fragmentShader: FIG_FRAG,
       ...FX,
       side: DoubleSide,
-      uniforms: uniforms({ uArt: null, uDepth: null, uDepthAmt: 0.3, uMatte: 0, uShatter: 0, uTime: 0, uWave: 1, uReveal: 1, uOpacity: 1, uTint: 0, uCut: 1, uDark: 0, uGlow: new Vector3(1, 1, 1) }),
+      uniforms: uniforms({
+        uArt: null,
+        uDepth: null,
+        uDepthAmt: 0.3,
+        uMatte: 0,
+        uShatter: 0,
+        uTime: 0,
+        uWave: 1,
+        uReveal: 1,
+        uOpacity: 1,
+        uTint: 0,
+        uCut: 1,
+        uDark: 0,
+        uGlow: new Vector3(1, 1, 1),
+        uRim: new Vector3(1, 1, 1),
+        uEdge: 0,
+        uLight: 1,
+        uHQ: 1,
+        uWall: 0,
+        uThick: 0.035,
+        uGrid: 1 / 32,
+        uTexel: new Vector2(1 / 256, 1 / 256),
+      }),
+    }),
+  shadow: () =>
+    new ShaderMaterial({
+      vertexShader: BASIC_VERT,
+      fragmentShader: SHADOW_FRAG,
+      ...FX,
+      side: DoubleSide,
+      uniforms: uniforms({ uOpacity: 1, uDark: 1, uRing: new Vector3(1, 1, 1), uRingAmt: 0, uTime: 0 }),
     }),
   panel: () => new ShaderMaterial({ vertexShader: BASIC_VERT, fragmentShader: PANEL_FRAG, ...FX, side: DoubleSide, uniforms: uniforms({ uMap: null, uOpacity: 1, uTint: 0, uGlow: new Vector3(1, 1, 1), uSheen: -1 }) }),
   particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300 }) }),
@@ -1059,6 +1412,7 @@ export class Stage {
 
   private applyLevel() {
     const l = this.levels[this.level];
+    setFigureDetail(this.level === 0 ? 0 : this.level === 1 ? 1 : 2);
     this.particles.emitScale = l.emit;
     if (l.post && !this.post) this.post = new Post();
     if (!l.post && this.post) {

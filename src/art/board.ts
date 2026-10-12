@@ -1,19 +1,20 @@
 // Monsters standing on the field: every face-up monster gets its 3D figure (its
-// art pushed out by the depth map, background cut away) standing on its card for
-// as long as it stays there. One small canvas under the duel's controls, drawn
-// at ~30 fps and only while a figure is on the field. Positions come from the
-// cards on screen ([data-uid]), so Classic and Touch both work unchanged.
+// art pushed out by the relief map, background cut away, lit as a solid) standing
+// on its card for as long as it stays there, on a glowing base disc with a soft
+// contact shadow. One small canvas under the duel's controls, drawn at ~30 fps
+// and only while a figure is on the field. Positions come from the cards on
+// screen ([data-uid]), so Classic and Touch both work unchanged.
 //
 // Kept cheap for phones: card positions are measured only when the layout may
 // have moved (resize, scroll, a new field, a slow 500 ms refresh), not every
 // frame; nothing is allocated per frame; and nothing at all is drawn while a
 // cinematic plays (a 250 ms poll waits for it to end), while the tab is hidden,
 // or while the WebGL context is lost.
-import { PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } from "three";
+import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } from "three";
 import { card } from "../eds/db";
-import { artFor } from "./depth";
+import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { Figure, dprCap, easeOut, lerp, makeRenderer, prewarmRenderer, setRgb } from "./stage";
+import { ContactShadow, Figure, clamp01, dprCap, easeOut, footprint, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, type Footprint } from "./stage";
 import { artBusy } from "./cues";
 
 export interface BoardMonster {
@@ -22,21 +23,105 @@ export interface BoardMonster {
   def: boolean;
 }
 
+/** Where a field figure stands on screen. Every length is in viewport CSS px. */
+export interface FieldPose {
+  /** the feet: the card's center x and the foot line y */
+  cx: number;
+  foot: number;
+  /** center of the figure's square mesh (before tilt) */
+  x: number;
+  y: number;
+  /** side of the square Figure mesh (its geometry is a 1×1 plane: mesh.scale = size, scale.y = size·scaleY) */
+  size: number;
+  /** the subject's visible width and height */
+  w: number;
+  h: number;
+  /** 1, or 0.85 kneeling in Defense */
+  scaleY: number;
+  /** tilt around the foot point, radians (negative leans back) */
+  rotX: number;
+  /** the foot point in the figure's local uv (0..1, v up) */
+  footU: number;
+  footV: number;
+}
+
+interface RectLike {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** Lean back (radians, around the feet): standing, and kneeling in Defense. */
+const STAND_TILT = -0.1;
+const KNEEL_TILT = -0.45;
+
+const FALLBACK_FOOT: Footprint = { u: 0.5, v: 0.08, w: 0.5, top: 0.92, left: 0.2, right: 0.8, relief: 0.5 };
+
+/** Writes the field pose for a card on screen into `out` (no allocation). */
+function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
+  // the card's own width (a Defense card lies on its side)
+  const cw = Math.min(r.width, r.height);
+  // the subject (not the whole art square) is ~1.2× the card's width tall (1.0× in Defense)
+  const subjH = Math.max(0.55, Math.min(1, f.top - f.v));
+  const size = (cw * (def ? 1.0 : 1.2)) / subjH;
+  const scaleY = def ? 0.85 : 1;
+  out.cx = r.left + r.width / 2;
+  // feet a little above the card's middle-low, clear of the ATK label at its bottom edge
+  out.foot = r.top + r.height * (def ? 0.6 : 0.56);
+  out.size = size;
+  out.scaleY = scaleY;
+  out.rotX = def ? KNEEL_TILT : STAND_TILT;
+  out.footU = f.u;
+  out.footV = f.v;
+  out.x = out.cx - (f.u - 0.5) * size;
+  out.y = out.foot + (f.v - 0.5) * size * scaleY;
+  out.w = (f.right - f.left) * size;
+  out.h = (f.top - f.v) * size * scaleY;
+  return out;
+}
+
+/**
+ * Where the board will stand this monster's figure, for a card at `rect`
+ * (getBoundingClientRect of its [data-uid] element), so a summon cinematic can end
+ * exactly on it. `art` null uses a generic footprint.
+ */
+export function fieldPose(rect: RectLike, def: boolean, art: ArtData | null): FieldPose {
+  return poseInto({ cx: 0, foot: 0, x: 0, y: 0, size: 0, w: 0, h: 0, scaleY: 1, rotX: 0, footU: 0.5, footV: 0.08 }, rect, def, art ? footprint(art) : FALLBACK_FOOT);
+}
+
+const landed = new Map<number, number>();
+/** QUICK_MS: a figure that a cinematic just landed on its card fades in this fast instead of re-revealing. */
+const QUICK_MS = 150;
+const LANDED_WINDOW_MS = 2000;
+
+/** A cinematic has just put this monster on its card: its board figure appears without a second reveal. */
+export function markLanded(uid: number) {
+  landed.set(uid, performance.now());
+  if (landed.size > 32) landed.delete(landed.keys().next().value!);
+}
+
 interface Piece {
   uid: number;
   name: string;
   def: boolean;
   fig: Figure | null;
+  /** pivot at the feet: tilt and sway turn around it */
+  pivot: Object3D;
+  disc: ContactShadow | null;
   seed: number;
   depth: number;
   glow: number;
   /** 0..1 how far it has appeared */
   show: number;
+  /** null until it first shows; then whether it fades in quickly (landed by a cinematic) */
+  quick: boolean | null;
   leaving: boolean;
-  /** the card on screen, as last measured: center x, foot y, card width (0 = not on screen) */
-  cx: number;
-  foot: number;
+  /** smoothed 0..1 Defense (kneel) amount */
+  kneel: number;
+  /** the card on screen, as last measured (cw 0 = not on screen) */
   cw: number;
+  pose: FieldPose;
 }
 
 const DEF_GLOW = 0x4a8aff;
@@ -78,7 +163,7 @@ export class BoardLayer {
       this.ro = new ResizeObserver(this.markDirty);
       this.ro.observe(document.body);
     }
-    void prewarmRenderer(this.renderer, this.camera, ["figure"]);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"]);
   }
 
   resize() {
@@ -115,26 +200,38 @@ export class BoardLayer {
         name: m.name,
         def: m.def,
         fig: null,
+        pivot: new Object3D(),
+        disc: null,
         seed: prof.seed % 1000,
-        depth: 0.22 + prof.depth * 0.3,
+        depth: 0.18 + prof.depth * 0.22,
         glow: prof.colors[0],
         show: 0,
+        quick: null,
         leaving: false,
-        cx: 0,
-        foot: 0,
+        kneel: m.def ? 1 : 0,
         cw: 0,
+        pose: { cx: 0, foot: 0, x: 0, y: 0, size: 0, w: 0, h: 0, scaleY: 1, rotX: 0, footU: 0.5, footV: 0.08 },
       };
       this.pieces.set(m.uid, piece);
       artFor(m.name)
         .then((art) => {
-          if (this.dead || this.pieces.get(m.uid) !== piece || piece.leaving)
-            return;
-          piece.fig = new Figure(art, 1, 32, piece.glow, piece.depth);
-          piece.fig.u.uCut.value = 1;
-          piece.fig.u.uReveal.value = 0;
-          piece.fig.u.uDepthAmt.value = piece.depth;
-          piece.fig.mesh.visible = false;
-          this.scene.add(piece.fig.mesh);
+          if (this.dead || this.pieces.get(m.uid) !== piece || piece.leaving) return;
+          const rim = art.palette[0] ?? piece.glow;
+          const fig = new Figure(art, 1, 40, piece.glow, piece.depth, { rim, edge: prof.tier >= 2 ? 0.8 : 0 });
+          piece.fig = fig;
+          fig.detail = 2;
+          fig.u.uCut.value = 1;
+          fig.u.uReveal.value = 0;
+          // the board draws its own shadow + base disc flat on the card, not the figure's
+          fig.shadowAmt = 0;
+          fig.shadow.mesh.visible = false;
+          const disc = new ContactShadow(piece.glow, 1);
+          disc.mesh.renderOrder = -3;
+          rimColor(piece.glow, disc.u.uRing.value as Vector3);
+          piece.disc = disc;
+          piece.pivot.visible = false;
+          piece.pivot.add(fig.mesh);
+          this.scene.add(piece.pivot, disc.mesh);
           this.dirty = true;
           this.start();
         })
@@ -147,6 +244,8 @@ export class BoardLayer {
 
   private drop(p: Piece) {
     p.fig?.dispose();
+    p.disc?.dispose();
+    p.pivot.removeFromParent();
     this.pieces.delete(p.uid);
   }
 
@@ -186,7 +285,7 @@ export class BoardLayer {
   private onRestored = () => {
     // three.js rebuilds its GL state; textures and buffers re-upload on next draw.
     this.lost = false;
-    void prewarmRenderer(this.renderer, this.camera, ["figure"]);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"]);
     this.dirty = true;
     this.start();
   };
@@ -223,7 +322,7 @@ export class BoardLayer {
     if (++this.frame % 2 === 0 || dt > 0.05) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);
-      this.step(dt);
+      this.step(dt, now);
       this.renderer.render(this.scene, this.camera);
     }
     if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
@@ -241,48 +340,69 @@ export class BoardLayer {
         continue;
       }
       const r = el.getBoundingClientRect();
-      // The card's own width (a Defense card lies on its side).
       p.cw = r.width > 0 ? Math.min(r.width, r.height) : 0;
-      p.cx = r.left + r.width / 2;
-      p.foot = r.top + r.height * 0.72;
+      if (p.cw > 0) poseInto(p.pose, r, p.def, p.fig.foot);
     }
   }
 
-  private step(dt: number) {
+  private step(dt: number, now: number) {
     this.setOpacity("1");
     for (const p of this.pieces.values()) {
+      const fig = p.fig;
       if (p.leaving) {
         p.show -= dt * 4;
-        if (p.show <= 0 || !p.fig) {
+        if (p.show <= 0 || !fig) {
           this.drop(p);
           continue;
         }
-      } else if (p.fig) p.show = Math.min(1, p.show + dt * 1.4);
-      const fig = p.fig;
-      if (!fig) continue;
+      } else if (fig && p.cw > 0) {
+        if (p.quick === null) {
+          const at = landed.get(p.uid);
+          p.quick = at !== undefined && now - at < LANDED_WINDOW_MS;
+          if (p.quick) landed.delete(p.uid);
+        }
+        p.show = Math.min(1, p.show + dt * (p.quick ? 1000 / QUICK_MS : 1.4));
+      }
+      if (!fig || !p.disc) continue;
       fig.update(dt);
-      const cw = p.cw;
-      if (cw <= 0) {
-        fig.mesh.visible = false;
+      p.disc.update(dt);
+      if (p.cw <= 0) {
+        p.pivot.visible = false;
+        p.disc.mesh.visible = false;
         continue;
       }
-      fig.mesh.visible = true;
-      const size = cw * (p.def ? 1.35 : 1.7);
+      p.pivot.visible = true;
+      p.disc.mesh.visible = true;
+      const pose = p.pose;
       const k = easeOut(p.show);
       const t = fig.time;
-      const grow = lerp(0.6, 1, k);
-      fig.mesh.scale.setScalar(size * grow);
-      fig.mesh.position.set(
-        p.cx - this.w / 2,
-        this.h / 2 - (p.foot - size * 0.5 * grow) + Math.sin(t * 1.6 + p.seed) * cw * 0.03,
-        cw * 0.4,
-      );
-      fig.mesh.rotation.set(-0.12, Math.sin(t * 0.8 + p.seed) * 0.25, 0);
+      // kneeling eases in and out instead of snapping
+      p.kneel += ((p.def ? 1 : 0) - p.kneel) * Math.min(1, dt * 6);
+      const breath = 1 + Math.sin(t * 1.9 + p.seed) * 0.006;
+      const grow = p.quick ? 1 : lerp(0.75, 1, k);
+      // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
+      const s = pose.size * grow * breath;
+      const sy = lerp(1, 0.85, p.kneel);
+      // pivot at the feet on the card; the figure hangs from it
+      const fx = pose.cx - this.w / 2;
+      const fy = this.h / 2 - pose.foot;
+      p.pivot.position.set(fx, fy, 0);
+      p.pivot.rotation.set(lerp(STAND_TILT, KNEEL_TILT, p.kneel), Math.sin(t * 0.45 + p.seed) * 0.14, 0);
+      fig.mesh.scale.set(s, s * sy * (1 + (breath - 1) * 0.5), s);
+      fig.mesh.position.set(-(pose.footU - 0.5) * s, -(pose.footV - 0.5) * s * sy, -fig.foot.relief * fig.u.uDepthAmt.value * 0.45 * s);
       const u = fig.u;
-      u.uReveal.value = k;
-      u.uOpacity.value = p.leaving ? Math.max(0, p.show) : 1;
+      u.uReveal.value = p.quick ? 1 : k;
+      u.uOpacity.value = p.leaving ? Math.max(0, p.show) : p.quick ? k : 1;
       setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : p.glow);
-      u.uDark.value = p.def ? 0.25 : 0;
+      u.uDark.value = p.kneel * 0.2;
+      // the base disc + shadow lies on the card under the feet
+      const d = p.disc;
+      const dsz = Math.max(p.cw * 0.55, fig.foot.w * s * 1.15);
+      d.mesh.position.set(fx, fy - p.cw * 0.02, 1);
+      d.mesh.scale.set(dsz, dsz * 0.42, 1);
+      d.u.uOpacity.value = clamp01(p.leaving ? p.show : k);
+      d.u.uRingAmt.value = p.def ? 0.8 : 1.3;
+      d.u.uDark.value = 1.5;
     }
   }
 
@@ -295,7 +415,10 @@ export class BoardLayer {
     this.canvas.removeEventListener("webglcontextlost", this.onLost, false);
     this.canvas.removeEventListener("webglcontextrestored", this.onRestored, false);
     this.ro?.disconnect();
-    for (const p of this.pieces.values()) p.fig?.dispose();
+    for (const p of this.pieces.values()) {
+      p.fig?.dispose();
+      p.disc?.dispose();
+    }
     this.pieces.clear();
     this.renderer.dispose();
     this.renderer.forceContextLoss();

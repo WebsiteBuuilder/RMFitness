@@ -337,3 +337,10 @@
   pointer-events: none;
   transition: opacity 0.2s;
 }
+
+/* ---- field figures (board.ts) ----
+   The 3D figures canvas (.art-board, z-index 2) stands over the field; the Touch
+   screen's ATK/DEF labels are lifted above it so they always stay readable. */
+.art3d-on .tz .tstat {
+  z-index: 3;
+}
