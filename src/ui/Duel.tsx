@@ -3,6 +3,7 @@ import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
 import { PHASES } from '../eds/types';
 import { other } from '../eds/engine';
+import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { Menu, Overlay, Win } from './Window';
@@ -141,9 +142,11 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
             else setMode({ kind: 'attack', uid: m.uid });
           },
         });
+        if (can && e.canAttackDirectly(m) && e.monsters(other(acting)).length > 0) commands.push({ label: 'Direct Attack', onPick: () => send({ type: 'ATTACK', player: acting, uid: m.uid, target: null }) });
       }
       if (e.inMainPhase()) {
-        if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh, onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
+        if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
+        if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos, onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
         else commands.push({ label: 'Flip Summon', disabled: !fresh, onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
       }
     }

@@ -5,7 +5,15 @@ import { other } from './engine';
 import { getEffect } from './effects';
 import type { Action, FieldCard, Pid } from './types';
 
-const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts']);
+const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
+/** Cards that destroy a class of monsters: worth it when they hit more of theirs than ours. */
+const WIPES: Record<string, (e: Engine, m: FieldCard) => boolean> = {
+  'Warrior Elimination': (e, m) => e.info(m.name).race === 'Warrior',
+  'Eradicating Aerosol': (e, m) => e.info(m.name).race === 'Insect',
+  'Acid Rain': (e, m) => m.faceUp && e.info(m.name).race === 'Machine',
+  'Breath of Light': (e, m) => m.faceUp && e.info(m.name).race === 'Rock',
+  'Eternal Rest': (_e, m) => m.equips.length > 0,
+};
 
 export function aiAction(e: Engine, me: Pid): Action | null {
   const s = e.state;
@@ -23,7 +31,20 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.
-    const picks = rankOptions(e, me, prompt.title, prompt.options).slice(0, Math.max(prompt.min, Math.min(prompt.max, prompt.min || 1)));
+    const ranked = rankOptions(e, me, prompt.title, prompt.options);
+    const need = prompt.title.match(/^Ritual: .*Level (\d+)/);
+    if (need) {
+      const target = Number(need[1]);
+      const picks: number[] = [];
+      let total = 0;
+      for (const i of ranked) {
+        if (total >= target) break;
+        picks.push(i);
+        total += e.info(prompt.options[i].label).level ?? 1;
+      }
+      return total >= target ? { type: 'CHOOSE', player: me, picks } : { type: 'CANCEL', player: me };
+    }
+    const picks = ranked.slice(0, Math.max(prompt.min, Math.min(prompt.max, prompt.min || 1)));
     if (picks.length < prompt.min && prompt.cancel) return { type: 'CANCEL', player: me };
     return { type: 'CHOOSE', player: me, picks };
   }
@@ -61,6 +82,28 @@ export function aiAction(e: Engine, me: Pid): Action | null {
         if (pool.some((g) => (e.info(g.name).atk ?? 0) >= 1800)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
       }
     }
+    // 3b. Ritual Summons, type wipes, Field Spells and monster effects.
+    for (const c of my.hand) {
+      const info = e.info(c.name);
+      if (!e.canActivateMain(me, c.uid)) continue;
+      if (info.sub === 'Ritual' && info.kind === 'spell') return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      const wipe = WIPES[c.name];
+      if (wipe && theirMonsters.filter((m) => wipe(e, m)).length > myMonsters.filter((m) => wipe(e, m)).length) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      if (info.sub === 'Field' && !my.field) {
+        const aura = getEffect(c.name)?.aura;
+        const fake = { ...c, pos: 'atk', faceUp: true, active: true, placedTurn: 0, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 } as FieldCard;
+        const gain = (list: FieldCard[]) => list.reduce((a, m) => a + (aura?.(e, fake, m, me)?.atk ?? 0), 0);
+        if (aura && gain(myMonsters) > gain(theirMonsters)) return { type: 'ACTIVATE', player: me, uid: c.uid };
+      }
+      if ((c.name === 'Giant Trunade' || c.name === 'Tribute to the Doomed') && e.spells(opp).length >= 2 && e.spells(me).length === 0) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+    }
+    for (const m of myMonsters) {
+      if (!e.canUseMonsterEffect(me, m)) continue;
+      const myBest = Math.max(0, ...myMonsters.map((x) => e.atkOf(x)));
+      if (m.name === 'Cannon Soldier' && (their.lp <= 500 * myMonsters.length || myMonsters.some((x) => x.uid !== m.uid && e.atkOf(x) < 1000 && e.atkOf(x) < theirBest))) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+      if (m.name === 'Time Wizard' && theirMonsters.length >= 2 && theirBest > myBest) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+      if (m.name === 'Barrel Dragon' && theirMonsters.some((x) => x.faceUp)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+    }
     // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
     if (!my.normalSummoned) {
       const candidates = my.hand.filter((c) => e.canNormalSummon(me, c)).map((c) => ({ c, info: e.info(c.name) }));
@@ -86,6 +129,9 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       const fresh = m.placedTurn !== s.turn && !m.posChanged && !m.attacked;
       if (!fresh) continue;
       if (!m.faceUp && (e.atkOf(m) >= theirBest || getEffect(m.name)?.flip)) return { type: 'FLIP_SUMMON', player: me, uid: m.uid };
+      if (m.cannotChangePos) continue;
+      if (m.faceUp && m.name === 'Dream Clown' && m.pos === 'atk' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };
+      if (m.faceUp && m.name === 'Crass Clown' && m.pos === 'def' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };
       if (m.faceUp && m.pos === 'def' && e.atkOf(m) > theirBest && s.phase === 'M1') return { type: 'CHANGE_POS', player: me, uid: m.uid };
       if (m.faceUp && m.pos === 'atk' && e.atkOf(m) < theirBest && e.defOf(m) > e.atkOf(m) && s.phase === 'M2') return { type: 'CHANGE_POS', player: me, uid: m.uid };
     }
@@ -108,7 +154,8 @@ export function aiAction(e: Engine, me: Pid): Action | null {
     for (const m of myMonsters) {
       if (!e.canAttackWith(me, m)) continue;
       const atk = e.atkOf(m);
-      if (theirMonsters.length === 0) return { type: 'ATTACK', player: me, uid: m.uid, target: null };
+      if (theirMonsters.length === 0 || e.canAttackDirectly(m)) return { type: 'ATTACK', player: me, uid: m.uid, target: null };
+      if (m.name === 'Dark Elf' && my.lp <= 2000) continue;
       // Best target: a monster we beat, preferring the biggest attack-position one; face-downs when we are strong.
       const beatable = theirMonsters.filter((t) => (t.faceUp ? (t.pos === 'atk' ? atk > e.atkOf(t) : atk > e.defOf(t)) : atk >= 1600));
       if (beatable.length) {
@@ -141,6 +188,8 @@ function rankOptions(e: Engine, me: Pid, title: string, options: { label: string
     const theirs = o.loc?.player !== undefined && o.loc.player !== me;
     const fc = o.uid !== undefined ? e.fieldCard(o.uid) : null;
     const power = fc ? Math.max(e.atkOf(fc), e.defOf(fc)) : atk;
+    if (/^Ritual:/.test(title)) return (info.level ?? 1) * 1000 - power; // high Level, low value
+    if (/Fusion Summon which/i.test(title)) return power;
     if (/Tribute|discard|Discard|Hand limit/i.test(title)) return -power; // give up the weakest
     if (/destroy|Destroy|Take control|Snatch|Trap Hole/i.test(title)) return theirs ? power : -power - 5000;
     if (/Special Summon|Return which|add a monster/i.test(title)) return power;
