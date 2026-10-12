@@ -310,6 +310,15 @@ export class Engine {
       const b = getEffect(eq.name)?.equipBonus?.(this, eq, m);
       if (b) (atk += b.atk), (def += b.def);
     }
+    // Revealed Speed Duel Skills that work like a Field Spell (Power of Dark, Peak Performance...).
+    if (m.faceUp) {
+      for (const p of [0, 1] as Pid[]) {
+        const ps = this.player(p);
+        const sk = ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+        const b = sk?.aura?.(this, p, m);
+        if (b) (atk += b.atk), (def += b.def);
+      }
+    }
     // Lasting changes card effects made ("gains 500 ATK" with no end).
     if (m.tags?.permAtk) atk += m.tags.permAtk;
     if (m.tags?.permDef) def += m.tags.permDef;
@@ -545,6 +554,7 @@ export class Engine {
   }
 
   damage(player: Pid, amount: number) {
+    if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
     if (amount <= 0) return;
     const ps = this.player(player);
@@ -562,6 +572,7 @@ export class Engine {
   }
 
   payLp(player: Pid, amount: number) {
+    if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     const ps = this.player(player);
     ps.lp = Math.max(0, ps.lp - amount);
     this.event('damage', { player, amount });
@@ -1022,6 +1033,12 @@ export class Engine {
       }
     }
     this.state.fx.borrowed = [];
+    // Revealed Skills with an End Phase effect.
+    for (const p of [tp, other(tp)]) {
+      const ps = this.player(p);
+      const sk = ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+      if (sk?.onEndPhase && this.state.winner === null) yield* this.as(p, sk.onEndPhase(this, p));
+    }
     // Hand limit.
     const ps = this.player(tp);
     const limit = this.rules.handLimit;
@@ -1060,7 +1077,23 @@ export class Engine {
     if (s.fx.skipDraw === s.turnPlayer) {
       s.fx.skipDraw = undefined;
       this.log(s.turnPlayer, `${this.player(s.turnPlayer).name}'s Draw Phase is skipped`);
-    } else if (!this.draw(s.turnPlayer, 1, true)) return;
+    } else {
+      // Speed Duel Skills that replace the normal draw ("search your Deck instead of drawing").
+      const ps = this.player(s.turnPlayer);
+      const sk = ps.skill ? getSkill(ps.skill) : undefined;
+      let replaced = false;
+      if (sk?.drawPhase && sk.drawPhase.can(this, s.turnPlayer)) {
+        if (yield* this.yesno(s.turnPlayer, `Use your Skill ${ps.skill} instead of drawing?`)) {
+          replaced = true;
+          ps.skillRevealed = true;
+          ps.skillUses = (ps.skillUses ?? 0) + 1;
+          this.log(s.turnPlayer, `${ps.name} uses the Skill ${ps.skill}`);
+          yield* this.as(s.turnPlayer, sk.drawPhase.run(this, s.turnPlayer));
+          if (this.state.winner !== null) return;
+        }
+      }
+      if (!replaced && !this.draw(s.turnPlayer, 1, true)) return;
+    }
     s.fx.hurt = [0, 0];
     yield* this.enterPhase('SP');
   }

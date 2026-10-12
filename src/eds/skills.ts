@@ -1,7 +1,7 @@
 // Speed Duel Skills. Each player may bring one Skill to a Speed Duel; it starts
 // face-down and flips when it is first used. Keyed by the Skill Card's name.
 import type { Engine, Step } from './engine';
-import type { Pid } from './types';
+import type { FieldCard, Pid } from './types';
 import { SKILL_LIST } from './speed/skills';
 
 export interface SkillDef {
@@ -17,6 +17,12 @@ export interface SkillDef {
     can(e: Engine, p: Pid): boolean;
     run(e: Engine, p: Pid): Step;
   };
+  /** Offered (yes/no) at the start of the player's Draw Phase, instead of the normal draw. Counts as a use. */
+  drawPhase?: { can(e: Engine, p: Pid): boolean; run(e: Engine, p: Pid): Step };
+  /** While revealed: ATK/DEF change for a face-up monster (Skills placed "in the Field Zone"). `p` owns the Skill. */
+  aura?(e: Engine, p: Pid, m: FieldCard): { atk: number; def: number } | undefined;
+  /** While revealed: runs in every End Phase. */
+  onEndPhase?(e: Engine, p: Pid): Step;
 }
 
 export const SKILLS: Record<string, SkillDef> = SKILL_LIST;
