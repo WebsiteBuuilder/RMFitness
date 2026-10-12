@@ -1,75 +1,162 @@
 import { useEffect, useState } from 'preact/hooks';
-import { Session, useSession } from '../game/session';
-import type { PlayerId } from '../game/types';
-import { loadCards } from '../data/cards';
+import { loadDb } from '../eds/db';
+import { DuelSession, useDuelSession } from '../eds/session';
+import { addToTrunk, eraseSave, loadSave, newSave, writeSave, type SaveFile } from '../eds/save';
+import type { Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { PeerAdapter } from '../sync/peer';
 import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
-import { Home, StartChoice } from './Home';
-import { Lobby } from './Lobby';
-import { Board } from './Board';
+import { Duel } from './Duel';
+import { LinkMenu, Lobby, type LinkChoice } from './Link';
+import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
+
+type Screen = 'title' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack';
 
 function makeOnline(code: string, isHost: boolean): SyncAdapter {
   return FirebaseAdapter.available() ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
 }
 
 export function App() {
-  const [name, setName] = useState(() => localStorage.getItem('sdo.name') ?? '');
-  const [session, setSession] = useState<Session | null>(null);
+  const [save, setSaveState] = useState<SaveFile | null>(() => loadSave());
+  const [screen, setScreen] = useState<Screen>('title');
+  const [dbReady, setDbReady] = useState(false);
+  const [session, setSession] = useState<DuelSession | null>(null);
   const [hotseat, setHotseat] = useState(false);
-  const [mySeat, setMySeat] = useState<PlayerId>(0);
-  const [cardsReady, setCardsReady] = useState(false);
-
-  useEffect(() => {
-    void loadCards().then(() => setCardsReady(true));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('sdo.name', name);
-  }, [name]);
-
-  // ?join=CODE from an invite link goes straight into that room.
-  useEffect(() => {
+  const [mySeat, setMySeat] = useState<Pid>(0);
+  const [pendingJoin, setPendingJoin] = useState<string | null>(() => {
     const code = new URLSearchParams(location.search).get('join');
-    if (code && /^[A-Z]{4}$/i.test(code) && !session) {
-      history.replaceState(null, '', location.pathname);
-      start({ mode: 'join', code: code.toUpperCase() });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
+  });
+
+  useEffect(() => {
+    void loadDb().then(() => setDbReady(true));
   }, []);
 
-  const start = (c: StartChoice) => {
+  const setSave = (s: SaveFile) => {
+    setSaveState(s);
+    writeSave(s);
+  };
+
+  const openSession = (c: LinkChoice) => {
     session?.close();
     if (c.mode === 'hotseat') {
       setHotseat(true);
       setMySeat(0);
-      setSession(new Session(new LocalAdapter(c.resume)));
+      setSession(new DuelSession(new LocalAdapter(false)));
     } else {
       setHotseat(false);
       setMySeat(c.mode === 'host' ? 0 : 1);
-      setSession(new Session(makeOnline(c.code, c.mode === 'host')));
+      setSession(new DuelSession(makeOnline(c.mode === 'join' ? c.code : newCode(), c.mode === 'host')));
     }
+    setScreen('duel');
   };
 
-  const leave = () => {
-    if (session && session.state.started && !confirm('Leave this duel?')) return;
+  const leaveDuel = () => {
     session?.close();
     setSession(null);
+    setScreen('menu');
   };
 
-  if (!session) return <Home name={name} setName={setName} onStart={start} />;
-  return <Running session={session} hotseat={hotseat} mySeat={mySeat} setMySeat={setMySeat} myName={name} onLeave={leave} cardsReady={cardsReady} />;
+  const finishDuel = (winner: Pid | 'draw', oppName: string) => {
+    if (!save) return leaveDuel();
+    const next: SaveFile = { ...save, record: { ...save.record }, day: save.day + 1 };
+    const r = { ...(next.record[oppName] ?? { w: 0, l: 0, d: 0 }) };
+    if (winner === 'draw') {
+      next.draws++;
+      r.d++;
+    } else if (winner === mySeat) {
+      next.wins++;
+      r.w++;
+      next.pendingPacks++;
+    } else {
+      next.losses++;
+      r.l++;
+    }
+    next.record[oppName] = r;
+    if (next.wins >= 10 && !next.unlockedPacks.includes('Judge Man')) next.unlockedPacks = [...next.unlockedPacks, 'Judge Man'];
+    setSave(next);
+    session?.close();
+    setSession(null);
+    setScreen(next.pendingPacks > 0 ? 'pack' : 'menu');
+  };
+
+  if (!save) {
+    if (screen === 'title') return <Title hasSave={false} onStart={() => setScreen('intro')} />;
+    return (
+      <Intro
+        onDone={(name, color, deck) => {
+          const s = newSave(name);
+          s.starter = color;
+          s.main = deck;
+          // every card also exists in the trunk count? No: EDS keeps deck cards out of the trunk.
+          addToTrunk(s, []);
+          setSave(s);
+          setScreen(pendingJoin ? 'link' : 'menu');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'title') return <Title hasSave onStart={() => setScreen(pendingJoin ? 'link' : 'menu')} />;
+  if (!dbReady) return <div class="loading">Loading card data…</div>;
+
+  if (screen === 'link' && pendingJoin) {
+    const code = pendingJoin;
+    setPendingJoin(null);
+    history.replaceState(null, '', location.pathname);
+    openSession({ mode: 'join', code });
+    return null;
+  }
+
+  const onMenu = (c: MenuChoice) => {
+    if (c === 'erase') {
+      if (confirm('Erase all save data? Your cards and record will be lost.')) {
+        eraseSave();
+        setSaveState(null);
+        setScreen('title');
+      }
+      return;
+    }
+    if (c === 'trade') return;
+    setScreen(c);
+  };
+
+  switch (screen) {
+    case 'menu':
+      return <MainMenu save={save} onPick={onMenu} />;
+    case 'campaign':
+      return <Campaign save={save} onBack={() => setScreen('menu')} />;
+    case 'deck':
+      return <DeckEdit save={save} onSave={setSave} onBack={() => setScreen('menu')} />;
+    case 'record':
+      return <Record save={save} onBack={() => setScreen('menu')} />;
+    case 'calendar':
+      return <Calendar save={save} onBack={() => setScreen('menu')} />;
+    case 'password':
+      return <Password save={save} onSave={setSave} onBack={() => setScreen('menu')} />;
+    case 'pack':
+      return <PackOpen save={save} onSave={setSave} onDone={() => setScreen('menu')} />;
+    case 'link':
+      return <LinkMenu save={save} onPick={openSession} onBack={() => setScreen('menu')} />;
+    case 'duel':
+      if (!session) return <MainMenu save={save} onPick={onMenu} />;
+      return <Running session={session} hotseat={hotseat} mySeat={mySeat} save={save} onLeave={leaveDuel} onFinished={finishDuel} />;
+    default:
+      return <MainMenu save={save} onPick={onMenu} />;
+  }
 }
 
-function Running({ session, hotseat, mySeat, setMySeat, myName, onLeave, cardsReady }: { session: Session; hotseat: boolean; mySeat: PlayerId; setMySeat: (p: PlayerId) => void; myName: string; onLeave: () => void; cardsReady: boolean }) {
-  const view = useSession(session);
-  // In hotseat the active seat follows the turn player, so the phone shows the hand of whoever is up.
-  useEffect(() => {
-    if (hotseat && view.state.started) setMySeat(view.state.turnPlayer);
-  }, [hotseat, view.state.turnPlayer, view.state.started, setMySeat]);
+function newCode(): string {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += letters[Math.floor(Math.random() * letters.length)];
+  return code;
+}
 
-  if (!cardsReady) return <div class="loading">Loading cards…</div>;
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} myName={myName} onLeave={onLeave} />;
-  return <Board session={session} view={view} mySeat={mySeat} hotseat={hotseat} onSwap={() => setMySeat(mySeat === 0 ? 1 : 0)} onLeave={onLeave} />;
+function Running({ session, hotseat, mySeat, save, onLeave, onFinished }: { session: DuelSession; hotseat: boolean; mySeat: Pid; save: SaveFile; onLeave: () => void; onFinished: (winner: Pid | 'draw', opp: string) => void }) {
+  const view = useDuelSession(session);
+  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} save={save} onLeave={onLeave} />;
+  const oppName = view.state.players[mySeat === 0 ? 1 : 0].name;
+  return <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />;
 }

@@ -1,4 +1,4 @@
-import type { GameEvent } from '../game/types';
+import type { GameEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
 import { firebaseConfig } from './firebaseConfig';
 

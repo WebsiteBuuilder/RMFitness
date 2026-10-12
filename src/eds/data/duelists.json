@@ -1,0 +1,2908 @@
+[
+ {
+  "name": "Tristan Taylor",
+  "tier": 1,
+  "deck": [
+   {
+    "name": "Ansatsu",
+    "qty": 1
+   },
+   {
+    "name": "Aqua Madoor",
+    "qty": 1
+   },
+   {
+    "name": "Battle Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Dark Assailant",
+    "qty": 1
+   },
+   {
+    "name": "Dark-Piercing Light",
+    "qty": 1
+   },
+   {
+    "name": "Doron",
+    "qty": 1
+   },
+   {
+    "name": "Goblin's Secret Remedy",
+    "qty": 1
+   },
+   {
+    "name": "Greenkappa",
+    "qty": 1
+   },
+   {
+    "name": "Gryphon Wing",
+    "qty": 1
+   },
+   {
+    "name": "Hibikime",
+    "qty": 1
+   },
+   {
+    "name": "Hiro's Shadow Scout",
+    "qty": 1
+   },
+   {
+    "name": "Horn Imp",
+    "qty": 1
+   },
+   {
+    "name": "Jinzo #7",
+    "qty": 1
+   },
+   {
+    "name": "Kagemusha of the Blue Flame",
+    "qty": 1
+   },
+   {
+    "name": "Kanan the Swordmistress",
+    "qty": 1
+   },
+   {
+    "name": "Kojikocy",
+    "qty": 1
+   },
+   {
+    "name": "Legendary Sword",
+    "qty": 1
+   },
+   {
+    "name": "M-Warrior #1",
+    "qty": 1
+   },
+   {
+    "name": "M-Warrior #2",
+    "qty": 1
+   },
+   {
+    "name": "Masaki the Legendary Swordsman",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Moon Envoy",
+    "qty": 1
+   },
+   {
+    "name": "Mooyan Curry",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Elf",
+    "qty": 1
+   },
+   {
+    "name": "Oscillo Hero",
+    "qty": 1
+   },
+   {
+    "name": "Pendulum Machine",
+    "qty": 1
+   },
+   {
+    "name": "Prevent Rat",
+    "qty": 1
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Shadow Specter",
+    "qty": 1
+   },
+   {
+    "name": "Skull Servant",
+    "qty": 1
+   },
+   {
+    "name": "Sonic Maid",
+    "qty": 1
+   },
+   {
+    "name": "Soul of the Pure",
+    "qty": 1
+   },
+   {
+    "name": "Spirit of the Harp",
+    "qty": 1
+   },
+   {
+    "name": "Stuffed Animal",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 1
+   },
+   {
+    "name": "Sword of Dark Destruction",
+    "qty": 1
+   },
+   {
+    "name": "Swordstalker",
+    "qty": 1
+   },
+   {
+    "name": "Unknown Warrior of Fiend",
+    "qty": 1
+   },
+   {
+    "name": "Vishwar Randi",
+    "qty": 1
+   },
+   {
+    "name": "Zanki",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Tea Gardner",
+  "tier": 1,
+  "deck": [
+   {
+    "name": "Beautiful Headhuntress",
+    "qty": 1
+   },
+   {
+    "name": "Beaver Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber-Tech Alligator",
+    "qty": 1
+   },
+   {
+    "name": "Dancing Elf",
+    "qty": 2
+   },
+   {
+    "name": "Dark Witch",
+    "qty": 1
+   },
+   {
+    "name": "Dryad",
+    "qty": 1
+   },
+   {
+    "name": "Enchanting Mermaid",
+    "qty": 1
+   },
+   {
+    "name": "Fairywitch",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Green Phantom King",
+    "qty": 1
+   },
+   {
+    "name": "Happy Lover",
+    "qty": 1
+   },
+   {
+    "name": "Ill Witch",
+    "qty": 1
+   },
+   {
+    "name": "Key Mace #2",
+    "qty": 1
+   },
+   {
+    "name": "Lady of Faith",
+    "qty": 1
+   },
+   {
+    "name": "Lunar Queen Elzaim",
+    "qty": 1
+   },
+   {
+    "name": "Maiden of the Moonlight",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Elf",
+    "qty": 1
+   },
+   {
+    "name": "Oscillo Hero",
+    "qty": 1
+   },
+   {
+    "name": "Oscillo Hero #2",
+    "qty": 1
+   },
+   {
+    "name": "Petit Angel",
+    "qty": 2
+   },
+   {
+    "name": "Petit Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Protector of the Throne",
+    "qty": 1
+   },
+   {
+    "name": "Queen of Autumn Leaves",
+    "qty": 1
+   },
+   {
+    "name": "Queen's Double",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Supporter in the Shadows",
+    "qty": 3
+   },
+   {
+    "name": "Tenderness",
+    "qty": 1
+   },
+   {
+    "name": "Water Element",
+    "qty": 1
+   },
+   {
+    "name": "Water Omotics",
+    "qty": 1
+   },
+   {
+    "name": "Waterdragon Fairy",
+    "qty": 1
+   },
+   {
+    "name": "Weather Control",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Yugi Muto",
+  "tier": 1,
+  "deck": [
+   {
+    "name": "Air Marmot of Nefariousness",
+    "qty": 1
+   },
+   {
+    "name": "Ancient Jar",
+    "qty": 1
+   },
+   {
+    "name": "Baby Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Battle Steer",
+    "qty": 1
+   },
+   {
+    "name": "Beaver Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Buster Blader",
+    "qty": 1
+   },
+   {
+    "name": "Celtic Guardian",
+    "qty": 1
+   },
+   {
+    "name": "Dark Magician",
+    "qty": 1
+   },
+   {
+    "name": "Exodia the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Feral Imp",
+    "qty": 1
+   },
+   {
+    "name": "Gazelle the King of Mythical Beasts",
+    "qty": 1
+   },
+   {
+    "name": "Genin",
+    "qty": 2
+   },
+   {
+    "name": "Griffore",
+    "qty": 1
+   },
+   {
+    "name": "Hitotsu-Me Giant",
+    "qty": 1
+   },
+   {
+    "name": "Kuriboh",
+    "qty": 1
+   },
+   {
+    "name": "Left Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Mammoth Graveyard",
+    "qty": 2
+   },
+   {
+    "name": "Meda Bat",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystic Lamp",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Capture Chain",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Elf",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 1
+   },
+   {
+    "name": "Petit Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Red Medicine",
+    "qty": 1
+   },
+   {
+    "name": "Right Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Ryu-Kishin",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 1
+   },
+   {
+    "name": "Silver Fang",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Time Wizard",
+    "qty": 1
+   },
+   {
+    "name": "Torike",
+    "qty": 1
+   },
+   {
+    "name": "Trap Hole",
+    "qty": 1
+   },
+   {
+    "name": "Weather Control",
+    "qty": 1
+   },
+   {
+    "name": "Winged Dragon,Guardian of the Fortress #1",
+    "qty": 1
+   },
+   {
+    "name": "Yamatano Dragon Scroll",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Bakura Ryou",
+  "tier": 1,
+  "deck": [
+   {
+    "name": "Armored Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Axe of Despair",
+    "qty": 1
+   },
+   {
+    "name": "Black Pendant",
+    "qty": 1
+   },
+   {
+    "name": "Blue-Eyed Silver Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Castle of Dark Illusions",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Clown Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Dark Assailant",
+    "qty": 1
+   },
+   {
+    "name": "Dark Elf",
+    "qty": 3
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dokuroizo the Grim Reaper",
+    "qty": 1
+   },
+   {
+    "name": "Dokurorider",
+    "qty": 1
+   },
+   {
+    "name": "Dragon Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Fiend's Hand",
+    "qty": 1
+   },
+   {
+    "name": "Fire Reaper",
+    "qty": 1
+   },
+   {
+    "name": "Ghoul with an Appetite",
+    "qty": 1
+   },
+   {
+    "name": "Graveyard and the Hand of Invitation",
+    "qty": 1
+   },
+   {
+    "name": "King of Yamimakai",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magical Ghost",
+    "qty": 1
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Pumpking the King of Ghosts",
+    "qty": 1
+   },
+   {
+    "name": "Revival of Dokurorider",
+    "qty": 1
+   },
+   {
+    "name": "Spellbinding Circle",
+    "qty": 1
+   },
+   {
+    "name": "Temple of Skulls",
+    "qty": 1
+   },
+   {
+    "name": "The 13th Grave",
+    "qty": 1
+   },
+   {
+    "name": "The Snake Hair",
+    "qty": 2
+   },
+   {
+    "name": "Three-Legged Zombies",
+    "qty": 1
+   },
+   {
+    "name": "Trap Hole",
+    "qty": 1
+   },
+   {
+    "name": "Trial of Nightmare",
+    "qty": 1
+   },
+   {
+    "name": "Wasteland",
+    "qty": 1
+   },
+   {
+    "name": "Witty Phantom",
+    "qty": 2
+   },
+   {
+    "name": "Wood Remains",
+    "qty": 1
+   },
+   {
+    "name": "Yaranzo",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Joey Wheeler",
+  "tier": 1,
+  "deck": [
+   {
+    "name": "Alligator's Sword",
+    "qty": 3
+   },
+   {
+    "name": "Axe Raider",
+    "qty": 1
+   },
+   {
+    "name": "Baby Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Battle Steer",
+    "qty": 1
+   },
+   {
+    "name": "Battle Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Beaver Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Blackland Fire Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dragon Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Garoozis",
+    "qty": 1
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 1
+   },
+   {
+    "name": "Hero of the East",
+    "qty": 1
+   },
+   {
+    "name": "Hitotsu-Me Giant",
+    "qty": 2
+   },
+   {
+    "name": "Kageningen",
+    "qty": 1
+   },
+   {
+    "name": "Lava Battleguard",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magic-Arm Shield",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystic Horseman",
+    "qty": 1
+   },
+   {
+    "name": "Panther Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Polymerization",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Red-Eyes B. Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Skull Dice",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 1
+   },
+   {
+    "name": "Swamp Battleguard",
+    "qty": 2
+   },
+   {
+    "name": "Sword of Dragon's Soul",
+    "qty": 1
+   },
+   {
+    "name": "The 13th Grave",
+    "qty": 1
+   },
+   {
+    "name": "Tiger Axe",
+    "qty": 2
+   },
+   {
+    "name": "Time Wizard",
+    "qty": 1
+   },
+   {
+    "name": "Torike",
+    "qty": 1
+   },
+   {
+    "name": "Thousand Dragon",
+    "qty": 1,
+    "fusion": true
+   }
+  ]
+ },
+ {
+  "name": "Rex Raptor",
+  "tier": 2,
+  "deck": [
+   {
+    "name": "Blackland Fire Dragon",
+    "qty": 3
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Crawling Dragon #2",
+    "qty": 2
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dragon Zombie",
+    "qty": 1
+   },
+   {
+    "name": "Giant Rat",
+    "qty": 1
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "qty": 3
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 1
+   },
+   {
+    "name": "Little D",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Megazowler",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 1
+   },
+   {
+    "name": "Sword Arm of Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Trakadon",
+    "qty": 2
+   },
+   {
+    "name": "Twin-Headed Fire Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Two-Headed King Rex",
+    "qty": 3
+   },
+   {
+    "name": "Uraby",
+    "qty": 2
+   },
+   {
+    "name": "Wasteland",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Espa Roba",
+  "tier": 2,
+  "deck": [
+   {
+    "name": "7 Completed",
+    "qty": 2
+   },
+   {
+    "name": "Big Eye",
+    "qty": 2
+   },
+   {
+    "name": "Blast Juggler",
+    "qty": 1
+   },
+   {
+    "name": "Blast Sphere",
+    "qty": 2
+   },
+   {
+    "name": "Ceremonial Bell",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Falcon",
+    "qty": 2
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Cyber-Tech Alligator",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dimensional Warrior",
+    "qty": 2
+   },
+   {
+    "name": "Disk Magician",
+    "qty": 2
+   },
+   {
+    "name": "Giant Mech-Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Giant Trunade",
+    "qty": 1
+   },
+   {
+    "name": "Giga-tech Wolf",
+    "qty": 2
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 1
+   },
+   {
+    "name": "Holograh",
+    "qty": 2
+   },
+   {
+    "name": "Imperial Order",
+    "qty": 1
+   },
+   {
+    "name": "Jinzo",
+    "qty": 1
+   },
+   {
+    "name": "Machine King",
+    "qty": 2
+   },
+   {
+    "name": "Mechanicalchaser",
+    "qty": 2
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Negate Attack",
+    "qty": 1
+   },
+   {
+    "name": "Pendulum Machine",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Reaper of the Cards",
+    "qty": 1
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Time Machine",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Weevil Underwood",
+  "tier": 2,
+  "deck": [
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Dark Elf",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Flying Kamakiri #2",
+    "qty": 3
+   },
+   {
+    "name": "Forest",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 2
+   },
+   {
+    "name": "Giant Rat",
+    "qty": 2
+   },
+   {
+    "name": "Gokibore",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Insect Queen",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 3
+   },
+   {
+    "name": "Mechanical Spider",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Needle Worm",
+    "qty": 2
+   },
+   {
+    "name": "Parasite Paracide",
+    "qty": 3
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Mako Tsunami",
+  "tier": 2,
+  "deck": [
+   {
+    "name": "7 Colored Fish",
+    "qty": 3
+   },
+   {
+    "name": "Axe of Despair",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Elf",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Fortress Whale",
+    "qty": 1
+   },
+   {
+    "name": "Fortress Whale's Oath",
+    "qty": 1
+   },
+   {
+    "name": "Great White",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 1
+   },
+   {
+    "name": "Kunai with Chain",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Knight",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 3
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Red Archery Girl",
+    "qty": 3
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Star Boy",
+    "qty": 2
+   },
+   {
+    "name": "Suijin",
+    "qty": 2
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 2
+   },
+   {
+    "name": "Umi",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Mai Valentine",
+  "tier": 2,
+  "deck": [
+   {
+    "name": "Beautiful Headhuntress",
+    "qty": 1
+   },
+   {
+    "name": "Blue-Winged Crown",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Shield",
+    "qty": 2
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Electro-Whip",
+    "qty": 1
+   },
+   {
+    "name": "Elegant Egotist",
+    "qty": 1
+   },
+   {
+    "name": "Faith Bird",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Harpie Lady",
+    "qty": 3
+   },
+   {
+    "name": "Harpie's Brother",
+    "qty": 3
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Harpie's Pet Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Invader of the Throne",
+    "qty": 1
+   },
+   {
+    "name": "Kanan the Swordmistress",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Red Archery Girl",
+    "qty": 2
+   },
+   {
+    "name": "Rising Air Current",
+    "qty": 2
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Sonic Maid",
+    "qty": 1
+   },
+   {
+    "name": "Spirit of the Books",
+    "qty": 1
+   },
+   {
+    "name": "Wall of Illusion",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Rare Hunter",
+  "tier": 3,
+  "deck": [
+   {
+    "name": "Big Eye",
+    "qty": 2
+   },
+   {
+    "name": "Cannon Soldier",
+    "qty": 3
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Exodia the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "qty": 1
+   },
+   {
+    "name": "Giant Trunade",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Horn of Heaven",
+    "qty": 1
+   },
+   {
+    "name": "Left Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Mystic Tomato",
+    "qty": 1
+   },
+   {
+    "name": "Negate Attack",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Right Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 2
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Skelengel",
+    "qty": 3
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 2
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Arkana",
+  "tier": 3,
+  "deck": [
+   {
+    "name": "Cannon Soldier",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Elf",
+    "qty": 3
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dark Magician",
+    "qty": 3
+   },
+   {
+    "name": "Dark Magician Girl",
+    "qty": 1
+   },
+   {
+    "name": "Dark Rabbit",
+    "qty": 1
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "qty": 3
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 3
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Premature Burial",
+    "qty": 2
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 2
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Skelengel",
+    "qty": 3
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Strings",
+  "tier": 3,
+  "deck": [
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Elf",
+    "qty": 2
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dimensional Warrior",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Hane-Hane",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar",
+    "qty": 3
+   },
+   {
+    "name": "Needle Worm",
+    "qty": 2
+   },
+   {
+    "name": "Numinous Healer",
+    "qty": 2
+   },
+   {
+    "name": "Penguin Knight",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "The Bistro Butcher",
+    "qty": 2
+   },
+   {
+    "name": "Tremendous Fire",
+    "qty": 3
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Umbra & Lumis",
+  "tier": 3,
+  "deck": [
+   {
+    "name": "Blast Sphere",
+    "qty": 2
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Crass Clown",
+    "qty": 2
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 2
+   },
+   {
+    "name": "Giant Trunade",
+    "qty": 1
+   },
+   {
+    "name": "Hane-Hane",
+    "qty": 2
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 1
+   },
+   {
+    "name": "Horn of Heaven",
+    "qty": 1
+   },
+   {
+    "name": "Labyrinth Wall",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 1
+   },
+   {
+    "name": "Millennium Golem",
+    "qty": 2
+   },
+   {
+    "name": "Millennium Shield",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar",
+    "qty": 2
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Shadow Ghoul",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Spellbinding Circle",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 2
+   },
+   {
+    "name": "The Bistro Butcher",
+    "qty": 2
+   },
+   {
+    "name": "Trap Hole",
+    "qty": 1
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 2
+   },
+   {
+    "name": "Wall of Illusion",
+    "qty": 2
+   },
+   {
+    "name": "Widespread Ruin",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Marik Ishtar",
+  "tier": 3,
+  "deck": [
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Delinquent Duo",
+    "qty": 2
+   },
+   {
+    "name": "Dragon Seeker",
+    "qty": 1
+   },
+   {
+    "name": "Dream Clown",
+    "qty": 3
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 3
+   },
+   {
+    "name": "Jinzo #7",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 3
+   },
+   {
+    "name": "Millennium Golem",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar #2",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sebek's Blessing",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "The Bistro Butcher",
+    "qty": 1
+   },
+   {
+    "name": "Trap Hole",
+    "qty": 1
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 2
+   },
+   {
+    "name": "White Hole",
+    "qty": 1
+   },
+   {
+    "name": "White Magical Hat",
+    "qty": 3
+   }
+  ]
+ },
+ {
+  "name": "Seto Kaiba",
+  "tier": 4,
+  "deck": [
+   {
+    "name": "Blue-Eyes White Dragon",
+    "qty": 3
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Cyber-Stein",
+    "qty": 2
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Hoshiningen",
+    "qty": 3
+   },
+   {
+    "name": "Hyozanryu",
+    "qty": 1
+   },
+   {
+    "name": "Koumori Dragon",
+    "qty": 3
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Nimble Momonga",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 2
+   },
+   {
+    "name": "Sebek's Blessing",
+    "qty": 2
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Solemn Judgment",
+    "qty": 1
+   },
+   {
+    "name": "Twin-Headed Fire Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 3
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   },
+   {
+    "name": "Blue-Eyes Ultimate Dragon",
+    "qty": 2,
+    "fusion": true
+   }
+  ]
+ },
+ {
+  "name": "Ishizu Ishtar",
+  "tier": 4,
+  "deck": [
+   {
+    "name": "Axe of Despair",
+    "qty": 3
+   },
+   {
+    "name": "Banisher of the Light",
+    "qty": 2
+   },
+   {
+    "name": "Blue-Eyes White Dragon",
+    "qty": 2
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dunames Dark Witch",
+    "qty": 3
+   },
+   {
+    "name": "Giant Trunade",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Horn of Heaven",
+    "qty": 1
+   },
+   {
+    "name": "Hoshiningen",
+    "qty": 3
+   },
+   {
+    "name": "Luminous Spark",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Maha Vailo",
+    "qty": 3
+   },
+   {
+    "name": "Metalmorph",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 2
+   },
+   {
+    "name": "Neo the Magic Swordsman",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Shining Fairy",
+    "qty": 3
+   },
+   {
+    "name": "Solemn Judgment",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Shadi",
+  "tier": 4,
+  "deck": [
+   {
+    "name": "Anti Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Banisher of the Light",
+    "qty": 2
+   },
+   {
+    "name": "Call of the Dark",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dian Keto the Cure Master",
+    "qty": 1
+   },
+   {
+    "name": "Gyakutenno Megami",
+    "qty": 1
+   },
+   {
+    "name": "La Jinn the Mystical Genie of the Lamp",
+    "qty": 3
+   },
+   {
+    "name": "Lord of Zemia",
+    "qty": 3
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Millennium Golem",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Needle Worm",
+    "qty": 3
+   },
+   {
+    "name": "Orion the Battle King",
+    "qty": 3
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Reaper of the Cards",
+    "qty": 2
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 2
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Solemn Judgment",
+    "qty": 1
+   },
+   {
+    "name": "Tribute to The Doomed",
+    "qty": 1
+   },
+   {
+    "name": "White Hole",
+    "qty": 1
+   }
+  ]
+ },
+ {
+  "name": "Yami Bakura",
+  "tier": 4,
+  "deck": [
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dimensional Warrior",
+    "qty": 2
+   },
+   {
+    "name": "Dream Clown",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 3
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "qty": 1
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 2
+   },
+   {
+    "name": "Kunai with Chain",
+    "qty": 1
+   },
+   {
+    "name": "Kuriboh",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 2
+   },
+   {
+    "name": "Masked Sorcerer",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 2
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 3
+   },
+   {
+    "name": "Wall of Illusion",
+    "qty": 2
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Yami Yugi",
+  "tier": 4,
+  "deck": [
+   {
+    "name": "Alpha The Magnet Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Anti Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Beta The Magnet Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Big Shield Gardna",
+    "qty": 2
+   },
+   {
+    "name": "Buster Blader",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Chorus of Sanctuary",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Dark Magician",
+    "qty": 2
+   },
+   {
+    "name": "Dark Magician Girl",
+    "qty": 2
+   },
+   {
+    "name": "Gamma The Magnet Warrior",
+    "qty": 1
+   },
+   {
+    "name": "Gazelle the King of Mythical Beasts",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 2
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "qty": 1
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Kuriboh",
+    "qty": 2
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Elf",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 1
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 2
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Valkyrion the Magna Warrior",
+    "qty": 1
+   },
+   {
+    "name": "White Hole",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ]
+ },
+ {
+  "name": "Duel Computer",
+  "tier": 5,
+  "deck": [
+   {
+    "name": "Bell of Destruction",
+    "qty": 2
+   },
+   {
+    "name": "Call Of The Haunted",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Delinquent Duo",
+    "qty": 2
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 2
+   },
+   {
+    "name": "Gravekeeper's Servant",
+    "qty": 3
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Man-Eater Bug",
+    "qty": 3
+   },
+   {
+    "name": "Mask of Darkness",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Morphing Jar",
+    "qty": 3
+   },
+   {
+    "name": "Morphing Jar #2",
+    "qty": 2
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "qty": 2
+   },
+   {
+    "name": "Negate Attack",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "The Bistro Butcher",
+    "qty": 1
+   },
+   {
+    "name": "White Magical Hat",
+    "qty": 3
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ],
+  "unlock": "Tier 5 (beat all Tier 4 duelists five times each)"
+ },
+ {
+  "name": "Simon",
+  "tier": 5,
+  "deck": [
+   {
+    "name": "Banisher of the Light",
+    "qty": 1
+   },
+   {
+    "name": "Cannon Soldier",
+    "qty": 2
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Heavy Storm",
+    "qty": 2
+   },
+   {
+    "name": "Imperial Order",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Magician of Faith",
+    "qty": 3
+   },
+   {
+    "name": "Mask of Darkness",
+    "qty": 2
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Muka Muka",
+    "qty": 2
+   },
+   {
+    "name": "Panther Warrior",
+    "qty": 2
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 2
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "qty": 1
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Total Defense Shogun",
+    "qty": 2
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 3
+   },
+   {
+    "name": "Wall of Illusion",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ],
+  "unlock": "Win the National Tournament (held in November)"
+ },
+ {
+  "name": "Maximillion Pegasus",
+  "tier": 5,
+  "deck": [
+   {
+    "name": "Black Illusion Ritual",
+    "qty": 2
+   },
+   {
+    "name": "Blue-Eyes Toon Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Cyber Jar",
+    "qty": 1
+   },
+   {
+    "name": "Dark Hole",
+    "qty": 1
+   },
+   {
+    "name": "Dark-Eyes Illusionist",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 1
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Manga Ryu-Ran",
+    "qty": 1
+   },
+   {
+    "name": "Megamorph",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Nimble Momonga",
+    "qty": 3
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Red Archery Girl",
+    "qty": 3
+   },
+   {
+    "name": "Relinquished",
+    "qty": 2
+   },
+   {
+    "name": "Rogue Doll",
+    "qty": 2
+   },
+   {
+    "name": "Sinister Serpent",
+    "qty": 1
+   },
+   {
+    "name": "Solemn Judgment",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 1
+   },
+   {
+    "name": "Time Machine",
+    "qty": 1
+   },
+   {
+    "name": "Toon Summoned Skull",
+    "qty": 3
+   },
+   {
+    "name": "Toon World",
+    "qty": 2
+   },
+   {
+    "name": "Vorse Raider",
+    "qty": 3
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ],
+  "unlock": "Have a copy of Toon World"
+ },
+ {
+  "name": "Trusdale",
+  "tier": 5,
+  "deck": [
+   {
+    "name": "Anti Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Big Eye",
+    "qty": 1
+   },
+   {
+    "name": "Blue-Eyes White Dragon",
+    "qty": 1
+   },
+   {
+    "name": "Change of Heart",
+    "qty": 1
+   },
+   {
+    "name": "Exodia the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Gazelle the King of Mythical Beasts",
+    "qty": 1
+   },
+   {
+    "name": "Gemini Elf",
+    "qty": 3
+   },
+   {
+    "name": "Giant Trunade",
+    "qty": 2
+   },
+   {
+    "name": "Graceful Charity",
+    "qty": 2
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "qty": 1
+   },
+   {
+    "name": "Imperial Order",
+    "qty": 1
+   },
+   {
+    "name": "Left Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Magic Jammer",
+    "qty": 1
+   },
+   {
+    "name": "Mirror Force",
+    "qty": 1
+   },
+   {
+    "name": "Monster Reborn",
+    "qty": 1
+   },
+   {
+    "name": "Mystical Elf",
+    "qty": 3
+   },
+   {
+    "name": "Penguin Soldier",
+    "qty": 3
+   },
+   {
+    "name": "Pot of Greed",
+    "qty": 1
+   },
+   {
+    "name": "Raigeki",
+    "qty": 1
+   },
+   {
+    "name": "Right Arm of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "qty": 1
+   },
+   {
+    "name": "Sangan",
+    "qty": 2
+   },
+   {
+    "name": "Snatch Steal",
+    "qty": 1
+   },
+   {
+    "name": "Spellbinding Circle",
+    "qty": 1
+   },
+   {
+    "name": "Summoned Skull",
+    "qty": 1
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "qty": 2
+   },
+   {
+    "name": "White Hole",
+    "qty": 1
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "qty": 2
+   }
+  ],
+  "unlock": "Collect all 819 cards"
+ }
+]

@@ -1,10 +1,10 @@
 import Peer, { DataConnection } from 'peerjs';
-import type { GameEvent, LoggedEvent } from '../game/types';
+import type { GameEvent, LoggedEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
 
 type Msg = { t: 'sync'; events: LoggedEvent[] } | { t: 'ev'; ev: GameEvent } | { t: 'hello' };
 
-const PREFIX = 'speed-duel-online-';
+const PREFIX = 'eds-remake-';
 
 /**
  * Phone-to-phone room over WebRTC (PeerJS public broker). The host holds the

@@ -1,5 +1,8 @@
 {
-  "_comment": "Passcodes to force into or out of the Speed Duel pool when the API lags a set or mis-tags a card.",
-  "add": [],
-  "remove": []
+  "Call Of The Haunted": "Call of the Haunted",
+  "Winged Dragon, Guardian of the Fortress #1": "Winged Dragon, Guardian of the Fortress #1",
+  "Fiend's Mirror": "Fiend's Mirror",
+  "Tremendous Fire": "Tremendous Fire",
+  "Man Eater": "Man Eater",
+  "Insect Monster Token": "Insect Monster Token"
 }

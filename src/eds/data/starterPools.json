@@ -1,0 +1,22 @@
+{
+  "fixed": {
+    "1": ["Black Pendant", "Change of Heart", "Magic Jammer", "Monster Reborn", "Mystical Space Typhoon", "Mystical Space Typhoon", "Pot of Greed", "Seven Tools of the Bandit", "Swords of Revealing Light", "Trap Hole", "Trap Hole"],
+    "5": ["Mystical Elf", "Summoned Skull"]
+  },
+  "pools": {
+    "2": ["Dark Hole", "Raigeki"],
+    "3": ["Megamorph", "Premature Burial", "Snatch Steal"],
+    "4": ["Bell of Destruction", "Call Of The Haunted", "Mirror Force"],
+    "6": ["7 Colored Fish", "Axe Raider", "Barrel Rock", "Blackland Fire Dragon", "Celtic Guardian", "Fireyarou", "Great White", "Griffore", "Koumori Dragon", "Lesser Dragon", "Mystic Horseman", "Winged Dragon, Guardian of the Fortress #1", "Wow Warrior"],
+    "7": ["Battle Ox", "Bean Soldier", "Crawling Dragon #2", "Feral Imp", "Harpie Lady", "Hitotsu-Me Giant", "Horn Imp", "Snakeyashi", "Spirit of the Books", "Tiger Axe", "Two-Headed King Rex", "Tyhone", "Uraby"],
+    "8": ["Aqua Madoor", "Armored Lizard", "Big Insect", "Fiend Kraken", "Gokibore", "Jellyfish", "Killer Needle", "Krokodilus", "Minomushi Warrior", "Neo the Magic Swordsman", "Rogue Doll", "Takriminos", "Temple of Skulls"],
+    "9": ["Air Marmot of Nefariousness", "Anthrosaurus", "Armaill", "Binding Chain", "Blue-Eyed Silver Zombie", "Candle of Fate", "Claw Reacher", "Curtain of the Dark Ones", "Dark Gray", "Darkworld Thorns", "Dorover", "Drooling Lizard", "Eldeen", "Enchanting Mermaid", "Eyearmor", "Fiend's Hand", "Fire Reaper", "Firegrass", "Ganigumo", "Giant Soldier of Stone", "Haniwa", "Hard Armor", "Hitodenchak", "Holograh", "Hourglass of Life", "Kagemusha of the Blue Flame", "Kaminarikozou", "Kumootoko", "Kurama", "LaLa Li-oon", "Larvas", "Left Leg of the Forbidden One", "M-Warrior #1", "M-Warrior #2", "Mammoth Graveyard", "Man Eater", "Meda Bat", "Meotoko", "Nemuriko", "One-Eyed Shield Dragon", "Petit Angel", "Petit Dragon", "Sectarian of Secrets", "Silver Fang", "Skull Stalker", "Solitude", "Stone Armadiller", "Supporter in the Shadows", "The Bewitching Phantom Thief", "The Drdek", "The Furious Sea King", "The Wandering Doomed", "Tomozaurus", "Wicked Mirror", "Winged Cleaver", "Wood Remains", "Wretched Ghost of the Attic"],
+    "10": ["Battle Steer", "Crawling Dragon", "Curse of Dragon", "Dark Chimera", "Garoozis", "Gyakutenno Megami", "Hercules Beetle", "Illusionist Faceless Mage", "Judge Man", "Kairyu-Shin", "King of Yamimakai", "Sword Arm of Dragon"],
+    "11": ["Magician of Faith", "Man-Eater Bug", "Morphing Jar", "Needle Worm", "Penguin Soldier", "Sangan", "Witch of the Black Forest"]
+  },
+  "counts": {
+    "Black": { "2": 1, "3": 1, "4": 1, "6": 3, "7": 3, "8": 6, "9": 9, "10": 2, "11": 1 },
+    "Red": { "2": 1, "3": 1, "4": 1, "6": 6, "7": 3, "8": 3, "9": 9, "10": 2, "11": 1 },
+    "Green": { "2": 1, "3": 1, "4": 1, "6": 3, "7": 6, "8": 3, "9": 9, "10": 2, "11": 1 }
+  }
+}
