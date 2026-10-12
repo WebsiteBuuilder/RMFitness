@@ -1,8 +1,10 @@
 {
-  "generated": "2026-10-12T03:17:39Z",
-  "cards": 1684,
-  "skills": 124,
-  "total": 1684,
-  "imagesFetchedThisRun": 1684,
-  "previousTotal": null
+  "generated": "2026-10-12T04:41:16Z",
+  "count": 807,
+  "missing": [
+    "The Monarchy",
+    "Set Sail for the Kingdom",
+    "Glory of the King's Hand"
+  ],
+  "source": "YGOPRODeck API v7 + yugipedia EDS card list"
 }

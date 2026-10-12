@@ -1,4 +1,4 @@
-import type { GameEvent, LoggedEvent } from '../game/types';
+import type { GameEvent, LoggedEvent } from './events';
 
 export type SyncStatus = 'offline' | 'connecting' | 'waiting' | 'connected' | 'error';
 

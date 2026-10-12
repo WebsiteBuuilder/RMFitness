@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Builds the card database the game ships with.
+Builds the card database for the Eternal Duelist Soul remake.
 
-- Pulls every Speed Duel card and every Skill Card from the YGOPRODeck API.
-- Downloads each card image ONCE (the API asks apps to re-host images rather
-  than hotlink them) and stores a small WebP under public/cards/img/<id>.webp.
-- Writes public/cards/cards.json (compact fields only) and public/cards/meta.json.
-- scripts/card-overrides.json can add or remove passcodes when the API lags a set.
+- Reads src/eds/data/eds-cards.json (the 819-card list with numbers and passwords).
+- Looks each card up in the YGOPRODeck API by name (exact, then fuzzy, then the
+  manual map in scripts/card-overrides.json) to get type, stats and text.
+- Downloads each card image ONCE (the API asks apps to re-host) as a small WebP.
+- Writes public/cards/cards.json and public/cards/meta.json (including any names
+  that could not be matched, so they can be added to the overrides file).
 
-Runs in GitHub Actions (see .github/workflows/cards.yml). Safe to re-run:
-existing images are kept, so a re-run only fetches what is new.
+Runs in GitHub Actions (see .github/workflows/cards.yml).
 """
 import io
 import json
-import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -24,115 +24,153 @@ from PIL import Image
 API = "https://db.ygoprodeck.com/api/v7/cardinfo.php"
 IMG = "https://images.ygoprodeck.com/images/cards/{id}.jpg"
 ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src" / "eds" / "data" / "eds-cards.json"
 OUT_DIR = ROOT / "public" / "cards"
 IMG_DIR = OUT_DIR / "img"
 OVERRIDES = ROOT / "scripts" / "card-overrides.json"
 IMG_WIDTH = 300
 IMG_QUALITY = 72
-DELAY = 0.2  # seconds between image downloads (API limit is 20 requests/s)
-UA = "speed-duel-online card snapshot (github actions)"
+DELAY = 0.15
+UA = "eternal-duelist-soul-remake card snapshot (github actions)"
 
 
-def get(url: str, retries: int = 4) -> bytes:
+def get(url: str, retries: int = 4) -> bytes | None:
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=60) as r:
                 return r.read()
-        except Exception as e:  # noqa: BLE001
-            wait = 2 ** attempt
+        except urllib.error.HTTPError as e:  # type: ignore[attr-defined]
+            if e.code == 400:
+                return None  # no such card
+            wait = 2**attempt
             print(f"  retry {attempt + 1} for {url}: {e} (waiting {wait}s)", file=sys.stderr)
             time.sleep(wait)
-    raise RuntimeError(f"failed to fetch {url}")
+        except Exception as e:  # noqa: BLE001
+            wait = 2**attempt
+            print(f"  retry {attempt + 1} for {url}: {e} (waiting {wait}s)", file=sys.stderr)
+            time.sleep(wait)
+    return None
 
 
-def api(query: str) -> list[dict]:
-    data = json.loads(get(f"{API}?{query}"))
-    return data.get("data", [])
+def api(params: dict) -> list[dict]:
+    raw = get(f"{API}?{urllib.parse.urlencode(params)}")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw).get("data", [])
+    except json.JSONDecodeError:
+        return []
 
 
-def compact(c: dict) -> dict:
+def norm(s: str) -> str:
+    return " ".join(s.lower().replace("’", "'").split())
+
+
+def compact(c: dict, entry: dict) -> dict:
     out = {
         "id": c["id"],
         "name": c["name"],
         "type": c.get("type", ""),
         "frame": c.get("frameType", ""),
         "desc": c.get("desc", ""),
+        "n": entry["n"],
+        "password": entry.get("password"),
     }
     for k in ("atk", "def", "level", "race", "attribute"):
         if c.get(k) is not None:
             out[k] = c[k]
-    if c.get("type") == "Skill Card":
-        # The API stores the Skill's character in the "race" field.
-        out["character"] = c.get("race", "")
-        out.pop("race", None)
+    if norm(c["name"]) != norm(entry["name"]):
+        out["alias"] = entry["name"]  # keep the EDS-era name usable in decks
     return out
+
+
+entry_password: dict = {}
+
+
+def lookup(name: str, overrides: dict, cache: dict) -> dict | None:
+    key = norm(name)
+    if key in cache:
+        return cache[key]
+    found = None
+    pw = entry_password.get(key)
+    if pw and pw.isdigit():
+        # The 8-digit password printed on the card is the passcode YGOPRODeck uses as its id,
+        # which survives every rename (Bell of Destruction -> Ring of Destruction, etc.).
+        res = api({"id": int(pw)})
+        found = res[0] if res else None
+    if not found and name in overrides:
+        ov = overrides[name]
+        found = (api({"id": ov}) if isinstance(ov, int) else api({"name": ov})) or []
+        found = found[0] if found else None
+    if not found:
+        res = api({"name": name})
+        found = res[0] if res else None
+    if not found:
+        res = api({"fname": name})
+        exact = [c for c in res if norm(c["name"]) == key]
+        found = exact[0] if exact else (res[0] if len(res) == 1 else None)
+    time.sleep(0.06)
+    cache[key] = found
+    return found
 
 
 def main() -> int:
     IMG_DIR.mkdir(parents=True, exist_ok=True)
-    print("Fetching Speed Duel cards…")
-    speed = api("format=speed%20duel")
-    print(f"  {len(speed)} cards")
-    print("Fetching Skill Cards…")
-    skills = api("type=Skill%20Card")
-    print(f"  {len(skills)} skills")
+    entries = json.loads(SRC.read_text())
+    overrides = json.loads(OVERRIDES.read_text()) if OVERRIDES.exists() else {}
+    cards: list[dict] = []
+    missing: list[str] = []
+    cache: dict = {}
+    seen_ids: set[int] = set()
+    for entry in entries:
+        if entry.get("password"):
+            entry_password[norm(entry["name"])] = entry["password"]
+    for i, entry in enumerate(entries):
+        name = entry["name"]
+        found = lookup(name, overrides, cache)
+        if not found:
+            missing.append(name)
+            print(f"  !! no match for {name}", file=sys.stderr)
+            continue
+        c = compact(found, entry)
+        if found["id"] in seen_ids:
+            continue  # alternate artwork entry: keep one record per card
+        seen_ids.add(found["id"])
+        cards.append(c)
+        if (i + 1) % 50 == 0:
+            print(f"  {i + 1}/{len(entries)} looked up")
+    print(f"{len(cards)} cards matched, {len(missing)} missing")
 
-    cards: dict[int, dict] = {}
-    for c in speed + skills:
-        cards[c["id"]] = c
+    # Images
+    done = 0
+    for c in cards:
+        path = IMG_DIR / f"{c['id']}.webp"
+        if path.exists():
+            c["img"] = True
+            continue
+        raw = get(IMG.format(id=c["id"]))
+        if not raw:
+            c["img"] = False
+            continue
+        try:
+            im = Image.open(io.BytesIO(raw)).convert("RGB")
+            h = round(im.height * IMG_WIDTH / im.width)
+            im = im.resize((IMG_WIDTH, h), Image.LANCZOS)
+            im.save(path, "WEBP", quality=IMG_QUALITY, method=6)
+            c["img"] = True
+            done += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"  image failed for {c['name']}: {e}", file=sys.stderr)
+            c["img"] = False
+        time.sleep(DELAY)
+    print(f"{done} new images")
 
-    overrides = {"add": [], "remove": []}
-    if OVERRIDES.exists():
-        overrides.update(json.loads(OVERRIDES.read_text()))
-    for cid in overrides.get("add", []):
-        if cid not in cards:
-            found = api(f"id={cid}")
-            if found:
-                cards[found[0]["id"]] = found[0]
-                print(f"  override added {found[0]['name']}")
-    for cid in overrides.get("remove", []):
-        if cards.pop(cid, None) is not None:
-            print(f"  override removed {cid}")
-
-    out = []
-    fetched = 0
-    for cid in sorted(cards):
-        c = cards[cid]
-        entry = compact(c)
-        target = IMG_DIR / f"{cid}.webp"
-        if not target.exists():
-            try:
-                raw = get(IMG.format(id=cid))
-                img = Image.open(io.BytesIO(raw)).convert("RGB")
-                h = round(img.height * IMG_WIDTH / img.width)
-                img = img.resize((IMG_WIDTH, h), Image.LANCZOS)
-                img.save(target, "WEBP", quality=IMG_QUALITY, method=6)
-                fetched += 1
-                time.sleep(DELAY)
-            except Exception as e:  # noqa: BLE001
-                print(f"  no image for {cid} {c['name']}: {e}", file=sys.stderr)
-        entry["img"] = target.exists()
-        out.append(entry)
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "cards.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
-    prev = {}
-    meta_path = OUT_DIR / "meta.json"
-    if meta_path.exists():
-        prev = json.loads(meta_path.read_text())
-    meta = {
-        "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "cards": len(speed),
-        "skills": len(skills),
-        "total": len(out),
-        "imagesFetchedThisRun": fetched,
-        "previousTotal": prev.get("total"),
-    }
-    meta_path.write_text(json.dumps(meta, indent=2))
-    print(json.dumps(meta, indent=2))
-    if prev.get("total") and len(out) < prev["total"] * 0.95:
-        print("WARNING: card count dropped by more than 5% since the last run", file=sys.stderr)
+    cards.sort(key=lambda c: c["n"])
+    (OUT_DIR / "cards.json").write_text(json.dumps(cards, ensure_ascii=False, separators=(",", ":")))
+    (OUT_DIR / "meta.json").write_text(
+        json.dumps({"generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "count": len(cards), "missing": missing, "source": "YGOPRODeck API v7 + yugipedia EDS card list"}, indent=2)
+    )
     return 0
 
 

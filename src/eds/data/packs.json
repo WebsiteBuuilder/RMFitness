@@ -1,0 +1,4128 @@
+[
+ {
+  "name": "Dark Magician",
+  "unlock": "It is available from the beginning of the game.",
+  "cards": [
+   {
+    "name": "Air Marmot of Nefariousness",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beast Fangs",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Book of Secret Arts",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Candle of Fate",
+    "rarity": "Common"
+   },
+   {
+    "name": "Curtain of the Dark Ones",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Gray",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Hole",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Dark Magician",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Eyearmor",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fiend's Hand",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fire Reaper",
+    "rarity": "Common"
+   },
+   {
+    "name": "Firegrass",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fissure",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Gaia The Fierce Knight",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Haniwa",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hitodenchak",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hitotsu-Me Giant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hourglass of Life",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kagemusha of the Blue Flame",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kaminarikozou",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kurama",
+    "rarity": "Common"
+   },
+   {
+    "name": "LaLa Li-oon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Legendary Sword",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Mammoth Graveyard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Meotoko",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nemuriko",
+    "rarity": "Common"
+   },
+   {
+    "name": "Petit Angel",
+    "rarity": "Common"
+   },
+   {
+    "name": "Petit Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Power of Kaishin",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Red Medicine",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sectarian of Secrets",
+    "rarity": "Common"
+   },
+   {
+    "name": "Silver Fang",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sparks",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Drdek",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Furious Sea King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tomozaurus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Trap Hole",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Violet Crystal",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Wicked Mirror",
+    "rarity": "Common"
+   },
+   {
+    "name": "Winged Cleaver",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Mystical Elf",
+  "unlock": "It is available from the beginning of the game.",
+  "cards": [
+   {
+    "name": "Armaill",
+    "rarity": "Common"
+   },
+   {
+    "name": "Blue-Eyed Silver Zombie",
+    "rarity": "Common"
+   },
+   {
+    "name": "Claw Reacher",
+    "rarity": "Common"
+   },
+   {
+    "name": "Curse of Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Dark Energy",
+    "rarity": "Rare"
+   },
+   {
+    "name": "De-Spell",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dorover",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragoness the Wicked Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Enchanting Mermaid",
+    "rarity": "Common"
+   },
+   {
+    "name": "Final Flame",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Goblin's Secret Remedy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hard Armor",
+    "rarity": "Common"
+   },
+   {
+    "name": "Holograh",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kamionwizard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Karbonala Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kumootoko",
+    "rarity": "Common"
+   },
+   {
+    "name": "Larvas",
+    "rarity": "Common"
+   },
+   {
+    "name": "Laser Cannon Armor",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Machine Conversion Factory",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Man Eater",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mavelus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Meda Bat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Monster Reborn",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "M-Warrior #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "M-Warrior #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Elf",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "One-Eyed Shield Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Raise Body Heat",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Solitude",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spirit of the Harp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stone Armadiller",
+    "rarity": "Common"
+   },
+   {
+    "name": "Supporter in the Shadows",
+    "rarity": "Common"
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Terra the Terrible",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Bewitching Phantom Thief",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tyhone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Uraby",
+    "rarity": "Common"
+   },
+   {
+    "name": "Vile Germs",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Wood Remains",
+    "rarity": "Common"
+   },
+   {
+    "name": "Zombie Warrior",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Red-Eyes B. Dragon",
+  "unlock": "It is available from the beginning of the game.",
+  "cards": [
+   {
+    "name": "Akihiron",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Ansatsu",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Anthrosaurus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armed Ninja",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armored Starfish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Barox",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beaver Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Binding Chain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Darkworld Thorns",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Treasure",
+    "rarity": "Common"
+   },
+   {
+    "name": "Drooling Lizard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Eldeen",
+    "rarity": "Common"
+   },
+   {
+    "name": "Electro-Whip",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fireyarou",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flower Wolf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Follow Wind",
+    "rarity": "Common"
+   },
+   {
+    "name": "Frenzied Panda",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gaia the Dragon Champion",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Ganigumo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Mech-Soldier",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gravedigger Ghoul",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hane-Hane",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Kamakiriman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Lesser Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mabarrel",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Man-Eater Bug",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Metal Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Misairuzame",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Moon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Pot of Greed",
+    "rarity": "Common"
+   },
+   {
+    "name": "Rare Fish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Reaper of the Cards",
+    "rarity": "Common"
+   },
+   {
+    "name": "Red-Eyes B. Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Rogue Doll",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Sand Stone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Silver Bow and Arrow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skelengel",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Red Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Stalker",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sleeping Lion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spike Seadra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Steel Ogre Grotto #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stop Defense",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Succubus Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Wandering Doomed",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tripwire Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Witty Phantom",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wretched Ghost of the Attic",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Cyber Harpie",
+  "unlock": "It is unlocked by defeating everyone in Stage 1 ten times each.",
+  "cards": [
+   {
+    "name": "Ancient Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ancient Lizard Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armored Lizard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Barrel Lily",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bottom Dweller",
+    "rarity": "Common"
+   },
+   {
+    "name": "Breath of Light",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Cocoon of Evolution",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Crawling Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "D. Human",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Assailant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Deepsea Shark",
+    "rarity": "Common"
+   },
+   {
+    "name": "Destroyer Golem",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dokuroizo the Grim Reaper",
+    "rarity": "Common"
+   },
+   {
+    "name": "Doma The Angel of Silence",
+    "rarity": "Common"
+   },
+   {
+    "name": "Electric Lizard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Elegant Egotist",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Eradicating Aerosol",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Eternal Draught",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Fiend Reflection #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Viper",
+    "rarity": "Common"
+   },
+   {
+    "name": "Great Bill",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ground Attacker Bugroth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie Lady",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie Lady Sisters",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Hunter Spider",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kaminari Attack",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kattapillar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kojikocy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magician of Faith",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Mask of Darkness",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Mega Thunderball",
+    "rarity": "Common"
+   },
+   {
+    "name": "Morinphen",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nekogal #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ocubeam",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ogre of the Black Shadow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Petit Moth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Pragtical",
+    "rarity": "Common"
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Rock Ogre Grotto #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stain Storm",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Steel Scorpion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Summoned Skull",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Tao the Chanter",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tongyo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Trakadon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Trent",
+    "rarity": "Common"
+   },
+   {
+    "name": "Warrior Elimination",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Water Girl",
+    "rarity": "Common"
+   },
+   {
+    "name": "Water Omotics",
+    "rarity": "Common"
+   },
+   {
+    "name": "Winged Dragon,Guardian of the Fortress #1",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Gate Guardian",
+  "unlock": "It is unlocked by having ten wins in Stage 2.",
+  "cards": [
+   {
+    "name": "Acid Crawler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Anti Raigeki",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Armored Rat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armored Zombie",
+    "rarity": "Common"
+   },
+   {
+    "name": "B. Skull Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Big Eye",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bio Plant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Blast Juggler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Call of the Dark",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Change of Heart",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Crow Goblin",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Dark Rabbit",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Shade",
+    "rarity": "Common"
+   },
+   {
+    "name": "Disk Magician",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dungeon Worm",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Empress Judge",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fake Trap",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Feral Imp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hibikime",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hyo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hyosube",
+    "rarity": "Common"
+   },
+   {
+    "name": "Jinzo #7",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kazejin",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Killer Needle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Larvae Moth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Leghul",
+    "rarity": "Common"
+   },
+   {
+    "name": "Leogun",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magical Ghost",
+    "rarity": "Common"
+   },
+   {
+    "name": "Masked Sorcerer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Master & Expert",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystic Lamp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ooguchi",
+    "rarity": "Common"
+   },
+   {
+    "name": "Pale Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Queen's Double",
+    "rarity": "Common"
+   },
+   {
+    "name": "Rainbow Flower",
+    "rarity": "Common"
+   },
+   {
+    "name": "Roaring Ocean Snake",
+    "rarity": "Common"
+   },
+   {
+    "name": "Rose Spectre of Dunn",
+    "rarity": "Common"
+   },
+   {
+    "name": "Rude Kaiser",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Sanga of the Thunder",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Snakeyashi",
+    "rarity": "Common"
+   },
+   {
+    "name": "Soul Release",
+    "rarity": "Common"
+   },
+   {
+    "name": "Suijin",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "The Cheerful Coffin",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "The Thing That Hides in the Mud",
+    "rarity": "Common"
+   },
+   {
+    "name": "Toad Master",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tribute to The Doomed",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Unknown Warrior of Fiend",
+    "rarity": "Common"
+   },
+   {
+    "name": "White Magical Hat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wing Egg Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Yaiba Robo",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Great Moth",
+  "unlock": "It is unlocked by defeating all Stage 2 Duelists ten times each.",
+  "cards": [
+   {
+    "name": "Air Eater",
+    "rarity": "Common"
+   },
+   {
+    "name": "Baby Dragon",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Battle Steer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Blackland Fire Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bladefly",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Blue-Winged Crown",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bolt Escargot",
+    "rarity": "Common"
+   },
+   {
+    "name": "Burglar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cannon Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber Commander",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dice Armadillo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Piper",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Cerebrus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Scorpion of the Tundra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giga-tech Wolf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giltia the D. Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gokibore",
+    "rarity": "Common"
+   },
+   {
+    "name": "Great Moth",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Griffore",
+    "rarity": "Common"
+   },
+   {
+    "name": "Guardian of the Labyrinth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Horn Imp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Horn of Heaven",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Hoshiningen",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Ice Water",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kanikabuto",
+    "rarity": "Common"
+   },
+   {
+    "name": "Lady of Faith",
+    "rarity": "Common"
+   },
+   {
+    "name": "Laughing Flower",
+    "rarity": "Common"
+   },
+   {
+    "name": "Little Chimera",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Lord of Zemia",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magic Jammer",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Milus Radiant",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Muka Muka",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Musician King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nekogal #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Niwatori",
+    "rarity": "Common"
+   },
+   {
+    "name": "Polymerization",
+    "rarity": "Common"
+   },
+   {
+    "name": "Prisman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Protector of the Throne",
+    "rarity": "Common"
+   },
+   {
+    "name": "Punished Eagle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sangan",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sea King Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Shadow Ghoul",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Shovel Crusher",
+    "rarity": "Common"
+   },
+   {
+    "name": "Solemn Judgment",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Star Boy",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Tenderness",
+    "rarity": "Common"
+   },
+   {
+    "name": "Thousand Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Torike",
+    "rarity": "Common"
+   },
+   {
+    "name": "Violent Rain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "rarity": "Common"
+   },
+   {
+    "name": "Witch's Apprentice",
+    "rarity": "Rare"
+   }
+  ]
+ },
+ {
+  "name": "Launcher Spider",
+  "unlock": "It is unlocked by defeating Mai Valentine 20 times.",
+  "cards": [
+   {
+    "name": "7 Colored Fish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Akakieisu",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ancient Tool",
+    "rarity": "Common"
+   },
+   {
+    "name": "Arlownay",
+    "rarity": "Common"
+   },
+   {
+    "name": "Arma Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "B. Dragon Jungle King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Barrel Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Block Attack",
+    "rarity": "Common"
+   },
+   {
+    "name": "Catapult Turtle",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Clown Zombie",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crazy Fish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber Saurus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Chimera",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dimensional Warrior",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Fiend Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gatekeeper",
+    "rarity": "Common"
+   },
+   {
+    "name": "Germ Infection",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Ghoul with an Appetite",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giganto",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hero of the East",
+    "rarity": "Common"
+   },
+   {
+    "name": "Illusionist Faceless Mage",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kuriboh",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Labyrinth Tank",
+    "rarity": "Common"
+   },
+   {
+    "name": "Launcher Spider",
+    "rarity": "Common"
+   },
+   {
+    "name": "Lava Battleguard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mirror Force",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Monstrous Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mushroom Man #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystic Horseman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Paralyzing Potion",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Pendulum Machine",
+    "rarity": "Common"
+   },
+   {
+    "name": "Prevent Rat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Princess of Tsurugi",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Rabid Horseman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Robbin' Goblin",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Royal Guard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Saber Slasher",
+    "rarity": "Common"
+   },
+   {
+    "name": "Saggi the Dark Clown",
+    "rarity": "Common"
+   },
+   {
+    "name": "Shield & Sword",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Swamp Battleguard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sword of Deep-Seated",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Immortal of Thunder",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Unhappy Maiden",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Thunder Dragon",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Togex",
+    "rarity": "Common"
+   },
+   {
+    "name": "Toon Alligator",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tremendous Fire",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Twin-Headed Thunder Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Waterdragon Fairy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Zanki",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Blue-Eyes White Dragon",
+  "unlock": "It is unlocked by defeating Yugi Muto 20 times.",
+  "cards": [
+   {
+    "name": "Aqua Madoor",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Basic Insect",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beast Fangs",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Blue-Eyes White Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Book of Secret Arts",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Celtic Guardian",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Charubin the Fire Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Gray",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Hole",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Dark King of the Abyss",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Magician",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Darkfire Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dissolverock",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Capture Jar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fiend Reflection #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Firegrass",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fissure",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Flame Ghost",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Manipulator",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Swordsman",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Forest",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Fusionist",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gaia The Fierce Knight",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Green Phantom King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hinotama",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hinotama Soul",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hitotsu-Me Giant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kagemusha of the Blue Flame",
+    "rarity": "Common"
+   },
+   {
+    "name": "King Fog",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kurama",
+    "rarity": "Common"
+   },
+   {
+    "name": "Legendary Sword",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Mammoth Graveyard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Masaki the Legendary Swordsman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Monster Egg",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mountain",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Mystical Sheep #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nemuriko",
+    "rarity": "Common"
+   },
+   {
+    "name": "Petit Angel",
+    "rarity": "Common"
+   },
+   {
+    "name": "Petit Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Polymerization",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Power of Kaishin",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Raigeki",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Ray & Temperature",
+    "rarity": "Common"
+   },
+   {
+    "name": "Red Medicine",
+    "rarity": "Common"
+   },
+   {
+    "name": "Remove Trap",
+    "rarity": "Common"
+   },
+   {
+    "name": "Root Water",
+    "rarity": "Common"
+   },
+   {
+    "name": "Silver Fang",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Servant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sogen",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Sparks",
+    "rarity": "Common"
+   },
+   {
+    "name": "The 13th Grave",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Furious Sea King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Trap Hole",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Trial of Nightmare",
+    "rarity": "Common"
+   },
+   {
+    "name": "Turtle Tiger",
+    "rarity": "Common"
+   },
+   {
+    "name": "Two-Mouth Darkruler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Two-Pronged Attack",
+    "rarity": "Common"
+   },
+   {
+    "name": "Umi",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Violet Crystal",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Wasteland",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Yami",
+    "rarity": "Rare"
+   }
+  ]
+ },
+ {
+  "name": "Exodia the Forbidden One",
+  "unlock": "It is unlocked by defeating Joey Wheeler 20 times.",
+  "cards": [
+   {
+    "name": "Armaill",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armed Ninja",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armored Starfish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beaver Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Curse of Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Dark Energy",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Darkworld Thorns",
+    "rarity": "Common"
+   },
+   {
+    "name": "De-Spell",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Treasure",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragoness the Wicked Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Drooling Lizard",
+    "rarity": "Common"
+   },
+   {
+    "name": "Electro-Whip",
+    "rarity": "Common"
+   },
+   {
+    "name": "Enchanting Mermaid",
+    "rarity": "Common"
+   },
+   {
+    "name": "Exodia the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Final Flame",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Fireyarou",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flower Wolf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Follow Wind",
+    "rarity": "Common"
+   },
+   {
+    "name": "Frenzied Panda",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gaia the Dragon Champion",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Goblin's Secret Remedy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gravedigger Ghoul",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hane-Hane",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Hard Armor",
+    "rarity": "Common"
+   },
+   {
+    "name": "Karbonala Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kumootoko",
+    "rarity": "Common"
+   },
+   {
+    "name": "Larvas",
+    "rarity": "Common"
+   },
+   {
+    "name": "Laser Cannon Armor",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Left Arm of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Lesser Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Machine Conversion Factory",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Man Eater",
+    "rarity": "Common"
+   },
+   {
+    "name": "Man-Eater Bug",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Meda Bat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Metal Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Misairuzame",
+    "rarity": "Common"
+   },
+   {
+    "name": "Monster Reborn",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "M-Warrior #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "M-Warrior #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Elf",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Mystical Moon",
+    "rarity": "Common"
+   },
+   {
+    "name": "One-Eyed Shield Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Pot of Greed",
+    "rarity": "Common"
+   },
+   {
+    "name": "Raise Body Heat",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Reaper of the Cards",
+    "rarity": "Common"
+   },
+   {
+    "name": "Red-Eyes B. Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Right Arm of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Sand Stone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Silver Bow and Arrow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Red Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spike Seadra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spirit of the Harp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Steel Ogre Grotto #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stop Defense",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Succubus Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Terra the Terrible",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tripwire Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tyhone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Uraby",
+    "rarity": "Common"
+   },
+   {
+    "name": "Vile Germs",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Witty Phantom",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Relinquished",
+  "unlock": "It is unlocked by having ten wins in Stage 3.",
+  "cards": [
+   {
+    "name": "Ameba",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ancient One of the Deep Forest",
+    "rarity": "Common"
+   },
+   {
+    "name": "Axe of Despair",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Black Pendant",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Chain Energy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Chorus of Sanctuary",
+    "rarity": "Common"
+   },
+   {
+    "name": "Confiscation",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Curse of Fiend",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Witch",
+    "rarity": "Common"
+   },
+   {
+    "name": "Darkness Approaches",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Delinquent Duo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Electric Snake",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fairy's Hand Mirror",
+    "rarity": "Common"
+   },
+   {
+    "name": "Final Destiny",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fire Kraken",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Trunade",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Turtle Who Feeds on Flames",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gravekeeper's Servant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Griggle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Guardian of the Throne Room",
+    "rarity": "Common"
+   },
+   {
+    "name": "High Tide Gyojin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hiro's Shadow Scout",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Horn of Light",
+    "rarity": "Common"
+   },
+   {
+    "name": "Invader of the Throne",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Liquid Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Maha Vailo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Malevolent Nuzzler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mechanical Snail",
+    "rarity": "Common"
+   },
+   {
+    "name": "Metal Fish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Minar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Space Typhoon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Painful Choice",
+    "rarity": "Common"
+   },
+   {
+    "name": "Peacock",
+    "rarity": "Common"
+   },
+   {
+    "name": "Penguin Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Queen Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Red Archery Girl",
+    "rarity": "Common"
+   },
+   {
+    "name": "Relinquished",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Rush Recklessly",
+    "rarity": "Common"
+   },
+   {
+    "name": "Slot Machine",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Snake Fang",
+    "rarity": "Common"
+   },
+   {
+    "name": "Snatch Steal",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spellbinding Circle",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Tailor of the Fickle",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Forceful Sentry",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "The Reliable Guardian",
+    "rarity": "Common"
+   },
+   {
+    "name": "Toll",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Tyhone #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Upstart Goblin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Weather Report",
+    "rarity": "Common"
+   },
+   {
+    "name": "Whiptail Crow",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Blue-Eyes Toon Dragon",
+  "unlock": "It is unlocked by defeating Marik Ishtar 20 times.",
+  "cards": [
+   {
+    "name": "Banisher of the Light",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Blue-Eyes Toon Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Boar Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ceremonial Bell",
+    "rarity": "Common"
+   },
+   {
+    "name": "Commencement Dance",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crab Turtle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber Jar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Zebra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Eatgaboon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Eternal Rest",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Flash Assailant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flying Kamakiri #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gaia Power",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Germ",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Giant Rat",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hamburger Recipe",
+    "rarity": "Common"
+   },
+   {
+    "name": "Horn of the Unicorn",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "House of Adhesive Tape",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hungry Burger",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hyozanryu",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Jigen Bakudan",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Karate Man",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kotodama",
+    "rarity": "Common"
+   },
+   {
+    "name": "Labyrinth Wall",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Luminous Spark",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magical Labyrinth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Manga Ryu-Ran",
+    "rarity": "Common"
+   },
+   {
+    "name": "Megamorph",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Messenger of Peace",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Molten Destruction",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mother Grizzly",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystic Plasma Zone",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Mystic Tomato",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nimble Momonga",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Octoberser",
+    "rarity": "Common"
+   },
+   {
+    "name": "Performance of Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Psychic Kappa",
+    "rarity": "Common"
+   },
+   {
+    "name": "Rising Air Current",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ryu-Ran",
+    "rarity": "Common"
+   },
+   {
+    "name": "Senju of the Thousand Hands",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Shining Fairy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sonic Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spear Cretin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stone Ogre Grotto",
+    "rarity": "Common"
+   },
+   {
+    "name": "Toon Mermaid",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Toon Summoned Skull",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Toon World",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Turtle Oath",
+    "rarity": "Common"
+   },
+   {
+    "name": "Twin Long Rods #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "UFO Turtle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Umiiruka",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wall Shadow",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Buster Blader",
+  "unlock": "It is unlocked by defeating Yami Yugi 20 times.",
+  "cards": [
+   {
+    "name": "7 Completed",
+    "rarity": "Common"
+   },
+   {
+    "name": "Appropriate",
+    "rarity": "Common"
+   },
+   {
+    "name": "Armored Glass",
+    "rarity": "Common"
+   },
+   {
+    "name": "Backup Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Buster Blader",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Call Of The Haunted",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Ceasefire",
+    "rarity": "Common"
+   },
+   {
+    "name": "Chain Destruction",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Cyber Falcon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Darkfire Soldier #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Darkfire Soldier #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "DNA Surgery",
+    "rarity": "Common"
+   },
+   {
+    "name": "Driving Snow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dust Tornado",
+    "rarity": "Common"
+   },
+   {
+    "name": "Earthshaker",
+    "rarity": "Common"
+   },
+   {
+    "name": "Enchanted Javelin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Champion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flying Kamakiri #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Forced Requisition",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gift of The Mystical Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Graverobber",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gust",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie's Brother",
+    "rarity": "Common"
+   },
+   {
+    "name": "Imperial Order",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Inspection",
+    "rarity": "Common"
+   },
+   {
+    "name": "Jinzo",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Kiseitai",
+    "rarity": "Common"
+   },
+   {
+    "name": "Light of Intervention",
+    "rarity": "Common"
+   },
+   {
+    "name": "Lightforce Sword",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Magical Hats",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Major Riot",
+    "rarity": "Common"
+   },
+   {
+    "name": "Metal Detector",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mirror Wall",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Morphing Jar #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mr. Volcano",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystic Probe",
+    "rarity": "Common"
+   },
+   {
+    "name": "Nobleman of Crossout",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Nobleman of Extermination",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Numinous Healer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Parasite Paracide",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Premature Burial",
+    "rarity": "Common"
+   },
+   {
+    "name": "Prohibition",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Respect Play",
+    "rarity": "Common"
+   },
+   {
+    "name": "Solomon's Lawbook",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Steel Ogre Grotto #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Eye of Truth",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Regulation of Tribe",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Shallow Grave",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Three-Headed Geedo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Time Seal",
+    "rarity": "Common"
+   },
+   {
+    "name": "Twin-Headed Fire Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "World Suppression",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Blue-Eyes Ultimate Dragon",
+  "unlock": "The player can unlock this set by advancing to Stage 4 in Campaign Mode.",
+  "cards": [
+   {
+    "name": "Blue-Eyes Ultimate Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Magic Ritual",
+    "rarity": "Common"
+   },
+   {
+    "name": "Firewing Pegasus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gate Guardian",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magician of Black Chaos",
+    "rarity": "Common"
+   },
+   {
+    "name": "Meteor B. Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Meteor Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sengenjin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Serpent Night Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tri-Horned Dragon",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Black Luster Soldier",
+  "unlock": "The player can unlock this set by defeating all Stage 3 Duelists ten times each.",
+  "cards": [
+   {
+    "name": "Beastly Mirror Ritual",
+    "rarity": "Common"
+   },
+   {
+    "name": "Black Luster Ritual",
+    "rarity": "Common"
+   },
+   {
+    "name": "Black Luster Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Chakra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fiend's Mirror",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fortress Whale",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fortress Whale's Oath",
+    "rarity": "Common"
+   },
+   {
+    "name": "Javelin Beetle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Javelin Beetle Pact",
+    "rarity": "Common"
+   },
+   {
+    "name": "Novox's Prayer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Resurrection of Chakra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Guardian",
+    "rarity": "Common"
+   },
+   {
+    "name": "Super War-Lion",
+    "rarity": "Common"
+   },
+   {
+    "name": "War-Lion Ritual",
+    "rarity": "Common"
+   },
+   {
+    "name": "Zera Ritual",
+    "rarity": "Common"
+   },
+   {
+    "name": "Zera The Mant",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Judge Man",
+  "unlock": "The player can unlock this set by having at least ten wins.",
+  "cards": [
+   {
+    "name": "Ancient Jar",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Battle Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Blue Medicine",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Celtic Guardian",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Dian Keto the Cure Master",
+    "rarity": "Common"
+   },
+   {
+    "name": "Doron",
+    "rarity": "Common"
+   },
+   {
+    "name": "Genin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Graveyard and the Hand of Invitation",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gyakutenno Megami",
+    "rarity": "Common"
+   },
+   {
+    "name": "Happy Lover",
+    "rarity": "Common"
+   },
+   {
+    "name": "Judge Man",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Judge Man",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Kageningen",
+    "rarity": "Common"
+   },
+   {
+    "name": "Last Will",
+    "rarity": "Common"
+   },
+   {
+    "name": "Lunar Queen Elzaim",
+    "rarity": "Common"
+   },
+   {
+    "name": "Man-Eating Plant",
+    "rarity": "Common"
+   },
+   {
+    "name": "Man-Eating Treasure Chest",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mooyan Curry",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mountain Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Capture Chain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Neo the Magic Swordsman",
+    "rarity": "Common"
+   },
+   {
+    "name": "Oscillo Hero #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Raimei",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Shadow Specter",
+    "rarity": "Common"
+   },
+   {
+    "name": "Swordstalker",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Stern Mystic",
+    "rarity": "Common"
+   },
+   {
+    "name": "Vishwar Randi",
+    "rarity": "Common"
+   },
+   {
+    "name": "Waboku",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wall of Illusion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Water Element",
+    "rarity": "Common"
+   },
+   {
+    "name": "Weather Control",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wings of Wicked Flame",
+    "rarity": "Common"
+   },
+   {
+    "name": "Yamatano Dragon Scroll",
+    "rarity": "Rare"
+   }
+  ]
+ },
+ {
+  "name": "Tiger Axe",
+  "unlock": "The player can unlock this set advancing to Stage 2 in Campaign Mode.",
+  "cards": [
+   {
+    "name": "Bean Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Burning Spear",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Dark Artist",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark-Piercing Light",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Dryad",
+    "rarity": "Common"
+   },
+   {
+    "name": "Elf's Light",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Fairywitch",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Giant Flea",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gust Fan",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Hercules Beetle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hourglass of Courage",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Key Mace #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kuwagata a",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kwagar Hercules",
+    "rarity": "Common"
+   },
+   {
+    "name": "Little D",
+    "rarity": "Common"
+   },
+   {
+    "name": "Minomushi Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Oscillo Hero",
+    "rarity": "Common"
+   },
+   {
+    "name": "Patrol Robo",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Rhaimundos of the Red Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skullbird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sonic Maid",
+    "rarity": "Common"
+   },
+   {
+    "name": "Soul of the Pure",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Spirit of the Books",
+    "rarity": "Common"
+   },
+   {
+    "name": "Steel Shell",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Sword of Dark Destruction",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Takuhee",
+    "rarity": "Common"
+   },
+   {
+    "name": "Temple of Skulls",
+    "rarity": "Common"
+   },
+   {
+    "name": "Vermillion Sparrow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Warrior of Tradition",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wodan the Resident of the Forest",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wow Warrior",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Gemini Elf",
+  "unlock": "The player can unlock this set by defeating Mako Tsunami 20 times.",
+  "cards": [
+   {
+    "name": "Amazon of the Seas",
+    "rarity": "Common"
+   },
+   {
+    "name": "Aqua Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Axe Raider",
+    "rarity": "Common"
+   },
+   {
+    "name": "Barrel Rock",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beautiful Headhuntress",
+    "rarity": "Common"
+   },
+   {
+    "name": "Big Insect",
+    "rarity": "Common"
+   },
+   {
+    "name": "Call of the Grave",
+    "rarity": "Common"
+   },
+   {
+    "name": "Castle Walls",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Cockroach Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Artist",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dryad",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fairy Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Faith Bird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fiend Kraken",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gemini Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Giant Red Seasnake",
+    "rarity": "Common"
+   },
+   {
+    "name": "Graceful Charity",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gruesome Goo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hercules Beetle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hourglass of Courage",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Maiden of the Moonlight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Man-eating Black Shark",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mechanical Spider",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mechanicalchaser",
+    "rarity": "Common"
+   },
+   {
+    "name": "Orion the Battle King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Patrol Robo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Queen of Autumn Leaves",
+    "rarity": "Common"
+   },
+   {
+    "name": "Reinforcements",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Reverse Trap",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Rhaimundos of the Red Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sea Kamen",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sonic Maid",
+    "rarity": "Common"
+   },
+   {
+    "name": "Spirit of the Books",
+    "rarity": "Common"
+   },
+   {
+    "name": "Swordsman from a Foreign Land",
+    "rarity": "Common"
+   },
+   {
+    "name": "Takuhee",
+    "rarity": "Common"
+   },
+   {
+    "name": "Temple of Skulls",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tiger Axe",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ultimate Offering",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Vermillion Sparrow",
+    "rarity": "Common"
+   },
+   {
+    "name": "Warrior of Tradition",
+    "rarity": "Common"
+   },
+   {
+    "name": "White Hole",
+    "rarity": "Common"
+   },
+   {
+    "name": "Wodan the Resident of the Forest",
+    "rarity": "Common"
+   },
+   {
+    "name": "Zone Eater",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Blue Millennium Puzzle",
+  "unlock": "The player can unlock this set by having ten wins against Stage 4 opponents.",
+  "cards": [
+   {
+    "name": "Baby Dragon",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Call Of The Haunted",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Cannon Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Change of Heart",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Cyber Jar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Hole",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Delinquent Duo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Exodia the Forbidden One",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Fake Trap",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Giant Soldier of Stone",
+    "rarity": "Common"
+   },
+   {
+    "name": "Graceful Charity",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Heavy Storm",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kuriboh",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Labyrinth Wall",
+    "rarity": "Normal Rare"
+   },
+   {
+    "name": "Last Will",
+    "rarity": "Common"
+   },
+   {
+    "name": "Left Arm of the Forbidden One",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Left Leg of the Forbidden One",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Magician of Faith",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Mask of Darkness",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Mirror Force",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Monster Reborn",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Muka Muka",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Painful Choice",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Pot of Greed",
+    "rarity": "Common"
+   },
+   {
+    "name": "Raigeki",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Reaper of the Cards",
+    "rarity": "Common"
+   },
+   {
+    "name": "Right Arm of the Forbidden One",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Right Leg of the Forbidden One",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Sangan",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sinister Serpent",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Snatch Steal",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Tribute to The Doomed",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Wall of Illusion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Witch of the Black Forest",
+    "rarity": "Rare"
+   }
+  ]
+ },
+ {
+  "name": "Green Millennium Puzzle",
+  "unlock": "The player can unlock this set by defeating Kaiba Seto 20 times. (Defeating a Ghoul in a random encounter also awards a copy.)",
+  "cards": [
+   {
+    "name": "Axe of Despair",
+    "rarity": "Common"
+   },
+   {
+    "name": "B. Skull Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Barrel Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Blue-Eyes Toon Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Buster Blader",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Catapult Turtle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cocoon of Evolution",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Magician Girl",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Dark-Eyes Illusionist",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Dimensional Warrior",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Swordsman",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Gaia the Dragon Champion",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hane-Hane",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie Lady Sisters",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Hiro's Shadow Scout",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hyozanryu",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Insect Queen",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Jinzo",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Lord of D.",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Magic Jammer",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Magician of Faith",
+    "rarity": "Common"
+   },
+   {
+    "name": "Man-Eater Bug",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mask of Darkness",
+    "rarity": "Common"
+   },
+   {
+    "name": "Messenger of Peace",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Metalzoa",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Mirror Force",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Muka Muka",
+    "rarity": "Common"
+   },
+   {
+    "name": "Panther Warrior",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Perfectly Ultimate Great Moth",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Red-Eyes B. Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Relinquished",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Seiyaryu",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Seven Tools of the Bandit",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Shadow Ghoul",
+    "rarity": "Common"
+   },
+   {
+    "name": "Shield & Sword",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Slot Machine",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Solemn Judgment",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Spellbinding Circle",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Stop Defense",
+    "rarity": "Common"
+   },
+   {
+    "name": "Swords of Revealing Light",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "The Cheerful Coffin",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "The Flute of Summoning Dragon",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "The Unhappy Maiden",
+    "rarity": "Common"
+   },
+   {
+    "name": "Thousand Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Time Wizard",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Toon Mermaid",
+    "rarity": "Common"
+   },
+   {
+    "name": "Toon Summoned Skull",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Toon World",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Tribute to The Doomed",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Twin-Headed Thunder Dragon",
+    "rarity": "Ultra Rare"
+   }
+  ]
+ },
+ {
+  "name": "Eye of Wdjat",
+  "unlock": "The player can unlock this set by defeating each opponent in Stage 4 ten times.",
+  "cards": [
+   {
+    "name": "Alligator's Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Black Illusion Ritual",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Blast Sphere",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Blue-Eyes White Dragon",
+    "rarity": "Super Rare",
+    "artwork": 2
+   },
+   {
+    "name": "Celtic Guardian",
+    "rarity": "Common"
+   },
+   {
+    "name": "Celtic Guardian",
+    "rarity": "Common",
+    "artwork": 2
+   },
+   {
+    "name": "Cosmo Queen",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Dancing Elf",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dark Magician",
+    "rarity": "Secret Rare",
+    "artwork": 2
+   },
+   {
+    "name": "Dark Magician Girl",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Dark-Eyes Illusionist",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Dokurorider",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Exile of the Wicked",
+    "rarity": "Common"
+   },
+   {
+    "name": "Flame Swordsman",
+    "rarity": "Super Rare",
+    "artwork": 2
+   },
+   {
+    "name": "Garnecia Elefantis",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gazelle the King of Mythical Beasts",
+    "rarity": "Common"
+   },
+   {
+    "name": "Goddess of Whim",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kanan the Swordmistress",
+    "rarity": "Common"
+   },
+   {
+    "name": "Launcher Spider",
+    "rarity": "Common",
+    "artwork": 2
+   },
+   {
+    "name": "Mikazukinoyaiba",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Millennium Shield",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Panther Warrior",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Pendulum Machine",
+    "rarity": "Common",
+    "artwork": 2
+   },
+   {
+    "name": "Revival of Dokurorider",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Stuffed Animal",
+    "rarity": "Common"
+   },
+   {
+    "name": "Takriminos",
+    "rarity": "Common"
+   },
+   {
+    "name": "Thousand Dragon",
+    "rarity": "Secret Rare",
+    "artwork": 2
+   },
+   {
+    "name": "Three-Legged Zombies",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tiger Axe",
+    "rarity": "Common",
+    "artwork": 2
+   },
+   {
+    "name": "Time Machine",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Time Wizard",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Yaranzo",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Obelisk the Tormentor",
+    "rarity": "Normal Rare"
+   }
+  ]
+ },
+ {
+  "name": "Garoozis",
+  "unlock": "The player can unlock this set by advancing to Stage 3 in Campaign Mode.",
+  "cards": [
+   {
+    "name": "Amphibious Bugroth",
+    "rarity": "Common"
+   },
+   {
+    "name": "Beastking of the Swamps",
+    "rarity": "Common"
+   },
+   {
+    "name": "Behegon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bracchio-raidus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crawling Dragon #2",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crimson Sunbird",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber-Stein",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Seeker",
+    "rarity": "Common"
+   },
+   {
+    "name": "Exile of the Wicked",
+    "rarity": "Common"
+   },
+   {
+    "name": "Fusion Sage",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gale Dogra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Garoozis",
+    "rarity": "Common"
+   },
+   {
+    "name": "Garvas",
+    "rarity": "Common"
+   },
+   {
+    "name": "Goddess with the Third Eye",
+    "rarity": "Common"
+   },
+   {
+    "name": "Great Mammoth of Goldfine",
+    "rarity": "Common"
+   },
+   {
+    "name": "Greenkappa",
+    "rarity": "Common"
+   },
+   {
+    "name": "Guardian of the Sea",
+    "rarity": "Common"
+   },
+   {
+    "name": "Hibikime",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ill Witch",
+    "rarity": "Common"
+   },
+   {
+    "name": "Invader from Another Dimension",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kairyu-Shin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Kaiser Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Krokodilus",
+    "rarity": "Common"
+   },
+   {
+    "name": "Last Day of Witch",
+    "rarity": "Common"
+   },
+   {
+    "name": "Lord of the Lamp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Machine King",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magic Thorn",
+    "rarity": "Common"
+   },
+   {
+    "name": "Marine Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Monster Eye",
+    "rarity": "Common"
+   },
+   {
+    "name": "Morphing Jar",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Sand",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mystical Sheep #1",
+    "rarity": "Common"
+   },
+   {
+    "name": "Needle Ball",
+    "rarity": "Common"
+   },
+   {
+    "name": "Needle Worm",
+    "rarity": "Common"
+   },
+   {
+    "name": "Parrot Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Penguin Soldier",
+    "rarity": "Common"
+   },
+   {
+    "name": "Restructer Revolution",
+    "rarity": "Common"
+   },
+   {
+    "name": "Royal Decree",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skelgon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Soul Hunter",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sword Arm of Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Snake Hair",
+    "rarity": "Common"
+   },
+   {
+    "name": "Trap Master",
+    "rarity": "Common"
+   },
+   {
+    "name": "Two-Headed King Rex",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ushi Oni",
+    "rarity": "Common"
+   },
+   {
+    "name": "Versago the Destroyer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Water Magician",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Battle Ox",
+  "unlock": "The player can unlock this set by defeating Umbra & Lumis 20 times.",
+  "cards": [
+   {
+    "name": "Ancient Brain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ancient Telescope",
+    "rarity": "Common"
+   },
+   {
+    "name": "Battle Ox",
+    "rarity": "Common"
+   },
+   {
+    "name": "Bickuribox",
+    "rarity": "Common"
+   },
+   {
+    "name": "Castle of Dark Illusions",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crass Clown",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dragon Zombie",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dream Clown",
+    "rarity": "Common"
+   },
+   {
+    "name": "Grappler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Great White",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gryphon Wing",
+    "rarity": "Common"
+   },
+   {
+    "name": "Heavy Storm",
+    "rarity": "Common"
+   },
+   {
+    "name": "Insect Soldiers of the Sky",
+    "rarity": "Common"
+   },
+   {
+    "name": "Invigoration",
+    "rarity": "Common"
+   },
+   {
+    "name": "Jellyfish",
+    "rarity": "Common"
+   },
+   {
+    "name": "Jirai Gumo",
+    "rarity": "Common"
+   },
+   {
+    "name": "Just Desserts",
+    "rarity": "Common"
+   },
+   {
+    "name": "King of Yamimakai",
+    "rarity": "Common"
+   },
+   {
+    "name": "Koumori Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "La Jinn the Mystical Genie of the Lamp",
+    "rarity": "Common"
+   },
+   {
+    "name": "Megazowler",
+    "rarity": "Common"
+   },
+   {
+    "name": "Metal Guardian",
+    "rarity": "Common"
+   },
+   {
+    "name": "Millennium Golem",
+    "rarity": "Common"
+   },
+   {
+    "name": "Monster Tamer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Moon Envoy",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mushroom Man",
+    "rarity": "Common"
+   },
+   {
+    "name": "Mysterious Puppeteer",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ookazi",
+    "rarity": "Common"
+   },
+   {
+    "name": "Pumpking the King of Ghosts",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ring of Magnetism",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ryu-Kishin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Ryu-Kishin Powered",
+    "rarity": "Common"
+   },
+   {
+    "name": "Share the Pain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Skull Knight",
+    "rarity": "Common"
+   },
+   {
+    "name": "Stim-Pack",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sword of Dark Destruction",
+    "rarity": "Common"
+   },
+   {
+    "name": "Tainted Wisdom",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Bistro Butcher",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Inexperienced Spy",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Little Swordsman of Aile",
+    "rarity": "Common"
+   },
+   {
+    "name": "The Wicked Worm Beast",
+    "rarity": "Common"
+   },
+   {
+    "name": "Yado Karu",
+    "rarity": "Common"
+   }
+  ]
+ },
+ {
+  "name": "Yellow Millennium Puzzle",
+  "unlock": "The player can unlock this set by defeating Simon.",
+  "cards": [
+   {
+    "name": "Acid Trap Hole",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Alligator's Sword Dragon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Alpha The Magnet Warrior",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Anti-Magic Fragrance",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Aqua Chorus",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Bell of Destruction",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Beta The Magnet Warrior",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Bright Castle",
+    "rarity": "Common"
+   },
+   {
+    "name": "Crush Card",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Cyber Shield",
+    "rarity": "Common"
+   },
+   {
+    "name": "Cyber-Tech Alligator",
+    "rarity": "Common"
+   },
+   {
+    "name": "Dunames Dark Witch",
+    "rarity": "Common"
+   },
+   {
+    "name": "Gamma The Magnet Warrior",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Garma Sword",
+    "rarity": "Common"
+   },
+   {
+    "name": "Garma Sword Oath",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Goblin Fan",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie's Feather Duster",
+    "rarity": "Common"
+   },
+   {
+    "name": "Harpie's Pet Dragon",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Insect Armor with Laser Cannon",
+    "rarity": "Common"
+   },
+   {
+    "name": "Insect Queen",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Kunai with Chain",
+    "rarity": "Common"
+   },
+   {
+    "name": "Magic-Arm Shield",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Mesmeric Control",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Metalmorph",
+    "rarity": "Secret Rare"
+   },
+   {
+    "name": "Metalzoa",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Perfectly Ultimate Great Moth",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Red-Eyes Black Metal Dragon",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Riryoku",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Salamandra",
+    "rarity": "Common"
+   },
+   {
+    "name": "Seal of the Ancients",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Sebek's Blessing",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Seiyaryu",
+    "rarity": "Common"
+   },
+   {
+    "name": "Sinister Serpent",
+    "rarity": "Rare"
+   },
+   {
+    "name": "Sword of Dragon's Soul",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Valkyrion the Magna Warrior",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Vorse Raider",
+    "rarity": "Common"
+   },
+   {
+    "name": "Widespread Ruin",
+    "rarity": "Common"
+   },
+   {
+    "name": "Windstorm of Etaqua",
+    "rarity": "Super Rare"
+   },
+   {
+    "name": "Zoa",
+    "rarity": "Ultra Rare"
+   },
+   {
+    "name": "Slifer the Sky Dragon",
+    "rarity": "Normal Rare"
+   }
+  ]
+ }
+]

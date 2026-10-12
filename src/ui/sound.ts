@@ -45,3 +45,22 @@ export function playAlert() {
   tone(880, 0.1, 'square', 0.15, 0.15);
   tone(1174, 0.2, 'square', 0.15, 0.3);
 }
+
+/** GBA-style cursor blip. */
+export function playBlip() {
+  if (!ctx) return;
+  tone(1200, 0.04, 'square', 0.08);
+}
+
+/** Card draw swish. */
+export function playDraw() {
+  if (!ctx) return;
+  tone(600, 0.06, 'triangle', 0.1);
+  tone(900, 0.06, 'triangle', 0.1, 0.05);
+}
+
+/** Victory jingle. */
+export function playWin() {
+  if (!ctx) return;
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.12, i * 0.14));
+}

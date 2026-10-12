@@ -1,4 +1,4 @@
-import type { GameEvent, LoggedEvent } from '../game/types';
+import type { GameEvent, LoggedEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
 
 /** One device, both seats (hotseat). The log also survives a reload. */
@@ -6,7 +6,7 @@ export class LocalAdapter extends AdapterBase implements SyncAdapter {
   readonly kind = 'local' as const;
   readonly isHost = true;
   readonly roomCode = null;
-  private key = 'sdo.hotseat.log';
+  private key = 'eds.hotseat.log';
 
   constructor(resume = false) {
     super();
@@ -25,7 +25,7 @@ export class LocalAdapter extends AdapterBase implements SyncAdapter {
 
   static hasSave(): boolean {
     try {
-      const raw = localStorage.getItem('sdo.hotseat.log');
+      const raw = localStorage.getItem('eds.hotseat.log');
       return !!raw && raw.length > 2;
     } catch {
       return false;
