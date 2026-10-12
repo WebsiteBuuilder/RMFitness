@@ -282,7 +282,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       >
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'}`}>
-            <CardImg name={c.name} back={!visible} />
+            <CardImg name={c.name} back={!visible} owner={c.owner} />
           </div>
         )}
         {c && c.faceUp && kind === 'm' && (
@@ -541,7 +541,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       <div class="topp-hand">
         {opp.hand.map((c) => (
           <div key={c.uid} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name))}>
-            <CardImg name={c.name} back={!ctl.oppHandShown} />
+            <CardImg name={c.name} back={!ctl.oppHandShown} owner={c.owner} />
           </div>
         ))}
       </div>
@@ -608,7 +608,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
         {selCard && canSeeSel && !drag && (
           <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name))}>
-            <CardImg name={selCard.name} class="tdetail-img" />
+            <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
             <div class="tdetail-text">
               <b>{selCard.name}</b>
               <DetailLine name={selCard.name} />
@@ -629,7 +629,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
             {...dragProps(c, 'hand')}
           >
-            <CardImg name={c.name} back={!canAct} />
+            <CardImg name={c.name} back={!canAct} owner={c.owner} />
           </div>
         ))}
         {handCount === 0 && <div class="thint">No cards in hand</div>}
@@ -677,7 +677,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
       {drag && (
         <div class={`tghost ${drag.over ? 'over' : ''}`} style={{ left: `${drag.x}px`, top: `${drag.y}px` }}>
-          <CardImg name={drag.name} />
+          <CardImg name={drag.name} owner={e.find(drag.uid)?.card.owner} />
         </div>
       )}
 

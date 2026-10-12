@@ -1,0 +1,276 @@
+/* Card leveling: lvrity frames and foil, Master Duel style.
+   R silver edge · SR silver foil · UR gold foil · Glossy rainbow holo · Royal prismatic gold.
+   The frame is on the picture itself; the foil layer (.lvr-fx) shows only where the
+   card sits in a slot (field, hand), so lists and pop-ups keep their layout. */
+:root {
+  --lvr-silver: #e4e9f2;
+  --lvr-gold: #ffd56a;
+  --lvr-gold-deep: #c8961e;
+}
+
+img.cimg.lvr-R,
+div.cimg.lvr-R {
+  box-shadow: 0 0 0 1px var(--lvr-silver), 0 2px 6px #000a;
+}
+img.cimg.lvr-SR,
+div.cimg.lvr-SR {
+  box-shadow: 0 0 0 1.5px var(--lvr-silver), 0 0 7px #cfe3ffaa, 0 2px 6px #000a;
+}
+img.cimg.lvr-UR,
+div.cimg.lvr-UR {
+  box-shadow: 0 0 0 2px var(--lvr-gold), 0 0 9px #ffcf4dbb, 0 2px 6px #000a;
+}
+img.cimg.lvr-GL,
+div.cimg.lvr-GL {
+  box-shadow: 0 0 0 2px var(--lvr-gold), 0 0 10px #ff8cf0aa, 0 0 16px #6ce3ff88, 0 2px 6px #000a;
+}
+img.cimg.lvr-RO,
+div.cimg.lvr-RO {
+  box-shadow: 0 0 0 2px #fff6d8, 0 0 0 3.5px var(--lvr-gold-deep), 0 0 14px #ffd56acc, 0 2px 6px #000a;
+  animation: lvr-royal-glow 2.6s ease-in-out infinite;
+}
+div.cimg.ctext.lvr {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------- the foil layer ---------- */
+.lvr-fx {
+  display: none;
+}
+.fcard,
+.thcard,
+.hcard,
+.tghost {
+  position: relative;
+}
+.fcard > .lvr-fx,
+.thcard > .lvr-fx,
+.hcard > .lvr-fx,
+.tghost > .lvr-fx,
+.ctext.lvr > .lvr-fx {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 3px;
+}
+/* the tier chip, top-left */
+.fcard > .lvr-fx::after,
+.thcard > .lvr-fx::after,
+.hcard > .lvr-fx::after,
+.tghost > .lvr-fx::after {
+  content: attr(data-r);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font: 800 8px/11px system-ui, sans-serif;
+  letter-spacing: 0.3px;
+  color: #10131a;
+  background: linear-gradient(180deg, #ffffff, #b9c3d3);
+  box-shadow: 0 1px 2px #000a;
+}
+.lvr-fx-UR::after,
+.lvr-fx-GL::after,
+.lvr-fx-RO::after {
+  background: linear-gradient(180deg, #fff3c2, var(--lvr-gold) 45%, var(--lvr-gold-deep)) !important;
+}
+.lvr-fx-GL::after {
+  box-shadow: 0 0 0 1px #ff9df4, 0 1px 3px #000a !important;
+}
+.lvr-fx-RO::after {
+  box-shadow: 0 0 0 1px #fffbe8, 0 0 6px var(--lvr-gold) !important;
+}
+
+/* the sheen that sweeps across (SR and up) */
+.lvr-fx-SR::before,
+.lvr-fx-UR::before,
+.lvr-fx-GL::before,
+.lvr-fx-RO::before {
+  content: '';
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(115deg, transparent 38%, #ffffff55 47%, #ffffffaa 50%, #ffffff55 53%, transparent 62%);
+  transform: translateX(-60%);
+  animation: lvr-sweep 3.4s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+.lvr-fx-UR::before {
+  background: linear-gradient(115deg, transparent 36%, #ffe08a55 46%, #fff3c8cc 50%, #ffe08a55 54%, transparent 64%);
+  animation-duration: 2.8s;
+}
+.lvr-fx-GL {
+  background: linear-gradient(135deg, #ff6ad522, #ffd56a22 25%, #6cff9e22 50%, #6ce3ff2a 75%, #b06cff22);
+  background-size: 300% 300%;
+  animation: lvr-holo 5s linear infinite;
+  mix-blend-mode: color-dodge;
+}
+.lvr-fx-GL::before {
+  background: linear-gradient(115deg, transparent 34%, #ff9df466 44%, #ffffffcc 50%, #7af0ff66 56%, transparent 66%);
+  animation-duration: 2.4s;
+}
+.lvr-fx-RO {
+  background:
+    radial-gradient(circle at 20% 15%, #ffffff40 0 6%, transparent 7%),
+    radial-gradient(circle at 78% 70%, #ffffff35 0 5%, transparent 6%),
+    conic-gradient(from 0deg, #ffd56a33, #ff8cf033, #6ce3ff33, #9dff8c33, #ffd56a33);
+  background-size: 100% 100%, 100% 100%, 220% 220%;
+  animation: lvr-holo 4s linear infinite;
+  mix-blend-mode: color-dodge;
+}
+.lvr-fx-RO::before {
+  background: linear-gradient(115deg, transparent 32%, #fff3c888 44%, #ffffffee 50%, #ffd8ff88 56%, transparent 68%);
+  animation-duration: 2.1s;
+}
+.fcard.fd > .lvr-fx {
+  display: none;
+}
+
+@keyframes lvr-sweep {
+  0%,
+  35% {
+    transform: translateX(-60%);
+  }
+  75%,
+  100% {
+    transform: translateX(60%);
+  }
+}
+@keyframes lvr-holo {
+  0% {
+    background-position: 0% 50%, 0 0, 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%, 0 0, 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%, 0 0, 0% 50%;
+  }
+}
+@keyframes lvr-royal-glow {
+  50% {
+    box-shadow: 0 0 0 2px #fff6d8, 0 0 0 3.5px var(--lvr-gold-deep), 0 0 22px #ffd56a, 0 2px 6px #000a;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvr-fx,
+  .lvr-fx::before,
+  img.cimg.lvr-RO {
+    animation: none !important;
+  }
+}
+
+/* ---------- Card Levels screen ---------- */
+.lv-filter {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.lv-row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  border-bottom: 1px solid #ffffff14;
+}
+.lv-row .cimg {
+  width: 34px;
+  height: 50px;
+}
+.lv-name {
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lv-why {
+  font-size: 10px;
+  color: var(--dim);
+}
+.lv-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: #ffffff1c;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.lv-meter > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #b9c3d3, #ffffff);
+}
+.lv-t-UR .lv-meter > i,
+.lv-t-GL .lv-meter > i,
+.lv-t-RO .lv-meter > i {
+  background: linear-gradient(90deg, var(--lvr-gold-deep), var(--lvr-gold));
+}
+.lv-chip {
+  display: inline-block;
+  min-width: 26px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font: 800 11px/16px system-ui, sans-serif;
+  color: #10131a;
+  background: linear-gradient(180deg, #ffffff, #b9c3d3);
+}
+.lv-chip.lv-N {
+  background: #3a4150;
+  color: #cfd6e2;
+}
+.lv-chip.lv-UR,
+.lv-chip.lv-GL,
+.lv-chip.lv-RO {
+  background: linear-gradient(180deg, #fff3c2, var(--lvr-gold) 45%, var(--lvr-gold-deep));
+}
+.lv-chip.lv-GL {
+  box-shadow: 0 0 0 1px #ff9df4, 0 0 6px #6ce3ff;
+}
+.lv-chip.lv-RO {
+  box-shadow: 0 0 0 1px #fffbe8, 0 0 8px var(--lvr-gold);
+}
+.lv-delta {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+.lv-up {
+  color: #7cf29a;
+}
+.lv-down {
+  color: #ff8a8a;
+}
+.lv-rankup {
+  color: var(--lvr-gold);
+  font-size: 10px;
+}
+.lv-banner {
+  border: 1px solid var(--lvr-gold-deep);
+  background: linear-gradient(180deg, #3a2c0c, #1c1608);
+  color: #ffe9a8;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.lv-banner button {
+  margin-left: 6px;
+}
+.lv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--dim);
+  margin: 4px 0 8px;
+}
+.cinfo-lv {
+  font-size: 11px;
+  margin: 4px 0;
+}
