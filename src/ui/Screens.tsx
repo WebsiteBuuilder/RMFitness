@@ -362,6 +362,8 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
   /** Ticket cards and the Egyptian Gods are keepsakes in EDS: they cannot go in a Deck. */
   const keepsake = (n: string) => card(n)?.sub === 'Ticket' || GODS.has(n);
   const copies = (n: string) => save.main.filter((x) => x === n).length + save.side.filter((x) => x === n).length + save.fusion.filter((x) => x === n).length;
+  /** Only a card coming out of the Trunk adds a copy to your decks; moving one between decks doesn't. */
+  const tooMany = (n: string) => tab === 'trunk' && copies(n) >= 3;
   const dbKnown = allCards().length > 0;
 
   return (
@@ -404,9 +406,9 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
             items={[
               ...(keepsake(sel) ? [{ label: 'A keepsake: it cannot be used in a Duel', disabled: true, onPick: () => {} }] : []),
               ...(tab !== 'trunk' ? [{ label: 'To Trunk', onPick: () => move(sel, tab, 'trunk') }] : []),
-              ...(tab !== 'main' && !isFusion(sel) && !keepsake(sel) ? [{ label: 'To Main Deck', disabled: copies(sel) >= 3, onPick: () => move(sel, tab, 'main') }] : []),
-              ...(tab !== 'side' && !keepsake(sel) ? [{ label: 'To Side Deck', disabled: copies(sel) >= 3 || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
-              ...(tab !== 'fusion' && isFusion(sel) ? [{ label: 'To Fusion Deck', disabled: copies(sel) >= 3 || save.fusion.length >= 20, onPick: () => move(sel, tab, 'fusion') }] : []),
+              ...(tab !== 'main' && !isFusion(sel) && !keepsake(sel) ? [{ label: 'To Main Deck', disabled: tooMany(sel), onPick: () => move(sel, tab, 'main') }] : []),
+              ...(tab !== 'side' && !keepsake(sel) ? [{ label: 'To Side Deck', disabled: tooMany(sel) || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
+              ...(tab !== 'fusion' && isFusion(sel) ? [{ label: 'To Fusion Deck', disabled: tooMany(sel) || save.fusion.length >= 20, onPick: () => move(sel, tab, 'fusion') }] : []),
               { label: 'Card Info', onPick: () => setInfo(sel) },
             ]}
           />

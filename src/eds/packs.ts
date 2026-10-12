@@ -29,7 +29,8 @@ const RARE_SLOT: [string, number][] = [
   ['Secret Rare', 4],
   ['Normal Rare', 6],
 ];
-const ORDER = ['Common', 'Rare', 'Super Rare', 'Ultra Rare', 'Secret Rare', 'Normal Rare'];
+// Rarest last, so a pack without the rolled rarity steps down, never up (Normal Rare sits just above Common).
+const ORDER = ['Common', 'Normal Rare', 'Rare', 'Super Rare', 'Ultra Rare', 'Secret Rare'];
 
 function pick<T>(list: T[], next: () => number): T {
   return list[Math.floor(next() * list.length)];

@@ -377,3 +377,33 @@ img.cimg {
 .duel:not(.touch) .hand {
   padding: 11px 8px 3px;
 }
+
+/* Online duel: say so when the connection drops instead of waiting silently. */
+.netwarn {
+  position: fixed;
+  top: calc(6px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  background: #4a1c1c;
+  border: 2px solid var(--red);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 #000;
+  font-size: 11px;
+  text-align: center;
+  animation: blink 1.4s steps(2) 3;
+}
+
+/* iPhones zoom the whole page into any text box under 16px. */
+input,
+.search,
+.pw,
+.code {
+  font-size: 16px;
+}
+.search {
+  padding: 2px 6px;
+  min-width: 0;
+}

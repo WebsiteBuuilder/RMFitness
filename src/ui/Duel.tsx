@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
 import { other } from '../eds/engine';
@@ -64,14 +64,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const lastSeq = useRef(0);
   const finished = useRef(false);
 
-  // Hotseat: pass the phone when the acting seat changes.
-  useEffect(() => {
+  // Hotseat: pass the phone when the acting seat changes (before paint, so the next hand never flashes).
+  useLayoutEffect(() => {
     if (hotseat && lastActing.current !== acting && state.winner === null) setPass(true);
     lastActing.current = acting;
   }, [acting, hotseat, state.winner]);
 
   // Hotseat: hide the first hand until whoever goes first has the phone.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (hotseat && state.winner === null) setPass(true);
   }, []);
 
@@ -101,7 +101,25 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     }
   }, [state.winner]);
 
+  /** The last move sent, so a double tap can't send it twice before the game answers (online it takes a moment). */
+  const sent = useRef<{ view: SessionView; at: number } | null>(null);
+  const online = !!session.adapter.roomCode;
+  /** Saves the result exactly once, however many times Continue is tapped. */
+  const recorded = useRef(false);
+  const finish = (w: Pid | 'draw') => {
+    if (recorded.current) return;
+    recorded.current = true;
+    onFinished(w);
+  };
+  /** Leaving a finished duel still saves its result; leaving an online duel early concedes it, so the other player isn't left waiting. */
+  const leave = () => {
+    if (state.winner !== null) return finish(state.winner);
+    if (online && canAct) session.send({ type: 'SURRENDER', player: acting });
+    onLeave();
+  };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
+    if (sent.current && sent.current.view === view && Date.now() - sent.current.at < 1500) return;
+    sent.current = { view, at: Date.now() };
     unlockAudio();
     playBlip();
     // A command used up the selection: don't leave the old card's menu on screen.
@@ -272,7 +290,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       return (
         <Win title={state.winner === 'draw' ? 'DRAW' : hotseat ? `${state.players[state.winner].name} WINS` : won ? 'YOU WIN!' : 'YOU LOSE'} class="msgwin">
           <p>{state.winReason}</p>
-          <Menu items={[{ label: 'Continue', onPick: () => onFinished(state.winner!) }, { label: 'View log', onPick: () => setShowLog(true) }]} />
+          <Menu items={[{ label: 'Continue', onPick: () => finish(state.winner!) }, { label: 'View log', onPick: () => setShowLog(true) }]} />
         </Win>
       );
     }
@@ -441,13 +459,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => confirm('Surrender this duel?') && (send({ type: 'SURRENDER', player: acting }), setShowMenu(false)) },
-                { label: 'Leave duel', onPick: () => (setShowMenu(false), onLeave()) },
+                { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />
           </Win>
         </Overlay>
       )}
+      {online && view.status !== 'connected' && state.winner === null && <div class="netwarn">{view.detail || 'Connection lost. Reconnecting…'}</div>}
       {pass && (
         <div class="pass" onClick={() => setPass(false)}>
           <Win title="Pass the phone">
@@ -464,7 +483,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
         overlays={overlays}
       />
     );

@@ -3,10 +3,11 @@ import { card, imageUrl } from '../eds/db';
 
 /** Card picture with a drawn fallback when the image is missing. */
 export function CardImg({ name, back = false, class: cls = '' }: { name: string; back?: boolean; class?: string }) {
-  const [broken, setBroken] = useState(false);
+  // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
+  const [broken, setBroken] = useState<string | null>(null);
   if (back) return <div class={`cimg cback ${cls}`} />;
-  const url = broken ? null : imageUrl(name);
-  if (url) return <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(true)} />;
+  const url = broken === name ? null : imageUrl(name);
+  if (url) return <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(name)} />;
   const info = card(name);
   const kind = info?.kind ?? 'monster';
   const sub = info?.sub ?? 'Normal';

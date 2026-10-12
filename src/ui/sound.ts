@@ -3,7 +3,11 @@
 let ctx: AudioContext | null = null;
 
 export function unlockAudio() {
-  if (ctx) return;
+  if (ctx) {
+    // Phones suspend sound when you switch apps; wake it on the next tap.
+    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
+    return;
+  }
   try {
     ctx = new AudioContext();
   } catch {

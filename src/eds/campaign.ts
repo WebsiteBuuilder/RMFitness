@@ -52,11 +52,11 @@ export function isUnlocked(s: SaveFile, d: Duelist): boolean {
     case 'Duel Computer':
       return true;
     case 'Simon':
-      return s.day % 365 >= 304; // November on the in-game calendar
+      return s.day % 365 >= 304 && s.day % 365 < 334; // November on the in-game calendar
     case 'Maximillion Pegasus':
       return (s.trunk['Toon World'] ?? 0) > 0 || s.main.includes('Toon World') || s.side.includes('Toon World');
     case 'Trusdale':
-      return Object.keys(s.trunk).length + s.main.length >= 819;
+      return new Set([...Object.keys(s.trunk).filter((n) => s.trunk[n] > 0), ...s.main, ...s.side, ...s.fusion]).size >= 819;
     default:
       return false;
   }
