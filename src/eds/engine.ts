@@ -61,7 +61,7 @@ export class Engine {
   constructor(public readonly db: Map<string, CardInfo>) {}
 
   info(name: string): CardInfo {
-    const c = this.db.get(name);
+    const c = this.db.get(name) ?? this.db.get(name.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim());
     if (c) return c;
     return { id: 0, name, kind: 'monster', sub: 'Normal', atk: 0, def: 0, level: 1, desc: '' };
   }

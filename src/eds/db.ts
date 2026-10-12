@@ -55,8 +55,12 @@ export async function loadDb(): Promise<boolean> {
     for (const r of list) {
       const info = toInfo(r);
       DB.set(info.name, info);
+      DB.set(norm(info.name), info);
       byId.set(info.id, info);
-      if (r.alias) DB.set(r.alias, info);
+      if (r.alias) {
+        DB.set(r.alias, info);
+        DB.set(norm(r.alias), info);
+      }
       if (r.img === false) noImage.add(r.id);
     }
     loaded = true;
@@ -86,8 +90,8 @@ export function cardByPassword(pw: string): CardInfo | undefined {
 
 /** All EDS cards sorted by their in-game number (falls back to name). */
 export function allCards(): CardInfo[] {
-  const seen = new Set<string>();
+  const seen = new Set<number>();
   return [...DB.values()]
-    .filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)))
+    .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
     .sort((a, b) => (a.n ?? 9999) - (b.n ?? 9999) || a.name.localeCompare(b.name));
 }
