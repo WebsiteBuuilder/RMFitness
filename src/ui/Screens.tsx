@@ -88,7 +88,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
         </div>
         <div>
           Cards {totalCards(save)} · W {save.wins} L {save.losses} D {save.draws}
-          {save.pendingPacks > 0 && <b class="blink"> · {save.pendingPacks} pack to open!</b>}
+          {save.pendingPacks > 0 && <b class="blink"> · {save.pendingPacks === 1 ? '1 pack' : `${save.pendingPacks} packs`} to open!</b>}
         </div>
       </div>
       <Win title="Main Menu">
@@ -293,13 +293,20 @@ export function PackOpen({ save, onSave, onDone }: { save: SaveFile; onSave: (s:
       <Win title={chosen ?? 'Pack'}>
         <div class="packrow">
           {cards.map((c, i) => (
-            <div key={i} class={`pcard ${i < shown ? 'up' : ''}`} onClick={(ev) => (ev.stopPropagation(), i < shown ? setInfo(c.name) : reveal())}>
+            <div key={i} class={`pcard ${i < shown ? 'up' : ''} ${c.rarity !== 'Common' ? 'shine' : ''}`} onClick={(ev) => (ev.stopPropagation(), i < shown ? setInfo(c.name) : reveal())}>
               <CardImg name={c.name} back={i >= shown} />
               {i < shown && <span class={`rar r-${RARITY_SHORT[c.rarity] ?? 'C'}`}>{RARITY_SHORT[c.rarity] ?? 'C'}</span>}
             </div>
           ))}
         </div>
-        {shown < cards.length ? <p class="hint">Tap to reveal</p> : <Menu items={[{ label: save.pendingPacks > 0 ? `Open another pack (${save.pendingPacks} left)` : 'Done', onPick: () => (save.pendingPacks > 0 ? setCards(null) : onDone()) }]} />}
+        {shown < cards.length ? (
+          <>
+            <p class="hint">Tap to reveal</p>
+            <button class="gbtn reveal-all" onClick={(ev) => (ev.stopPropagation(), playWin(), setShown(cards.length))}>
+              Reveal all
+            </button>
+          </>
+        ) : <Menu items={[{ label: save.pendingPacks > 0 ? `Open another pack (${save.pendingPacks} left)` : 'Done', onPick: () => (save.pendingPacks > 0 ? setCards(null) : onDone()) }]} />}
       </Win>
       {info && (
         <Overlay onClose={() => setInfo(null)}>

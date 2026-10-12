@@ -70,6 +70,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     lastActing.current = acting;
   }, [acting, hotseat, state.winner]);
 
+  // Hotseat: hide the first hand until whoever goes first has the phone.
+  useEffect(() => {
+    if (hotseat && state.winner === null) setPass(true);
+  }, []);
+
   // Animations and sounds from engine events.
   useEffect(() => {
     const ev = state.lastEvent;
@@ -99,6 +104,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const send = (a: Parameters<DuelSession['send']>[0]) => {
     unlockAudio();
     playBlip();
+    // A command used up the selection: don't leave the old card's menu on screen.
+    setSel(null);
+    setMode(null);
     session.send(a);
   };
 
