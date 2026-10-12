@@ -1883,6 +1883,7 @@ p {
   .thcard + .thcard {
     margin-left: calc(-74px * var(--overlap, 0));
   }
+}
 .tskill {
   font-size: 11px;
   font-weight: 700;
@@ -2107,4 +2108,29 @@ p {
 }
 .tlink.neg {
   opacity: 0.45;
+}
+
+/* Speed Duel deck editor: keep everything inside a phone-width screen. */
+.deckedit .tab {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deckedit .filters {
+  flex-wrap: wrap;
+}
+.deckedit .filters .search {
+  order: 9;
+  flex: 1 1 calc(100% - 60px);
+  min-width: 0;
+}
+.deckedit .filters .search + .chip {
+  order: 10;
+}
+.sd-deckhead > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
