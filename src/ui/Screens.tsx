@@ -3,7 +3,7 @@
 import { useState } from 'preact/hooks';
 import { allCards, card, cardByPassword } from '../eds/db';
 import { PACKS, RARITY_SHORT, openPack, packByName, type PackCard } from '../eds/packs';
-import { MONTHS, WEEKDAYS, addToTrunk, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
+import { MONTHS, WEEKDAYS, CONTROL_NAMES, addToTrunk, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
 import { Avatar } from './Profiles';
 import { DUELISTS, STAGE_WINS_NEEDED, displayName, isUnlocked, lockReason, stageReached, type Duelist } from '../eds/campaign';
 import { STARTER_BLURB, STARTER_COLORS, buildStarterDeck, type StarterColor } from '../eds/starter';
@@ -73,7 +73,7 @@ export function Intro({ onDone, presetName }: { onDone: (name: string, color: St
   );
 }
 
-export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'switch' | 'delete' | 'speed';
+export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'switch' | 'delete' | 'speed' | 'controls';
 
 export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: Profile | null; onPick: (c: MenuChoice) => void }) {
   const d = calendarDate(save.day);
@@ -102,6 +102,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
             { label: 'Record', onPick: () => onPick('record') },
             { label: 'Calendar', onPick: () => onPick('calendar') },
             { label: 'Password', onPick: () => onPick('password') },
+            { label: `Controls: ${CONTROL_NAMES[save.controls ?? 'classic']}`, note: save.controls === 'touch' ? 'tap and drag, like Master Duel' : 'the original game menus', onPick: () => onPick('controls') },
             { label: 'Switch Profile', note: "who's dueling?", onPick: () => onPick('switch') },
           ]}
         />

@@ -4,7 +4,7 @@ import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpe
 import type { GameMode } from '../eds/types';
 import { SpeedHub, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
 import { DuelSession, useDuelSession } from '../eds/session';
-import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type Profile, type SaveFile } from '../eds/save';
+import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
@@ -237,6 +237,7 @@ export function App() {
     if (c === 'delete') return setConfirmDelete(true);
     if (c === 'switch') return switchProfile();
     if (c === 'speed' && profile) setSpeedSaveState(loadSpeedSave(profile.id));
+    if (c === 'controls') return setSave({ ...save, controls: save.controls === 'touch' ? 'classic' : 'touch' });
     setScreen(c);
   };
 
@@ -270,6 +271,21 @@ export function App() {
       )}
     </>
   );
+
+  /** Each seat's control style: in a hotseat duel Player 2's own profile decides theirs. */
+  const controlsFor = (p: Pid): ControlStyle => {
+    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? 'classic';
+    return save.controls ?? 'classic';
+  };
+  const setControls = (p: Pid, c: ControlStyle) => {
+    if (hotseat && p === 1) {
+      const theirs = p2Profile && p2Profile !== profile.id ? loadSave(p2Profile) : null;
+      if (theirs) writeSave(p2Profile!, { ...theirs, controls: c });
+      // A guest's choice lasts for this duel only.
+      return;
+    }
+    setSave({ ...save, controls: c });
+  };
 
   const others = (): SeatProfile[] =>
     loadProfiles()
@@ -315,7 +331,7 @@ export function App() {
       return <SpeedHub profile={profile} save={speedSave ?? loadSpeedSave(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />;
     case 'duel':
       if (!session) return menu;
-      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} onLeave={leaveDuel} onFinished={finishDuel} />;
+      return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />;
     default:
       return menu;
   }
@@ -337,6 +353,8 @@ function Running({
   entries,
   others,
   onSeatProfile,
+  controlsFor,
+  onControls,
   onLeave,
   onFinished,
 }: {
@@ -348,6 +366,8 @@ function Running({
   entries: Partial<Record<GameMode, SeatEntry>>;
   others: SeatProfile[];
   onSeatProfile: (id: string | null) => void;
+  controlsFor: (p: Pid) => ControlStyle;
+  onControls: (p: Pid, c: ControlStyle) => void;
   onLeave: () => void;
   onFinished: (winner: Pid | 'draw', opp: string) => void;
 }) {
@@ -374,5 +394,5 @@ function Running({
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
   if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
-  return <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />;
+  return <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />;
 }
