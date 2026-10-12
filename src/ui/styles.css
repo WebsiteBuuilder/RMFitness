@@ -1928,3 +1928,195 @@ p {
     margin-left: calc(-74px * var(--overlap, 0));
   }
 }
+
+/* ---------- Touch screen: Speed Duel and Master Duel-style touches ---------- */
+.duel.touch.speed .trow {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.duel.touch.speed .tmat {
+  max-width: 400px;
+}
+.tskill {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #c9d3ff;
+  background: #ffffff10;
+  border: 1px solid #ffffff40;
+  flex: none;
+}
+.tskill.up {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.tskill.ready {
+  color: #1a1200;
+  background: linear-gradient(180deg, #ffe48a, #e0a92a);
+  border-color: #fff3c0;
+  box-shadow: 0 0 12px #ffcf4d;
+  animation: tpulse 1.4s ease-in-out infinite;
+}
+@keyframes tpulse {
+  50% {
+    box-shadow: 0 0 2px #ffcf4d;
+  }
+}
+.tbanner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 42%;
+  z-index: 40;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  background: linear-gradient(90deg, transparent, #0b1550e6 18%, #0b1550e6 82%, transparent);
+  border-top: 1px solid #8fa6ff88;
+  border-bottom: 1px solid #8fa6ff88;
+  animation: tbanner 1.1s ease-out both;
+}
+.tbanner b {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 14px #6f8cff;
+}
+.tbanner small {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #c9d3ff;
+}
+.tbanner.theirs {
+  background: linear-gradient(90deg, transparent, #4a0d18e6 18%, #4a0d18e6 82%, transparent);
+  border-color: #ff8a8a88;
+}
+.tbanner.theirs b {
+  text-shadow: 0 0 14px #ff5a5a;
+}
+.tbanner.duel b {
+  font-size: 46px;
+  color: var(--gold);
+  text-shadow: 0 0 18px #ffb400;
+}
+.tbanner.phase {
+  top: 46%;
+  padding: 6px 0;
+}
+.tbanner.phase b {
+  font-size: 18px;
+}
+@keyframes tbanner {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+  15% {
+    opacity: 1;
+    transform: none;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.tspot {
+  position: fixed;
+  left: 50%;
+  top: 38%;
+  z-index: 35;
+  width: 150px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  animation: tspot 1.3s ease-out both;
+}
+.tspot .cimg {
+  width: 150px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px #fff8, 0 0 30px #8fb0ff;
+}
+.tspot span {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: #000a;
+}
+@keyframes tspot {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  28% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+.tchain {
+  position: fixed;
+  left: 6px;
+  top: 30%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #050a24d9;
+  border: 1px solid #8fa6ff66;
+}
+.tchain-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--gold);
+  text-align: center;
+}
+.tlink {
+  position: relative;
+  width: 40px;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.tlink span {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  background: #3a5bd8;
+  border: 1px solid #fff;
+}
+.tlink.theirs span {
+  background: #c43a3a;
+}
+.tlink.neg {
+  opacity: 0.45;
+}

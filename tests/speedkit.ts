@@ -106,6 +106,7 @@ export function randomAction(e: Engine, me: Pid): Action | null {
       if (e.canActivateMain(me, c.uid)) acts.push({ type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(ps.sz) }, { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(ps.sz) });
       if (e.canSet(me, c)) acts.push({ type: 'SET_ST', player: me, uid: c.uid, zone: freeZone(ps.sz) });
     }
+    for (const c of [...ps.hand, ...ps.gy, ...e.monsters(me), ...ps.sz.filter((z): z is FieldCard => !!z)]) if (e.canUseQuickNow(me, c.uid)) acts.push({ type: 'QUICK_EFFECT', player: me, uid: c.uid });
     for (const c of ps.gy) if (e.canUseGraveEffect(me, c.uid)) acts.push({ type: 'GRAVE_EFFECT', player: me, uid: c.uid }, { type: 'GRAVE_EFFECT', player: me, uid: c.uid });
     for (const m of e.monsters(me)) {
       if (!m.faceUp && !m.posChanged && m.placedTurn !== s.turn) acts.push({ type: 'FLIP_SUMMON', player: me, uid: m.uid });

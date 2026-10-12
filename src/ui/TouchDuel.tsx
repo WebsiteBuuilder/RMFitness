@@ -45,6 +45,8 @@ export interface TouchCtl {
   setPile: (p: { title: string; cards: Card[] } | null) => void;
   openMenu: () => void;
   setShowLog: (v: boolean) => void;
+  /** Speed Duel: open a player's Skill */
+  openSkill: (p: Pid) => void;
   onFinished: (winner: Pid | 'draw') => void;
 }
 
@@ -76,6 +78,59 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const actions = commands.filter((c) => !c.disabled && c.label !== 'Card Info');
 
   useEffect(() => setPhaseOpen(false), [state.phase, state.turn, state.prompt]);
+
+  // ----- Master Duel-style banners: duel start, whose turn, the phase, and a spotlight on activated cards -----
+  const [banner, setBanner] = useState<{ text: string; sub?: string; kind: string; key: number } | null>(null);
+  const [spot, setSpot] = useState<{ name: string; who: string; key: number } | null>(null);
+  const showBanner = (text: string, kind: string, ms: number, sub?: string) => {
+    const key = Date.now() + Math.random();
+    setBanner({ text, sub, kind, key });
+    setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
+  };
+  const turnWho = state.turnPlayer === acting ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.toUpperCase()}'S TURN`;
+  useEffect(() => {
+    if (state.winner !== null) return;
+    if (state.turn === 1 && state.log.length < 6) showBanner('DUEL!', 'duel', 1300, turnWho);
+    else showBanner(turnWho, state.turnPlayer === acting ? 'mine' : 'theirs', 1100, `Turn ${state.turn}`);
+  }, [state.turn]);
+  const lastPhase = useRef(state.phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = state.phase;
+    if (was === state.phase || state.winner !== null) return;
+    if (state.phase === 'BP') showBanner('BATTLE PHASE', 'phase', 900);
+    else if (state.phase === 'M2') showBanner('MAIN PHASE 2', 'phase', 800);
+    else if (state.phase === 'EP') showBanner('END PHASE', 'phase', 700);
+  }, [state.phase]);
+  const lastChain = useRef(0);
+  const lastSpotSeq = useRef(0);
+  useEffect(() => {
+    const n = state.chain.length;
+    const grew = n > lastChain.current;
+    lastChain.current = n;
+    let name: string | null = null;
+    let who: Pid | null = null;
+    if (grew) {
+      const link = state.chain[n - 1];
+      name = link.card.name;
+      who = link.player;
+    } else {
+      const ev = state.lastEvent;
+      if (ev && ev.seq !== lastSpotSeq.current && ev.kind === 'activate' && ev.uid !== undefined) {
+        lastSpotSeq.current = ev.seq;
+        const f = e.find(ev.uid);
+        if (f) (name = f.card.name), (who = ev.player ?? f.loc.player);
+      }
+    }
+    if (!name || who === null) return;
+    const key = Date.now() + Math.random();
+    setSpot({ name, who: who === acting ? 'You activate' : `${state.players[who].name} activates`, key });
+    setTimeout(() => setSpot((sp) => (sp?.key === key ? null : sp)), 1300);
+  }, [state.chain.length, state.lastEvent?.seq]);
+  // A little buzz when someone takes damage, on phones that support it.
+  useEffect(() => {
+    if (anim?.kind === 'damage') navigator.vibrate?.(anim.player === acting ? [40, 30, 60] : 25);
+  }, [anim?.seq]);
 
   // Keep the action bubble pinned over the selected card.
   useLayoutEffect(() => {
@@ -277,7 +332,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {extra && (
           <div class="textra">
             {ps.fusion.length > 0 && (
-              <button onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: 'Fusion Deck', cards: ps.fusion }))}>F {ps.fusion.length}</button>
+              <button onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
+                {e.speed ? 'EX' : 'F'} {ps.fusion.length}
+              </button>
             )}
             {ps.removed.length > 0 && <button onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed }))}>Out {ps.removed.length}</button>}
           </div>
@@ -310,6 +367,15 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           {ps.lp}
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
+        {ps.skill && (
+          <button
+            class={`tskill ${ps.skillRevealed ? 'up' : ''} ${p === acting && canAct && e.canUseSkill(acting) ? 'ready' : ''}`}
+            aria-label="Skill"
+            onClick={(ev) => (ev.stopPropagation(), ctl.openSkill(p))}
+          >
+            SKILL
+          </button>
+        )}
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
             ☰
@@ -464,7 +530,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''}`}
+      class={`duel touch ${e.speed ? 'speed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -582,6 +648,32 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       <div class="tsheet-wrap" onClick={(ev) => ev.stopPropagation()}>
         {sheet()}
       </div>
+
+      {state.chain.length > 0 && (
+        <div class="tchain" onClick={(ev) => ev.stopPropagation()}>
+          <span class="tchain-title">Chain</span>
+          {state.chain.map((l, i) => (
+            <button key={i} class={`tlink ${l.player === acting ? 'mine' : 'theirs'} ${l.negated ? 'neg' : ''}`} onClick={() => ctl.setInfo(l.card.name)}>
+              <CardImg name={l.card.name} />
+              <span>{i + 1}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {banner && (
+        <div key={banner.key} class={`tbanner ${banner.kind}`}>
+          <b>{banner.text}</b>
+          {banner.sub && <small>{banner.sub}</small>}
+        </div>
+      )}
+
+      {spot && (
+        <div key={spot.key} class="tspot">
+          <CardImg name={spot.name} />
+          <span>{spot.who}</span>
+        </div>
+      )}
 
       {drag && (
         <div class={`tghost ${drag.over ? 'over' : ''}`} style={{ left: `${drag.x}px`, top: `${drag.y}px` }}>

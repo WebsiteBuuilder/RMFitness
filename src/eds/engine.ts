@@ -832,6 +832,8 @@ export class Engine {
         return this.run(this.useSkill(action.player));
       case 'GRAVE_EFFECT':
         return this.run(this.graveEffect(action.player, action.uid));
+      case 'QUICK_EFFECT':
+        return this.run(this.quickNow(action.player, action.uid));
     }
   }
 
@@ -945,6 +947,23 @@ export class Engine {
     const card = this.find(uid)!.card;
     this.log(player, `${card.name}'s effect activates from the Graveyard`);
     yield* this.as(player, getEffect(card.name)!.graveIgnition!.run(this, card, player));
+  }
+
+  // ---------- Quick Effects used on your own turn (Speed Duel) ----------
+  /** Can this card's Quick Effect be used right now, with nothing else happening in your Main Phase? */
+  canUseQuickNow(player: Pid, uid: number): boolean {
+    const s = this.state;
+    if (!this.speed || s.turnPlayer !== player || s.prompt || s.winner !== null || s.chain.length) return false;
+    if (!this.inMainPhase()) return false;
+    return this.quickOptions(player, 'main', {}).some((o) => o.uid === uid);
+  }
+
+  private *quickNow(player: Pid, uid: number): Step {
+    if (!this.canUseQuickNow(player, uid)) return;
+    const link = yield* this.activateQuick(player, uid, 'main', {});
+    if (!link) return;
+    yield* this.responseWindow('effect', { uid, link });
+    yield* this.resolveChain();
   }
 
   // ---------- phases ----------
@@ -1482,6 +1501,9 @@ export class Engine {
       if (info.sub === 'Equip' && fc.equippedTo === undefined) yield* this.sendToGrave(fc.uid, 'used');
       return;
     }
+    // A Normal Spell/Trap whose effect keeps it on the field: a countdown (Swords of
+    // Revealing Light) or a card that attached itself to a monster.
+    if (!link.negated && fc.active && (fc.turns !== undefined || fc.equippedTo !== undefined)) return;
     yield* this.sendToGrave(fc.uid, 'used');
   }
 
