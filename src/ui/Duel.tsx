@@ -323,7 +323,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
   const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
 
   return (
-    <div class={`duel ${canAct ? '' : 'spectate'}`}>
+    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
       <div class="pbar top">
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>

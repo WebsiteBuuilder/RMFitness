@@ -1278,3 +1278,9 @@ p {
   display: block;
   margin: 10px auto;
 }
+/* Speed Duel: 3 Monster and 3 Spell/Trap Zones, centred. */
+.duel.speed .row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 72%;
+  margin: 0 auto;
+}
