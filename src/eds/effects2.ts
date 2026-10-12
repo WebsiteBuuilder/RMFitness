@@ -1423,7 +1423,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         (e.state.fx.endOfBattle ??= []).push(c.uid);
       }
       // Shuffle the hats around the monster zones.
-      const zones = ps.mz.map((z, i) => (z && (z.uid === hidden.uid || (e.state.fx.endOfBattle as number[]).includes(z.uid)) ? i : -1)).filter((i) => i >= 0);
+      const zones = ps.mz.map((z, i) => (z && (z.uid === hidden.uid || ((e.state.fx.endOfBattle as number[] | undefined) ?? []).includes(z.uid)) ? i : -1)).filter((i) => i >= 0);
       const cards = e.shuffle(zones.map((i) => ps.mz[i]!));
       zones.forEach((zi, k) => (ps.mz[zi] = cards[k]));
       if (e.state.battle && e.state.battle.target === hidden.uid) e.state.battle.target = randomPick(e, cards)?.uid ?? hidden.uid;

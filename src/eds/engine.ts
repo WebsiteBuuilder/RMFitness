@@ -2,7 +2,7 @@
 // Everything that needs a decision from a player is written as a generator that
 // yields a Prompt; the engine parks the generator until the answer arrives.
 
-import type { Action, Card, CardInfo, ChainLink, DuelState, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SelectOption } from './types';
+import type { Action, Card, CardInfo, ChainLink, DuelState, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SeatSetup, SelectOption } from './types';
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
 import { getEffect, setNameResolver, type Trigger } from './effects';
 import { getSkill } from './skills';
@@ -887,9 +887,34 @@ export class Engine {
     s.turnPlayer = a.first;
     s.phase = 'DP';
     this.log(null, `Duel start! ${s.players[a.first].name} goes first.`);
-    for (const p of [0, 1] as Pid[]) this.draw(p, rules.openingHand, true);
+    for (const p of [0, 1] as Pid[]) this.draw(p, Math.max(0, rules.openingHand + (a.setup?.[p]?.openingHand ?? 0)), true);
     if (rules.firstPlayerDraws) this.draw(a.first, 1, true);
+    for (const p of [0, 1] as Pid[]) if (a.setup?.[p]) this.applySetup(p, a.setup[p]!);
     this.run(this.duelOpening());
+  }
+
+  /** A Duel Condition: different LP, cards already in play, extra cards in hand. */
+  private applySetup(p: Pid, su: SeatSetup) {
+    const ps = this.player(p);
+    if (su.lp && su.lp > 0) ps.lp = su.lp;
+    for (const n of su.monsters ?? []) {
+      const z = ps.mz.findIndex((x) => x === null);
+      if (z < 0 || this.info(n).kind !== 'monster') continue;
+      ps.mz[z] = this.toField(this.newCard(n, p), 'atk', true);
+    }
+    if (su.field && !ps.field && this.info(su.field).sub === 'Field') {
+      ps.field = this.toField(this.newCard(su.field, p), 'atk', true);
+      ps.field.active = true;
+    }
+    for (const n of su.spells ?? []) {
+      const z = ps.sz.findIndex((x) => x === null);
+      if (z < 0 || this.info(n).kind === 'monster') continue;
+      const fc = this.toField(this.newCard(n, p), 'atk', true);
+      fc.active = true;
+      ps.sz[z] = fc;
+    }
+    for (const n of su.hand ?? []) ps.hand.push(this.newCard(n, p));
+    if (su.lp || su.monsters?.length || su.field || su.spells?.length || su.hand?.length) this.log(p, `${ps.name} starts under a Duel Condition`);
   }
 
   /** Skills that act at the start of the Duel, then the first Standby Phase. */

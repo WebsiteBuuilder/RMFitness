@@ -19,6 +19,11 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
+import { Solo, type SoloMode } from './Solo';
+import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
+import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
+import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
+import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -58,6 +63,10 @@ export function App() {
   const [duelMode, setDuelMode] = useState<GameMode>('eds');
   const [speedReady, setSpeedReady] = useState(false);
   const [speedFailed, setSpeedFailed] = useState(false);
+  /** Speed Duel solo modes: which one is open, the duel in progress and the last result */
+  const [soloMode, setSoloMode] = useState<SoloMode | null>(null);
+  const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
+  const [soloReport, setSoloReport] = useState<SoloReport | null>(null);
   const [pendingJoin, setPendingJoin] = useState<string | null>(() => {
     const code = new URLSearchParams(location.search).get('join');
     return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
@@ -102,6 +111,7 @@ export function App() {
     setProfile(null);
     setSaveState(null);
     setSpeedSaveState(null);
+    setSoloMode(null);
     setConfirmDelete(false);
     setScreen('profiles');
   };
@@ -139,6 +149,46 @@ export function App() {
     setScreen('duel');
   };
 
+  /** A solo duel (practice, campaign, Labyrinth) against the computer. */
+  const startSoloDuel = (spec: CpuDuelSpec) => {
+    if (!save) return;
+    session?.close();
+    const ses = new DuelSession(new MemoryAdapter());
+    const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : Math.random() < 0.5 ? 0 : 1;
+    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill });
+    ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
+    ses.send({ type: 'START', first, seed: randomSeed(), names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
+    soloDuel.current = { ctx: spec.context, startLp: spec.me.setup?.lp ?? 4000, spec };
+    setSoloReport(null);
+    setHotseat(false);
+    setCpu(true);
+    setMySeat(0);
+    setP2Profile(null);
+    setDuelMode('speed');
+    setSession(ses);
+    setScreen('duel');
+  };
+
+  /** Files a solo duel's result (or a forfeit) and goes back to that mode's screen. */
+  const endSoloDuel = (left: boolean) => {
+    const sd = soloDuel.current;
+    if (!sd || !profile) return false;
+    soloDuel.current = null;
+    const o = !left && session ? outcomeOf(session.engine.state, 0, sd.startLp) : forfeit(sd.startLp);
+    const speedNow = speedSave ?? loadSpeedSave(profile.id);
+    const r = settleSolo(sd.ctx, o, speedNow, loadSolo(profile.id));
+    writeSolo(profile.id, r.solo);
+    if (r.speed !== speedNow) setSpeedSave(r.speed);
+    setSoloReport(left && sd.ctx.kind !== 'labyrinth' ? null : r.report);
+    lastSoloSpec.current = sd.spec;
+    session?.close();
+    setSession(null);
+    setP2Profile(null);
+    setScreen('speed');
+    return true;
+  };
+  const lastSoloSpec = useRef<CpuDuelSpec | null>(null);
+
   const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds') => {
     session?.close();
     setCpu(false);
@@ -160,6 +210,7 @@ export function App() {
   const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
 
   const leaveDuel = () => {
+    if (endSoloDuel(true)) return;
     const mode = gameOf();
     session?.close();
     setSession(null);
@@ -169,6 +220,7 @@ export function App() {
 
   const finishDuel = (winner: Pid | 'draw', oppName: string) => {
     if (!save) return leaveDuel();
+    if (endSoloDuel(false)) return;
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
     if (gameOf() === 'speed') {
       // Speed Duel keeps its own record; no booster packs or calendar days.
@@ -328,7 +380,23 @@ export function App() {
         ) : (
           <div class="loading">Loading Speed Duel cards…</div>
         );
-      return <SpeedHub profile={profile} save={speedSave ?? loadSpeedSave(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />;
+      if (soloMode)
+        return (
+          <Solo
+            mode={soloMode}
+            profile={profile}
+            name={save.name}
+            speed={speedSave ?? loadSpeedSave(profile.id)}
+            onSpeed={setSpeedSave}
+            report={soloReport}
+            lastSpec={lastSoloSpec.current}
+            onReportSeen={() => setSoloReport(null)}
+            onDuel={startSoloDuel}
+            onMode={setSoloMode}
+            onExit={() => (setSoloReport(null), setSoloMode(null))}
+          />
+        );
+      return <SpeedHub onSolo={setSoloMode} profile={profile} save={speedSave ?? loadSpeedSave(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />;
     case 'duel':
       if (!session) return menu;
       return <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />;
@@ -373,6 +441,8 @@ function Running({
 }) {
   const view = useDuelSession(session);
   const cpuStreak = useRef(0);
+  // Dev builds only: lets UI tests reach the end of a duel.
+  if (import.meta.env.DEV) (window as unknown as { __session?: DuelSession }).__session = session;
   // The computer takes its turn a beat after each change, so the player can follow along.
   useEffect(() => {
     if (!cpu || !view.state.started || view.state.winner !== null) return;

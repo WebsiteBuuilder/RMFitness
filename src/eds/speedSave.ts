@@ -26,6 +26,12 @@ export interface SpeedSave {
   losses: number;
   draws: number;
   created: number;
+  /**
+   * Speed Duel cards this profile owns (name -> copies). Free decks can still use every
+   * card; the campaign builds its deck only from these, and any later card-earning
+   * feature adds to the same place.
+   */
+  collection?: Record<string, number>;
 }
 
 export const MAIN_MIN = 20;
@@ -88,6 +94,16 @@ export function withSpeedResult(s: SpeedSave, result: 'w' | 'l' | 'd', opp: stri
   else if (result === 'l') next.losses++;
   else next.draws++;
   return next;
+}
+
+// ---------- the collection ----------
+export const owned = (s: SpeedSave, name: string) => s.collection?.[name] ?? 0;
+
+/** A copy of the save with these cards added to the collection. */
+export function withCards(s: SpeedSave, names: string[]): SpeedSave {
+  const collection = { ...(s.collection ?? {}) };
+  for (const n of names) collection[n] = (collection[n] ?? 0) + 1;
+  return { ...s, collection };
 }
 
 // ---------- the card pool ----------
