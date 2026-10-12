@@ -751,6 +751,7 @@ export class Engine {
 
   /** Gives each player (opponent first) a chance to respond with a set card. Up to 3 responses, like EDS. */
   *responseWindow(trigger: Trigger, ctx: ChainCtx): Step {
+    const rootHasLink = !!ctx.link;
     let responder: Pid = other(this.state.turnPlayer);
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
@@ -789,7 +790,7 @@ export class Engine {
       passes++;
       responder = other(responder);
     }
-    if (!ctx.link && this.state.chain.length > 0) yield* this.resolveChain();
+    if (!rootHasLink && this.state.chain.length > 0) yield* this.resolveChain();
   }
 
   private responseTitle(trigger: Trigger, ctx: ChainCtx): string {

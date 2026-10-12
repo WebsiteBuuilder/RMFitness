@@ -1,5 +1,5 @@
 {
-  "name": "speed-duel-online",
+  "name": "eternal-duelist-soul-remake",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check-decks": "node scripts/check-decks.mjs"
+    "check-decks": "node scripts/check-decks.mjs",
+    "test": "tsx tests/engine.test.ts"
   },
   "dependencies": {
     "firebase": "^11.0.0",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.0",
     "vite": "^5.4.0"
   }
