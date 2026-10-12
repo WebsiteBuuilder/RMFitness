@@ -56,7 +56,7 @@ export function CardLevels({ save, deckNames, onBack }: { save: SpeedSave; deckN
     <div class="screen">
       <Win title="Card Levels" onClose={onBack}>
         <p class="hint">
-          Every card ranks up the more you duel with it: N, R, SR, UR, then the Glossy and Royal finishes. Destroying monsters, battle damage, direct attacks and burn fill the meter fast (+{XP.kill} a kill, +{XP.direct} a direct hit). Playing it fills a little. Dying or getting banished drains a little, but a card never loses a rarity it reached. Rarity is a look only: ATK, DEF and effects stay the same.
+          Every card ranks up the more you duel with it: N, R, SR, UR, the Glossy and Royal finishes, and finally Overframe, where its art breaks out of the card. Destroying monsters, battle damage, direct attacks and burn fill the meter fast (+{XP.kill} a kill, +{XP.direct} a direct hit). Playing it fills a little. Dying or getting banished drains a little, but a card never loses a rarity it reached. Rarity is a look only: ATK, DEF and effects stay the same.
         </p>
         <div class="lv-filter">
           <button class={`chip ${tab === 'last' ? 'sel' : ''}`} onClick={() => setTab('last')}>
