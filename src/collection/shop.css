@@ -1,0 +1,338 @@
+/* Card Shop: Duel Chips bar, booster packs, the pack reveal, the binder. */
+.shop-bar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  background: var(--panel2);
+  border-bottom: 2px solid var(--border);
+  font-size: 12px;
+}
+.shop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold);
+}
+.dchip {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff6c9 0 18%, #f7c948 19% 55%, #b07a12 56% 100%);
+  box-shadow: 0 0 0 1.5px #fff3, 0 0 6px #f7c94888;
+  flex: none;
+}
+.shop-pad {
+  padding: 6px 10px 0;
+}
+
+/* ---- packs ---- */
+.pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+  padding: 4px 2px 10px;
+}
+.pack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 150px;
+  padding: 10px 6px;
+  border-radius: 6px;
+  border: 2px solid #fff8;
+  background: linear-gradient(160deg, var(--pa, #2f6bff) 0%, var(--pb, #0b1c5c) 70%);
+  box-shadow: 0 4px 10px #0008, inset 0 0 18px #fff2;
+  overflow: hidden;
+  text-align: center;
+  transition: transform 0.15s;
+}
+.pack::after {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(115deg, transparent 40%, #fff5 50%, transparent 60%);
+  animation: pack-shine 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.pack:active {
+  transform: scale(0.96);
+}
+.pack.p1 { --pa: #0fa3a3; --pb: #06343f; }
+.pack.p2 { --pa: #c43ad6; --pb: #3a0b4d; }
+.pack.p3 { --pa: #e2a21c; --pb: #4d2a06; }
+.pack.p4 { --pa: #d6303a; --pb: #4d0b10; }
+.pack.p5 { --pa: #3fbf5b; --pb: #0b3d18; }
+.pack.locked {
+  filter: grayscale(1) brightness(0.55);
+}
+.pack.locked::after {
+  display: none;
+}
+.pack:disabled:not(.locked) {
+  opacity: 0.75;
+}
+.pack-logo {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--gold);
+  text-shadow: 0 1px 0 #000;
+}
+.pack-name {
+  font-size: 12px;
+  font-weight: bold;
+  text-shadow: 0 1px 2px #000;
+}
+.pack-note {
+  font-size: 10px;
+  color: #fffc;
+}
+@keyframes pack-shine {
+  0%, 60% { transform: translateX(-60%); }
+  100% { transform: translateX(60%); }
+}
+
+/* ---- the reveal ---- */
+.reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 8px;
+  width: min(560px, calc(100vw - 32px));
+  background: radial-gradient(ellipse at center, #1c2a7aee 0%, #050818f5 75%);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 0 0 100vmax #000b;
+}
+.pack.big {
+  width: 170px;
+  min-height: 250px;
+  animation: pack-wobble 1.6s ease-in-out infinite;
+}
+.pack.big .pack-name {
+  font-size: 15px;
+}
+@keyframes pack-wobble {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg) scale(1.03); }
+}
+.reveal-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.rv {
+  width: 92px;
+  aspect-ratio: 59 / 86;
+  perspective: 600px;
+  animation: rv-deal 0.35s ease-out both;
+}
+@keyframes rv-deal {
+  from { transform: translateY(-60px) scale(0.6); opacity: 0; }
+}
+.rv-in {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.rv.up .rv-in {
+  transform: rotateY(180deg);
+}
+.rv-back,
+.rv-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 4px;
+}
+.rv-face {
+  transform: rotateY(180deg);
+}
+.rv .cimg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+/* Rare-or-better cards glow on their back, so you know before you flip. */
+.rv:not(.up).rsr .rv-back,
+.rv:not(.up).rur .rv-back,
+.rv:not(.up).rscr .rv-back {
+  animation: rv-tease 1.1s ease-in-out infinite;
+}
+.rv.rsr .rv-back { --glow: #cfe3ff; }
+.rv.rur .rv-back { --glow: #ffd56a; }
+.rv.rscr .rv-back { --glow: #ff8cf0; }
+@keyframes rv-tease {
+  0%, 100% { box-shadow: 0 0 6px var(--glow); }
+  50% { box-shadow: 0 0 18px var(--glow), 0 0 4px #fff; }
+}
+.rv.up.rr .rv-face { box-shadow: 0 0 0 1.5px var(--lvr-silver, #e4e9f2), 0 0 8px #cfe3ff66; }
+.rv.up.rsr .rv-face { box-shadow: 0 0 0 2px var(--lvr-silver, #e4e9f2), 0 0 16px #cfe3ffcc; }
+.rv.up.rur .rv-face { box-shadow: 0 0 0 2px var(--lvr-gold, #ffd56a), 0 0 20px #ffcf4dcc; }
+.rv.up.rscr .rv-face {
+  box-shadow: 0 0 0 2px #fff, 0 0 22px #ff8cf0cc, 0 0 30px #6ce3ffaa;
+  animation: rv-prism 2.2s linear infinite;
+}
+@keyframes rv-prism {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+.rv.up.rur .rv-face::after,
+.rv.up.rscr .rv-face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: linear-gradient(120deg, transparent 30%, #fff8 48%, transparent 62%);
+  background-size: 250% 100%;
+  animation: rv-foil 1.8s ease-in-out infinite;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+@keyframes rv-foil {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+.rv-r,
+.rv-new {
+  position: absolute;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #000c;
+  z-index: 2;
+}
+.rv-r {
+  left: 3px;
+  bottom: 3px;
+  color: var(--gold);
+}
+.rv-new {
+  right: 3px;
+  top: 3px;
+  color: #7dffa0;
+  animation: rv-pop 0.4s ease-out 0.35s both;
+}
+@keyframes rv-pop {
+  from { transform: scale(0); }
+  60% { transform: scale(1.3); }
+}
+
+/* ---- the binder ---- */
+.binder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 6px;
+  padding: 2px;
+}
+.bcard {
+  position: relative;
+  aspect-ratio: 59 / 86;
+}
+.bcard .cimg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bcount,
+.brar {
+  position: absolute;
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: #000c;
+}
+.bcount {
+  right: 2px;
+  bottom: 2px;
+}
+.brar {
+  left: 2px;
+  top: 2px;
+}
+.brar.rr { color: #e4e9f2; }
+.brar.rsr { color: #bfe0ff; }
+.brar.rur { color: var(--gold); }
+.brar.rscr { color: #ff9cf3; }
+.sheet {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+.sheet .cimg {
+  width: 80px;
+  flex: none;
+}
+.sheet p {
+  margin: 0 0 6px;
+}
+
+/* ---- stakes in the Link Battle room ---- */
+.stakes {
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 8px 0;
+  background: #2a1e0566;
+}
+.stakes h4 {
+  margin: 0 0 6px;
+  color: var(--gold);
+  font-size: 13px;
+}
+.stakes-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.stakes-row b {
+  color: var(--gold);
+}
+.stakes .cimg {
+  width: 34px;
+}
+.stake-pick {
+  max-height: 210px;
+  overflow-y: auto;
+  margin: 6px 0;
+}
+.crown {
+  color: var(--gold);
+  text-shadow: 0 0 6px #f7c948aa;
+}
+.crown.hot {
+  animation: crown-hot 1.2s ease-in-out infinite;
+}
+@keyframes crown-hot {
+  0%, 100% { text-shadow: 0 0 6px #f7c948aa; }
+  50% { text-shadow: 0 0 14px #ff7a1a, 0 0 4px #fff; }
+}
+.prize-lines {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pack::after,
+  .pack.big,
+  .rv,
+  .rv-back,
+  .rv-face,
+  .rv-face::after,
+  .crown.hot {
+    animation: none !important;
+  }
+}
