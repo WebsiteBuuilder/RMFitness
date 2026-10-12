@@ -62,6 +62,11 @@ export interface FieldCard extends Card {
   returnAtEnd?: Pid;
   /** Swords of Revealing Light: turns remaining */
   turns?: number;
+  /** ignition effect already used this turn */
+  effectUsed?: boolean;
+  /** temporary flags set by effects (e.g. Spellbinding Circle) */
+  cannotAttack?: boolean;
+  cannotChangePos?: boolean;
 }
 
 export interface PlayerState {
@@ -160,6 +165,7 @@ export type Action =
   | { type: 'FLIP_SUMMON'; player: Pid; uid: number }
   | { type: 'CHANGE_POS'; player: Pid; uid: number }
   | { type: 'ATTACK'; player: Pid; uid: number; target: number | null }
+  | { type: 'MONSTER_EFFECT'; player: Pid; uid: number }
   | { type: 'NEXT_PHASE'; player: Pid }
   | { type: 'END_TURN'; player: Pid }
   | { type: 'CHOOSE'; player: Pid; picks: number[] }

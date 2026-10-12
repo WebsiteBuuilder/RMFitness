@@ -67,7 +67,7 @@ export class Engine {
   }
 
   // ---------- randomness ----------
-  private rand(): number {
+  rand(): number {
     let a = (this.state.rngState + 0x6d2b79f5) >>> 0;
     this.state.rngState = a;
     let t = a;
@@ -143,25 +143,61 @@ export class Engine {
 
   // ---------- stats ----------
   atkOf(m: FieldCard): number {
-    const base = this.info(m.name).atk ?? 0;
-    let bonus = m.atkMod;
-    for (const uid of m.equips) {
-      const eq = this.fieldCard(uid);
-      if (!eq) continue;
-      bonus += getEffect(eq.name)?.equipBonus?.(this, eq, m).atk ?? 0;
-    }
-    return Math.max(0, base + bonus);
+    return Math.max(0, (this.info(m.name).atk ?? 0) + m.atkMod + this.bonus(m).atk);
   }
 
   defOf(m: FieldCard): number {
-    const base = this.info(m.name).def ?? 0;
-    let bonus = m.defMod;
+    return Math.max(0, (this.info(m.name).def ?? 0) + m.defMod + this.bonus(m).def);
+  }
+
+  /** Equip bonuses plus auras from face-up effect monsters and Field Spells. */
+  private bonus(m: FieldCard): { atk: number; def: number } {
+    let atk = 0;
+    let def = 0;
     for (const uid of m.equips) {
       const eq = this.fieldCard(uid);
       if (!eq) continue;
-      bonus += getEffect(eq.name)?.equipBonus?.(this, eq, m).def ?? 0;
+      const b = getEffect(eq.name)?.equipBonus?.(this, eq, m);
+      if (b) (atk += b.atk), (def += b.def);
     }
-    return Math.max(0, base + bonus);
+    const self = getEffect(m.name)?.selfBonus;
+    if (self && m.faceUp) {
+      const b = self(this, m);
+      (atk += b.atk), (def += b.def);
+    }
+    for (const p of [0, 1] as Pid[]) {
+      const sources = [...this.monsters(p), ...(this.player(p).field ? [this.player(p).field!] : [])];
+      for (const src of sources) {
+        if (!src.faceUp) continue;
+        const aura = getEffect(src.name)?.aura;
+        if (!aura) continue;
+        const b = aura(this, src, m, p);
+        if (b) (atk += b.atk), (def += b.def);
+      }
+    }
+    return { atk, def };
+  }
+
+  /** Public die roll / coin toss from the shared seed. */
+  roll(sides: number): number {
+    return 1 + Math.floor(this.rand() * sides);
+  }
+
+  /** Fusion materials named on a Fusion Monster's text, as card ids. */
+  fusionMaterials(name: string): number[] | null {
+    const desc = this.info(name).desc;
+    const m = desc.match(/^"([^"]+)"\s*\+\s*"([^"]+)"(?:\s*\+\s*"([^"]+)")?/);
+    if (!m) return null;
+    return [m[1], m[2], m[3]].filter((x): x is string => !!x).map((x) => this.info(x).id);
+  }
+
+  /** The named Ritual Monster and the total Level a Ritual Spell needs. */
+  ritualOf(name: string): { monster: string; level: number } | null {
+    const desc = this.info(name).desc;
+    const m = desc.match(/Ritual Summon "([^"]+)"/);
+    if (!m) return null;
+    const lv = desc.match(/(?:equal|Level is) (\d+)/);
+    return { monster: m[1], level: lv ? Number(lv[1]) : this.info(m[1]).level ?? 1 };
   }
 
   // ---------- card movement ----------
@@ -331,6 +367,51 @@ export class Engine {
     this.event('to-hand', { uid, player: card.owner });
   }
 
+  /** Removes a card from play (D.D. Warrior, Gravedigger Ghoul). */
+  banish(uid: number) {
+    const f = this.find(uid);
+    if (!f) return;
+    const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
+    const card = this.detach(uid)!;
+    if (fc) {
+      for (const eqUid of fc.equips.slice()) this.detachEquip(eqUid);
+      if (fc.equippedTo !== undefined) {
+        const host = this.fieldCard(fc.equippedTo);
+        if (host) host.equips = host.equips.filter((u) => u !== uid);
+      }
+    }
+    this.player(card.owner).removed.push(card);
+    this.event('to-gy', { uid, player: card.owner });
+    this.log(card.owner, `${card.name} was removed from play`);
+  }
+
+  private detachEquip(uid: number) {
+    const card = this.detach(uid);
+    if (card) {
+      this.player(card.owner).gy.push(card);
+      this.event('to-gy', { uid, player: card.owner });
+    }
+  }
+
+  /** Puts a card on top of its owner's Deck (Cockroach Knight). */
+  toDeckTop(uid: number) {
+    const card = this.detach(uid);
+    if (!card) return;
+    this.player(card.owner).deck.unshift(card);
+    this.event('to-hand', { uid, player: card.owner });
+  }
+
+  /** Jinzo: traps cannot be activated while it is face-up. */
+  trapsSealed(): boolean {
+    return [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && getEffect(m.name)?.sealsTraps);
+  }
+
+  /** Face-up Spells/Traps/Field cards of a player that are in effect. */
+  activeSpells(p: Pid): FieldCard[] {
+    const ps = this.player(p);
+    return [...this.spells(p), ...(ps.field ? [ps.field] : [])].filter((c) => c.faceUp && c.active);
+  }
+
   // ---------- prompts ----------
   optionsFor(cards: (Card | FieldCard)[], hideFaceDown = false): SelectOption[] {
     return cards.map((c) => {
@@ -389,9 +470,11 @@ export class Engine {
       case 'FLIP_SUMMON':
         return this.run(this.flipSummon(action.player, action.uid));
       case 'CHANGE_POS':
-        return this.changePosition(action.player, action.uid);
+        return this.run(this.changePosition(action.player, action.uid));
       case 'ATTACK':
         return this.run(this.attack(action.player, action.uid, action.target));
+      case 'MONSTER_EFFECT':
+        return this.run(this.monsterEffect(action.player, action.uid));
       case 'NEXT_PHASE':
         return this.run(this.nextPhase());
       case 'END_TURN':
@@ -492,11 +575,15 @@ export class Engine {
         }
       }
     }
-    // End-phase countdowns (Swords of Revealing Light).
+    // End-phase countdowns (Swords of Revealing Light) and monster end-phase effects (Karate Man).
     for (const p of [0, 1] as Pid[]) {
       for (const c of this.spells(p)) {
         const eff = getEffect(c.name);
         if (c.faceUp && c.active && eff?.onEndPhase) yield* eff.onEndPhase(this, c, p);
+      }
+      for (const m of this.monsters(p)) {
+        const eff = getEffect(m.name);
+        if (m.faceUp && eff?.onEndPhase && this.fieldCard(m.uid)) yield* eff.onEndPhase(this, m, p);
       }
     }
     // Hand limit.
@@ -523,6 +610,7 @@ export class Engine {
       m.posChanged = false;
       m.atkMod = 0;
       m.defMod = 0;
+      m.effectUsed = false;
     }
     this.player(prev).normalSummoned = false;
     s.attackedThisTurn = [];
@@ -549,6 +637,7 @@ export class Engine {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.player(player).normalSummoned) return false;
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
+    if (getEffect(card.name)?.cannotNormalSummon) return false;
     const need = this.tributesNeeded(info.level ?? 1);
     const ps = this.player(player);
     const empty = ps.mz.filter((z) => z === null).length;
@@ -584,6 +673,8 @@ export class Engine {
     if (faceUp) {
       this.log(player, `${ps.name} ${need ? 'Tribute ' : ''}Summoned ${card.name}${pos === 'def' ? ' in Defense Position' : ''}`);
       yield* this.responseWindow('summon', { uid });
+      const eff = getEffect(card.name);
+      if (eff?.onSummon && this.fieldCard(uid)) yield* eff.onSummon(this, fc, player);
     } else {
       this.log(player, `${ps.name} Set a monster`);
     }
@@ -601,6 +692,23 @@ export class Engine {
     this.log(player, `${this.player(player).name} Flip Summoned ${m.name}`);
     yield* this.responseWindow('summon', { uid });
     if (this.fieldCard(uid)) yield* this.flipEffect(uid, player);
+    const eff = getEffect(m.name);
+    if (eff?.onSummon && this.fieldCard(uid)) yield* eff.onSummon(this, m, player);
+  }
+
+  /** Ignition effects of face-up monsters (Cannon Soldier, Time Wizard...). */
+  canUseMonsterEffect(player: Pid, m: FieldCard): boolean {
+    const eff = getEffect(m.name);
+    if (!eff?.ignition || !m.faceUp || m.effectUsed || !this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
+    return eff.ignition.can(this, m, player);
+  }
+
+  private *monsterEffect(player: Pid, uid: number): Step {
+    const m = this.fieldCard(uid);
+    if (!m || this.controller(uid) !== player || !this.canUseMonsterEffect(player, m)) return;
+    m.effectUsed = true;
+    this.log(player, `${m.name}'s effect activates`);
+    yield* getEffect(m.name)!.ignition!.run(this, m, player);
   }
 
   *flipEffect(uid: number, controller: Pid): Step {
@@ -613,15 +721,17 @@ export class Engine {
     }
   }
 
-  private changePosition(player: Pid, uid: number) {
+  private *changePosition(player: Pid, uid: number): Step {
     const m = this.fieldCard(uid);
     const f = this.find(uid);
     if (!m || !f || f.loc.zone !== 'mz' || f.loc.player !== player) return;
-    if (!this.inMainPhase() || !m.faceUp || m.placedTurn === this.state.turn || m.posChanged || m.attacked) return;
+    if (!this.inMainPhase() || !m.faceUp || m.placedTurn === this.state.turn || m.posChanged || m.attacked || m.cannotChangePos) return;
     m.pos = m.pos === 'atk' ? 'def' : 'atk';
     m.posChanged = true;
     this.event('position', { uid, player });
     this.log(player, `${m.name} changed to ${m.pos === 'atk' ? 'Attack' : 'Defense'} Position`);
+    const eff = getEffect(m.name);
+    if (eff?.onPositionChange) yield* eff.onPositionChange(this, m, player);
   }
 
   canSet(player: Pid, card: Card): boolean {
@@ -668,7 +778,7 @@ export class Engine {
       return eff.canActivate ? eff.canActivate(this, f.card, player, 'main', {}) : true;
     }
     if (info.kind === 'trap') {
-      if (f.loc.zone !== 'sz') return false;
+      if (f.loc.zone !== 'sz' || this.trapsSealed()) return false;
       const fc = f.card as FieldCard;
       if (fc.faceUp || fc.placedTurn === this.state.turn) return false;
       if (info.sub === 'Counter') return false;
@@ -815,7 +925,7 @@ export class Engine {
       const info = this.info(fc.name);
       const eff = getEffect(fc.name);
       if (!eff?.resolve || !eff.canActivate) continue;
-      if (info.kind === 'trap' && fc.placedTurn === this.state.turn) continue;
+      if (info.kind === 'trap' && (fc.placedTurn === this.state.turn || this.trapsSealed())) continue;
       if (info.kind === 'spell' && info.sub !== 'Quick-Play') continue;
       if (info.kind === 'spell' && fc.placedTurn === this.state.turn) continue;
       if (eff.canActivate(this, fc, player, trigger, ctx)) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
@@ -826,10 +936,21 @@ export class Engine {
   // ---------- battle ----------
   canAttackWith(player: Pid, m: FieldCard): boolean {
     if (this.state.phase !== 'BP' || this.state.turnPlayer !== player || this.state.firstTurn) return false;
-    if (!m.faceUp || m.pos !== 'atk' || m.attacked) return false;
+    if (!m.faceUp || m.pos !== 'atk' || m.attacked || m.cannotAttack) return false;
     // Swords of Revealing Light on the opponent's side stops attacks.
     for (const c of this.spells(other(player))) if (c.faceUp && c.active && getEffect(c.name)?.blocksAttacks) return false;
+    for (const p of [0, 1] as Pid[]) for (const c of this.activeSpells(p)) if (getEffect(c.name)?.blocksAttack?.(this, c, m, player)) return false;
+    for (const uid of m.equips) {
+      const eq = this.fieldCard(uid);
+      if (eq && getEffect(eq.name)?.hostCannotAttack?.(this, eq, m)) return false;
+    }
+    const eff = getEffect(m.name);
+    if (eff?.attackCost && !eff.attackCost.can(this, m, player)) return false;
     return true;
+  }
+
+  canAttackDirectly(m: FieldCard): boolean {
+    return !!getEffect(m.name)?.directAttack;
   }
 
   private *attack(player: Pid, uid: number, targetUid: number | null): Step {
@@ -838,11 +959,13 @@ export class Engine {
     if (!m || !f || f.loc.zone !== 'mz' || f.loc.player !== player || !this.canAttackWith(player, m)) return;
     const opp = other(player);
     const oppMonsters = this.monsters(opp);
-    if (targetUid === null && oppMonsters.length > 0) return;
+    if (targetUid === null && oppMonsters.length > 0 && !this.canAttackDirectly(m)) return;
     if (targetUid !== null) {
       const t = this.find(targetUid);
       if (!t || t.loc.zone !== 'mz' || t.loc.player !== opp) return;
     }
+    const cost = getEffect(m.name)?.attackCost;
+    if (cost) yield* cost.pay(this, m, player);
     m.attacked = true;
     this.state.attackedThisTurn.push(uid);
     this.state.battle = { attacker: uid, target: targetUid };
@@ -876,10 +999,21 @@ export class Engine {
     if (!target) {
       this.event('hit', { uid: attacker.uid, player: opp });
       this.damage(opp, atk);
+      const eff = getEffect(attacker.name);
+      if (eff?.onBattleDamage && atk > 0 && this.state.winner === null) yield* eff.onBattleDamage(this, attacker, player);
+      if (atk > 0) yield* this.battleDamageDealt(player, attacker);
       return;
     }
+    const preBattle = getEffect(target.name)?.onAttacked;
+    if (preBattle && !target.faceUp) {
+      target.faceUp = true;
+      this.event('flip', { uid: target.uid, player: opp });
+      this.log(opp, `${target.name} was flipped face-up`);
+    }
     let flipped = false;
-    if (!target.faceUp) {
+    if (preBattle) {
+      flipped = true;
+    } else if (!target.faceUp) {
       target.faceUp = true;
       flipped = true;
       this.event('flip', { uid: target.uid, player: opp });
@@ -893,6 +1027,9 @@ export class Engine {
         destroyed.push(target.uid);
         this.damage(opp, atk - tAtk);
         this.log(player, `${attacker.name} destroys ${target.name}`);
+        const eff = getEffect(attacker.name);
+        if (eff?.onBattleDamage && this.state.winner === null) yield* eff.onBattleDamage(this, attacker, player);
+        yield* this.battleDamageDealt(player, attacker);
       } else if (atk < tAtk) {
         destroyed.push(attacker.uid);
         this.damage(player, tAtk - atk);
@@ -917,6 +1054,8 @@ export class Engine {
     if (this.state.winner !== null) return;
     // FLIP effects resolve after damage calculation, even if the monster is destroyed.
     const targetUid = target.uid;
+    const targetDestroyed = destroyed.includes(target.uid);
+    const attackerDestroyed = destroyed.includes(attacker.uid);
     yield* this.destroy(destroyed);
     if (flipped) {
       const eff = getEffect(target.name);
@@ -925,6 +1064,36 @@ export class Engine {
         yield* eff.flip(this, target, opp, !this.fieldCard(targetUid));
       }
     }
+    if (this.state.winner !== null) return;
+    const tEff = getEffect(target.name);
+    if (tEff?.onAttacked) yield* tEff.onAttacked(this, target, attacker, opp, targetDestroyed);
+    if (targetDestroyed && tEff?.onDestroyedByBattle) yield* tEff.onDestroyedByBattle(this, target, opp);
+    const aEff = getEffect(attacker.name);
+    if (attackerDestroyed && aEff?.onDestroyedByBattle) yield* aEff.onDestroyedByBattle(this, attacker, player);
+    if (aEff?.afterBattle && this.fieldCard(attacker.uid)) yield* aEff.afterBattle(this, attacker, target, player, targetDestroyed);
+  }
+
+  private *battleDamageDealt(player: Pid, attacker: FieldCard): Step {
+    if (this.state.winner !== null) return;
+    for (const c of this.activeSpells(player)) {
+      const eff = getEffect(c.name);
+      if (eff?.onBattleDamageDealt) yield* eff.onBattleDamageDealt(this, c, attacker, player);
+    }
+  }
+
+  /** Special Summon straight from a list (Cyber Jar, Giant Rat...). */
+  *summonFrom(uid: number, controller: Pid, pos: Pos): Step {
+    yield* this.specialSummon(uid, controller, pos);
+  }
+
+  /** Negates and ends the current attack (Negate Attack). */
+  endBattle() {
+    this.state.battle = null;
+  }
+
+  /** Returns every card from a list to the owner's hand. */
+  bounce(uids: number[]) {
+    for (const uid of uids) this.toHand(uid);
   }
 }
 
