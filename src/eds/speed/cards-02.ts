@@ -985,7 +985,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Banished when it leaves the field (only when it is sent to the GY).
-  const banishOnLeave = (e: Engine) => (e.state.fx.banishOnLeave ??= {}) as Record<number, number>;
+  const banishOnLeave = (e: Engine) => (e.state.fx.banishOnLeaveMap ??= {}) as Record<number, number>;
   // Simplification: its first effect (an additional Normal Summon) is not implemented.
   E['Cartorhyn the Hidden Gem of the Seafront'] = {
     graveIgnition: {
