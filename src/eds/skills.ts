@@ -23,6 +23,8 @@ export interface SkillDef {
   aura?(e: Engine, p: Pid, m: FieldCard): { atk: number; def: number } | undefined;
   /** While revealed: runs in every End Phase. */
   onEndPhase?(e: Engine, p: Pid): Step;
+  /** Whether the computer should use this Skill now (false: never, e.g. Skills that can lose the Duel). Default: whenever it can. */
+  ai?: boolean | ((e: Engine, p: Pid) => boolean);
 }
 
 export const SKILLS: Record<string, SkillDef> = SKILL_LIST;
