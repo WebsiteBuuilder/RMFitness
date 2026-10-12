@@ -757,6 +757,7 @@ export class Engine {
     if (f && f.loc.zone === 'mz' && this.actor !== null && this.actor !== f.loc.player) (this.state.fx.bounced ??= [-1, -1])[f.loc.player] = this.state.turn;
     const card = this.detach(uid);
     if (!card) return;
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'bounced');
     this.player(card.owner).hand.push(card);
     this.event('to-hand', { uid, player: card.owner });
   }
@@ -767,30 +768,41 @@ export class Engine {
     if (!f) return;
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
-    if (fc) {
-      for (const eqUid of fc.equips.slice()) this.detachEquip(eqUid);
-      if (fc.equippedTo !== undefined) {
-        const host = this.fieldCard(fc.equippedTo);
-        if (host) host.equips = host.equips.filter((u) => u !== uid);
-      }
-    }
+    if (fc) this.leftField(fc, f.loc.player, 'banished');
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
     this.log(card.owner, `${card.name} was removed from play`);
   }
 
-  private detachEquip(uid: number) {
-    const card = this.detach(uid);
-    if (card) {
-      this.player(card.owner).gy.push(card);
-      this.event('to-gy', { uid, player: card.owner });
+  /**
+   * A card left the field without going to the GY (returned to the hand or Deck, banished).
+   * Its equips and attached cards go to the GY, and its "when this card leaves the field"
+   * effect runs, as soon as the current effect or action has finished (see flushLeaves).
+   */
+  private leftField(fc: FieldCard, controller: Pid, reason: string) {
+    if (fc.equippedTo !== undefined) {
+      const host = this.fieldCard(fc.equippedTo);
+      if (host) host.equips = host.equips.filter((u) => u !== fc.uid);
+    }
+    ((this.state.fx.pendingLeave ??= []) as { fc: FieldCard; controller: Pid; reason: string }[]).push({ fc: { ...fc, equips: fc.equips.slice() }, controller, reason });
+  }
+
+  *flushLeaves(): Step {
+    const list = (this.state.fx.pendingLeave ?? []) as { fc: FieldCard; controller: Pid; reason: string }[];
+    while (list.length && this.state.winner === null) {
+      const { fc, controller, reason } = list.shift()!;
+      for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
+      const eff = fc.token ? undefined : getEffect(fc.name);
+      if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
     }
   }
 
   /** Puts a card on top of its owner's Deck (Cockroach Knight). */
   toDeckTop(uid: number) {
+    const f = this.find(uid);
     const card = this.detach(uid);
     if (!card) return;
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'to-deck');
     this.player(card.owner).deck.unshift(card);
     this.event('to-hand', { uid, player: card.owner });
   }
@@ -886,7 +898,11 @@ export class Engine {
 
   private run(gen: Step) {
     if (this.gen) return;
-    this.gen = gen;
+    const self = this;
+    this.gen = (function* () {
+      yield* gen;
+      yield* self.flushLeaves();
+    })();
     this.resume(undefined as unknown as Choice);
   }
 
@@ -1542,6 +1558,7 @@ export class Engine {
       this.resolving--;
     }
     this.state.chain = [];
+    yield* this.flushLeaves();
     yield* this.damageWindow(false);
     yield* this.flushSummonWindows();
   }
