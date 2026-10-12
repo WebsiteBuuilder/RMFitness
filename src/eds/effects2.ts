@@ -1645,12 +1645,14 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         yield* mr.resolve!(e, link, p);
         const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
         if (m) tag(m).reborn = 1;
+        // Speed Duel, Millennium Revelation: a Ra revived with Monster Reborn this turn goes to the GY in the End Phase.
+        if (m && m.name === 'The Winged Dragon of Ra' && e.state.fx.revelation?.[p] === e.state.turn) tag(m).sendAtEnd = e.state.turn;
       },
     };
   }
   // "During your Main Phase or your opponent's Battle Phase: pay 500 LP; immediately Normal Summon/Set 1 monster."
   {
-    const summonable = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && e.canNormalSummon(p, c, true));
+    const summonable = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && e.canNormalSummon(p, c, undefined, true));
     const can = (e: Engine, p: Pid) => e.player(p).lp > 500 && summonable(e, p).length > 0;
     const offer = function* (e: Engine, p: Pid): Step {
       const list = summonable(e, p);

@@ -98,8 +98,8 @@ export function randomAction(e: Engine, me: Pid): Action | null {
     for (const c of ps.hand) {
       if (e.canNormalSummon(me, c)) {
         const z = Math.max(0, freeZone(ps.mz));
-        acts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'atk', faceUp: true });
-        acts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'def', faceUp: false });
+        if (e.canNormalSummon(me, c, true)) acts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'atk', faceUp: true });
+        if (e.canNormalSummon(me, c, false)) acts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'def', faceUp: false });
       }
       if (e.canSpecialProc(me, c)) acts.push({ type: 'SPECIAL', player: me, uid: c.uid }, { type: 'SPECIAL', player: me, uid: c.uid });
       if (e.canUseMonsterEffect(me, c)) acts.push({ type: 'MONSTER_EFFECT', player: me, uid: c.uid }, { type: 'MONSTER_EFFECT', player: me, uid: c.uid });
@@ -109,7 +109,7 @@ export function randomAction(e: Engine, me: Pid): Action | null {
     for (const c of [...ps.hand, ...ps.gy, ...e.monsters(me), ...ps.sz.filter((z): z is FieldCard => !!z)]) if (e.canUseQuickNow(me, c.uid)) acts.push({ type: 'QUICK_EFFECT', player: me, uid: c.uid });
     for (const c of ps.gy) if (e.canUseGraveEffect(me, c.uid)) acts.push({ type: 'GRAVE_EFFECT', player: me, uid: c.uid }, { type: 'GRAVE_EFFECT', player: me, uid: c.uid });
     for (const m of e.monsters(me)) {
-      if (!m.faceUp && !m.posChanged && m.placedTurn !== s.turn) acts.push({ type: 'FLIP_SUMMON', player: me, uid: m.uid });
+      if (!m.faceUp && !m.posChanged && m.placedTurn !== s.turn && !e.summonBlocked(me, m, 'flip', 'mz')) acts.push({ type: 'FLIP_SUMMON', player: me, uid: m.uid });
       if (e.canChangePosition(me, m)) acts.push({ type: 'CHANGE_POS', player: me, uid: m.uid });
       if (e.canUseMonsterEffect(me, m)) acts.push({ type: 'MONSTER_EFFECT', player: me, uid: m.uid }, { type: 'MONSTER_EFFECT', player: me, uid: m.uid });
     }
