@@ -326,3 +326,14 @@
   height: calc(100% - 250px);
   bottom: auto;
 }
+
+/* monsters standing on their cards: under the duel's controls, never in the way of a tap */
+.art-board {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
