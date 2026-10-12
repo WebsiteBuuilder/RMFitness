@@ -1003,3 +1003,235 @@ p {
     padding: 2px;
   }
 }
+
+/* ---------- profiles ("Who's dueling?") ---------- */
+.profiles {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 32px;
+  text-align: center;
+}
+.who {
+  font-family: 'Press Start 2P', 'Silkscreen', monospace;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #7a1b1b;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+.who-sub {
+  color: var(--dim);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.ptiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 132px));
+  gap: 18px 22px;
+  justify-content: center;
+  margin: 22px 0 18px;
+  width: 100%;
+}
+@media (min-width: 480px) {
+  .ptiles {
+    grid-template-columns: repeat(3, minmax(0, 132px));
+  }
+}
+.ptile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.pav-wrap {
+  position: relative;
+  display: block;
+}
+.pavatar {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: 'Press Start 2P', 'Silkscreen', monospace;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  border: 3px solid var(--border);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.18),
+    4px 4px 0 #000;
+  flex: none;
+}
+.pavatar.big {
+  width: 112px;
+  height: 112px;
+  font-size: 40px;
+}
+.pavatar.small {
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+  border-width: 2px;
+  box-shadow: 2px 2px 0 #000;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+.pavatar.plus {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--dim);
+  color: var(--dim);
+  box-shadow: none;
+  text-shadow: none;
+  font-size: 44px;
+}
+.ptile:hover .pavatar,
+.ptile:focus-visible .pavatar {
+  border-color: var(--gold);
+}
+.ptile:active .pavatar {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #000;
+}
+.ptile.editing .pavatar {
+  filter: brightness(0.6);
+  color: transparent;
+  text-shadow: none;
+}
+.pedit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 36px;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000;
+}
+.palias {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptile.add .palias {
+  color: var(--dim);
+}
+.pname {
+  font-size: 11px;
+  color: var(--dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pmanage {
+  margin-top: 4px;
+  min-height: 40px;
+  padding: 8px 18px;
+}
+.pmanage.done {
+  background: linear-gradient(180deg, #3a9a5a, #1d5a33);
+}
+.pform,
+.profiles .overlay {
+  text-align: left;
+}
+.pform-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.pform-head .pavatar.big {
+  width: 64px;
+  height: 64px;
+  font-size: 24px;
+}
+.pform-head .hint {
+  margin: 0;
+}
+.pfield {
+  display: block;
+  margin: 8px 0 10px;
+}
+.pfield span {
+  display: block;
+  color: var(--dim);
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.pfield input {
+  font-size: 16px; /* keeps iOS from zooming in */
+}
+.pbtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+.pbtns .gbtn {
+  min-height: 40px;
+  padding: 8px 16px;
+}
+.pconfirm {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.pconfirm p {
+  margin-top: 2px;
+}
+.menu-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.menu-who .pavatar.small {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+}
+.p2-head {
+  color: var(--gold);
+  margin: 10px 0 6px;
+}
+.p2-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.p2-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 6px 8px;
+  border: 2px solid #27408f;
+  border-radius: 3px;
+  background: rgba(6, 9, 28, 0.5);
+  min-height: 48px;
+}
+.p2-pick:not(:disabled):active,
+.p2-pick:not(:disabled):hover {
+  border-color: var(--gold);
+}
+.p2-pick:disabled {
+  opacity: 0.45;
+}
+.p2-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.p2-text span {
+  color: var(--dim);
+  font-size: 11px;
+}

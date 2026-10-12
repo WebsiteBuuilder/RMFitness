@@ -1,9 +1,10 @@
 // The out-of-duel screens: title, starter deck, main menu, record, calendar,
-// password, pack opening and the (not yet playable) campaign roster.
+// password, pack opening and the campaign roster.
 import { useState } from 'preact/hooks';
 import { allCards, card, cardByPassword } from '../eds/db';
 import { PACKS, RARITY_SHORT, openPack, packByName, type PackCard } from '../eds/packs';
-import { MONTHS, WEEKDAYS, addToTrunk, calendarDate, deckProblems, totalCards, type SaveFile } from '../eds/save';
+import { MONTHS, WEEKDAYS, addToTrunk, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
+import { Avatar } from './Profiles';
 import { DUELISTS, STAGE_WINS_NEEDED, displayName, isUnlocked, lockReason, stageReached, type Duelist } from '../eds/campaign';
 import { STARTER_BLURB, STARTER_COLORS, buildStarterDeck, type StarterColor } from '../eds/starter';
 import { randomSeed } from '../eds/rng';
@@ -27,8 +28,8 @@ export function Title({ onStart, hasSave }: { onStart: () => void; hasSave: bool
   );
 }
 
-export function Intro({ onDone }: { onDone: (name: string, color: StarterColor, deck: string[]) => void }) {
-  const [name, setName] = useState('');
+export function Intro({ onDone, presetName }: { onDone: (name: string, color: StarterColor, deck: string[]) => void; presetName?: string }) {
+  const [name, setName] = useState(presetName ?? '');
   const [color, setColor] = useState<StarterColor | null>(null);
   const [preview, setPreview] = useState<string[] | null>(null);
   const seed = useState(() => randomSeed())[0];
@@ -40,11 +41,17 @@ export function Intro({ onDone }: { onDone: (name: string, color: StarterColor, 
   return (
     <div class="screen intro">
       <Win title="Téa">
-        <p>Hey! You're new here, right? Tell me your name, then pick a Starter Deck. Each one has 40 cards.</p>
-        <label class="field">
-          <span>Name</span>
-          <input value={name} maxLength={10} placeholder="Duelist" onInput={(ev) => setName((ev.target as HTMLInputElement).value)} />
-        </label>
+        {presetName ? (
+          <p>Hey {presetName}! You're new here, right? Pick a Starter Deck. Each one has 40 cards.</p>
+        ) : (
+          <>
+            <p>Hey! You're new here, right? Tell me your name, then pick a Starter Deck. Each one has 40 cards.</p>
+            <label class="field">
+              <span>Name</span>
+              <input value={name} maxLength={10} placeholder="Duelist" onInput={(ev) => setName((ev.target as HTMLInputElement).value)} />
+            </label>
+          </>
+        )}
         <Menu items={STARTER_COLORS.map((c) => ({ label: `${c} Deck`, selected: color === c, note: STARTER_BLURB[c], onPick: () => pick(c) }))} />
       </Win>
       {preview && color && (
@@ -63,15 +70,18 @@ export function Intro({ onDone }: { onDone: (name: string, color: StarterColor, 
   );
 }
 
-export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'trade' | 'erase';
+export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'switch' | 'delete';
 
-export function MainMenu({ save, onPick }: { save: SaveFile; onPick: (c: MenuChoice) => void }) {
+export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: Profile | null; onPick: (c: MenuChoice) => void }) {
   const d = calendarDate(save.day);
   return (
     <div class="screen mainmenu">
       <div class="menu-head">
-        <div>
-          <b>{save.name}</b> · {WEEKDAYS[d.weekday]}, {MONTHS[d.month]} {d.date}
+        <div class="menu-who">
+          {profile && <Avatar p={profile} size="small" />}
+          <span>
+            <b>{profile?.alias ?? save.name}</b> · {WEEKDAYS[d.weekday]}, {MONTHS[d.month]} {d.date}
+          </span>
         </div>
         <div>
           Cards {totalCards(save)} · W {save.wins} L {save.losses} D {save.draws}
@@ -81,18 +91,19 @@ export function MainMenu({ save, onPick }: { save: SaveFile; onPick: (c: MenuCho
       <Win title="Main Menu">
         <Menu
           items={[
-            { label: 'Campaign', note: 'duel the computer (coming next)', onPick: () => onPick('campaign') },
+            ...(save.pendingPacks > 0 ? [{ label: 'Open Booster Pack', note: `${save.pendingPacks} waiting`, onPick: () => onPick('pack') }] : []),
+            { label: 'Campaign', note: 'duel the computer', onPick: () => onPick('campaign') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => onPick('link') },
             { label: 'Deck Edit', note: `Main ${save.main.length}/40`, onPick: () => onPick('deck') },
             { label: 'Record', onPick: () => onPick('record') },
             { label: 'Calendar', onPick: () => onPick('calendar') },
-            { label: 'Card Trading', note: 'coming later', disabled: true },
             { label: 'Password', onPick: () => onPick('password') },
+            { label: 'Switch Profile', note: "who's dueling?", onPick: () => onPick('switch') },
           ]}
         />
       </Win>
-      <button class="erase" onClick={() => onPick('erase')}>
-        Erase save data
+      <button class="erase" onClick={() => onPick('delete')}>
+        Delete this profile
       </button>
     </div>
   );
@@ -200,7 +211,7 @@ export function Calendar({ save, onBack }: { save: SaveFile; onBack: () => void 
             </div>
           ))}
         </div>
-        <p class="hint">One day passes after every duel. Tuesdays bring Weekly Yu-Gi-Oh!, the 21st brings Yu-Gi-Oh! Magazine (mail-order packs arrive with the campaign update).</p>
+        <p class="hint">One day passes after every duel, Campaign or Link Battle. Today is highlighted.</p>
       </Win>
     </div>
   );
