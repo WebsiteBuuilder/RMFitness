@@ -4,10 +4,68 @@
 // CardPanel (a flat card: backs, spells, traps), Particles (one pooled GPU
 // sprite system), Ribbon (beams, bolts, slashes, tendrils) and Ring (summoning
 // circles, shockwaves, the Shadow Realm eye).
-import { AddEquation, BufferAttribute, CustomBlending, BufferGeometry, CanvasTexture, DataTexture, DoubleSide, LinearFilter, Mesh, NormalBlending, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry, Points, RedFormat, Scene, ShaderMaterial, Texture, Vector3, WebGLRenderer } from 'three';
+//
+// Performance notes (mid-range Android first, iPhone Safari too):
+// - Every material comes from a module-level pool: one never-disposed base
+//   ShaderMaterial per kind, compiled once per renderer by prewarm(); instances
+//   are base.clone(), so three.js reuses the base's linked program and disposing
+//   an instance never releases (and later relinks) it.
+// - Shader error checking only in dev; no MSAA; DPR capped at 1.5 (1.25 on small
+//   devices); a frame-time governor steps quality down and back up (stage.tier).
+// - On the top tiers a cheap post pass (half-res bloom + vignette, plus pulse()
+//   flashes) is composited over the transparent canvas without painting black.
+import {
+  AddEquation,
+  BufferAttribute,
+  CustomBlending,
+  BufferGeometry,
+  CanvasTexture,
+  DataTexture,
+  DoubleSide,
+  LinearFilter,
+  LinearSRGBColorSpace,
+  Mesh,
+  NoBlending,
+  NormalBlending,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
+  OrthographicCamera,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Points,
+  RedFormat,
+  Scene,
+  ShaderMaterial,
+  Texture,
+  Vector2,
+  Vector3,
+  WebGLRenderTarget,
+  WebGLRenderer,
+  type Camera,
+  type IUniform,
+} from 'three';
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
 
 export type Quality = 'full' | 'fast';
+
+/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. */
+export function dprCap(): number {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5);
+}
+
+/** A WebGL renderer set up the same way everywhere (so compiled programs match). */
+export function makeRenderer(canvas: HTMLCanvasElement, powerPreference: WebGLPowerPreference): WebGLRenderer {
+  const r = new WebGLRenderer({ canvas, alpha: true, antialias: false, premultipliedAlpha: true, powerPreference });
+  // Linking stalls the main thread for every program; checking each for errors costs more again.
+  r.debug.checkShaderErrors = !!import.meta.env?.DEV;
+  // None of our shaders convert color spaces; a fixed output space also keeps the program
+  // cache key the same whether a pass draws into a render target or onto the canvas.
+  r.outputColorSpace = LinearSRGBColorSpace;
+  r.setClearColor(0x000000, 0);
+  return r;
+}
 
 /**
  * Glow blending for a premultiplied-alpha canvas: colors add up, and alpha grows
@@ -18,6 +76,8 @@ const GLOW = { blending: CustomBlending, blendEquation: AddEquation, blendSrc: O
 const GLOW_OUT = 'vec3 o = min(vec3(1.0), OUT); gl_FragColor = vec4(o, max(o.r, max(o.g, o.b)));';
 
 export const rgb = (hex: number) => new Vector3(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
+/** rgb() into an existing vector (no allocation, for per-frame use). */
+export const setRgb = (v: Vector3, hex: number) => v.set(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
 export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 export const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 export const easeOut = (k: number) => 1 - (1 - clamp01(k)) ** 3;
@@ -155,29 +215,7 @@ export class Figure implements Fx {
     this.depthTex.minFilter = LinearFilter;
     this.depthTex.generateMipmaps = false;
     this.depthTex.needsUpdate = true;
-    this.mat = new ShaderMaterial({
-      vertexShader: FIG_VERT,
-      fragmentShader: FIG_FRAG,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      side: DoubleSide,
-      uniforms: {
-        uArt: { value: this.tex },
-        uDepth: { value: this.depthTex },
-        uDepthAmt: { value: depthAmt },
-        uMatte: { value: art.relief ? 1 : 0 },
-        uShatter: { value: 0 },
-        uTime: { value: 0 },
-        uWave: { value: 1 },
-        uReveal: { value: 1 },
-        uOpacity: { value: 1 },
-        uTint: { value: 0 },
-        uCut: { value: 1 },
-        uDark: { value: 0 },
-        uGlow: { value: rgb(glow) },
-      },
-    });
+    this.mat = material('figure', { uArt: this.tex, uDepth: this.depthTex, uDepthAmt: depthAmt, uMatte: art.relief ? 1 : 0, uGlow: rgb(glow) });
     this.mesh = new Mesh(geo, this.mat);
     this.mesh.scale.setScalar(size);
   }
@@ -228,15 +266,7 @@ export class CardPanel implements Fx {
     this.tex = new CanvasTexture(source ?? cardBack());
     this.tex.minFilter = LinearFilter;
     this.tex.generateMipmaps = false;
-    this.mat = new ShaderMaterial({
-      vertexShader: BASIC_VERT,
-      fragmentShader: PANEL_FRAG,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      side: DoubleSide,
-      uniforms: { uMap: { value: this.tex }, uOpacity: { value: 1 }, uTint: { value: 0 }, uGlow: { value: rgb(glow) }, uSheen: { value: -1 } },
-    });
+    this.mat = material('panel', { uMap: this.tex, uGlow: rgb(glow) });
     this.mesh = new Mesh(new PlaneGeometry(height * 0.686, height), this.mat);
   }
   get u() {
@@ -300,6 +330,8 @@ export interface Emit {
   pull?: { x: number; y: number; strength: number; swirl: number };
 }
 
+const P_ATTRS = ['position', 'aColor', 'aSize', 'aAlpha'] as const;
+
 export class Particles implements Fx {
   readonly max: number;
   points: Points;
@@ -315,6 +347,8 @@ export class Particles implements Fx {
   private pull: Float32Array; // px py strength swirl
   private next = 0;
   active = 0;
+  /** quality governor: fraction of requested particles actually emitted */
+  emitScale = 1;
   mat: ShaderMaterial;
 
   constructor(max: number) {
@@ -333,13 +367,15 @@ export class Particles implements Fx {
     this.geo.setAttribute('aColor', new BufferAttribute(this.col, 3));
     this.geo.setAttribute('aSize', new BufferAttribute(this.size, 1));
     this.geo.setAttribute('aAlpha', new BufferAttribute(this.alpha, 1));
-    this.mat = new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, transparent: true, premultipliedAlpha: true, depthWrite: false, ...GLOW, uniforms: { uPx: { value: 300 } } });
+    this.mat = material('particles', {});
     this.points = new Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 10;
   }
 
   emit(o: Emit, count = 1) {
+    // Under load emit fewer (stochastic rounding keeps single-particle trickles alive).
+    if (this.emitScale < 1) count = Math.floor(count * this.emitScale + Math.random());
     for (let n = 0; n < count; n++) {
       const i = this.next;
       this.next = (this.next + 1) % this.max;
@@ -363,7 +399,10 @@ export class Particles implements Fx {
       this.phys[i * 2] = o.gravity ?? 0;
       this.phys[i * 2 + 1] = o.drag ?? 1.5;
       const p = o.pull;
-      this.pull.set(p ? [p.x, p.y, p.strength, p.swirl] : [0, 0, 0, 0], i * 4);
+      this.pull[i * 4] = p ? p.x : 0;
+      this.pull[i * 4 + 1] = p ? p.y : 0;
+      this.pull[i * 4 + 2] = p ? p.strength : 0;
+      this.pull[i * 4 + 3] = p ? p.swirl : 0;
       const c = o.color;
       // a little color jitter keeps bursts from looking flat
       const j = 0.85 + Math.random() * 0.3;
@@ -409,7 +448,7 @@ export class Particles implements Fx {
       this.alpha[i] = k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88;
     }
     this.active = active;
-    for (const name of ['position', 'aColor', 'aSize', 'aAlpha']) this.geo.getAttribute(name).needsUpdate = true;
+    for (const name of P_ATTRS) this.geo.getAttribute(name).needsUpdate = true;
     return true;
   }
 
@@ -478,16 +517,7 @@ export class Ribbon implements Fx {
     this.geo.setAttribute('uv', new BufferAttribute(uv, 2));
     this.geo.setAttribute('aT', new BufferAttribute(t, 1));
     this.geo.setIndex(idx);
-    this.mat = new ShaderMaterial({
-      vertexShader: RIB_VERT,
-      fragmentShader: RIB_FRAG,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      ...GLOW,
-      side: DoubleSide,
-      uniforms: { uColor: { value: rgb(color) }, uOpacity: { value: 1 }, uHead: { value: 1.05 }, uTail: { value: -0.1 }, uTime: { value: 0 }, uFlow: { value: flow } },
-    });
+    this.mat = material('ribbon', { uColor: rgb(color), uFlow: flow });
     this.mesh = new Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 8;
@@ -593,25 +623,13 @@ export class Ring implements Fx {
   alive = true;
   spinSpeed = 0;
   constructor(size: number, color: number, glyph: number, opts: { inner?: number; outer?: number; star?: number; eye?: boolean } = {}) {
-    this.mat = new ShaderMaterial({
-      vertexShader: BASIC_VERT,
-      fragmentShader: RING_FRAG,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      ...GLOW,
-      side: DoubleSide,
-      uniforms: {
-        uColor: { value: rgb(color) },
-        uOpacity: { value: 1 },
-        uInner: { value: opts.inner ?? 0.72 },
-        uOuter: { value: opts.outer ?? 0.92 },
-        uGlyph: { value: (glyph % 9973) + 0.5 },
-        uSpin: { value: 0 },
-        uStar: { value: opts.star ?? 0 },
-        uEye: { value: opts.eye ? 0.001 : 0 },
-        uTime: { value: 0 },
-      },
+    this.mat = material('ring', {
+      uColor: rgb(color),
+      uInner: opts.inner ?? 0.72,
+      uOuter: opts.outer ?? 0.92,
+      uGlyph: (glyph % 9973) + 0.5,
+      uStar: opts.star ?? 0,
+      uEye: opts.eye ? 0.001 : 0,
     });
     this.mesh = new Mesh(new PlaneGeometry(size, size), this.mat);
     this.mesh.renderOrder = 5;
@@ -654,16 +672,7 @@ export class Backdrop implements Fx {
   mesh: Mesh;
   mat: ShaderMaterial;
   constructor() {
-    this.mat = new ShaderMaterial({
-      vertexShader: BASIC_VERT,
-      fragmentShader: BG_FRAG,
-      transparent: true,
-      premultipliedAlpha: true,
-      depthWrite: false,
-      depthTest: false,
-      blending: NormalBlending,
-      uniforms: { uColor: { value: rgb(0x0a1030) }, uOpacity: { value: 0 }, uTime: { value: 0 }, uVortex: { value: 0 } },
-    });
+    this.mat = material('backdrop', {});
     this.mesh = new Mesh(new PlaneGeometry(60, 60), this.mat);
     this.mesh.position.z = -6;
     this.mesh.renderOrder = -10;
@@ -681,7 +690,257 @@ export class Backdrop implements Fx {
   }
 }
 
+// ---------------------------------------------------------------- post passes
+const FS_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+/** Half-res bright pass: a 4-tap box downsample keeping only what glows. Premultiplied in and out. */
+const BRIGHT_FRAG = /* glsl */ `
+uniform sampler2D tMap;
+uniform vec2 uTexel;
+uniform float uThreshold;
+varying vec2 vUv;
+void main(){
+  vec2 o = uTexel * 0.5;
+  vec4 c = (texture2D(tMap, vUv + vec2(-o.x, -o.y)) + texture2D(tMap, vUv + vec2(o.x, -o.y)) + texture2D(tMap, vUv + vec2(-o.x, o.y)) + texture2D(tMap, vUv + o)) * 0.25;
+  float l = max(c.r, max(c.g, c.b));
+  vec3 g = c.rgb * smoothstep(uThreshold, uThreshold + 0.3, l);
+  gl_FragColor = vec4(g, max(g.r, max(g.g, g.b)));
+}`;
+
+/** One Kawase blur iteration (4 bilinear taps on the diagonals). */
+const KAWASE_FRAG = /* glsl */ `
+uniform sampler2D tMap;
+uniform vec2 uTexel;
+uniform float uOff;
+varying vec2 vUv;
+void main(){
+  vec2 o = uTexel * (uOff + 0.5);
+  gl_FragColor = (texture2D(tMap, vUv + vec2(-o.x, -o.y)) + texture2D(tMap, vUv + vec2(o.x, -o.y)) + texture2D(tMap, vUv + vec2(-o.x, o.y)) + texture2D(tMap, vUv + o)) * 0.25;
+}`;
+
+/**
+ * Scene + bloom + vignette (+ pulses) in one pass onto the transparent canvas.
+ * Premultiplied throughout: bloom adds light and grows alpha only as much as it is
+ * bright (like the glow blending), the vignette only darkens what the cinematic
+ * itself drew (alpha is untouched, so empty pixels stay empty), and the flash is
+ * white laid "over" the result.
+ */
+const COMPOSITE_FRAG = /* glsl */ `
+uniform sampler2D tScene;
+uniform sampler2D tBloom;
+uniform float uBloom;
+uniform float uVig;
+uniform float uChroma;
+uniform float uFlash;
+varying vec2 vUv;
+void main(){
+  vec4 c = texture2D(tScene, vUv);
+  if (uChroma > 0.0) {
+    vec2 d = (vUv - 0.5) * uChroma;
+    vec4 r = texture2D(tScene, vUv + d);
+    vec4 b = texture2D(tScene, vUv - d);
+    c = vec4(r.r, c.g, b.b, max(c.a, max(r.a, b.a)));
+  }
+  vec2 q = vUv - 0.5;
+  float v = 1.0 - uVig * smoothstep(0.3, 0.8, length(q));
+  vec3 col = min(vec3(1.0), c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom);
+  float a = max(c.a, max(col.r, max(col.g, col.b)));
+  col = vec3(uFlash) + col * (1.0 - uFlash);
+  a = uFlash + a * (1.0 - uFlash);
+  gl_FragColor = vec4(col, a);
+}`;
+
+// ---------------------------------------------------------------- material pool
+/**
+ * One base material per kind, created once and never disposed. Instances are
+ * clones, so their program cache key matches the base's; because the base keeps
+ * holding the program in every renderer that compiled it (prewarm), disposing an
+ * instance never deletes the program and the next cinematic links nothing.
+ */
+export type MaterialKind = 'figure' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'bright' | 'kawase' | 'composite';
+export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'bright', 'kawase', 'composite'];
+
+const uniforms = (o: Record<string, unknown>) => {
+  const r: Record<string, IUniform> = {};
+  for (const k in o) r[k] = { value: o[k] };
+  return r;
+};
+// forceSinglePass: a transparent DoubleSide mesh is otherwise drawn twice (back faces, then front).
+const FX = { transparent: true, premultipliedAlpha: true, depthWrite: false, forceSinglePass: true } as const;
+const PASS = { blending: NoBlending, transparent: false, premultipliedAlpha: true, depthTest: false, depthWrite: false } as const;
+
+const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
+  figure: () =>
+    new ShaderMaterial({
+      vertexShader: FIG_VERT,
+      fragmentShader: FIG_FRAG,
+      ...FX,
+      side: DoubleSide,
+      uniforms: uniforms({ uArt: null, uDepth: null, uDepthAmt: 0.3, uMatte: 0, uShatter: 0, uTime: 0, uWave: 1, uReveal: 1, uOpacity: 1, uTint: 0, uCut: 1, uDark: 0, uGlow: new Vector3(1, 1, 1) }),
+    }),
+  panel: () => new ShaderMaterial({ vertexShader: BASIC_VERT, fragmentShader: PANEL_FRAG, ...FX, side: DoubleSide, uniforms: uniforms({ uMap: null, uOpacity: 1, uTint: 0, uGlow: new Vector3(1, 1, 1), uSheen: -1 }) }),
+  particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300 }) }),
+  ribbon: () =>
+    new ShaderMaterial({
+      vertexShader: RIB_VERT,
+      fragmentShader: RIB_FRAG,
+      ...FX,
+      ...GLOW,
+      side: DoubleSide,
+      uniforms: uniforms({ uColor: new Vector3(1, 1, 1), uOpacity: 1, uHead: 1.05, uTail: -0.1, uTime: 0, uFlow: 0 }),
+    }),
+  ring: () =>
+    new ShaderMaterial({
+      vertexShader: BASIC_VERT,
+      fragmentShader: RING_FRAG,
+      ...FX,
+      ...GLOW,
+      side: DoubleSide,
+      uniforms: uniforms({ uColor: new Vector3(1, 1, 1), uOpacity: 1, uInner: 0.72, uOuter: 0.92, uGlyph: 0.5, uSpin: 0, uStar: 0, uEye: 0, uTime: 0 }),
+    }),
+  backdrop: () =>
+    new ShaderMaterial({
+      vertexShader: BASIC_VERT,
+      fragmentShader: BG_FRAG,
+      ...FX,
+      depthTest: false,
+      blending: NormalBlending,
+      uniforms: uniforms({ uColor: rgb(0x0a1030), uOpacity: 0, uTime: 0, uVortex: 0 }),
+    }),
+  bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.6 }) }),
+  kawase: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: KAWASE_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uOff: 0 }) }),
+  composite: () =>
+    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.7, uVig: 0.3, uChroma: 0, uFlash: 0 }) }),
+};
+
+const BASE = new Map<MaterialKind, ShaderMaterial>();
+function baseMaterial(kind: MaterialKind) {
+  let m = BASE.get(kind);
+  if (!m) BASE.set(kind, (m = SPECS[kind]()));
+  return m;
+}
+
+/** A material instance of `kind` (shares the base's compiled program), with these uniform values. */
+export function material(kind: MaterialKind, values: Record<string, unknown>): ShaderMaterial {
+  const m = baseMaterial(kind).clone();
+  for (const k in values) m.uniforms[k].value = values[k];
+  return m;
+}
+
+/**
+ * Compiles the base material of every kind on `renderer` (one hidden warm-up scene),
+ * off the main thread where KHR_parallel_shader_compile exists. The bases then keep
+ * their programs for the renderer's lifetime.
+ */
+export function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: readonly MaterialKind[] = MATERIAL_KINDS): Promise<void> {
+  const scene = new Scene();
+  const plane = new PlaneGeometry(1, 1);
+  const dot = new BufferGeometry();
+  dot.setAttribute('position', new BufferAttribute(new Float32Array(3), 3));
+  for (const k of kinds) {
+    const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : new Mesh(plane, baseMaterial(k));
+    o.frustumCulled = false;
+    scene.add(o);
+  }
+  const done = () => {
+    plane.dispose();
+    dot.dispose();
+  };
+  try {
+    const compiled: Promise<unknown> = typeof renderer.compileAsync === 'function' ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
+    // Never wait forever (a context lost mid-compile never reports ready).
+    const timeout = new Promise((ok) => setTimeout(ok, 5000));
+    return Promise.race([compiled, timeout]).then(done, (err) => {
+      done();
+      console.warn('art engine: prewarm failed', err);
+    });
+  } catch (err) {
+    done();
+    console.warn('art engine: prewarm failed', err);
+    return Promise.resolve();
+  }
+}
+
+/** Bloom + vignette + pulses: scene → full-res target → half-res bright → 2 Kawase → composite. */
+class Post {
+  private scene = new Scene();
+  private cam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private quad: Mesh;
+  private bright = material('bright', {});
+  private kawase = material('kawase', {});
+  comp = material('composite', {});
+  private full = new WebGLRenderTarget(1, 1, { depthBuffer: false });
+  private a = new WebGLRenderTarget(1, 1, { depthBuffer: false });
+  private b = new WebGLRenderTarget(1, 1, { depthBuffer: false });
+  private size = new Vector2();
+
+  constructor() {
+    this.quad = new Mesh(new PlaneGeometry(2, 2), this.bright);
+    this.quad.frustumCulled = false;
+    this.scene.add(this.quad);
+  }
+
+  setSize(renderer: WebGLRenderer) {
+    renderer.getDrawingBufferSize(this.size);
+    const w = Math.max(1, this.size.x);
+    const h = Math.max(1, this.size.y);
+    const hw = Math.max(1, w >> 1);
+    const hh = Math.max(1, h >> 1);
+    this.full.setSize(w, h);
+    this.a.setSize(hw, hh);
+    this.b.setSize(hw, hh);
+    (this.bright.uniforms.uTexel.value as Vector2).set(1 / w, 1 / h);
+    (this.kawase.uniforms.uTexel.value as Vector2).set(1 / hw, 1 / hh);
+  }
+
+  private pass(renderer: WebGLRenderer, mat: ShaderMaterial, target: WebGLRenderTarget | null) {
+    this.quad.material = mat;
+    renderer.setRenderTarget(target);
+    renderer.render(this.scene, this.cam);
+  }
+
+  render(renderer: WebGLRenderer, scene: Scene, camera: Camera) {
+    renderer.setRenderTarget(this.full);
+    renderer.render(scene, camera);
+    this.bright.uniforms.tMap.value = this.full.texture;
+    this.pass(renderer, this.bright, this.a);
+    this.kawase.uniforms.tMap.value = this.a.texture;
+    this.kawase.uniforms.uOff.value = 0;
+    this.pass(renderer, this.kawase, this.b);
+    this.kawase.uniforms.tMap.value = this.b.texture;
+    this.kawase.uniforms.uOff.value = 1;
+    this.pass(renderer, this.kawase, this.a);
+    this.comp.uniforms.tScene.value = this.full.texture;
+    this.comp.uniforms.tBloom.value = this.a.texture;
+    this.pass(renderer, this.comp, null);
+  }
+
+  dispose() {
+    this.quad.geometry.dispose();
+    this.bright.dispose();
+    this.kawase.dispose();
+    this.comp.dispose();
+    this.full.dispose();
+    this.a.dispose();
+    this.b.dispose();
+  }
+}
+
 // ---------------------------------------------------------------- Stage
+/** One step of the quality ladder (stage.tier indexes these, 0 = cheapest). */
+interface Level {
+  dpr: number;
+  emit: number;
+  post: boolean;
+}
+
+/** Post-processing (bloom, vignette, pulses) on the 'full' setting's upper tiers. */
+export const POST_ENABLED = true;
+
+const SLOW_MS = 22;
+const FAST_MS = 14;
+const WINDOW = 60;
+
 export class Stage {
   renderer: WebGLRenderer;
   scene = new Scene();
@@ -689,6 +948,7 @@ export class Stage {
   particles: Particles;
   backdrop = new Backdrop();
   private fx = new Set<Fx>();
+  private fxList: Fx[] = [];
   private raf = 0;
   private last = 0;
   private shakeAmt = 0;
@@ -699,28 +959,130 @@ export class Stage {
   halfH = 1;
   /** time scale: Fast mode plays everything quicker */
   speed = 1;
-  quality: Quality;
+  private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
   running = false;
+  /** the WebGL context is gone (until the browser restores it): draw nothing */
+  lost = false;
+  onLost: (() => void) | null = null;
+  onRestore: (() => void) | null = null;
+  private warm: Promise<void> | null = null;
+  private post: Post | null = null;
+  private chroma = 0;
+  private flash = 0;
+  private disposed = false;
+
+  // quality governor
+  private levels: Level[] = [];
+  private level = 0;
+  /** set false to pin the current tier (tests, benchmarks) */
+  governor = true;
+  private ft = new Float32Array(WINDOW);
+  private work = new Float32Array(WINDOW);
+  private ftSum = 0;
+  private workSum = 0;
+  private ftI = 0;
+  private ftN = 0;
+  private goodFor = 0;
+  private upWait = 3;
+  private lastUp = -1e9;
 
   constructor(
     public canvas: HTMLCanvasElement,
     quality: Quality,
   ) {
-    this.quality = quality;
-    this.renderer = new WebGLRenderer({ canvas, alpha: true, antialias: quality === 'full', powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x000000, 0);
+    this.q = quality;
+    this.renderer = makeRenderer(canvas, 'high-performance');
     this.particles = new Particles(quality === 'full' ? 2600 : 1400);
     this.scene.add(this.backdrop.mesh, this.particles.points);
+    this.buildLevels();
+    this.pinFromStorage();
+    canvas.addEventListener('webglcontextlost', this.handleLost, false);
+    canvas.addEventListener('webglcontextrestored', this.handleRestore, false);
+    document.addEventListener('visibilitychange', this.handleVisibility);
+    void this.prewarm();
+  }
+
+  get quality() {
+    return this.q;
+  }
+  set quality(q: Quality) {
+    if (q === this.q) return;
+    this.q = q;
+    this.buildLevels();
+    this.pinFromStorage();
+  }
+
+  /** Current quality tier, 0 (cheapest) .. tiers (best). */
+  get tier() {
+    return this.level;
+  }
+  set tier(t: number) {
+    const n = Math.max(0, Math.min(this.levels.length - 1, Math.round(t)));
+    if (n === this.level) return;
+    this.level = n;
+    this.applyLevel();
+  }
+  /** The best tier's number. */
+  get tiers() {
+    return this.levels.length - 1;
+  }
+
+  /** localStorage 'eds.artTier' = a tier number or 'top' pins the quality (testing, or a device the governor misjudges). */
+  private pinFromStorage() {
+    let v: string | null = null;
+    try {
+      v = localStorage.getItem('eds.artTier');
+    } catch {
+      /* storage blocked */
+    }
+    if (v === null || v === '') return;
+    const n = v === 'top' ? this.tiers : Number(v);
+    if (!Number.isFinite(n)) return;
+    this.governor = false;
+    this.tier = n;
+  }
+
+  private buildLevels() {
+    const cap = this.q === 'full' ? dprCap() : Math.min(dprCap(), 1.25);
+    const low = Math.min(1, cap);
+    const post = POST_ENABLED && this.q === 'full';
+    const top: Level[] = [];
+    for (let d = cap; d > 1.001; d = Math.max(1, d - 0.25)) top.push({ dpr: d, emit: 1, post });
+    top.push({ dpr: low, emit: 1, post });
+    top.push({ dpr: low, emit: 0.6, post });
+    if (post) top.push({ dpr: low, emit: 0.6, post: false });
+    this.levels = top.reverse();
+    this.level = this.levels.length - 1;
+    this.applyLevel();
+  }
+
+  private applyLevel() {
+    const l = this.levels[this.level];
+    this.particles.emitScale = l.emit;
+    if (l.post && !this.post) this.post = new Post();
+    if (!l.post && this.post) {
+      this.post.dispose();
+      this.post = null;
+    }
+    this.resetGovernor();
     this.resize();
   }
 
+  /** Compiles every material's program ahead of time (resolves when ready to draw without stalls). */
+  prewarm(): Promise<void> {
+    if (this.lost || this.disposed) return Promise.resolve();
+    return (this.warm ??= prewarmRenderer(this.renderer, this.camera));
+  }
+
   resize() {
+    if (!this.levels.length) return;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, this.quality === 'full' ? 2 : 1.25);
+    const dpr = this.levels[this.level].dpr;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
+    this.post?.setSize(this.renderer);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.halfH = Math.tan((this.camera.fov * Math.PI) / 360) * this.camBase.z;
@@ -756,36 +1118,118 @@ export class Stage {
     this.shakeAmt = Math.max(this.shakeAmt, amount);
   }
 
-  start() {
-    if (this.running) return;
-    this.running = true;
-    this.last = performance.now();
-    const loop = (now: number) => {
-      if (!this.running) return;
-      const dt = Math.min(0.05, (now - this.last) / 1000) * this.speed;
-      this.last = now;
-      this.step(dt);
-      this.raf = requestAnimationFrame(loop);
-    };
-    this.raf = requestAnimationFrame(loop);
+  /**
+   * A one-beat screen effect for impacts: 'chroma' splits the colors outward,
+   * 'flash' lays white over everything. `strength` 0..1. Drawn by the post pass,
+   * so it shows only on the tiers that have it.
+   */
+  pulse(kind: 'chroma' | 'flash', strength: number) {
+    const s = clamp01(strength);
+    if (kind === 'chroma') this.chroma = Math.max(this.chroma, s);
+    else this.flash = Math.max(this.flash, s);
   }
+
+  start() {
+    if (this.running || this.lost || this.disposed) return;
+    this.running = true;
+    this.resetGovernor();
+    this.schedule();
+  }
+
+  private schedule() {
+    if (this.raf || !this.running || document.hidden) return;
+    this.last = performance.now();
+    this.raf = requestAnimationFrame(this.loop);
+  }
+
+  private loop = (now: number) => {
+    this.raf = 0;
+    if (!this.running) return;
+    const ms = now - this.last;
+    const dt = Math.min(0.05, ms / 1000) * this.speed;
+    this.last = now;
+    const t0 = performance.now();
+    this.step(dt);
+    if (!this.running) return;
+    this.raf = requestAnimationFrame(this.loop);
+    if (this.governor) this.govern(ms, performance.now() - t0);
+  };
 
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    if (this.lost) return;
+    this.renderer.setRenderTarget(null);
     this.renderer.clear();
   }
 
   step(dt: number) {
     this.onFrame?.(dt);
-    for (const f of [...this.fx]) if (!f.update(dt)) this.remove(f);
+    // a reused list: no allocation per frame (and new effects start next frame)
+    const list = this.fxList;
+    list.length = 0;
+    for (const f of this.fx) list.push(f);
+    for (const f of list) if (!f.update(dt)) this.remove(f);
+    list.length = 0;
     this.particles.update(dt);
     this.backdrop.update(dt);
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 2.2);
     const s = this.shakeAmt * this.shakeAmt * 0.35;
     this.camera.position.set(this.camBase.x + (Math.random() - 0.5) * s, this.camBase.y + (Math.random() - 0.5) * s, this.camBase.z);
     this.camera.lookAt(this.camLook);
-    this.renderer.render(this.scene, this.camera);
+    if (this.lost) return;
+    if (this.post) {
+      const u = this.post.comp.uniforms;
+      u.uChroma.value = this.chroma * 0.035;
+      u.uFlash.value = this.flash * 0.85;
+      this.post.render(this.renderer, this.scene, this.camera);
+    } else this.renderer.render(this.scene, this.camera);
+    // pulses last a beat (a few frames), not a whole effect
+    this.chroma = this.chroma > 0.05 ? this.chroma * 0.4 : 0;
+    this.flash = this.flash > 0.05 ? this.flash * 0.4 : 0;
+  }
+
+  private resetGovernor() {
+    this.ft.fill(0);
+    this.work.fill(0);
+    this.ftSum = this.workSum = 0;
+    this.ftI = this.ftN = 0;
+    this.goodFor = 0;
+  }
+
+  /**
+   * Rolling 60-frame average of the frame interval: above 22 ms step down a tier;
+   * comfortably fast for 3 s step back up. "Fast" is under 14 ms, or holding the
+   * display's 60 Hz with little work per frame (a 60 Hz phone never gets under 14).
+   * Stepping up and then straight back down doubles the wait before trying again.
+   */
+  private govern(ms: number, workMs: number) {
+    const x = Math.min(ms, 50);
+    const i = this.ftI;
+    this.ftSum += x - this.ft[i];
+    this.workSum += workMs - this.work[i];
+    this.ft[i] = x;
+    this.work[i] = workMs;
+    this.ftI = (i + 1) % WINDOW;
+    if (this.ftN < WINDOW) {
+      this.ftN++;
+      return;
+    }
+    const avg = this.ftSum / WINDOW;
+    const work = this.workSum / WINDOW;
+    const now = performance.now();
+    if (avg > SLOW_MS && this.level > 0) {
+      if (now - this.lastUp < 5000) this.upWait = Math.min(this.upWait * 2, 48);
+      this.tier = this.level - 1;
+      return;
+    }
+    const fast = avg < FAST_MS || (avg < 17.5 && work < 6);
+    this.goodFor = fast ? this.goodFor + x / 1000 : 0;
+    if (this.goodFor >= this.upWait && this.level < this.levels.length - 1) {
+      this.lastUp = now;
+      this.tier = this.level + 1;
+    }
   }
 
   /** Everything still on stage. */
@@ -798,11 +1242,44 @@ export class Stage {
     this.particles.clear();
   }
 
+  private handleVisibility = () => {
+    if (document.hidden) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+    } else this.schedule();
+  };
+
+  private handleLost = (e: Event) => {
+    e.preventDefault();
+    this.lost = true;
+    this.warm = null;
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.onLost?.();
+  };
+
+  private handleRestore = () => {
+    // three.js re-creates its GL state; textures and buffers re-upload on next use.
+    // The base materials' programs went with the old context: compile them again.
+    this.lost = false;
+    this.resize();
+    void this.prewarm();
+    this.onRestore?.();
+  };
+
   dispose() {
     this.stop();
     this.clear();
+    this.disposed = true;
+    this.canvas.removeEventListener('webglcontextlost', this.handleLost, false);
+    this.canvas.removeEventListener('webglcontextrestored', this.handleRestore, false);
+    document.removeEventListener('visibilitychange', this.handleVisibility);
     this.particles.dispose();
     this.backdrop.dispose();
+    this.post?.dispose();
     this.renderer.dispose();
+    // Free the context now (phones cap live WebGL contexts) instead of waiting for GC.
+    this.renderer.forceContextLoss();
   }
 }

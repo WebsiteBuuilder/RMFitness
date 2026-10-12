@@ -135,6 +135,19 @@ export class Director {
     this.stage = new Stage(canvas, quality);
     this.stage.speed = quality === 'fast' ? 1.8 : 1;
     this.stage.onFrame = (dt) => this.frame(dt);
+    // WebGL context lost (backgrounded phone, GPU reset): drop everything and report
+    // idle so the duel never waits on a cinematic that cannot draw; play again once restored.
+    this.stage.onLost = () => this.clear();
+  }
+
+  /** Compiles every shader ahead of the first cinematic (call right after construction). */
+  prewarm(): Promise<void> {
+    return this.stage.prewarm();
+  }
+
+  /** The WebGL context is gone: cinematics are skipped until the browser restores it. */
+  get broken() {
+    return this.stage.lost;
   }
 
   setQuality(q: Quality) {
@@ -148,6 +161,10 @@ export class Director {
 
   push(cues: Cue[]) {
     if (!cues.length) return;
+    if (this.stage.lost) {
+      this.onIdle?.();
+      return;
+    }
     // A long backlog (reconnect, a burst of moves): keep only what matters most.
     this.queue.push(...cues);
     if (this.queue.length > 10) this.queue = this.queue.filter((c) => SLOW_KINDS.has(c.kind) || c.kind === 'damage' || c.kind === 'destroy').slice(-10);
