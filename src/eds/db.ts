@@ -21,6 +21,7 @@ interface RawCard {
 }
 
 const BASE = import.meta.env.BASE_URL;
+declare const __BUILD_ID__: string;
 export const DB = new Map<string, CardInfo>();
 const byId = new Map<number, CardInfo>();
 const noImage = new Set<number>();
@@ -49,28 +50,41 @@ function toInfo(r: RawCard): CardInfo {
   return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias };
 }
 
+/** Changes with every deploy, so phones never reuse a card list from an older version of the site. */
+const BUILD = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
+/** The EDS card list has about 810 cards, each with its EDS number. Anything else is a stale copy. */
+const looksCurrent = (list: unknown): list is RawCard[] => Array.isArray(list) && list.length >= 800 && list.every((r) => r && typeof r.name === 'string') && list.filter((r) => typeof r.n === 'number').length >= 800;
+
+async function fetchList(query: string, cache: RequestCache): Promise<RawCard[] | null> {
+  try {
+    const res = await fetch(`${BASE}cards/cards.json?v=${query}`, { cache });
+    if (!res.ok) return null;
+    const list: unknown = await res.json();
+    return looksCurrent(list) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadDb(): Promise<boolean> {
   if (loaded) return true;
-  try {
-    const res = await fetch(`${BASE}cards/cards.json`, { cache: 'force-cache' });
-    if (!res.ok) return false;
-    const list: RawCard[] = await res.json();
-    for (const r of list) {
-      const info = toInfo(r);
-      DB.set(info.name, info);
-      DB.set(norm(info.name), info);
-      byId.set(info.id, info);
-      if (r.alias) {
-        DB.set(r.alias, info);
-        DB.set(norm(r.alias), info);
-      }
-      if (r.img === false) noImage.add(r.id);
+  // Ask the server each time (cheap when nothing changed); if a stale or broken copy
+  // still comes back, force a fresh download.
+  const list = (await fetchList(BUILD, 'no-cache')) ?? (await fetchList(`${BUILD}-${Date.now()}`, 'reload'));
+  if (!list) return false;
+  for (const r of list) {
+    const info = toInfo(r);
+    DB.set(info.name, info);
+    DB.set(norm(info.name), info);
+    byId.set(info.id, info);
+    if (r.alias) {
+      DB.set(r.alias, info);
+      DB.set(norm(r.alias), info);
     }
-    loaded = true;
-    return true;
-  } catch {
-    return false;
+    if (r.img === false) noImage.add(r.id);
   }
+  loaded = true;
+  return true;
 }
 
 export function dbLoaded(): boolean {

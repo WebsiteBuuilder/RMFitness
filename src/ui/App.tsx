@@ -55,9 +55,12 @@ export function App() {
     return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
   });
 
-  useEffect(() => {
-    void loadDb().then(() => setDbReady(true));
-  }, []);
+  const [dbFailed, setDbFailed] = useState(false);
+  const tryLoadDb = () => {
+    setDbFailed(false);
+    void loadDb().then((ok) => (ok ? setDbReady(true) : setDbFailed(true)));
+  };
+  useEffect(tryLoadDb, []);
 
   const setSave = (s: SaveFile) => {
     setSaveState(s);
@@ -154,7 +157,17 @@ export function App() {
     );
   }
 
-  if (!dbReady) return <div class="loading">Loading card data…</div>;
+  if (!dbReady)
+    return dbFailed ? (
+      <div class="loading">
+        <p>Couldn't load the card data. Check the connection and try again.</p>
+        <button class="gbtn" onClick={tryLoadDb}>
+          Try again
+        </button>
+      </div>
+    ) : (
+      <div class="loading">Loading card data…</div>
+    );
 
   if (screen === 'link' && pendingJoin) {
     const code = pendingJoin;

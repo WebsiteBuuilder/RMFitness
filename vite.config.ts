@@ -7,4 +7,6 @@ export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [preact()],
   build: { target: 'es2020' },
+  // Stamped into the app so each deploy asks for fresh card data.
+  define: { __BUILD_ID__: JSON.stringify(Date.now().toString(36)) },
 });
