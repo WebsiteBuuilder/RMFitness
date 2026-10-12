@@ -421,6 +421,29 @@ export class Engine {
     return fc;
   }
 
+  /**
+   * Puts a face-up, active Spell/Trap "treated as" a real card onto the field for a Skill
+   * (It's a Toon World!: treated as Toon World). It is a token: it vanishes if it leaves the field.
+   */
+  placeSkillCard(name: string, controller: Pid, where: 'field' | 'sz'): FieldCard | null {
+    const ps = this.player(controller);
+    const card: Card = { uid: this.state.uidCounter++, name, owner: controller, token: true };
+    const fc = this.toField(card, 'atk', true);
+    fc.active = true;
+    if (where === 'field') {
+      if (ps.field) return null;
+      ps.field = fc;
+    } else {
+      const mid = Math.floor(ps.sz.length / 2);
+      const zone = ps.sz[mid] === null ? mid : ps.sz.findIndex((z) => z === null);
+      if (zone < 0) return null;
+      ps.sz[zone] = fc;
+    }
+    this.event('activate', { uid: card.uid, player: controller });
+    this.log(controller, `${ps.name} places ${name} on the field`);
+    return fc;
+  }
+
   /** Runs a card effect on behalf of a player (so "your opponent's effect" checks work). */
   *as(p: Pid, step: Step): Step {
     const prev = this.actor;
