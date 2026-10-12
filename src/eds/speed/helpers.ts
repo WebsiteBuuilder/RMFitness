@@ -55,8 +55,10 @@ export const info = (e: Engine, c: Card | string) => e.info(typeof c === 'string
 export const isMonster = (e: Engine, c: Card) => info(e, c).kind === 'monster';
 export const isSpell = (e: Engine, c: Card) => info(e, c).kind === 'spell';
 export const isTrap = (e: Engine, c: Card) => info(e, c).kind === 'trap';
-export const levelOf = (e: Engine, c: Card) => info(e, c).level ?? 0;
-export const attrOf = (e: Engine, c: Card) => info(e, c).attribute ?? '';
+/** A Trap Card on the field as a monster (Quantum Cat, Zoma the Spirit): the Level/Attribute its script gave it. */
+const trapMonster = (e: Engine, c: Card) => (e.find(c.uid)?.loc.zone === 'mz' ? ((e.state.fx.trapMonster ?? {}) as Record<number, { level?: number; attribute?: string }>)[c.uid] : undefined);
+export const levelOf = (e: Engine, c: Card) => trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
+export const attrOf = (e: Engine, c: Card) => trapMonster(e, c)?.attribute ?? info(e, c).attribute ?? '';
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
 export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);
