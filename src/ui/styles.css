@@ -1239,3 +1239,42 @@ p {
   color: var(--dim);
   font-size: 11px;
 }
+
+/* ---------- Speed Duel ---------- */
+.skillbtn {
+  border: 1px solid var(--dim);
+  color: var(--dim);
+}
+.skillbtn.up {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.skillbtn.ready {
+  color: #000;
+  background: var(--gold);
+  animation: blink 1.2s steps(2) infinite;
+}
+.gcard .geff {
+  margin-top: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+.sd-deckhead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--panel);
+  border-top: 2px solid var(--border);
+  font-size: 10px;
+}
+.sd-deckhead .chip {
+  white-space: nowrap;
+}
+.crow.off {
+  opacity: 0.45;
+}
+.cardlist .more {
+  display: block;
+  margin: 10px auto;
+}

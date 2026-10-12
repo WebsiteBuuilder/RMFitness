@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
-import { PHASES } from '../eds/types';
 import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
@@ -38,6 +37,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
   const [info, setInfo] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
@@ -223,8 +223,15 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
           </button>
         )}
         {ps.fusion.length > 0 && (
-          <button class="pile small" onClick={() => p === acting && setPile({ title: 'Fusion Deck', cards: ps.fusion })}>
-            <span>Fusion {ps.fusion.length}</span>
+          <button class="pile small" onClick={() => p === acting && setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion })}>
+            <span>
+              {e.speed ? 'Extra' : 'Fusion'} {ps.fusion.length}
+            </span>
+          </button>
+        )}
+        {ps.skill && (
+          <button class={`pile small skillbtn ${ps.skillRevealed ? 'up' : ''} ${p === acting && e.canUseSkill(acting) && canAct ? 'ready' : ''}`} onClick={() => setSkillOf(p)}>
+            <span>Skill</span>
           </button>
         )}
       </div>
@@ -339,7 +346,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
           <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
           <div class="center">
             <div class="phases">
-              {PHASES.map((p) => (
+              {e.phases().map((p) => (
                 <span key={p} class={`ph ${state.phase === p ? 'on' : ''} ${p === 'BP' && state.firstTurn ? 'off' : ''}`}>
                   {PHASE_SHORT[p]}
                 </span>
@@ -350,7 +357,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
               <div class="phasebtns">
                 {state.phase !== 'EP' && (
                   <button class="gbtn" onClick={() => send({ type: 'NEXT_PHASE', player: acting })}>
-                    {state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? 'Main 2' : state.phase === 'M2' ? 'End Phase' : 'Next'}
+                    {state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? (e.rules.mainPhase2 ? 'Main 2' : 'End Phase') : state.phase === 'M2' ? 'End Phase' : 'Next'}
                   </button>
                 )}
                 <button class="gbtn end" onClick={() => send({ type: 'END_TURN', player: acting })}>
@@ -402,13 +409,50 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
                 {pile.cards
                   .slice()
                   .reverse()
-                  .map((c) => (
-                    <button key={c.uid} class="gcard" onClick={() => setInfo(c.name)}>
-                      <CardImg name={c.name} />
-                      <span>{c.name}</span>
-                    </button>
-                  ))}
+                  .map((c) =>
+                    canAct && !prompt && e.canUseGraveEffect(acting, c.uid) ? (
+                      <div key={c.uid} class="gcard">
+                        <button onClick={() => setInfo(c.name)}>
+                          <CardImg name={c.name} />
+                          <span>{c.name}</span>
+                        </button>
+                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'GRAVE_EFFECT', player: acting, uid: c.uid }))}>
+                          Effect
+                        </button>
+                      </div>
+                    ) : (
+                      <button key={c.uid} class="gcard" onClick={() => setInfo(c.name)}>
+                        <CardImg name={c.name} />
+                        <span>{c.name}</span>
+                      </button>
+                    ),
+                  )}
               </div>
+            )}
+          </Win>
+        </Overlay>
+      )}
+      {skillOf !== null && (
+        <Overlay onClose={() => setSkillOf(null)}>
+          <Win title={skillOf === acting ? 'Your Skill' : `${state.players[skillOf].name}'s Skill`} onClose={() => setSkillOf(null)}>
+            {skillOf === acting || state.players[skillOf].skillRevealed ? (
+              <>
+                <CardInfoPanel name={state.players[skillOf].skill ?? ''} />
+                {skillOf === acting && canAct && (
+                  <Menu
+                    items={[
+                      {
+                        label: 'Use Skill',
+                        disabled: !e.canUseSkill(acting),
+                        note: state.players[skillOf].skillUses ? `used ${state.players[skillOf].skillUses}×` : undefined,
+                        onPick: () => (setSkillOf(null), send({ type: 'SKILL', player: acting })),
+                      },
+                    ]}
+                  />
+                )}
+              </>
+            ) : (
+              <p>Face-down. It flips over when they use it.</p>
             )}
           </Win>
         </Overlay>

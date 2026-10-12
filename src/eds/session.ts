@@ -4,16 +4,20 @@ import { useEffect, useState } from 'preact/hooks';
 import type { SyncAdapter, SyncStatus } from '../sync/types';
 import { Engine } from './engine';
 import { DB } from './db';
-import type { Action, DuelState, LoggedAction, Pid } from './types';
+import type { Action, DuelState, GameMode, LoggedAction, Pid } from './types';
 
 export interface Seat {
   name: string;
   deck: string[];
   fusion: string[];
   ready: boolean;
+  /** which game the player readied for (missing = EDS) */
+  mode?: GameMode;
+  /** Speed Duel: the Skill they bring */
+  skill?: string | null;
 }
 
-export type LobbyAction = { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[] };
+export type LobbyAction = { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -66,7 +70,7 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null };
       return;
     }
     try {

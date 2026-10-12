@@ -33,7 +33,7 @@ export function CardInfoPanel({ name }: { name: string }) {
         {info ? (
           <>
             <div class="cinfo-type">
-              {info.kind === 'monster' ? `${info.attribute ?? ''} · ${info.race ?? ''} · ${info.sub} · Level ${info.level ?? '?'}` : `${info.sub} ${info.kind === 'spell' ? 'Magic' : 'Trap'} Card`}
+              {info.sub === 'Skill' ? `Skill Card · ${info.character ?? ''}` : info.kind === 'monster' ? `${info.attribute ?? ''} · ${info.race ?? ''} · ${info.sub} · Level ${info.level ?? '?'}` : `${info.sub} ${info.kind === 'spell' ? 'Magic' : 'Trap'} Card`}
             </div>
             {info.kind === 'monster' && (
               <div class="cinfo-stats">

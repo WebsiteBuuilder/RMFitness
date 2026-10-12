@@ -159,6 +159,7 @@ export function updateProfile(id: string, name: string, alias: string): Profile 
 export function deleteProfile(id: string) {
   writeProfiles(loadProfiles().filter((p) => p.id !== id));
   eraseSave(id);
+  removeKey(`eds.speed.${id}`); // the profile's Speed Duel decks and record
 }
 
 export function loadSave(id: string): SaveFile | null {

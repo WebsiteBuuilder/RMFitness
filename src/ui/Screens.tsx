@@ -73,7 +73,7 @@ export function Intro({ onDone, presetName }: { onDone: (name: string, color: St
   );
 }
 
-export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'switch' | 'delete';
+export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'switch' | 'delete' | 'speed';
 
 export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: Profile | null; onPick: (c: MenuChoice) => void }) {
   const d = calendarDate(save.day);
@@ -97,6 +97,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
             ...(save.pendingPacks > 0 ? [{ label: 'Open Booster Pack', note: `${save.pendingPacks} waiting`, onPick: () => onPick('pack') }] : []),
             { label: 'Campaign', note: 'duel the computer', onPick: () => onPick('campaign') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => onPick('link') },
+            { label: 'Speed Duel', note: 'its own decks: Speed Duel cards only', onPick: () => onPick('speed') },
             { label: 'Deck Edit', note: `Main ${save.main.length}/40`, onPick: () => onPick('deck') },
             { label: 'Record', onPick: () => onPick('record') },
             { label: 'Calendar', onPick: () => onPick('calendar') },
