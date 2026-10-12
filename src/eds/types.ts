@@ -34,6 +34,12 @@ export interface CardInfo {
   password?: string | null;
   /** the name the card had in EDS when it differs from today's */
   alias?: string;
+  /** part of the Speed Duel card pool */
+  speed?: boolean;
+  /** Skill Cards: the character the Skill belongs to */
+  character?: string;
+  /** a monster with no effect (needs no script) */
+  vanilla?: boolean;
 }
 
 export interface Card {
@@ -89,6 +95,13 @@ export interface PlayerState {
   normalSummoned: boolean;
   /** cannot attack while the opponent's Swords of Revealing Light is active, etc. */
   ready: boolean;
+  /** Speed Duel: the Skill this player brought, face-down until first used */
+  skill?: string | null;
+  skillRevealed?: boolean;
+  /** times the Skill was used this duel */
+  skillUses?: number;
+  /** turn number the Skill was last used */
+  skillTurn?: number;
 }
 
 /** A question the engine is asking one player. */
@@ -162,11 +175,13 @@ export interface DuelState {
   uidCounter: number;
   /** lasting duel-wide effects card scripts set (declared names/types, skipped phases...) */
   fx: Record<string, any>;
+  /** the rule set (missing in duels recorded before Speed Duel existed: EDS) */
+  rules?: Rules;
 }
 
 /** What a player may ask the engine to do. */
 export type Action =
-  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]] }
+  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]]; mode?: GameMode; skills?: [string | null, string | null] }
   | { type: 'SUMMON'; player: Pid; uid: number; zone: number; pos: Pos; faceUp: boolean }
   | { type: 'SET_ST'; player: Pid; uid: number; zone: number }
   | { type: 'ACTIVATE'; player: Pid; uid: number; zone?: number }
@@ -182,11 +197,32 @@ export type Action =
   | { type: 'PASS'; player: Pid }
   | { type: 'YES'; player: Pid }
   | { type: 'NO'; player: Pid }
+  | { type: 'SKILL'; player: Pid }
+  | { type: 'GRAVE_EFFECT'; player: Pid; uid: number }
   | { type: 'SURRENDER'; player: Pid };
 
 export type LoggedAction = Action & { seq: number; ts: number };
+
+/** Which rule set a duel uses: the 2002 Eternal Duelist Soul rules or Speed Duel. */
+export type GameMode = 'eds' | 'speed';
+export interface Rules {
+  mode: GameMode;
+  lp: number;
+  openingHand: number;
+  handLimit: number;
+  monsterZones: number;
+  stZones: number;
+  /** Speed Duel has no Main Phase 2 */
+  mainPhase2: boolean;
+  /** EDS: the first player draws on turn 1; Speed Duel: they do not */
+  firstPlayerDraws: boolean;
+}
 
 export const STARTING_LP = 8000;
 export const HAND_LIMIT = 6;
 export const MONSTER_ZONES = 5;
 export const ST_ZONES = 5;
+
+export const EDS_RULES: Rules = { mode: 'eds', lp: STARTING_LP, openingHand: 5, handLimit: HAND_LIMIT, monsterZones: MONSTER_ZONES, stZones: ST_ZONES, mainPhase2: true, firstPlayerDraws: true };
+export const SPEED_RULES: Rules = { mode: 'speed', lp: 4000, openingHand: 4, handLimit: 6, monsterZones: 3, stZones: 3, mainPhase2: false, firstPlayerDraws: false };
+export const rulesFor = (mode: GameMode | undefined): Rules => (mode === 'speed' ? SPEED_RULES : EDS_RULES);
