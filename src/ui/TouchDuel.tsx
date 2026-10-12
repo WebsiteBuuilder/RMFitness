@@ -43,10 +43,10 @@ export interface TouchCtl {
   nextPhaseLabel: string;
   setInfo: (name: string | null) => void;
   setPile: (p: { title: string; cards: Card[] } | null) => void;
+  /** show a player's Speed Duel Skill */
+  openSkill: (p: Pid) => void;
   openMenu: () => void;
   setShowLog: (v: boolean) => void;
-  /** Speed Duel: open a player's Skill */
-  openSkill: (p: Pid) => void;
   onFinished: (winner: Pid | 'draw') => void;
 }
 
@@ -333,7 +333,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="textra">
             {ps.fusion.length > 0 && (
               <button onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
-                {e.speed ? 'EX' : 'F'} {ps.fusion.length}
+                {e.speed ? 'Extra' : 'F'} {ps.fusion.length}
               </button>
             )}
             {ps.removed.length > 0 && <button onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed }))}>Out {ps.removed.length}</button>}
@@ -362,20 +362,19 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             {!top && ps.normalSummoned ? ' · Summoned' : ''}
           </span>
         </div>
+        {ps.skill && (
+          <button
+            class={`tskill ${ps.skillRevealed ? 'up' : ''} ${p === acting && canAct && e.canUseSkill(acting) ? 'ready' : ''}`}
+            onClick={(ev) => (ev.stopPropagation(), ctl.openSkill(p))}
+          >
+            Skill
+          </button>
+        )}
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
           {ps.lp}
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
-        {ps.skill && (
-          <button
-            class={`tskill ${ps.skillRevealed ? 'up' : ''} ${p === acting && canAct && e.canUseSkill(acting) ? 'ready' : ''}`}
-            aria-label="Skill"
-            onClick={(ev) => (ev.stopPropagation(), ctl.openSkill(p))}
-          >
-            SKILL
-          </button>
-        )}
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
             ☰
@@ -395,7 +394,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   // ----- phase button -----
   const phaseItems: { label: string; onPick: () => void }[] = [];
   if (myTurn && idle) {
-    if (state.phase !== 'EP' && state.phase !== 'M2') phaseItems.push({ label: ctl.nextPhaseLabel === 'Battle' ? 'Battle Phase' : ctl.nextPhaseLabel === 'Main 2' ? 'Main Phase 2' : ctl.nextPhaseLabel, onPick: () => send({ type: 'NEXT_PHASE', player: acting }) });
+    if (state.phase !== 'EP' && state.phase !== 'M2' && ctl.nextPhaseLabel !== 'End Phase') phaseItems.push({ label: ctl.nextPhaseLabel === 'Battle' ? 'Battle Phase' : ctl.nextPhaseLabel === 'Main 2' ? 'Main Phase 2' : ctl.nextPhaseLabel, onPick: () => send({ type: 'NEXT_PHASE', player: acting }) });
     phaseItems.push({ label: 'End Turn', onPick: () => send({ type: 'END_TURN', player: acting }) });
   }
 
@@ -530,7 +529,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   return (
     <div
-      class={`duel touch ${e.speed ? 'speed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''}`}
+      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -547,7 +546,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       </div>
 
       <div class="tboard">
-        <div class="tmat">
+        <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           <div class="trow">
             {deck(oppId)}
             {opp.sz

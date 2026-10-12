@@ -236,8 +236,8 @@ export function App() {
   const onMenu = (c: MenuChoice) => {
     if (c === 'delete') return setConfirmDelete(true);
     if (c === 'switch') return switchProfile();
-    if (c === 'speed' && profile) setSpeedSaveState(loadSpeedSave(profile.id));
     if (c === 'controls') return setSave({ ...save, controls: save.controls === 'touch' ? 'classic' : 'touch' });
+    if (c === 'speed' && profile) setSpeedSaveState(loadSpeedSave(profile.id));
     setScreen(c);
   };
 
