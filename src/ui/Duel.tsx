@@ -93,7 +93,8 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
     }
     if (mode?.kind === 'attack') {
       const f = e.find(uid);
-      if (f && f.loc.zone === 'mz' && f.loc.player === other(acting)) send({ type: 'ATTACK', player: acting, uid: mode.uid, target: uid });
+      const attacker = e.fieldCard(mode.uid);
+      if (f && f.loc.zone === 'mz' && f.loc.player === other(acting) && attacker && e.legalTargets(acting, attacker).some((t) => t.uid === uid)) send({ type: 'ATTACK', player: acting, uid: mode.uid, target: uid });
       setMode(null);
       return;
     }
@@ -108,6 +109,8 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
     setPicks((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : cur.length < p.max ? [...cur, i] : cur));
   };
 
+  /** The Eye of Truth, Respect Play and Ceremonial Bell show the opponent's hand. */
+  const oppHandShown = e.handRevealed(other(acting));
   const selected = sel !== null ? e.find(sel) : null;
   const selCard = selected?.card ?? null;
   const selField = selected && (selected.loc.zone === 'mz' || selected.loc.zone === 'sz' || selected.loc.zone === 'field') ? (selected.card as FieldCard) : null;
@@ -123,6 +126,9 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
         const zone = me.mz.findIndex((z) => z === null);
         commands.push({ label: 'Summon', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
         commands.push({ label: 'Set', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'def', faceUp: false }) });
+        const eff = getEffect(selCard.name);
+        if (eff?.summonProc) commands.push({ label: 'Special Summon', disabled: !e.canSpecialProc(acting, selCard), onPick: () => send({ type: 'SPECIAL', player: acting, uid: selCard.uid }) });
+        if (eff?.handIgnition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, selCard), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: selCard.uid }) });
       } else {
         const zone = me.sz.findIndex((z) => z === null);
         if (info?.kind === 'spell') commands.push({ label: 'Activate', disabled: !e.canActivateMain(acting, selCard.uid), onPick: () => send({ type: 'ACTIVATE', player: acting, uid: selCard.uid, zone }) });
@@ -136,7 +142,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
         const can = e.canAttackWith(acting, m);
         commands.push({
           label: 'Attack',
-          disabled: !can,
+          disabled: !can || (e.monsters(other(acting)).length > 0 && e.legalTargets(acting, m).length === 0 && !e.canAttackDirectly(m)),
           onPick: () => {
             if (e.monsters(other(acting)).length === 0) send({ type: 'ATTACK', player: acting, uid: m.uid, target: null });
             else setMode({ kind: 'attack', uid: m.uid });
@@ -146,12 +152,16 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
       }
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
-        if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos, onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
+        if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos || !e.canChangePosition(acting, m), onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
         else commands.push({ label: 'Flip Summon', disabled: !fresh, onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
       }
     }
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && !selField.faceUp && myTurn) {
       commands.push({ label: 'Activate', disabled: !e.canActivateMain(acting, selField.uid), onPick: () => send({ type: 'ACTIVATE', player: acting, uid: selField.uid }) });
+    }
+    // Face-up Spells and Traps with an effect you can use (Magical Labyrinth, Metalmorph...).
+    if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && selField.faceUp && myTurn && e.inMainPhase() && getEffect(selField.name)?.ignition) {
+      commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, selField), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: selField.uid }) });
     }
   }
   const canSeeSel = !!selCard && (!selField || selField.faceUp || selected?.loc.player === acting);
@@ -162,7 +172,10 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
     if (sel === uid) cls += ' sel';
     if (prompt?.kind === 'select' && prompt.options.some((o) => o.uid === uid)) cls += ' pick';
     if (prompt?.kind === 'select' && picks.some((i) => prompt.options[i]?.uid === uid)) cls += ' picked';
-    if (mode?.kind === 'attack' && e.find(uid)?.loc.player === other(acting) && e.find(uid)?.loc.zone === 'mz') cls += ' pick';
+    if (mode?.kind === 'attack') {
+      const attacker = e.fieldCard(mode.uid);
+      if (attacker && e.legalTargets(acting, attacker).some((t) => t.uid === uid)) cls += ' pick';
+    }
     if (anim?.uid === uid) cls += ` anim-${anim.kind}`;
     return cls;
   };
@@ -314,8 +327,8 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
       </div>
       <div class="opp-hand">
         {opp.hand.map((c) => (
-          <div key={c.uid} class={`hcard back ${anim?.uid === c.uid ? 'anim-draw' : ''}`}>
-            <CardImg name={c.name} back />
+          <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name)}>
+            <CardImg name={c.name} back={!oppHandShown} />
           </div>
         ))}
       </div>

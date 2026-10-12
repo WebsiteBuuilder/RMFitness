@@ -104,6 +104,22 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       if (m.name === 'Time Wizard' && theirMonsters.length >= 2 && theirBest > myBest) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
       if (m.name === 'Barrel Dragon' && theirMonsters.some((x) => x.faceUp)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
     }
+    // Special Summon procedures (Gate Guardian, Toons, the moth line...) and hand effects.
+    for (const c of my.hand) {
+      if (e.canSpecialProc(me, c)) {
+        const atk = e.info(c.name).atk ?? 0;
+        const myBest = Math.max(0, ...myMonsters.map((x) => e.atkOf(x)));
+        if (atk >= 1500 && atk > myBest) return { type: 'SPECIAL', player: me, uid: c.uid };
+      }
+      if ((c.name === 'Thunder Dragon' || c.name === 'Cocoon of Evolution') && e.canUseMonsterEffect(me, c)) return { type: 'MONSTER_EFFECT', player: me, uid: c.uid };
+    }
+    // Monster effects that are simply good to use.
+    for (const m of myMonsters) {
+      if (!e.canUseMonsterEffect(me, m)) continue;
+      if (m.name === 'Relinquished' && theirMonsters.some((t) => e.atkOf(t) >= 1500)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+      if (m.name === 'Monster Eye' && my.lp > 3000 && !my.hand.some((c) => c.name === 'Polymerization')) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+      if (m.name === 'Catapult Turtle' && their.lp <= Math.max(...myMonsters.filter((x) => x.uid !== m.uid).map((x) => Math.floor(e.atkOf(x) / 2)), 0)) return { type: 'MONSTER_EFFECT', player: me, uid: m.uid };
+    }
     // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
     if (!my.normalSummoned) {
       const candidates = my.hand.filter((c) => e.canNormalSummon(me, c)).map((c) => ({ c, info: e.info(c.name) }));
@@ -129,7 +145,7 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       const fresh = m.placedTurn !== s.turn && !m.posChanged && !m.attacked;
       if (!fresh) continue;
       if (!m.faceUp && (e.atkOf(m) >= theirBest || getEffect(m.name)?.flip)) return { type: 'FLIP_SUMMON', player: me, uid: m.uid };
-      if (m.cannotChangePos) continue;
+      if (m.cannotChangePos || (m.faceUp && !e.canChangePosition(me, m))) continue;
       if (m.faceUp && m.name === 'Dream Clown' && m.pos === 'atk' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };
       if (m.faceUp && m.name === 'Crass Clown' && m.pos === 'def' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };
       if (m.faceUp && m.pos === 'def' && e.atkOf(m) > theirBest && s.phase === 'M1') return { type: 'CHANGE_POS', player: me, uid: m.uid };
@@ -157,7 +173,8 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       if (theirMonsters.length === 0 || e.canAttackDirectly(m)) return { type: 'ATTACK', player: me, uid: m.uid, target: null };
       if (m.name === 'Dark Elf' && my.lp <= 2000) continue;
       // Best target: a monster we beat, preferring the biggest attack-position one; face-downs when we are strong.
-      const beatable = theirMonsters.filter((t) => (t.faceUp ? (t.pos === 'atk' ? atk > e.atkOf(t) : atk > e.defOf(t)) : atk >= 1600));
+      const legal = e.legalTargets(me, m);
+      const beatable = legal.filter((t) => (t.faceUp ? (t.pos === 'atk' ? atk > e.atkOf(t) : atk > e.defOf(t)) : atk >= 1600));
       if (beatable.length) {
         beatable.sort((a, b) => score(e, b) - score(e, a));
         return { type: 'ATTACK', player: me, uid: m.uid, target: beatable[0].uid };

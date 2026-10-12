@@ -115,6 +115,57 @@ def lookup(name: str, overrides: dict, cache: dict) -> dict | None:
     return found
 
 
+WIKI = "https://yugipedia.com/api.php"
+TICKET_TEXT = "A Ticket card from Duelist Kingdom. It is a keepsake and cannot be used in a Duel."
+
+
+def wiki(params: dict) -> dict:
+    raw = get(f"{WIKI}?{urllib.parse.urlencode({**params, 'format': 'json'})}")
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def crop_card(im: "Image.Image") -> "Image.Image":
+    """Yugipedia's EDS images are whole GBA screens; keep just the card on the left."""
+    w, h = im.size
+    if w <= h:
+        return im
+    olive = lambda p: p[0] > 120 and p[1] > 120 and p[2] < 110
+    cols = [x for x in range(w // 2) if sum(olive(im.getpixel((x, y))) for y in range(h)) > h // 5]
+    rows = [y for y in range(h) if sum(olive(im.getpixel((x, y))) for x in range(w // 2)) > w // 15]
+    if not cols or not rows:
+        return im
+    return im.crop((max(0, cols[0] - 2), max(0, rows[0] - 2), min(w, cols[-1] + 3), min(h, rows[-1] + 3)))
+
+
+def ticket_card(entry: dict) -> tuple[dict, bytes | None]:
+    """EDS-only Ticket cards are not in YGOPRODeck: take their art from yugipedia's EDS page."""
+    page = f"{entry['name']} (EDS)"
+    data = wiki({"action": "query", "titles": page, "prop": "images", "imlimit": "50"})
+    files = []
+    for p in data.get("query", {}).get("pages", {}).values():
+        files += [i["title"] for i in p.get("images", [])]
+    files = [f for f in files if "EDS" in f and f.lower().endswith((".png", ".jpg"))] or files
+    raw = None
+    if files:
+        info = wiki({"action": "query", "titles": files[0], "prop": "imageinfo", "iiprop": "url"})
+        for p in info.get("query", {}).get("pages", {}).values():
+            for ii in p.get("imageinfo", []):
+                raw = get(ii["url"])
+    card = {
+        "id": 99000000 + int(entry["n"]),
+        "name": entry["name"],
+        "type": "Ticket Card",
+        "frame": "ticket",
+        "desc": TICKET_TEXT,
+        "n": entry["n"],
+        "password": entry.get("password"),
+    }
+    return card, raw
+
+
 def main() -> int:
     IMG_DIR.mkdir(parents=True, exist_ok=True)
     entries = json.loads(SRC.read_text())
@@ -130,6 +181,20 @@ def main() -> int:
         name = entry["name"]
         found = lookup(name, overrides, cache)
         if not found:
+            card, raw = ticket_card(entry)
+            path = IMG_DIR / f"{card['id']}.webp"
+            if raw and not path.exists():
+                try:
+                    im = crop_card(Image.open(io.BytesIO(raw)).convert("RGB"))
+                    h = round(im.height * IMG_WIDTH / im.width)
+                    im.resize((IMG_WIDTH, h), Image.LANCZOS).save(path, "WEBP", quality=IMG_QUALITY, method=6)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  ticket image failed for {name}: {e}", file=sys.stderr)
+            if path.exists():
+                card["img"] = True
+                cards.append(card)
+                print(f"  ticket card {name} taken from yugipedia")
+                continue
             missing.append(name)
             print(f"  !! no match for {name}", file=sys.stderr)
             continue
@@ -145,6 +210,8 @@ def main() -> int:
     # Images
     done = 0
     for c in cards:
+        if c.get("frame") == "ticket":
+            continue
         path = IMG_DIR / f"{c['id']}.webp"
         if path.exists():
             c["img"] = True

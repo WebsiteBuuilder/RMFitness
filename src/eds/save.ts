@@ -1,5 +1,5 @@
 // The player's save file: trunk, decks, record, calendar and unlocked packs.
-// Stored in localStorage on this device (one "cartridge" per browser).
+// Stored in localStorage on this device, one save per profile.
 
 export interface SaveFile {
   version: 1;
@@ -23,8 +23,6 @@ export interface SaveFile {
   created: number;
 }
 
-const KEY = 'eds.save';
-
 export function newSave(name: string): SaveFile {
   return {
     version: 1,
@@ -46,32 +44,136 @@ export function newSave(name: string): SaveFile {
   };
 }
 
-export function loadSave(): SaveFile | null {
+// ---------- profiles ----------
+// Several people can share one phone: each profile has its own SaveFile.
+// `eds.profiles` holds the list; each save lives under `eds.save.<id>`.
+
+export interface Profile {
+  id: string;
+  /** the person's real name (small print on the picker) */
+  name: string;
+  /** what shows in duels, records and the menu header */
+  alias: string;
+  color: string;
+  created: number;
+}
+
+export const MAX_PROFILES = 6;
+export const PROFILE_COLORS = ['#d8453b', '#2f7fe0', '#e0a21b', '#2fae5a', '#9b51e0', '#e0559b'];
+export const NAME_MAX = 12;
+export const ALIAS_MAX = 10;
+
+const PROFILES_KEY = 'eds.profiles';
+/** The single save used before profiles existed. */
+const LEGACY_KEY = 'eds.save';
+const saveKey = (id: string) => `eds.save.${id}`;
+
+// In-memory copies, so the game still works for the session when storage is blocked.
+let memProfiles: Profile[] | null = null;
+const memSaves = new Map<string, SaveFile>();
+
+function readJson<T>(key: string): T | null {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as SaveFile;
-    if (s.version !== 1) return null;
-    return s;
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
 }
 
-export function writeSave(s: SaveFile) {
+function writeJson(key: string, v: unknown): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(key, JSON.stringify(v));
+    return true;
   } catch {
-    /* private mode */
+    return false;
   }
 }
 
-export function eraseSave() {
+function removeKey(key: string) {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(key);
   } catch {
     /* ignore */
   }
+}
+
+function newId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function validSave(s: unknown): s is SaveFile {
+  return !!s && typeof s === 'object' && (s as SaveFile).version === 1;
+}
+
+function nextColor(list: Profile[]): string {
+  return PROFILE_COLORS.find((c) => !list.some((p) => p.color === c)) ?? PROFILE_COLORS[list.length % PROFILE_COLORS.length];
+}
+
+/** The profiles on this device. The first time, an old single save becomes a profile. */
+export function loadProfiles(): Profile[] {
+  const stored = readJson<Profile[]>(PROFILES_KEY);
+  let list = Array.isArray(stored) ? stored.filter((p) => p && typeof p.id === 'string') : (memProfiles ?? []);
+  if (list.length === 0) {
+    const legacy = readJson<SaveFile>(LEGACY_KEY);
+    if (validSave(legacy)) {
+      const label = (legacy.name || 'Duelist').slice(0, ALIAS_MAX);
+      const p: Profile = { id: newId(), name: label, alias: label, color: PROFILE_COLORS[0], created: legacy.created || Date.now() };
+      list = [p];
+      memSaves.set(p.id, legacy);
+      // Drop the old key only once both the save and the profile list are safely written.
+      if (writeJson(saveKey(p.id), legacy) && writeJson(PROFILES_KEY, list)) removeKey(LEGACY_KEY);
+    }
+  }
+  memProfiles = list;
+  return list;
+}
+
+export function writeProfiles(list: Profile[]) {
+  memProfiles = list;
+  writeJson(PROFILES_KEY, list);
+}
+
+export function createProfile(name: string, alias: string): Profile | null {
+  const list = loadProfiles();
+  if (list.length >= MAX_PROFILES) return null;
+  const a = alias.trim().slice(0, ALIAS_MAX) || 'Duelist';
+  const p: Profile = { id: newId(), name: name.trim().slice(0, NAME_MAX) || a, alias: a, color: nextColor(list), created: Date.now() };
+  writeProfiles([...list, p]);
+  return p;
+}
+
+/** Rename a profile. The save's duel name follows the alias. */
+export function updateProfile(id: string, name: string, alias: string): Profile | null {
+  const list = loadProfiles();
+  const old = list.find((p) => p.id === id);
+  if (!old) return null;
+  const a = alias.trim().slice(0, ALIAS_MAX) || old.alias;
+  const p: Profile = { ...old, name: name.trim().slice(0, NAME_MAX) || a, alias: a };
+  writeProfiles(list.map((x) => (x.id === id ? p : x)));
+  const s = loadSave(id);
+  if (s && s.name !== a) writeSave(id, { ...s, name: a });
+  return p;
+}
+
+export function deleteProfile(id: string) {
+  writeProfiles(loadProfiles().filter((p) => p.id !== id));
+  eraseSave(id);
+}
+
+export function loadSave(id: string): SaveFile | null {
+  const s = readJson<SaveFile>(saveKey(id)) ?? memSaves.get(id) ?? null;
+  return validSave(s) ? s : null;
+}
+
+export function writeSave(id: string, s: SaveFile) {
+  memSaves.set(id, s);
+  writeJson(saveKey(id), s);
+}
+
+export function eraseSave(id: string) {
+  memSaves.delete(id);
+  removeKey(saveKey(id));
 }
 
 export function addToTrunk(s: SaveFile, names: string[]) {
