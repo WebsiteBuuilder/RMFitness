@@ -80,7 +80,7 @@ export function Lobby({ session, view, mySeat, hotseat, save, onLeave }: { sessi
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && (session.adapter.isHost ? <Menu items={[{ label: 'Start Duel (coin toss)', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && (session.adapter.isHost ? <Menu items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
     </div>
   );
