@@ -146,6 +146,8 @@ export interface EffectDef {
   cannotBeAttacked?(e: Engine, m: FieldCard, attacker: FieldCard): boolean;
   /** How many attacks this monster may make each Battle Phase (default 1). */
   attacks?(e: Engine, m: FieldCard): number;
+  /** An active Spell/Trap, after damage calculation of every battle (the monsters may already be gone). `controller` controls this card. */
+  afterAnyBattle?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard): Step;
 }
 
 const E: Record<string, EffectDef> = {};

@@ -403,6 +403,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Blaze Accelerator'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
+    // "You cannot declare an attack during the turn you activate this effect": monsters Summoned later this turn too.
+    blocksAttack: (e, card, _m, attacker) => attacker === ctrl(e, card) && card.tags?.blazeTurn === e.state.turn,
     ignition: {
       repeat: true,
       can: (e, _m, p) => lowPyro(e, p).length > 0 && targetable(e, e.monsters(other(p))).length > 0,
@@ -412,6 +414,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const c = yield* pickOne(e, p, 'Send which Pyro monster to the GY?', lowPyro(e, p), true);
         if (!c) return;
         for (const m of e.monsters(p)) tag(m).noAttackTurn = e.state.turn;
+        tag(_m).blazeTurn = e.state.turn;
         yield* e.sendToGrave(c.uid, 'cost');
         if (inZone(e, c.uid, 'gy') && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
       },
