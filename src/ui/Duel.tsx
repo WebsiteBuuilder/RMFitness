@@ -7,6 +7,8 @@ import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
+import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
+import { TouchDuel } from './TouchDuel';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -15,13 +17,23 @@ interface Props {
   view: SessionView;
   mySeat: Pid;
   hotseat: boolean;
+  /** each seat's control style when the duel starts */
+  controlsFor?: (p: Pid) => ControlStyle;
+  /** remember a seat's new control style */
+  onControls?: (p: Pid, c: ControlStyle) => void;
   onLeave: () => void;
   onFinished: (winner: Pid | 'draw') => void;
 }
 
-type Mode = { kind: 'attack'; uid: number } | null;
+export type Mode = { kind: 'attack'; uid: number } | null;
 
-export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Props) {
+export interface Command {
+  label: string;
+  onPick: () => void;
+  disabled?: boolean;
+}
+
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished }: Props) {
   const { state } = view;
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
@@ -41,6 +53,13 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
+  const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
+  const style = styles[acting];
+  const switchStyle = () => {
+    const next: ControlStyle = style === 'touch' ? 'classic' : 'touch';
+    setStyles((cur) => (acting === 0 ? [next, cur[1]] : [cur[0], next]));
+    onControls?.(acting, next);
+  };
   const lastActing = useRef(acting);
   const lastSeq = useRef(0);
   const finished = useRef(false);
@@ -116,7 +135,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
   const selField = selected && (selected.loc.zone === 'mz' || selected.loc.zone === 'sz' || selected.loc.zone === 'field') ? (selected.card as FieldCard) : null;
 
   // ----- commands for the selected card -----
-  const commands: { label: string; onPick: () => void; disabled?: boolean }[] = [];
+  const commands: Command[] = [];
   if (selCard && selected && canAct && !prompt && state.winner === null) {
     const info = cardInfo(selCard.name);
     const mine = selected.loc.player === acting;
@@ -320,78 +339,11 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
     );
   };
 
-  const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
+  const nextPhaseLabel = state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? (e.rules.mainPhase2 ? 'Main 2' : 'End Phase') : state.phase === 'M2' ? 'End Phase' : 'Next';
 
-  return (
-    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
-      <div class="pbar top">
-        <span class="pname">{opp.name}</span>
-        <span class={`lp ${lpAnim(other(acting))}`}>
-          LP {opp.lp}
-          {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
-        </span>
-        <span class="hcount">Hand {opp.hand.length}</span>
-      </div>
-      <div class="opp-hand">
-        {opp.hand.map((c) => (
-          <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name)}>
-            <CardImg name={c.name} back={!oppHandShown} />
-          </div>
-        ))}
-      </div>
-      <div class="field">
-        {sideBox(other(acting), true)}
-        <div class="rows">
-          <div class="row">{opp.sz.map((c, i) => zone(c, other(acting), 's', i))}</div>
-          <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
-          <div class="center">
-            <div class="phases">
-              {e.phases().map((p) => (
-                <span key={p} class={`ph ${state.phase === p ? 'on' : ''} ${p === 'BP' && state.firstTurn ? 'off' : ''}`}>
-                  {PHASE_SHORT[p]}
-                </span>
-              ))}
-            </div>
-            <div class="turninfo">Turn {state.turn}</div>
-            {myTurn && canAct && !state.prompt && state.winner === null && (
-              <div class="phasebtns">
-                {state.phase !== 'EP' && (
-                  <button class="gbtn" onClick={() => send({ type: 'NEXT_PHASE', player: acting })}>
-                    {state.phase === 'M1' ? (state.firstTurn ? 'End Phase' : 'Battle') : state.phase === 'BP' ? (e.rules.mainPhase2 ? 'Main 2' : 'End Phase') : state.phase === 'M2' ? 'End Phase' : 'Next'}
-                  </button>
-                )}
-                <button class="gbtn end" onClick={() => send({ type: 'END_TURN', player: acting })}>
-                  End Turn
-                </button>
-              </div>
-            )}
-            <button class="gbtn menu-btn" onClick={() => setShowMenu(true)}>
-              MENU
-            </button>
-          </div>
-          <div class="row">{me.mz.map((c, i) => zone(c, acting, 'm', i))}</div>
-          <div class="row">{me.sz.map((c, i) => zone(c, acting, 's', i))}</div>
-        </div>
-        {sideBox(acting, false)}
-      </div>
-      <div class="pbar bottom">
-        <span class="pname">{me.name}</span>
-        <span class={`lp ${lpAnim(acting)}`}>
-          LP {me.lp}
-          {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
-        </span>
-        <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
-      </div>
-      <div class="hand">
-        {me.hand.map((c) => (
-          <div key={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
-            <CardImg name={c.name} back={!canAct} />
-          </div>
-        ))}
-        {me.hand.length === 0 && <div class="hint">No cards in hand</div>}
-      </div>
-      {renderWindow()}
-
+  // Card info, piles, log, menu and the hotseat hand-over screen look the same in both styles.
+  const overlays = (
+    <>
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>
@@ -478,6 +430,7 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
           <Win title="Menu" onClose={() => setShowMenu(false)}>
             <Menu
               items={[
+                { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => confirm('Surrender this duel?') && (send({ type: 'SURRENDER', player: acting }), setShowMenu(false)) },
                 { label: 'Leave duel', onPick: () => (setShowMenu(false), onLeave()) },
@@ -497,6 +450,90 @@ export function Duel({ session, view, mySeat, hotseat, onLeave, onFinished }: Pr
           </Win>
         </div>
       )}
+    </>
+  );
+
+  if (style === 'touch')
+    return (
+      <TouchDuel
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished }}
+        overlays={overlays}
+      />
+    );
+
+  const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
+
+  return (
+    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
+      <div class="pbar top">
+        <span class="pname">{opp.name}</span>
+        <span class={`lp ${lpAnim(other(acting))}`}>
+          LP {opp.lp}
+          {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
+        </span>
+        <span class="hcount">Hand {opp.hand.length}</span>
+      </div>
+      <div class="opp-hand">
+        {opp.hand.map((c) => (
+          <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name)}>
+            <CardImg name={c.name} back={!oppHandShown} />
+          </div>
+        ))}
+      </div>
+      <div class="field">
+        {sideBox(other(acting), true)}
+        <div class="rows">
+          <div class="row">{opp.sz.map((c, i) => zone(c, other(acting), 's', i))}</div>
+          <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
+          <div class="center">
+            <div class="phases">
+              {e.phases().map((p) => (
+                <span key={p} class={`ph ${state.phase === p ? 'on' : ''} ${p === 'BP' && state.firstTurn ? 'off' : ''}`}>
+                  {PHASE_SHORT[p]}
+                </span>
+              ))}
+            </div>
+            <div class="turninfo">Turn {state.turn}</div>
+            {myTurn && canAct && !state.prompt && state.winner === null && (
+              <div class="phasebtns">
+                {state.phase !== 'EP' && (
+                  <button class="gbtn" onClick={() => send({ type: 'NEXT_PHASE', player: acting })}>
+                    {nextPhaseLabel}
+                  </button>
+                )}
+                <button class="gbtn end" onClick={() => send({ type: 'END_TURN', player: acting })}>
+                  End Turn
+                </button>
+              </div>
+            )}
+            <button class="gbtn menu-btn" onClick={() => setShowMenu(true)}>
+              MENU
+            </button>
+          </div>
+          <div class="row">{me.mz.map((c, i) => zone(c, acting, 'm', i))}</div>
+          <div class="row">{me.sz.map((c, i) => zone(c, acting, 's', i))}</div>
+        </div>
+        {sideBox(acting, false)}
+      </div>
+      <div class="pbar bottom">
+        <span class="pname">{me.name}</span>
+        <span class={`lp ${lpAnim(acting)}`}>
+          LP {me.lp}
+          {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
+        </span>
+        <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
+      </div>
+      <div class="hand">
+        {me.hand.map((c) => (
+          <div key={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
+            <CardImg name={c.name} back={!canAct} />
+          </div>
+        ))}
+        {me.hand.length === 0 && <div class="hint">No cards in hand</div>}
+      </div>
+      {renderWindow()}
+
+      {overlays}
     </div>
   );
 }

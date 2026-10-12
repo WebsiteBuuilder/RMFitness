@@ -21,7 +21,13 @@ export interface SaveFile {
   pendingPacks: number;
   starter: string | null;
   created: number;
+  /** how this player works the duel screen; missing means the original Classic controls */
+  controls?: ControlStyle;
 }
+
+/** Classic: the original game's menu window. Touch: tap and drag, like Master Duel. */
+export type ControlStyle = 'classic' | 'touch';
+export const CONTROL_NAMES: Record<ControlStyle, string> = { classic: 'Classic', touch: 'Touch' };
 
 export function newSave(name: string): SaveFile {
   return {
