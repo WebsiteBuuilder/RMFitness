@@ -63,7 +63,7 @@ export interface EffectDef {
   onAnyDiscard?(e: Engine, card: FieldCard, controller: Pid, discarder: Pid): Step;
   /** An active Spell/Trap watching draws outside the Draw Phase (Appropriate). */
   onDraw?(e: Engine, card: FieldCard, controller: Pid, drawer: Pid, n: number): void;
-  /** A face-up monster watching every Summon (Mysterious Puppeteer, Kotodama). */
+  /** A face-up monster watching every Summon (Mysterious Puppeteer, Kotodama). In Speed Duel, active Spells/Traps may watch too. */
   onAnySummon?(e: Engine, watcher: FieldCard, watcherController: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
   /** Control of this face-up monster moved (Ameba, Griggle). */
   onControlChange?(e: Engine, m: FieldCard, from: Pid, to: Pid): void;

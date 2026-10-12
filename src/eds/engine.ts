@@ -148,6 +148,8 @@ export class Engine {
   info(name: string): CardInfo {
     const c = this.db.get(name) ?? this.db.get(name.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim());
     if (c) return c;
+    const tok = (this.state.fx.tokens as Record<string, Partial<CardInfo>> | undefined)?.[name];
+    if (tok) return { id: 0, name, kind: 'monster', sub: 'Normal', atk: 0, def: 0, level: 1, desc: 'Token', ...tok };
     return { id: 0, name, kind: 'monster', sub: 'Normal', atk: 0, def: 0, level: 1, desc: '' };
   }
 
@@ -397,7 +399,8 @@ export class Engine {
   }
 
   /** Puts a Token onto the field. */
-  createToken(name: string, controller: Pid, pos: Pos, faceUp = true): FieldCard | null {
+  createToken(name: string, controller: Pid, pos: Pos, faceUp = true, stats?: { atk: number; def: number; level: number; attribute?: string; race?: string }): FieldCard | null {
+    if (stats) ((this.state.fx.tokens ??= {}) as Record<string, unknown>)[name] = stats;
     const ps = this.player(controller);
     const zone = ps.mz.findIndex((z) => z === null);
     if (zone < 0) return null;
@@ -624,6 +627,15 @@ export class Engine {
       for (const w of this.monsters(p)) {
         if (!w.faceUp || !this.fieldCard(m.uid)) continue;
         const h = this.effectOn(w)?.onAnySummon;
+        if (h) yield* h(this, w, p, m, controller, kind);
+      }
+      // Speed Duel: active Spells/Traps that watch Summons too.
+      if (!this.speed) continue;
+      for (const w of this.activeSpells(p)) {
+        if (!this.fieldCard(m.uid) || !this.fieldCard(w.uid)) continue;
+        const kindOf = this.info(w.name).kind;
+        if ((kindOf === 'spell' && this.spellsNegated()) || (kindOf === 'trap' && this.trapsNegated(w.name))) continue;
+        const h = getEffect(w.name)?.onAnySummon;
         if (h) yield* h(this, w, p, m, controller, kind);
       }
     }
