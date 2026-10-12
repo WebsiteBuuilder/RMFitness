@@ -12,9 +12,11 @@
 import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
-import { openPack, rarityOf, unlockedSets, type Rarity } from './sets';
+import { openPack, rarityIn, rarityOf, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
+/** an Ultra Rare or better is guaranteed at least once every PITY packs */
+export const PITY = 10;
 export const WELCOME_PACKS = 3;
 export const RIVAL_PACKS_PER_DAY = 3;
 /** a win against another player only pays prizes when the duel lasted this many turns */
@@ -51,6 +53,8 @@ export type EconSave = SpeedSave & {
   /** head-to-head records against other players (Link Battles) */
   rivals?: Record<string, Rival>;
   levels?: Record<string, number>;
+  /** packs opened since the last Ultra Rare or better */
+  dry?: number;
 };
 
 const E = (s: SpeedSave) => s as EconSave;
@@ -67,7 +71,10 @@ export const dayKey = (now = Date.now()) => {
 function daily(s: SpeedSave, now: number): Daily {
   const d = E(s).daily;
   // Setting the phone's clock back doesn't start a fresh day.
-  return d && d.day >= dayKey(now) ? d : { day: dayKey(now), cpu: [], rivalPacks: 0, rivalChip: false };
+  // (A saved day far in the future means the clock was wrong then, so it starts over.)
+  const today = dayKey(now);
+  const keep = d && (d.day === today || (d.day > today && d.day <= dayKey(now + 86_400_000)));
+  return keep ? d! : { day: today, cpu: [], rivalPacks: 0, rivalChip: false };
 }
 
 const countsOf = (list: string[]) => {
@@ -185,7 +192,8 @@ export function todaysPrizes(s: SpeedSave, cpus: string[], now = Date.now()): { 
 
 /** Breaks one spare copy into shards. */
 export function breakCopy(s: SpeedSave, name: string): SpeedSave | null {
-  if (spareCopies(s, name) < 1) return null;
+  // Never the last copy: breaking keeps at least one of every card.
+  if (spareCopies(s, name) < 1 || owned(s, name) < 2) return null;
   const collection = { ...(s.collection ?? {}) };
   collection[name]--;
   if (!collection[name]) delete collection[name];
@@ -199,7 +207,7 @@ export function cantCraft(s: SpeedSave, name: string): string | null {
   const c = card(name);
   if (!c || !c.speed) return 'not a Speed Duel card';
   if (owned(s, name) >= (c.sub === 'Skill' ? 1 : COPIES)) return c.sub === 'Skill' ? 'you own this Skill' : `you own the most (${COPIES})`;
-  if (chipsOf(s) < craftCost(name)) return `needs ${craftCost(name)} Duel Chips`;
+  if (chipsOf(s) < craftCost(name)) return `needs ${craftCost(name)} Duel Chip${craftCost(name) === 1 ? '' : 's'}`;
   return null;
 }
 
@@ -235,11 +243,15 @@ export interface Opened {
 }
 
 /** Opens one of the profile's unopened packs from a set it has unlocked. */
+/** Packs left until an Ultra Rare or better is guaranteed. */
+export const pityLeft = (s: SpeedSave) => PITY - (E(s).dry ?? 0);
+
 export function openOwnedPack(s: SpeedSave, setName: string, seed = Date.now()): Opened | null {
   if (packsOf(s) < 1 || !unlockedSets(s.wins).some((x) => x.name === setName)) return null;
-  const cards = openPack(setName, [], seed);
+  const cards = openPack(setName, [], seed, pityLeft(s) <= 1 ? 'Ultra Rare' : 'Rare');
+  const big = cards.some((n) => ['Ultra Rare', 'Secret Rare'].includes(rarityIn(setName, n)));
   const fresh = [...new Set(cards.filter((n) => owned(s, n) === 0))];
-  const { save, shards } = breakExtras(withCards({ ...s, packs: packsOf(s) - 1 } as EconSave, cards));
+  const { save, shards } = breakExtras(withCards({ ...s, packs: packsOf(s) - 1, dry: big ? 0 : (E(s).dry ?? 0) + 1 } as EconSave, cards));
   return { save, set: setName, cards, fresh, shards };
 }
 

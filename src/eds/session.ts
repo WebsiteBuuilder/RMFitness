@@ -5,7 +5,7 @@ import type { SyncAdapter, SyncStatus } from '../sync/types';
 import { Engine } from './engine';
 import { DB } from './db';
 import type { Action, DuelState, GameMode, LoggedAction, Pid } from './types';
-import type { Ante, Stakes } from '../collection/stakes';
+import { betsLocked, type Ante, type Stakes } from '../collection/stakes';
 
 export interface Seat {
   name: string;
@@ -97,6 +97,9 @@ export class DuelSession {
       if (!this.engine.state.started) this.seats[a.player] = { ...this.seats[a.player], accepted: true };
       return;
     }
+    // A Speed Duel with bets only starts once both players accepted the bets as they stand
+    // in the log (a bet changed just before Start resets that, on every phone alike).
+    if (a.type === 'START' && a.mode === 'speed' && !this.engine.state.started && !betsLocked(this.seats)) return;
     try {
       this.engine.apply(a as Action);
     } catch (err) {

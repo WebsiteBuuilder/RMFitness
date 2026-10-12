@@ -523,3 +523,96 @@
 .stake-pick {
   max-height: 320px;
 }
+
+/* ---- round 3 ---- */
+.pack-art {
+  position: absolute;
+  inset: 22px 10px 28px;
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0.55;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 25%, #000 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 25%, #000 70%, transparent 100%);
+  pointer-events: none;
+}
+.pack-art .cimg {
+  width: 100%;
+  height: 160%;
+  object-fit: cover;
+  object-position: 50% 18%;
+}
+.pack > span:not(.pack-art) {
+  position: relative;
+  z-index: 1;
+}
+.pack.locked {
+  filter: grayscale(0.85) brightness(0.8);
+}
+.pack.locked .pack-name,
+.pack.locked .pack-note {
+  color: #fff;
+}
+/* The card back for the reveal: Speed Duel swirl with a gold oval. */
+.sd-back {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  border: 3px solid #3b2a14;
+  background:
+    radial-gradient(ellipse 34% 40% at 50% 50%, #ffd56a 0 20%, #b7791f 21% 26%, transparent 27%),
+    repeating-conic-gradient(from 0deg at 50% 50%, #2b1660 0 10deg, #4a2a9a 10deg 20deg),
+    #2b1660;
+  box-shadow: inset 0 0 0 2px #c8961e, inset 0 0 18px #000a;
+}
+.bcard.missing .cimg {
+  filter: grayscale(1) brightness(0.45);
+}
+.pips {
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+.bet-grid .bcard {
+  aspect-ratio: 59 / 86;
+}
+.stakes .bet-grid .cimg,
+.stakes .bet-grid img.cimg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.stakes-vs {
+  text-align: center;
+  font-size: 12px;
+  color: var(--gold);
+  margin: 4px 0;
+}
+.gbtn.accept {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 4px;
+  border: 2px solid var(--green);
+  border-radius: 4px;
+  color: var(--green);
+  font-weight: bold;
+  animation: accept-pulse 1.4s ease-in-out infinite;
+}
+@keyframes accept-pulse {
+  50% { box-shadow: 0 0 10px #5be07a88; }
+}
+.seat-bet.locked {
+  border-color: var(--green);
+  box-shadow: 0 0 10px #5be07a55;
+}
+.news-who {
+  margin: 8px 0 2px;
+  color: var(--gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gbtn.accept { animation: none; }
+}
+.pity {
+  margin: 0 2px 6px;
+  font-size: 12px;
+  color: #ffe08a;
+}

@@ -10,7 +10,7 @@ import { other } from '../eds/engine';
 import { CHIP_CAP, owned, withCards, withChips, type SpeedSave } from '../eds/speedSave';
 import type { DuelState, Pid } from '../eds/types';
 import { sealedCards } from '../art/shadow';
-import { SHARDS_PER_CHIP, chipsOf, craftCost, shardsOf, spareCopies } from './economy';
+import { SHARDS_PER_CHIP, breakExtras, chipsOf, craftCost, shardsOf, spareCopies } from './economy';
 
 export interface Ante {
   card: string | null;
@@ -51,6 +51,14 @@ export function stakesFor(s: SpeedSave, open: boolean, ante: Ante | null = null)
 
 /** Both seats are profiles with collection decks: bets and rescues are on. */
 export const staked = (a?: Stakes, b?: Stakes) => !!a?.profile && !!b?.profile && !a.open && !b.open;
+
+/** Nobody bet, or both players accepted the bets as they stand. */
+export function betsLocked(seats: StakeSeat[]): boolean {
+  const [a, b] = seats;
+  if (!staked(a.stakes, b.stakes)) return true;
+  if (noAnte(a.stakes?.ante) && noAnte(b.stakes?.ante)) return true;
+  return !!a.accepted && !!b.accepted;
+}
 
 /** Why this bet can't be made, or null. */
 export function anteProblem(s: SpeedSave, a: Ante): string | null {
@@ -153,7 +161,8 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
       lines.push(`${theirs.name} rescued ${rescued} and took your ${prize}`);
     }
   }
-  return { save: next, lines, won, lost };
+  // A 4th copy won this way breaks into shards like one from a pack.
+  return { save: won.length ? breakExtras(next).save : next, lines, won, lost };
 }
 
 // ---------- leaving without saying goodbye ----------

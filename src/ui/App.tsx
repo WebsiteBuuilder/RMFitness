@@ -109,7 +109,7 @@ export function App() {
     const raw = loadSpeedSave(id);
     let s = migrate(raw);
     // A Link Battle this profile walked out of (the app was closed) counts as a loss.
-    const left = settleLeft && !session ? settleTicket(s) : null;
+    const left = settleLeft && !session && !pendingJoin ? settleTicket(s) : null;
     if (left) {
       s = rivalResult(left.save, { result: 'l', opp: left.opp, turns: 0, counts: false }).save;
       s = withSpeedResult(s, 'l', left.opp);
@@ -208,10 +208,18 @@ export function App() {
     if (mode === 'speed' && !cpu && session && st?.started && st.winner === null) {
       if (hotseat && quitter === undefined) return setWhoQuits(true);
       setWhoQuits(false);
-      // The other phone is gone: whoever stayed wins (the one who left loses on their phone).
+      // The other phone is gone: no contest here, so nothing can be paid twice. (If they
+      // closed the app, their own phone counts it as their loss the next time it opens.)
       if (!hotseat && session.status !== 'connected') {
-        const opp = st.players[other(mySeat)].name;
-        return finishDuel(mySeat, opp === 'Téa Gardner' ? 'Tea Gardner' : opp);
+        if (speedSave) setSpeedSave(withTicket(speedSave, null));
+        settled.current = session;
+        setSpeedNews(['The connection was lost, so this duel has no result. Bets stay where they were.']);
+        setNewsCards({ won: [], lost: [] });
+        session.close();
+        setSession(null);
+        setP2Profile(null);
+        setScreen('speed');
+        return;
       }
       const loser = quitter ?? mySeat;
       session.send({ type: 'SURRENDER', player: loser });
@@ -256,7 +264,7 @@ export function App() {
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         if (seat === mySeat) (cards.won.push(...bet.won), cards.lost.push(...bet.lost));
-        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines] : [...bet.lines, ...rv.lines].map((l) => `${seats[seat].name}: ${l}`)));
+        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines] : rv.lines.map((l) => (l.startsWith('👑') ? l : `${seats[seat].name}: ${l}`))));
         return rv.save;
       };
       // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".

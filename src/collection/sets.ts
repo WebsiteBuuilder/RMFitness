@@ -130,11 +130,12 @@ export function setByName(name: string | undefined): SpeedSet | undefined {
 export const shortSetName = (name: string) => name.replace(/^Speed Duel( GX)?:\s*/, '');
 
 /**
- * Opens one pack: 4 Commons and a Rare-or-better. Prefers cards the game can play.
+ * Opens one pack: 4 Commons and a Rare-or-better (at least `minTop` when the set has it).
+ * Prefers cards the game can play.
  * Matches the campaign's PackOpener signature: an unknown or missing set picks one of the
  * booster sets at random, and `pool` is only used when there are no sets at all.
  */
-export function openPack(setName: string | undefined, pool: string[] = [], seed = Date.now()): string[] {
+export function openPack(setName: string | undefined, pool: string[] = [], seed = Date.now(), minTop: Rarity = 'Rare'): string[] {
   const next = rng(seed);
   const sets = boosterSets();
   const set = setByName(setName) ?? sets[Math.floor(next() * sets.length)];
@@ -165,9 +166,14 @@ export function openPack(setName: string | undefined, pool: string[] = [], seed 
     }
     roll -= w;
   }
+  const forced = rank(want) < rank(minTop);
+  if (forced) want = minTop;
   // Speed Duel boxes often skip Rare (Commons, Super and Secret Rares only): step down to
-  // Rare, then up, so the top card is always Rare or better when the set has one.
-  const order = [...RARITIES.slice(1, rank(want) + 1).reverse(), ...RARITIES.slice(rank(want) + 1), 'Common' as Rarity];
+  // Rare, then up, so the top card is always Rare or better when the set has one. A pity
+  // pack steps up first, so it never lands below the rarity it promised.
+  const down = RARITIES.slice(1, rank(want) + 1).reverse();
+  const up = RARITIES.slice(rank(want) + 1);
+  const order = forced ? [want, ...up, ...down.slice(1), 'Common' as Rarity] : [...down, ...up, 'Common' as Rarity];
   for (const r of order) {
     const list = byRarity(r);
     if (list.length) {

@@ -6,17 +6,13 @@ import type { DuelSession, SessionView } from '../eds/session';
 import type { SpeedSave } from '../eds/speedSave';
 import type { Pid } from '../eds/types';
 import { CardImg } from '../ui/CardImg';
-import { Menu } from '../ui/Window';
 import { playBlip } from '../ui/sound';
 import { chipsOf, crownHolder, rivalsOf } from './economy';
-import { anteProblem, betCards, noAnte, rescuePrize, rescueTarget, staked, type Ante } from './stakes';
+import { anteProblem, betCards, betsLocked, noAnte, rescuePrize, rescueTarget, staked, type Ante } from './stakes';
 
 /** The duel may start: nobody bet, or both players accepted the bets. */
 export function stakesReady(view: SessionView): boolean {
-  const [a, b] = view.seats;
-  if (!staked(a.stakes, b.stakes)) return true;
-  if (noAnte(a.stakes?.ante) && noAnte(b.stakes?.ante)) return true;
-  return !!a.accepted && !!b.accepted;
+  return betsLocked(view.seats);
 }
 
 export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { session: DuelSession; view: SessionView; mySeat: Pid; hotseat: boolean; betSave: (seat: Pid) => SpeedSave | null }) {
@@ -35,6 +31,13 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
   const crown = me ? crownHolder(me, rival) : null;
   const rec = me ? rivalsOf(me)[rival] : undefined;
   const otherOf = (p: Pid): Pid => (p === 0 ? 1 : 0);
+
+  /** Both bets together. */
+  const pot = () => {
+    const cards = ([0, 1] as Pid[]).map((p) => seats[p].stakes?.ante?.card).filter(Boolean);
+    const chips = ([0, 1] as Pid[]).reduce<number>((t, p) => t + (seats[p].stakes?.ante?.chips ?? 0), 0);
+    return [...cards, ...(chips ? [`${chips} chip${chips > 1 ? 's' : ''}`] : [])].join(' + ');
+  };
 
   /** Everything this seat gives up if it loses. */
   const risk = (p: Pid) => {
@@ -70,7 +73,7 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
           const a = seats[p].stakes?.ante;
           const lose = risk(p);
           return (
-            <div key={p} class="seat-bet">
+            <div key={p} class={`seat-bet ${seats[p].accepted && !bothNoBet ? 'locked' : ''}`}>
               <b>{seats[p].name}</b>
               {noAnte(a) ? (
                 <span class="hint">no bet</span>
@@ -88,7 +91,13 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
                 </span>
               )}
               {lose.length > 0 && <span class="loss-line">If {seats[p].name} loses: {lose.join(', ')}</span>}
-              {!bothNoBet && <span class={seats[p].accepted ? 'ok' : 'hint'}>{seats[p].accepted ? '✓ accepted' : 'not accepted yet'}</span>}
+              {!bothNoBet && seats[p].accepted && <span class="ok">✓ locked in</span>}
+              {!bothNoBet && !seats[p].accepted && !mine(p) && <span class="hint">deciding…</span>}
+              {!bothNoBet && !seats[p].accepted && mine(p) && (
+                <button class="gbtn accept" onClick={() => (playBlip(), setEditing(null), session.send({ type: 'ACCEPT', player: p }))}>
+                  ACCEPT
+                </button>
+              )}
               {mine(p) && (
                 <button class="chip" onClick={() => (playBlip(), setEditing(editing === p ? null : p))}>
                   {editing === p ? 'Close' : noAnte(a) ? 'Place a bet' : 'Change bet'}
@@ -106,13 +115,7 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
           onBet={(a) => (session.send({ type: 'STAKE', player: editing, ante: a }), playBlip())}
         />
       )}
-      {!bothNoBet && (
-        <Menu
-          items={([0, 1] as Pid[])
-            .filter((p) => mine(p) && !seats[p].accepted)
-            .map((p) => ({ label: `${seats[p].name}: Accept`, note: 'winner takes both bets', onPick: () => (setEditing(null), session.send({ type: 'ACCEPT', player: p })) }))}
-        />
-      )}
+      {!bothNoBet && <p class="stakes-vs">The winner takes the pot: {pot()}</p>}
       <p class="hint">Changing a bet means both accept again. Leaving the duel counts as a loss.</p>
     </div>
   );
@@ -149,7 +152,7 @@ function BetPicker({ save, ante, theirs, onBet }: { save: SpeedSave; ante: Ante 
         <p class="hint">No spare cards to bet: every copy you own is in one of your decks.</p>
       ) : (
         <>
-          <p class="hint">Bet a card (only spare copies no deck uses):</p>
+          <p class="hint">Bet a card. Only spare copies that no deck uses can be bet.</p>
           <div class="bet-grid">
             <button class={`bcard nocard ${!cur ? 'on' : ''}`} onClick={() => set({ card: null, chips })}>
               No card

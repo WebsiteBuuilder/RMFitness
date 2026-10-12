@@ -5,6 +5,7 @@ import { DB as APP_DB } from '../src/eds/db';
 import { CHIP_CAP, newSpeedSave, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../src/eds/speedSave';
 import {
   CRAFT_COST,
+  PITY,
   RIVAL_PACKS_PER_DAY,
   WELCOME_PACKS,
   breakCopy,
@@ -95,6 +96,11 @@ ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlo
   ok(openOwnedPack(s, 'Speed Duel: Newer Box') === null, 'a locked set cannot be opened');
   const o = openOwnedPack(s, 'Speed Duel: Older Box', 9)!;
   ok(!!o && packsOf(o.save) === 1 && o.cards.every((n) => owned(o.save, n) >= 1), 'opening a pack uses it and adds its cards');
+  let dry = withPacks(newSpeedSave(), 10) as SpeedSave & { dry?: number };
+  dry.dry = PITY - 1;
+  const pity = openOwnedPack(dry, 'Speed Duel: Older Box', 4)!;
+  ok(pity.cards.some((n) => rarityIn('Speed Duel: Older Box', n) === 'Secret Rare'), `the ${PITY}th pack without an Ultra Rare or better has one`);
+  ok((pity.save as { dry?: number }).dry === 0, 'and the count starts over');
   s = { ...newSpeedSave(), collection: { [A]: 5 } };
   const b = breakExtras(s);
   ok(owned(b.save, A) === 3 && b.shards === 2 * CRAFT_COST.Common, 'copies past 3 break into shards');
@@ -111,10 +117,11 @@ ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlo
   s = { ...withChips(newSpeedSave(), 3), collection: { [A]: 1 } };
   const up = lookUp(s, A)!;
   ok(tierIndex(cardLevels(up)[A]) === 1 && chipsOf(up) === 0, "3 chips lift a card's look one rarity");
-  let sh = { ...newSpeedSave(), collection: { [names[21]]: 2 } } as SpeedSave;
+  let sh = { ...newSpeedSave(), collection: { [names[21]]: 3 } } as SpeedSave;
   sh = breakCopy(sh, names[21])!;
   sh = breakCopy(sh, names[21])!;
   ok(chipsOf(sh) === 1 && shardsOf(sh) === 6, '16 shards from two Secret Rares make 1 chip with 6 left');
+  ok(breakCopy(sh, names[21]) === null, 'the last copy of a card never breaks');
 }
 
 // ---------- prizes ----------
