@@ -42,6 +42,12 @@ export interface CardInfo {
   character?: string;
   /** a monster with no effect (needs no script) */
   vanilla?: boolean;
+  /** a Tuner monster (Synchro Summons need one) */
+  tuner?: boolean;
+  /** an Xyz Monster's Rank (Xyz Monsters have no Level) */
+  rank?: number;
+  /** a Link Monster's Link Rating */
+  linkRating?: number;
 }
 
 export interface Card {
@@ -81,6 +87,8 @@ export interface FieldCard extends Card {
   /** temporary flags set by effects (e.g. Spellbinding Circle) */
   cannotAttack?: boolean;
   cannotChangePos?: boolean;
+  /** an Xyz Monster's Xyz Materials (cards attached under it) */
+  mats?: Card[];
 }
 
 export interface PlayerState {

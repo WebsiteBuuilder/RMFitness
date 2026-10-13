@@ -250,6 +250,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
               </div>
             )}
             {c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
+            {(c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
           </div>
         ) : (
           <span class="zlabel">{kind === 'm' ? '' : ''}</span>
@@ -279,7 +280,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           </button>
         )}
         {ps.fusion.length > 0 && (
-          <button class="pile small" onClick={() => p === acting && setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion })}>
+          <button class={`pile small ${p === acting && canAct && !prompt && ps.fusion.some((c) => e.canSpecialProc(acting, c)) ? 'xready' : ''}`} onClick={() => p === acting && setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion })}>
             <span>
               {e.speed ? 'Extra' : 'Fusion'} {ps.fusion.length}
             </span>
@@ -400,7 +401,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                   .slice()
                   .reverse()
                   .map((c) =>
-                    canAct && !prompt && (e.canUseGraveEffect(acting, c.uid) || e.canUseQuickNow(acting, c.uid)) ? (
+                    canAct && !prompt && e.canSpecialProc(acting, c) ? (
+                      <div key={c.uid} class="gcard">
+                        <button onClick={() => setInfo(c.name)}>
+                          <CardImg name={c.name} />
+                          <span>{c.name}</span>
+                        </button>
+                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'SPECIAL', player: acting, uid: c.uid }))}>
+                          {['Xyz', 'Synchro', 'Link'].includes(e.info(c.name).sub) ? `${e.info(c.name).sub} Summon` : 'Summon'}
+                        </button>
+                      </div>
+                    ) : canAct && !prompt && (e.canUseGraveEffect(acting, c.uid) || e.canUseQuickNow(acting, c.uid)) ? (
                       <div key={c.uid} class="gcard">
                         <button onClick={() => setInfo(c.name)}>
                           <CardImg name={c.name} />

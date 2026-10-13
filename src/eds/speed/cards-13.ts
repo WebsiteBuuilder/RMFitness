@@ -881,7 +881,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   const quickChaos = (e: Engine, p: Pid) =>
     targetable(e, faceUpMonsters(e, p)).filter((m) => {
       const n = m.name.match(numberRe);
-      return info(e, m).sub === 'Xyz' && n && !n[1] && e.player(p).fusion.some((c) => c.name.match(numberRe)?.[1] === 'C' && c.name.match(numberRe)?.[2] === n[2] && (info(e, c).level ?? 0) === (info(e, m).level ?? 0) + 1);
+      return info(e, m).sub === 'Xyz' && n && !n[1] && e.player(p).fusion.some((c) => c.name.match(numberRe)?.[1] === 'C' && c.name.match(numberRe)?.[2] === n[2] && (info(e, c).rank ?? 0) === (info(e, m).rank ?? 0) + 1);
     });
   E['Rank-Up-Magic Quick Chaos'] = {
     canActivate: (e, _c, p, t) => (isMain(t) || anyTime(t)) && quickChaos(e, p).length > 0,
@@ -894,7 +894,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       const n = m?.name.match(numberRe);
       if (!m || !n || e.controller(m.uid) !== p) return;
-      const cs = e.player(p).fusion.filter((c) => c.name.match(numberRe)?.[1] === 'C' && c.name.match(numberRe)?.[2] === n[2] && (info(e, c).level ?? 0) === (info(e, m).level ?? 0) + 1);
+      const cs = e.player(p).fusion.filter((c) => c.name.match(numberRe)?.[1] === 'C' && c.name.match(numberRe)?.[2] === n[2] && (info(e, c).rank ?? 0) === (info(e, m).rank ?? 0) + 1);
       const c = yield* pickOne(e, p, 'Special Summon which "Number C" monster?', cs);
       if (!c) return;
       yield* e.sendToGrave(m.uid, 'used');
@@ -1004,7 +1004,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, _l, p) {
       for (const m of faceUpMonsters(e)) {
         if (info(e, m).sub !== 'Xyz') continue;
-        if ((info(e, m).level ?? 0) <= 3) boostTurn(m, 500, 500);
+        if ((info(e, m).rank ?? 0) <= 3) boostTurn(m, 500, 500);
         else tag(m).noAttackTurn = e.state.turn;
       }
       e.log(p, 'Planckton: Rank 3 or lower Xyz Monsters gain 500 ATK/DEF, Rank 4 or higher cannot attack');

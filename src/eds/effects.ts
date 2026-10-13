@@ -71,6 +71,8 @@ export interface EffectDef {
   onStandbyInGrave?(e: Engine, card: Card, owner: Pid): Step;
   /** Special Summon procedure from the hand (Gate Guardian, Toons). */
   summonProc?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
+  /** Speed Duel: a Summon procedure from the Extra Deck that replaces the usual Xyz/Synchro/Link Summon (or adds one to a Fusion Monster). */
+  extraProc?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
   /** Effect used from the hand (Thunder Dragon, Cocoon of Evolution). */
   handIgnition?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
   /** A cost paid before a Spell/Trap is activated from the Main Phase. Return false to stop. */
@@ -314,6 +316,15 @@ export function getEffect(name: string): EffectDef | undefined {
   if (!found) for (const n of resolveNames(name)) if ((found = E[n] ?? LOWER[n.toLowerCase()])) break;
   CACHE.set(name, found ?? null);
   return found;
+}
+type Proc = { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
+let extraProcs: (e: Engine, name: string) => Proc | undefined = () => undefined;
+/** The built-in Xyz/Synchro/Link Summon procedure (src/eds/speed/extra.ts registers it). */
+export function setExtraProcs(fn: (e: Engine, name: string) => Proc | undefined) {
+  extraProcs = fn;
+}
+export function extraProcFor(e: Engine, name: string): Proc | undefined {
+  return extraProcs(e, name);
 }
 export function hasEffect(name: string): boolean {
   return !!getEffect(name);

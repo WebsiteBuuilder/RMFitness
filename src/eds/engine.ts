@@ -4,7 +4,7 @@
 
 import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SeatSetup, SelectOption } from './types';
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
-import { getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
+import { extraProcFor, getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
 import { getSkill } from './skills';
 import { noteLevelEvent } from '../level/leveling';
 
@@ -621,9 +621,16 @@ export class Engine {
       case 'fusion':
         ps.fusion.splice(f.loc.index, 1);
         break;
-      case 'mz':
+      case 'mz': {
         ps.mz[f.loc.index] = null;
+        // Xyz Materials go to the GY when the Xyz Monster leaves the field.
+        const mats = (f.card as FieldCard).mats;
+        if (mats?.length) {
+          for (const m of mats) this.player(m.owner).gy.push(m);
+          (f.card as FieldCard).mats = [];
+        }
         break;
+      }
       case 'sz':
         ps.sz[f.loc.index] = null;
         break;
@@ -696,7 +703,7 @@ export class Engine {
   }
 
   /** Sends a card to its owner's Graveyard, handling equips and "sent to GY" effects. */
-  *sendToGrave(uid: number, reason: 'destroyed' | 'discard' | 'tribute' | 'used' | 'mill' | 'cost' = 'destroyed'): Step {
+  *sendToGrave(uid: number, reason: 'destroyed' | 'discard' | 'tribute' | 'used' | 'mill' | 'cost' | 'material' = 'destroyed'): Step {
     const f = this.find(uid);
     if (!f) return;
     const byBattle = this.battleKill;
@@ -735,8 +742,8 @@ export class Engine {
       this.log(card.owner, `${card.name} is removed from play instead`);
     } else if (toDeck) {
       const ps = this.player(card.owner);
-      ps.deck.push(card);
-      ps.deck = this.shuffle(ps.deck);
+      if (this.isExtraCard(card.name)) ps.fusion.push(card);
+      else (ps.deck.push(card), (ps.deck = this.shuffle(ps.deck)));
       this.log(card.owner, `${card.name} is shuffled into the Deck instead`);
     } else this.player(card.owner).gy.push(card);
     this.event('to-gy', { uid, player: card.owner });
@@ -976,7 +983,7 @@ export class Engine {
   }
 
   /** Special Summons a card from anywhere onto the controller's field. Returns false if no zone. */
-  *specialSummon(uid: number, controller: Pid, pos: Pos, faceUp = true): Step {
+  *specialSummon(uid: number, controller: Pid, pos: Pos, faceUp = true, prep?: (fc: FieldCard) => void): Step {
     const ps = this.player(controller);
     const zone = ps.mz.findIndex((z) => z === null);
     if (zone < 0) return;
@@ -998,6 +1005,7 @@ export class Engine {
       const ss = ({ hand: 1, deck: 2, gy: 3, removed: 4, fusion: 5 } as Record<string, number>)[from?.loc.zone ?? ''] ?? 9;
       fc.tags = { ss, ssAt: this.state.turn, ssFrom: ss === 9 ? 0 : ss, ...(from?.loc.zone === 'fusion' ? { ssExtra: 1 } : {}) };
     }
+    prep?.(fc);
     ps.mz[zone] = fc;
     this.event('summon', { uid, player: controller });
     this.log(controller, `${ps.name} Special Summoned ${faceUp ? card.name : 'a monster'} in ${pos === 'atk' ? 'Attack' : 'Defense'} Position`);
@@ -1077,7 +1085,8 @@ export class Engine {
     if (this.find(uid)?.loc.zone === 'gy') (this.state.fx.gyToHand ??= {})[uid] = this.state.turn;
     const card = this.detach(uid);
     if (!card) return;
-    this.player(p).hand.push(card);
+    if (this.isExtraCard(card.name)) this.player(card.owner).fusion.push(card);
+    else this.player(p).hand.push(card);
     this.event('to-hand', { uid, player: p });
   }
 
@@ -1095,7 +1104,7 @@ export class Engine {
     const card = this.detach(uid);
     if (!card) return;
     if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'bounced');
-    this.player(card.owner).hand.push(card);
+    (this.isExtraCard(card.name) ? this.player(card.owner).fusion : this.player(card.owner).hand).push(card);
     this.event('to-hand', { uid, player: card.owner });
   }
 
@@ -1142,7 +1151,8 @@ export class Engine {
     const card = this.detach(uid);
     if (!card) return;
     if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'to-deck');
-    this.player(card.owner).deck.unshift(card);
+    if (this.isExtraCard(card.name)) this.player(card.owner).fusion.push(card);
+    else this.player(card.owner).deck.unshift(card);
     this.event('to-hand', { uid, player: card.owner });
   }
 
@@ -1890,19 +1900,104 @@ export class Engine {
   canSpecialProc(player: Pid, card: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(card.uid);
-    if (!f || f.loc.player !== player || f.loc.zone !== 'hand' || this.prohibited(card.name)) return false;
-    const proc = getEffect(card.name)?.summonProc;
+    if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
+    const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
-    if (proc && this.summonBlocked(player, card, 'special', 'hand')) return false;
+    if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
     return !!proc && proc.can(this, card, player);
+  }
+
+  /** The summon procedure for a card in the hand (its script) or the Extra Deck (Xyz/Synchro/Link Summons, or its script). */
+  private procFor(card: Card, zone: string) {
+    const eff = getEffect(card.name);
+    if (zone === 'hand') return eff?.summonProc;
+    if (zone !== 'fusion' || !this.speed) return undefined;
+    return eff?.extraProc ?? extraProcFor(this, card.name);
+  }
+
+  /** Fusion, Xyz, Synchro and Link Monsters live in the Extra Deck and go back there instead of the hand or Deck. */
+  isExtraCard(name: string): boolean {
+    return ['Fusion', 'Xyz', 'Synchro', 'Link'].includes(this.info(name).sub);
+  }
+
+  /** An Xyz Monster's Xyz Materials. */
+  matsOf(m: Card): Card[] {
+    return (m as FieldCard).mats ?? [];
+  }
+
+  /** Attaches a card (from anywhere) to an Xyz Monster as an Xyz Material. */
+  attachMat(xyz: FieldCard, uid: number): boolean {
+    if (!this.fieldCard(xyz.uid) || this.info(xyz.name).sub !== 'Xyz' || uid === xyz.uid) return false;
+    const f = this.find(uid);
+    if (!f) return false;
+    const fc = ['mz', 'sz', 'field'].includes(f.loc.zone) ? (f.card as FieldCard) : null;
+    const carried = fc?.mats?.splice(0) ?? [];
+    const card = this.detach(uid);
+    if (!card || card.token) return false;
+    if (fc) this.leftField(fc, f.loc.player, 'material');
+    (xyz.mats ??= []).push(card, ...carried);
+    this.event('attach', { uid: xyz.uid, player: this.controller(xyz.uid) ?? xyz.owner });
+    return true;
+  }
+
+  /** Detaches Xyz Materials to the GY (a cost or effect). The player picks which when there is a choice. Returns false if there are too few. */
+  *detachMats(xyz: FieldCard, n: number, player?: Pid): Generator<Prompt, boolean, Choice> {
+    const mats = xyz.mats ?? [];
+    if (mats.length < n) return false;
+    let chosen = mats.slice(0, n);
+    if (mats.length > n && player !== undefined) {
+      const picks = yield* this.select(player, `Detach ${n} Xyz Material${n > 1 ? 's' : ''} from ${xyz.name}`, mats.map((c) => ({ label: c.name, uid: c.uid })), n, n, false);
+      if (picks?.length === n) chosen = picks.map((i) => mats[i]);
+    }
+    xyz.mats = mats.filter((c) => !chosen.includes(c));
+    for (const c of chosen) this.player(c.owner).gy.push(c);
+    this.log(this.controller(xyz.uid) ?? xyz.owner, `${xyz.name} detaches ${chosen.map((c) => c.name).join(', ')}`);
+    const fx = (this.state.fx.detached ??= {}) as Record<number, number>;
+    fx[xyz.uid] = this.state.turn;
+    const by = this.controller(xyz.uid) ?? xyz.owner;
+    for (const c of chosen) yield* this.graveWatch({ card: c, from: 'mz', controller: by, reason: 'detached', byBattle: false, faceUp: true, race: this.info(c.name).race ?? '', toGy: true, token: false, by });
+    return true;
+  }
+
+  /**
+   * An Xyz, Synchro or Link Summon: the materials leave the field (Xyz Materials go under the
+   * new monster, the rest go to the GY), then the monster is Special Summoned from the Extra Deck.
+   */
+  *extraSummon(player: Pid, uid: number, materials: number[], kind: 'Xyz' | 'Synchro' | 'Link'): Step {
+    const f = this.find(uid);
+    if (!f || f.loc.zone !== 'fusion') return;
+    const ps = this.player(player);
+    if (kind === 'Xyz') {
+      const under: Card[] = [];
+      for (const m of materials) {
+        const at = this.find(m);
+        if (!at) continue;
+        const fc = at.card as FieldCard;
+        const carried = fc.mats?.splice(0) ?? [];
+        const card = this.detach(m);
+        if (!card) continue;
+        this.leftField(fc, at.loc.player, 'material');
+        if (!card.token) under.push(card);
+        under.push(...carried);
+      }
+      yield* this.flushLeaves();
+      this.log(player, `${ps.name} Xyz Summons ${f.card.name} using ${under.map((c) => c.name).join(', ')}`);
+      yield* this.specialSummon(uid, player, 'atk', true, (fc) => ((fc.mats = under), ((fc.tags ??= {}).xyzS = 1)));
+      return;
+    }
+    const names = materials.map((m) => this.find(m)?.card.name ?? '?');
+    for (const m of materials) if (this.fieldCard(m)) yield* this.sendToGrave(m, 'material');
+    this.log(player, `${ps.name} ${kind} Summons ${f.card.name} using ${names.join(', ')}`);
+    yield* this.specialSummon(uid, player, 'atk', true, (fc) => ((fc.tags ??= {})[kind === 'Synchro' ? 'synS' : 'linkS'] = 1));
   }
 
   private *specialProc(player: Pid, uid: number): Step {
     const f = this.find(uid);
     if (!f || !this.canSpecialProc(player, f.card)) return;
-    yield* this.as(player, getEffect(f.card.name)!.summonProc!.run(this, f.card, player));
+    const fromHand = f.loc.zone === 'hand';
+    yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
     // Chain Energy charges for a card Special Summoned from the hand.
-    if (this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
+    if (fromHand && this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
   }
 
   /** Ignition effects of face-up monsters (Cannon Soldier, Time Wizard...). */

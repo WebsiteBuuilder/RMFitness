@@ -3,6 +3,8 @@
 // the shared table; the EDS scripts (effects.ts, effects2.ts) win on any overlap.
 import type { EffectDef } from '../effects';
 import type { SpeedHelpers } from './helpers';
+import { builtinExtraProc } from './extra';
+import { setExtraProcs } from '../effects';
 import { install as b00 } from './cards-00';
 import { install as b01 } from './cards-01';
 import { install as b02 } from './cards-02';
@@ -46,6 +48,7 @@ const BATCHES: [string, Installer][] = [
 export const SPEED_BATCH: Record<string, string> = {};
 
 export function installSpeed(E: Record<string, EffectDef>, h: SpeedHelpers) {
+  setExtraProcs(builtinExtraProc);
   for (const [id, install] of BATCHES) {
     const table: Record<string, EffectDef> = {};
     install(table, h);

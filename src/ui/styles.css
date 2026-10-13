@@ -2146,3 +2146,29 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Xyz Materials under a monster, and an Extra Deck with a Summon ready */
+.matmark {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  background: #3b2a6b;
+  color: #f1e6ff;
+  border: 1px solid #b89cff;
+  font-size: 9px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  padding: 0 2px;
+}
+.xready {
+  box-shadow: 0 0 0 2px var(--gold), 0 0 10px var(--gold);
+  animation: xready 1.4s ease-in-out infinite;
+}
+@keyframes xready {
+  50% {
+    box-shadow: 0 0 0 2px var(--gold), 0 0 2px var(--gold);
+  }
+}

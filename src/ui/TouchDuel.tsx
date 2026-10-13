@@ -293,6 +293,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </div>
         )}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
+        {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
     );
   };
@@ -335,7 +336,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {extra && (
           <div class="textra">
             {ps.fusion.length > 0 && (
-              <button onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
+              <button class={p === acting && ctl.canAct && !ctl.prompt && ps.fusion.some((c) => e.canSpecialProc(acting, c)) ? 'xready' : ''} onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
                 {e.speed ? 'Extra' : 'F'} {ps.fusion.length}
               </button>
             )}

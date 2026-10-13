@@ -152,6 +152,13 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
       const skillOk = t.skill === 'normal' || (t.skill === 'save' && (my.lp < their.lp || s.turn >= 7));
       if (skillOk && e.canUseSkill(me) && sk?.ai !== false && (typeof sk?.ai !== 'function' || sk.ai(e, me)) && tryOnce(`skill${me}`)) return { type: 'SKILL', player: me };
       for (const c of my.hand) if (e.canSpecialProc(me, c) && tryOnce(`sp${c.uid}`)) return { type: 'SPECIAL', player: me, uid: c.uid };
+      // Xyz, Synchro and Link Summons: the strongest one that beats what the materials could do on their own.
+      const myBest = Math.max(0, ...myMonsters.map((x) => e.atkOf(x)));
+      const extras = my.fusion.filter((c) => e.canSpecialProc(me, c)).sort((a, b) => (e.info(b.name).atk ?? 0) - (e.info(a.name).atk ?? 0));
+      for (const c of extras) {
+        const atk = e.info(c.name).atk ?? 0;
+        if ((atk >= myBest + 300 || atk >= 2400 || theirBest >= myBest) && tryOnce(`xsp${c.uid}`)) return { type: 'SPECIAL', player: me, uid: c.uid };
+      }
       for (const c of my.hand) {
         const info = e.info(c.name);
         if (info.kind === 'spell' && info.sub !== 'Equip' && e.canActivateMain(me, c.uid) && tryOnce(`act${c.uid}`)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
