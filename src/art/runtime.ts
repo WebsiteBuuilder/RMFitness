@@ -1136,6 +1136,8 @@ export class Director {
         () => {
           if (have.back) this.stage.remove(have.back);
           have.back = null;
+          // never leave an earlier figure of this card behind on the stage
+          if (have.fig && have.fig !== fig) this.stage.remove(have.fig);
           have.fig = fig;
           have.name = c.name;
           have.prof = prof;

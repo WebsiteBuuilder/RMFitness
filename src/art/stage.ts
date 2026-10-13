@@ -2350,6 +2350,8 @@ export class Stage {
 
   step(dt: number) {
     this.onFrame?.(dt);
+    // the director may have stopped the stage this frame (idle): don't draw a last frame over the cleared canvas
+    if (!this.running) return;
     // a reused list: no allocation per frame (and new effects start next frame)
     const list = this.fxList;
     list.length = 0;

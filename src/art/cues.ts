@@ -66,6 +66,9 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
   const f = locate(state, uid);
   const old = memo.get(uid);
   if (!f) return old ?? null;
+  // A monster that has already left the field (destroyed in this batch) is shown as it
+  // last stood there: a face-down defender stays face-down until its flip is shown.
+  if (!f.field && old) return live({ ...old, rect: rectOf(uid, host) ?? old.rect }, host);
   const faceUp = f.field ? f.field.faceUp : true;
   const known = faceUp || f.controller === viewer;
   return live({ uid, name: known ? f.card.name : '', faceUp, controller: f.controller, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' }, host);
