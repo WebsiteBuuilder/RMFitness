@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { card, speedCards } from '../eds/db';
 import { Win } from '../ui/Window';
 import { unlockAudio } from '../ui/sound';
-import type { CardRef, Cue } from './cues';
-import { profileFor } from './profile';
+import { bannerOnce, type CardRef, type Cue } from './cues';
+import { profileFor, SIGNATURE_CARDS } from './profile';
 import type { Director } from './runtime';
 import { getArtSetting } from './ArtStage';
 import './art.css';
 
-const ref = (uid: number, name: string, controller: 0 | 1, faceUp = true): CardRef => ({ uid, name, faceUp, controller, rect: null, def: false });
+const ref = (uid: number, name: string, controller: 0 | 1, faceUp = true, rect: CardRef['rect'] = null): CardRef => ({ uid, name, faceUp, controller, rect, def: false });
 
 export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -21,12 +21,16 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
   const [name, setName] = useState(initial ?? 'Blue-Eyes White Dragon');
   const [foe, setFoe] = useState('Dark Magician');
   const [error, setError] = useState<string | null>(null);
+  /** cards with their own preset or signature attack (known once the engine has loaded) */
+  const [showcase, setShowcase] = useState<string[]>([]);
   const uid = useRef(1000);
 
   useEffect(() => {
     let dead = false;
     import('./runtime')
-      .then(({ Director }) => {
+      .then(({ Director, SPELL_PRESET_CARDS, SIGNATURE_ATTACK_CARDS }) => {
+        const have = new Set(pool.map((c) => c.name));
+        setShowcase([...new Set([...SIGNATURE_ATTACK_CARDS, ...SIGNATURE_CARDS, ...SPELL_PRESET_CARDS])].filter((n) => have.has(n)));
         if (dead || !canvas.current || !layer.current) return;
         const ui = layer.current;
         const add = (cls: string, html: string, dur: number, style: Record<string, string>) => {
@@ -40,11 +44,13 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
         };
         const hx = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+        const once = bannerOnce();
         const d = new Director(canvas.current, getArtSetting() === 'fast' ? 'fast' : 'full', {
-          banner: (o) => add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) }),
-          number: (o) => add(`art-number side-${o.side}`, esc(o.text), 0.9, { '--c': hx(o.color), '--s': String(o.size) }),
+          banner: (o) => void (once(o.title) && add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) })),
+          number: (o) => add(`art-number side-${o.side}`, esc(o.text), 1.3, { '--c': hx(o.color), '--s': String(o.size) }),
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
+          clear: () => ui.replaceChildren(),
         });
         dir.current = d;
         void d.prewarm();
@@ -68,6 +74,13 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
   };
   const me = () => ref(++uid.current, name, 0);
   const them = () => ref(++uid.current, foe, 1);
+  /** A little field for Spells and Traps to strike: two of the foe on top, one of yours below. */
+  const field = (): CardRef[] => {
+    const w = canvas.current?.clientWidth || 390;
+    const h = canvas.current?.clientHeight || 844;
+    const r = (x: number, y: number) => ({ x: x * w, y: y * h, w: w * 0.18, h: w * 0.26 });
+    return [ref(++uid.current, foe, 1, true, r(0.32, 0.24)), ref(++uid.current, 'Kuriboh', 1, true, r(0.68, 0.24)), ref(++uid.current, 'Dark Magician', 0, true, r(0.5, 0.5))];
+  };
   const info = card(name);
   const prof = profileFor(info, name);
   const isMonster = info?.kind === 'monster';
@@ -112,7 +125,24 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
           },
         },
       ]
-    : [{ label: 'Activate', go: () => run([{ kind: 'activate', card: me(), what: info?.kind === 'trap' ? 'trap' : 'spell' }]) }];
+    : [
+        { label: 'Activate', go: () => run([{ kind: 'activate', card: me(), what: info?.kind === 'trap' ? 'trap' : 'spell', field: field() }]) },
+        {
+          label: 'On a target',
+          go: () => {
+            const f = field();
+            const destroyed = /destroy/i.test(info?.desc ?? '');
+            const cues: Cue[] = [{ kind: 'activate', card: me(), what: info?.kind === 'trap' ? 'trap' : 'spell', field: f, targets: [{ card: f[0], destroyed }] }];
+            if (destroyed) cues.push({ kind: 'destroy', card: f[0] });
+            run(cues);
+          },
+        },
+      ];
+  if (isMonster)
+    actions.push({
+      label: 'Destroy',
+      go: () => run([{ kind: 'destroy', card: me() }]),
+    });
 
   return (
     <div class="artlab">
@@ -148,6 +178,18 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
             )}
           </div>
           {isMonster && <p class="hint">Opponent: {foe}</p>}
+          {showcase.length > 0 && (
+            <details class="artlab-show">
+              <summary>Showcase ({showcase.length})</summary>
+              <div class="artlab-list">
+                {showcase.map((n) => (
+                  <button key={n} class={n === name ? 'on' : ''} onClick={() => setName(n)}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
         </Win>
       </div>
     </div>

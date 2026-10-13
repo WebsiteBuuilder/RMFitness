@@ -151,9 +151,9 @@ const gy = (e: Engine, p: Pid, name: string) => {
   return c;
 };
 
-// The card list this batch was written from lived in a scratch folder; check it only where it exists.
-const CHUNK = '/tmp/claude-0/sd/agents/chunk13.json';
-for (const c of (existsSync(CHUNK) ? JSON.parse(readFileSync(CHUNK, 'utf8')) : []) as { name: string }[]) {
+// (the card list was a scratch file on the machine that wrote this batch; it isn't in the repo)
+const CHUNK13 = '/tmp/claude-0/sd/agents/chunk13.json';
+for (const c of (existsSync(CHUNK13) ? JSON.parse(readFileSync(CHUNK13, 'utf8')) : []) as { name: string }[]) {
   if (!getEffect(c.name)) check(false, `${c.name} has a script`);
 }
 

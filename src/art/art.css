@@ -6,8 +6,9 @@
   pointer-events: none;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
-/* while the board lags behind a cinematic, every tap skips (nobody acts on a stale board);
-   otherwise taps go through to the duel, except on the skip pill */
+/* while the board lags behind a cinematic, every tap skips (nobody acts on a stale board; the
+   touch is then handed on to the duel underneath, so a drag goes on);
+   otherwise taps go through to the duel (and skip on the way, unless meant for a prompt or button) */
 .art-stage.hold {
   pointer-events: auto;
   touch-action: none;
@@ -24,35 +25,62 @@
   inset: 0;
   overflow: hidden;
 }
+/* the skip pill: small, top centre, inside the opponent's bar (ArtStage places it on the
+   bar and keeps it clear of their Life Points); never over a hand or the Spell/Trap row.
+   It stands over the raised Life Points bars (z 61), so it stays tappable. */
 .art-skip {
-  position: absolute;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: 12px;
-  padding: 7px 12px;
+  position: fixed;
+  z-index: 62;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(50% - 58px);
+  display: none;
+  box-sizing: border-box;
+  width: 116px;
+  height: 24px;
+  padding: 0 6px;
+  text-align: center;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #fff;
-  background: rgba(6, 9, 28, 0.82);
+  background: rgba(6, 9, 28, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+}
+.art-skip.on {
+  display: block;
   animation: art-skip 2s ease-out forwards;
 }
-/* shown for 1.5 s, then it fades (the stage still takes a tap while the board lags) */
+/* bright for 1.5 s, then it settles back but stays tappable (a tap anywhere skips too) */
 @keyframes art-skip {
   0%,
   75% {
     opacity: 1;
   }
   100% {
-    opacity: 0;
-    visibility: hidden;
+    opacity: 0.4;
   }
+}
+
+/* While a cinematic is on: both Life Points bars stand over its dim (z 60), so a blow's
+   damage is always readable; taps on them reach the stage (skip). A prompt waits until
+   the stage is off (the stage is always cleared before a choice is shown). */
+.art-on .duel .tbar,
+.art-on .duel .pbar {
+  position: relative;
+  z-index: 61;
+  pointer-events: none;
+}
+.art-on .duel .tsheet {
+  visibility: hidden;
 }
 
 /* phones with a notch: keep the duel's top bar and the banners clear of it */
@@ -204,11 +232,13 @@
     transform: translateX(28px);
   }
 }
+/* the plate wipes in fast and its text comes with it (a slow wipe with the text still hidden
+   read as a stray empty teal box on a stalled frame) */
 @keyframes art-plate {
   0% {
     transform: skewX(-14deg) scaleX(0);
   }
-  14%,
+  8%,
   100% {
     transform: skewX(-14deg) scaleX(1);
   }
@@ -224,11 +254,11 @@
 }
 @keyframes art-text {
   0%,
-  6% {
+  2% {
     opacity: 0;
     transform: translateX(-26px);
   }
-  22% {
+  10% {
     opacity: 1;
     transform: none;
   }
@@ -343,7 +373,11 @@
   outline: none;
   box-shadow: none;
   font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
-  font-size: 32px;
+  font-size: min(32px, 8vw);
+  white-space: nowrap;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: clip;
   font-style: italic;
   font-weight: 900;
   color: #ffd75a;
@@ -403,10 +437,10 @@
 }
 @keyframes art-land {
   0% {
-    transform: scale(1.5);
+    transform: scale(1.22);
   }
   14% {
-    transform: scale(0.94);
+    transform: scale(0.97);
   }
   24% {
     transform: none;
@@ -529,6 +563,20 @@
   border: none;
   border-bottom: 1px solid #ffffff18;
 }
+.artlab-show {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.artlab-show summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.artlab-show .artlab-list {
+  max-height: 140px;
+}
+.artlab-list button.on {
+  color: #ffc94a;
+}
 .artlab-btns {
   display: flex;
   flex-wrap: wrap;
@@ -557,4 +605,126 @@
    screen's ATK/DEF labels are lifted above it so they always stay readable. */
 .art3d-on .tz .tstat {
   z-index: 3;
+}
+
+/* The turn / phase strip between the rows (Touch) and the phase bar (Classic) stay
+   above the field figures, so a tall monster never hides whose turn it is. */
+.art3d-on .tmid,
+.art3d-on .phases {
+  position: relative;
+  z-index: 3;
+}
+.art3d-on .tmid .tturn,
+.art3d-on .tmid .thint {
+  text-shadow: 0 0 3px #000, 0 1px 4px #000c;
+}
+/* The tilted field (.tmat) is its own stacking layer, so the row inside it can never rise over
+   the figures canvas: TouchDuel draws a flat copy (.tmid-float) at the row's place, outside the
+   field, over the figures; the row in the field only keeps the space. */
+.tmid-float {
+  display: none;
+}
+.art3d-on .tmid.tmid-float {
+  display: flex;
+  position: fixed;
+  z-index: 3;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.art3d-on .tmat > .tmid {
+  visibility: hidden;
+}
+/* While a cinematic is on, the Life Points bars (raised over the stage, z 61) are opaque: a card
+   flying in from the opponent's hand passes under the bar, not visibly through it. */
+.art-on .duel .tbar.top {
+  background: linear-gradient(90deg, #0b1030, #1b2560);
+}
+.art-on .duel .tbar.bottom {
+  background: linear-gradient(90deg, #1b2560, #0b1030);
+}
+/* a direct hit: the defending duelist's Life Points plate jolts (raised over the dim) */
+.art-lp-shake,
+.art-lp-shatter {
+  position: relative;
+  z-index: 61;
+}
+.art-lp-shake {
+  animation: art-lp-shake 0.42s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+@keyframes art-lp-shake {
+  0% {
+    transform: translate(0, 0) scale(1.08);
+    filter: drop-shadow(0 0 10px #ff2020);
+  }
+  15% {
+    transform: translate(-7px, 3px) rotate(-2deg) scale(1.06);
+  }
+  32% {
+    transform: translate(6px, -3px) rotate(1.5deg);
+  }
+  50% {
+    transform: translate(-4px, 2px) rotate(-1deg);
+  }
+  70% {
+    transform: translate(2px, -1px);
+  }
+  100% {
+    transform: none;
+    filter: none;
+  }
+}
+/* the Shadow Realm takes the loser: their plate shakes, flares, and falls away in pieces (drawn in 3D) */
+.art-lp-shatter {
+  animation: art-lp-shatter 1.6s ease-in forwards;
+}
+@keyframes art-lp-shatter {
+  0% {
+    transform: none;
+  }
+  10% {
+    transform: translate(-5px, 2px) rotate(-1.5deg);
+    filter: drop-shadow(0 0 12px #ff4fd8);
+  }
+  20% {
+    transform: translate(5px, -2px) rotate(1.5deg);
+    opacity: 1;
+  }
+  28% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- damage number flight (art runtime: Director.damageNumber) ----
+   The number pops where the blow lands, holds a beat, then flies into the Life
+   Points plate of the side that took it (--tx/--ty: the offset to the plate). */
+.art-number.art-fly {
+  animation-name: art-number-fly;
+  animation-timing-function: linear;
+}
+@keyframes art-number-fly {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(2.2);
+  }
+  14% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  42% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-8px) scale(1);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.45);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--tx, 0px)), var(--ty, 0px)) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--tx, 0px)), var(--ty, 0px)) scale(0.3);
+  }
 }

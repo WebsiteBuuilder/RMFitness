@@ -1,5 +1,5 @@
 // Link Battle: create or join an online room, or play on one phone.
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { GameMode, Pid } from '../eds/types';
 import { speedDeckProblems, type SpeedDeck } from '../eds/speedSave';
@@ -12,6 +12,7 @@ import { Menu, Win } from './Window';
 import type { Stakes } from '../collection/stakes';
 import { StakesPanel, stakesReady } from '../collection/StakesPanel';
 import type { SpeedSave } from '../eds/speedSave';
+import { preloadArt3d } from '../art/preload';
 
 export type LinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -95,6 +96,10 @@ export function Lobby({
 }) {
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
+  // a Speed Duel's 3D engine downloads while the room fills
+  useEffect(() => {
+    if (mode === 'speed') preloadArt3d();
+  }, [mode]);
   const [guestName, setGuestName] = useState('');
   const [copied, setCopied] = useState(false);
   /** Phones open the share sheet (Messages, WhatsApp...); elsewhere the link is copied. */

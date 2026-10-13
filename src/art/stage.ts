@@ -12,6 +12,11 @@
 //   an instance never releases (and later relinks) it.
 // - Shader error checking only in dev; no MSAA; DPR capped at 1.5 (1.25 on small
 //   devices); a frame-time governor steps quality down and back up (stage.tier).
+//   Mid-shot it only changes cheap things (particle count, post on/off, figure
+//   detail); a new drawing-buffer size waits until the stage is idle. The tier it
+//   settles on is remembered per device, and a small device starts a tier down.
+// - prewarm() compiles AND draws every material kind once (into a tiny target),
+//   one kind per idle slice, so no program links on first use mid-cinematic.
 // - On the top tiers a cheap post pass (half-res bloom + vignette, plus pulse()
 //   flashes) is composited over the transparent canvas without painting black.
 import {
@@ -48,6 +53,7 @@ import {
   type IUniform,
 } from 'three';
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
+import { DEFAULT_FADE, tuneFor } from './overrides';
 
 export type Quality = 'full' | 'fast';
 
@@ -124,6 +130,48 @@ float vedge(vec2 x){ vec2 n = floor(x); vec2 f = fract(x); float d1 = 8.0; float
 // (uWall = 1), pushed back and darkened with the matte dilated, is the slab's
 // side wall when the camera swings round; a ContactShadow sits under the feet.
 // Both are children of figure.mesh, so they come and go with it.
+//
+// Silhouettes: the relief falls to 0 across the matte's edge band (and toward the
+// art's border), so the outline sits flat on the plane instead of ballooning out
+// or smearing the art across a stretched skirt; the art's border fades out along
+// a broken line instead of a hard straight cut.
+// Lighting discipline: white / chrome / low-saturation subjects (measured once per
+// art, plus per-pixel brightness) get less specular, rim and key light, so they
+// keep their painted texture; lighting adds form without washing out the colors.
+// Per-card tunes (src/art/overrides.ts) scale the subject about its feet (uZoom),
+// set its relief, caps and border fade.
+
+/** Shared by the figure and the cracks on it: art uv from mesh uv and the displaced height. */
+const FIG_DISP_GLSL = /* glsl */ `
+vec2 artUv(vec2 m){ return uFoot + (m - uFoot) * uZoom; }
+float borderIn(vec2 a){ return min(min(a.x, 1.0 - a.x), min(a.y, 1.0 - a.y)); }
+/** how far off its front the camera sees the figure (radians, at its center) */
+float figOff(){
+  vec3 fN = normalize(normalMatrix * vec3(0.0, 0.0, 1.0));
+  vec3 toCam = normalize(-(modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
+  return acos(clamp(abs(dot(fN, toCam)), 0.0, 1.0));
+}
+float figHeight(vec2 a){
+  vec4 t = texture2D(uDepth, a);
+  float d = t.r;
+  if (uMatte > 0.5) {
+    // a blurred matte (9 taps over ~3 grid cells): 0 outside, 1 well inside
+    float g = uGrid * 1.5;
+    float s = t.a * 0.36;
+    s += 0.08 * (texture2D(uDepth, a + vec2(g, 0.0)).a + texture2D(uDepth, a - vec2(g, 0.0)).a + texture2D(uDepth, a + vec2(0.0, g)).a + texture2D(uDepth, a - vec2(0.0, g)).a);
+    g *= 2.0;
+    s += 0.08 * (texture2D(uDepth, a + vec2(g, g)).a + texture2D(uDepth, a - vec2(g, g)).a + texture2D(uDepth, a + vec2(g, -g)).a + texture2D(uDepth, a - vec2(g, -g)).a);
+    d *= smoothstep(0.42, 0.95, s);
+    // and to exactly 0 at the silhouette itself: no relief left to stretch the rim into streaks
+    d *= smoothstep(0.35, 0.85, t.a);
+  }
+  // seen well off axis (from ~20°, mostly gone by ~43°) the relief flattens toward a billboard: its extrusion would read as streaky slices
+  d *= mix(1.0, 0.35, smoothstep(0.35, 0.75, figOff()));
+  // flat toward the art's border (and outside it, when zoomed out)
+  return d * smoothstep(0.0, uFade * 1.3 + 0.02, borderIn(a));
+}
+`;
+
 const FIG_VERT = /* glsl */ `
 attribute vec3 aCenter;
 attribute vec3 rnd;
@@ -136,25 +184,28 @@ uniform float uMatte;
 uniform float uWall;
 uniform float uThick;
 uniform float uGrid;
+uniform float uZoom;
+uniform float uFade;
+uniform vec2 uFoot;
 varying vec2 vUv;
+varying vec2 vMesh;
 varying float vD;
 varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+varying float vOff;
+${FIG_DISP_GLSL}
 void main(){
-  vUv = uv;
-  float d = rel(uv);
-  vD = d;
-  if (uMatte > 0.5) {
-    // keep the silhouette on a plateau: the vertices just outside the subject take
-    // its depth, so the steep skirt falls where the matte is already transparent
-    // instead of smearing the art across a stretched edge
-    float g = uGrid;
-    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
-    d = max(d, m * 0.9);
-  }
+  vMesh = uv;
+  vec2 a = artUv(uv);
+  vUv = a;
+  vD = texture2D(uDepth, a).r;
+  // how far off its front the camera sees this figure (radians, at its center): seen well off
+  // axis, the relief flattens toward a billboard instead of showing its extrusion as streaky slices
+  // (figHeight applies it; the cracks' vertex shader shares it, so they stay on the surface)
+  vOff = figOff();
+  float d = figHeight(a);
   vec3 p = position;
   // the back of the slab: flatter, a little behind
   p.z += uWall > 0.5 ? d * uDepthAmt * 0.35 - uThick : d * uDepthAmt;
@@ -163,10 +214,13 @@ void main(){
   p.x += sin(uTime * 1.3 + p.y * 2.0) * 0.01 * d * uWave;
   if (uShatter > 0.0) {
     vec3 c = aCenter;
-    c.z += rel(c.xy + 0.5) * uDepthAmt;
+    c.z += figHeight(artUv(c.xy + 0.5)) * uDepthAmt;
     vec3 local = p - c;
     float s = uShatter;
     vec3 dir = normalize(vec3(c.xy * 2.2 + (rnd.xy - 0.5) * 1.6, 0.5 + rnd.z));
+    // mostly outward, only a little toward the camera: pieces flying into the lens fill the
+    // frame with huge blurred fragments (a grey wash over the whole screen)
+    dir.z *= 0.3;
     local *= max(0.0, 1.0 - s * 0.85);
     float a = s * (rnd.x - 0.5) * 14.0;
     local.xy = mat2(cos(a), -sin(a), sin(a), cos(a)) * local.xy;
@@ -189,6 +243,8 @@ uniform float uMatte;
 uniform float uReveal;
 uniform float uOpacity;
 uniform float uTint;
+uniform vec3 uTintCol;
+uniform float uTintKeep;
 uniform float uCut;
 uniform float uShatter;
 uniform float uTime;
@@ -197,23 +253,40 @@ uniform float uWall;
 uniform float uHQ;
 uniform float uEdge;
 uniform float uLight;
+uniform float uTame;
+uniform float uSpec;
+uniform float uRimAmt;
+uniform float uFade;
+uniform float uPulse;
+uniform vec3 uFlash;
 uniform vec2 uTexel;
 uniform vec3 uGlow;
 uniform vec3 uRim;
 varying vec2 vUv;
+varying vec2 vMesh;
 varying float vD;
 varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
+varying float vOff;
 ${NOISE_GLSL}
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+/** relief for the normals, flattened across the matte's edge like the mesh */
+float hgt(vec2 uv){ vec4 t = texture2D(uDepth, uv); return t.r * mix(1.0, smoothstep(0.3, 0.9, t.a), uMatte); }
+float bIn(vec2 a){ return min(min(a.x, 1.0 - a.x), min(a.y, 1.0 - a.y)); }
 void main(){
   vec4 col = texture2D(uArt, vUv);
   vec4 dm = texture2D(uDepth, vUv);
-  float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.07, vUv.y) * smoothstep(0.0, 0.07, 1.0 - vUv.y);
+  // the art's border fades out along a broken line (never a straight cut); the mesh's own edge too
+  float bn = bIn(vUv) + (vnoise(vUv * 11.0 + 3.7) - 0.5) * uFade * 0.9;
+  float edge = smoothstep(0.0, uFade, bn) * smoothstep(0.0, 0.02, bIn(vMesh));
   float ma = dm.a;
   float guess = vD;
+  if (uWall < 0.5 && uMatte > 0.5) {
+    // erode the cut-out ~2 px: the matte's soft outer rim (background bleeding into it) never shows
+    vec2 t = uTexel * 2.0;
+    ma = min(ma, min(min(texture2D(uDepth, vUv + vec2(t.x, 0.0)).a, texture2D(uDepth, vUv - vec2(t.x, 0.0)).a), min(texture2D(uDepth, vUv + vec2(0.0, t.y)).a, texture2D(uDepth, vUv - vec2(0.0, t.y)).a)));
+  }
   if (uWall > 0.5) {
     // the wall's matte is dilated ~1.5 px so it also rims the figure with a dark outline
     vec2 t = uTexel * 1.5;
@@ -223,21 +296,23 @@ void main(){
   // prebuilt figure maps carry the cut-out subject in alpha; otherwise guess it from depth
   float subj = mix(smoothstep(0.22, 0.5, guess), smoothstep(0.35, 0.65, ma), uMatte);
   float a = edge * mix(1.0, subj, uCut);
-  float n = vnoise(vUv * 9.0 + uTime * 0.3) * 0.28;
-  float r = uReveal * 1.35 - (vUv.y * 0.95 + n);
+  float n = vnoise(vMesh * 9.0 + uTime * 0.3) * 0.28;
+  float r = uReveal * 1.35 - (vMesh.y * 0.95 + n);
   float vis = smoothstep(0.0, 0.03, r);
   float rim = (1.0 - smoothstep(0.0, 0.1, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999);
   vec3 c = col.rgb;
   if (uWall > 0.5) {
     c = c * 0.16 + uRim * 0.05;
     a *= 1.0 - smoothstep(0.0, 0.12, uShatter);
+    // more than ~30° off its front the wall only reads as dark slices beside the figure
+    a *= 1.0 - smoothstep(0.4, 0.52, vOff);
   } else {
     // normals from the relief (central differences, tamed so painted detail stays painted)
     vec2 t = uTexel * 1.5;
-    float hl = rel(vUv - vec2(t.x, 0.0));
-    float hr = rel(vUv + vec2(t.x, 0.0));
-    float hd = rel(vUv - vec2(0.0, t.y));
-    float hu = rel(vUv + vec2(0.0, t.y));
+    float hl = hgt(vUv - vec2(t.x, 0.0));
+    float hr = hgt(vUv + vec2(t.x, 0.0));
+    float hd = hgt(vUv - vec2(0.0, t.y));
+    float hu = hgt(vUv + vec2(0.0, t.y));
     vec3 on = normalize(vec3((hl - hr) * 0.16, (hd - hu) * 0.16, t.x * 2.0));
     vec3 N = normalize(on.x * vNx + on.y * vNy + on.z * vNz);
     if (!gl_FrontFacing) N = -N;
@@ -248,29 +323,48 @@ void main(){
     float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.2);
     float ao = 1.0;
     float spec = 0.0;
+    // bright, colorless pixels (white scales, silver bone, chrome) are tamed as well as bright arts
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    float tame = clamp(uTame + smoothstep(0.55, 0.9, lum) * (1.0 - smoothstep(0.15, 0.4, sat)) * 0.6, 0.0, 1.0);
     if (uHQ > 0.5) {
       // cheap AO: darker where the relief sits below its wider neighbourhood
       vec2 w = uTexel * 6.0;
-      float nb = (rel(vUv + w) + rel(vUv - w) + rel(vUv + vec2(w.x, -w.y)) + rel(vUv + vec2(-w.x, w.y))) * 0.25;
-      ao = clamp(1.0 - max(0.0, nb - dm.r) * 3.0, 0.5, 1.0);
-      spec = pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * 0.22;
+      float nb = (hgt(vUv + w) + hgt(vUv - w) + hgt(vUv + vec2(w.x, -w.y)) + hgt(vUv + vec2(-w.x, w.y))) * 0.25;
+      ao = clamp(1.0 - max(0.0, nb - hgt(vUv)) * 3.0, 0.55, 1.0);
+      spec = pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * 0.2 * uSpec * (1.0 - 0.85 * tame);
     }
-    vec3 lit = c * (vec3(0.42, 0.44, 0.52) * ao * (0.75 + 0.5 * hemi) + vec3(1.0, 0.9, 0.74) * dif * 0.82 * mix(1.0, ao, 0.5));
+    // form, not wash-out: ambient + key stays near 1, and below 1 for tamed (bright) art
+    vec3 shade = vec3(0.46, 0.47, 0.54) * ao * (0.78 + 0.4 * hemi) + vec3(1.0, 0.92, 0.8) * dif * 0.66 * mix(1.0, ao, 0.5);
+    shade = min(shade, vec3(mix(1.28, 1.02, tame)));
+    vec3 lit = c * shade;
     lit += vec3(1.0, 0.95, 0.85) * spec * ao;
-    lit += uRim * fres * 1.25 * (0.4 + 0.6 * subj);
+    lit += uRim * fres * uRimAmt * (1.0 - 0.7 * tame) * (0.4 + 0.6 * subj);
     // a palette glow just inside the silhouette (big monsters)
     float inner = smoothstep(0.35, 0.6, ma) * (1.0 - smoothstep(0.6, 0.97, ma)) * uMatte;
-    lit += uRim * inner * uEdge * 0.9;
+    lit += uRim * inner * uEdge * 0.8 * (1.0 - 0.5 * tame);
     c = mix(c, lit, uLight);
     float subjEdge = (1.0 - abs(subj * 2.0 - 1.0)) * uCut;
-    float scan = 0.5 + 0.5 * sin(vUv.y * 160.0 - uTime * 6.0);
-    c += uGlow * subjEdge * (0.55 + 0.25 * scan);
+    float scan = 0.5 + 0.5 * sin(vMesh.y * 160.0 - uTime * 6.0);
+    c += uGlow * subjEdge * ((0.4 + 0.2 * scan) * (1.0 - 0.4 * tame) + uPulse * 1.6);
+    // ready to attack: a soft palette pulse over the body and its rim
+    c += uGlow * uPulse * (0.1 + fres * 0.5);
+    // hit: a red flash
+    c = mix(c, c * 0.5 + uFlash, clamp(max(uFlash.r, max(uFlash.g, uFlash.b)), 0.0, 1.0) * 0.6);
   }
-  c = mix(c, vec3(1.0), uTint);
+  // tint: toward white by default; struck (uTintKeep 1), toward a color with the painted detail kept
+  // (even the white tint keeps some of the painting: a flash never turns a figure into a solid white cut-out)
+  c = mix(c, mix(uTintCol, c * 0.55 + uTintCol * 0.55, max(uTintKeep, 0.45)), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
+  // capped below white before the bloom (hue kept): a bright figure under a flash stays a painting
+  if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2;
   float alpha = (a * vis + rim * a) * uOpacity;
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
+  // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
+  vec3 fn = cross(dFdx(vViewPos), dFdy(vViewPos));
+  float facing = abs(dot(fn, normalize(vViewPos))) / max(length(fn), 1e-12);
+  alpha *= mix(1.0, smoothstep(0.18, 0.4, facing), uMatte * (1.0 - step(0.001, uShatter)));
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
@@ -289,6 +383,8 @@ export interface Footprint {
   right: number;
   /** relief 0..1 around the feet */
   relief: number;
+  /** the per-card size multiplier already folded into this footprint (figureFoot); 1 for footprint() */
+  scale?: number;
 }
 
 const FOOTPRINTS = new WeakMap<ArtData, Footprint>();
@@ -380,6 +476,88 @@ export function footprint(art: ArtData): Footprint {
   return fp;
 }
 
+const FIGURE_FEET = new WeakMap<ArtData, Footprint>();
+
+/**
+ * The footprint as the Figure's mesh shows it: the per-card tune's foot point and
+ * size (scaled about the feet, src/art/overrides.ts) folded in, in mesh uv.
+ * Board and cinematics place figures with this.
+ */
+export function figureFoot(art: ArtData): Footprint {
+  const have = FIGURE_FEET.get(art);
+  if (have) return have;
+  const f = footprint(art);
+  const t = tuneFor(art.id);
+  const k = t.scale ?? 1;
+  const u = t.footU ?? f.u;
+  const v = t.footV ?? f.v;
+  const fp: Footprint = {
+    u,
+    v,
+    w: f.w * k,
+    top: Math.min(1, v + (f.top - v) * k),
+    left: clamp01(u + (f.left - u) * k),
+    right: clamp01(u + (f.right - u) * k),
+    relief: f.relief,
+    scale: k,
+  };
+  FIGURE_FEET.set(art, fp);
+  return fp;
+}
+
+/** How bright and colorless a subject is: 0 = colorful mid-tones, 1 = white / silver / chrome. */
+const LOOKS = new WeakMap<ArtData, number>();
+export function artTame(art: ArtData): number {
+  const have = LOOKS.get(art);
+  if (have !== undefined) return have;
+  let tame = 0;
+  try {
+    const n = 32;
+    const c = document.createElement('canvas');
+    c.width = c.height = n;
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(art.art, 0, 0, n, n);
+    const px = g.getImageData(0, 0, n, n).data;
+    let ma: Uint8ClampedArray | null = null;
+    if (art.relief) {
+      g.clearRect(0, 0, n, n);
+      g.drawImage(art.relief, 0, 0, n, n);
+      ma = g.getImageData(0, 0, n, n).data;
+    }
+    let w = 0;
+    let lum = 0;
+    let sat = 0;
+    let chrome = 0;
+    for (let i = 0; i < n * n; i++) {
+      // the subject only (its matte), or the middle of the art
+      const x = i % n;
+      const y = (i / n) | 0;
+      const k = ma ? ma[i * 4 + 3] / 255 : Math.max(0, 1 - Math.hypot(x / n - 0.5, y / n - 0.55) * 2.2);
+      if (k < 0.05) continue;
+      const r = px[i * 4] / 255;
+      const gg = px[i * 4 + 1] / 255;
+      const b = px[i * 4 + 2] / 255;
+      const l = 0.299 * r + 0.587 * gg + 0.114 * b;
+      const s = Math.max(r, gg, b) - Math.min(r, gg, b);
+      w += k;
+      lum += l * k;
+      sat += s * k;
+      if (l > 0.6 && s < 0.22) chrome += k;
+    }
+    if (w > 0) {
+      lum /= w;
+      sat /= w;
+      chrome /= w;
+      tame = clamp01(Math.max(clamp01((lum - 0.4) / 0.3) * clamp01((0.42 - sat) / 0.25), chrome * 1.6));
+    }
+  } catch {
+    tame = 0;
+  }
+  tame = Math.max(tame, tuneFor(art.id).tame ?? 0);
+  LOOKS.set(art, tame);
+  return tame;
+}
+
 /**
  * Figure detail, set by the stage's quality governor: 0 = no side wall, no AO or
  * specular (fewest texture taps); 1 = side wall; 2 = everything.
@@ -406,6 +584,41 @@ export interface FigureOptions {
   edge?: number;
 }
 
+/** A card picture's two textures (the art and its relief), shared by every figure of it in every renderer. */
+export interface ArtTextures {
+  art: CanvasTexture;
+  depth: DataTexture | Texture;
+  /** figures using them now */
+  users: number;
+}
+const artTex = new WeakMap<ArtData, ArtTextures>();
+
+/** The textures of a card picture, made once (an upload happens on first use, or ahead of it in Stage.upload). */
+export function artTextures(art: ArtData): ArtTextures {
+  let t = artTex.get(art);
+  if (t) return t;
+  const tex = new CanvasTexture(art.art);
+  tex.minFilter = LinearFilter;
+  tex.generateMipmaps = false;
+  const depth = art.relief ? new Texture(art.relief) : new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
+  depth.flipY = true;
+  depth.magFilter = LinearFilter;
+  depth.minFilter = LinearFilter;
+  depth.generateMipmaps = false;
+  depth.needsUpdate = true;
+  t = { art: tex, depth, users: 0 };
+  artTex.set(art, t);
+  return t;
+}
+
+/** A figure is done with its textures: the GPU copies go once no figure uses them (they upload again if needed). */
+function releaseArtTextures(t: ArtTextures) {
+  if (--t.users > 0) return;
+  t.users = 0;
+  t.art.dispose();
+  t.depth.dispose();
+}
+
 export class Figure implements Fx {
   mesh: Mesh;
   mat: ShaderMaterial;
@@ -421,6 +634,7 @@ export class Figure implements Fx {
   /** fixed detail (0..2), or null to follow the stage's governor */
   detail: number | null = null;
   private appliedDetail = -1;
+  private texs: ArtTextures;
   private tex: CanvasTexture;
   private depthTex: DataTexture | Texture;
   alive = true;
@@ -449,20 +663,26 @@ export class Figure implements Fx {
     }
     geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
     geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
-    this.tex = new CanvasTexture(art.art);
-    this.tex.minFilter = LinearFilter;
-    this.tex.generateMipmaps = false;
-    this.depthTex = art.relief ? new Texture(art.relief) : new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
-    this.depthTex.flipY = true;
-    this.depthTex.magFilter = LinearFilter;
-    this.depthTex.minFilter = LinearFilter;
-    this.depthTex.generateMipmaps = false;
-    this.depthTex.needsUpdate = true;
+    // shared per card picture: uploaded once (ahead of time, see Stage.upload), not per figure
+    this.texs = artTextures(art);
+    this.texs.users++;
+    this.tex = this.texs.art;
+    this.depthTex = this.texs.depth;
     const texN = art.relief ? art.relief.naturalWidth || 256 : DEPTH_SIZE;
+    const tune = tuneFor(art.id);
+    this.foot = figureFoot(art);
+    const f = this.foot;
     this.mat = material('figure', {
       uArt: this.tex,
       uDepth: this.depthTex,
-      uDepthAmt: depthAmt,
+      uDepthAmt: depthAmt * (tune.relief ?? 1),
+      uZoom: 1 / (f.scale ?? 1),
+      uFoot: new Vector2(f.u, f.v),
+      uFade: tune.fade ?? DEFAULT_FADE,
+      uTame: artTame(art),
+      uSpec: tune.spec ?? 1,
+      uRimAmt: tune.rim ?? 1,
+      uFlash: new Vector3(0, 0, 0),
       uMatte: art.relief ? 1 : 0,
       uGlow: rgb(glow),
       uRim: rimColor(opts.rim ?? glow),
@@ -480,14 +700,12 @@ export class Figure implements Fx {
     this.wall.renderOrder = -1;
     this.mesh.add(this.wall);
     // the contact shadow, flat on the ground under the feet
-    this.foot = footprint(art);
-    const f = this.foot;
     this.shadow = new ContactShadow();
     const sw = Math.max(0.3, f.w * 1.35);
     const sm = this.shadow.mesh;
     sm.scale.set(sw, sw * 0.9, 1);
     sm.rotation.x = -1.2;
-    sm.position.set(f.u - 0.5, f.v - 0.5 + 0.01, f.relief * depthAmt * 0.45);
+    sm.position.set(f.u - 0.5, f.v - 0.5 + 0.01, f.relief * this.u.uDepthAmt.value * 0.45);
     sm.renderOrder = -2;
     this.mesh.add(sm);
     this.applyDetail();
@@ -522,8 +740,7 @@ export class Figure implements Fx {
     this.mat.dispose();
     this.wallMat.dispose();
     this.shadow.dispose();
-    this.tex.dispose();
-    this.depthTex.dispose();
+    releaseArtTextures(this.texs);
   }
 }
 
@@ -627,13 +844,15 @@ attribute float aSize;
 attribute float aAlpha;
 attribute vec3 aColor;
 uniform float uPx;
+uniform float uMaxPx;
 varying float vAlpha;
 varying vec3 vColor;
 void main(){
   vAlpha = aAlpha;
   vColor = aColor;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = aSize * uPx / max(0.1, -mv.z);
+  // capped: a huge sprite near the camera fills the screen with overdraw on phones
+  gl_PointSize = min(aSize * uPx / max(0.1, -mv.z), uMaxPx);
   gl_Position = projectionMatrix * mv;
 }`;
 const P_FRAG = /* glsl */ `
@@ -684,6 +903,7 @@ export class Particles implements Fx {
   private phys: Float32Array; // gravity drag
   private pull: Float32Array; // px py strength swirl
   private next = 0;
+  private lim: number;
   active = 0;
   /** quality governor: fraction of requested particles actually emitted */
   emitScale = 1;
@@ -691,6 +911,7 @@ export class Particles implements Fx {
 
   constructor(max: number) {
     this.max = max;
+    this.lim = max;
     this.geo = new BufferGeometry();
     this.pos = new Float32Array(max * 3);
     this.col = new Float32Array(max * 3);
@@ -711,12 +932,27 @@ export class Particles implements Fx {
     this.points.renderOrder = 10;
   }
 
+  /** How much of the pool is used (the quality governor lowers it on the cheapest tiers). */
+  get limit() {
+    return this.lim;
+  }
+  set limit(n: number) {
+    n = Math.max(1, Math.min(this.max, Math.round(n)));
+    if (n === this.lim) return;
+    // particles past a lowered limit die now (their slots are no longer stepped or drawn)
+    for (let i = n; i < this.lim; i++) (this.life[i * 2 + 1] = 0), (this.alpha[i] = 0), (this.size[i] = 0);
+    if (n < this.lim) for (const name of P_ATTRS) this.geo.getAttribute(name).needsUpdate = true;
+    this.lim = n;
+    if (this.next >= n) this.next = 0;
+    this.geo.setDrawRange(0, n);
+  }
+
   emit(o: Emit, count = 1) {
     // Under load emit fewer (stochastic rounding keeps single-particle trickles alive).
     if (this.emitScale < 1) count = Math.floor(count * this.emitScale + Math.random());
     for (let n = 0; n < count; n++) {
       const i = this.next;
-      this.next = (this.next + 1) % this.max;
+      this.next = (this.next + 1) % this.lim;
       const r = o.r ?? 0;
       const b = o.burst ?? 0;
       const th = Math.random() * Math.PI * 2;
@@ -752,7 +988,7 @@ export class Particles implements Fx {
 
   update(dt: number) {
     let active = 0;
-    for (let i = 0; i < this.max; i++) {
+    for (let i = 0; i < this.lim; i++) {
       const mx = this.life[i * 2 + 1];
       if (mx <= 0) continue;
       const age = (this.life[i * 2] += dt);
@@ -786,7 +1022,12 @@ export class Particles implements Fx {
       this.alpha[i] = k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88;
     }
     this.active = active;
-    for (const name of P_ATTRS) this.geo.getAttribute(name).needsUpdate = true;
+    for (const name of P_ATTRS) {
+      const a = this.geo.getAttribute(name) as BufferAttribute;
+      // upload only the part of the pool in use
+      if (this.lim < this.max) (a.clearUpdateRanges(), a.addUpdateRange(0, this.lim * a.itemSize));
+      a.needsUpdate = true;
+    }
     return true;
   }
 
@@ -1046,6 +1287,7 @@ uniform vec3 uFlashColor;
 uniform float uCrack;
 uniform float uCrackOp;
 uniform vec2 uCrackAt;
+uniform vec3 uCrackColor;
 uniform float uRed;
 uniform float uSpeed;
 uniform vec2 uFocus;
@@ -1070,8 +1312,10 @@ void main(){
   }
   if (uRed > 0.0) {
     float e = smoothstep(0.35, 1.0, length((vUv - 0.5) * 2.0));
-    L += vec3(1.0, 0.1, 0.06) * e * uRed * 0.85;
-    a = max(a, e * uRed * 0.5);
+    // capped at 0.25 (its color drives the layer's alpha too)
+    float re = min(e * uRed * 0.85, 0.25);
+    L += vec3(1.0, 0.1, 0.06) * re;
+    a = max(a, re);
   }
   if (uCrack > 0.0) {
     vec2 q = (vUv - uCrackAt) * asp;
@@ -1083,10 +1327,12 @@ void main(){
     float radial = 1.0 - smoothstep(0.0, 0.006 / max(d, 0.03) + 0.004, rl);
     float cells = 1.0 - smoothstep(0.0, 0.035, vedge(q * (5.0 / (0.25 + d * 1.5)) + 3.7));
     float line = max(radial, cells * (1.0 - smoothstep(0.05, 0.35, d)) * 0.9 + cells * 0.35);
-    L += vec3(0.92, 0.96, 1.0) * line * m * uCrackOp;
+    L += uCrackColor * line * m * uCrackOp;
     a = max(a, line * m * 0.4 * uCrackOp);
   }
-  L += uFlashColor * uFlash * (1.0 - 0.35 * min(r, 1.0));
+  // the flash rings the subject instead of covering it: none on the subject, rising toward
+  // the screen's edge, so the frame never takes a full-screen tint and the silhouette stays readable
+  L += uFlashColor * uFlash * 0.5 * smoothstep(0.3, 1.0, length((vUv - uFocus) * 2.0));
   L = min(L, vec3(1.0));
   gl_FragColor = vec4(L, clamp(max(a, max(L.r, max(L.g, L.b))), 0.0, 1.0));
 }`;
@@ -1233,19 +1479,17 @@ uniform float uDepthAmt;
 uniform float uTime;
 uniform float uMatte;
 uniform float uGrid;
+uniform float uZoom;
+uniform float uFade;
+uniform vec2 uFoot;
 varying vec2 vUv;
 varying float vD;
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+${FIG_DISP_GLSL}
 void main(){
-  vUv = uv;
-  float d = rel(uv);
-  vD = d;
-  // the same plateau as the figure's own vertex shader, so the cracks sit on its surface
-  if (uMatte > 0.5) {
-    float g = uGrid;
-    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
-    d = max(d, m * 0.9);
-  }
+  // the same art uv and height as the figure's own vertex shader, so the cracks sit on its surface
+  vUv = artUv(uv);
+  vD = texture2D(uDepth, vUv).r;
+  float d = figHeight(vUv);
   vec3 p = position;
   p.z += d * uDepthAmt + 0.004;
   p.z += sin(uTime * 2.0 + p.y * 3.0) * 0.015 * d;
@@ -1269,8 +1513,11 @@ void main(){
   float d = length(vUv - uOrigin);
   float m = 1.0 - smoothstep(uCrack * 1.25 - 0.12, uCrack * 1.25, d);
   float e = vedge(vUv * 6.0 + uSeed);
+  // the fine 14x cell layer only right around the impact point: spread over the whole
+  // figure it turned into rainbow noise under the chroma pulse
   float e2 = vedge(vUv * 14.0 + uSeed * 1.7);
-  float line = (1.0 - smoothstep(0.0, 0.045, e)) + (1.0 - smoothstep(0.0, 0.03, e2)) * 0.6 * smoothstep(0.35, 1.0, uCrack);
+  float near = 1.0 - smoothstep(0.06, 0.2, d);
+  float line = (1.0 - smoothstep(0.0, 0.045, e)) + (1.0 - smoothstep(0.0, 0.03, e2)) * 0.45 * near * smoothstep(0.35, 1.0, uCrack);
   vec3 c = (mix(uColor, vec3(1.0), 0.55) * line * 1.3 + uColor * exp(-e * 9.0) * 0.4) * m * subj;
   c += uColor * subj * uCrack * 0.18;
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
@@ -1289,7 +1536,7 @@ export class Crack implements Fx {
     origin = { u: 0.5, v: 0.55 },
   ) {
     const f = fig.u;
-    this.mat = material('crack', { uDepth: f.uDepth.value, uDepthAmt: f.uDepthAmt.value, uMatte: f.uMatte.value, uGrid: f.uGrid?.value ?? 0.02, uColor: rgb(color), uSeed: Math.random() * 50, uOrigin: new Vector2(origin.u, origin.v) });
+    this.mat = material('crack', { uDepth: f.uDepth.value, uDepthAmt: f.uDepthAmt.value, uMatte: f.uMatte.value, uGrid: f.uGrid?.value ?? 0.02, uZoom: f.uZoom?.value ?? 1, uFade: f.uFade?.value ?? DEFAULT_FADE, uFoot: f.uFoot?.value ?? new Vector2(0.5, 0.08), uColor: rgb(color), uSeed: Math.random() * 50, uOrigin: new Vector2(origin.u, origin.v) });
     this.mesh = new Mesh(fig.mesh.geometry, this.mat);
     this.mesh.renderOrder = 9;
     this.mesh.frustumCulled = false;
@@ -1313,12 +1560,14 @@ export class Crack implements Fx {
 const SHARD_VERT = /* glsl */ `
 attribute vec4 aRect;
 attribute vec4 aSeed;
+uniform float uZoom;
+uniform vec2 uFoot;
 varying vec2 vUv;
 varying vec2 vL;
 varying vec4 vSeed;
 void main(){
   vL = uv;
-  vUv = aRect.xy + uv * aRect.zw;
+  vUv = uFoot + (aRect.xy + uv * aRect.zw - uFoot) * uZoom;
   vSeed = aSeed;
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
 }`;
@@ -1373,7 +1622,7 @@ export class Shards implements Fx {
     const f = fig.u;
     this.n = cols * rows;
     this.gravity = gravity;
-    this.mat = material('shards', { uArt: f.uArt.value, uDepth: f.uDepth.value, uMatte: f.uMatte.value, uColor: rgb(color) });
+    this.mat = material('shards', { uArt: f.uArt.value, uDepth: f.uDepth.value, uMatte: f.uMatte.value, uColor: rgb(color), uZoom: f.uZoom?.value ?? 1, uFoot: f.uFoot?.value ?? new Vector2(0.5, 0.08) });
     const geo = new PlaneGeometry(1, 1);
     const rect = new Float32Array(this.n * 4);
     const seed = new Float32Array(this.n * 4);
@@ -1633,8 +1882,9 @@ void main(){
  * Scene + bloom + vignette (+ pulses) in one pass onto the transparent canvas.
  * Premultiplied throughout: bloom adds light and grows alpha only as much as it is
  * bright (like the glow blending), the vignette only darkens what the cinematic
- * itself drew (alpha is untouched, so empty pixels stay empty), and the flash is
- * white laid "over" the result.
+ * itself drew (alpha is untouched, so empty pixels stay empty), and the flash
+ * brightens what is there (plus a little of the glow) instead of laying a uniform
+ * white over the frame, so it never reads as a grey wash.
  */
 const COMPOSITE_FRAG = /* glsl */ `
 uniform sampler2D tScene;
@@ -1643,6 +1893,7 @@ uniform float uBloom;
 uniform float uVig;
 uniform float uChroma;
 uniform float uFlash;
+uniform float uDim;
 varying vec2 vUv;
 void main(){
   vec4 c = texture2D(tScene, vUv);
@@ -1654,10 +1905,17 @@ void main(){
   }
   vec2 q = vUv - 0.5;
   float v = 1.0 - uVig * smoothstep(0.3, 0.8, length(q));
-  vec3 col = min(vec3(1.0), c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom);
+  // soft shoulder instead of a hard clip: stacked additive glow rolls off toward white
+  // (and the bloom is held back where the scene is already bright) so silhouettes survive
+  // (a dimmed stage gets less: the glow stays around what glows instead of washing the frame out)
+  vec3 bl = texture2D(tBloom, vUv).rgb;
+  vec3 x = c.rgb * v + bl * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.75 * smoothstep(0.55, 0.9, max(c.r, max(c.g, c.b))));
+  vec3 col = min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-max(x - 0.72, 0.0) * 3.6));
   float a = max(c.a, max(col.r, max(col.g, col.b)));
-  col = vec3(uFlash) + col * (1.0 - uFlash);
-  a = uFlash + a * (1.0 - uFlash);
+  // (only what is already bright: a tinted veil or a dim backdrop is not pushed toward a solid color)
+  // (and what is already near white gets little more, so a white dragon keeps its detail through it)
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = min(col + col * smoothstep(0.25, 0.8, lum) * (1.0 - 0.8 * smoothstep(0.62, 0.9, lum)) * uFlash * 1.5 + uFlash * 0.15 * bl, vec3(1.0));
   gl_FragColor = vec4(col, a);
 }`;
 
@@ -1698,6 +1956,8 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uReveal: 1,
         uOpacity: 1,
         uTint: 0,
+        uTintCol: new Vector3(1, 1, 1),
+        uTintKeep: 0,
         uCut: 1,
         uDark: 0,
         uGlow: new Vector3(1, 1, 1),
@@ -1709,6 +1969,14 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uThick: 0.035,
         uGrid: 1 / 32,
         uTexel: new Vector2(1 / 256, 1 / 256),
+        uZoom: 1,
+        uFoot: new Vector2(0.5, 0.08),
+        uFade: DEFAULT_FADE,
+        uTame: 0,
+        uSpec: 1,
+        uRimAmt: 1,
+        uPulse: 0,
+        uFlash: new Vector3(0, 0, 0),
       }),
     }),
   shadow: () =>
@@ -1720,7 +1988,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       uniforms: uniforms({ uOpacity: 1, uDark: 1, uRing: new Vector3(1, 1, 1), uRingAmt: 0, uTime: 0 }),
     }),
   panel: () => new ShaderMaterial({ vertexShader: BASIC_VERT, fragmentShader: PANEL_FRAG, ...FX, side: DoubleSide, uniforms: uniforms({ uMap: null, uOpacity: 1, uTint: 0, uGlow: new Vector3(1, 1, 1), uSheen: -1 }) }),
-  particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300 }) }),
+  particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300, uMaxPx: 64 }) }),
   ribbon: () =>
     new ShaderMaterial({
       vertexShader: RIB_VERT,
@@ -1755,7 +2023,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       ...FX,
       depthTest: false,
       blending: NormalBlending,
-      uniforms: uniforms({ uDim: 0, uFlash: 0, uFlashColor: new Vector3(1, 1, 1), uCrack: 0, uCrackOp: 1, uCrackAt: new Vector2(0.5, 0.5), uRed: 0, uSpeed: 0, uFocus: new Vector2(0.5, 0.5), uAspect: 0.5, uTime: 0 }),
+      uniforms: uniforms({ uDim: 0, uFlash: 0, uFlashColor: new Vector3(1, 1, 1), uCrack: 0, uCrackOp: 1, uCrackAt: new Vector2(0.5, 0.5), uCrackColor: new Vector3(0.92, 0.96, 1), uRed: 0, uSpeed: 0, uFocus: new Vector2(0.5, 0.5), uAspect: 0.5, uTime: 0 }),
     }),
   glow: () =>
     new ShaderMaterial({
@@ -1773,7 +2041,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       ...FX,
       ...GLOW,
       side: DoubleSide,
-      uniforms: uniforms({ uDepth: null, uDepthAmt: 0.3, uTime: 0, uMatte: 0, uGrid: 0.02, uCrack: 0, uOpacity: 1, uSeed: 0, uOrigin: new Vector2(0.5, 0.5), uColor: new Vector3(1, 1, 1) }),
+      uniforms: uniforms({ uDepth: null, uDepthAmt: 0.3, uTime: 0, uMatte: 0, uGrid: 0.02, uZoom: 1, uFade: DEFAULT_FADE, uFoot: new Vector2(0.5, 0.08), uCrack: 0, uOpacity: 1, uSeed: 0, uOrigin: new Vector2(0.5, 0.5), uColor: new Vector3(1, 1, 1) }),
     }),
   shards: () =>
     new ShaderMaterial({
@@ -1781,7 +2049,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       fragmentShader: SHARD_FRAG,
       ...FX,
       side: DoubleSide,
-      uniforms: uniforms({ uArt: null, uDepth: null, uMatte: 0, uOpacity: 1, uHeat: 1, uColor: new Vector3(1, 1, 1) }),
+      uniforms: uniforms({ uArt: null, uDepth: null, uMatte: 0, uOpacity: 1, uHeat: 1, uColor: new Vector3(1, 1, 1), uZoom: 1, uFoot: new Vector2(0.5, 0.08) }),
     }),
   cutin: () =>
     new ShaderMaterial({
@@ -1792,10 +2060,10 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       blending: NormalBlending,
       uniforms: uniforms({ uArt: null, uText: null, uK: 0, uAspect: 0.5, uTime: 0, uOpacity: 1, uTextAspect: 4, uColor: new Vector3(1, 1, 1), uColor2: new Vector3(1, 1, 1) }),
     }),
-  bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.6 }) }),
+  bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.72 }) }),
   kawase: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: KAWASE_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uOff: 0 }) }),
   composite: () =>
-    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.7, uVig: 0.3, uChroma: 0, uFlash: 0 }) }),
+    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.35, uVig: 0.3, uChroma: 0, uFlash: 0, uDim: 0 }) }),
 };
 
 const BASE = new Map<MaterialKind, ShaderMaterial>();
@@ -1812,38 +2080,55 @@ export function material(kind: MaterialKind, values: Record<string, unknown>): S
   return m;
 }
 
+/** Waits for an idle moment (a new task: the frames in between are free). */
+function slice(): Promise<void> {
+  return new Promise((ok) => {
+    const w = (typeof window !== 'undefined' ? window : undefined) as (Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) | undefined;
+    if (w?.requestIdleCallback) w.requestIdleCallback(() => ok(), { timeout: 120 });
+    else setTimeout(ok, 16);
+  });
+}
+
 /**
- * Compiles the base material of every kind on `renderer` (one hidden warm-up scene),
- * off the main thread where KHR_parallel_shader_compile exists. The bases then keep
- * their programs for the renderer's lifetime.
+ * Gets every material kind ready to draw on `renderer` without a stall: for each
+ * kind, compile its program (off the main thread where KHR_parallel_shader_compile
+ * exists) and then draw it once into a tiny offscreen target with the variant
+ * it is really drawn with (points, instanced shards, the post passes' quads), so
+ * the link and the uniform lookup happen now and not on first use. One kind per
+ * idle slice, so no single task holds the main thread for long. The base materials
+ * keep their programs for the renderer's lifetime. `alive` false stops early (lost
+ * context, disposed).
  */
-export function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: readonly MaterialKind[] = MATERIAL_KINDS): Promise<void> {
-  const scene = new Scene();
+export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: readonly MaterialKind[] = MATERIAL_KINDS, alive: () => boolean = () => true): Promise<void> {
   const plane = new PlaneGeometry(1, 1);
   const dot = new BufferGeometry();
   dot.setAttribute('position', new BufferAttribute(new Float32Array(3), 3));
-  for (const k of kinds) {
-    // shards draw instanced: warm the instanced variant of their program
-    const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
-    o.frustumCulled = false;
-    scene.add(o);
-  }
-  const done = () => {
+  const target = new WebGLRenderTarget(4, 4, { depthBuffer: false });
+  const parallel = typeof renderer.compileAsync === 'function' && !!renderer.extensions?.has?.('KHR_parallel_shader_compile');
+  try {
+    for (const k of kinds) {
+      if (!alive()) break;
+      const scene = new Scene();
+      // shards draw instanced, particles as points: warm those variants of their programs
+      const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
+      o.frustumCulled = false;
+      scene.add(o);
+      // Never wait forever (a context lost mid-compile never reports ready).
+      if (parallel) await Promise.race([renderer.compileAsync(scene, camera), new Promise((ok) => setTimeout(ok, 3000))]);
+      if (!alive()) break;
+      const prev = renderer.getRenderTarget();
+      renderer.setRenderTarget(target);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(prev);
+      if (o instanceof InstancedMesh) o.dispose();
+      await slice();
+    }
+  } catch (err) {
+    console.warn('art engine: prewarm failed', err);
+  } finally {
     plane.dispose();
     dot.dispose();
-  };
-  try {
-    const compiled: Promise<unknown> = typeof renderer.compileAsync === 'function' ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
-    // Never wait forever (a context lost mid-compile never reports ready).
-    const timeout = new Promise((ok) => setTimeout(ok, 5000));
-    return Promise.race([compiled, timeout]).then(done, (err) => {
-      done();
-      console.warn('art engine: prewarm failed', err);
-    });
-  } catch (err) {
-    done();
-    console.warn('art engine: prewarm failed', err);
-    return Promise.resolve();
+    target.dispose();
   }
 }
 
@@ -1940,6 +2225,16 @@ function noise1(t: number, seed: number): number {
 const SLOW_MS = 22;
 const FAST_MS = 14;
 const WINDOW = 60;
+/** What every cinematic draws from its first frame (the dim, the backdrop, the post passes) warms first. */
+const WARM_ORDER: readonly MaterialKind[] = ['veil', 'backdrop', 'particles', 'bright', 'kawase', 'composite', 'figure', 'shadow', 'glow', 'ribbon', 'ring', 'panel', 'crack', 'shards', 'cutin'];
+/** where the governor remembers the tier it settled on, on this device */
+const AUTO_KEY = 'eds.artTierAuto';
+
+/** The tier the stage on screen is at now (-1: none yet), for the field figures. */
+let liveTier = -1;
+export function stageTier() {
+  return liveTier;
+}
 
 export class Stage {
   renderer: WebGLRenderer;
@@ -1975,6 +2270,8 @@ export class Stage {
   private warm: Promise<void> | null = null;
   private post: Post | null = null;
   private chroma = 0;
+  /** how dimmed the stage is (0..1, set by the director): the bloom backs off under the dim */
+  dim = 0;
   private flash = 0;
   private disposed = false;
 
@@ -1992,6 +2289,10 @@ export class Stage {
   private goodFor = 0;
   private upWait = 3;
   private lastUp = -1e9;
+  /** a new drawing-buffer size (or a new post pass) waits for the stage to go idle */
+  private sizeDirty = false;
+  /** the tier last saved to AUTO_KEY */
+  private savedTier = -1;
 
   constructor(
     public canvas: HTMLCanvasElement,
@@ -2059,37 +2360,109 @@ export class Stage {
     top.push({ dpr: low, emit: 0.6, post });
     if (post) top.push({ dpr: low, emit: 0.6, post: false });
     this.levels = top.reverse();
-    this.level = this.levels.length - 1;
-    this.applyLevel();
+    this.level = this.startTier();
+    this.savedTier = this.level;
+    this.applyLevel(true);
   }
 
-  private applyLevel() {
+  /**
+   * Where the governor starts: the tier it settled on last time on this device;
+   * on a first run the top, or one below it on a small device (≤ 4 GB or ≤ 4 cores).
+   */
+  private startTier() {
+    const top = this.levels.length - 1;
+    try {
+      const v = JSON.parse(localStorage.getItem(AUTO_KEY) ?? 'null') as { t?: number; n?: number; q?: string } | null;
+      if (v && v.n === top && v.q === this.q && Number.isInteger(v.t)) return Math.max(0, Math.min(top, v.t!));
+    } catch {
+      /* storage blocked or garbled */
+    }
+    const nav = (typeof navigator !== 'undefined' ? navigator : {}) as Navigator & { deviceMemory?: number };
+    const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+    return small ? Math.max(0, top - 1) : top;
+  }
+
+  /** Remembers the tier the governor settled on (when it changed, and only while it governs). */
+  private saveTier() {
+    if (!this.governor || this.level === this.savedTier) return;
+    this.savedTier = this.level;
+    try {
+      localStorage.setItem(AUTO_KEY, JSON.stringify({ t: this.level, n: this.levels.length - 1, q: this.q }));
+    } catch {
+      /* storage blocked */
+    }
+  }
+
+  /**
+   * Applies the current tier. The cheap parts (particle count, figure detail, post
+   * on/off when the pass exists) apply at once; a new drawing-buffer size and a
+   * new post pass wait until the stage is idle (stop()), unless `now`.
+   */
+  private applyLevel(now = false) {
     const l = this.levels[this.level];
+    liveTier = this.level;
     setFigureDetail(this.level === 0 ? 0 : this.level === 1 ? 1 : 2);
     this.particles.emitScale = l.emit;
-    if (l.post && !this.post) this.post = new Post();
-    if (!l.post && this.post) {
-      this.post.dispose();
-      this.post = null;
-    }
+    // the two cheapest tiers keep a smaller particle pool (less to step and upload every frame)
+    this.particles.limit = this.level <= 1 ? Math.min(this.particles.max, 900) : this.particles.max;
     this.resetGovernor();
+    const sizeNow = this.renderer.getPixelRatio();
+    const needPost = l.post && !this.post;
+    if (!now && this.running && (needPost || Math.abs(sizeNow - l.dpr) > 1e-3)) {
+      this.sizeDirty = true;
+      return;
+    }
+    this.sizeDirty = false;
+    if (needPost) this.post = new Post();
     this.resize();
   }
 
   /** Compiles every material's program ahead of time (resolves when ready to draw without stalls). */
   prewarm(): Promise<void> {
     if (this.lost || this.disposed) return Promise.resolve();
-    return (this.warm ??= prewarmRenderer(this.renderer, this.camera));
+    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed));
+  }
+
+  private uploads: Texture[] = [];
+  private uploadRaf = 0;
+
+  /**
+   * Uploads a card picture's textures to the GPU ahead of its cinematic, one texture
+   * per frame (an upload mid-shot stalls the GPU for a long frame on some devices).
+   */
+  upload(art: ArtData) {
+    if (this.lost || this.disposed) return;
+    const t = artTextures(art);
+    for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
+    this.uploadRaf ||= requestAnimationFrame(this.onUpload);
+  }
+
+  private onUpload = () => this.uploadOne();
+  private uploadOne() {
+    this.uploadRaf = 0;
+    if (this.lost || this.disposed) return void (this.uploads.length = 0);
+    const x = this.uploads.shift();
+    if (!x) return;
+    try {
+      // a no-op when this renderer already has it
+      this.renderer.initTexture(x);
+    } catch {
+      /* a lost context mid-upload: it uploads on first use instead */
+    }
+    if (this.uploads.length) this.uploadRaf = requestAnimationFrame(this.onUpload);
   }
 
   resize() {
     if (!this.levels.length) return;
+    this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     const dpr = this.levels[this.level].dpr;
+    if (this.levels[this.level].post && !this.post) this.post = new Post();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.post?.setSize(this.renderer);
+    this.particles.mat.uniforms.uMaxPx.value = 64 * dpr;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     // measured at the resting camera (z = 10, base fov) so a cinematic's camera moves never change the unit
@@ -2152,11 +2525,32 @@ export class Stage {
     else this.flash = Math.max(this.flash, s);
   }
 
+  /** the stopped stage's tidy-up (clear, resize, save the tier), waiting for a quiet moment */
+  private parkId = 0;
+  /** the canvas was hidden by stop(): it shows again once a new frame is drawn */
+  private hidden = false;
+  /** A frame this long (ms), SPIKE_RUN times in a row, drops a quality tier at once. */
+  static readonly SPIKE_MS = 50;
+  static readonly SPIKE_RUN = 3;
+  /** consecutive frames over SPIKE_MS */
+  private spikes = 0;
+
   start() {
     if (this.running || this.lost || this.disposed) return;
     this.running = true;
+    // a tidy-up still waiting is moot: the next frame draws over the canvas anyway
+    this.cancelPark();
     this.resetGovernor();
+    this.spikes = 0;
     this.schedule();
+  }
+
+  private cancelPark() {
+    if (!this.parkId) return;
+    const w = window as Window & { cancelIdleCallback?: (id: number) => void };
+    if (w.cancelIdleCallback) w.cancelIdleCallback(this.parkId);
+    clearTimeout(this.parkId);
+    this.parkId = 0;
   }
 
   private schedule() {
@@ -2169,30 +2563,61 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     const ms = now - this.last;
-    let dt = Math.min(0.05, ms / 1000) * this.speed;
+    // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
+    // not slow motion); physics and particles step at most 50 ms at a time.
+    let dt = Math.min(0.2, ms / 1000) * this.speed;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;
     }
     this.last = now;
     const t0 = performance.now();
-    this.step(dt);
+    this.step(Math.min(dt, 0.05 * this.speed), dt);
     if (!this.running) return;
+    // stopped earlier (hidden at once): it shows again now that a fresh frame is drawn
+    if (this.hidden) {
+      this.hidden = false;
+      this.canvas.style.visibility = '';
+    }
     this.raf = requestAnimationFrame(this.loop);
     if (this.governor) this.govern(ms, performance.now() - t0);
   };
 
+  /**
+   * Stops drawing. The canvas is hidden this very moment (a tap-skip gives the duel
+   * the screen back without a stall); clearing it, a new buffer size the governor
+   * asked for mid-shot and saving the tier wait for a quiet moment.
+   */
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    if (this.lost) return;
-    this.renderer.setRenderTarget(null);
-    this.renderer.clear();
+    if (this.disposed) return;
+    if (this.lost) return void this.saveTier();
+    if (!this.hidden) {
+      this.hidden = true;
+      this.canvas.style.visibility = 'hidden';
+    }
+    if (this.parkId) return;
+    const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+    this.parkId = w.requestIdleCallback ? w.requestIdleCallback(this.park, { timeout: 600 }) : (setTimeout(this.park, 60) as unknown as number);
   }
 
-  step(dt: number) {
-    this.onFrame?.(dt);
+  private park = () => {
+    this.parkId = 0;
+    if (this.running || this.disposed) return;
+    this.saveTier();
+    if (this.lost) return;
+    if (this.sizeDirty) this.resize();
+    this.renderer.setRenderTarget(null);
+    this.renderer.clear();
+  };
+
+  /** One frame: `dt` steps effects and particles, `cineDt` (default `dt`) the cinematic's own clock. */
+  step(dt: number, cineDt = dt) {
+    this.onFrame?.(cineDt);
+    // the director may have stopped the stage this frame (idle): don't draw a last frame over the cleared canvas
+    if (!this.running) return;
     // a reused list: no allocation per frame (and new effects start next frame)
     const list = this.fxList;
     list.length = 0;
@@ -2221,10 +2646,13 @@ export class Stage {
       this.camera.updateProjectionMatrix();
     }
     if (this.lost) return;
-    if (this.post) {
+    if (this.post && this.levels[this.level].post) {
       const u = this.post.comp.uniforms;
-      u.uChroma.value = this.chroma * 0.035;
+      // capped (was up to 0.035): a strong pulse split a shattering figure's fine fragments and thin
+      // bright lines (cracks, bolts) into rainbow noise
+      u.uChroma.value = Math.min(0.012, this.chroma * 0.035);
       u.uFlash.value = this.flash * 0.85;
+      u.uDim.value = this.dim;
       this.post.render(this.renderer, this.scene, this.camera);
     } else this.renderer.render(this.scene, this.camera);
     // pulses last a beat (a few frames), not a whole effect
@@ -2247,6 +2675,14 @@ export class Stage {
    * Stepping up and then straight back down doubles the wait before trying again.
    */
   private govern(ms: number, workMs: number) {
+    // a run of very long frames (a busy phone): step down now, not after a whole window
+    this.spikes = ms > Stage.SPIKE_MS ? this.spikes + 1 : 0;
+    if (this.spikes >= Stage.SPIKE_RUN && this.level > 0) {
+      this.spikes = 0;
+      if (performance.now() - this.lastUp < 5000) this.upWait = Math.min(this.upWait * 2, 48);
+      this.tier = this.level - 1;
+      return;
+    }
     const x = Math.min(ms, 50);
     const i = this.ftI;
     this.ftSum += x - this.ft[i];
@@ -2312,8 +2748,11 @@ export class Stage {
 
   dispose() {
     this.stop();
+    this.cancelPark();
     this.clear();
     this.disposed = true;
+    cancelAnimationFrame(this.uploadRaf);
+    this.uploads.length = 0;
     this.canvas.removeEventListener('webglcontextlost', this.handleLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleRestore, false);
     document.removeEventListener('visibilitychange', this.handleVisibility);
