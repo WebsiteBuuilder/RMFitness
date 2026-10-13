@@ -1,0 +1,409 @@
+/* Phone polish for the whole app: crisper card art, tap feedback, screen transitions,
+   and a Classic duel screen that always fits the phone without scrolling.
+   Loaded after styles.css so these rules win; nothing here changes the GBA layout. */
+
+/* ---------- touch basics ---------- */
+button,
+.zone,
+.hcard,
+.pcard,
+.crow,
+.menu-item {
+  touch-action: manipulation; /* no double-tap zoom, no 300ms wait on fast taps */
+}
+.duel,
+.title,
+.packopen,
+.ptiles,
+.menu,
+.tabs,
+.cardlist {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none; /* long-pressing a card doesn't pop up "Save image" */
+}
+
+/* Card art is a real picture, not pixel art: shrink it smoothly instead of dropping pixels. */
+img.cimg {
+  image-rendering: auto;
+}
+.cimg {
+  -webkit-user-drag: none;
+}
+
+/* The profile tiles' .pname rule was also shrinking and greying the names in the duel bar. */
+.pbar .pname {
+  font-size: 12px;
+  color: var(--gold);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- menus ---------- */
+/* Short command names stay on one line; the grey note takes whatever room is left. */
+.menu-item {
+  align-items: center;
+  border-radius: 2px;
+  transition: background-color 0.08s;
+}
+.menu-label {
+  flex: 0 0 auto;
+  max-width: 62%;
+}
+.menu-note {
+  flex: 1 1 0;
+  min-width: 0;
+  line-height: 1.25;
+}
+.menu-item:not(.off):active {
+  background: #ffffff1f;
+}
+.menu-item:not(.off):active .cursor {
+  visibility: visible;
+  animation: none;
+}
+.menu-item:not(.off):active .menu-label {
+  color: var(--gold);
+}
+.gbtn,
+.chip,
+.tab,
+.win-x,
+.erase {
+  transition:
+    transform 0.06s,
+    box-shadow 0.06s,
+    filter 0.1s;
+}
+.gbtn:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 #000;
+  filter: brightness(1.25);
+}
+.chip:active,
+.tab:active,
+.win-x:active {
+  filter: brightness(1.4);
+}
+.crow:active {
+  background: #1d3480;
+}
+.win-x {
+  min-width: 36px;
+  min-height: 30px;
+  margin: -4px -6px;
+}
+
+/* ---------- screen and window transitions ---------- */
+.screen > .win,
+.screen > .tabs,
+.menu-head,
+.profiles > * {
+  animation: win-open 0.16s ease-out both;
+}
+.screen > .win + .win {
+  animation-delay: 0.05s;
+}
+.overlay {
+  animation: overlay-in 0.14s ease-out both;
+}
+.overlay-inner > .win {
+  animation: win-open 0.16s ease-out both;
+}
+@keyframes win-open {
+  from {
+    opacity: 0;
+    transform: scaleY(0.85);
+  }
+}
+@keyframes overlay-in {
+  from {
+    background: rgba(0, 0, 0, 0);
+  }
+}
+.title {
+  animation: fade-in 0.4s ease-out both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.title-logo .t1 {
+  text-shadow:
+    3px 3px 0 #7a1b1b,
+    0 0 18px #f7c94855;
+}
+.pass .win {
+  animation: win-open 0.2s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* iPhone home bar and notch */
+.screen {
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
+.deckedit .msgwin {
+  margin-bottom: calc(6px + env(safe-area-inset-bottom));
+}
+.title-foot {
+  bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+/* ---------- Classic duel: always fits the phone, nothing jumps ---------- */
+.duel:not(.touch) {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
+  /* everything above and below the 4 zone rows: bars, hands, the centre strip, the message window */
+  --chrome: 440px;
+}
+.duel:not(.touch) .field {
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+/* On short phones the zones shrink so the whole board still fits on screen. */
+.duel:not(.touch) .rows {
+  max-width: calc((100dvh - var(--chrome) - env(safe-area-inset-bottom)) / 4 * 59 / 86 * 5 + 12px);
+}
+.duel:not(.touch) .sidebox.top,
+.duel:not(.touch) .sidebox.bottom {
+  align-self: stretch;
+}
+/* The message window keeps one size, so the field and hand don't hop up and down after every tap. */
+.duel:not(.touch) > .msgwin {
+  flex: none;
+  height: 160px;
+  display: flex;
+  flex-direction: column;
+  margin: 4px 6px 6px;
+}
+.duel:not(.touch) > .msgwin .win-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.duel:not(.touch) > .msgwin .menu.scroll {
+  max-height: none;
+}
+.duel:not(.touch) > .msgwin .menu-item {
+  min-height: 32px;
+  padding: 5px 4px;
+}
+/* Four or more commands sit in two columns so none hide below the fold. */
+.duel:not(.touch) > .msgwin .menu:not(.scroll):has(> li:nth-child(4)) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 4px;
+}
+.duel:not(.touch) > .msgwin .selstat {
+  margin-bottom: 0;
+}
+@media (max-height: 720px) {
+  :root {
+    --card-w: 46px;
+    --card-h: 67px;
+  }
+  .duel:not(.touch) {
+    --chrome: 420px;
+  }
+  .duel:not(.touch) > .msgwin {
+    height: 150px;
+  }
+}
+
+/* A big hand overlaps instead of running off the edge of the screen. */
+.hand {
+  scroll-snap-type: x proximity;
+}
+.hand:has(> .hcard:nth-child(7)) .hcard + .hcard {
+  margin-left: -12px;
+}
+.hand:has(> .hcard:nth-child(8)) .hcard + .hcard {
+  margin-left: -20px;
+}
+.hand:has(> .hcard:nth-child(10)) .hcard + .hcard {
+  margin-left: -28px;
+}
+.hand .hcard {
+  border-radius: 3px;
+  box-shadow: -2px 0 4px #0008;
+  transition:
+    transform 0.15s,
+    margin 0.15s;
+}
+.hand .hcard.sel {
+  z-index: 2;
+}
+.hand .hcard:active {
+  transform: translateY(-4px);
+}
+.hand .hcard.sel:active {
+  transform: translateY(-8px);
+}
+
+/* Field cards: a soft drop shadow lifts them off the mat; selected and target zones glow. */
+.zone .fcard .cimg {
+  box-shadow: 0 2px 4px #0009;
+}
+.zone.sel {
+  box-shadow: 0 0 10px #f7c948aa;
+}
+.zone.pick {
+  box-shadow: 0 0 10px #5be07aaa;
+}
+.zone:not(.empty):active {
+  filter: brightness(1.2);
+}
+.ph.on {
+  box-shadow: 0 0 6px #f7c948aa;
+}
+
+/* Life points tick and flash when they change. */
+.lp-damage {
+  text-shadow: 0 0 8px #ff5a5a;
+}
+.lp-heal {
+  animation: heal 0.5s;
+  text-shadow: 0 0 8px #5be07a;
+}
+@keyframes heal {
+  40% {
+    transform: scale(1.15);
+  }
+}
+.dmg {
+  font-size: 13px;
+  text-shadow: 1px 1px 0 #000;
+}
+.anim-damage .fcard,
+.zone.anim-damage {
+  animation: shake 0.4s;
+}
+
+/* ---------- booster packs ---------- */
+.packopen {
+  min-height: 100dvh;
+  cursor: pointer;
+}
+.packrow {
+  gap: 8px;
+  margin: 14px 0 18px;
+  perspective: 600px;
+}
+.pcard {
+  width: min(17.5vw, 76px);
+  height: auto;
+  aspect-ratio: 59 / 86;
+  transform-style: preserve-3d;
+  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.pcard .cimg {
+  border-radius: 3px;
+  box-shadow: 0 3px 8px #000b;
+}
+.pcard.up {
+  animation: pack-flip 0.4s ease-out;
+}
+@keyframes pack-flip {
+  0% {
+    transform: rotateY(90deg) scale(1.08);
+  }
+  100% {
+    transform: none;
+  }
+}
+.pcard:not(.up):active {
+  transform: rotateY(180deg) scale(0.9);
+}
+/* The rare-slot card shines when it is something better than a Common. */
+.pcard.up.shine .cimg {
+  box-shadow:
+    0 0 0 2px var(--gold),
+    0 0 16px #f7c948cc;
+}
+.pcard.up.shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: linear-gradient(115deg, transparent 30%, #ffffffaa 48%, transparent 66%);
+  background-size: 250% 100%;
+  animation: pack-shine 1.6s ease-in-out 0.3s infinite;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+@keyframes pack-shine {
+  0% {
+    background-position: 130% 0;
+  }
+  60%,
+  100% {
+    background-position: -30% 0;
+  }
+}
+.rar {
+  bottom: -10px;
+  font-size: 10px;
+  border-radius: 2px;
+}
+.packopen .reveal-all {
+  display: block;
+  margin: 6px auto 2px;
+}
+
+/* ---------- Link Battle ---------- */
+.chip.copied {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* Room for the raised selected card: the hand scrolls sideways, which clips anything above it. */
+.duel:not(.touch) .hand {
+  padding: 11px 8px 3px;
+}
+
+/* Online duel: say so when the connection drops instead of waiting silently. */
+.netwarn {
+  position: fixed;
+  top: calc(6px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  background: #4a1c1c;
+  border: 2px solid var(--red);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 #000;
+  font-size: 11px;
+  text-align: center;
+  animation: blink 1.4s steps(2) 3;
+}
+
+/* iPhones zoom the whole page into any text box under 16px. */
+input,
+.search,
+.pw,
+.code {
+  font-size: 16px;
+}
+.search {
+  padding: 2px 6px;
+  min-width: 0;
+}

@@ -85,6 +85,24 @@ export function Lobby({
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
   const [guestName, setGuestName] = useState('');
+  const [copied, setCopied] = useState(false);
+  /** Phones open the share sheet (Messages, WhatsApp...); elsewhere the link is copied. */
+  const invite = async (room: string) => {
+    const url = `${location.origin}${location.pathname}?join=${room}`;
+    try {
+      if (navigator.share) return await navigator.share({ title: 'Duel me!', text: `Join my duel room ${room}`, url });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt('Copy this link:', url);
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   // The host decides the game; a guest follows whatever the host readied for.
   const roomMode: GameMode = mySeat === 0 || !seats[0].ready ? mode : (seats[0].mode ?? 'eds');
   const mine = entries[roomMode];
@@ -142,8 +160,8 @@ export function Lobby({
         {code && session.adapter.isHost && status === 'waiting' && (
           <p>
             Tell your brother the code <b>{code}</b> or send him this link:{' '}
-            <button class="chip" onClick={() => void navigator.clipboard?.writeText(`${location.origin}${location.pathname}?join=${code}`)}>
-              Copy invite link
+            <button class={`chip ${copied ? 'copied' : ''}`} onClick={() => void invite(code)}>
+              {copied ? 'Link copied!' : 'Send invite link'}
             </button>
           </p>
         )}

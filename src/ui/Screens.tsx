@@ -88,7 +88,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
         </div>
         <div>
           Cards {totalCards(save)} · W {save.wins} L {save.losses} D {save.draws}
-          {save.pendingPacks > 0 && <b class="blink"> · {save.pendingPacks} pack to open!</b>}
+          {save.pendingPacks > 0 && <b class="blink"> · {save.pendingPacks === 1 ? '1 pack' : `${save.pendingPacks} packs`} to open!</b>}
         </div>
       </div>
       <Win title="Main Menu">
@@ -293,13 +293,20 @@ export function PackOpen({ save, onSave, onDone }: { save: SaveFile; onSave: (s:
       <Win title={chosen ?? 'Pack'}>
         <div class="packrow">
           {cards.map((c, i) => (
-            <div key={i} class={`pcard ${i < shown ? 'up' : ''}`} onClick={(ev) => (ev.stopPropagation(), i < shown ? setInfo(c.name) : reveal())}>
+            <div key={i} class={`pcard ${i < shown ? 'up' : ''} ${c.rarity !== 'Common' ? 'shine' : ''}`} onClick={(ev) => (ev.stopPropagation(), i < shown ? setInfo(c.name) : reveal())}>
               <CardImg name={c.name} back={i >= shown} />
               {i < shown && <span class={`rar r-${RARITY_SHORT[c.rarity] ?? 'C'}`}>{RARITY_SHORT[c.rarity] ?? 'C'}</span>}
             </div>
           ))}
         </div>
-        {shown < cards.length ? <p class="hint">Tap to reveal</p> : <Menu items={[{ label: save.pendingPacks > 0 ? `Open another pack (${save.pendingPacks} left)` : 'Done', onPick: () => (save.pendingPacks > 0 ? setCards(null) : onDone()) }]} />}
+        {shown < cards.length ? (
+          <>
+            <p class="hint">Tap to reveal</p>
+            <button class="gbtn reveal-all" onClick={(ev) => (ev.stopPropagation(), playWin(), setShown(cards.length))}>
+              Reveal all
+            </button>
+          </>
+        ) : <Menu items={[{ label: save.pendingPacks > 0 ? `Open another pack (${save.pendingPacks} left)` : 'Done', onPick: () => (save.pendingPacks > 0 ? setCards(null) : onDone()) }]} />}
       </Win>
       {info && (
         <Overlay onClose={() => setInfo(null)}>
@@ -355,6 +362,8 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
   /** Ticket cards and the Egyptian Gods are keepsakes in EDS: they cannot go in a Deck. */
   const keepsake = (n: string) => card(n)?.sub === 'Ticket' || GODS.has(n);
   const copies = (n: string) => save.main.filter((x) => x === n).length + save.side.filter((x) => x === n).length + save.fusion.filter((x) => x === n).length;
+  /** Only a card coming out of the Trunk adds a copy to your decks; moving one between decks doesn't. */
+  const tooMany = (n: string) => tab === 'trunk' && copies(n) >= 3;
   const dbKnown = allCards().length > 0;
 
   return (
@@ -397,9 +406,9 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
             items={[
               ...(keepsake(sel) ? [{ label: 'A keepsake: it cannot be used in a Duel', disabled: true, onPick: () => {} }] : []),
               ...(tab !== 'trunk' ? [{ label: 'To Trunk', onPick: () => move(sel, tab, 'trunk') }] : []),
-              ...(tab !== 'main' && !isFusion(sel) && !keepsake(sel) ? [{ label: 'To Main Deck', disabled: copies(sel) >= 3, onPick: () => move(sel, tab, 'main') }] : []),
-              ...(tab !== 'side' && !keepsake(sel) ? [{ label: 'To Side Deck', disabled: copies(sel) >= 3 || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
-              ...(tab !== 'fusion' && isFusion(sel) ? [{ label: 'To Fusion Deck', disabled: copies(sel) >= 3 || save.fusion.length >= 20, onPick: () => move(sel, tab, 'fusion') }] : []),
+              ...(tab !== 'main' && !isFusion(sel) && !keepsake(sel) ? [{ label: 'To Main Deck', disabled: tooMany(sel), onPick: () => move(sel, tab, 'main') }] : []),
+              ...(tab !== 'side' && !keepsake(sel) ? [{ label: 'To Side Deck', disabled: tooMany(sel) || save.side.length >= 15, onPick: () => move(sel, tab, 'side') }] : []),
+              ...(tab !== 'fusion' && isFusion(sel) ? [{ label: 'To Fusion Deck', disabled: tooMany(sel) || save.fusion.length >= 20, onPick: () => move(sel, tab, 'fusion') }] : []),
               { label: 'Card Info', onPick: () => setInfo(sel) },
             ]}
           />
