@@ -23,8 +23,14 @@ export interface SummonLock {
   only?: string[];
   /** monsters of these Levels cannot be Summoned */
   levels?: number[];
+  /** only monsters of these card types (CardInfo.sub: 'Fusion', 'Synchro'...) can be Summoned */ // audit-04
+  subs?: string[];
   /** this card is exempt */
   except?: number;
+  /** audit-02: monsters with these names cannot be Summoned (Chaos Grepher) */
+  names?: string[];
+  /** audit-02: only monsters of these kinds (Fusion, Xyz...) can be Summoned from the Extra Deck (Contact Gate) */
+  extraOnly?: string[];
 }
 
 function makePlayer(name: string): PlayerState {
@@ -119,6 +125,7 @@ export class Engine {
     if (how === 'effect' && own?.effectProof?.(this, m)) return true;
     // "This turn, cannot be destroyed by card effects" that outlasts its source (Amazoness Scouts).
     if (how === 'effect' && (m.tags?.effProofTurn ?? -1) === this.state.turn) return true;
+    if (how === 'effect' && this.speed && m.tags?.effProof) return true; // audit-10: "it cannot be destroyed by card effects" for good (Vehicroid Connection Zone)
     for (const p of [0, 1] as Pid[]) {
       const sources = [...this.monsters(p).filter((x) => x.faceUp), ...this.activeSpells(p)];
       for (const src of sources) {
@@ -130,6 +137,7 @@ export class Engine {
       }
     }
     for (const l of this.lingering()) if (l.eff.lingering?.shields?.(this, l.p, m, how)) return true;
+    for (const x of this.skillFx()) if (x.eff.shields?.(this, x.c, m, how, x.p)) return true; // audit-skills
     return false;
   }
 
@@ -233,6 +241,7 @@ export class Engine {
   }
 
   isNegated(m: FieldCard): boolean {
+    if (m.tags?.unnegatable) return false; // audit-10: "its effects cannot be negated" (Vehicroid Connection Zone)
     return !!m.faceUp && (m.tags?.negated === 1 || m.tags?.negatedTurn === this.state.turn);
   }
 
@@ -248,6 +257,42 @@ export class Engine {
         const eff = getEffect(c.name);
         if (eff) out.push({ c, p, eff });
       }
+    }
+    out.push(...this.skillFx()); // audit-skills
+    return out;
+  }
+
+  // audit-skills: a Skill's continuous hooks (SkillDef.eff) run like an active Spell/Trap of its owner, through this stand-in
+  // card (uid < 0: it is not in any zone, so it cannot be moved, targeted or destroyed).
+  skillCard(p: Pid): FieldCard | null {
+    const ps = this.player(p);
+    if (!ps.skill) return null;
+    const list = (this.state.fx.skillCards ??= [null, null]) as (FieldCard | null)[];
+    if (!list[p] || list[p]!.name !== ps.skill) list[p] = { uid: -1 - p, name: ps.skill, owner: p, pos: 'atk', faceUp: true, placedTurn: 0, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0, active: true };
+    return list[p];
+  }
+
+  /** audit-skills: the Skills with continuous hooks, as liveST() entries. */
+  skillFx(): { c: FieldCard; p: Pid; eff: EffectDef }[] {
+    const out: { c: FieldCard; p: Pid; eff: EffectDef }[] = [];
+    if (!this.speed) return out;
+    for (const p of [0, 1] as Pid[]) {
+      const ps = this.player(p);
+      const eff = ps.skill ? getSkill(ps.skill)?.eff : undefined;
+      const c = eff ? this.skillCard(p) : null;
+      if (eff && c) out.push({ c, p, eff });
+    }
+    return out;
+  }
+
+  /** audit-skills: the Skills in play, with their owners. */
+  skillDefs(): { p: Pid; sk: import('./skills').SkillDef }[] {
+    const out: { p: Pid; sk: import('./skills').SkillDef }[] = [];
+    if (!this.speed) return out;
+    for (const p of [0, 1] as Pid[]) {
+      const ps = this.player(p);
+      const sk = ps.skill ? getSkill(ps.skill) : undefined;
+      if (sk) out.push({ p, sk });
     }
     return out;
   }
@@ -278,8 +323,9 @@ export class Engine {
     // The card's own Summoning condition ("Cannot be Special Summoned", "Must be Fusion Summoned"), unless an effect ignores it.
     const rule = getEffect(c.name)?.summonRule;
     if (rule && fx.ignoreCond !== c.uid && !rule(this, c, p, how, from)) return true;
+    if (how === 'flip' && (c as FieldCard).tags?.noFlip) return true; // audit-05: "cannot change its battle position" also stops a Flip Summon (Floodgate Trap Hole)
     if (how !== 'set' && fx.summonLock?.[p] === this.state.turn && fx.summonLockExcept !== c.uid) return true;
-    if (how === 'special' && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true;
+    if (how === 'special' && fx.ignoreCond !== c.uid && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true; // a Summoning condition: effects that ignore it skip it too
     if (how === 'special' && from === 'fusion' && this.liveST().some((x) => x.c.name === 'Summon Gate') && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
     if (how === 'special' && from !== null && getEffect(c.name)?.cannotSpecialSummon && fx.ignoreCond !== c.uid) return true;
     // "You cannot Normal or Special Summon ... this turn, except ..." (summonLocks: see SummonLock).
@@ -288,8 +334,19 @@ export class Engine {
       if (!(how === 'special' ? l.special : how === 'normal' && l.normal)) continue;
       if (l.only && !l.only.some((n) => c.name.includes(n))) return true;
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
+      if (l.subs && !l.subs.includes(this.info(c.name).sub)) return true; // audit-04: "except Fusion Monsters" (Elemental HERO Blazeman)
+      if (l.names && l.names.includes(c.name)) return true; // audit-02
+      if (l.extraOnly && from === 'fusion' && !l.extraOnly.includes(this.info(c.name).sub)) return true; // audit-02
     }
     if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
+    // audit-03: "you cannot Special Summon monsters from the Extra Deck this turn, except ..." (fx.extraLocks: allowed race/attributes/kinds).
+    if (how === 'special' && from === 'fusion') {
+      const ci = this.info(c.name);
+      for (const l of (fx.extraLocks ?? []) as { p: Pid; turn: number; race?: string; attrs?: string[]; subs?: string[] }[])
+        if (l.p === p && l.turn === this.state.turn && ((l.race && ci.race !== l.race) || (l.attrs && !l.attrs.includes(ci.attribute ?? '')) || (l.subs && !l.subs.includes(ci.sub)))) return true;
+    }
+    // audit-08: "while you control any of those monsters face-up, you cannot Special Summon from the Extra Deck, except Fusion Monsters" (NEXT).
+    if (how === 'special' && from === 'fusion' && this.info(c.name).sub !== 'Fusion' && ((fx.extraLockBy ?? []) as { p: Pid; uids: number[] }[]).some((l) => l.p === p && l.uids.some((u) => this.controller(u) === p && !!this.fieldCard(u)?.faceUp))) return true;
     return this.liveCards().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
   }
 
@@ -302,12 +359,16 @@ export class Engine {
     if (!this.speed) return false;
     const fx = this.state.fx;
     if (this.nameLocked(card.name)) return true;
+    // audit-06: "for the rest of this turn, you cannot activate cards, or the effects of cards, with that name" (Generation Next): fx.turnNameLocks.
+    if (((fx.turnNameLocks ?? []) as { p: Pid; name: string; turn: number }[]).some((x) => x.p === player && x.name === card.name && x.turn === this.state.turn)) return true;
     if (((card as FieldCard).tags?.noActTurn ?? -1) === this.state.turn && this.find(card.uid)?.loc.zone === 'sz') return true;
     const kind = this.info(card.name).kind;
     if (kind === 'trap' && (fx.noTrapTurn as number[] | undefined)?.[player] === this.state.turn) return true;
     const lock = fx.battleLock as { player: Pid; turn: number; kind: string } | undefined;
     if (lock && lock.player === player && lock.turn === this.state.turn && this.state.battle && this.controller(this.state.battle.attacker) === other(player) && lock.kind === kind) return true;
     if (kind === 'monster' && this.monsterEffectsLocked(player, card)) return true;
+    // audit-03: "cannot activate cards with that name for the rest of this Duel" (Cursed Seal of the Forbidden Spell): fx.duelNameLocks.
+    if (((fx.duelNameLocks ?? []) as { p: Pid; name: string }[]).some((x) => x.p === player && x.name === card.name)) return true;
     return false;
   }
 
@@ -326,7 +387,9 @@ export class Engine {
 
   /** Speed Duel: extra attacks a monster was granted (Evil HERO Infernal Gainer, Diffusion Wave-Motion). */
   extraAttacks(m: FieldCard): number {
-    return (m.tags?.extraAttacks ?? 0) + (m.tags?.extraAttacksTurn === this.state.turn ? m.tags?.extraAttacksN ?? 0 : 0);
+    const ctl = this.controller(m.uid); // audit-skills: Skills granting extra attacks
+    const bySkill = this.skillDefs().reduce((n, x) => n + (x.p === ctl ? x.sk.extraAttacks?.(this, x.p, m) ?? 0 : 0), 0);
+    return (m.tags?.extraAttacks ?? 0) + (m.tags?.extraAttacksTurn === this.state.turn ? m.tags?.extraAttacksN ?? 0 : 0) + bySkill;
   }
 
   /** Speed Duel: this monster cannot attack directly (Berserk Scales, Massivemorph). */
@@ -456,6 +519,11 @@ export class Engine {
     this.state.lastEvent = ev;
     const list = (this.state.events ??= []);
     list.push(ev);
+    // audit-09: the last face-up monster turned face-down (scripts report it with a 'position' event): Subterror Behemoth Stalagmo.
+    if (kind === 'position' && extra.uid !== undefined && this.speed) {
+      const f = this.find(extra.uid);
+      if (f?.loc.zone === 'mz' && !(f.card as FieldCard).faceUp) this.state.fx.flippedDown = { uid: extra.uid, p: f.loc.player, turn: this.state.turn, seq: ev.seq };
+    }
     if (list.length > 40) list.splice(0, list.length - 40);
     if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
@@ -519,7 +587,7 @@ export class Engine {
     let b = { atk: info.atk ?? 0, def: info.def ?? 0 };
     const set = this.effectOn(m)?.baseStats?.(this, m);
     if (set) b = set;
-    if (this.state.fx.swapTurn === this.state.turn) b = { atk: b.def, def: b.atk };
+    if (this.state.fx.swapTurn === this.state.turn || (m.tags?.swapTurn !== undefined && m.tags.swapTurn === this.state.turn)) b = { atk: b.def, def: b.atk }; // audit-eds: Shield & Sword (only monsters on the field then)
     return b;
   }
 
@@ -558,7 +626,9 @@ export class Engine {
     for (const q of p === undefined ? ([0, 1] as Pid[]) : [p]) {
       for (const c of this.activeSpells(q)) if (c.name === name) return c;
       for (const m of this.monsters(q)) if (m.faceUp && m.name === name) return m;
+      if (this.speed && this.skillDefs().some((x) => x.p === q && x.sk.namesAs?.(this, q) === name)) return this.skillCard(q); // audit-skills
       if (this.speed) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
+      if (this.speed) for (const c of this.activeSpells(q)) if (getEffect(c.name)?.countsAs?.(this, c) === name) return c; // audit-00: A Legendary Ocean is "Umi"
     }
     return null;
   }
@@ -582,7 +652,14 @@ export class Engine {
 
   /** Royal Decree: other Trap effects are negated. */
   trapsNegated(except?: string): boolean {
-    return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing');
+    if (this.speed && [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.negatesTraps)) return true; // audit-06: Jinzo - Lord
+    return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing') || this.jinzoNegates(); // audit-eds
+  }
+
+  /** audit-eds: Speed Duel: a face-up Jinzo negates all Trap effects on the field (unless an Amplifier frees it). */
+  private jinzoNegates(): boolean {
+    if (!this.speed) return false;
+    return [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.sealsTraps && !m.equips.some((u) => !!getEffect(this.fieldCard(u)?.name ?? '')?.freesOwnTraps));
   }
 
   /**
@@ -661,6 +738,14 @@ export class Engine {
 
   /** Public die roll / coin toss from the shared seed. */
   roll(sides: number): number {
+    // audit-skills: a die (6) or coin (2) result a player decided in advance for their own next roll (It's My Lucky Day!).
+    const fixed = this.state.fx.fixedRoll as { p: Pid; die?: number; coin?: number } | undefined;
+    if (fixed && this.actor === fixed.p && ((sides === 6 && fixed.die) || (sides === 2 && fixed.coin))) {
+      const v = sides === 6 ? fixed.die! : fixed.coin!;
+      this.state.fx.fixedRoll = undefined;
+      this.log(fixed.p, `${this.player(fixed.p).name} decides the result: ${sides === 6 ? v : v === 1 ? 'heads' : 'tails'}`);
+      return v;
+    }
     return 1 + Math.floor(this.rand() * sides);
   }
 
@@ -725,9 +810,11 @@ export class Engine {
       }
       case 'sz':
         ps.sz[f.loc.index] = null;
+        if (this.speed && !f.card.token) ((f.card as FieldCard).tags ??= {}).leftBy = this.actor ?? -1; // audit-10: whose card effect moved it (Waking the Dragon)
         break;
       case 'field':
         ps.field = null;
+        if (this.speed && !f.card.token) ((f.card as FieldCard).tags ??= {}).leftBy = this.actor ?? -1; // audit-10
         break;
     }
     return f.card.token ? { uid: f.card.uid, name: f.card.name, owner: f.card.owner, token: true } : { uid: f.card.uid, name: f.card.name, owner: f.card.owner };
@@ -813,6 +900,12 @@ export class Engine {
     }
     // Dark Ruler Ha Des: the effects of a monster destroyed by battle with its controller's Fiends are negated.
     const muted = byBattle && ((this.state.fx.battleMuted ?? []) as number[]).includes(uid);
+    // audit-09: cards in the GY that got there by being destroyed by battle (Skyscraper 2 - Hero City).
+    if (this.speed) {
+      const bd = (this.state.fx.battleDead ??= {}) as Record<number, number>;
+      if (byBattle && f.loc.zone === 'mz') bd[uid] = 1;
+      else delete bd[uid];
+    }
     const ev: GraveEvent | null = this.speed ? { card: { uid, name: f.card.name, owner: f.card.owner }, from: f.loc.zone, controller, reason, byBattle, faceUp: !!fc?.faceUp, pos: fc?.pos, race: fc ? this.raceOf(fc) : this.info(f.card.name).race ?? '', toGy: false, token: !!f.card.token, by: this.actor } : null;
     const card = this.detach(uid)!;
     if (byBattle && fc?.tags) fc.tags.leftBy = -1; // b17: destroyed by battle, not by a card effect
@@ -833,6 +926,7 @@ export class Engine {
       if (this.speed) ((this.state.fx.banishedAt ??= {}) as Record<number, number>)[uid] = this.state.turn;
       this.player(card.owner).removed.push(card);
       this.log(card.owner, `${card.name} is removed from play instead`);
+      this.queueBanished(card); // audit-09
     } else if (toDeck) {
       const ps = this.player(card.owner);
       if (this.isExtraCard(card.name)) ps.fusion.push(card);
@@ -876,7 +970,7 @@ export class Engine {
     this.graveQueue = [];
     if (!events.length || this.state.winner !== null) return;
     for (const x of this.liveST()) {
-      if (x.eff.onAnyToGrave && this.fieldCard(x.c.uid)?.active && this.state.winner === null) yield* this.as(x.p, x.eff.onAnyToGrave(this, x.c, x.p, events));
+      if (x.eff.onAnyToGrave && (x.c.uid < 0 || this.fieldCard(x.c.uid)?.active) && this.state.winner === null) yield* this.as(x.p, x.eff.onAnyToGrave(this, x.c, x.p, events)); // audit-skills: Skills (uid < 0) too
     }
     // Face-up monsters that watch the GY too (Marina, Princess of Sunflowers).
     for (const p of [0, 1] as Pid[]) {
@@ -894,7 +988,7 @@ export class Engine {
       for (const c of [...this.player(p).hand, ...this.player(p).gy]) {
         const h = getEffect(c.name)?.watchGrave;
         const z = this.find(c.uid)?.loc;
-        if (h && this.state.winner === null && z && z.player === p && (z.zone === 'hand' || z.zone === 'gy')) yield* this.as(p, h(this, c, p, z.zone, events));
+        if (h && this.state.winner === null && z && z.player === p && (z.zone === 'hand' || z.zone === 'gy') && !(z.zone === 'gy' && this.graveSTLocked(c))) yield* this.as(p, h(this, c, p, z.zone, events)); // audit-02: graveSTLocked
       }
   }
 
@@ -928,6 +1022,50 @@ export class Engine {
           kept = yield* repl(this, m, byBattle);
         } finally {
           this.actor = prev;
+        }
+        if (kept) continue;
+      }
+      // audit-07: a card in a GY can be banished instead of this monster being destroyed (Machine Angel Ritual).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        const ctl = this.controller(uid) ?? m.owner;
+        const sub = this.player(ctl).gy.find((c) => getEffect(c.name)?.graveReplace?.(this, c, ctl, m, byBattle));
+        if (sub) {
+          this.banish(sub.uid);
+          if (this.find(sub.uid)?.loc.zone === 'removed') {
+            this.log(ctl, `${sub.name} is banished instead of ${m.name} being destroyed`);
+            continue;
+          }
+        }
+      }
+      // audit-02: a card in the hand discarded instead (Chronomaly Acambaro Figures).
+      const ownerNow = m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz' ? this.controller(uid) : null;
+      if (m && ownerNow !== null) {
+        let kept = false;
+        for (const c of this.player(ownerNow).hand.slice()) {
+          const h = getEffect(c.name)?.handReplace;
+          if (!h || kept || this.find(c.uid)?.loc.zone !== 'hand') continue;
+          const prev = this.actor;
+          this.actor = ownerNow;
+          try {
+            kept = yield* h(this, c, m, byBattle, byBattle ? null : prev);
+          } finally {
+            this.actor = prev;
+          }
+        }
+        if (kept) continue;
+      }
+      // audit-skills: a Skill replacing the destruction (Rainbow Crystal Collection, Heavy Metal Raiders).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        let kept = false;
+        for (const x of this.skillDefs()) {
+          if (kept || !x.sk.destroyReplace || !this.fieldCard(uid)) continue;
+          const prev = this.actor;
+          this.actor = x.p;
+          try {
+            kept = yield* x.sk.destroyReplace(this, x.p, m, byBattle);
+          } finally {
+            this.actor = prev;
+          }
         }
         if (kept) continue;
       }
@@ -1051,6 +1189,7 @@ export class Engine {
     if (amount > 0 && (this.state.fx.halfDamage as number[] | undefined)?.[player] === this.state.turn) amount = Math.floor(amount / 2);
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
+    if (amount > 0 && (this.battleHit || (this.actor !== null && this.actor !== player))) (this.state.fx.dmgByOpp ??= [-1, -1])[player] = this.state.turn; // audit-07: took battle/opponent's effect damage this turn (Magikuriboh)
     if (amount <= 0) return;
     const ps = this.player(player);
     const from = ps.lp;
@@ -1163,6 +1302,7 @@ export class Engine {
         if (h) yield* h(this, w, p, m, controller, kind);
       }
     }
+    for (const x of this.skillFx()) if (x.eff.onAnySummon && this.fieldCard(m.uid) && this.state.winner === null) yield* this.as(x.p, x.eff.onAnySummon(this, x.c, x.p, m, controller, kind)); // audit-skills
     for (const l of this.lingering()) {
       const h = l.eff.lingering?.onAnySummon;
       if (h && this.fieldCard(m.uid) && this.state.winner === null) yield* this.as(l.p, h(this, l.p, m, controller, kind));
@@ -1217,14 +1357,30 @@ export class Engine {
   /** Removes a card from play (D.D. Warrior, Gravedigger Ghoul). */
   banish(uid: number) {
     const f = this.find(uid);
-    if (!f || this.graveLocked(uid)) return;
+    if (!f) return;
+    this.state.fx.banishing = uid; // audit-07: locksGrave can tell a banish from other moves (Kycoo the Ghost Destroyer)
+    const locked = this.graveLocked(uid);
+    this.state.fx.banishing = undefined;
+    if (locked) return;
     if (this.speed) ((this.state.fx.banishedAt ??= {}) as Record<number, number>)[uid] = this.state.turn;
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
     if (fc) this.leftField(fc, f.loc.player, 'banished');
+    if (card.token || card.name.startsWith('__token')) {
+      // A banished Token ceases to exist (it can never come back to the field).
+      this.event('to-gy', { uid, player: card.owner });
+      this.log(card.owner, `${card.name} was removed from play`);
+      return;
+    }
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
     this.log(card.owner, `${card.name} was removed from play`);
+    this.queueBanished(card); // audit-09
+  }
+
+  /** audit-09: a banished card whose script has onBanished runs it once the current action or chain has finished (see flushLeaves). */
+  private queueBanished(card: Card) {
+    if (this.speed && !card.token && getEffect(card.name)?.onBanished) ((this.state.fx.pendingBanished ??= []) as { uid: number; owner: Pid }[]).push({ uid: card.uid, owner: card.owner });
   }
 
   /**
@@ -1247,6 +1403,21 @@ export class Engine {
       for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
       const eff = fc.token ? undefined : getEffect(fc.name);
       if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
+      // audit-02: cards in a GY that watch cards leaving the field (Contact Gate).
+      if (this.speed)
+        for (const q of [0, 1] as Pid[])
+          for (const c of this.player(q).gy.slice()) {
+            const h = getEffect(c.name)?.watchLeave;
+            if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && !this.graveSTLocked(c)) yield* this.as(q, h(this, c, q, fc, controller, reason));
+          }
+    }
+    // audit-09: "If this card is banished" (Resonance Insect).
+    const gone = (this.state.fx.pendingBanished ?? []) as { uid: number; owner: Pid }[];
+    while (gone.length && this.state.winner === null) {
+      const { uid, owner } = gone.shift()!;
+      const f = this.find(uid);
+      const h = f?.loc.zone === 'removed' ? getEffect(f.card.name)?.onBanished : undefined;
+      if (f && h) yield* this.as(owner, h(this, f.card, owner));
     }
   }
 
@@ -1273,9 +1444,18 @@ export class Engine {
     if (!this.speed) return false;
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'gy') return false;
+    // audit-06: an effect unaffected by Necrovalley is resolving (fx.graveFree: Gravekeeper's Stele, Ambusher), or a face-up card frees this GY (Gravekeeper's Chief).
+    if (this.state.fx.graveFree || this.liveCards().some((x) => x.eff.freesGrave?.(this, x.c, x.p, f.card) === true)) return false;
+    if (this.state.fx.ignoreGraveLock === uid) return false; // audit-09: an effect unaffected by Necrovalley (Rite of Spirit)
     const lock = this.liveCards().find((x) => x.eff.locksGrave?.(this, x.c, x.p, f.card) === true);
     if (lock) this.log(null, `${lock.c.name}: ${f.card.name} cannot leave the Graveyard`);
     return !!lock;
+  }
+
+  /** audit-02: a face-up card stops the effects of this Spell/Trap Card in the GY from being activated (Chow Sai the Ghost Stopper). */
+  graveSTLocked(card: Card): boolean {
+    if (!this.speed || this.info(card.name).kind === 'monster') return false;
+    return this.liveCards().some((x) => x.eff.locksGraveST?.(this, x.c, x.p, card) === true);
   }
 
   /** Speed Duel: a face-up card stops `player` from activating this Spell/Trap Card right now (Ancient Gear Soldier, Invader of Darkness, Mirage Dragon). */
@@ -1390,7 +1570,7 @@ export class Engine {
     for (let i = 0; i < 4 && this.state.winner === null; i++) {
       let acted = false;
       for (const x of this.liveST().filter((y) => y.eff.stateCheck)) {
-        if (!this.fieldCard(x.c.uid)?.active || this.state.winner !== null) continue;
+        if ((x.c.uid >= 0 && !this.fieldCard(x.c.uid)?.active) || this.state.winner !== null) continue; // audit-skills: Skills (uid < 0) too
         const before = this.state.log.length;
         yield* this.as(x.p, x.eff.stateCheck!(this, x.c, x.p));
         if (this.state.log.length !== before) acted = true;
@@ -1514,7 +1694,8 @@ export class Engine {
     if (sk.use.phase === 'main' && !this.inMainPhase()) return false;
     if (sk.use.phase === 'start' && !(this.state.phase === 'M1' || this.state.phase === 'SP') ) return false;
     if (sk.use.oncePerDuel !== false && (ps.skillUses ?? 0) >= (sk.use.timesPerDuel ?? 1)) return false;
-    if (ps.skillTurn === this.state.turn) return false;
+    if (sk.use.phase === 'battle' && !(this.state.phase === 'BP' && this.state.attackedThisTurn.length === 0)) return false; // audit-skills
+    if (ps.skillTurn === this.state.turn && !sk.use.repeat) return false; // audit-skills: repeat
     return sk.use.can(this, player);
   }
 
@@ -1535,6 +1716,7 @@ export class Engine {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'gy' || f.loc.player !== player || this.prohibited(f.card.name)) return false;
+    if (this.graveSTLocked(f.card)) return false; // audit-02
     const g = getEffect(f.card.name)?.graveIgnition;
     return !!g && g.can(this, f.card, player);
   }
@@ -1569,12 +1751,18 @@ export class Engine {
     const doomed = ((fx.endOfBattle ?? []) as number[]).filter((u) => this.fieldCard(u));
     fx.endOfBattle = [];
     if (doomed.length) yield* this.destroy(doomed);
+    // audit-eds: control taken "until the end of the Battle Phase" goes back (Magical Arm Shield).
+    for (const x of ((fx.returnAfterBattle ?? []) as { uid: number; to: Pid }[]).splice(0)) {
+      const m = this.fieldCard(x.uid);
+      if (m && this.controller(x.uid) !== x.to && this.takeControl(x.uid, x.to)) (m.returnAtEnd = undefined), this.log(null, `${m.name} returns to ${this.player(x.to).name}`);
+    }
     if (this.speed)
       for (const p of [this.state.turnPlayer, other(this.state.turnPlayer)])
         for (const m of this.monsters(p)) {
           const h = m.faceUp ? this.effectOn(m)?.onBattlePhaseEnd : undefined;
           if (h && this.fieldCard(m.uid)?.faceUp && this.state.winner === null) yield* this.as(p, h(this, m, p));
         }
+    for (const x of this.skillDefs()) if (x.sk.onBattlePhaseEnd && this.state.winner === null) yield* this.as(x.p, x.sk.onBattlePhaseEnd(this, x.p)); // audit-skills
   }
 
   private *nextPhase(): Step {
@@ -1623,6 +1811,13 @@ export class Engine {
           const eff = getEffect(c.name);
           if (eff?.onStandbyInGrave && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(tp, eff.onStandbyInGrave(this, c, tp));
         }
+        // audit-10: "during the Standby Phase of the next turn" from the GY, on either player's turn (Vampire's Curse).
+        if (this.speed)
+          for (const p of [tp, other(tp)])
+            for (const c of this.player(p).gy.slice()) {
+              const h = getEffect(c.name)?.onStandbyInGraveAny;
+              if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+            }
         if (this.speed)
           for (const c of this.player(tp).removed.slice()) {
             const h = getEffect(c.name)?.onStandbyBanished;
@@ -1682,6 +1877,7 @@ export class Engine {
       }
       for (const m of this.monsters(p)) {
         const eff = this.effectOn(m);
+        if (this.speed && m.faceUp && this.liveST().some((x) => x.eff.skipsEndPhase?.(this, x.c, x.p, m))) continue; // audit-08: Neo Space
         if (m.faceUp && eff?.onEndPhase && this.fieldCard(m.uid)) yield* eff.onEndPhase(this, m, p);
       }
     }
@@ -1690,7 +1886,7 @@ export class Engine {
       for (const p of [tp, other(tp)])
         for (const c of this.player(p).gy.slice()) {
           const h = getEffect(c.name)?.onEndPhaseInGrave;
-          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && !this.graveSTLocked(c)) yield* this.as(p, h(this, c, p)); // audit-02: graveSTLocked
         }
     // Speed Duel: "During the End Phase, if this card is banished" (D.D. Survivor, D.D. Scout Plane).
     if (this.speed)
@@ -1723,7 +1919,7 @@ export class Engine {
     // Revealed Skills with an End Phase effect.
     for (const p of [tp, other(tp)]) {
       const ps = this.player(p);
-      const sk = ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+      const sk = ps.skill ? getSkill(ps.skill) : undefined; // audit-skills: face-down Skills too (each Skill checks its own conditions)
       if (sk?.onEndPhase && this.state.winner === null) yield* this.as(p, sk.onEndPhase(this, p));
     }
     // Hand limit.
@@ -1810,12 +2006,16 @@ export class Engine {
   tributePlan(player: Pid, card: Card, faceUp?: boolean): { need: number; only?: (m: FieldCard) => boolean } {
     const info = this.info(card.name);
     const down = this.speed ? ((this.state.fx.lvDown ?? {}) as Record<number, { turn: number; n: number }>)[card.uid] : undefined;
-    const level = Math.max(1, (info.level ?? 1) - (down?.turn === this.state.turn ? down.n : 0));
+    let lvMod = 0; // audit-00: Levels changed in the hand by an active card (A Legendary Ocean)
+    if (this.speed) for (const x of this.liveST()) lvMod += x.eff.levelMod?.(this, x.c, x.p, card) ?? 0;
+    const level = Math.max(1, (info.level ?? 1) - (down?.turn === this.state.turn ? down.n : 0) + lvMod);
     let less = 0;
     if (this.speed) for (const x of this.liveST()) less += x.eff.tributeDiscount?.(this, x.c, x.p, card, player) ?? 0;
-    let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, this.tributesNeeded(level) - less) };
+    const fixed = getEffect(card.name)?.tributeCount?.(this, card, player); // audit-eds: Divine-Beasts need 3
+    let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, (fixed ?? this.tributesNeeded(level)) - less) };
     if (!this.speed || faceUp === false || plan.need === 0) return plan;
     const offers = [getEffect(card.name)?.tributeOffer?.(this, null, player, card, plan.need), ...this.liveST().filter((x) => x.p === player).map((x) => x.eff.tributeOffer?.(this, x.c, x.p, card, plan.need))];
+    for (const l of this.lingering()) if (l.p === player) offers.push(l.eff.lingering?.tributeOffer?.(this, l.p, card, plan.need)); // audit-10 (Vampire Sorcerer)
     for (const o of offers) if (o && o.need < plan.need && (!o.only || this.monsters(player).filter(o.only).length >= o.need)) plan = o;
     return plan;
   }
@@ -1823,17 +2023,20 @@ export class Engine {
   /** `faceUp`: true = a face-up Normal Summon, false = a Set, undefined = either. `extra`: an additional Normal Summon granted by a card (Ultimate Offering), outside the usual timing and limit. */
   canNormalSummon(player: Pid, card: Card, faceUp?: boolean, extra = false): boolean {
     if (!extra && (!this.inMainPhase() || this.state.turnPlayer !== player)) return false;
-    if (!extra && this.player(player).normalSummoned && !(faceUp !== false && this.extraTributeSummon(player) && this.tributeNeed(player, card) > 0)) return false;
+    if (!extra && this.player(player).normalSummoned && !(faceUp !== false && (this.extraTributeSummon(player) || this.skillExtraTribute(player, card)) && this.tributeNeed(player, card) > 0)) return false; // audit-skills: skillExtraTribute
     if (extra && this.find(card.uid)?.loc.zone !== 'hand') return false;
     if (faceUp === true && this.summonBlocked(player, card, 'normal', 'hand')) return false;
+    if (faceUp !== true && this.skillFx().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, card, player, 'set', 'hand') === true)) return false; // audit-skills: "cannot Summon/Set" Skills
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
     if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
+    if (faceUp === false && getEffect(card.name)?.cannotNormalSet) return false; // audit-eds
     if (this.chainEnergyBlocks(player)) return false;
+    if (faceUp === false && this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: Absorbing Jar
     const plan = this.tributePlan(player, card, faceUp);
     const need = plan.need;
     const empty = this.openMonsterZones(player); // b20
-    const owned = this.monsters(player).filter((m) => !this.untributable(m) && (!plan.only || plan.only(m))).length;
+    const owned = this.monsters(player).filter((m) => !this.untributable(m) && !this.tribLocked(m, card) && (!plan.only || plan.only(m))).length;
     if (need === 0) return empty > 0;
     if (owned < need && empty > 0 && faceUp !== false && this.tributeStandIns(player, card, need).length) return true;
     if (owned < need && faceUp !== false && this.doubleTributes(player, card).length) return true;
@@ -1856,6 +2059,11 @@ export class Engine {
     return this.speed && (this.state.fx.extraTribute as number[] | undefined)?.[player] === this.state.turn;
   }
 
+  /** audit-skills: a Skill lets `player` Tribute Summon this monster in addition to the Normal Summon (once per turn). */
+  skillExtraTribute(player: Pid, card: Card): boolean {
+    return this.speed && this.oncePerTurn('skill:extraTribute', player) && this.skillDefs().some((x) => x.p === player && x.sk.extraTributeFor?.(this, player, card) === true);
+  }
+
   /** Ultimate Offering: Normal Summon/Set a monster right now, in addition to the usual Normal Summon. */
   *extraNormalSummon(player: Pid, uid: number, pos: Pos, faceUp: boolean): Step {
     const ps = this.player(player);
@@ -1868,11 +2076,19 @@ export class Engine {
   /** Speed Duel: this monster cannot be Tributed (its own effect, or an equip on it: Blue Duston, Magicalized Duston Mop). */
   untributable(m: FieldCard): boolean {
     if (!this.speed) return false;
+    if (m.faceUp && m.tags?.cannotTribute) return true; // audit-00: "It cannot be Tributed" (Archfiend's Roar)
+    if (m.tags?.skillNoTribute) return true; // audit-skills: "cannot be Tributed" a Skill gave it (Forbidden Cyber Style Technique)
     if (m.faceUp && this.effectOn(m)?.cannotBeTributed?.(this, m)) return true;
     return m.equips.some((u) => {
       const eq = this.fieldCard(u);
       return !!eq && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && !!getEffect(eq.name)?.cannotBeTributed?.(this, m);
     });
+  }
+
+  /** audit-07: a monster that can only be Tributed for the Tribute Summon of a monster whose name includes fx.tribFor[uid] (Jurrac Tokens). */
+  tribLocked(m: FieldCard, card: Card): boolean {
+    const t = (this.state.fx.tribFor as Record<number, string> | undefined)?.[m.uid];
+    return this.speed && typeof t === 'string' && !card.name.includes(t);
   }
 
   /** Speed Duel: active Spells/Traps that can be Tributed instead of all the monsters (Ancient Gear Castle). */
@@ -1911,14 +2127,16 @@ export class Engine {
         const k = doubles.length === 1 ? [0] : yield* this.select(player, 'Tribute which monster as 2 Tributes?', this.optionsFor(doubles), 1, 1);
         double = doubles[k?.[0] ?? 0] ?? null;
       }
+      this.state.fx.tributingFor = f.card.name; // audit-05: the monster these Tributes are for (Evil HERO Infernal Prodigy)
       if (standIn) {
+        if (standIn.uid < 0) standIn.counters = 0; // audit-skills: a Skill Tributed instead (Middle Age Mechs) loses its counters
         yield* this.sendToGrave(standIn.uid, 'tribute');
         this.log(player, `${ps.name} Tributed ${standIn.name}`);
       } else if (double) {
         yield* this.sendToGrave(double.uid, 'tribute');
         this.log(player, `${ps.name} Tributed ${double.name} as 2 Tributes`);
       } else {
-        const pool = fodder.filter((m) => !this.untributable(m));
+        const pool = fodder.filter((m) => !this.untributable(m) && !this.tribLocked(m, f.card));
         if (pool.length < need) return;
         const picks = yield* this.select(player, `Choose ${need} monster${need > 1 ? 's' : ''} to Tribute`, this.optionsFor(pool, true), need, need, true);
         if (!picks) return;
@@ -1932,7 +2150,9 @@ export class Engine {
           }
         })());
       }
+      this.state.fx.tributingFor = undefined; // audit-05
       if (!this.monsterZoneOpen(player, zone)) zone = this.freeMonsterZone(player); // b20
+      if (this.speed) ((this.state.fx.tributedFor ??= {}) as Record<number, number>)[uid] = need; // audit-00: how many Tributes it took (Behemoth the King of All Animals)
     }
     // b20: a blocked zone (Ojama Knight) cannot take the monster: use another open one.
     if (zone >= 0 && zone < ps.mz.length && ps.mz[zone] === null && this.mzBlocked(player, zone)) zone = this.freeMonsterZone(player);
@@ -1941,19 +2161,61 @@ export class Engine {
     const fc = this.toField(card, faceUp ? pos : 'def', faceUp);
     ps.mz[zone] = fc;
     ps.normalSummoned = true;
-    if (usesExtra) (this.state.fx.extraTribute as number[])[player] = -1;
+    if (this.speed && faceUp && need > 0) (fc.tags ??= {}).tribS = need; // audit-06: it was Tribute Summoned (Granmarg, Gravekeeper's Chief, Infestation Wave)
+    if (usesExtra && !this.extraTributeSummon(player)) this.useOnce('skill:extraTribute', player); // audit-skills: the Skill's extra Tribute Summon
+    else if (usesExtra) (this.state.fx.extraTribute as number[])[player] = -1;
     yield* this.chainEnergy(player);
     this.event(faceUp ? 'summon' : 'set', { uid, player });
     if (faceUp) {
       this.log(player, `${ps.name} ${need ? 'Tribute ' : ''}Summoned ${card.name}${pos === 'def' ? ' in Defense Position' : ''}`);
-      yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
+      if (!(this.speed && getEffect(card.name)?.noSummonResponse)) yield* this.responseWindow('summon', { uid, summonKind: 'normal' }); // audit-eds
       const eff = this.effectOn(fc);
       if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
     } else {
       this.log(player, `${ps.name} Set a monster`);
       for (const x of this.liveST()) if (x.eff.onAnySet && this.fieldCard(uid)) yield* this.as(x.p, x.eff.onAnySet(this, x.c, x.p, fc, player));
+      // audit-00: face-up monsters watch Sets too (Arcana Force III - The Empress).
+      if (this.speed)
+        for (const q of [0, 1] as Pid[])
+          for (const w of this.monsters(q)) {
+            const h = w.faceUp ? this.effectOn(w)?.onAnySet : undefined;
+            if (h && this.fieldCard(uid) && this.state.winner === null) yield* this.as(q, h(this, w, q, fc, player));
+          }
     }
+  }
+
+  /**
+   * audit-06: a Tribute Summon with Tributes a card's own procedure chose ("You can Tribute 3 monsters to Tribute Summon (but not Set)
+   * this card": Gilford the Lightning, Gravekeeper's Oracle). Uses the Normal Summon; the Tributed monsters (name, Level) are kept
+   * in fx.tributedFor[uid] and the monster gets tags.tribS. Returns false when it could not be Summoned.
+   */
+  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk'): Generator<Prompt, boolean, Choice> {
+    const f = this.find(uid);
+    if (!f || f.loc.zone !== 'hand' || this.summonBlocked(player, f.card, 'normal', 'hand')) return false;
+    const ps = this.player(player);
+    const used = tributes.map((t) => this.fieldCard(t)).filter((m): m is FieldCard => !!m);
+    ((this.state.fx.tributedFor ??= {}) as Record<number, { name: string; level: number }[]>)[uid] = used.map((m) => ({ name: m.name, level: this.info(m.name).level ?? 0 }));
+    const self = this;
+    yield* this.together((function* (): Step {
+      for (const m of used) {
+        yield* self.sendToGrave(m.uid, 'tribute');
+        self.log(player, `${ps.name} Tributed ${m.name}`);
+      }
+    })());
+    const zone = this.freeMonsterZone(player);
+    if (zone < 0 || this.find(uid)?.loc.zone !== 'hand') return false;
+    const fc = this.toField(this.detach(uid)!, pos, true);
+    fc.tags = { tribS: used.length };
+    ps.mz[zone] = fc;
+    ps.normalSummoned = true;
+    this.event('summon', { uid, player });
+    this.log(player, `${ps.name} Tribute Summoned ${fc.name}`);
+    yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
+    const eff = this.effectOn(fc);
+    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
+    if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
+    return true;
   }
 
   private *flipSummon(player: Pid, uid: number): Step {
@@ -2015,8 +2277,20 @@ export class Engine {
     if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
     const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
-    if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
-    return !!proc && proc.can(this, card, player);
+    // audit-05/07/10: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways"); batches read fx.procSummon, fx.procCheck or fx.procSS.
+    const prevProc = this.state.fx.procSS;
+    const procPrev = this.state.fx.procSummon;
+    this.state.fx.procSS = card.uid;
+    this.state.fx.procCheck = card.uid;
+    this.state.fx.procSummon = card.uid;
+    try {
+      if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
+      return !!proc && proc.can(this, card, player);
+    } finally {
+      this.state.fx.procSS = prevProc;
+      this.state.fx.procCheck = undefined;
+      this.state.fx.procSummon = procPrev;
+    }
   }
 
   /** The summon procedure for a card in the hand (its script) or the Extra Deck (Xyz/Synchro/Link Summons, or its script). */
@@ -2125,7 +2399,14 @@ export class Engine {
     const f = this.find(uid);
     if (!f || !this.canSpecialProc(player, f.card)) return;
     const fromHand = f.loc.zone === 'hand';
-    yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
+    this.state.fx.procSS = uid; // audit-10
+    this.state.fx.procSummon = uid; // audit-05
+    try {
+      yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
+    } finally {
+      this.state.fx.procSS = undefined; // audit-10
+      this.state.fx.procSummon = undefined; // audit-05
+    }
     // Chain Energy charges for a card Special Summoned from the hand.
     if (fromHand && this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
   }
@@ -2218,6 +2499,7 @@ export class Engine {
     const info = this.info(card.name);
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card.name)) return false;
     if (this.chainEnergyBlocks(player)) return false;
+    if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
     if (info.sub === 'Field') return !this.player(player).field;
     return this.freeZone(this.player(player), 'sz') >= 0;
   }
@@ -2390,6 +2672,7 @@ export class Engine {
         if (h) yield* this.as(p, h(this, m, p, link));
       }
     }
+    for (const x of this.skillFx()) if (x.eff.onChainLink && !link.negated && this.state.winner === null) yield* this.as(x.p, x.eff.onChainLink(this, x.c, x.p, link)); // audit-skills
   }
 
   /** After damage is dealt, Numinous Healer and Sebek's Blessing may respond. */
@@ -2422,12 +2705,21 @@ export class Engine {
     // A Normal Spell/Trap whose effect keeps it on the field: a countdown (Swords of
     // Revealing Light) or a card that attached itself to a monster.
     if (!link.negated && fc.active && (fc.turns !== undefined || fc.equippedTo !== undefined)) return;
+    // audit-skills: a negated card Set again instead of going to the GY (I'm Just Gonna Attack!).
+    if (link.negated && this.state.fx.setInstead === fc.uid && this.find(fc.uid)?.loc.zone === 'sz') {
+      this.state.fx.setInstead = undefined;
+      Object.assign(fc, { faceUp: false, active: false, placedTurn: this.state.turn, equips: [], counters: 0 });
+      this.log(this.controller(fc.uid), `${fc.name} is Set again instead of going to the GY`);
+      return;
+    }
     yield* this.sendToGrave(fc.uid, 'used');
   }
 
   /** Gives each player (opponent first) a chance to respond with a set card. Up to 3 responses, like EDS. */
   *responseWindow(trigger: Trigger, ctx: ChainCtx): Step {
     const rootHasLink = !!ctx.link;
+    // audit-09: "neither player can activate cards or effects in response to this card's activation" (Super Polymerization).
+    if (this.speed && (ctx.link?.payload as { noResponse?: boolean } | undefined)?.noResponse) return;
     let responder: Pid = other(this.state.turnPlayer);
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
@@ -2517,12 +2809,13 @@ export class Engine {
       if (!q || (q.from ?? 'field') !== from || this.prohibited(c.name, from === 'field' ? c.uid : undefined)) return;
       if (from === 'field') {
         const fc = c as FieldCard;
-        if (!fc.faceUp) return;
+        if (!fc.faceUp && !(q.faceDown && this.find(c.uid)?.loc.zone === 'mz')) return; // audit-eds: Big Shield Gardna
         const kind = this.info(c.name).kind;
         if (kind !== 'monster' && !fc.active) return;
         if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) return;
       }
       if (!q.repeat && !this.oncePerTurn(`quick:${c.name}:${from === 'field' ? c.uid : 0}`, player)) return;
+      if (from === 'gy' && this.graveSTLocked(c)) return; // audit-02
       if (this.activationBlocked(player, c)) return;
       if (!q.can(this, c, player, trigger, ctx)) return;
       out.push({ label: q.label ? `${c.name}: ${q.label}` : `${c.name}'s effect`, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'quick' });
@@ -2561,6 +2854,8 @@ export class Engine {
 
   /** Set spells/traps the player could activate right now against the trigger. */
   responsesFor(player: Pid, trigger: Trigger, ctx: ChainCtx): SelectOption[] {
+    // audit-00: "your opponent cannot activate cards or effects in response to this card's activation" (Abyss Script - Rise of the Abyss King).
+    if (this.speed && ctx.link && ctx.link.player !== player && this.state.fx.unchainable === ctx.link.card.uid && this.state.chain.includes(ctx.link)) return [];
     const out: SelectOption[] = this.speed ? this.quickOptions(player, trigger, ctx) : [];
     const sealed = this.attackSealed(player);
     for (const fc of this.spells(player)) {
@@ -2597,9 +2892,11 @@ export class Engine {
     if (!m.faceUp || m.cannotAttack) return false;
     if (m.attacked && (m.tags?.attacksMade ?? 1) >= (eff?.attacks?.(this, m) ?? 1) + this.extraAttacks(m)) return false;
     if (this.speed && this.noDirectAttack(m) && this.monsters(other(player)).length === 0) return false;
-    if (m.pos !== 'atk' && !eff?.attackInDefense) return false;
+    if (m.pos !== 'atk' && !eff?.attackInDefense && !this.skillDefs().some((x) => x.p === player && x.sk.attackInDefense?.(this, player, m))) return false; // audit-skills
+    if (this.skillDefs().some((x) => x.p === player && x.sk.mayAttack?.(this, player, m) === false)) return false; // audit-skills
     if (eff?.cannotAttack?.(this, m, player)) return false;
     if ((m.tags?.noAttackTurn ?? -1) === s.turn) return false;
+    if (this.speed && (m.tags?.noAttackTurn2 ?? -1) === s.turn) return false; // audit-06: a second turn it cannot attack (Harpie Lady 3)
     // Speed Duel: "you cannot declare an attack / conduct your Battle Phase this turn" (Soul Exchange, Destiny HERO - Doom Lord).
     if (this.speed && ((s.fx.noDeclare ?? []) as number[])[player] === s.turn) return false;
     const ill = m.tags?.illusionBy;
@@ -2628,6 +2925,8 @@ export class Engine {
 
   canAttackDirectly(m: FieldCard): boolean {
     if (this.speed && m.tags?.directTurn === this.state.turn) return true;
+    const owner = this.controller(m.uid); // audit-skills: Skills letting monsters attack directly
+    if (owner !== null && this.skillDefs().some((x) => x.p === owner && x.sk.canAttackDirectly?.(this, owner, m))) return true;
     const d = this.effectOn(m)?.directAttack;
     if (typeof d === 'function') {
       const ctl = this.controller(m.uid);
@@ -2705,12 +3004,26 @@ export class Engine {
     this.event('attack', { uid, player, target: targetUid });
     const targetName = targetUid !== null ? (this.fieldCard(targetUid)!.faceUp ? this.fieldCard(targetUid)!.name : 'a face-down monster') : 'directly';
     this.log(player, `${m.name} attacks ${targetName}`);
+    // audit-08: mandatory "when an attack is declared" effects of face-up cards and of cards in the GY.
+    if (this.speed) {
+      const tgt = targetUid !== null ? this.fieldCard(targetUid) : null;
+      for (const x of this.liveCards()) if (x.eff.onAttackDeclared && this.state.battle && this.state.winner === null && this.fieldCard(x.c.uid) && this.fieldCard(uid)) yield* this.as(x.p, x.eff.onAttackDeclared(this, x.c, x.p, m, tgt));
+      for (const q of [0, 1] as Pid[]) for (const c of this.player(q).gy.slice()) { const h = getEffect(c.name)?.onAttackDeclaredInGrave; if (h && this.state.battle && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && this.fieldCard(uid)) yield* this.as(q, h(this, c, q, m, tgt)); }
+      if (this.state.winner !== null || !this.state.battle) return;
+    }
+    // audit-skills: Skills that react to an attack declaration (Behold, Gate Guardian!, Small Roid Big City).
+    for (const x of this.skillDefs()) {
+      const a = this.fieldCard(uid);
+      const t = targetUid !== null ? this.fieldCard(targetUid) : null;
+      if (x.sk.onAttack && a && this.state.battle && this.state.winner === null && (targetUid === null || t)) yield* this.as(x.p, x.sk.onAttack(this, x.p, a, t));
+    }
+    if (!this.state.battle) return;
     yield* this.responseWindow('attack', { uid, targetUid: targetUid ?? undefined });
     if (this.state.winner !== null) return;
     if (!this.state.battle) return; // Waboku and friends end the battle
     targetUid = this.state.battle.target; // Magical Arm Shield can redirect it
     const attacker = this.fieldCard(uid);
-    if (!attacker || this.controller(uid) !== player || (attacker.pos !== 'atk' && !getEffect(attacker.name)?.attackInDefense)) {
+    if (!attacker || this.controller(uid) !== player || (attacker.pos !== 'atk' && !getEffect(attacker.name)?.attackInDefense && !this.skillDefs().some((x) => x.p === player && x.sk.attackInDefense?.(this, player, attacker)))) { // audit-skills
       this.state.battle = null;
       return; // attacker was destroyed, taken, or forced into Defense
     }
@@ -2739,6 +3052,8 @@ export class Engine {
   /** Battle damage, with Relinquished passing it back to the opponent. */
   private battleDamage(p: Pid, amount: number, a: FieldCard, t: FieldCard | null): void {
     if (amount <= 0) return;
+    // audit-06: battle damage a monster inflicts is treated as effect damage (Gravekeeper's Vassal): battle-damage protection does not apply.
+    if (this.speed && [a, t].some((m) => m && m.faceUp && this.controller(m.uid) === other(p) && this.effectOn(m)?.battleAsEffect)) return this.damage(p, amount);
     for (const m of [a, t]) {
       if (!m || this.controller(m.uid) !== p) continue;
       // Speed Duel: the damage goes to the opponent instead (Magical Reflect Slime).
@@ -2782,6 +3097,14 @@ export class Engine {
   private *damageStep(player: Pid, attacker: FieldCard, target: FieldCard | null): Step {
     const opp = other(player);
     const aEff = this.effectOn(attacker);
+    // audit-00: "at the start of the Damage Step" effects of the face-up battling monsters (Ally of Justice Core Destroyer, Armed Dragon LV10 White).
+    if (this.speed) {
+      for (const [m, foe, ctl] of [[attacker, target, player], [target, attacker, opp]] as [FieldCard | null, FieldCard | null, Pid][]) {
+        const h = m && m.faceUp && this.fieldCard(m.uid) ? this.effectOn(m)?.damageStepStart : undefined;
+        if (h && m && this.state.winner === null) yield* this.as(ctl, h(this, m, foe && this.fieldCard(foe.uid) ? foe : null, ctl));
+      }
+      if (this.state.winner !== null || !this.fieldCard(attacker.uid) || (target && !this.fieldCard(target.uid))) return;
+    }
     if (!target) {
       let dmg = this.atkOf(attacker) + this.attackBonus(attacker, null);
       dmg = yield* this.kuriboh(opp, dmg);
@@ -2793,6 +3116,11 @@ export class Engine {
       }
       yield* this.damageWindow(true);
       return;
+    }
+    // audit-09: the attacker acts at the start of the Damage Step, before a face-down target is flipped (Sasuke Samurai).
+    if (this.speed && aEff?.startDamageStep) {
+      yield* this.as(player, aEff.startDamageStep(this, attacker, target, player));
+      if (this.state.winner !== null || !this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     }
     const tEff = this.effectOn(target);
     const wasFaceDown = !target.faceUp;
@@ -2809,6 +3137,9 @@ export class Engine {
       this.log(opp, `${target.name} was flipped face-up`);
     }
     if (tEff?.onBeingAttacked) yield* this.as(opp, tEff.onBeingAttacked(this, target, attacker, opp));
+    // audit-04: the attacker's own "before damage calculation" effect (Drillroid, Eater of Millions).
+    if (this.speed && aEff?.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.as(player, aEff.beforeDamageCalc(this, attacker, target, player));
+    if (this.speed && aEff?.attackerDamageStep && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.as(player, aEff.attackerDamageStep(this, attacker, target, player)); // audit-10
     if (!this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     let atk = this.atkOf(attacker) + this.attackBonus(attacker, target);
     if (this.state.fx.zeroAttack === attacker.uid) {
@@ -2831,8 +3162,10 @@ export class Engine {
         }
       } else if (atk < tAtk) {
         destroyed.push(attacker.uid);
+        const lp0 = this.player(player).lp; // audit-10
         this.battleDamage(player, tAtk - atk, attacker, target);
         this.log(opp, `${target.name} destroys ${attacker.name}`);
+        if (this.speed && this.player(player).lp < lp0 && this.state.winner === null && tEff?.onTargetBattleDamage) yield* this.as(opp, tEff.onTargetBattleDamage(this, target, attacker, opp)); // audit-10
       } else if (atk > 0) {
         destroyed.push(target.uid, attacker.uid);
         this.log(null, `${attacker.name} and ${target.name} destroy each other`);
@@ -2847,7 +3180,8 @@ export class Engine {
         const pierce = aEff?.piercing;
         const granted = this.liveCards().some((x) => x.eff.grantsPiercing?.(this, x.c, x.p, attacker) === true);
         const tagged = this.speed && !!attacker.tags?.pierceBattle && attacker.tags.pierceBattle === this.state.fx.battleNo;
-        if ((pierce && (typeof pierce !== 'function' || pierce(this, attacker))) || granted || tagged) {
+        const turnPierce = this.speed && attacker.tags?.pierceTurn === this.state.turn; // audit-06: piercing until the end of the turn (H - Heated Heart)
+        if ((pierce && (typeof pierce !== 'function' || pierce(this, attacker))) || granted || tagged || turnPierce) {
           this.log(player, `${attacker.name} pierces the defense`);
           const lp = this.player(opp).lp;
           this.battleDamage(opp, atk - tDef, attacker, target);
@@ -2855,14 +3189,29 @@ export class Engine {
           if (this.player(opp).lp < lp) yield* this.battleDamageDealt(player, attacker);
         }
       } else if (atk < tDef) {
+        const lp0 = this.player(player).lp; // audit-10
         this.battleDamage(player, tDef - atk, attacker, target);
         this.log(opp, `${target.name} holds; ${attacker.name}'s controller takes damage`);
+        if (this.speed && this.player(player).lp < lp0 && this.state.winner === null && tEff?.onTargetBattleDamage) yield* this.as(opp, tEff.onTargetBattleDamage(this, target, attacker, opp)); // audit-10
       } else {
         this.log(null, `${attacker.name} bounces off ${target.name}`);
       }
     }
     if (this.state.winner !== null) return;
     yield* this.damageWindow(false);
+    if (this.state.winner !== null) return;
+    // audit-03: "after damage calculation" effects of either battling monster, before battle destruction (D.D. Warrior Lady).
+    if (this.speed) {
+      let hit = false;
+      for (const [m, ctl, foe] of [[attacker, player, target], [target, opp, attacker]] as [FieldCard, Pid, FieldCard][]) {
+        const h = this.fieldCard(m.uid)?.faceUp ? this.effectOn(m)?.afterDamageCalc : undefined;
+        if (!h || this.state.winner !== null || !this.fieldCard(foe.uid)) continue;
+        hit = true;
+        yield* this.as(ctl, h(this, m, ctl, foe));
+      }
+      // Monsters that already left the field (banished) are no longer destroyed by this battle.
+      if (hit) for (let i = destroyed.length - 1; i >= 0; i--) if (!this.fieldCard(destroyed[i])) destroyed.splice(i, 1);
+    }
     if (this.state.winner !== null) return;
     // Relinquished sacrifices the monster it absorbed instead.
     for (let i = 0; i < destroyed.length; i++) {
@@ -2877,6 +3226,8 @@ export class Engine {
     const muted = this.speed ? destroyed.filter((u) => this.battleMutes(u, u === attacker.uid ? target : attacker)) : [];
     this.state.fx.battleMuted = muted;
     yield* this.destroy(destroyed, 'destroyed', true);
+    // audit-08: remember which monsters destroyed a monster by battle this turn (Nordic Relic Laevateinn).
+    if (this.speed) for (const [k, w] of [[target, attacker], [attacker, target]] as const) if (destroyed.includes(k.uid) && !this.fieldCard(k.uid) && this.fieldCard(w.uid)) (w.tags ??= {}).killTurn = this.state.turn;
     this.state.fx.battleMuted = [];
     // FLIP effects resolve after damage calculation, even if the monster is destroyed.
     if (wasFaceDown && tEff?.flip && this.speed && ((targetDestroyed && aEff?.negatesVictimFlip) || (!this.fieldCard(targetUid) && aEff?.negatesBattleFlip?.(this, attacker, target)))) {
@@ -2905,6 +3256,7 @@ export class Engine {
         yield* this.as(p, h(this, c, p, attacker, target));
       }
     }
+    for (const x of this.skillFx()) if (x.eff.afterAnyBattle && this.state.winner === null) yield* this.as(x.p, x.eff.afterAnyBattle(this, x.c, x.p, attacker, target)); // audit-skills
     for (const l of this.lingering()) {
       const h = l.eff.lingering?.afterAnyBattle;
       if (h && this.state.winner === null) yield* this.as(l.p, h(this, l.p, attacker, target));
@@ -2921,12 +3273,16 @@ export class Engine {
     const victimCtl = this.controller(uid);
     const killerCtl = this.controller(killer.uid);
     if (victimCtl === null || killerCtl === null || victimCtl === killerCtl || !killer.faceUp) return false;
+    if (killer.equips.some((u) => { const eq = this.fieldCard(u); return !!eq && eq.faceUp && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && getEffect(eq.name)?.negatesBattleVictims?.(this, eq, killer, killerCtl) === true; })) return true; // audit-10: an Equip Spell on the killer (Wicked-Breaking Flamberge - Baou)
+    if (this.skillFx().some((x) => x.p === killerCtl && x.eff.negatesBattleVictims?.(this, x.c, killer, killerCtl) === true)) return true; // audit-skills
     return this.monsters(killerCtl).some((s) => s.faceUp && this.effectOn(s)?.negatesBattleVictims?.(this, s, killer, killerCtl) === true);
   }
 
   /** ATK added only while attacking (Metalmorph, Insect Soldiers of the Sky). */
   private attackBonus(attacker: FieldCard, target: FieldCard | null): number {
     let bonus = this.effectOn(attacker)?.attackBonus?.(this, attacker, target) ?? 0;
+    const ctl = this.controller(attacker.uid); // audit-skills: Skills adding ATK in damage calculation
+    for (const x of this.skillDefs()) if (x.p === ctl) bonus += x.sk.attackBonus?.(this, x.p, attacker, target) ?? 0;
     for (const uid of attacker.equips) {
       const eq = this.fieldCard(uid);
       if (eq && !(this.info(eq.name).kind === 'trap' && this.trapsNegated())) bonus += getEffect(eq.name)?.hostAttackBonus?.(this, eq, attacker, target) ?? 0;
@@ -2948,6 +3304,7 @@ export class Engine {
       if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
       if (eff?.onBattleDamageDealt) yield* eff.onBattleDamageDealt(this, c, attacker, player);
     }
+    for (const x of this.skillFx()) if (x.p === player && x.eff.onBattleDamageDealt && this.state.winner === null) yield* this.as(x.p, x.eff.onBattleDamageDealt(this, x.c, attacker, player)); // audit-skills
   }
 
   /** Special Summon straight from a list (Cyber Jar, Giant Rat...). */

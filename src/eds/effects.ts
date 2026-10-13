@@ -97,6 +97,8 @@ export interface EffectDef {
   interceptAttack?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Generator<Prompt, boolean, Choice>;
   /** Before damage calculation, when attacked (Kazejin, Sanga, Suijin). */
   onBeingAttacked?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Step;
+  /** audit-04: Speed Duel: this attacker's effect before damage calculation, after the target was flipped face-up (Drillroid). */
+  beforeDamageCalc?(e: Engine, attacker: FieldCard, target: FieldCard, controller: Pid): Step;
   /** DEF multiplier during damage calculation (Dark Artist). */
   defenseMult?(e: Engine, target: FieldCard, attacker: FieldCard): number;
   /** Destroy this uid instead when the monster would be destroyed by battle (Relinquished). */
@@ -124,6 +126,8 @@ export interface EffectDef {
    */
   quick?: {
     from?: 'field' | 'hand' | 'gy' | 'extra';
+    /** audit-eds: usable while this monster is face-down on the field (Big Shield Gardna). */
+    faceDown?: boolean; // audit-eds
     label?: string;
     repeat?: boolean;
     can(e: Engine, card: Card, p: Pid, trigger: Trigger, ctx: ChainCtx): boolean;
@@ -230,6 +234,8 @@ export interface EffectDef {
     onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
     attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
     afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
+    /** audit-10: fewer Tributes for `owner`'s face-up Normal Summon of `monster` this turn (Vampire Sorcerer). */
+    tributeOffer?(e: Engine, owner: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
   };
   // ---------- more Speed Duel hooks (batch 14) ----------
   /** This card's own Summon conditions: true = `p` cannot Summon it this way (Amaterasu, Helpoemer). `from`: the zone it comes from. */
@@ -289,6 +295,59 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // audit-07
+  /** A card in `owner`'s GY: true = it is banished instead of `m` (a face-up monster `owner` controls) being destroyed (Machine Angel Ritual). */
+  graveReplace?(e: Engine, card: Card, owner: Pid, m: FieldCard, byBattle: boolean): boolean;
+  // ---------- audit-03 hooks ----------
+  /** audit-03: after damage calculation, before battle destruction, while both battling monsters are still on the field (D.D. Warrior Lady). */
+  afterDamageCalc?(e: Engine, m: FieldCard, controller: Pid, foe: FieldCard): Step;
+  /** audit-03: "A Fusion Summon of this card can only be done with the above Fusion Materials" (no substitutes: Cyber End Dragon). */
+  noFusionSub?: boolean;
+  // ---------- audit-10 hooks ----------
+  /** audit-10: this attacker, at the start of the Damage Step (after a face-down target was flipped) (Vampire Hunter). */
+  attackerDamageStep?(e: Engine, attacker: FieldCard, target: FieldCard, p: Pid): Step;
+  /** audit-10: this attacked monster inflicted battle damage to the attacker's controller (Vampire Lady). */
+  onTargetBattleDamage?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Step;
+  /** audit-10: during each Standby Phase (either player's) while this card is in its owner's GY (Vampire's Curse). */
+  onStandbyInGraveAny?(e: Engine, card: Card, owner: Pid): Step;
+  // ---------- audit-00 hooks ----------
+  /** audit-00: this face-up monster, at the start of the Damage Step of its battle (`foe` null for a direct attack). */
+  damageStepStart?(e: Engine, m: FieldCard, foe: FieldCard | null, controller: Pid): Step;
+  /** audit-00: an active Spell/Trap changes the Level of `card` (in a hand or a Monster Zone) by this much (A Legendary Ocean). */
+  levelMod?(e: Engine, src: FieldCard, srcController: Pid, card: Card): number;
+  // audit-08 hooks
+  /** audit-08: a face-up monster or active Spell/Trap, right after an attack is declared (mandatory "when ... attacks" effects: Neo-Spacian Glow Moss, Ordeal of a Traveler). */
+  onAttackDeclared?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: this card in its owner's GY, right after an attack is declared (Performapal Inflater Tapir). */
+  onAttackDeclaredInGrave?(e: Engine, card: Card, owner: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: an active Spell/Trap: the face-up monster `m` does not apply its End Phase effects (Neo Space). */
+  skipsEndPhase?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard): boolean;
+  // ---------- audit-06 hooks ----------
+  /** audit-06: this face-up card keeps Necrovalley-style GY locks (locksGrave) off `card` (Gravekeeper's Chief: "Your GY is unaffected by Necrovalley"). */
+  freesGrave?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** audit-06: battle damage this face-up monster inflicts to the opponent is treated as effect damage (Gravekeeper's Vassal). */
+  battleAsEffect?: boolean;
+  /** audit-06: while this monster is face-up, the effects of all Trap Cards on the field are negated (Jinzo - Lord). */
+  negatesTraps?: boolean;
+  // audit-09 hooks
+  /** audit-09: this attacker, at the start of the Damage Step, before a face-down target is flipped (Sasuke Samurai). */
+  startDamageStep?(e: Engine, attacker: FieldCard, target: FieldCard, p: Pid): Step;
+  /** audit-09: "If this card is banished" (Resonance Insect); runs once the current action or chain has finished. */
+  onBanished?(e: Engine, card: Card, owner: Pid): Step;
+  // audit-eds: hooks added by the EDS-table audit
+  /** audit-eds: Tributes this monster needs to be Normal Summoned/Set, instead of the Level rule (Divine-Beasts: 3). */
+  tributeCount?(e: Engine, card: Card, p: Pid): number | undefined; // audit-eds
+  /** audit-eds: this monster cannot be Normal Set (Divine-Beasts). */
+  cannotNormalSet?: boolean; // audit-eds
+  /** audit-eds: Speed Duel: nothing can be activated in response to this monster's Normal Summon (Divine-Beasts). */
+  noSummonResponse?: boolean; // audit-eds
+  // ---------- audit-02 hooks ----------
+  /** audit-02: this card in its owner's hand can be discarded instead when their face-up monster `m` would be destroyed (`by`: whose card effect, null for battle or a game action); true = it replaced the destruction (Chronomaly Acambaro Figures). */
+  handReplace?(e: Engine, card: Card, m: FieldCard, byBattle: boolean, by: Pid | null): Generator<Prompt, boolean, Choice>;
+  /** audit-02: this face-up card stops the effects of the Spell/Trap Card `card` in a GY from being activated (Chow Sai the Ghost Stopper). */
+  locksGraveST?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** audit-02: this card, in its owner's GY, sees a card leave the field without going to the GY (returned to the hand/Extra Deck, banished): Contact Gate. */
+  watchLeave?(e: Engine, card: Card, owner: Pid, fc: FieldCard, controller: Pid, reason: string): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -442,14 +501,31 @@ E['Magic Jammer'] = {
     if (target) {
       target.negated = true;
       e.log(link.player, `Magic Jammer negates ${target.card.name}`);
+      if (e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]); // audit-eds: "and if you do, destroy it"
     }
   },
 };
 
+/**
+ * audit-eds: can this monster in a GY be revived? Speed Duel: Fusion, Synchro, Link and Ritual Monsters only once they were properly
+ * Summoned (the engine records Polymerization, Synchro/Link and Ritual Summons); Xyz Monsters are not tracked and are allowed.
+ * EDS: anything but Fusion Monsters.
+ */
+const revivable = (e: Engine, c: Card, p?: Pid) => {
+  if (!isMonster(e, c)) return false;
+  const sub = e.info(c.name).sub;
+  if (!e.speed) return sub !== 'Fusion';
+  if (p !== undefined && e.summonBlocked(p, c, 'special', 'gy')) return false;
+  const fx = e.state.fx;
+  if (sub === 'Fusion') return !!fx.fusionMatList?.[c.uid];
+  if (sub === 'Ritual') return !!fx.ritualMats?.[c.uid];
+  if (sub === 'Synchro' || sub === 'Link') return !!fx.extraMats?.[c.uid];
+  return true;
+};
 E['Monster Reborn'] = {
-  canActivate: (e, _c, p, t) => isMain(t) && hasFreeZone(e, p) && [...e.player(0).gy, ...e.player(1).gy].some((c) => isMonster(e, c) && e.info(c.name).sub !== 'Fusion'),
+  canActivate: (e, _c, p, t) => isMain(t) && hasFreeZone(e, p) && [...e.player(0).gy, ...e.player(1).gy].some((c) => revivable(e, c, p)),
   *activate(e, link, player) {
-    const targets = [...e.player(player).gy, ...e.player(other(player)).gy].filter((c) => isMonster(e, c) && e.info(c.name).sub !== 'Fusion');
+    const targets = [...e.player(player).gy, ...e.player(other(player)).gy].filter((c) => revivable(e, c, player));
     const picks = yield* e.select(player, 'Special Summon which monster?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
@@ -496,6 +572,7 @@ E['Seven Tools of the Bandit'] = {
     if (target) {
       target.negated = true;
       e.log(link.player, `Seven Tools of the Bandit negates ${target.card.name}`);
+      if (e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]); // audit-eds: "and if you do, destroy it"
     }
   },
 };
@@ -574,9 +651,9 @@ E['Megamorph'] = equip((e, eq, host) => {
 });
 
 E['Premature Burial'] = {
-  canActivate: (e, _c, p, t) => isMain(t) && e.player(p).lp > 800 && hasFreeZone(e, p) && e.player(p).gy.some((c) => isMonster(e, c) && e.info(c.name).sub !== 'Fusion'),
+  canActivate: (e, _c, p, t) => isMain(t) && e.player(p).lp > 800 && hasFreeZone(e, p) && e.player(p).gy.some((c) => revivable(e, c, p)), // audit-eds
   *activate(e, link, player) {
-    const targets = e.player(player).gy.filter((c) => isMonster(e, c) && e.info(c.name).sub !== 'Fusion');
+    const targets = e.player(player).gy.filter((c) => revivable(e, c, player));
     const picks = yield* e.select(player, 'Pay 800 LP: Special Summon which monster?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     e.payLp(player, 800);
@@ -589,7 +666,11 @@ E['Premature Burial'] = {
     yield* e.specialSummon(f.card.uid, player, 'atk');
     attachTo(e, fc, f.card.uid);
   },
-  onLeaveField: destroyHostOnLeave,
+  // audit-eds: Speed Duel: "When this card is destroyed" (not when it is returned or banished).
+  *onLeaveField(e, fc, controller, reason) {
+    if (e.speed && reason !== 'destroyed') return;
+    yield* destroyHostOnLeave(e, fc, controller, reason);
+  },
 };
 
 E['Snatch Steal'] = {
@@ -686,7 +767,8 @@ E['Magician of Faith'] = {
 
 E['Man-Eater Bug'] = {
   *flip(e, m, controller) {
-    const targets = allMonsters(e).filter(notThisCard(m));
+    // audit-eds: "Target 1 monster on the field" (itself included; untargetable monsters are not).
+    const targets = allMonsters(e).filter((x) => (e.speed || x.uid !== m.uid) && !e.untargetable(x));
     const picks = yield* e.select(controller, 'Man-Eater Bug: destroy which monster?', e.optionsFor(targets, true), 1, 1);
     if (picks && targets[picks[0]]) {
       e.log(controller, `Man-Eater Bug destroys ${targets[picks[0]].faceUp ? targets[picks[0]].name : 'a face-down monster'}`);
@@ -716,7 +798,8 @@ E['Needle Worm'] = {
 
 E['Penguin Soldier'] = {
   *flip(e, m, controller) {
-    const targets = allMonsters(e).filter(notThisCard(m));
+    // audit-eds: "target up to 2 monsters on the field" (itself included; untargetable monsters are not).
+    const targets = allMonsters(e).filter((x) => (e.speed || x.uid !== m.uid) && !e.untargetable(x));
     const picks = yield* e.select(controller, 'Penguin Soldier: return up to 2 monsters to the hand', e.optionsFor(targets, true), 0, 2);
     if (!picks) return;
     for (const i of picks) {
@@ -746,7 +829,21 @@ E['Sangan'] = searcher('Sangan: add a monster with 1500 or less ATK to your hand
 E['Witch of the Black Forest'] = searcher('Witch of the Black Forest: add a monster with 1500 or less DEF to your hand', (e, c) => (e.info(c.name).def ?? 0) <= 1500);
 
 // ---------- Common pack cards ----------
-E['Axe of Despair'] = equip(() => ({ atk: 1000, def: 0 }));
+E['Axe of Despair'] = equip(() => ({ atk: 1000, def: 0 }), {
+  // audit-eds: "When this card is sent from the field to the GY: You can Tribute 1 monster; place this card on the top of your Deck."
+  *onLeaveField(e, fc, controller) {
+    if (!e.speed || e.find(fc.uid)?.loc.zone !== 'gy' || fc.owner !== controller) return;
+    const mine = e.monsters(controller).filter((m) => !e.untributable(m));
+    if (!mine.length || !(yield* e.yesno(controller, 'Axe of Despair: Tribute 1 monster to put it on top of your Deck?'))) return;
+    const picks = yield* e.select(controller, 'Axe of Despair: Tribute which monster?', e.optionsFor(mine), 1, 1, true);
+    if (!picks || !mine[picks[0]]) return;
+    yield* e.sendToGrave(mine[picks[0]].uid, 'tribute');
+    if (e.find(fc.uid)?.loc.zone === 'gy') {
+      e.toDeckTop(fc.uid);
+      e.log(controller, 'Axe of Despair returns to the top of the Deck');
+    }
+  },
+});
 E['Malevolent Nuzzler'] = equip(() => ({ atk: 700, def: 0 }));
 E['Horn of the Unicorn'] = equip(() => ({ atk: 700, def: 700 }));
 E['Book of Secret Arts'] = equip(() => ({ atk: 300, def: 300 }));
@@ -836,7 +933,13 @@ E['Fissure'] = {
   *resolve(e, _l, player) {
     const ms = e.monsters(other(player)).filter((m) => m.faceUp);
     if (!ms.length) return;
-    const weakest = ms.reduce((a, b) => (e.atkOf(b) < e.atkOf(a) ? b : a));
+    let weakest = ms.reduce((a, b) => (e.atkOf(b) < e.atkOf(a) ? b : a));
+    // audit-eds: "your choice, if tied"
+    const tied = ms.filter((m) => e.atkOf(m) === e.atkOf(weakest));
+    if (tied.length > 1) {
+      const k = yield* e.select(player, 'Fissure: destroy which of the tied monsters?', e.optionsFor(tied), 1, 1);
+      if (k && tied[k[0]]) weakest = tied[k[0]];
+    }
     e.log(player, `Fissure destroys ${weakest.name}`);
     yield* e.destroy([weakest.uid]);
   },
@@ -855,16 +958,24 @@ E['Harpie\'s Feather Duster'] = {
     yield* e.destroy(t.map((c) => c.uid));
   },
 };
+// audit-eds: "Target 1 face-up Spell, or 1 Set Spell/Trap; destroy that target if it is a Spell. (If the target is Set, reveal it.)"
+const deSpellTargets = (e: Engine, card: Card) => allSpells(e).filter((c) => c.uid !== card.uid && (!c.faceUp || e.info(c.name).kind === 'spell'));
 E['De-Spell'] = {
-  canActivate: (e, card, _p, t) => isMain(t) && allSpells(e).some((c) => c.uid !== card.uid && e.info(c.name).kind === 'spell'),
+  canActivate: (e, card, _p, t) => isMain(t) && deSpellTargets(e, card).length > 0,
   *activate(e, link, player) {
-    const targets = allSpells(e).filter((c) => c.uid !== link.card.uid && e.info(c.name).kind === 'spell');
+    const targets = deSpellTargets(e, link.card);
     const picks = yield* e.select(player, 'Destroy which Spell?', e.optionsFor(targets, true), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
   },
   *resolve(e, link) {
-    if (link.targetUid !== undefined && e.fieldCard(link.targetUid)) yield* e.destroy([link.targetUid]);
+    const t = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
+    if (!t) return;
+    if (e.info(t.name).kind !== 'spell') {
+      e.log(link.player, `De-Spell reveals ${t.name}: not a Spell, so it stays`);
+      return;
+    }
+    yield* e.destroy([t.uid]);
   },
 };
 E['Stop Defense'] = {
@@ -884,9 +995,9 @@ E['Stop Defense'] = {
   },
 };
 E['Block Attack'] = {
-  canActivate: (e, _c, p, t) => isMain(t) && e.monsters(other(p)).some((m) => m.pos === 'atk' && m.faceUp),
+  canActivate: (e, _c, p, t) => isMain(t) && e.monsters(other(p)).some((m) => m.pos === 'atk' && m.faceUp && !e.untargetable(m)), // audit-eds
   *activate(e, link, player) {
-    const targets = e.monsters(other(player)).filter((m) => m.pos === 'atk' && m.faceUp);
+    const targets = e.monsters(other(player)).filter((m) => m.pos === 'atk' && m.faceUp && !e.untargetable(m)); // audit-eds
     const picks = yield* e.select(player, 'Switch which monster to Defense Position?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
@@ -905,19 +1016,30 @@ E['Card Destruction'] = {
   },
 };
 E['Waboku'] = {
-  canActivate: (_e, _c, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && !!ctx,
+  // audit-eds: Speed Duel: a Normal Trap usable at any open moment; it lasts for the whole turn and the attack goes on.
+  canActivate: (e, _c, p, t, ctx) => (e.speed ? isMain(t) || t === 'summon' || t === 'special' || t === 'attack' || t === 'spell' || t === 'trap' || t === 'effect' : t === 'attack' && ctx.uid !== undefined && !!ctx),
   *resolve(e, link, player) {
     e.log(player, 'Waboku: battle damage this turn is 0 and monsters are not destroyed');
+    if (e.speed) {
+      (e.state.fx.noBattleDamage ??= [-1, -1])[player] = e.state.turn;
+      e.linger('Waboku', player);
+      return;
+    }
     // Implemented as: end the current battle before damage.
     e.state.battle = null;
     for (const m of e.monsters(other(player))) m.attacked = true;
     void link;
   },
+  lingering: {
+    shields: (e, owner, target, how) => how === 'battle' && e.controller(target.uid) === owner,
+  },
 };
+// audit-eds: Speed Duel: "Target 1 face-up monster on the field" at any open moment (EDS: your monster, during an attack).
+const reinforceTargets = (e: Engine, p: Pid) => (e.speed ? allMonsters(e) : e.monsters(p)).filter((m) => m.faceUp && !e.untargetable(m));
 E['Reinforcements'] = {
-  canActivate: (e, _c, p, t) => t === 'attack' && e.monsters(p).some((m) => m.faceUp),
+  canActivate: (e, _c, p, t) => (e.speed ? isMain(t) || t === 'summon' || t === 'special' || t === 'attack' || t === 'spell' || t === 'trap' || t === 'effect' : t === 'attack') && reinforceTargets(e, p).length > 0,
   *activate(e, link, player) {
-    const targets = e.monsters(player).filter((m) => m.faceUp);
+    const targets = reinforceTargets(e, player);
     const picks = yield* e.select(player, 'Reinforcements: +500 ATK to which monster?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
@@ -963,6 +1085,8 @@ delete E['Ultimate Offering'];
 // =====================================================================
 
 const ctrl = (e: Engine, m: FieldCard): Pid => e.controller(m.uid) ?? m.owner;
+/** audit-eds: a card whose name is (treated as) "Harpie Lady" (Harpie Lady 1, Cyber Harpie Lady...). */
+const isHarpieLady = (e: Engine, name: string) => name === 'Harpie Lady' || e.info(name).desc.includes('always treated as "Harpie Lady"');
 const race = (r: string) => (e: Engine, m: FieldCard) => e.raceOf(m) === r;
 const attr = (a: string) => (e: Engine, m: FieldCard) => e.info(m.name).attribute === a;
 const countField = (e: Engine, test: (m: FieldCard) => boolean) => allMonsters(e).filter((m) => m.faceUp && test(m)).length;
@@ -994,7 +1118,7 @@ function equipFor(test: (e: Engine, m: FieldCard) => boolean, bonus: EffectDef['
 
 // ---------- type-restricted equips ----------
 E['Electro-Whip'] = equipFor(race('Thunder'), () => ({ atk: 300, def: 300 }));
-E['Cyber Shield'] = equipFor((_e, m) => m.name === 'Harpie Lady' || m.name === 'Harpie Lady Sisters', () => ({ atk: 500, def: 0 }));
+E['Cyber Shield'] = equipFor((e, m) => isHarpieLady(e, m.name) || m.name === 'Harpie Lady Sisters', () => ({ atk: 500, def: 0 })); // audit-eds: cards named "Harpie Lady" too
 E['Steel Shell'] = equipFor(attr('WATER'), () => ({ atk: 400, def: -200 }));
 E['Machine Conversion Factory'] = equipFor(race('Machine'), () => ({ atk: 300, def: 300 }));
 E['Follow Wind'] = equipFor(race('Winged Beast'), () => ({ atk: 300, def: 300 }));
@@ -1023,7 +1147,7 @@ function fieldSpell(bonus: (e: Engine, m: FieldCard) => { atk: number; def: numb
     *resolve(e, link, player) {
       // Only one Field Spell stays out: the newer one replaces the opponent's.
       const theirs = e.player(other(player)).field;
-      if (theirs && theirs.uid !== link.card.uid) {
+      if (theirs && theirs.uid !== link.card.uid && !e.speed) { // audit-eds: Speed Duel: each player keeps their own Field Spell
         e.log(player, `${theirs.name} is replaced by ${link.card.name}`);
         yield* e.destroy([theirs.uid]);
       }
@@ -1058,13 +1182,13 @@ E['Shadow Ghoul'] = { selfBonus: (e, m) => ({ atk: 100 * e.player(ctrl(e, m)).gy
 E['Buster Blader'] = {
   selfBonus: (e, m) => {
     const opp = e.player(other(ctrl(e, m)));
-    const n = e.monsters(other(ctrl(e, m))).filter((x) => e.raceOf(x) === 'Dragon').length + opp.gy.filter((c) => e.info(c.name).race === 'Dragon').length;
+    const n = e.monsters(other(ctrl(e, m))).filter((x) => x.faceUp && e.raceOf(x) === 'Dragon').length + opp.gy.filter((c) => e.info(c.name).race === 'Dragon').length; // audit-eds: face-up Dragons only
     return { atk: 500 * n, def: 0 };
   },
 };
 E["Harpie's Pet Dragon"] = {
   selfBonus: (e) => {
-    const n = countField(e, (m) => m.name === 'Harpie Lady' || m.name === 'Harpie Lady Sisters');
+    const n = countField(e, (m) => isHarpieLady(e, m.name)); // audit-eds: each "Harpie Lady" (Harpie Lady Sisters is not one)
     return { atk: 300 * n, def: 300 * n };
   },
 };
@@ -1092,7 +1216,14 @@ E['Hoshiningen'] = {
   aura: (e, _src, m) => (e.info(m.name).attribute === 'LIGHT' ? { atk: 500, def: 0 } : e.info(m.name).attribute === 'DARK' ? { atk: -400, def: 0 } : undefined),
 };
 E['Jinzo'] = { sealsTraps: true };
-E['Harpie Lady Sisters'] = { cannotNormalSummon: true };
+// audit-eds: Speed Duel: "Must first be Special Summoned with Elegant Egotist" (from the GY/banished only once that happened).
+E['Harpie Lady Sisters'] = {
+  cannotNormalSummon: true,
+  summonRule: (e, c, _p, how, from) => how !== 'special' || from === null || ((from === 'gy' || from === 'removed') && !!(e.state.fx.properSS as Record<number, number> | undefined)?.[c.uid]),
+  *onSpecialSummon(e, m) {
+    ((e.state.fx.properSS ??= {}) as Record<number, number>)[m.uid] = 1;
+  },
+};
 
 // ---------- direct attackers and attack costs ----------
 for (const n of ['Jinzo #7', "Queen's Double", 'Mystic Lamp', 'Ooguchi', 'Leghul']) E[n] = { directAttack: true };
@@ -1288,19 +1419,27 @@ E['Big Shield Gardna'] = {
     if (!destroyed && e.fieldCard(t.uid)) t.pos = 'atk';
   },
 };
+// audit-eds: Speed Duel: both are banished even when the battle destroyed one of them (from the GY then).
+const ddGone = (e: Engine, uid: number) => (e.speed ? ['mz', 'gy'].includes(e.find(uid)?.loc.zone ?? '') : !!e.fieldCard(uid));
 E['D.D. Warrior'] = {
   *afterBattle(e, m, target) {
-    if (e.fieldCard(target.uid)) e.banish(target.uid);
-    if (e.fieldCard(m.uid)) e.banish(m.uid);
+    if (ddGone(e, target.uid)) e.banish(target.uid);
+    if (ddGone(e, m.uid)) e.banish(m.uid);
   },
   *onAttacked(e, t, attacker) {
-    if (e.fieldCard(attacker.uid)) e.banish(attacker.uid);
-    if (e.fieldCard(t.uid)) e.banish(t.uid);
+    if (ddGone(e, attacker.uid)) e.banish(attacker.uid);
+    if (ddGone(e, t.uid)) e.banish(t.uid);
+  },
+  *onDestroyedByBattle(e, m) {
+    const b = e.state.battle;
+    if (!e.speed || !b || b.attacker !== m.uid || b.target === null) return;
+    if (ddGone(e, b.target)) e.banish(b.target);
+    if (ddGone(e, m.uid)) e.banish(m.uid);
   },
 };
 const recruiter = (a: string): EffectDef => ({
   *onDestroyedByBattle(e, m, controller) {
-    if (!hasFreeZone(e, controller)) return;
+    if (!hasFreeZone(e, controller) || e.find(m.uid)?.loc.zone !== 'gy') return; // audit-eds: "and sent to the GY"
     const ps = e.player(controller);
     const targets = ps.deck.filter((c) => isMonster(e, c) && (e.info(c.name).atk ?? 0) <= 1500 && e.info(c.name).attribute === a && e.info(c.name).sub !== 'Fusion' && e.info(c.name).sub !== 'Ritual');
     if (!targets.length) return;
@@ -1340,22 +1479,40 @@ E['Nimble Momonga'] = {
 };
 
 // ---------- position-change and summon triggers ----------
-E['Dream Clown'] = {
-  *onPositionChange(e, m, p) {
-    if (m.pos !== 'def') return;
-    const targets = e.monsters(other(p));
-    const picks = yield* e.select(p, 'Dream Clown: destroy which monster?', e.optionsFor(targets, true), 1, 1);
-    if (picks && targets[picks[0]]) yield* e.destroy([targets[picks[0]].uid]);
-  },
-};
-E['Crass Clown'] = {
-  *onPositionChange(e, m, p) {
-    if (m.pos !== 'atk') return;
-    const targets = e.monsters(other(p));
-    const picks = yield* e.select(p, 'Crass Clown: return which monster to the hand?', e.optionsFor(targets, true), 1, 1);
-    if (picks && targets[picks[0]]) e.toHand(targets[picks[0]].uid);
-  },
-};
+/**
+ * audit-eds: "When this card is changed from X to Y Position": by its controller (onPositionChange), and in Speed Duel by
+ * any card effect too (stateCheck compares the position it last had while face-up).
+ */
+function posTrigger(to: 'atk' | 'def', run: (e: Engine, m: FieldCard, p: Pid) => Step, onFlip = false): EffectDef {
+  const code = (m: FieldCard) => (m.pos === 'atk' ? 1 : 2);
+  return {
+    *onPositionChange(e, m, p) {
+      (m.tags ??= {}).lastPos = code(m);
+      if (m.pos === to) yield* run(e, m, p);
+    },
+    *stateCheck(e, m, p) {
+      const t = (m.tags ??= {});
+      const last = t.lastPos;
+      t.lastPos = code(m);
+      if (m.faceUp && last !== undefined && last !== code(m) && m.pos === to) yield* run(e, m, p);
+    },
+    *onSummon(e, m, p, kind) {
+      (m.tags ??= {}).lastPos = code(m);
+      if (e.speed && onFlip && kind === 'flip' && m.pos === to) yield* run(e, m, p);
+    },
+  };
+}
+E['Dream Clown'] = posTrigger('def', function* (e, _m, p) {
+  const targets = e.monsters(other(p));
+  const picks = yield* e.select(p, 'Dream Clown: destroy which monster?', e.optionsFor(targets, true), 1, 1);
+  if (picks && targets[picks[0]]) yield* e.destroy([targets[picks[0]].uid]);
+});
+// A Flip Summon changes it from Defense to Attack Position too.
+E['Crass Clown'] = posTrigger('atk', function* (e, _m, p) {
+  const targets = e.monsters(other(p));
+  const picks = yield* e.select(p, 'Crass Clown: return which monster to the hand?', e.optionsFor(targets, true), 1, 1);
+  if (picks && targets[picks[0]]) e.toHand(targets[picks[0]].uid);
+}, true);
 E['Dragon Seeker'] = {
   *onSummon(e, m, p) {
     const targets = allMonsters(e).filter((x) => x.faceUp && x.uid !== m.uid && e.raceOf(x) === 'Dragon');
@@ -1410,16 +1567,22 @@ E['Time Wizard'] = {
     },
   },
 };
+// audit-eds: the target is chosen when the effect is activated (untargetable monsters cannot be chosen).
 E['Barrel Dragon'] = {
   ignition: {
-    can: (e, _m, p) => e.monsters(other(p)).length > 0,
-    *run(e, _m, p) {
-      const targets = e.monsters(other(p));
+    can: (e, _m, p) => e.monsters(other(p)).some((m) => !e.untargetable(m)),
+    *cost(e, m, p) {
+      const targets = e.monsters(other(p)).filter((x) => !e.untargetable(x));
       const picks = yield* e.select(p, 'Barrel Dragon: fire at which monster?', e.optionsFor(targets, true), 1, 1, true);
-      if (!picks || !targets[picks[0]]) return;
+      if (!picks || !targets[picks[0]]) return false;
+      (m.tags ??= {}).barrel = targets[picks[0]].uid;
+    },
+    *run(e, m, p) {
+      const t = m.tags?.barrel ? e.fieldCard(m.tags.barrel) : null;
+      if (!t || e.controller(t.uid) !== other(p)) return;
       const heads = [e.roll(2), e.roll(2), e.roll(2)].filter((r) => r === 1).length;
       e.log(p, `Barrel Dragon: ${heads} of 3 coins show Heads`);
-      if (heads >= 2) yield* e.destroy([targets[picks[0]].uid]);
+      if (heads >= 2) yield* e.destroy([t.uid]);
     },
   },
 };
@@ -1508,18 +1671,18 @@ const wipe = (test: (e: Engine, m: FieldCard) => boolean, label: string): Effect
     yield* e.destroy(targets.map((m) => m.uid));
   },
 });
-E['Warrior Elimination'] = wipe((e, m) => e.raceOf(m) === 'Warrior', 'Warriors');
-E['Eradicating Aerosol'] = wipe((e, m) => e.raceOf(m) === 'Insect', 'Insects');
+E['Warrior Elimination'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Warrior', 'Warriors'); // audit-eds: face-down monsters have no known Type
+E['Eradicating Aerosol'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Insect', 'Insects'); // audit-eds
 E['Acid Rain'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Machine', 'Machines');
 E['Breath of Light'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Rock', 'Rock monsters');
 E['Eternal Rest'] = wipe((_e, m) => m.equips.length > 0, 'equipped monsters');
 E['Tribute to the Doomed'] = {
-  canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some(notThisCard(c)) && allMonsters(e).length > 0,
+  canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some(notThisCard(c)) && allMonsters(e).some((m) => !e.untargetable(m)), // audit-eds
   *activate(e, link, p) {
     const hand = e.player(p).hand.filter(notThisCard(link.card));
     const d = yield* e.select(p, 'Tribute to the Doomed: discard which card?', e.optionsFor(hand), 1, 1, true);
     if (!d) return false;
-    const targets = allMonsters(e);
+    const targets = allMonsters(e).filter((m) => !e.untargetable(m)); // audit-eds
     const picks = yield* e.select(p, 'Tribute to the Doomed: destroy which monster?', e.optionsFor(targets, true), 1, 1, true);
     if (!picks) return false;
     yield* e.discard(p, hand[d[0]].uid);
@@ -1530,9 +1693,9 @@ E['Tribute to the Doomed'] = {
   },
 };
 E['Riryoku'] = {
-  canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).filter((m) => m.faceUp).length >= 2,
+  canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).filter((m) => m.faceUp && !e.untargetable(m)).length >= 2, // audit-eds
   *activate(e, link, p) {
-    const targets = allMonsters(e).filter((m) => m.faceUp);
+    const targets = allMonsters(e).filter((m) => m.faceUp && !e.untargetable(m));
     const picks = yield* e.select(p, 'Riryoku: pick the monster to halve, then the monster to power up', e.optionsFor(targets), 2, 2, true);
     if (!picks || picks.length < 2) return false;
     link.payload = picks.map((i) => targets[i].uid);
@@ -1595,16 +1758,16 @@ E['Painful Choice'] = {
   },
 };
 E['Share the Pain'] = {
-  canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).length > 0 && e.monsters(other(p)).length > 0,
+  canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => !e.untributable(m)) && e.monsters(other(p)).length > 0,
   *activate(e, link, p) {
-    const mine = e.monsters(p);
+    const mine = e.monsters(p).filter((m) => !e.untributable(m)); // audit-eds
     const picks = yield* e.select(p, 'Share the Pain: Tribute which monster?', e.optionsFor(mine), 1, 1, true);
     if (!picks) return false;
     yield* e.sendToGrave(mine[picks[0]].uid, 'tribute');
     void link;
   },
   *resolve(e, _l, p) {
-    const theirs = e.monsters(other(p));
+    const theirs = e.monsters(other(p)).filter((m) => !e.untributable(m)); // audit-eds
     const picks = yield* e.select(other(p), 'Share the Pain: Tribute which monster?', e.optionsFor(theirs), 1, 1);
     if (picks && theirs[picks[0]]) yield* e.sendToGrave(theirs[picks[0]].uid, 'tribute');
   },
@@ -1634,14 +1797,23 @@ E['Fusion Sage'] = {
 E['Elegant Egotist'] = {
   canActivate: (e, _c, p, t) => {
     const ps = e.player(p);
-    return isMain(t) && hasFreeZone(e, p) && allMonsters(e).some((m) => m.faceUp && m.name === 'Harpie Lady') && [...ps.hand, ...ps.deck].some((c) => c.name === 'Harpie Lady' || c.name === 'Harpie Lady Sisters');
+    // audit-eds: cards whose name is treated as "Harpie Lady" count too.
+    return isMain(t) && hasFreeZone(e, p) && allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m.name)) && [...ps.hand, ...ps.deck].some((c) => isHarpieLady(e, c.name) || c.name === 'Harpie Lady Sisters');
   },
   *resolve(e, _l, p) {
     const ps = e.player(p);
-    const targets = [...ps.hand, ...ps.deck].filter((c) => c.name === 'Harpie Lady' || c.name === 'Harpie Lady Sisters');
+    if (e.speed && !allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m.name))) return; // audit-eds
+    const targets = [...ps.hand, ...ps.deck].filter((c) => isHarpieLady(e, c.name) || c.name === 'Harpie Lady Sisters');
     const picks = yield* e.select(p, 'Elegant Egotist: Special Summon which Harpie?', e.optionsFor(targets), 1, 1);
     if (picks && targets[picks[0]] && hasFreeZone(e, p)) {
-      yield* e.specialSummon(targets[picks[0]].uid, p, 'atk');
+      // audit-eds: this is how Harpie Lady Sisters must first be Special Summoned.
+      const prev = e.state.fx.ignoreCond;
+      e.state.fx.ignoreCond = targets[picks[0]].uid;
+      try {
+        yield* e.specialSummon(targets[picks[0]].uid, p, 'atk');
+      } finally {
+        e.state.fx.ignoreCond = prev;
+      }
       ps.deck = e.shuffle(ps.deck);
     }
   },
@@ -1688,7 +1860,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
       continue;
     }
     // Beastking of the Swamps & co. can stand in for any one material.
-    const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
+    const subs = getEffect(fusion.name)?.noFusionSub ? [] : pool.filter((c) => getEffect(c.name)?.fusionSub || (e.state.fx.fusionSubs as Record<number, number> | undefined)?.[c.uid] === e.state.turn); // audit-03: noFusionSub; audit-skills: Pal-O'Mine-zation!
     const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
@@ -1816,6 +1988,7 @@ E['Negate Attack'] = {
     e.log(p, 'Negate Attack stops the attack and ends the Battle Phase');
     e.endBattle();
     for (const m of e.monsters(other(p))) m.attacked = true;
+    if (e.speed) ((e.state.fx.noDeclare ??= [-1, -1]) as number[])[other(p)] = e.state.turn; // audit-eds: no more attacks this Battle Phase (extra attacks too)
   },
 };
 E['Widespread Ruin'] = {
@@ -1846,10 +2019,11 @@ E['Horn of Heaven'] = {
   },
 };
 E['Spellbinding Circle'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp && !e.untargetable(m)),
+  // audit-eds: Speed Duel: "target 1 monster your opponent controls" (face-down ones too).
+  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack' || (e.speed && (t === 'special' || t === 'spell' || t === 'trap' || t === 'effect'))) && e.monsters(other(p)).some((m) => (e.speed || m.faceUp) && !e.untargetable(m)),
   *activate(e, link, p) {
-    const targets = e.monsters(other(p)).filter((m) => m.faceUp && !e.untargetable(m));
-    const picks = yield* e.select(p, 'Spellbinding Circle: bind which monster?', e.optionsFor(targets), 1, 1, true);
+    const targets = e.monsters(other(p)).filter((m) => (e.speed || m.faceUp) && !e.untargetable(m));
+    const picks = yield* e.select(p, 'Spellbinding Circle: bind which monster?', e.optionsFor(targets, true), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
   },
@@ -1861,7 +2035,7 @@ E['Spellbinding Circle'] = {
     m.cannotAttack = true;
     m.cannotChangePos = true;
     if (e.state.battle?.attacker === m.uid) e.endBattle();
-    e.log(p, `${m.name} is bound by Spellbinding Circle`);
+    e.log(p, `${m.faceUp ? m.name : 'A face-down monster'} is bound by Spellbinding Circle`);
   },
   *onLeaveField(e, fc) {
     if (fc.equippedTo !== undefined) {
@@ -1873,12 +2047,49 @@ E['Spellbinding Circle'] = {
     }
   },
 };
+// audit-eds: Speed Duel: "Activate 1 or both": change the attacker to Defense Position, and/or equip this card to your monster (+500 ATK).
+const kunaiHosts = (e: Engine, p: Pid) => e.monsters(p).filter((m) => m.faceUp && !e.untargetable(m));
+const kunaiAttacker = (e: Engine, p: Pid, ctx: ChainCtx) => (ctx.uid !== undefined && e.state.battle?.attacker === ctx.uid && e.controller(ctx.uid) === other(p) && !e.untargetable(e.fieldCard(ctx.uid)!) ? ctx.uid : undefined);
 E['Kunai with Chain'] = {
-  canActivate: (e, _c, p, t, ctx) => attackingOpp(e, p, t, ctx),
-  *activate(_e, link, _p, ctx) {
-    link.targetUid = ctx.uid;
+  canActivate: (e, _c, p, t, ctx) => attackingOpp(e, p, t, ctx) || (e.speed && (isMain(t) || t === 'summon' || t === 'special' || t === 'attack' || t === 'spell' || t === 'trap' || t === 'effect') && kunaiHosts(e, p).length > 0),
+  *activate(e, link, p, ctx) {
+    if (!e.speed) {
+      link.targetUid = ctx.uid;
+      return;
+    }
+    const a = kunaiAttacker(e, p, ctx);
+    const hosts = kunaiHosts(e, p);
+    const modes = [...(a !== undefined ? ['Change the attacking monster to Defense Position'] : []), ...(hosts.length ? ['Equip it to your monster (+500 ATK)'] : []), ...(a !== undefined && hosts.length ? ['Both'] : [])];
+    const k = modes.length === 1 ? [0] : yield* e.select(p, 'Kunai with Chain: activate which effect?', modes.map((label) => ({ label })), 1, 1, true);
+    if (!k || !modes[k[0]]) return false;
+    const mode = modes[k[0]];
+    const pay: { attacker?: number; host?: number } = {};
+    if (mode !== 'Equip it to your monster (+500 ATK)') (pay.attacker = a), (link.targetUid = a);
+    if (mode !== 'Change the attacking monster to Defense Position') {
+      const h = hosts.length === 1 ? [0] : yield* e.select(p, 'Kunai with Chain: equip to which monster?', e.optionsFor(hosts), 1, 1, true);
+      if (!h || !hosts[h[0]]) return false;
+      pay.host = hosts[h[0]].uid;
+    }
+    link.payload = pay;
   },
+  equipBonus: () => ({ atk: 500, def: 0 }),
   *resolve(e, link) {
+    const pay = e.speed ? (link.payload as { attacker?: number; host?: number } | undefined) : undefined;
+    if (pay) {
+      const a = pay.attacker !== undefined ? e.fieldCard(pay.attacker) : null;
+      if (a && a.pos === 'atk') {
+        a.pos = 'def';
+        a.posChanged = true;
+        e.log(link.player, `Kunai with Chain drags ${a.name} into Defense Position`);
+      }
+      const host = pay.host !== undefined ? e.fieldCard(pay.host) : null;
+      const eq = e.fieldCard(link.card.uid);
+      if (host && eq && host.faceUp && e.controller(host.uid) === link.player) {
+        attachTo(e, eq, host.uid);
+        e.log(link.player, `Kunai with Chain is equipped to ${host.name}`);
+      }
+      return;
+    }
     const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
     if (!m) return;
     m.pos = 'def';
@@ -1912,8 +2123,23 @@ E['Dust Tornado'] = {
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;
   },
-  *resolve(e, link) {
+  *resolve(e, link, p) {
     if (link.targetUid !== undefined && e.fieldCard(link.targetUid)) yield* e.destroy([link.targetUid]);
+    // audit-eds: "then you can Set 1 Spell/Trap from your hand"
+    if (!e.speed) return;
+    const ps = e.player(p);
+    const zone = e.freeZone(ps, 'sz');
+    const list = ps.hand.filter((c) => e.info(c.name).kind !== 'monster' && (e.info(c.name).sub === 'Field' ? !ps.field : zone >= 0));
+    if (!list.length || !(yield* e.yesno(p, 'Dust Tornado: Set a Spell/Trap from your hand?'))) return;
+    const k = yield* e.select(p, 'Dust Tornado: Set which card?', e.optionsFor(list), 1, 1, true);
+    const c = k ? list[k[0]] : undefined;
+    if (!c) return;
+    ps.hand = ps.hand.filter((x) => x.uid !== c.uid);
+    const fc: FieldCard = { ...c, pos: 'atk', faceUp: false, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
+    if (e.info(c.name).sub === 'Field') ps.field = fc;
+    else ps.sz[e.freeZone(ps, 'sz')] = fc;
+    e.event('set', { uid: c.uid, player: p });
+    e.log(p, `${ps.name} Sets a card`);
   },
 };
 E["Robbin' Goblin"] = {
