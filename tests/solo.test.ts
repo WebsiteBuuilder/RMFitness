@@ -9,7 +9,8 @@ import { getSkill } from '../src/eds/skills';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { chapterOpen, deckOf, nodeOpen, roadDeckProblems, settleCampaign, startRoad } from '../src/eds/speedCampaign/campaign';
 import { CURSES, afterDuel, choose, stake, unplayableInRun, duelFor, enter, newRun, reachable, readResultCode, resultCode, stopById, summaryOf, type Run } from '../src/eds/speedCampaign/labyrinth';
-import { deckCode, readDeckCode } from '../src/eds/speedCampaign/deckCode';
+import { deckCode, fighterCode, readDeckCode, talkOf } from '../src/eds/speedCampaign/deckCode';
+import { DEFAULT_TACTICS, readPepTalk, tacticsLabel, type Tactics } from '../src/eds/tactics';
 import { newSoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
 import { mergeSetups, RELICS } from '../src/eds/speedCampaign/relics';
@@ -307,6 +308,59 @@ for (const ch of CHAPTERS) {
       } catch (err) {
         ok(false, `${n.id} duel ${g} threw: ${(err as Error).message}`);
       }
+    }
+  }
+}
+
+// ---------- Pep talks for Computer vs computer ----------
+{
+  const t = (s: string) => readPepTalk(s).tactics;
+  ok(t('Attack everything, no mercy!').attack === 2, 'all-out talk attacks at 2');
+  ok(t('Be careful and patient').attack === -1, 'careful talk');
+  const wall = t('play defense, wall up');
+  ok(wall.attack === -2 && wall.wall, 'defense talk walls up');
+  ok(t('save your traps for their dragon').traps === 'hold', 'hold traps');
+  ok(t('use your traps right away').traps === 'fire', 'fire traps');
+  ok(t('protect your life points').guardLp, 'guard LP');
+  ok(t('go big with tribute summons').tribute === 1, 'tribute big');
+  ok(t("don't tribute anything").tribute === -1, 'no tributes');
+  ok(t('save your skill for later').skill === 'save', 'save Skill');
+  ok(t('take out their strongest monster').target === 'biggest', 'target biggest');
+  ok(t('pick off the weakest ones').target === 'weakest', 'target weakest');
+  const none = readPepTalk('');
+  ok(JSON.stringify(none.tactics) === JSON.stringify(DEFAULT_TACTICS) && none.lines.length === 1, 'empty talk plays the usual way');
+  const cheer = readPepTalk('You got this, believe in the heart of the cards!');
+  ok(JSON.stringify(cheer.tactics) === JSON.stringify(DEFAULT_TACTICS) && /Fired up/.test(cheer.lines[0]), 'a pure cheer is understood as a cheer');
+  ok(readPepTalk('attack a lot and save traps for big monsters').lines.length >= 2, 'one line per understood point');
+  ok(tacticsLabel(t('all-out, save your traps')).startsWith('All-out'), 'label reads the talk');
+
+  // Fighter codes carry the deck and the talk.
+  const d = deckFromStarter(STARTERS[0]);
+  const talk = 'Attack everything ~ and save traps! 100% 💥';
+  const code = fighterCode(d, talk);
+  ok(talkOf(code) === talk, 'fighter code keeps the talk');
+  ok(JSON.stringify(readDeckCode(code)?.main) === JSON.stringify(readDeckCode(deckCode(d))?.main), 'fighter code reads as the same deck');
+  ok(talkOf(deckCode(d)) === '', 'a plain deck code has no talk');
+  ok(talkOf(fighterCode(d, 'x'.repeat(900))).length === 400, 'talk is capped at 400 characters');
+
+  // Two computer duelists with different talks finish their duels.
+  const styles: Tactics[] = [t('attack everything, go big, trap everything right away'), t('play defense, save traps for big attackers, protect your life points, no skill'), t('careful, pick off the weakest'), DEFAULT_TACTICS];
+  for (let g = 0; g < 8; g++) {
+    const e = new Engine(KIT);
+    const da = deckFromStarter(STARTERS[g % STARTERS.length]);
+    const db = deckFromStarter(STARTERS[(g + 1) % STARTERS.length]);
+    e.apply({ type: 'START', first: (g % 2) as Pid, seed: 100 + g, names: ['A', 'B'], decks: [da.main, db.main], fusions: [da.extra, db.extra], mode: 'speed', skills: [da.skill, db.skill] });
+    const tac: [Tactics, Tactics] = [styles[g % 4], styles[(g + 1) % 4]];
+    let steps = 0;
+    try {
+      while (e.state.winner === null && steps < 4000) {
+        const who = (e.state.prompt ? e.state.prompt.player : e.state.turnPlayer) as Pid;
+        e.apply(aiAction(e, who, tac[who]) ?? { type: 'END_TURN', player: who });
+        steps++;
+      }
+      ok(e.state.winner !== null, `computer vs computer duel ${g} finished (${steps} steps)`);
+    } catch (err) {
+      ok(false, `computer vs computer duel ${g} threw: ${(err as Error).message}`);
     }
   }
 }

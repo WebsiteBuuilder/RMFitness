@@ -1,6 +1,7 @@
 // Shared shapes for the Speed Duel solo modes: the story campaign (The Millennium Road),
 // the roguelite (Shadow Gauntlet) and Practice Duels.
 import type { SeatSetup } from '../types';
+import type { Tactics } from '../tactics';
 
 /** A deck written compactly: "Card Name" or "Card Name*3". */
 export type DeckList = string[];
@@ -65,7 +66,7 @@ export interface DuelOutcome {
 
 /** Which solo mode a duel belongs to, so its result goes to the right place. */
 export type DuelContext =
-  | { kind: 'practice'; oppId: string; deckId: string | null; first: 'me' | 'cpu' | 'coin'; conditions: boolean }
+  | { kind: 'practice'; oppId: string; deckId: string | null; first: 'me' | 'cpu' | 'coin'; conditions: boolean; watch?: boolean }
   | { kind: 'campaign'; nodeId: string }
   | { kind: 'labyrinth'; runId: string; stopId: string };
 
@@ -75,6 +76,8 @@ export interface CpuDuelSpec {
   cpu: { name: string; main: string[]; extra: string[]; skill: string | null; setup?: SeatSetup };
   first: 'me' | 'cpu' | 'coin';
   context: DuelContext;
+  /** the computer plays both sides, each with its own pep talk (Practice: watch a duel) */
+  watch?: { tactics: [Tactics, Tactics] };
   /** a fixed duel shuffle (the Daily deals the same duels to everyone) */
   seed?: number;
   /** what the VS splash and the in-duel goal chip show */

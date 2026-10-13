@@ -1160,3 +1160,116 @@
 }
 .so-stop.live .so-stop-a { border-color: var(--so-gold); }
 .so-stop.k-boss .so-stop-a { width: 40px; height: 40px; border-color: #dc3c5a; }
+
+/* Practice: You duel / Computer vs computer */
+.so-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 12px 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--so-card);
+  border: 1px solid var(--so-line);
+}
+.so-tabs button {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--so-dim);
+  font: 600 14px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+.so-tabs button.on {
+  background: rgba(242, 193, 78, 0.18);
+  color: #ffe6a3;
+  box-shadow: inset 0 0 0 1px var(--so-gold);
+}
+.so-fighter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--so-card);
+  border: 1px solid var(--so-line);
+}
+.so-fighter-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.so-fighter-h > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.so-fighter-h b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.so-fighter-h .so-btn {
+  min-height: 38px;
+  font-size: 14px;
+}
+textarea.so-talk {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 72px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--so-line);
+  background: rgba(3, 6, 16, 0.5);
+  color: var(--so-ink);
+  /* 16px keeps iPhone Safari from zooming in on focus */
+  font: 16px/1.35 system-ui, sans-serif;
+}
+textarea.so-talk:focus {
+  outline: none;
+  border-color: var(--so-gold);
+}
+ul.so-understood {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #cfe9ff;
+}
+ul.so-understood li::before {
+  content: '✓ ';
+  color: var(--so-gold);
+}
+/* Pause and speed while the computer duels itself. Sits top-left; the goals chip is top-right. */
+.so-watchbar {
+  position: fixed;
+  z-index: 40;
+  left: 6px;
+  top: calc(env(safe-area-inset-top) + 64px);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(8, 12, 28, 0.86);
+  border: 1px solid rgba(242, 193, 78, 0.6);
+}
+.so-watchbar button {
+  min-width: 40px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #ffe6a3;
+  font: 600 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.so-watchbar button.on {
+  background: rgba(242, 193, 78, 0.25);
+}

@@ -25,6 +25,8 @@ export interface TouchCtl {
   me: PlayerState;
   opp: PlayerState;
   canAct: boolean;
+  /** watching the computer duel itself: every card is shown */
+  spectator?: boolean;
   myTurn: boolean;
   prompt: Prompt | null;
   sel: number | null;
@@ -263,7 +265,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   // ----- field pieces -----
   const zone = (c: FieldCard | null, owner: Pid, kind: 'm' | 's', i: number) => {
-    const visible = c ? c.faceUp || owner === acting : false;
+    const visible = c ? c.faceUp || owner === acting || !!ctl.spectator : false;
     const mine = owner === acting;
     const dropId = mine ? `${kind}z${i}` : c && kind === 'm' ? `t${c.uid}` : undefined;
     const draggable = mine && kind === 'm' && c && state.phase === 'BP';
@@ -308,7 +310,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           if (ps.field) tapCard(ps.field.uid);
         }}
       >
-        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine} /> : <span class="tz-label">FIELD</span>}
+        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} /> : <span class="tz-label">FIELD</span>}
       </div>
     );
   };
@@ -629,7 +631,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
             {...dragProps(c, 'hand')}
           >
-            <CardImg name={c.name} back={!canAct} owner={c.owner} />
+            <CardImg name={c.name} back={!canAct && !ctl.spectator} owner={c.owner} />
           </div>
         ))}
         {handCount === 0 && <div class="thint">No cards in hand</div>}

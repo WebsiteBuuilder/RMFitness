@@ -48,6 +48,16 @@ export interface PracticePrefs {
   cpuSkill: string;
   /** decks pasted from codes, kept for the next practice */
   codes: { name: string; code: string }[];
+  /** Computer vs computer: the two fighters and their pep talks */
+  watch?: WatchPrefs;
+}
+
+export interface WatchPrefs {
+  /** fighter ids: 'deck:<id>' for your decks, otherwise a Practice opponent id */
+  a: string | null;
+  b: string | null;
+  talkA: string;
+  talkB: string;
 }
 
 export interface SoloSave {
