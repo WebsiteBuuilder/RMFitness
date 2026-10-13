@@ -34,6 +34,8 @@ import { sealedCards } from '../art/shadow';
 import { CardLevels, levelHeadline } from '../level/CardLevels';
 import { cardLevels } from '../level/leveling';
 import { showProfileLevels } from '../level/view';
+import { CardShop, ChipBar } from '../collection/Shop';
+import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 
 export type SpeedLinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -53,7 +55,7 @@ export function speedOpponents(): SpeedOpponent[] {
   });
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
 
 export function SpeedHub({
   onSolo,
@@ -76,25 +78,27 @@ export function SpeedHub({
   const [sub, setSub] = useState<Sub>('menu');
   const [editing, setEditing] = useState<string | null>(null);
   const deck = activeDeck(save);
-  const problems = deck ? speedDeckProblems(deck) : ['Build a deck first'];
+  const problems = deck ? [...speedDeckProblems(deck), ...collectionProblems(save, deck)] : ['Build a deck first'];
   // Card pictures on these screens show this profile's card rarities.
   showProfileLevels(cardLevels(save));
   useEffect(() => () => showProfileLevels(null), []);
 
-  if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...save, decks: [d], active: d.id })} onExit={onExit} />;
+  if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
   if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id) => (setEditing(id), setSub('edit'))} onBack={() => setSub('menu')} />;
   if (sub === 'edit' && editing) {
     const d = save.decks.find((x) => x.id === editing);
-    if (d) return <SpeedDeckEdit deck={d} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
+    if (d) return <SpeedDeckEdit deck={d} collection={d.open ? undefined : (save.collection ?? {})} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
   }
   if (sub === 'cpu') return <CpuPick save={save} problems={problems} onPick={onCpu} onBack={() => setSub('menu')} />;
+  if (sub === 'shop') return <CardShop save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
   if (sub === 'art') return <ArtLab onBack={() => setSub('menu')} />;
   if (sub === 'shadow') return <ShadowRealmScreen save={save} onBack={() => setSub('menu')} />;
   if (sub === 'levels') return <CardLevels save={save} deckNames={[...new Set(save.decks.flatMap((d) => [...d.main, ...d.extra]))]} onBack={() => setSub('menu')} />;
   const headline = levelHeadline(save);
   const sealed = sealedCards(save);
+  const crown = bestCrown(save);
   if (sub === 'link') return <SpeedLink problems={problems} onPick={onLink} onBack={() => setSub('menu')} />;
 
   return (
@@ -108,9 +112,19 @@ export function SpeedHub({
         </div>
         <div>
           Deck: {deck ? `${deck.name} (${deck.main.length})` : 'none'}
-          {deck?.skill ? ` · Skill: ${deck.skill}` : ''} · W {save.wins} L {save.losses} D {save.draws}
+          {deck?.skill ? ` · Skill: ${deck.skill}` : ''}
         </div>
+        <div>
+          Wins {save.wins} · Losses {save.losses} · Draws {save.draws}
+        </div>
+        {crown && (
+          <div>
+            <span class={`crown ${crown.rec.streak >= 3 ? 'hot' : ''}`}>👑</span> King of Games over {crown.rival} ({crown.rec.w}-{crown.rec.l}
+            {crown.rec.streak >= 3 ? `, ${crown.rec.streak} wins in a row` : ''})
+          </div>
+        )}
       </div>
+      <ChipBar save={save} cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))} />
       <Win title="Speed Duel">
         <p class="hint">Speed Duel cards only. 4000 LP, 4-card hands, 3 Monster and 3 Spell/Trap Zones, no Main Phase 2, and one Skill per Duel.</p>
         {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}. Fix it in Decks.</div>}
@@ -130,6 +144,7 @@ export function SpeedHub({
             { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
             { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
+            { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
             { label: 'Record', onPick: () => setSub('record') },
@@ -149,7 +164,7 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
   return (
     <div class="screen">
       <Win title="Pick your first Speed Duel deck" onClose={onExit}>
-        <p>Each one is a real Speed Duel Starter Deck with its Skill. You can build your own decks from every Speed Duel card later.</p>
+        <p>Each one is a real Speed Duel Starter Deck with its Skill. Its cards become yours. Win packs and Duel Chips to grow your collection, plus 3 welcome packs to start.</p>
         <Menu items={STARTERS.map((s) => ({ label: s.character, note: s.title.replace(/^.*\(|\)$/g, ''), selected: sel === s, onPick: () => (playBlip(), setSel(s)) }))} />
       </Win>
       {sel && preview && (
@@ -185,8 +200,8 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
         <Menu
           items={[
             ...save.decks.map((d) => {
-              const bad = speedDeckProblems(d);
-              return { label: `${d.id === activeDeck(save)?.id ? '★ ' : ''}${d.name}`, note: bad.length ? `not ready: ${bad[0]}` : `${d.main.length}+${d.extra.length} · ${d.skill ?? 'no Skill'}`, selected: sel?.id === d.id, onPick: () => (setSel(d), setConfirmDel(false)) };
+              const bad = [...speedDeckProblems(d), ...collectionProblems(save, d)];
+              return { label: `${d.id === activeDeck(save)?.id ? '★ ' : ''}${d.name}${d.open ? ' · Anything goes' : ''}`, note: bad.length ? `not ready: ${bad[0]}` : `${d.main.length}+${d.extra.length} · ${d.skill ?? 'no Skill'}`, selected: sel?.id === d.id, onPick: () => (setSel(d), setConfirmDel(false)) };
             }),
             { label: 'New deck', disabled: full, note: full ? `${MAX_DECKS} decks max` : undefined, onPick: () => setAdding(true) },
           ]}
@@ -228,8 +243,9 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
           <Win title="New deck" onClose={() => setAdding(false)}>
             <Menu
               items={[
-                { label: 'Empty deck', onPick: () => add({ id: newDeckId(), name: `Deck ${save.decks.length + 1}`, main: [], extra: [], skill: null }) },
-                ...STARTERS.map((s) => ({ label: `Start from ${s.character}`, note: s.title.replace(/^.*\(|\)$/g, ''), onPick: () => add(deckFromStarter(s)) })),
+                { label: 'Empty deck', note: 'from the cards you own', onPick: () => add({ id: newDeckId(), name: `Deck ${save.decks.length + 1}`, main: [], extra: [], skill: null }) },
+                { label: 'Anything goes deck', note: "every card; earns nothing and can't be bet", onPick: () => add({ id: newDeckId(), name: `Anything ${save.decks.length + 1}`, main: [], extra: [], skill: null, open: true }) },
+                ...STARTERS.map((s) => ({ label: `Start from ${s.character}`, note: 'the copies you own', onPick: () => add(ownedOnly(save, deckFromStarter(s))) })),
               ]}
             />
           </Win>
@@ -326,6 +342,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
         </button>
         <span class={problems.length ? 'err' : 'good'}>{problems.length ? problems[0] : `Ready · ${deck.main.length} cards${deck.skill ? ` · ${deck.skill}` : ''}`}</span>
       </div>
+      {deck.open && <p class="hint shop-pad">Anything goes deck: every card is here, but duels with it earn no packs or chips and it can't be bet.</p>}
+      {collection && tab === 'cards' && pool.length < 40 && <p class="hint shop-pad">Only cards you own are here. Get more from packs and crafting in the Card Shop.</p>}
       {tab !== 'skill' && (
         <div class="filters">
           {(['all', 'monster', 'spell', 'trap', 'extra'] as Kind[]).map((f) => (

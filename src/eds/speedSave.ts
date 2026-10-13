@@ -14,6 +14,8 @@ export interface SpeedDeck {
   /** Extra Deck (Fusion Monsters) */
   extra: string[];
   skill: string | null;
+  /** an "Anything goes" deck: any card, but it earns nothing and can't be bet */
+  open?: boolean;
 }
 
 export interface SpeedSave {
@@ -27,12 +29,11 @@ export interface SpeedSave {
   draws: number;
   created: number;
   /**
-   * Speed Duel cards this profile owns (name -> copies). Free decks can still use every
-   * card; the campaign builds its deck only from these, and any later card-earning
-   * feature adds to the same place.
+   * Speed Duel cards (and Skills) this profile owns (name -> copies): the one collection.
+   * Decks are built from it; packs, the campaign, ante wins and crafting add to it.
    */
   collection?: Record<string, number>;
-  /** Duel Chips held (at most CHIP_CAP) */
+  /** Duel Chips: the rare currency (at most CHIP_CAP) */
   chips?: number;
 }
 
@@ -108,6 +109,11 @@ export function withCards(s: SpeedSave, names: string[]): SpeedSave {
   const collection = { ...(s.collection ?? {}) };
   for (const n of names) collection[n] = (collection[n] ?? 0) + 1;
   return { ...s, collection };
+}
+
+/** A copy of the save with Duel Chips added (or taken, when negative), kept between 0 and CHIP_CAP. */
+export function withChips(s: SpeedSave, n: number): SpeedSave {
+  return { ...s, chips: Math.max(0, Math.min(CHIP_CAP, (s.chips ?? 0) + n)) };
 }
 
 // ---------- the card pool ----------
