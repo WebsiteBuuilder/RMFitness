@@ -325,7 +325,7 @@ export class Engine {
     if (rule && fx.ignoreCond !== c.uid && !rule(this, c, p, how, from)) return true;
     if (how === 'flip' && (c as FieldCard).tags?.noFlip) return true; // audit-05: "cannot change its battle position" also stops a Flip Summon (Floodgate Trap Hole)
     if (how !== 'set' && fx.summonLock?.[p] === this.state.turn && fx.summonLockExcept !== c.uid) return true;
-    if (how === 'special' && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true;
+    if (how === 'special' && fx.ignoreCond !== c.uid && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true; // a Summoning condition: effects that ignore it skip it too
     if (how === 'special' && from === 'fusion' && this.liveST().some((x) => x.c.name === 'Summon Gate') && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
     if (how === 'special' && from !== null && getEffect(c.name)?.cannotSpecialSummon && fx.ignoreCond !== c.uid) return true;
     // "You cannot Normal or Special Summon ... this turn, except ..." (summonLocks: see SummonLock).

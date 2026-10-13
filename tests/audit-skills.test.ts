@@ -90,6 +90,7 @@ function place(e: Engine, p: Pid, name: string, pos: Pos = 'atk', faceUp = true,
   const ps = e.player(p);
   const c = [...ps.deck, ...ps.gy, ...ps.fusion, ...ps.hand].find((x) => x.name === name);
   if (!c) throw new Error(`no ${name} for player ${p}`);
+  e.state.fx.ignoreCond = c.uid; // test setup: place it ignoring Summoning conditions
   run(e, e.specialSummon(c.uid, p, pos, faceUp), ...ans);
   const f = e.fieldCard(c.uid);
   if (!f) throw new Error(`${name} did not arrive`);
