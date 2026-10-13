@@ -154,11 +154,11 @@ export interface EffectDef {
   onAnyToGrave?(e: Engine, card: FieldCard, controller: Pid, events: GraveEvent[]): Step;
   /** A card about to go to the GY is banished instead (Macro Cosmos). */
   banishInstead?(e: Engine, card: FieldCard, controller: Pid, moving: Card): boolean;
-  /** `summoner` cannot Summon `monster` this way (`from`: the zone it comes from, null for Tokens). */
+  /** `summoner` cannot Summon `monster` this way (`from`: the zone it comes from, null for Tokens). Face-up monsters may use it too. */
   forbidsSummon?(e: Engine, card: FieldCard, controller: Pid, monster: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
   /** This attacker inflicts piercing battle damage (Dragon's Rage). */
   grantsPiercing?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard): boolean;
-  /** Checked after every action: "destroy this card if..." (the script destroys it itself). */
+  /** Checked after every action: "destroy this card if..." (the script destroys it itself). Face-up monsters may use it too. */
   stateCheck?(e: Engine, card: FieldCard, controller: Pid): Step;
   /** A monster's battle position was changed (by its controller, or a Flip Summon). */
   onAnyPositionChange?(e: Engine, card: FieldCard, controller: Pid, m: FieldCard, mController: Pid): Step;
@@ -172,6 +172,37 @@ export interface EffectDef {
   onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
   /** Its controller drew these cards for their normal draw in the Draw Phase. */
   onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+
+  // ---------- Speed Duel hooks added for batch 16 ----------
+  /** "If this card attacks, your opponent cannot activate Spell/Trap Cards until the end of the Damage Step." */
+  attackSealsST?: boolean | ((e: Engine, m: FieldCard) => boolean);
+  /** A face-up monster or active Spell/Trap: `attacker` cannot choose `target` as its attack target (Amazoness Tiger, Parasite Paranoid). */
+  attackGuard?(e: Engine, src: FieldCard, srcController: Pid, attacker: FieldCard, target: FieldCard): boolean;
+  /** "Cannot be Special Summoned." */
+  cannotSpecialSummon?: boolean;
+  /** This face-up monster can be treated as 2 Tributes for the Tribute Summon of `monster` (Unshaven Angler). */
+  doubleTribute?(e: Engine, m: FieldCard, monster: Card): boolean;
+  /** An active Spell/Trap (Field Spell): `summoner` needs this many fewer Tributes to Normal Summon `monster` (Geartown). */
+  tributeDiscount?(e: Engine, src: FieldCard, srcController: Pid, monster: Card, summoner: Pid): number;
+  /** A face-up monster, at the end of the Battle Phase (Battle Survivor, Flyfang). */
+  onBattlePhaseEnd?(e: Engine, m: FieldCard, controller: Pid): Step;
+  /** A face-up monster watching cards sent to the GY, like onAnyToGrave (Buster Blader, the Destruction Swordmaster). */
+  onGraveEvents?(e: Engine, m: FieldCard, controller: Pid, events: GraveEvent[]): Step;
+  /** The FLIP effects of monsters this attacker destroys by battle are negated (Harpie Lady 2). */
+  negatesVictimFlip?: boolean;
+  /** This face-up monster makes the field count as having an active card of this name (Maiden of the Aqua: "Umi"). */
+  countsAs?(e: Engine, m: FieldCard): string | undefined;
+  /** While this monster is face-up, Spell Cards cannot be activated and Spell effects on the field are negated (Spell Canceller). */
+  sealsSpells?: boolean;
+  /** Checked after every action for this card while it is in a hand (Pharaoh's Treasure). */
+  inHand?(e: Engine, card: Card, owner: Pid): Step;
+  /** "This turn, ..." effects that outlast the card. Registered with e.linger(name, p); `owner` is the player who applied it. */
+  lingering?: {
+    shields?(e: Engine, owner: Pid, target: FieldCard, how: 'battle' | 'effect' | 'target'): boolean;
+    onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
+    attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
+    afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
+  };
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
