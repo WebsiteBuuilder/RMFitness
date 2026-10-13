@@ -63,7 +63,7 @@ def set_list() -> list[dict]:
 
 def compact(c: dict) -> dict:
     out = {"id": c["id"], "name": c["name"], "type": c.get("type", ""), "frame": c.get("frameType", ""), "desc": c.get("desc", "")}
-    for k in ("atk", "def", "level", "race", "attribute"):
+    for k in ("atk", "def", "level", "race", "attribute", "linkval"):
         if c.get(k) is not None:
             out[k] = c[k]
     if c.get("type") == "Skill Card":

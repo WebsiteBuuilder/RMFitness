@@ -49,8 +49,10 @@ export const faceUpMonsters = (e: Engine, p?: Pid) => (p === undefined ? allMons
 /** Spells/Traps on a player's field, including the Field Zone. */
 export const stOf = (e: Engine, p: Pid) => [...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])];
 export const allST = (e: Engine) => [...stOf(e, 0), ...stOf(e, 1)];
-export const freeMZ = (e: Engine, p: Pid) => e.player(p).mz.some((z) => z === null);
-export const freeST = (e: Engine, p: Pid) => e.player(p).sz.findIndex((z) => z === null);
+/** A Monster Zone `p` can place a monster in (empty and not blocked: Ojama Knight, Tri-Head Dust Dragon). */
+export const freeMZ = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0;
+// b18: Spell & Trap Zones locked by Number 57: Tri-Head Dust Dragon do not count.
+export const freeST = (e: Engine, p: Pid) => e.freeZone(e.player(p), 'sz');
 export const info = (e: Engine, c: Card | string) => e.info(typeof c === 'string' ? c : c.name);
 export const isMonster = (e: Engine, c: Card) => info(e, c).kind === 'monster';
 export const isSpell = (e: Engine, c: Card) => info(e, c).kind === 'spell';

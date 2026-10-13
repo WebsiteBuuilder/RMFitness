@@ -1200,7 +1200,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const z = freeST(e, p);
         if (!f || f.loc.zone !== 'mz' || f.loc.player === p || z < 0 || !e.fieldCard(m.uid)) return;
         yield* dropEquips(e, t.uid);
-        e.player(f.loc.player).mz[f.loc.index] = null;
+        e.vacateMZ(e.player(f.loc.player), f.loc.index);
         Object.assign(t, { faceUp: true, pos: 'atk', equippedTo: m.uid, active: false, atkMod: 0, defMod: 0, equips: [], counters: 0, tags: { plasmaEq: 1 }, returnAtEnd: undefined });
         e.player(p).sz[z] = t;
         m.equips.push(t.uid);

@@ -20,6 +20,8 @@ interface RawCard {
   alias?: string;
   /** Skill Cards: whose Skill it is */
   character?: string;
+  /** Link Monsters: Link Rating */
+  linkval?: number;
   /** Speed Duel products it was printed in */
   sets?: string[];
 }
@@ -43,6 +45,15 @@ export function isVanilla(r: { type: string; desc: string }): boolean {
   return r.desc.replace(/^("[^"]+")(\s*\+\s*"[^"]+")+/, '').trim() === '';
 }
 
+/** Tuners; Xyz Monsters have a Rank instead of a Level; Link Monsters have a Link Rating. */
+function extraStats(r: { type: string; level?: number; linkval?: number; desc: string }, sub: string) {
+  const out: { tuner?: boolean; rank?: number; level?: number; linkRating?: number } = {};
+  if (/Tuner/.test(r.type)) out.tuner = true;
+  if (sub === 'Xyz') (out.rank = r.level), (out.level = undefined);
+  if (sub === 'Link') out.linkRating = r.linkval ?? Number(r.desc.match(/^(\d+)/)?.[1] ?? 1);
+  return out;
+}
+
 function toInfo(r: RawCard): CardInfo {
   const t = r.type;
   let kind: CardInfo['kind'] = 'monster';
@@ -62,7 +73,7 @@ function toInfo(r: RawCard): CardInfo {
   } else if (/XYZ|Synchro|Link/.test(t)) sub = t.includes('XYZ') ? 'Xyz' : t.includes('Synchro') ? 'Synchro' : 'Link'; else if (/Fusion/.test(t)) sub = 'Fusion';
   else if (/Ritual/.test(t)) sub = 'Ritual';
   else if (/Effect|Flip|Tuner|Spirit|Toon|Union|Gemini/.test(t)) sub = 'Effect';
-  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias, character: r.character, vanilla: isVanilla(r) };
+  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias, character: r.character, vanilla: isVanilla(r), ...extraStats(r, sub) };
 }
 
 /** Changes with every deploy, so phones never reuse a card list from an older version of the site. */
