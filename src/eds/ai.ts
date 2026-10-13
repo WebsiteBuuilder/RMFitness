@@ -5,6 +5,7 @@ import { other } from './engine';
 import { getEffect } from './effects';
 import type { Action, FieldCard, Pid } from './types';
 import { getSkill } from './skills';
+import { DEFAULT_TACTICS, type Tactics } from './tactics';
 
 /** Speed Duel moves the computer already tried this turn (so a cancelled effect is not retried forever). */
 const TRIED = new Set<string>();
@@ -19,7 +20,8 @@ const WIPES: Record<string, (e: Engine, m: FieldCard) => boolean> = {
   'Eternal Rest': (_e, m) => m.equips.length > 0,
 };
 
-export function aiAction(e: Engine, me: Pid): Action | null {
+/** `t` is a pep talk read into tactics (Practice: the computer vs itself); without one it plays its usual way. */
+export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Action | null {
   const s = e.state;
   if (s.winner !== null) return null;
   const opp = other(me);
@@ -33,6 +35,13 @@ export function aiAction(e: Engine, me: Pid): Action | null {
     if (prompt.kind === 'response') {
       // Don't spring defensive traps (Waboku, Negate Attack...) on your own attacks.
       if (s.turnPlayer === me && / attacks\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
+      // Told to save traps: only answer a big attacker or a hit that would finish us.
+      const atk = prompt.title.match(/^(.*) attacks\. Respond\?$/);
+      if (t.traps === 'hold' && atk) {
+        const a = e.monsters(opp).find((m) => m.name === atk[1]);
+        const power = a ? e.atkOf(a) : (e.info(atk[1]).atk ?? 0);
+        if (power < 1800 && power < my.lp) return { type: 'PASS', player: me };
+      }
       // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
       return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
     }
@@ -56,6 +65,10 @@ export function aiAction(e: Engine, me: Pid): Action | null {
   }
 
   if (s.turnPlayer !== me) return null;
+  // Low on Life Points and told to guard them: play it safe from here.
+  const guarding = t.guardLp && my.lp <= 1500;
+  const attack = guarding ? Math.min(t.attack, -1) : t.attack;
+  const wall = t.wall || guarding;
   const myMonsters = e.monsters(me);
   const theirMonsters = e.monsters(opp);
   const theirBest = Math.max(0, ...theirMonsters.map((m) => (m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1200)));
@@ -136,7 +149,8 @@ export function aiAction(e: Engine, me: Pid): Action | null {
         return true;
       };
       const sk = my.skill ? getSkill(my.skill) : undefined;
-      if (e.canUseSkill(me) && sk?.ai !== false && (typeof sk?.ai !== 'function' || sk.ai(e, me)) && tryOnce(`skill${me}`)) return { type: 'SKILL', player: me };
+      const skillOk = t.skill === 'normal' || (t.skill === 'save' && (my.lp < their.lp || s.turn >= 7));
+      if (skillOk && e.canUseSkill(me) && sk?.ai !== false && (typeof sk?.ai !== 'function' || sk.ai(e, me)) && tryOnce(`skill${me}`)) return { type: 'SKILL', player: me };
       for (const c of my.hand) if (e.canSpecialProc(me, c) && tryOnce(`sp${c.uid}`)) return { type: 'SPECIAL', player: me, uid: c.uid };
       for (const c of my.hand) {
         const info = e.info(c.name);
@@ -154,7 +168,8 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       const myBest = Math.max(0, ...myMonsters.map((m) => e.atkOf(m)));
       for (const { c, info } of candidates) {
         const need = e.tributesNeeded(info.level ?? 1);
-        if (need > 0 && (info.atk ?? 0) < myBest + 600) continue; // not worth the tribute
+        if (need > 0 && t.tribute < 0) continue; // told never to tribute
+        if (need > 0 && (info.atk ?? 0) < myBest + (t.tribute > 0 ? 1 : 600)) continue; // not worth the tribute
         if (need > myMonsters.length) continue;
         const zone = freeZone(my.mz);
         if (zone < 0 && need === 0) break;
@@ -163,7 +178,9 @@ export function aiAction(e: Engine, me: Pid): Action | null {
         const flip = !!getEffect(c.name)?.flip;
         // Set weak or flip monsters; summon anything that can fight (Set it when it cannot be Summoned face-up right now).
         if (flip || (atk < theirBest && def >= atk) || !e.canNormalSummon(me, c, true)) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: false };
-        if (atk >= theirBest || theirMonsters.length === 0) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'atk', faceUp: true };
+        // A defensive talk sets anything that doesn't clearly win; an attacking one shows more monsters face-up.
+        if (wall && !(atk > theirBest + 300 && theirMonsters.length > 0)) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: false };
+        if (atk >= theirBest - (attack > 0 ? 300 * attack : 0) || theirMonsters.length === 0) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'atk', faceUp: true };
         return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: def > atk };
       }
     }
@@ -201,9 +218,14 @@ export function aiAction(e: Engine, me: Pid): Action | null {
       if (m.name === 'Dark Elf' && my.lp <= 2000) continue;
       // Best target: a monster we beat, preferring the biggest attack-position one; face-downs when we are strong.
       const legal = e.legalTargets(me, m);
-      const beatable = legal.filter((t) => (t.faceUp ? (t.pos === 'atk' ? atk > e.atkOf(t) : atk > e.defOf(t)) : atk >= 1600));
+      // How sure an attack must be: all-out takes even trades and swings into face-downs; careful wants a clear margin.
+      const margin = attack >= 2 ? -1 : attack <= -1 ? 300 : 0;
+      const blind = attack >= 2 ? 1200 : attack >= 1 ? 1400 : attack <= -1 ? 2000 : 1600;
+      const beatable = legal.filter((x) => (x.faceUp ? (x.pos === 'atk' ? atk > e.atkOf(x) + margin : atk > e.defOf(x) + Math.max(0, margin)) : atk >= blind));
       if (beatable.length) {
-        beatable.sort((a, b) => score(e, b) - score(e, a));
+        if (t.target === 'weakest') beatable.sort((a, b) => score(e, a) - score(e, b));
+        else if (t.target === 'biggest') beatable.sort((a, b) => (b.faceUp ? e.atkOf(b) : 0) - (a.faceUp ? e.atkOf(a) : 0));
+        else beatable.sort((a, b) => score(e, b) - score(e, a));
         return { type: 'ATTACK', player: me, uid: m.uid, target: beatable[0].uid };
       }
     }
