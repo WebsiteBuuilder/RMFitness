@@ -270,6 +270,12 @@ export interface EffectDef {
   tributeOffer?(e: Engine, src: FieldCard | null, controller: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
   /** Can be banished from the GY as a Ritual Summon material (Djinn Disserere of Rituals). */
   ritualFromGy?: boolean;
+  // ---------- Speed Duel hooks (batch 20) ----------
+  /**
+   * A Fusion Monster whose materials are kinds of monsters, not named cards ("1 Machine monster + 1 Dinosaur monster",
+   * "1 Synchro Monster + 1 Xyz Monster + 1 Link Monster"): one test per material. Polymerization uses it when the text names no cards.
+   */
+  fusionTests?: ((e: Engine, c: Card) => boolean)[];
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -333,7 +339,7 @@ export function hasEffect(name: string): boolean {
 // ---------- helpers ----------
 const allMonsters = (e: Engine) => [...e.monsters(0), ...e.monsters(1)];
 const allSpells = (e: Engine) => [...e.spells(0), ...e.spells(1), ...([e.player(0).field, e.player(1).field].filter((c): c is FieldCard => !!c))];
-const hasFreeZone = (e: Engine, p: Pid) => e.player(p).mz.some((z) => z === null);
+const hasFreeZone = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0; // b20: skips blocked zones
 const isMonster = (e: Engine, c: Card) => e.info(c.name).kind === 'monster';
 const isSpell = (e: Engine, c: Card) => e.info(c.name).kind === 'spell';
 const isMain = (t: Trigger) => t === 'main';
@@ -1641,7 +1647,12 @@ E['Messenger of Peace'] = {
 };
 
 // ---------- Polymerization ----------
-type FusionPlan = { fusion: Card; mats: Card[][] };
+type FusionPlan = { fusion: Card; mats: Card[][]; generic?: boolean };
+/** b20: can each material slot get its own card (generic materials, no substitutes)? */
+function fillable(mats: Card[][], used: number[] = []): boolean {
+  if (mats.length === 0) return true;
+  return mats[0].some((c) => !used.includes(c.uid) && fillable(mats.slice(1), [...used, c.uid]));
+}
 /** The card id a material counts as: a monster on the field whose name an effect changed (Proto-Cyber Dragon) counts as that card. */
 function matId(e: Engine, c: Card): number {
   const fc = e.fieldCard(c.uid);
@@ -1656,7 +1667,13 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
   for (const fusion of ps.fusion) {
     if (e.summonBlocked(p, fusion, 'special', 'fusion')) continue;
     const ids = e.fusionMaterials(fusion.name);
-    if (!ids) continue;
+    if (!ids) {
+      // b20: materials described by kind (fusionTests).
+      const tests = getEffect(fusion.name)?.fusionTests;
+      const mats = tests?.map((t) => pool.filter((c) => t(e, c)));
+      if (mats && fillable(mats)) out.push({ fusion, mats, generic: true });
+      continue;
+    }
     // Beastking of the Swamps & co. can stand in for any one material.
     const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
     const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
@@ -1685,6 +1702,15 @@ E['Polymerization'] = {
     const chosen: number[] = [];
     for (let i = 0; i < plan.mats.length; i++) {
       const cands = plan.mats[i];
+      if (plan.generic) {
+        // b20: generic materials: any card passing this slot's test that still leaves the rest fillable.
+        const free = cands.filter((c) => !chosen.includes(c.uid) && fillable(plan.mats.slice(i + 1), [...chosen, c.uid]));
+        if (free.length === 0) return false;
+        const pk = free.length === 1 ? [0] : yield* e.select(p, `Polymerization: use which material?`, e.optionsFor(free), 1, 1, true);
+        if (!pk) return false;
+        chosen.push(free[pk[0]].uid);
+        continue;
+      }
       const ids = e.fusionMaterials(plan.fusion.name)!;
       const subTaken = chosen.some((u, j) => { const f = e.find(u); return !f || matId(e, f.card) !== ids[j]; });
       const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && matId(e, c) !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || matId(e, c) !== ids[i]));
@@ -1706,7 +1732,8 @@ E['Polymerization'] = {
     if (!hasFreeZone(e, p)) return;
     // Speed Duel scripts read which cards were the materials (UFOroid Fighter, Fusion Recovery).
     if (e.speed) (e.state.fx.fusionMatList ??= {})[fusion] = mats.slice();
-    yield* e.specialSummon(fusion, p, 'atk');
+    // b20: tags.fusS marks a Fusion Summoned monster ("this Fusion Summoned card": Coordius, Dyna Tank).
+    yield* e.specialSummon(fusion, p, 'atk', true, (fc) => void ((fc.tags ??= {}).fusS = 1));
     e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
   },
 };

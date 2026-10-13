@@ -175,7 +175,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (mine && selected.loc.zone === 'hand' && myTurn && e.inMainPhase()) {
       if (info?.kind === 'monster') {
         const ok = e.canNormalSummon(acting, selCard);
-        const zone = me.mz.findIndex((z) => z === null);
+        const zone = e.freeMonsterZone(acting);
         commands.push({ label: 'Summon', disabled: !ok || !e.canNormalSummon(acting, selCard, true), onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
         commands.push({ label: 'Set', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'def', faceUp: false }) });
         const eff = getEffect(selCard.name);

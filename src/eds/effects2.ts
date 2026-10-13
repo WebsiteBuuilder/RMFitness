@@ -22,7 +22,7 @@ interface Helpers {
 const allMonsters = (e: Engine) => [...e.monsters(0), ...e.monsters(1)];
 const fieldST = (e: Engine, p: Pid) => [...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])];
 const allST = (e: Engine) => [...fieldST(e, 0), ...fieldST(e, 1)];
-const hasFreeZone = (e: Engine, p: Pid) => e.player(p).mz.some((z) => z === null);
+const hasFreeZone = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0; // b20: skips blocked zones
 const freeST = (e: Engine, p: Pid) => e.player(p).sz.findIndex((z) => z === null);
 const isMonster = (e: Engine, c: Card) => e.info(c.name).kind === 'monster';
 const isMain = (t: Trigger) => t === 'main';

@@ -178,7 +178,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         if (need > 0 && t.tribute < 0) continue; // told never to tribute
         if (need > 0 && (info.atk ?? 0) < myBest + (t.tribute > 0 ? 1 : 600)) continue; // not worth the tribute
         if (need > myMonsters.length) continue;
-        const zone = freeZone(my.mz);
+        const zone = e.freeMonsterZone(me);
         if (zone < 0 && need === 0) break;
         const atk = info.atk ?? 0;
         const def = info.def ?? 0;

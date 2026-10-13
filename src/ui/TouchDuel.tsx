@@ -166,7 +166,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const info = cardInfo(f.card.name);
       if (info?.kind === 'monster') {
         // A tribute frees a zone, so any of your zones takes a monster that needs tributes.
-        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (z === null || (info.level ?? 0) >= 5) && out.add(`mz${i}`));
+        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
       } else {
         const ok = (info?.kind === 'spell' && e.canActivateMain(acting, uid)) || e.canSet(acting, f.card);
         if (ok) {

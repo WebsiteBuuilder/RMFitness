@@ -133,6 +133,30 @@ export class Engine {
     return false;
   }
 
+  // b20: blocked Monster Zones (Ojama Knight). fx.blockedMZ lists zones of the source's opponent that cannot be used
+  // while the source stays face-up in a Monster Zone. Every free-zone search for monsters goes through these helpers.
+  /** b20: is Monster Zone `i` of player `p` blocked by an effect right now? */
+  mzBlocked(p: Pid, i: number): boolean {
+    const list = (this.state.fx.blockedMZ ?? []) as { src: number; zones: number[] }[];
+    return list.some((b) => {
+      const s = this.fieldCard(b.src);
+      return !!s && s.faceUp && this.find(s.uid)?.loc.zone === 'mz' && this.controller(s.uid) === other(p) && b.zones.includes(i);
+    });
+  }
+  /** b20: Monster Zone `i` of `p` is empty and not blocked. */
+  monsterZoneOpen(p: Pid, i: number): boolean {
+    const mz = this.player(p).mz;
+    return i >= 0 && i < mz.length && mz[i] === null && !this.mzBlocked(p, i);
+  }
+  /** b20: the first Monster Zone a monster can be placed in for `p`, or -1. */
+  freeMonsterZone(p: Pid): number {
+    return this.player(p).mz.findIndex((_, i) => this.monsterZoneOpen(p, i));
+  }
+  /** b20: how many Monster Zones `p` can still place a monster in. */
+  openMonsterZones(p: Pid): number {
+    return this.player(p).mz.filter((_, i) => this.monsterZoneOpen(p, i)).length;
+  }
+
   /** Speed Duel: registers a "this turn, ..." effect of a card (its script's `lingering` hooks) for the rest of the turn. */
   linger(name: string, p: Pid) {
     const list = ((this.state.fx.lingering ??= []) as { name: string; p: Pid; turn: number }[]).filter((x) => x.turn === this.state.turn);
@@ -160,7 +184,17 @@ export class Engine {
   /** A card's script, or nothing while its effects are negated (Speed Duel scripts can negate monsters). */
   effectOn(c: Card) {
     if ('faceUp' in c && this.isNegated(c as FieldCard)) return undefined;
-    return getEffect(c.name);
+    return this.copiedEffect(c) ?? getEffect(c.name);
+  }
+
+  /**
+   * b20: a face-up monster whose effect "becomes" another card's effect this turn (Arcana Call): fx.effectAs[uid] = { name, turn }.
+   * Its script is looked up under that name while the monster stays face-up in a Monster Zone.
+   */
+  copiedEffect(c: Card): EffectDef | undefined {
+    const x = (this.state.fx.effectAs as Record<number, { name: string; turn: number }> | undefined)?.[c.uid];
+    if (!x || x.turn !== this.state.turn || !('faceUp' in c) || !(c as FieldCard).faceUp || this.find(c.uid)?.loc.zone !== 'mz') return undefined;
+    return getEffect(x.name);
   }
 
   isNegated(m: FieldCard): boolean {
@@ -297,7 +331,7 @@ export class Engine {
       const f = this.find(x.uid);
       if (!f || f.loc.zone !== 'removed' || this.state.winner !== null) continue;
       const ps = this.player(x.controller);
-      const zone = ps.mz.findIndex((z) => z === null);
+      const zone = this.freeMonsterZone(x.controller); // b20
       if (zone < 0) {
         this.log(x.controller, `${f.card.name} has no zone to return to and is sent to the Graveyard`);
         yield* this.sendToGrave(x.uid, 'used');
@@ -646,7 +680,7 @@ export class Engine {
     if (stats) ((this.state.fx.tokens ??= {}) as Record<string, unknown>)[name] = stats;
     if (this.summonBlocked(controller, name, 'special', null)) return null;
     const ps = this.player(controller);
-    const zone = ps.mz.findIndex((z) => z === null);
+    const zone = this.freeMonsterZone(controller); // b20
     if (zone < 0) return null;
     const card: Card = { uid: this.state.uidCounter++, name, owner: controller, token: true };
     const fc = this.toField(card, pos, faceUp);
@@ -871,7 +905,7 @@ export class Engine {
       const paracide = (this.state.fx.paracide ?? []) as number[];
       if (paracide.includes(c.uid)) {
         this.state.fx.paracide = paracide.filter((u) => u !== c.uid);
-        const zone = ps.mz.findIndex((z) => z === null);
+        const zone = this.freeMonsterZone(player); // b20
         if (zone >= 0) {
           const card = this.detach(c.uid)!;
           ps.mz[zone] = this.toField(card, 'def', true);
@@ -985,7 +1019,7 @@ export class Engine {
   /** Special Summons a card from anywhere onto the controller's field. Returns false if no zone. */
   *specialSummon(uid: number, controller: Pid, pos: Pos, faceUp = true, prep?: (fc: FieldCard) => void): Step {
     const ps = this.player(controller);
-    const zone = ps.mz.findIndex((z) => z === null);
+    const zone = this.freeMonsterZone(controller); // b20
     if (zone < 0) return;
     const from = this.find(uid);
     if (this.graveLocked(uid)) return;
@@ -1068,7 +1102,7 @@ export class Engine {
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'mz') return false;
     const ps = this.player(to);
-    const zone = ps.mz.findIndex((z) => z === null);
+    const zone = this.freeMonsterZone(to); // b20
     if (zone < 0) return false;
     const fc = f.card as FieldCard;
     this.player(f.loc.player).mz[f.loc.index] = null;
@@ -1532,9 +1566,9 @@ export class Engine {
         // Speed Duel: monsters banished "until your next Standby Phase" come back (Flyfang).
         const away = (fx.returnAtStandby ?? []) as { uid: number; p: Pid; pos: Pos; after: number }[];
         for (const x of away.filter((y) => y.p === tp && y.after < this.state.turn)) {
-          if (this.find(x.uid)?.loc.zone !== 'removed' || !this.player(tp).mz.some((z) => z === null)) continue;
+          if (this.find(x.uid)?.loc.zone !== 'removed' || this.freeMonsterZone(tp) < 0) continue; // b20
           const card = this.detach(x.uid)!;
-          const z = this.player(tp).mz.findIndex((q) => q === null);
+          const z = this.freeMonsterZone(tp);
           this.player(tp).mz[z] = this.toField(card, x.pos, true);
           this.event('summon', { uid: x.uid, player: tp });
           this.log(tp, `${card.name} returns to the field`);
@@ -1721,8 +1755,7 @@ export class Engine {
     if (this.chainEnergyBlocks(player)) return false;
     const plan = this.tributePlan(player, card, faceUp);
     const need = plan.need;
-    const ps = this.player(player);
-    const empty = ps.mz.filter((z) => z === null).length;
+    const empty = this.openMonsterZones(player); // b20
     const owned = this.monsters(player).filter((m) => !this.untributable(m) && (!plan.only || plan.only(m))).length;
     if (need === 0) return empty > 0;
     if (owned < need && empty > 0 && faceUp !== false && this.tributeStandIns(player, card, need).length) return true;
@@ -1750,7 +1783,7 @@ export class Engine {
   *extraNormalSummon(player: Pid, uid: number, pos: Pos, faceUp: boolean): Step {
     const ps = this.player(player);
     const used = ps.normalSummoned;
-    const zone = ps.mz.findIndex((z) => z === null);
+    const zone = this.freeMonsterZone(player); // b20
     yield* this.summon(player, uid, zone < 0 ? 0 : zone, pos, faceUp, true);
     ps.normalSummoned = used;
   }
@@ -1822,8 +1855,10 @@ export class Engine {
           }
         })());
       }
-      if (zone < 0 || zone >= ps.mz.length || ps.mz[zone] !== null) zone = ps.mz.findIndex((z) => z === null);
+      if (!this.monsterZoneOpen(player, zone)) zone = this.freeMonsterZone(player); // b20
     }
+    // b20: a blocked zone (Ojama Knight) cannot take the monster: use another open one.
+    if (zone >= 0 && zone < ps.mz.length && ps.mz[zone] === null && this.mzBlocked(player, zone)) zone = this.freeMonsterZone(player);
     if (zone < 0 || zone >= ps.mz.length || ps.mz[zone] !== null) return;
     const card = this.detach(uid)!;
     const fc = this.toField(card, faceUp ? pos : 'def', faceUp);
@@ -2203,8 +2238,8 @@ export class Engine {
         const link = this.state.chain.pop()!;
         this.levelSource = link.card.uid;
         if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
-        const eff = getEffect(link.card.name);
         const effectLink = (link.payload as { effect?: string } | undefined)?.effect;
+        const eff = (effectLink ? this.copiedEffect(link.card) : undefined) ?? getEffect(link.card.name); // b20: copied effects (Arcana Call)
         // Speed Duel: face-up monsters that negate effects as they resolve (The End of Anubis).
         if (!link.negated && this.speed && ([0, 1] as Pid[]).some((q) => this.monsters(q).some((m) => m.faceUp && this.effectOn(m)?.negatesEffect?.(this, m, q, link) === true))) link.negated = true;
         if (effectLink) {
@@ -2394,7 +2429,7 @@ export class Engine {
   private *activateQuick(player: Pid, uid: number, trigger: Trigger, ctx: ChainCtx): Generator<Prompt, ChainLink | null, Choice> {
     const f = this.find(uid);
     if (!f) return null;
-    const q = getEffect(f.card.name)?.quick;
+    const q = (this.copiedEffect(f.card) ?? getEffect(f.card.name))?.quick; // b20: copied effects (Arcana Call)
     if (!q) return null;
     const from = q.from ?? 'field';
     const link: ChainLink = { card: f.card, loc: f.loc, player, label: f.card.name, negated: false, payload: { effect: 'quick', trigger, ctx } };

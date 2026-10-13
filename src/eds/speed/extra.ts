@@ -121,6 +121,12 @@ function materialSets(e: Engine, p: Pid, req: ExtraReq): FieldCard[][] {
   return subsets(pool, lo, hi).filter((s) => validMaterials(e, req, s));
 }
 
+/** b20: every legal group of materials `p` controls for this Xyz/Synchro/Link Monster (Re-dyce-cle filters them). */
+export function extraMaterialSets(e: Engine, p: Pid, name: string): FieldCard[][] {
+  const req = extraReq(e, name);
+  return req ? materialSets(e, p, req) : [];
+}
+
 export const extraSummonable = (e: Engine, p: Pid, name: string) => {
   const req = extraReq(e, name);
   return !!req && materialSets(e, p, req).length > 0;
