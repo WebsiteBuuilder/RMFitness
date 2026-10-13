@@ -1688,7 +1688,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
       continue;
     }
     // Beastking of the Swamps & co. can stand in for any one material.
-    const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
+    const subs = pool.filter((c) => getEffect(c.name)?.fusionSub || (e.state.fx.fusionSubs as Record<number, number> | undefined)?.[c.uid] === e.state.turn); // audit-skills: Pal-O'Mine-zation!
     const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });

@@ -130,6 +130,7 @@ export class Engine {
       }
     }
     for (const l of this.lingering()) if (l.eff.lingering?.shields?.(this, l.p, m, how)) return true;
+    for (const x of this.skillFx()) if (x.eff.shields?.(this, x.c, m, how, x.p)) return true; // audit-skills
     return false;
   }
 
@@ -249,6 +250,42 @@ export class Engine {
         if (eff) out.push({ c, p, eff });
       }
     }
+    out.push(...this.skillFx()); // audit-skills
+    return out;
+  }
+
+  // audit-skills: a Skill's continuous hooks (SkillDef.eff) run like an active Spell/Trap of its owner, through this stand-in
+  // card (uid < 0: it is not in any zone, so it cannot be moved, targeted or destroyed).
+  skillCard(p: Pid): FieldCard | null {
+    const ps = this.player(p);
+    if (!ps.skill) return null;
+    const list = (this.state.fx.skillCards ??= [null, null]) as (FieldCard | null)[];
+    if (!list[p] || list[p]!.name !== ps.skill) list[p] = { uid: -1 - p, name: ps.skill, owner: p, pos: 'atk', faceUp: true, placedTurn: 0, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0, active: true };
+    return list[p];
+  }
+
+  /** audit-skills: the Skills with continuous hooks, as liveST() entries. */
+  skillFx(): { c: FieldCard; p: Pid; eff: EffectDef }[] {
+    const out: { c: FieldCard; p: Pid; eff: EffectDef }[] = [];
+    if (!this.speed) return out;
+    for (const p of [0, 1] as Pid[]) {
+      const ps = this.player(p);
+      const eff = ps.skill ? getSkill(ps.skill)?.eff : undefined;
+      const c = eff ? this.skillCard(p) : null;
+      if (eff && c) out.push({ c, p, eff });
+    }
+    return out;
+  }
+
+  /** audit-skills: the Skills in play, with their owners. */
+  skillDefs(): { p: Pid; sk: import('./skills').SkillDef }[] {
+    const out: { p: Pid; sk: import('./skills').SkillDef }[] = [];
+    if (!this.speed) return out;
+    for (const p of [0, 1] as Pid[]) {
+      const ps = this.player(p);
+      const sk = ps.skill ? getSkill(ps.skill) : undefined;
+      if (sk) out.push({ p, sk });
+    }
     return out;
   }
 
@@ -326,7 +363,9 @@ export class Engine {
 
   /** Speed Duel: extra attacks a monster was granted (Evil HERO Infernal Gainer, Diffusion Wave-Motion). */
   extraAttacks(m: FieldCard): number {
-    return (m.tags?.extraAttacks ?? 0) + (m.tags?.extraAttacksTurn === this.state.turn ? m.tags?.extraAttacksN ?? 0 : 0);
+    const ctl = this.controller(m.uid); // audit-skills: Skills granting extra attacks
+    const bySkill = this.skillDefs().reduce((n, x) => n + (x.p === ctl ? x.sk.extraAttacks?.(this, x.p, m) ?? 0 : 0), 0);
+    return (m.tags?.extraAttacks ?? 0) + (m.tags?.extraAttacksTurn === this.state.turn ? m.tags?.extraAttacksN ?? 0 : 0) + bySkill;
   }
 
   /** Speed Duel: this monster cannot attack directly (Berserk Scales, Massivemorph). */
@@ -558,6 +597,7 @@ export class Engine {
     for (const q of p === undefined ? ([0, 1] as Pid[]) : [p]) {
       for (const c of this.activeSpells(q)) if (c.name === name) return c;
       for (const m of this.monsters(q)) if (m.faceUp && m.name === name) return m;
+      if (this.speed && this.skillDefs().some((x) => x.p === q && x.sk.namesAs?.(this, q) === name)) return this.skillCard(q); // audit-skills
       if (this.speed) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
     }
     return null;
@@ -661,6 +701,14 @@ export class Engine {
 
   /** Public die roll / coin toss from the shared seed. */
   roll(sides: number): number {
+    // audit-skills: a die (6) or coin (2) result a player decided in advance for their own next roll (It's My Lucky Day!).
+    const fixed = this.state.fx.fixedRoll as { p: Pid; die?: number; coin?: number } | undefined;
+    if (fixed && this.actor === fixed.p && ((sides === 6 && fixed.die) || (sides === 2 && fixed.coin))) {
+      const v = sides === 6 ? fixed.die! : fixed.coin!;
+      this.state.fx.fixedRoll = undefined;
+      this.log(fixed.p, `${this.player(fixed.p).name} decides the result: ${sides === 6 ? v : v === 1 ? 'heads' : 'tails'}`);
+      return v;
+    }
     return 1 + Math.floor(this.rand() * sides);
   }
 
@@ -876,7 +924,7 @@ export class Engine {
     this.graveQueue = [];
     if (!events.length || this.state.winner !== null) return;
     for (const x of this.liveST()) {
-      if (x.eff.onAnyToGrave && this.fieldCard(x.c.uid)?.active && this.state.winner === null) yield* this.as(x.p, x.eff.onAnyToGrave(this, x.c, x.p, events));
+      if (x.eff.onAnyToGrave && (x.c.uid < 0 || this.fieldCard(x.c.uid)?.active) && this.state.winner === null) yield* this.as(x.p, x.eff.onAnyToGrave(this, x.c, x.p, events)); // audit-skills: Skills (uid < 0) too
     }
     // Face-up monsters that watch the GY too (Marina, Princess of Sunflowers).
     for (const p of [0, 1] as Pid[]) {
@@ -928,6 +976,21 @@ export class Engine {
           kept = yield* repl(this, m, byBattle);
         } finally {
           this.actor = prev;
+        }
+        if (kept) continue;
+      }
+      // audit-skills: a Skill replacing the destruction (Rainbow Crystal Collection, Heavy Metal Raiders).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        let kept = false;
+        for (const x of this.skillDefs()) {
+          if (kept || !x.sk.destroyReplace || !this.fieldCard(uid)) continue;
+          const prev = this.actor;
+          this.actor = x.p;
+          try {
+            kept = yield* x.sk.destroyReplace(this, x.p, m, byBattle);
+          } finally {
+            this.actor = prev;
+          }
         }
         if (kept) continue;
       }
@@ -1163,6 +1226,7 @@ export class Engine {
         if (h) yield* h(this, w, p, m, controller, kind);
       }
     }
+    for (const x of this.skillFx()) if (x.eff.onAnySummon && this.fieldCard(m.uid) && this.state.winner === null) yield* this.as(x.p, x.eff.onAnySummon(this, x.c, x.p, m, controller, kind)); // audit-skills
     for (const l of this.lingering()) {
       const h = l.eff.lingering?.onAnySummon;
       if (h && this.fieldCard(m.uid) && this.state.winner === null) yield* this.as(l.p, h(this, l.p, m, controller, kind));
@@ -1390,7 +1454,7 @@ export class Engine {
     for (let i = 0; i < 4 && this.state.winner === null; i++) {
       let acted = false;
       for (const x of this.liveST().filter((y) => y.eff.stateCheck)) {
-        if (!this.fieldCard(x.c.uid)?.active || this.state.winner !== null) continue;
+        if ((x.c.uid >= 0 && !this.fieldCard(x.c.uid)?.active) || this.state.winner !== null) continue; // audit-skills: Skills (uid < 0) too
         const before = this.state.log.length;
         yield* this.as(x.p, x.eff.stateCheck!(this, x.c, x.p));
         if (this.state.log.length !== before) acted = true;
@@ -1514,7 +1578,8 @@ export class Engine {
     if (sk.use.phase === 'main' && !this.inMainPhase()) return false;
     if (sk.use.phase === 'start' && !(this.state.phase === 'M1' || this.state.phase === 'SP') ) return false;
     if (sk.use.oncePerDuel !== false && (ps.skillUses ?? 0) >= (sk.use.timesPerDuel ?? 1)) return false;
-    if (ps.skillTurn === this.state.turn) return false;
+    if (sk.use.phase === 'battle' && !(this.state.phase === 'BP' && this.state.attackedThisTurn.length === 0)) return false; // audit-skills
+    if (ps.skillTurn === this.state.turn && !sk.use.repeat) return false; // audit-skills: repeat
     return sk.use.can(this, player);
   }
 
@@ -1575,6 +1640,7 @@ export class Engine {
           const h = m.faceUp ? this.effectOn(m)?.onBattlePhaseEnd : undefined;
           if (h && this.fieldCard(m.uid)?.faceUp && this.state.winner === null) yield* this.as(p, h(this, m, p));
         }
+    for (const x of this.skillDefs()) if (x.sk.onBattlePhaseEnd && this.state.winner === null) yield* this.as(x.p, x.sk.onBattlePhaseEnd(this, x.p)); // audit-skills
   }
 
   private *nextPhase(): Step {
@@ -1723,7 +1789,7 @@ export class Engine {
     // Revealed Skills with an End Phase effect.
     for (const p of [tp, other(tp)]) {
       const ps = this.player(p);
-      const sk = ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+      const sk = ps.skill ? getSkill(ps.skill) : undefined; // audit-skills: face-down Skills too (each Skill checks its own conditions)
       if (sk?.onEndPhase && this.state.winner === null) yield* this.as(p, sk.onEndPhase(this, p));
     }
     // Hand limit.
@@ -1823,9 +1889,10 @@ export class Engine {
   /** `faceUp`: true = a face-up Normal Summon, false = a Set, undefined = either. `extra`: an additional Normal Summon granted by a card (Ultimate Offering), outside the usual timing and limit. */
   canNormalSummon(player: Pid, card: Card, faceUp?: boolean, extra = false): boolean {
     if (!extra && (!this.inMainPhase() || this.state.turnPlayer !== player)) return false;
-    if (!extra && this.player(player).normalSummoned && !(faceUp !== false && this.extraTributeSummon(player) && this.tributeNeed(player, card) > 0)) return false;
+    if (!extra && this.player(player).normalSummoned && !(faceUp !== false && (this.extraTributeSummon(player) || this.skillExtraTribute(player, card)) && this.tributeNeed(player, card) > 0)) return false; // audit-skills: skillExtraTribute
     if (extra && this.find(card.uid)?.loc.zone !== 'hand') return false;
     if (faceUp === true && this.summonBlocked(player, card, 'normal', 'hand')) return false;
+    if (faceUp !== true && this.skillFx().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, card, player, 'set', 'hand') === true)) return false; // audit-skills: "cannot Summon/Set" Skills
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
     if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
@@ -1856,6 +1923,11 @@ export class Engine {
     return this.speed && (this.state.fx.extraTribute as number[] | undefined)?.[player] === this.state.turn;
   }
 
+  /** audit-skills: a Skill lets `player` Tribute Summon this monster in addition to the Normal Summon (once per turn). */
+  skillExtraTribute(player: Pid, card: Card): boolean {
+    return this.speed && this.oncePerTurn('skill:extraTribute', player) && this.skillDefs().some((x) => x.p === player && x.sk.extraTributeFor?.(this, player, card) === true);
+  }
+
   /** Ultimate Offering: Normal Summon/Set a monster right now, in addition to the usual Normal Summon. */
   *extraNormalSummon(player: Pid, uid: number, pos: Pos, faceUp: boolean): Step {
     const ps = this.player(player);
@@ -1868,6 +1940,7 @@ export class Engine {
   /** Speed Duel: this monster cannot be Tributed (its own effect, or an equip on it: Blue Duston, Magicalized Duston Mop). */
   untributable(m: FieldCard): boolean {
     if (!this.speed) return false;
+    if (m.tags?.skillNoTribute) return true; // audit-skills: "cannot be Tributed" a Skill gave it (Forbidden Cyber Style Technique)
     if (m.faceUp && this.effectOn(m)?.cannotBeTributed?.(this, m)) return true;
     return m.equips.some((u) => {
       const eq = this.fieldCard(u);
@@ -1912,6 +1985,7 @@ export class Engine {
         double = doubles[k?.[0] ?? 0] ?? null;
       }
       if (standIn) {
+        if (standIn.uid < 0) standIn.counters = 0; // audit-skills: a Skill Tributed instead (Middle Age Mechs) loses its counters
         yield* this.sendToGrave(standIn.uid, 'tribute');
         this.log(player, `${ps.name} Tributed ${standIn.name}`);
       } else if (double) {
@@ -1941,7 +2015,8 @@ export class Engine {
     const fc = this.toField(card, faceUp ? pos : 'def', faceUp);
     ps.mz[zone] = fc;
     ps.normalSummoned = true;
-    if (usesExtra) (this.state.fx.extraTribute as number[])[player] = -1;
+    if (usesExtra && !this.extraTributeSummon(player)) this.useOnce('skill:extraTribute', player); // audit-skills: the Skill's extra Tribute Summon
+    else if (usesExtra) (this.state.fx.extraTribute as number[])[player] = -1;
     yield* this.chainEnergy(player);
     this.event(faceUp ? 'summon' : 'set', { uid, player });
     if (faceUp) {
@@ -2390,6 +2465,7 @@ export class Engine {
         if (h) yield* this.as(p, h(this, m, p, link));
       }
     }
+    for (const x of this.skillFx()) if (x.eff.onChainLink && !link.negated && this.state.winner === null) yield* this.as(x.p, x.eff.onChainLink(this, x.c, x.p, link)); // audit-skills
   }
 
   /** After damage is dealt, Numinous Healer and Sebek's Blessing may respond. */
@@ -2422,6 +2498,13 @@ export class Engine {
     // A Normal Spell/Trap whose effect keeps it on the field: a countdown (Swords of
     // Revealing Light) or a card that attached itself to a monster.
     if (!link.negated && fc.active && (fc.turns !== undefined || fc.equippedTo !== undefined)) return;
+    // audit-skills: a negated card Set again instead of going to the GY (I'm Just Gonna Attack!).
+    if (link.negated && this.state.fx.setInstead === fc.uid && this.find(fc.uid)?.loc.zone === 'sz') {
+      this.state.fx.setInstead = undefined;
+      Object.assign(fc, { faceUp: false, active: false, placedTurn: this.state.turn, equips: [], counters: 0 });
+      this.log(this.controller(fc.uid), `${fc.name} is Set again instead of going to the GY`);
+      return;
+    }
     yield* this.sendToGrave(fc.uid, 'used');
   }
 
@@ -2597,7 +2680,8 @@ export class Engine {
     if (!m.faceUp || m.cannotAttack) return false;
     if (m.attacked && (m.tags?.attacksMade ?? 1) >= (eff?.attacks?.(this, m) ?? 1) + this.extraAttacks(m)) return false;
     if (this.speed && this.noDirectAttack(m) && this.monsters(other(player)).length === 0) return false;
-    if (m.pos !== 'atk' && !eff?.attackInDefense) return false;
+    if (m.pos !== 'atk' && !eff?.attackInDefense && !this.skillDefs().some((x) => x.p === player && x.sk.attackInDefense?.(this, player, m))) return false; // audit-skills
+    if (this.skillDefs().some((x) => x.p === player && x.sk.mayAttack?.(this, player, m) === false)) return false; // audit-skills
     if (eff?.cannotAttack?.(this, m, player)) return false;
     if ((m.tags?.noAttackTurn ?? -1) === s.turn) return false;
     // Speed Duel: "you cannot declare an attack / conduct your Battle Phase this turn" (Soul Exchange, Destiny HERO - Doom Lord).
@@ -2628,6 +2712,8 @@ export class Engine {
 
   canAttackDirectly(m: FieldCard): boolean {
     if (this.speed && m.tags?.directTurn === this.state.turn) return true;
+    const owner = this.controller(m.uid); // audit-skills: Skills letting monsters attack directly
+    if (owner !== null && this.skillDefs().some((x) => x.p === owner && x.sk.canAttackDirectly?.(this, owner, m))) return true;
     const d = this.effectOn(m)?.directAttack;
     if (typeof d === 'function') {
       const ctl = this.controller(m.uid);
@@ -2705,12 +2791,19 @@ export class Engine {
     this.event('attack', { uid, player, target: targetUid });
     const targetName = targetUid !== null ? (this.fieldCard(targetUid)!.faceUp ? this.fieldCard(targetUid)!.name : 'a face-down monster') : 'directly';
     this.log(player, `${m.name} attacks ${targetName}`);
+    // audit-skills: Skills that react to an attack declaration (Behold, Gate Guardian!, Small Roid Big City).
+    for (const x of this.skillDefs()) {
+      const a = this.fieldCard(uid);
+      const t = targetUid !== null ? this.fieldCard(targetUid) : null;
+      if (x.sk.onAttack && a && this.state.battle && this.state.winner === null && (targetUid === null || t)) yield* this.as(x.p, x.sk.onAttack(this, x.p, a, t));
+    }
+    if (!this.state.battle) return;
     yield* this.responseWindow('attack', { uid, targetUid: targetUid ?? undefined });
     if (this.state.winner !== null) return;
     if (!this.state.battle) return; // Waboku and friends end the battle
     targetUid = this.state.battle.target; // Magical Arm Shield can redirect it
     const attacker = this.fieldCard(uid);
-    if (!attacker || this.controller(uid) !== player || (attacker.pos !== 'atk' && !getEffect(attacker.name)?.attackInDefense)) {
+    if (!attacker || this.controller(uid) !== player || (attacker.pos !== 'atk' && !getEffect(attacker.name)?.attackInDefense && !this.skillDefs().some((x) => x.p === player && x.sk.attackInDefense?.(this, player, attacker)))) { // audit-skills
       this.state.battle = null;
       return; // attacker was destroyed, taken, or forced into Defense
     }
@@ -2905,6 +2998,7 @@ export class Engine {
         yield* this.as(p, h(this, c, p, attacker, target));
       }
     }
+    for (const x of this.skillFx()) if (x.eff.afterAnyBattle && this.state.winner === null) yield* this.as(x.p, x.eff.afterAnyBattle(this, x.c, x.p, attacker, target)); // audit-skills
     for (const l of this.lingering()) {
       const h = l.eff.lingering?.afterAnyBattle;
       if (h && this.state.winner === null) yield* this.as(l.p, h(this, l.p, attacker, target));
@@ -2921,12 +3015,15 @@ export class Engine {
     const victimCtl = this.controller(uid);
     const killerCtl = this.controller(killer.uid);
     if (victimCtl === null || killerCtl === null || victimCtl === killerCtl || !killer.faceUp) return false;
+    if (this.skillFx().some((x) => x.p === killerCtl && x.eff.negatesBattleVictims?.(this, x.c, killer, killerCtl) === true)) return true; // audit-skills
     return this.monsters(killerCtl).some((s) => s.faceUp && this.effectOn(s)?.negatesBattleVictims?.(this, s, killer, killerCtl) === true);
   }
 
   /** ATK added only while attacking (Metalmorph, Insect Soldiers of the Sky). */
   private attackBonus(attacker: FieldCard, target: FieldCard | null): number {
     let bonus = this.effectOn(attacker)?.attackBonus?.(this, attacker, target) ?? 0;
+    const ctl = this.controller(attacker.uid); // audit-skills: Skills adding ATK in damage calculation
+    for (const x of this.skillDefs()) if (x.p === ctl) bonus += x.sk.attackBonus?.(this, x.p, attacker, target) ?? 0;
     for (const uid of attacker.equips) {
       const eq = this.fieldCard(uid);
       if (eq && !(this.info(eq.name).kind === 'trap' && this.trapsNegated())) bonus += getEffect(eq.name)?.hostAttackBonus?.(this, eq, attacker, target) ?? 0;
@@ -2948,6 +3045,7 @@ export class Engine {
       if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
       if (eff?.onBattleDamageDealt) yield* eff.onBattleDamageDealt(this, c, attacker, player);
     }
+    for (const x of this.skillFx()) if (x.p === player && x.eff.onBattleDamageDealt && this.state.winner === null) yield* this.as(x.p, x.eff.onBattleDamageDealt(this, x.c, attacker, player)); // audit-skills
   }
 
   /** Special Summon straight from a list (Cyber Jar, Giant Rat...). */
