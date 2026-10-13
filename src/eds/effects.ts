@@ -172,6 +172,18 @@ export interface EffectDef {
   onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
   /** Its controller drew these cards for their normal draw in the Draw Phase. */
   onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+
+  // ---------- Speed Duel hooks for face-up monsters (onAnyToGrave, banishInstead, tributeFor and negatesEffect above work on face-up monsters too) ----------
+  /** This face-up monster cannot be Tributed; on an Equip Card: the monster it is equipped to cannot be (Blue Duston, Magicalized Duston Mop). */
+  cannotBeTributed?(e: Engine, m: FieldCard): boolean;
+  /** A monster destroyed by battle is shuffled into the Deck instead of going to the GY (Grave Protector). */
+  deckInstead?(e: Engine, m: FieldCard, moving: Card): boolean;
+  /** This face-up card keeps the opponent's `attacker` from choosing `target` (another monster of its controller) as an attack target (Magician's Valkyria). */
+  guardsFromAttack?(e: Engine, src: FieldCard, target: FieldCard, attacker: FieldCard): boolean;
+  /** Bonus this card gives to a face-up monster while it is in its owner's GY (Phantom Beast Cross-Wing). */
+  graveAura?(e: Engine, card: Card, target: FieldCard, owner: Pid): { atk: number; def: number } | undefined;
+  /** The name this monster has while on the field, when an effect changes it (Proto-Cyber Dragon); used for Fusion Materials. */
+  fieldName?(e: Engine, m: FieldCard): string | undefined;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1535,6 +1547,12 @@ E['Messenger of Peace'] = {
 
 // ---------- Polymerization ----------
 type FusionPlan = { fusion: Card; mats: Card[][] };
+/** The card id a material counts as: a monster on the field whose name an effect changed (Proto-Cyber Dragon) counts as that card. */
+function matId(e: Engine, c: Card): number {
+  const fc = e.fieldCard(c.uid);
+  const n = fc && fc.faceUp && e.find(c.uid)?.loc.zone === 'mz' ? e.effectOn(fc)?.fieldName?.(e, fc) : undefined;
+  return e.info(n ?? c.name).id;
+}
 /** Every Fusion Monster in the Fusion Deck the player could fuse right now, with the candidate cards for each material. */
 function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
   const ps = e.player(p);
@@ -1546,7 +1564,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
     if (!ids) continue;
     // Beastking of the Swamps & co. can stand in for any one material.
     const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
-    const mats = ids.map((id) => [...pool.filter((c) => e.info(c.name).id === id), ...subs.filter((c) => e.info(c.name).id !== id)]);
+    const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
   }
@@ -1557,7 +1575,7 @@ function assignable(e: Engine, mats: Card[][], ids: number[], used: number[] = [
   if (mats.length === 0) return true;
   return mats[0].some((c) => {
     if (used.includes(c.uid)) return false;
-    const asSub = e.info(c.name).id !== ids[0];
+    const asSub = matId(e, c) !== ids[0];
     if (asSub && subbed) return false;
     return assignable(e, mats.slice(1), ids.slice(1), [...used, c.uid], subbed || asSub);
   });
@@ -1573,8 +1591,8 @@ E['Polymerization'] = {
     for (let i = 0; i < plan.mats.length; i++) {
       const cands = plan.mats[i];
       const ids = e.fusionMaterials(plan.fusion.name)!;
-      const subTaken = chosen.some((u, j) => e.info(e.find(u)?.card.name ?? '').id !== ids[j]);
-      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && e.info(c.name).id !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || e.info(c.name).id !== ids[i]));
+      const subTaken = chosen.some((u, j) => { const f = e.find(u); return !f || matId(e, f.card) !== ids[j]; });
+      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && matId(e, c) !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || matId(e, c) !== ids[i]));
       if (free.length === 0) return false;
       if (free.length === 1) {
         chosen.push(free[0].uid);

@@ -59,7 +59,16 @@ export const isTrap = (e: Engine, c: Card) => info(e, c).kind === 'trap';
 const trapMonster = (e: Engine, c: Card) => (e.find(c.uid)?.loc.zone === 'mz' ? ((e.state.fx.trapMonster ?? {}) as Record<number, { level?: number; attribute?: string }>)[c.uid] : undefined);
 /** Level/Attribute, including what a Trap Monster took on while it is on the field (Copy Knight, Swamp Mirrorer). */
 const declared = (e: Engine, c: Card, key: 'declLevel' | 'declAttr') => ('faceUp' in c && e.state.fx[key]?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx[key][c.uid] : undefined);
-export const levelOf = (e: Engine, c: Card): number => declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
+/**
+ * Level as it is now. On the field, effects can set it (tags.lvSet: Gagaga Caesar) or change it until the end of
+ * the turn (tags.lvTurn/lvDelta: Flelf, Mischief of the Yokai); a Level never drops below 1.
+ */
+export const levelOf = (e: Engine, c: Card): number => {
+  const t = 'faceUp' in c && e.find(c.uid)?.loc.zone === 'mz' ? (c as FieldCard).tags : undefined;
+  const base = t?.lvSet ?? declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
+  const d = t && t.lvTurn === e.state.turn ? t.lvDelta ?? 0 : 0;
+  return d && base > 0 ? Math.max(1, base + d) : base;
+};
 export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? info(e, c).attribute ?? '';
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
@@ -158,7 +167,7 @@ export function* discardCost(e: Engine, p: Pid, n = 1, test: (c: Card) => boolea
 }
 /** Tribute `n` monsters you control (matching `test`) as a cost. */
 export function* tributeCost(e: Engine, p: Pid, n = 1, test: (m: FieldCard) => boolean = () => true, except?: number): Gen<boolean> {
-  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m));
+  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m) && !e.untributable(m));
   if (cands.length < n) return false;
   const chosen = yield* pick(e, p, `Tribute ${n} monster${n > 1 ? 's' : ''}`, cands, n, n, true, false);
   if (!chosen) return false;
