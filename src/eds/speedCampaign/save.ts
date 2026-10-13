@@ -65,6 +65,8 @@ export interface SoloSave {
   campaign: CampaignProgress;
   labyrinth: LabyrinthProgress;
   practice: PracticePrefs;
+  /** the Tag Road (2v2 campaign): which tag pairs were beaten */
+  tagRoad?: { wins: Record<string, number>; losses: number };
 }
 
 export function newSoloSave(): SoloSave {

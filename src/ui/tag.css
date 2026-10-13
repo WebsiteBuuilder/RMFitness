@@ -1,0 +1,279 @@
+/* 2v2 Tag Duels: the menu, the Tag Road and the strip over a tag duel's board. */
+.tag-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--so-line);
+  background: var(--so-card);
+  font-size: 13px;
+  color: var(--so-dim);
+}
+.tag-rules b {
+  color: var(--so-ink);
+  font-size: 14px;
+}
+.tag-big {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  margin: 8px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--so-line);
+  background: linear-gradient(135deg, var(--so-card2), var(--so-card));
+  text-align: left;
+  cursor: pointer;
+}
+.tag-big b {
+  font-size: 18px;
+}
+.tag-big span {
+  font-size: 13px;
+  color: var(--so-dim);
+}
+.tag-big.gold {
+  border-color: var(--so-gold2);
+  background: linear-gradient(135deg, #3a2c10, var(--so-card));
+}
+.tag-big.gold b {
+  color: var(--so-gold);
+}
+.tag-big.blue b {
+  color: var(--so-blue);
+}
+.tag-big:active {
+  transform: scale(0.98);
+}
+.tag-code {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--so-line);
+  background: var(--so-card);
+  color: var(--so-ink);
+  font-size: 32px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.tag-pair {
+  display: flex;
+  flex: none;
+}
+.tag-pair .so-portrait + .so-portrait {
+  margin-left: -14px;
+}
+.tag-check {
+  margin-left: auto;
+  color: var(--so-gold);
+  font-weight: 700;
+}
+.tag-vs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.tag-layouts {
+  margin-top: 6px;
+}
+.tag-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.tag-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--so-line);
+  background: var(--so-card);
+  min-width: 0;
+}
+.tag-team.mine {
+  border-color: rgba(62, 197, 255, 0.5);
+}
+.tag-team.foe {
+  border-color: rgba(255, 93, 108, 0.5);
+}
+.tag-team em {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--so-dim);
+}
+.tag-team b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-pick {
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px dashed var(--so-gold2);
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tag-pick i {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--so-gold);
+}
+.tag-partners {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 55dvh;
+  overflow-y: auto;
+}
+.tag-partner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--so-line);
+  background: var(--so-card);
+  text-align: left;
+  cursor: pointer;
+}
+.tag-partner.on {
+  border-color: var(--so-gold);
+}
+.tag-partner span {
+  display: flex;
+  flex-direction: column;
+}
+.tag-partner em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--so-dim);
+}
+.tag-rewards {
+  margin: 8px 0;
+  text-align: center;
+}
+.tag-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+.tag-clear {
+  color: var(--so-gold);
+  font-weight: 700;
+}
+
+/* the strip over a tag duel's board */
+.tagbar {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 62px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100vw - 16px);
+  padding: 3px 6px;
+  border-radius: 12px;
+  background: rgba(8, 12, 28, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font: 600 11px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #c9d3f2;
+  pointer-events: auto;
+  backdrop-filter: blur(4px);
+}
+.tb-d {
+  max-width: 68px;
+  min-width: 2.8em;
+  flex: 0 1 auto;
+  padding: 2px 6px;
+  border-radius: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.5;
+}
+.tb-d.ally {
+  background: rgba(62, 197, 255, 0.16);
+}
+.tb-d.foe {
+  background: rgba(255, 93, 108, 0.16);
+}
+.tb-d.in {
+  opacity: 1;
+}
+.tb-d.turn {
+  outline: 1.5px solid #f2c14e;
+  color: #fff;
+}
+.tb-now {
+  padding: 2px 6px;
+  color: #95a3c9;
+}
+.tb-now.me {
+  color: #f2c14e;
+}
+.tb-peek {
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid #3ec5ff;
+  background: rgba(62, 197, 255, 0.15);
+  color: #fff;
+  font: inherit;
+}
+.tb-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.tb-sheet {
+  width: min(520px, 100vw);
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: #0b1226;
+  color: #eef2ff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.tb-hand {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 6px;
+}
+.tb-sheet .so-btn {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #2c3f73;
+  background: #141f3d;
+  color: inherit;
+}
+.tag-room {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(62, 197, 255, 0.15);
+  border: 1px solid rgba(62, 197, 255, 0.5);
+  font-weight: 700;
+}
