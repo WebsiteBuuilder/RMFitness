@@ -31,7 +31,9 @@ export function aiAction(e: Engine, me: Pid): Action | null {
     if (prompt.player !== me) return null;
     if (prompt.kind === 'yesno') return { type: 'YES', player: me };
     if (prompt.kind === 'response') {
-      // Respond with the first legal set card: the engine already filtered to useful moments.
+      // Don't spring defensive traps (Waboku, Negate Attack...) on your own attacks.
+      if (s.turnPlayer === me && / attacks\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
+      // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
       return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.

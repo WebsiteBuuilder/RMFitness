@@ -24,8 +24,9 @@ SETS_API = "https://db.ygoprodeck.com/api/v7/cardsets.php"
 IMG = "https://images.ygoprodeck.com/images/cards/{id}.jpg"
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "public" / "cards" / "speed.json"
+SETS_OUT = ROOT / "public" / "cards" / "speedSets.json"
 IMG_DIR = ROOT / "public" / "cards" / "img"
-SETS_OUT = ROOT / "public" / "cards" / "speed-sets.json"
+REPORT_OUT = ROOT / "public" / "cards" / "speed-sets.json"
 IMG_WIDTH = 300
 IMG_QUALITY = 72
 DELAY = 0.2
@@ -55,7 +56,7 @@ def is_speed_set(name: str) -> bool:
     return "speed duel" in n
 
 
-def speed_sets() -> list[dict]:
+def set_list() -> list[dict]:
     sets = json.loads(get(SETS_API))
     return sorted((s for s in sets if is_speed_set(s.get("set_name", ""))), key=lambda s: (s.get("tcg_date") or "9999", s["set_name"]))
 
@@ -71,6 +72,37 @@ def compact(c: dict) -> dict:
     return out
 
 
+def speed_sets(cards: list[dict]) -> list[dict]:
+    """Every real Speed Duel product and the cards printed in it, with their rarity, oldest first."""
+    dates = {}
+    try:
+        for st in json.loads(get(SETS_API)):
+            dates[st.get("set_name", "")] = st.get("tcg_date") or ""
+    except Exception as e:  # noqa: BLE001
+        print(f"  no set dates: {e}", file=sys.stderr)
+    sets: dict[str, dict] = {}
+    for c in cards:
+        for p in c.get("card_sets") or []:
+            name = p.get("set_name", "")
+            if "Speed Duel" not in name:
+                continue
+            st = sets.setdefault(name, {"name": name, "code": (p.get("set_code") or "").split("-")[0], "date": dates.get(name, ""), "cards": {}})
+            rarity = p.get("set_rarity", "Common")
+            prev = st["cards"].get(c["name"])
+            # A card printed twice in one set keeps its lower rarity.
+            if prev is None or RARITY_ORDER.get(rarity, 9) < RARITY_ORDER.get(prev, 9):
+                st["cards"][c["name"]] = rarity
+    out = []
+    for st in sets.values():
+        st["cards"] = sorted(st["cards"].items())
+        out.append(st)
+    out.sort(key=lambda st: (st["date"] or "9999", st["name"]))
+    return out
+
+
+RARITY_ORDER = {"Common": 0, "Rare": 1, "Super Rare": 2, "Ultra Rare": 3, "Secret Rare": 4}
+
+
 def main() -> int:
     speed = api("format=speed%20duel")
     skills = api("type=Skill%20Card")
@@ -79,7 +111,7 @@ def main() -> int:
     # Every card printed in a Speed Duel product, even if the API's "speed duel" format misses it.
     set_report = []
     in_set: dict[int, list[str]] = {}
-    for st in speed_sets():
+    for st in set_list():
         name = st["set_name"]
         try:
             members = api("cardset=" + urllib.parse.quote(name))
@@ -93,7 +125,7 @@ def main() -> int:
         set_report.append({"name": name, "code": st.get("set_code"), "date": st.get("tcg_date"), "cards": len(members), "addedBySet": added})
         print(f"  {name} ({st.get('set_code')}, {st.get('tcg_date')}): {len(members)} cards, {len(added)} not in the format list")
         time.sleep(DELAY)
-    SETS_OUT.write_text(json.dumps(set_report, ensure_ascii=False, indent=1))
+    REPORT_OUT.write_text(json.dumps(set_report, ensure_ascii=False, indent=1))
     prev = json.loads(OUT.read_text()) if OUT.exists() else []
     if prev and len(cards) < len(prev) * 0.95:
         print(f"Card count dropped from {len(prev)} to {len(cards)}: keeping the old list.", file=sys.stderr)
@@ -115,6 +147,10 @@ def main() -> int:
             entry["sets"] = sorted(set(in_set[cid]))
         out.append(entry)
     out.sort(key=lambda c: c["name"])
+    sets = speed_sets(list(cards.values()))
+    if sets:
+        SETS_OUT.write_text(json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
+        print(f"wrote {len(sets)} Speed Duel sets")
     OUT.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
     print(f"wrote {len(out)} entries, {fetched} new images")
     return 0

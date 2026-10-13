@@ -5,6 +5,7 @@ import type { SyncAdapter, SyncStatus } from '../sync/types';
 import { Engine } from './engine';
 import { DB } from './db';
 import type { Action, DuelState, GameMode, LoggedAction, Pid } from './types';
+import { betsLocked, type Ante, type Stakes } from '../collection/stakes';
 
 export interface Seat {
   name: string;
@@ -17,9 +18,17 @@ export interface Seat {
   skill?: string | null;
   /** Speed Duel: their cards' rarity tiers (card leveling), for the other player to see */
   rarity?: Record<string, number>;
+  /** Speed Duel: bets, Shadow Realm rescues and whether the duel pays prizes */
+  stakes?: Stakes;
+  /** pressed Accept on both players' bets */
+  accepted?: boolean;
 }
 
-export type LobbyAction = { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number> };
+export type LobbyAction =
+  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; stakes?: Stakes }
+  /** changes a seat's bet; both players have to Accept again */
+  | { type: 'STAKE'; player: Pid; ante: Ante | null }
+  | { type: 'ACCEPT'; player: Pid };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -72,9 +81,25 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, stakes: a.stakes };
+      this.seats[a.player === 0 ? 1 : 0].accepted = false;
       return;
     }
+    if (a.type === 'STAKE') {
+      const st = this.seats[a.player].stakes;
+      if (st && !this.engine.state.started) {
+        this.seats[a.player] = { ...this.seats[a.player], stakes: { ...st, ante: a.ante } };
+        this.seats[0].accepted = this.seats[1].accepted = false;
+      }
+      return;
+    }
+    if (a.type === 'ACCEPT') {
+      if (!this.engine.state.started) this.seats[a.player] = { ...this.seats[a.player], accepted: true };
+      return;
+    }
+    // A Speed Duel with bets only starts once both players accepted the bets as they stand
+    // in the log (a bet changed just before Start resets that, on every phone alike).
+    if (a.type === 'START' && a.mode === 'speed' && !this.engine.state.started && !betsLocked(this.seats)) return;
     try {
       this.engine.apply(a as Action);
     } catch (err) {

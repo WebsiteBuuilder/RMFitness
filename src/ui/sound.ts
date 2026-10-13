@@ -103,6 +103,42 @@ export function playWin() {
   [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.12, i * 0.14));
 }
 
+/** Rising fanfare for a won duel. */
+export function playFanfare() {
+  if (!ctx) return;
+  [523, 659, 784, 1046].forEach((f, i) => tone(f, i === 3 ? 0.5 : 0.14, 'square', 0.12, i * 0.12));
+}
+
+/** Falling tones for a lost duel or a lost heart. */
+export function playLose() {
+  if (!ctx) return;
+  [392, 330, 262].forEach((f, i) => tone(f, 0.22, 'triangle', 0.16, i * 0.18));
+}
+
+/** Sparkle for a star or a revealed card. */
+export function playStar(when = 0) {
+  if (!ctx) return;
+  tone(1568, 0.08, 'sine', 0.12, when);
+  tone(2093, 0.16, 'sine', 0.1, when + 0.06);
+}
+
+/** The clash before a duel. */
+export function playVs() {
+  if (!ctx) return;
+  tone(110, 0.5, 'sawtooth', 0.14);
+  tone(55, 0.6, 'sine', 0.5, 0.02);
+  tone(880, 0.25, 'square', 0.08, 0.1);
+}
+
+/** A short buzz on phones that allow it (Android; iPhones ignore it). */
+export function buzz(pattern: number | number[]) {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* not supported */
+  }
+}
+
 /** The shared audio context (null until the first tap), for the 3D art engine's sounds. */
 export function audioContext(): AudioContext | null {
   return ctx;
