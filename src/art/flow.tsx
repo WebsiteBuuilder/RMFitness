@@ -123,6 +123,9 @@ function isBig(c: Cue): boolean {
     case 'damage':
       return c.amount >= 1000;
     case 'set':
+    case 'leave':
+    case 'heal':
+    case 'draw':
       return false;
     default:
       // skills, attacks, hits, destruction, the finish
@@ -138,8 +141,11 @@ function owner(c: Cue): Pid | null {
     case 'flip':
     case 'activate':
     case 'target':
+    case 'leave':
       return c.card.controller;
     case 'skill':
+    case 'heal':
+    case 'draw':
       return c.player;
     case 'attack':
       return c.attacker.controller;

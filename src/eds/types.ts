@@ -165,6 +165,16 @@ export interface EngineEvent {
   target?: number | null;
   /** damage: Life Points before the hit */
   from?: number;
+  /** summon: how it was Summoned (normal, tribute, special, fusion, ritual, xyz, synchro, link) */
+  how?: string;
+  /** a card moved (to-hand, or to-gy for a banish): where it was ('mz', 'sz', 'field', 'hand', 'deck', 'gy', 'removed', 'fusion') */
+  zone?: string;
+  /** ...and where it went ('hand', 'deck', 'extra', 'banish'); to-hand events also cover cards returned to the Deck */
+  to?: string;
+  /** it left the field face-down (its name stays hidden from the opponent) */
+  down?: boolean;
+  /** draw: drawn by an effect, not the Draw Phase (or opening hand) draw */
+  effect?: boolean;
   seq: number;
 }
 
