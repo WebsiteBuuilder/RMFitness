@@ -19,9 +19,10 @@ import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { SpeedDeckEdit, speedOpponents } from './Speed';
 import { buzz, playBlip, playFanfare, playLose, playStar, playVs } from './sound';
+import { Legends } from './Legends';
 import './solo.css';
 
-export type SoloMode = 'campaign' | 'labyrinth' | 'practice';
+export type SoloMode = 'campaign' | 'labyrinth' | 'practice' | 'legends';
 
 interface Props {
   mode: SoloMode;
@@ -57,7 +58,7 @@ export function Solo(p: Props) {
   const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs ? setVs({ spec, cancel }) : go(spec)) };
   return (
     <>
-      {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : <Road {...ctx} />}
+      {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : p.mode === 'legends' ? <Legends {...ctx} /> : <Road {...ctx} />}
       {vs && <VsSplash spec={vs.spec} onGo={() => go(vs.spec)} onCancel={() => (setVs(null), vs.cancel?.())} />}
     </>
   );
@@ -66,7 +67,7 @@ export function Solo(p: Props) {
 // ---------- the phone's back gesture ----------
 // Each open sheet (and each screen's back arrow) registers what Back does; the newest wins.
 const backStack: (() => void)[] = [];
-function useBack(fn: () => void) {
+export function useBack(fn: () => void) {
   const ref = useRef(fn);
   ref.current = fn;
   useEffect(() => {
@@ -89,7 +90,7 @@ export function soloBack(): boolean {
 }
 
 /** The strongest monster in a deck, for its portrait. */
-const ace = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
+export const ace = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
 
 // ---------- the VS splash ----------
 function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => void; onCancel: () => void }) {
@@ -166,7 +167,7 @@ export function SoloHud({ vs }: { vs?: VsInfo }) {
   );
 }
 
-type Ctx = Props & { solo: SoloSave; setSolo: (s: SoloSave) => void };
+export type Ctx = Props & { solo: SoloSave; setSolo: (s: SoloSave) => void };
 
 // ---------- small pieces ----------
 export function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBack: () => void; right?: preact.ComponentChildren }) {
@@ -228,7 +229,7 @@ export function MilEye({ size = 22 }: { size?: number }) {
 }
 
 /** Skill names without the "(Skill Card)" tag some carry. */
-const skillName = (n: string | null | undefined) => (n ? n.replace(/ \(Skill Card\)$/, '') : 'no Skill');
+export const skillName = (n: string | null | undefined) => (n ? n.replace(/ \(Skill Card\)$/, '') : 'no Skill');
 
 const Stars = ({ s }: { s?: boolean[] }) => (
   <span class="so-stars">
@@ -248,7 +249,7 @@ export function Portrait({ d, size = 'm' }: { d: Pick<CpuDuelist, 'portrait' | '
   );
 }
 
-function CardRow({ names, onPick, picked, reveal, own }: { names: string[]; onPick?: (n: string) => void; picked?: string | null; reveal?: boolean; own?: (n: string) => number }) {
+export function CardRow({ names, onPick, picked, reveal, own }: { names: string[]; onPick?: (n: string) => void; picked?: string | null; reveal?: boolean; own?: (n: string) => number }) {
   const [info, setInfo] = useState<string | null>(null);
   // Revealed cards flip over one at a time, each with a sparkle.
   useEffect(() => {
@@ -838,7 +839,7 @@ function Road(p: Ctx) {
           </div>
           <div class="so-group">Duel Chips</div>
           <p>
-            {speed.chips ?? 0}/30. You earn one the first time you three-star a duel, one a day from a Labyrinth boss, and one a day for beating your brother. They're for betting in duels with your brother.
+            {speed.chips ?? 0}/30. You earn one the first time you three-star a duel, one a day from a Labyrinth boss, one a day for beating your brother, and more from Card Legends (every first win, every finished legend and a daily rematch). They're for betting in duels with your brother.
           </p>
           <div class="so-group">Titles</div>
           <p>{c.titles.length ? c.titles.join(' · ') : 'None yet. Bosses give you titles.'}</p>
