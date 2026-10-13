@@ -47,6 +47,7 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
         });
         dir.current = d;
+        void d.prewarm();
         // Test hook for automated browser checks.
         (window as unknown as { __artLab?: Director }).__artLab = d;
       })

@@ -680,12 +680,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Cerulean Skyfire: face-down Spells you control can be used for Hamon's summon too.
+  const hamonCost = (e: Engine, p: Pid) => {
+    const skyfire = e.liveST().some((x) => x.p === p && x.c.name === 'Cerulean Skyfire');
+    return e.spells(p).filter((s) => isSpell(e, s) && ((s.faceUp && info(e, s).sub === 'Continuous') || (skyfire && !s.faceUp)));
+  };
   E['Hamon, Lord of Striking Thunder'] = {
     cannotNormalSummon: true,
     summonProc: {
-      can: (e, _c, p) => freeMZ(e, p) && e.spells(p).filter((s) => s.faceUp && isSpell(e, s) && info(e, s).sub === 'Continuous').length >= 3,
+      can: (e, _c, p) => freeMZ(e, p) && hamonCost(e, p).length >= 3,
       *run(e, c, p) {
-        const list = e.spells(p).filter((s) => s.faceUp && isSpell(e, s) && info(e, s).sub === 'Continuous');
+        const list = hamonCost(e, p);
         const chosen = yield* pick(e, p, 'Hamon: send which 3 Continuous Spells to the GY?', list, 3, 3, true);
         if (!chosen) return;
         for (const s of chosen) yield* e.sendToGrave(s.uid, 'cost');
@@ -824,7 +829,6 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Its End Phase effect happens at its owner's next Standby Phase (no Graveyard hook in the End Phase).
   E['Hysteric Sign'] = {
     canActivate: (e, c, p, t) => isMain(t) && e.oncePerTurn(c.name, p),
     *resolve(e, link, p) {
@@ -841,20 +845,21 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (from === 'hand' || from === 'sz') flags[card.uid] = e.state.turn;
       else delete flags[card.uid];
     },
-    *onStandbyInGrave(e, card, p) {
+    *onEndPhaseInGrave(e, card, p) {
       const flags = fx<Record<number, number>>(e, 'hystericSign', {});
-      if (flags[card.uid] === undefined) return;
+      if (flags[card.uid] !== e.state.turn) return;
       delete flags[card.uid];
       if (!e.oncePerTurn(card.name, p)) return;
       const ps = e.player(p);
       const names = [...new Set(ps.deck.filter((c) => named(c, 'Harpie')).map((c) => c.name))];
       if (!names.length) return;
       e.useOnce(card.name, p);
-      const picks = yield* e.select(p, 'Hysteric Sign: add up to 3 "Harpie" cards with different names', names.map((n) => ({ label: n })), 1, 3);
+      const picks = yield* e.select(p, 'Hysteric Sign: add up to 3 "Harpie" cards with different names', names.map((n) => ({ label: n })), 1, Math.min(3, names.length));
       for (const i of picks ?? []) {
         const c = ps.deck.find((x) => x.name === names[i]);
         if (c) e.toHandOf(c.uid, p);
       }
+      e.log(p, `Hysteric Sign adds ${(picks ?? []).map((i) => names[i]).join(', ')} to the hand`);
       ps.deck = e.shuffle(ps.deck);
     },
   };

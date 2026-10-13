@@ -717,14 +717,22 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // No battle damage is decided at each attack declaration, so it stops the moment "Umi" is gone.
   E['Tornado Wall'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && umi(e),
-    *resolve(e, _l, p) {
-      if (e.state.turnPlayer !== p && umi(e)) noBattleDamage(e, p, true);
+    *resolve() {},
+    attackTax: {
+      can: () => true,
+      *pay(e, fc, _m, attacker) {
+        const p = ctrl(e, fc);
+        if (!umi(e)) return yield* e.destroy([fc.uid]);
+        if (attacker === p) return;
+        // The engine numbers the battle right after the attack costs are paid.
+        ((e.state.fx.noBattleDamageIn ??= [0, 0]) as number[])[p] = (e.state.fx.battleNo ?? 0) + 1;
+      },
     },
-    *onStandby(e, fc, p) {
+    *onStandby(e, fc) {
       if (!umi(e)) yield* e.destroy([fc.uid]);
-      else if (e.state.turnPlayer !== p) noBattleDamage(e, p, true);
     },
     *onEndPhase(e, fc) {
       if (!umi(e)) yield* e.destroy([fc.uid]);
@@ -1759,6 +1767,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p),
     *resolve(e, link, p) {
       if (!freeMZ(e, p) || !e.fieldCard(link.card.uid)) return;
+      ((e.state.fx.trapMonster ??= {}) as Record<number, unknown>)[link.card.uid] = { race: 'Zombie', attribute: 'DARK', level: 4 };
       yield* e.specialSummon(link.card.uid, p, 'def');
     },
     baseStats: (e, m) => (e.find(m.uid)?.loc.zone === 'mz' ? { atk: 1800, def: 500 } : undefined),

@@ -6,18 +6,19 @@ import { profileXpOf, rarityFor } from '../level/view';
 
 /** Card picture with a drawn fallback when the image is missing. `owner` picks whose rarity a duel card shows. */
 export function CardImg({ name, back = false, class: cls = '', owner }: { name: string; back?: boolean; class?: string; owner?: Pid }) {
-  const [broken, setBroken] = useState(false);
+  // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
+  const [broken, setBroken] = useState<string | null>(null);
   if (back) return <div class={`cimg cback ${cls}`} />;
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
   const tier = TIERS[rarityFor(name, owner)];
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
   const fx = tier.id !== 'N' && <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={tier.short} />;
-  const url = broken ? null : imageUrl(name);
+  const url = broken === name ? null : imageUrl(name);
   // Overframe: the picture gets its own box so the art can break out of the frame anywhere it shows.
   if (url && tier.id === 'OF')
     return (
       <span class={`lvr-of ${cls.replace(/\blvr(-OF)?\b/g, '')}`}>
-        <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(true)} />
+        <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
         {fx}
         <b class="lvr-pop" style={{ backgroundImage: `url("${url}")` }} />
         <i class="lvr-chip">OVER</i>
@@ -26,7 +27,7 @@ export function CardImg({ name, back = false, class: cls = '', owner }: { name: 
   if (url)
     return (
       <>
-        <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(true)} />
+        <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
         {fx}
       </>
     );

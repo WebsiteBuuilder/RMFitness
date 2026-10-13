@@ -119,7 +119,8 @@ async function fetchSpeed(query: string, cache: RequestCache): Promise<RawCard[]
 /** Adds the Speed Duel cards and Skills to the card database (cards also in EDS keep their EDS entry). */
 export function addSpeedCards(list: RawCard[]) {
   for (const r of list) {
-    const known = byId.get(r.id);
+    // Some reprints carry a different id in the Speed Duel list (Monster Reborn, Polymerization): match the EDS card by name too.
+    const known = byId.get(r.id) ?? (r.type !== 'Skill Card' && DB.get(r.name)?.name === r.name ? DB.get(r.name) : undefined);
     if (known && r.type !== 'Skill Card') {
       known.speed = true;
       if (known.name !== r.name && !DB.has(r.name)) (DB.set(r.name, known), DB.set(norm(r.name), known));

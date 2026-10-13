@@ -66,13 +66,13 @@ export function ChipBar({ save, cpus = [] }: { save: SpeedSave; cpus?: string[] 
         <Overlay onClose={() => setHelp(false)}>
           <Win title="Chips, shards and packs" onClose={() => setHelp(false)}>
             <p>
-              <i class="dchip" /> <b>Duel Chips</b> craft cards and lift a card's look. You can hold {CHIP_CAP}. They come slowly: one win a day over your brother, and shards.
+              <i class="dchip" /> <b>Duel Chips</b> craft cards and lift a card's look. You can hold {CHIP_CAP}. They come slowly: three stars on a campaign duel for the first time, a Labyrinth boss once a day, one win a day over your brother, and shards.
             </p>
             <p>
               ◆ <b>Shards</b> come from breaking spare copies. {SHARDS_PER_CHIP} make a chip.
             </p>
             <p>
-              🂠 <b>Packs</b> come from your first win against each computer duelist each day and up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns).
+              🂠 <b>Packs</b> come from your first win against each computer duelist each day, your first win over each campaign duelist, and up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns).
             </p>
             <p class="today">
               <b>Still to win today:</b> {left.cpu.length ? `a pack from ${left.cpu.length} computer duelist${left.cpu.length === 1 ? '' : 's'}` : 'every computer duelist is beaten'}, {left.rivalPacks} rival pack{left.rivalPacks === 1 ? '' : 's'}

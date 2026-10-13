@@ -609,7 +609,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
     *onAnySummon(e, w, wp, m, _c, kind) {
-      if (kind !== 'special' || e.state.fx.evoltileSS !== m.uid || !e.oncePerTurn(`Evo-Price:${w.uid}`, wp)) return;
+      if (kind !== 'special' || e.state.fx.evoltileSS !== m.uid || e.state.battle || !e.oncePerTurn(`Evo-Price:${w.uid}`, wp)) return;
       const list = [...targetable(e, allMonsters(e)), ...allST(e)];
       if (!list.length || !(yield* e.yesno(wp, 'Evo-Price: destroy 1 card on the field?'))) return;
       e.useOnce(`Evo-Price:${w.uid}`, wp);
@@ -719,9 +719,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const call = yield* chooseOption(e, p, 'Fairy Box: call the coin toss', ['Heads', 'Tails']);
         const heads = e.roll(2) === 1;
         e.log(p, `Fairy Box: the coin shows ${heads ? 'Heads' : 'Tails'}`);
-        if ((call === 0) === heads && e.state.battle?.attacker === a.uid) {
-          e.state.fx.zeroAttack = a.uid;
-          e.log(p, `${a.name}'s ATK becomes 0 for this battle`);
+        // "ATK becomes 0 until the end of the Battle Phase" (Speed Duel has no Main Phase 2, so until the end of the turn).
+        if ((call === 0) === heads && e.fieldCard(a.uid)) {
+          boostTurn(a, -e.atkOf(a));
+          e.log(p, `${a.name}'s ATK becomes 0 until the end of the Battle Phase`);
         }
       },
     },
@@ -883,6 +884,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *onAnySummon(e) {
       allToAttack(e);
+    },
+    // The position lock ends with the card (unless Gaap or another copy still holds it).
+    *onLeaveField(e, fc) {
+      const still = faceUpMonsters(e).some((m) => m.name === 'Gaap the Divine Soldier' && !e.isNegated(m)) || [0, 1].some((q) => e.activeSpells(q as Pid).some((c) => c.uid !== fc.uid && c.name === 'Final Attack Orders'));
+      if (!still) for (const m of allMonsters(e)) if (m.tags?.lockPosTurn !== undefined) delete m.tags.lockPosTurn;
     },
   };
 

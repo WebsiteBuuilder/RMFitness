@@ -37,6 +37,8 @@ export interface SpeedSave {
   chips?: number;
 }
 
+export const CHIP_CAP = 30;
+
 export const MAIN_MIN = 20;
 export const MAIN_MAX = 30;
 export const EXTRA_MAX = 6;
@@ -100,7 +102,6 @@ export function withSpeedResult(s: SpeedSave, result: 'w' | 'l' | 'd', opp: stri
 }
 
 // ---------- the collection ----------
-export const CHIP_CAP = 30;
 export const owned = (s: SpeedSave, name: string) => s.collection?.[name] ?? 0;
 
 /** A copy of the save with these cards added to the collection. */

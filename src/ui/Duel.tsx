@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
 import { other } from '../eds/engine';
@@ -9,7 +9,8 @@ import { Menu, Overlay, Win } from './Window';
 import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
-import { ArtStage, ART_SETTING_NAMES, nextArtSetting, setArtSetting, useArtSetting } from '../art/ArtStage';
+import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
+import { LpCount, useShownState } from '../art/flow';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -35,7 +36,7 @@ export interface Command {
 }
 
 export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished }: Props) {
-  const { state } = view;
+  const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
   const me = state.players[acting];
@@ -53,7 +54,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
-  const art3d = useArtSetting();
+  const artItems = useCinematicsMenu();
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -62,15 +63,22 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setStyles((cur) => (acting === 0 ? [next, cur[1]] : [cur[0], next]));
     onControls?.(acting, next);
   };
+  // Test hook: ?debug exposes the engine so automated checks can see what a button did.
+  if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as Record<string, unknown>).__duel = { e, state, acting };
   const lastActing = useRef(acting);
   const lastSeq = useRef(0);
   const finished = useRef(false);
 
-  // Hotseat: pass the phone when the acting seat changes.
-  useEffect(() => {
+  // Hotseat: pass the phone when the acting seat changes (before paint, so the next hand never flashes).
+  useLayoutEffect(() => {
     if (hotseat && lastActing.current !== acting && state.winner === null) setPass(true);
     lastActing.current = acting;
   }, [acting, hotseat, state.winner]);
+
+  // Hotseat: hide the first hand until whoever goes first has the phone.
+  useLayoutEffect(() => {
+    if (hotseat && state.winner === null) setPass(true);
+  }, []);
 
   // Animations and sounds from engine events.
   useEffect(() => {
@@ -98,9 +106,30 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     }
   }, [state.winner]);
 
+  /** The last move sent, so a double tap can't send it twice before the game answers (online it takes a moment). */
+  const sent = useRef<{ view: SessionView; at: number } | null>(null);
+  const online = !!session.adapter.roomCode;
+  /** Saves the result exactly once, however many times Continue is tapped. */
+  const recorded = useRef(false);
+  const finish = (w: Pid | 'draw') => {
+    if (recorded.current) return;
+    recorded.current = true;
+    onFinished(w);
+  };
+  /** Leaving a finished duel still saves its result; leaving an online duel early concedes it, so the other player isn't left waiting. */
+  const leave = () => {
+    if (state.winner !== null) return finish(state.winner);
+    if (online && canAct) session.send({ type: 'SURRENDER', player: acting });
+    onLeave();
+  };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
+    if (sent.current && sent.current.view === view && Date.now() - sent.current.at < 1500) return;
+    sent.current = { view, at: Date.now() };
     unlockAudio();
     playBlip();
+    // A command used up the selection: don't leave the old card's menu on screen.
+    setSel(null);
+    setMode(null);
     session.send(a);
   };
 
@@ -145,7 +174,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (info?.kind === 'monster') {
         const ok = e.canNormalSummon(acting, selCard);
         const zone = me.mz.findIndex((z) => z === null);
-        commands.push({ label: 'Summon', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
+        commands.push({ label: 'Summon', disabled: !ok || !e.canNormalSummon(acting, selCard, true), onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
         commands.push({ label: 'Set', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'def', faceUp: false }) });
         const eff = getEffect(selCard.name);
         if (eff?.summonProc) commands.push({ label: 'Special Summon', disabled: !e.canSpecialProc(acting, selCard), onPick: () => send({ type: 'SPECIAL', player: acting, uid: selCard.uid }) });
@@ -174,7 +203,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
         if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos || !e.canChangePosition(acting, m), onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
-        else commands.push({ label: 'Flip Summon', disabled: !fresh, onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
+        else commands.push({ label: 'Flip Summon', disabled: !fresh || e.summonBlocked(acting, m, 'flip', 'mz'), onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
       }
     }
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && !selField.faceUp && myTurn) {
@@ -184,6 +213,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && selField.faceUp && myTurn && e.inMainPhase() && getEffect(selField.name)?.ignition) {
       commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, selField), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: selField.uid }) });
     }
+  }
+  // Speed Duel Quick Effects you can use in your own Main Phase (from the hand or the field).
+  if (selCard && selected && canAct && !prompt && state.winner === null && selected.loc.player === acting && e.canUseQuickNow(acting, selCard.uid)) {
+    commands.push({ label: 'Quick Effect', onPick: () => send({ type: 'QUICK_EFFECT', player: acting, uid: selCard.uid }) });
   }
   const canSeeSel = !!selCard && (!selField || selField.faceUp || selected?.loc.player === acting);
   if (selCard && canSeeSel) commands.push({ label: 'Card Info', onPick: () => setInfo(selCard.name) });
@@ -266,7 +299,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       return (
         <Win title={state.winner === 'draw' ? 'DRAW' : hotseat ? `${state.players[state.winner].name} WINS` : won ? 'YOU WIN!' : 'YOU LOSE'} class="msgwin">
           <p>{state.winReason}</p>
-          <Menu items={[{ label: 'Continue', onPick: () => onFinished(state.winner!) }, { label: 'View log', onPick: () => setShowLog(true) }]} />
+          <Menu items={[{ label: 'Continue', onPick: () => finish(state.winner!) }, { label: 'View log', onPick: () => setShowLog(true) }]} />
         </Win>
       );
     }
@@ -365,13 +398,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                   .slice()
                   .reverse()
                   .map((c) =>
-                    canAct && !prompt && e.canUseGraveEffect(acting, c.uid) ? (
+                    canAct && !prompt && (e.canUseGraveEffect(acting, c.uid) || e.canUseQuickNow(acting, c.uid)) ? (
                       <div key={c.uid} class="gcard">
                         <button onClick={() => setInfo(c.name)}>
                           <CardImg name={c.name} />
                           <span>{c.name}</span>
                         </button>
-                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'GRAVE_EFFECT', player: acting, uid: c.uid }))}>
+                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: e.canUseGraveEffect(acting, c.uid) ? 'GRAVE_EFFECT' : 'QUICK_EFFECT', player: acting, uid: c.uid }))}>
                           Effect
                         </button>
                       </div>
@@ -434,16 +467,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             <Menu
               items={[
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
-                ...(e.speed ? [{ label: `3D Animations: ${ART_SETTING_NAMES[art3d]}`, note: 'tap to change', onPick: () => setArtSetting(nextArtSetting(art3d)) }] : []),
+                ...(e.speed ? artItems : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => confirm('Surrender this duel?') && (send({ type: 'SURRENDER', player: acting }), setShowMenu(false)) },
-                { label: 'Leave duel', onPick: () => (setShowMenu(false), onLeave()) },
+                { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />
           </Win>
         </Overlay>
       )}
+      {online && view.status !== 'connected' && state.winner === null && <div class="netwarn">{view.detail || 'Connection lost. Reconnecting…'}</div>}
       {pass && (
         <div class="pass" onClick={() => setPass(false)}>
           <Win title="Pass the phone">
@@ -460,7 +494,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
         overlays={overlays}
       />
     );
@@ -472,7 +506,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar top">
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
-          LP {opp.lp}
+          LP <LpCount value={opp.lp} />
           {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
@@ -522,7 +556,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar bottom">
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
-          LP {me.lp}
+          LP <LpCount value={me.lp} />
           {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>

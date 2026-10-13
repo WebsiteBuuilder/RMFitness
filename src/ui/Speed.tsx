@@ -58,6 +58,7 @@ export function speedOpponents(): SpeedOpponent[] {
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
 
 export function SpeedHub({
+  onSolo,
   profile,
   save,
   onSave,
@@ -65,6 +66,8 @@ export function SpeedHub({
   onCpu,
   onLink,
 }: {
+  /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
+  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice') => void;
   profile: Profile;
   save: SpeedSave;
   onSave: (s: SpeedSave) => void;
@@ -136,7 +139,10 @@ export function SpeedHub({
         )}
         <Menu
           items={[
-            { label: 'Duel the Computer', note: 'Yugi, Kaiba, Joey, Mai and more', onPick: () => setSub('cpu') },
+            { label: 'The Millennium Road', note: 'story campaign: earn cards, beat the bosses', onPick: () => onSolo('campaign') },
+            { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
+            { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
+            { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
             { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
