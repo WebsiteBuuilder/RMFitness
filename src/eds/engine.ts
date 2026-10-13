@@ -2021,6 +2021,8 @@ export class Engine {
       return;
     }
     const names = materials.map((m) => this.find(m)?.card.name ?? '?');
+    // b19: remember which monsters were used (Assault Blackwing - Onimaru, Chaos Angel, Cosmic Quasar Dragon read fx.extraMats[uid]).
+    ((this.state.fx.extraMats ??= {}) as Record<number, string[]>)[uid] = names;
     for (const m of materials) if (this.fieldCard(m)) yield* this.sendToGrave(m, 'material');
     this.log(player, `${ps.name} ${kind} Summons ${f.card.name} using ${names.join(', ')}`);
     yield* this.specialSummon(uid, player, 'atk', true, (fc) => ((fc.tags ??= {})[kind === 'Synchro' ? 'synS' : 'linkS'] = 1));
@@ -2508,6 +2510,8 @@ export class Engine {
       const eq = this.fieldCard(uid);
       if (eq && getEffect(eq.name)?.hostCannotAttack?.(this, eq, m)) return false;
     }
+    // b19: a face-up monster's blocksAttack stops other monsters attacking (Beelzeus of the Diabolic Dragons, Cloudcastle).
+    if (this.speed) for (const p of [0, 1] as Pid[]) for (const src of this.monsters(p)) if (src.faceUp && src.uid !== m.uid && this.effectOn(src)?.blocksAttack?.(this, src, m, player)) return false;
     if (eff?.attackCost && !eff.attackCost.can(this, m, player)) return false;
     return true;
   }

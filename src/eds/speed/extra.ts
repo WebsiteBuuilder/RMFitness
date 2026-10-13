@@ -102,15 +102,17 @@ function candidates(e: Engine, p: Pid, req: ExtraReq): FieldCard[] {
 }
 
 /** Is this exact group of monsters a legal set of materials? */
+/** b19: a Tuner, or a monster an effect made a Tuner while face-up (tags.tuner: Assault Blackwing - Onimaru the Divine Thunder). */
+export const isTuner = (e: Engine, m: FieldCard) => !!e.info(m.name).tuner || m.tags?.tuner === 1;
 export function validMaterials(e: Engine, req: ExtraReq, mats: FieldCard[]): boolean {
   if (req.kind !== 'Synchro') return mats.length >= req.min && mats.length <= req.max;
-  const tuners = mats.filter((m) => e.info(m.name).tuner && fits(e, m, req.tunerQual));
+  const tuners = mats.filter((m) => isTuner(e, m) && fits(e, m, req.tunerQual));
   if (tuners.length < req.tuners) return false;
   // The Tuners count as Tuners only up to the number needed; any other Tuner must fit as a non-Tuner.
   const asTuner = tuners.slice(0, req.tuners);
   const rest = mats.filter((m) => !asTuner.includes(m));
   if (rest.length < req.min || rest.length > req.max) return false;
-  if (!rest.every((m) => !e.info(m.name).tuner && fits(e, m, req.qual))) return false;
+  if (!rest.every((m) => !isTuner(e, m) && fits(e, m, req.qual))) return false;
   return mats.reduce((a, m) => a + levelOf(e, m), 0) === req.level;
 }
 
