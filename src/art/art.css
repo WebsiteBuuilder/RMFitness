@@ -103,65 +103,138 @@
   display: none;
 }
 
-/* name cards and attack calls */
+/* name plates and attack calls: a slanted plate with a gold (big) or attribute edge that
+   wipes in from the left, a heavy italic name; transform/opacity only (no blur filters) */
 .art-banner {
+  --edge: color-mix(in srgb, var(--c) 65%, #fff 35%);
   position: absolute;
   left: 0;
   right: 0;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - 36px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 10px 16px;
+  align-items: flex-start;
+  padding: 9px 26px 10px 30px;
   color: #fff;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 45%, #000 55%) 18%, color-mix(in srgb, var(--c) 45%, #000 55%) 82%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--c) 70%, #fff 30%);
-  border-bottom: 1px solid color-mix(in srgb, var(--c) 70%, #fff 30%);
-  animation: art-banner var(--d) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  text-shadow: 0 0 12px var(--c), 0 2px 2px #000;
+  isolation: isolate;
+  font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, -apple-system, sans-serif;
+  animation: art-banner var(--d) linear forwards;
+}
+.art-banner.big {
+  --edge: #ffc94a;
+}
+.art-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transform-origin: 0 50%;
+  background: linear-gradient(100deg, rgba(6, 8, 22, 0.95) 0%, color-mix(in srgb, var(--c) 34%, #05060f 66%) 62%, rgba(6, 8, 22, 0.88) 100%);
+  border-top: 2px solid var(--edge);
+  border-bottom: 2px solid var(--edge);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--c) 55%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  animation: art-plate var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+.art-banner::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: -5px;
+  bottom: -5px;
+  width: 7px;
+  background: var(--edge);
+  box-shadow: 0 0 10px var(--edge);
+  transform-origin: 50% 0;
+  animation: art-stripe var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
 }
 .art-banner b {
   font-size: 19px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1.15;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  line-height: 1.08;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 12px color-mix(in srgb, var(--c) 80%, transparent);
+  animation: art-text var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
 }
 .art-banner span {
   margin-top: 3px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 12px;
-  opacity: 0.9;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--edge);
+  text-shadow: 0 1px 2px #000;
+  animation: art-text var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
 }
 .art-banner.big b {
-  font-size: 25px;
-  font-style: italic;
-  text-transform: uppercase;
+  font-size: 26px;
 }
+/* clear of the Life Points bars and the hand (bottom) and of the opponent's bar (top) */
 .art-banner.pos-bottom {
-  bottom: 18%;
+  bottom: calc(21% + env(safe-area-inset-bottom));
 }
 .art-banner.pos-top {
-  top: calc(14% + env(safe-area-inset-top));
+  top: calc(11% + env(safe-area-inset-top));
 }
 .art-banner.pos-mid {
-  top: 46%;
+  top: 44%;
+}
+.artlab .art-banner.pos-bottom {
+  bottom: 4%;
+}
+.artlab .art-banner.pos-top {
+  top: calc(5% + env(safe-area-inset-top));
 }
 @keyframes art-banner {
-  0% {
-    opacity: 0;
-    transform: translateX(-40px) skewX(-12deg);
-  }
-  12% {
+  0%,
+  86% {
     opacity: 1;
     transform: none;
   }
-  82% {
-    opacity: 1;
-    transform: translateX(6px);
-  }
   100% {
     opacity: 0;
-    transform: translateX(40px) skewX(8deg);
+    transform: translateX(28px);
+  }
+}
+@keyframes art-plate {
+  0% {
+    transform: skewX(-14deg) scaleX(0);
+  }
+  14%,
+  100% {
+    transform: skewX(-14deg) scaleX(1);
+  }
+}
+@keyframes art-stripe {
+  0% {
+    transform: skewX(-14deg) scaleY(0);
+  }
+  10%,
+  100% {
+    transform: skewX(-14deg) scaleY(1);
+  }
+}
+@keyframes art-text {
+  0%,
+  6% {
+    opacity: 0;
+    transform: translateX(-26px);
+  }
+  22% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(8px);
   }
 }
 
@@ -169,15 +242,19 @@
 .art-number {
   position: absolute;
   left: 50%;
+  font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
   font-size: calc(34px * var(--s));
   font-weight: 900;
+  font-style: italic;
   color: #fff;
   -webkit-text-stroke: 2px var(--c);
-  text-shadow: 0 0 18px var(--c), 0 4px 4px #000;
+  text-shadow:
+    0 0 18px var(--c),
+    0 4px 4px #000;
   animation: art-number var(--d) ease-out forwards;
 }
 .art-number.side-bottom {
-  bottom: 24%;
+  bottom: calc(24% + env(safe-area-inset-bottom));
 }
 .art-number.side-top {
   top: calc(22% + env(safe-area-inset-top));
@@ -201,62 +278,138 @@
   }
 }
 
+/* (legacy: the cinematics flash in WebGL now) */
 .art-flash {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle, var(--c) 0%, transparent 75%);
-  mix-blend-mode: screen;
+  opacity: 0;
   animation: art-flash var(--d) ease-out forwards;
 }
 @keyframes art-flash {
   0% {
-    opacity: var(--s);
+    opacity: calc(var(--s) * 0.5);
   }
   100% {
     opacity: 0;
   }
 }
 
-/* Shadow Realm captions */
+/* Shadow Realm captions: gold-framed plates */
 .art-caption {
   position: absolute;
-  left: 16px;
-  right: 16px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - 40px);
+  box-sizing: border-box;
+  padding: 10px 22px;
   text-align: center;
   color: #fff;
   font-weight: 800;
+  background: linear-gradient(180deg, rgba(44, 8, 66, 0.94), rgba(12, 0, 26, 0.94));
+  border: 2px solid #ffc94a;
+  border-radius: 3px;
+  outline: 1px solid rgba(255, 201, 74, 0.45);
+  outline-offset: 3px;
+  box-shadow:
+    0 0 26px rgba(154, 60, 255, 0.7),
+    inset 0 0 14px rgba(255, 201, 74, 0.22);
   animation: art-caption var(--d) ease-out forwards;
+}
+.art-caption::before,
+.art-caption::after {
+  content: '◆';
+  position: absolute;
+  top: 50%;
+  margin-top: -9px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #ffc94a;
+  text-shadow: 0 0 8px #ff4fd8;
+}
+.art-caption::before {
+  left: -9px;
+}
+.art-caption::after {
+  right: -9px;
 }
 .art-caption.overkill {
   top: calc(12% + env(safe-area-inset-top));
-  font-size: 30px;
+  padding: 4px 10px;
+  background: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
+  font-size: 32px;
   font-style: italic;
+  font-weight: 900;
   color: #ffd75a;
-  text-shadow: 0 0 16px #ff4fd8, 0 3px 3px #000;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  -webkit-text-stroke: 1px #7a2a00;
+  text-shadow:
+    0 0 16px #ff4fd8,
+    0 3px 3px #000;
+}
+.art-caption.overkill::before,
+.art-caption.overkill::after {
+  content: none;
+}
+/* the number counting up: each step shows at once, the last one lands with a pop */
+.art-caption.overkill.tick {
+  animation: none;
+}
+.art-caption.overkill.land {
+  animation: art-land var(--d) ease-out forwards;
 }
 .art-caption.shadow {
-  bottom: 26%;
-  font-size: 22px;
-  text-shadow: 0 0 18px #9a3cff, 0 0 4px #000;
+  bottom: calc(26% + env(safe-area-inset-bottom));
+  font-size: 19px;
+  line-height: 1.25;
+  text-shadow:
+    0 0 14px #9a3cff,
+    0 2px 2px #000;
 }
 .art-caption.sealed {
-  bottom: 17%;
-  font-size: 15px;
+  bottom: calc(16% + env(safe-area-inset-bottom));
+  font-size: 14px;
   font-weight: 600;
-  color: #ffc8f2;
-  text-shadow: 0 0 10px #9a3cff, 0 2px 2px #000;
+  color: #ffd8f6;
+  text-shadow: 0 1px 2px #000;
+}
+.artlab .art-caption.shadow {
+  bottom: 18%;
+}
+.artlab .art-caption.sealed {
+  bottom: 4%;
 }
 @keyframes art-caption {
   0% {
     opacity: 0;
-    transform: scale(1.3);
-    filter: blur(6px);
+    transform: scale(1.18);
   }
-  15% {
+  12% {
     opacity: 1;
     transform: none;
-    filter: none;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes art-land {
+  0% {
+    transform: scale(1.5);
+  }
+  14% {
+    transform: scale(0.94);
+  }
+  24% {
+    transform: none;
   }
   85% {
     opacity: 1;
