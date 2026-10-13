@@ -68,6 +68,43 @@ THRESHOLDS = {
 }
 
 
+# Enclosed background holes filled after the cut, per card (smallest hole filled, as a fraction
+# of the art). A big window through a coiled subject (the space inside Blue-Eyes' neck) turns the
+# figure into a C-shaped cutout; filled, the painted background inside the coil reads as part of
+# the dragon. Not a global rule: on ~30 other cards the 2-9 % holes are the gaps between legs,
+# arms or wings, and filling those makes a slab of background.
+FILL_HOLES_CARD = {
+    89631139: 0.02,   # Blue-Eyes White Dragon: inside the coiled neck
+    70781052: 0.004,  # Summoned Skull: the notch beside its head
+    95231062: 0.02,   # Lost Blue Breaker: coiled body
+    96005454: 0.02,   # Hunter Dragon: curled neck and tail
+    3657444: 0.02,    # Cyber Valley: coiled body
+    23893227: 0.02,   # Cyber Dragon Core: coiled tail
+}
+# Feather (px of the 256 map) where the matte meets the artwork box, so a subject cut by the
+# frame fades out instead of ending in a straight edge with square corners.
+BORDER_FEATHER = 10.0
+
+
+def fill_big_holes(m, min_frac):
+    """Fill the enclosed holes of a mask that cover at least min_frac of the map."""
+    holes, n = ndi.label(ndi.binary_fill_holes(m) & ~m)
+    if not n:
+        return m
+    sizes = ndi.sum(np.ones_like(m), holes, range(1, n + 1))
+    big = [i + 1 for i, s in enumerate(sizes) if s >= SIZE * SIZE * min_frac]
+    return m | np.isin(holes, big) if big else m
+
+
+def border_ramp(size=SIZE, px=BORDER_FEATHER):
+    """1 inside, easing to 0 over px at the map's border (corners rounded by the product)."""
+    x = np.arange(size, dtype=np.float32)
+    e = np.minimum(x, size - 1 - x)
+    r = np.clip((e - 1.0) / px, 0, 1)
+    r = r * r * (3 - 2 * r)
+    return np.outer(r, r)
+
+
 def smooth_mask(m):
     """Clean, smooth outline: close small gaps, blur and re-threshold (no staircase steps)."""
     m = ndi.binary_closing(m, iterations=2)
@@ -113,11 +150,13 @@ def matte_of(d, art=None, lo_k=0.7, cid=None):
             if r < 0.36 or (r < 0.5 and (dist[h] < 14).mean() > 0.55):
                 filled &= ~h
     m = smooth_mask(ndi.binary_opening(filled, iterations=1))
+    if cid in FILL_HOLES_CARD:
+        m = fill_big_holes(m, FILL_HOLES_CARD[cid])
     soft = np.clip((d - (t * lo_k - 0.03)) / 0.08, 0, 1)
     inner = ndi.binary_erosion(m, iterations=3)
     # a ~2 px feather across the smoothed outline
     a = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.0) * np.maximum(soft, inner)
-    a = cv2.GaussianBlur(a, (0, 0), 0.6)
+    a = cv2.GaussianBlur(a, (0, 0), 0.6) * border_ramp()
     return np.clip(a, 0, 1)
 
 

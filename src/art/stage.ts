@@ -361,7 +361,7 @@ void main(){
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
   vec3 fn = cross(dFdx(vViewPos), dFdy(vViewPos));
   float facing = abs(dot(fn, normalize(vViewPos))) / max(length(fn), 1e-12);
-  alpha *= mix(1.0, smoothstep(0.1, 0.32, facing), uMatte * (1.0 - step(0.001, uShatter)));
+  alpha *= mix(1.0, smoothstep(0.18, 0.4, facing), uMatte * (1.0 - step(0.001, uShatter)));
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
@@ -1309,8 +1309,10 @@ void main(){
   }
   if (uRed > 0.0) {
     float e = smoothstep(0.35, 1.0, length((vUv - 0.5) * 2.0));
-    L += vec3(1.0, 0.1, 0.06) * e * uRed * 0.85;
-    a = max(a, e * uRed * 0.5);
+    // capped at 0.25 (its color drives the layer's alpha too)
+    float re = min(e * uRed * 0.85, 0.25);
+    L += vec3(1.0, 0.1, 0.06) * re;
+    a = max(a, re);
   }
   if (uCrack > 0.0) {
     vec2 q = (vUv - uCrackAt) * asp;
@@ -1325,8 +1327,9 @@ void main(){
     L += uCrackColor * line * m * uCrackOp;
     a = max(a, line * m * 0.4 * uCrackOp);
   }
-  // the flash rings the subject more than it covers it, so the silhouette stays readable
-  L += uFlashColor * uFlash * (0.5 + 0.5 * smoothstep(0.05, 0.6, r));
+  // the flash rings the subject instead of covering it: none on the subject, rising toward
+  // the screen's edge, so the frame never takes a full-screen tint and the silhouette stays readable
+  L += uFlashColor * uFlash * 0.5 * smoothstep(0.3, 1.0, length((vUv - uFocus) * 2.0));
   L = min(L, vec3(1.0));
   gl_FragColor = vec4(L, clamp(max(a, max(L.r, max(L.g, L.b))), 0.0, 1.0));
 }`;
@@ -1507,8 +1510,11 @@ void main(){
   float d = length(vUv - uOrigin);
   float m = 1.0 - smoothstep(uCrack * 1.25 - 0.12, uCrack * 1.25, d);
   float e = vedge(vUv * 6.0 + uSeed);
+  // the fine 14x cell layer only right around the impact point: spread over the whole
+  // figure it turned into rainbow noise under the chroma pulse
   float e2 = vedge(vUv * 14.0 + uSeed * 1.7);
-  float line = (1.0 - smoothstep(0.0, 0.045, e)) + (1.0 - smoothstep(0.0, 0.03, e2)) * 0.6 * smoothstep(0.35, 1.0, uCrack);
+  float near = 1.0 - smoothstep(0.06, 0.2, d);
+  float line = (1.0 - smoothstep(0.0, 0.045, e)) + (1.0 - smoothstep(0.0, 0.03, e2)) * 0.45 * near * smoothstep(0.35, 1.0, uCrack);
   vec3 c = (mix(uColor, vec3(1.0), 0.55) * line * 1.3 + uColor * exp(-e * 9.0) * 0.4) * m * subj;
   c += uColor * subj * uCrack * 0.18;
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
@@ -1873,8 +1879,9 @@ void main(){
  * Scene + bloom + vignette (+ pulses) in one pass onto the transparent canvas.
  * Premultiplied throughout: bloom adds light and grows alpha only as much as it is
  * bright (like the glow blending), the vignette only darkens what the cinematic
- * itself drew (alpha is untouched, so empty pixels stay empty), and the flash is
- * white laid "over" the result.
+ * itself drew (alpha is untouched, so empty pixels stay empty), and the flash
+ * brightens what is there (plus a little of the glow) instead of laying a uniform
+ * white over the frame, so it never reads as a grey wash.
  */
 const COMPOSITE_FRAG = /* glsl */ `
 uniform sampler2D tScene;
@@ -1898,11 +1905,12 @@ void main(){
   // soft shoulder instead of a hard clip: stacked additive glow rolls off toward white
   // (and the bloom is held back where the scene is already bright) so silhouettes survive
   // (a dimmed stage gets less: the glow stays around what glows instead of washing the frame out)
-  vec3 x = c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
+  vec3 bl = texture2D(tBloom, vUv).rgb;
+  vec3 x = c.rgb * v + bl * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
   vec3 col = min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-max(x - 0.72, 0.0) * 3.6));
   float a = max(c.a, max(col.r, max(col.g, col.b)));
-  col = vec3(uFlash) + col * (1.0 - uFlash);
-  a = uFlash + a * (1.0 - uFlash);
+  // (only what is already bright: a tinted veil or a dim backdrop is not pushed toward a solid color)
+  col = min(col + col * smoothstep(0.25, 0.8, dot(col, vec3(0.299, 0.587, 0.114))) * uFlash * 1.5 + uFlash * 0.15 * bl, vec3(1.0));
   gl_FragColor = vec4(col, a);
 }`;
 
@@ -2635,7 +2643,9 @@ export class Stage {
     if (this.lost) return;
     if (this.post && this.levels[this.level].post) {
       const u = this.post.comp.uniforms;
-      u.uChroma.value = this.chroma * 0.035;
+      // capped (was up to 0.035): a strong pulse split a shattering figure's fine fragments and thin
+      // bright lines (cracks, bolts) into rainbow noise
+      u.uChroma.value = Math.min(0.012, this.chroma * 0.035);
       u.uFlash.value = this.flash * 0.85;
       u.uDim.value = this.dim;
       this.post.render(this.renderer, this.scene, this.camera);

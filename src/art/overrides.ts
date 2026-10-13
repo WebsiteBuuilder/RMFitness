@@ -26,8 +26,9 @@ export interface FigureTune {
 export const DEFAULT_FADE = 0.08;
 
 export const FIGURE_TUNES: Record<number, FigureTune> = {
-  // Dark Magician: robe fills the bottom edge, staff crosses the frame
-  46986414: { relief: 0.9, fade: 0.11, rim: 0.8 },
+  // Dark Magician: robe fills the bottom edge, staff crosses the frame. Flatter: seen over the
+  // shoulder as an attacker, deeper relief smeared the purple robe and face sideways
+  46986414: { relief: 0.6, fade: 0.11, rim: 0.8 },
   // Blue-Eyes White Dragon: white chrome scales, wing cut by the right edge. Near-flat: a parallax
   // billboard keeps the painted head, coiled body and tail reading as a dragon (any real relief turns the coil into a C-shaped slab)
   89631139: { tame: 0.75, relief: 0.2, fade: 0.12, spec: 0.5, rim: 0.9, scale: 1.2 },
@@ -113,6 +114,8 @@ export const FIGURE_TUNES: Record<number, FigureTune> = {
   36354007: { relief: 0.85, fade: 0.13, tame: 0.3 },
   // Harpie Queen
   75064463: { relief: 0.9, fade: 0.11 },
+  // Rogue Doll: thin limbs and a cape that tear into strings seen over the shoulder; flatter, wider fade
+  91939608: { relief: 0.6, fade: 0.14 },
 };
 
 const NONE: FigureTune = {};

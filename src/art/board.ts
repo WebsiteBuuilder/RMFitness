@@ -18,6 +18,7 @@ import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
 import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
 import { artBusy, artFocus, onArtChange } from "./cues";
+import { tuneFor } from "./overrides";
 
 export interface BoardMonster {
   uid: number;
@@ -67,6 +68,15 @@ const KNEEL_TILT = -0.45;
 const FALLBACK_FOOT: Footprint = { u: 0.5, v: 0.08, w: 0.5, top: 0.92, left: 0.2, right: 0.8, relief: 0.5 };
 /** A field figure is never wider than this share of its zone, so neighbours never crowd each other. */
 const MAX_ZONE_W = 0.95;
+/**
+ * ...but its art square is never smaller than this share of its zone's height (the card's long
+ * side): a wide subject (wings, a crowd of sisters) fitted to the zone's width shrank to a blob.
+ */
+const MIN_ZONE_H = 1.15;
+/** (the minimum size still keeps a wide subject within this share of its zone's width, so neighbours only touch) */
+const MIN_GROW_W = 1.2;
+/** Relief cap for figures on the far (opponent's) side, seen from above: deep relief turned them into lumps. */
+const FAR_RELIEF = 0.7;
 
 /** Writes the field pose for a card on screen into `out` (no allocation). */
 function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
@@ -76,7 +86,8 @@ function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
   const subjH = Math.max(0.55, Math.min(1, f.top - f.v));
   // per-card size (overrides.ts), then no wider than its zone
   const subjW = Math.max(0.2, f.right - f.left);
-  const size = Math.min(((cw * (def ? 1.0 : 1.2)) / subjH) * (f.scale ?? 1), (r.width * MAX_ZONE_W) / subjW);
+  const fit = Math.min(((cw * (def ? 1.0 : 1.2)) / subjH) * (f.scale ?? 1), (r.width * MAX_ZONE_W) / subjW);
+  const size = Math.max(fit, Math.min(Math.max(r.width, r.height) * MIN_ZONE_H, (r.width * MIN_GROW_W) / subjW));
   const scaleY = def ? 0.85 : 1;
   out.cx = r.left + r.width / 2;
   // feet a little above the card's middle-low, clear of the ATK label at its bottom edge
@@ -123,6 +134,9 @@ interface Piece {
   disc: ContactShadow | null;
   seed: number;
   depth: number;
+  /** the figure's relief amount on the near side, and capped for the far side */
+  relief: number;
+  reliefFar: number;
   glow: number;
   /** 0..1 how far it has appeared */
   show: number;
@@ -256,6 +270,8 @@ export class BoardLayer {
         disc: null,
         seed: prof.seed % 1000,
         depth: 0.18 + prof.depth * 0.22,
+        relief: 0,
+        reliefFar: 0,
         glow: prof.colors[0],
         show: 0,
         quick: null,
@@ -281,6 +297,8 @@ export class BoardLayer {
           const rim = art.palette[0] ?? piece.glow;
           const fig = new Figure(art, 1, 40, piece.glow, piece.depth, { rim, edge: prof.tier >= 2 ? 0.8 : 0 });
           piece.fig = fig;
+          piece.relief = fig.u.uDepthAmt.value as number;
+          piece.reliefFar = piece.depth * Math.min(tuneFor(art.id).relief ?? 1, FAR_RELIEF);
           fig.detail = 2;
           fig.u.uCut.value = 1;
           fig.u.uReveal.value = 0;
@@ -398,7 +416,11 @@ export class BoardLayer {
       }
       const r = el.getBoundingClientRect();
       p.cw = r.width > 0 ? Math.min(r.width, r.height) : 0;
-      if (p.cw > 0) poseInto(p.pose, r, p.def, p.fig.foot);
+      if (p.cw > 0) {
+        poseInto(p.pose, r, p.def, p.fig.foot);
+        // the opponent's side (the card above the screen's middle)
+        p.fig.u.uDepthAmt.value = r.top + r.height / 2 < this.h / 2 ? p.reliefFar : p.relief;
+      }
     }
   }
 

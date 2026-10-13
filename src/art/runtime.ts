@@ -2143,8 +2143,9 @@ export class Director {
       att.lean = -0.3 * easeOut(k);
       att.oz = -0.25 * easeOut(k);
       this.place(att);
-      charge.u.uOpacity.value = easeIn(k) * 0.7;
-      charge.mesh.scale.setScalar(lerp(0.3, 1, easeOut(k)));
+      // kept soft so the glow at the muzzle never blows out the attacker's face
+      charge.u.uOpacity.value = easeIn(k) * 0.42;
+      charge.mesh.scale.setScalar(lerp(0.3, 0.8, easeOut(k)));
       const n = Math.floor(140 * this.q * dt + Math.random());
       for (let i = 0; i < n; i++) {
         const ang = Math.random() * Math.PI * 2;
