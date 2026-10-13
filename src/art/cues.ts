@@ -18,6 +18,8 @@ export interface CardRef {
   name: string;
   faceUp: boolean;
   controller: Pid;
+  /** whose card it is (its finish, Speed Duel card leveling, is the owner's) */
+  owner?: Pid;
   /** screen rectangle of the card on the board, when it is there */
   rect: Rect | null;
   def: boolean;
@@ -88,7 +90,7 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
   if (!f.field && old) return live({ ...old, rect: rectOf(uid, host) ?? old.rect }, host);
   const faceUp = f.field ? f.field.faceUp : true;
   const known = faceUp || f.controller === viewer;
-  return live({ uid, name: known ? f.card.name : '', faceUp, controller: f.controller, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' }, host);
+  return live({ uid, name: known ? f.card.name : '', faceUp, controller: f.controller, owner: f.card.owner, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' }, host);
 }
 
 /**
@@ -133,7 +135,7 @@ export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | nul
   for (const p of [0, 1] as Pid[])
     for (const c of state.players[p].mz) {
       if (!c) continue;
-      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, rect: rectOf(c.uid, host) ?? prev?.get(c.uid)?.rect ?? null, def: c.pos === 'def' });
+      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, owner: c.owner, rect: rectOf(c.uid, host) ?? prev?.get(c.uid)?.rect ?? null, def: c.pos === 'def' });
     }
   return m;
 }

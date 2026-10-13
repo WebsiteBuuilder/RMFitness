@@ -20,6 +20,7 @@ import type { DuelState, Pid } from '../eds/types';
 import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
+import { FIN, finishOf } from './finish';
 
 /** How the art stage plays what the flow hands it. */
 export interface ArtSink {
@@ -104,7 +105,7 @@ const withLp = (s: DuelState, from: DuelState): DuelState => ({
   players: s.players.map((p, k) => (p.lp === from.players[k].lp ? p : { ...p, lp: from.players[k].lp })) as DuelState['players'],
 });
 
-/** A summon worth a cinematic under "Big moments": level 7+, Fusion, Ritual, or a signature card. */
+/** A summon worth a cinematic under "Big moments": level 7+, Fusion, Ritual, or a signature card (or a Glossy-or-better finish, isBig). */
 function bigCard(name: string): boolean {
   const info = card(name);
   if (!info || info.kind !== 'monster') return false;
@@ -116,7 +117,8 @@ function isBig(c: Cue): boolean {
   switch (c.kind) {
     case 'summon':
     case 'flip':
-      return bigCard(c.card.name);
+      // a Glossy, Royal or Overframe card always gets its entrance: the finish is the show
+      return bigCard(c.card.name) || finishOf(c.card) >= FIN.GL;
     case 'activate':
     case 'target':
       return SIGNATURES.has(c.card.name);

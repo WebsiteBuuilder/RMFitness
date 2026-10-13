@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DuelState, Pid } from "../eds/types";
 import { bannerOnce, clearArtFocus, setArtBusy, type Cue } from "./cues";
+import { FINISH_TAG, finishOf } from "./finish";
 import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, promptWaiting, releaseBoard, skipAllChains, tapToResult } from "./flow";
 import { shadowRealmOf } from "./shadow";
 import { getAnimSpeed, useAnimSpeed, useCinematics } from "./settings";
@@ -65,8 +66,8 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     banner: (o) =>
       once(o.title) &&
       add(
-        `art-banner ${o.big ? "big" : ""} pos-${o.pos ?? "bottom"}`,
-        `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ""}`,
+        `art-banner ${o.big ? "big" : ""} pos-${o.pos ?? "bottom"}${o.finish ? ` fin-${o.finish}` : ""}`,
+        `${o.finish ? `<i class="art-fin">${FINISH_TAG[o.finish] ?? ""}</i>` : ""}<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ""}`,
         Math.max(0.6, o.dur),
         { "--c": hex(o.color) },
       ),
@@ -368,9 +369,10 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
             ready: state.phase === "BP" && state.turnPlayer === p && !state.firstTurn && c.pos === "atk" && !c.attacked,
             hit: state.battle?.target === c.uid || state.chain.some((l) => l.targetUid === c.uid),
             lp: state.players[p].lp,
+            finish: finishOf({ name: c.name, owner: c.owner, controller: p }),
           });
   const standKey = standing
-    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}`)
+    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}:${m.finish}`)
     .join(",");
   useEffect(() => {
     if (board.current) return board.current.sync(standing);

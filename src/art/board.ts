@@ -19,6 +19,7 @@ import { profileFor } from "./profile";
 import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
+import { FIN, finishGlow } from "./finish";
 
 export interface BoardMonster {
   uid: number;
@@ -30,6 +31,8 @@ export interface BoardMonster {
   hit?: boolean;
   /** its controller's LP: a drop makes it flinch */
   lp?: number;
+  /** its finish (TIERS index, the owner's card leveling): Ultra Rare and up glow in it */
+  finish?: number;
 }
 
 /** Where a field figure stands on screen. Every length is in viewport CSS px. */
@@ -128,6 +131,8 @@ interface Piece {
   uid: number;
   name: string;
   def: boolean;
+  /** finish (TIERS index) */
+  finish: number;
   fig: Figure | null;
   /** pivot at the feet: tilt and sway turn around it */
   pivot: Object3D;
@@ -250,6 +255,7 @@ export class BoardLayer {
       else {
         p.def = m.def;
         p.ready = !!m.ready;
+        p.finish = m.finish ?? 0;
         if ((m.hit && !p.wasHit) || (m.lp !== undefined && m.lp < p.lp)) p.hitPending = true;
         p.wasHit = !!m.hit;
         if (m.lp !== undefined) p.lp = m.lp;
@@ -289,6 +295,7 @@ export class BoardLayer {
         flourishAt: performance.now() + FLOURISH_MIN_MS + (prof.seed % 4000),
         flourishKind: prof.seed % 3,
         flourishT: -1,
+        finish: m.finish ?? 0,
       };
       this.pieces.set(m.uid, piece);
       artFor(m.name)
@@ -517,7 +524,14 @@ export class BoardLayer {
       const u = fig.u;
       u.uReveal.value = p.quick ? 1 : k;
       u.uOpacity.value = (p.leaving ? Math.max(0, p.show) : p.quick ? k : 1) * p.vis;
-      setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : p.glow);
+      // a finished card glows in its finish: its rim light and base ring (Overframe turns through
+      // the rainbow, Glossy rolls pink-violet-cyan, Royal breathes gold); one color per frame, no allocations
+      const fg = p.finish >= FIN.UR ? finishGlow(p.finish, t + p.seed) : -1;
+      setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : fg >= 0 ? fg : p.glow);
+      if (fg >= 0) {
+        rimColor(fg, u.uRim.value as Vector3);
+        if (p.finish >= FIN.GL) rimColor(fg, p.disc.u.uRing.value as Vector3);
+      }
       u.uDark.value = p.kneel * 0.2;
       u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
       setRgb(u.uFlash.value as Vector3, HIT_FLASH);
@@ -529,7 +543,7 @@ export class BoardLayer {
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
-      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
+      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.OF ? 0.9 : p.finish >= FIN.GL ? 0.5 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
     }
   }
