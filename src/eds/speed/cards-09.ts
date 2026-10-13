@@ -1,5 +1,7 @@
 // Speed Duel card scripts, batch 09 (Rare Metalmorph ... Tail Swipe).
 import type { EffectDef } from '../effects';
+import type { SummonLock } from '../engine';
+import { getEffect } from '../effects';
 import type { Card, ChainCtx, ChainLink, Engine, FieldCard, Gen, Pid, Pos, SpeedHelpers, Step } from './helpers';
 import {
   allMonsters,
@@ -204,21 +206,22 @@ function addCounter(e: E9, c: FieldCard) {
 function skilled(title: string, test: (e: E9, c: Card) => boolean, gyEffect: boolean): EffectDef {
   const sources = (e: E9, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => isMonster(e, c) && !isExtraOrRitual(e, c) && test(e, c));
   const def: EffectDef = {
-    quick: {
-      label: 'place a Spell Counter',
-      repeat: true,
-      can: (e, card, _p, t, ctx) => t === 'spell' && !!ctx.link && isSpell(e, ctx.link.card) && (card as FieldCard).counters < 3,
-      *run(e, card) {
-        const m = e.fieldCard(card.uid);
-        if (m?.faceUp) addCounter(e, m);
-      },
+    // audit-09: mandatory: a Spell Counter each time a Spell Card resolves (its activation, not a Spell's later effect), max. 3.
+    *onChainLink(e, m, _p, link) {
+      if ((link.payload as { effect?: string } | undefined)?.effect || !isSpell(e, link.card) || m.counters >= 3) return;
+      addCounter(e, m);
     },
     ignition: {
-      can: (e, m, p) => m.counters >= 3 && sources(e, p).length > 0,
-      *run(e, m, p) {
-        if (!e.fieldCard(m.uid)?.faceUp || m.counters < 3) return;
+      can: (e, m, p) => m.counters >= 3 && sources(e, p).length > 0 && !e.untributable(m),
+      // audit-09: Tributing it is the cost, paid as the effect is activated.
+      *cost(e, m, p) {
+        if (m.counters < 3) return false;
         e.log(p, `${e.player(p).name} Tributes ${m.name}`);
         yield* e.sendToGrave(m.uid, 'tribute');
+      },
+      // Approximation: resolves at once (the engine only resolves chained ignition effects of monsters still on the field).
+      chain: false,
+      *run(e, _m, p) {
         yield* summonOneOf(e, p, title, sources(e, p));
       },
     },
@@ -260,7 +263,10 @@ function columnOf(e: E9, m: FieldCard): FieldCard[] {
   const f = e.find(m.uid);
   if (!f || f.loc.zone !== 'mz') return [];
   const i = f.loc.index;
-  return ([0, 1] as Pid[]).map((q) => e.player(q).mz[i]).filter((x): x is FieldCard => !!x && x.uid !== m.uid);
+  const p = f.loc.player;
+  // audit-09: the opponent's zones face yours mirrored (zone i faces their zone n-1-i).
+  const facing = e.player(other(p)).mz[e.player(other(p)).mz.length - 1 - i];
+  return [e.player(p).mz[i], facing].filter((x): x is FieldCard => !!x && x.uid !== m.uid);
 }
 /** Battle damage equal to the original ATK when attacking directly "using this effect" (Sonic Shooter, Submarineroid). */
 const originalDirect = (e: E9, a: FieldCard, t: FieldCard | null) => {
@@ -268,7 +274,32 @@ const originalDirect = (e: E9, a: FieldCard, t: FieldCard | null) => {
   const p = ctrl(e, a);
   return e.monsters(other(p)).length > 0 ? e.baseStats(a).atk - e.atkOf(a) : 0;
 };
+/** audit-09: `m` is battling right now (attacker or attack target). */
+const inBattle = (e: E9, m: FieldCard) => !!e.state.battle && (e.state.battle.attacker === m.uid || e.state.battle.target === m.uid);
+/** audit-09: an opponent's effect targeting this monster: a die roll as it resolves; on a listed result it is negated and its card destroyed. */
+function dieGuard(name: string, hits: number[]): NonNullable<EffectDef['onChainLink']> {
+  return function* (e, m, p, link) {
+    if (link.player === p || link.targetUid !== m.uid || link.negated) return;
+    const r = e.roll(6);
+    e.log(p, `${name} rolls a ${r}`);
+    if (!hits.includes(r)) return;
+    negateLink(e, link, p);
+    if (link.negated && e.fieldCard(link.card.uid)) yield* e.destroy([link.card.uid]);
+  };
+}
 let skyscraperGuard = false;
+const DIVINE = ['Obelisk the Tormentor', 'Slifer the Sky Dragon', 'The Winged Dragon of Ra'];
+/** audit-09: "Must be Special Summoned (from your hand) by ..., and cannot be Special Summoned by other ways": fx.procSummon marks the proc's own Summon. */
+// (With nothing resolving, a Summon is let through: that is the engine offering the procedure itself, or a test placing the card.)
+const procOnly: EffectDef['cannotSpecial'] = (e, c, _p, from) => from !== null && e.state.fx.procSummon !== c.uid && e.resolvingCard() !== null;
+function* procSummon(e: E9, c: Card, p: Pid, pos: Pos = 'atk'): Step {
+  e.state.fx.procSummon = c.uid;
+  try {
+    yield* e.specialSummon(c.uid, p, pos);
+  } finally {
+    e.state.fx.procSummon = undefined;
+  }
+}
 
 export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // ---------- R ----------
@@ -322,24 +353,28 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       can: (e, _c, p) => e.monsters(p).filter((m) => raceOf(e, m) === 'Fiend').length >= 3,
       *run(e, c, p) {
         if (!(yield* tributeCost(e, p, 3, (m) => raceOf(e, m) === 'Fiend'))) return;
-        yield* e.specialSummon(c.uid, p, 'atk');
+        yield* procSummon(e, c, p);
       },
     },
+    cannotSpecial: procOnly, // audit-09
     *onAnySummon(e, _w, wp, _m, mp, kind) {
       if (kind !== 'normal' || mp === wp) return;
       const t = e.createToken('Phantasm Token', wp, 'atk', true, { atk: 1000, def: 1000, level: 1, attribute: 'DARK', race: 'Fiend' });
       if (t) t.cannotAttack = true;
     },
     ignition: {
-      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid),
-      *run(e, m, p) {
-        const t = yield* pickMine(e, p, 'Raviel: Tribute which monster?', e.monsters(p).filter((x) => x.uid !== m.uid), true);
-        if (!t) return;
-        const atk = e.baseStats(t).atk;
+      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && !e.untributable(x)),
+      // audit-09: the Tribute is the cost, paid as the effect is activated.
+      *cost(e, m, p) {
+        const t = yield* pickMine(e, p, 'Raviel: Tribute which monster?', e.monsters(p).filter((x) => x.uid !== m.uid && !e.untributable(x)), true);
+        if (!t) return false;
+        tag(m).ravielAtk = e.baseStats(t).atk;
         e.log(p, `${e.player(p).name} Tributes ${t.name}`);
         yield* e.sendToGrave(t.uid, 'tribute');
+      },
+      *run(e, m) {
         const r = e.fieldCard(m.uid);
-        if (r?.faceUp) boostTurn(r, atk);
+        if (r?.faceUp) boostTurn(r, m.tags?.ravielAtk ?? 0);
       },
     },
   };
@@ -374,8 +409,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (!e.oncePerTurn('Reactor Slime:tokens', p) || e.player(p).mz.filter((z) => z === null).length < 2) return;
         e.useOnce('Reactor Slime:tokens', p);
         for (let i = 0; i < 2; i++) e.createToken('Slime Token', p, 'atk', true, { atk: 500, def: 500, level: 1, attribute: 'WATER', race: 'Aqua' });
-        // Summon lock: approximated as "no more Normal Summons/Sets this turn".
-        e.player(p).normalSummoned = true;
+        // audit-09: "you cannot Normal or Special Summon monsters for the rest of this turn, except Divine-Beast monsters" (the Egyptian Gods by name).
+        ((e.state.fx.summonLocks ??= []) as SummonLock[]).push({ p, turn: e.state.turn, normal: true, special: true, only: DIVINE });
       },
     },
     quick: {
@@ -409,12 +444,26 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Recurring Nightmare'] = twoToHand('Recurring Nightmare: add which 2 DARK monsters?', (e, c) => attrOfC(e, c) === 'DARK' && (info(e, c).def ?? 0) === 0);
 
+  const redArchfiend = (e: E9) => allMonsters(e).some((m) => m.faceUp && info(e, m).name === 'Red Dragon Archfiend');
+  const lv1Tuners = (e: E9, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && !!info(e, c).tuner && levelOf(e, c) === 1);
   E['Red Screen'] = contTrap({
     blocksAttack: (e, card, _m, attacker) => attacker !== ctrl(e, card),
     *onEndPhase(e, fc, p) {
       if (e.state.turnPlayer !== p) return;
       if (e.player(p).lp > 1000) e.payLp(p, 1000);
       else yield* e.destroy([fc.uid]);
+    },
+    // audit-09: target a Level 1 Tuner in your GY; destroy this card, then Special Summon it (needs "Red Dragon Archfiend" on the field).
+    // Offered as a Main Phase effect of the face-up card.
+    ignition: {
+      repeat: true,
+      can: (e, _c, p) => redArchfiend(e) && freeMZ(e, p) && lv1Tuners(e, p).length > 0,
+      *run(e, c, p) {
+        const t = yield* pickOne(e, p, 'Red Screen: Special Summon which Level 1 Tuner?', lv1Tuners(e, p), true);
+        if (!t || !redArchfiend(e) || !e.fieldCard(c.uid)) return;
+        yield* e.destroy([c.uid]);
+        if (!e.fieldCard(c.uid) && e.find(t.uid)?.loc.zone === 'gy' && freeMZ(e, p)) yield* e.specialSummon(t.uid, p, 'atk');
+      },
     },
   });
 
@@ -449,9 +498,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       can: (e, _c, p) => e.monsters(p).some((m) => isREBD(e, m)),
       *run(e, c, p) {
         if (!(yield* tributeCost(e, p, 1, (m) => isREBD(e, m)))) return;
-        yield* e.specialSummon(c.uid, p, 'atk');
+        yield* procSummon(e, c, p);
       },
     },
+    cannotSpecial: procOnly, // audit-09
     selfBonus: (e, m) => ({ atk: 300 * e.player(ctrl(e, m)).gy.filter((c) => isMonster(e, c) && raceOf(e, c) === 'Dragon').length, def: 0 }),
   };
 
@@ -469,6 +519,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Approximation: "sent from your hand to the GY by an opponent's card effect" is caught when that effect discards it.
   E['Regenerating Mummy'] = {
     *onDiscarded(e, card, _owner, byOpponent) {
       if (!byOpponent || e.find(card.uid)?.loc.zone !== 'gy') return;
@@ -534,6 +585,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!e.player(owner).deck.some(test) || !(yield* e.yesno(owner, 'Resonance Insect: add a Level 5 or higher Insect from the Deck?'))) return;
       yield* searchDeck(e, owner, 'Resonance Insect: add which Insect?', test);
     },
+    // audit-09: "If this card is banished: You can send 1 Insect monster from your Deck to the GY, except Resonance Insect."
+    *onBanished(e, card, owner) {
+      const test = (c: Card) => isMonster(e, c) && raceOf(e, c) === 'Insect' && c.name !== card.name;
+      if (!e.player(owner).deck.some(test) || !(yield* e.yesno(owner, 'Resonance Insect: send 1 Insect monster from your Deck to the GY?'))) return;
+      yield* deckToGrave(e, owner, 'Resonance Insect: send which Insect?', test);
+    },
   };
 
   const beetleDown = function* (e: E9, m: FieldCard, p: Pid): Step {
@@ -585,10 +642,30 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Rising Energy'] = boostTrap('Rising Energy: which monster gains 1500 ATK?', 1500, 0, false, (e, p) => discardCost(e, p, 1), (e, p) => e.player(p).hand.length > 0);
 
-  E['Rite of Spirit'] = reviveCard('Rite of Spirit: Special Summon which "Gravekeeper\'s" monster?', (_e, c) => named(c, "Gravekeeper's"), { trap: true });
+  // audit-09: its activation and effect are unaffected by Necrovalley (fx.ignoreGraveLock lets the target leave the GY).
+  {
+    const base = reviveCard('Rite of Spirit: Special Summon which "Gravekeeper\'s" monster?', (_e, c) => named(c, "Gravekeeper's"), { trap: true });
+    E['Rite of Spirit'] = {
+      ...base,
+      *resolve(e, link, p) {
+        e.state.fx.ignoreGraveLock = link.targetUid;
+        try {
+          yield* base.resolve!(e, link, p);
+        } finally {
+          e.state.fx.ignoreGraveLock = undefined;
+        }
+      },
+    };
+  }
 
-  // Its only monster effect adds a face-up "Zefra" from the Extra Deck, which never happens without Pendulum Summons.
-  E['Ritual Beast Tamer Zefrawendi'] = {};
+  // Its Normal Summon effect adds a face-up "Zefra" from the Extra Deck, which never happens without Pendulum Summons.
+  // audit-09: "You can only Special Summon Ritual Beast Tamer Zefrawendi(s) once per turn."
+  E['Ritual Beast Tamer Zefrawendi'] = {
+    selfSummonBlock: (e, c, p, how) => how === 'special' && !e.oncePerTurn(`${c.name}:ss`, p),
+    *onSpecialSummon(e, m, p) {
+      e.useOnce(`${m.name}:ss`, p);
+    },
+  };
 
   E['Ritual Weapon'] = h.equipFor((e, m) => info(e, m).sub === 'Ritual' && levelOf(e, m) <= 6, () => ({ atk: 1500, def: 1500 }));
 
@@ -714,22 +791,25 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     quick: {
       label: 'negate it',
       repeat: true,
-      can: (e, card, p, t, ctx) => {
+      can: (e, _card, p, t, ctx) => {
         const l = ctx.link;
-        if (!l) return false;
-        if (t === 'trap' && isTrap(e, l.card) && info(e, l.card).sub === 'Normal') return e.player(p).lp > 1000;
-        return t === 'spell' && isSpell(e, l.card) && l.targetUid === card.uid;
+        return !!l && t === 'trap' && isTrap(e, l.card) && info(e, l.card).sub === 'Normal' && e.player(p).lp > 1000;
       },
-      *cost(e, _card, p, _link, ctx) {
-        if (ctx.link && isTrap(e, ctx.link.card) && !payLp(e, p, 1000)) return false;
+      *cost(e, _card, p) {
+        if (!payLp(e, p, 1000)) return false;
       },
       *run(e, card, p, link) {
         if (!e.fieldCard(card.uid)?.faceUp) return;
         const target = (link.payload as { ctx?: ChainCtx }).ctx?.link;
-        if (!target) return;
-        negateLink(e, target, p);
-        if (isSpell(e, target.card) && e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]);
+        if (target) negateLink(e, target, p);
       },
+    },
+    // audit-09: "Negate the effects of any Spell Card that targets this card and destroy it" is mandatory, applied as the Spell resolves.
+    *onChainLink(e, m, p, link) {
+      if ((link.payload as { effect?: string } | undefined)?.effect || !isSpell(e, link.card) || link.targetUid !== m.uid) return;
+      e.log(p, `${m.name} negates ${link.card.name}`);
+      link.negated = true;
+      if (e.fieldCard(link.card.uid)) yield* e.destroy([link.card.uid]);
     },
   };
 
@@ -818,17 +898,31 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       tag(fc).eps = (fc.tags?.eps ?? 0) + 1;
       if (fc.tags!.eps >= 3) yield* e.destroy([fc.uid]);
     },
-    // Only the battle half of the draw trigger is scripted.
+    // Battle half: offered in the "destroyed by battle" window. Once per turn (shared with the effect half below).
     quick: {
       label: 'draw 1 card',
-      can: (e, _card, p, t, ctx) => {
+      can: (e, card, p, t, ctx) => {
         const b = e.state.battle;
         const a = b ? e.fieldCard(b.attacker) : null;
-        return t === 'destroyed' && ctx.prevController === other(p) && !!a && ctrl(e, a) === p && named(a, 'SPYRAL') && e.player(p).deck.length > 0;
+        return t === 'destroyed' && e.oncePerTurn(`SPYRAL Assault:${card.uid}`, p) && ctx.prevController === other(p) && !!a && ctrl(e, a) === p && named(a, 'SPYRAL') && e.player(p).deck.length > 0;
+      },
+      *cost(e, card, p) {
+        e.useOnce(`SPYRAL Assault:${card.uid}`, p);
       },
       *run(e, _card, p) {
         e.draw(p, 1);
       },
+    },
+    // audit-09: effect half: the resolving effect of a "SPYRAL" monster you control destroys a card on the field: you can draw 1.
+    *onAnyToGrave(e, fc, p, events) {
+      if (!e.oncePerTurn(`SPYRAL Assault:${fc.uid}`, p) || !e.player(p).deck.length) return;
+      const src = e.resolvingCard();
+      const srcOk = !!src && isMonster(e, src) && named(src, 'SPYRAL') && e.controller(src.uid) === p;
+      const byEffect = srcOk && events.some((x) => !x.byBattle && x.reason === 'destroyed' && ['mz', 'sz', 'field'].includes(x.from) && x.by === p);
+      if (!byEffect) return;
+      if (!(yield* e.yesno(p, 'SPYRAL MISSION - Assault: draw 1 card?'))) return;
+      e.useOnce(`SPYRAL Assault:${fc.uid}`, p);
+      e.draw(p, 1);
     },
     graveIgnition: {
       can: (e, _c, p) => freeMZ(e, p) && e.player(p).hand.some((c) => isMonster(e, c) && named(c, 'SPYRAL')),
@@ -852,8 +946,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* searchDeck(e, p, 'SPYRAL Resort: add which "SPYRAL" monster?', (c) => isMonster(e, c) && named(c, 'SPYRAL'));
       },
     },
-    // Its End Phase upkeep is paid in your Standby Phase (Field Spells get no End Phase hook).
-    *onStandby(e, fc, p) {
+    // audit-09: the upkeep is paid in your End Phase (Speed Duel runs Field Spells' End Phase effects).
+    *onEndPhase(e, fc, p) {
       if (e.state.turnPlayer !== p) return;
       const mons = e.player(p).gy.filter((c) => isMonster(e, c));
       const c = mons.length ? yield* pickOne(e, p, 'SPYRAL Resort: shuffle which monster from your GY into the Deck? (Cancel destroys SPYRAL Resort)', mons, true) : null;
@@ -941,20 +1035,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // audit-09: mandatory, at the start of the Damage Step (before the face-down monster is flipped, so its FLIP effect never activates).
   E['Sasuke Samurai'] = {
-    quick: {
-      label: 'destroy the face-down monster it attacks',
-      repeat: true,
-      can: (e, card, _p, t) => {
-        const b = e.state.battle;
-        const d = b && b.attacker === card.uid && b.target !== null ? e.fieldCard(b.target) : null;
-        return t === 'attack' && !!d && !d.faceUp && d.pos === 'def';
-      },
-      *run(e, card) {
-        const b = e.state.battle;
-        const d = b && b.attacker === card.uid && b.target !== null ? e.fieldCard(b.target) : null;
-        if (d && !d.faceUp) yield* e.destroy([d.uid]);
-      },
+    *startDamageStep(e, _a, target, p) {
+      if (target.faceUp || target.pos !== 'def' || !e.fieldCard(target.uid)) return;
+      e.log(p, 'Sasuke Samurai destroys the face-down monster');
+      yield* e.destroy([target.uid]);
     },
   };
 
@@ -1043,7 +1129,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     // Set card destroyed by the opponent's effect: destroy 1 monster.
     *onLeaveField(e, fc, controller, reason) {
-      if (fc.faceUp || reason !== 'destroyed' || e.actor !== other(controller)) return;
+      // audit-09: only the opponent's Spell/Trap effects.
+      const kind = e.resolvingKind();
+      if (fc.faceUp || reason !== 'destroyed' || e.actor !== other(controller) || (kind !== 'spell' && kind !== 'trap')) return;
       const t = yield* pickOne(e, controller, 'Security Orb: destroy which monster?', allMonsters(e));
       if (t && e.fieldCard(t.uid)) yield* e.as(controller, e.destroy([t.uid]));
     },
@@ -1055,28 +1143,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (e.player(p).lp > 900) e.payLp(p, 900);
       else yield* e.destroy([m.uid]);
     },
-    // Halved battle damage: the normal damage is suppressed when it attacks, then half is dealt.
-    attackCost: {
-      can: () => true,
-      *pay(e, m, p) {
-        const no = (e.state.fx.battleNo ?? 0) + 1;
-        (e.state.fx.noBattleDamageIn ??= [0, 0])[other(p)] = no;
-        tag(m).halfBattle = no;
-      },
-    },
-    *onBattleDamage(e, a, p) {
-      const b = e.state.battle;
-      if (!b || a.tags?.halfBattle !== e.state.fx.battleNo) return;
-      const t = b.target !== null ? e.fieldCard(b.target) : null;
-      const full = t ? e.atkOf(a) - (t.pos === 'atk' ? e.atkOf(t) : e.defOf(t)) : e.atkOf(a);
-      if (full > 0) e.damage(other(p), Math.floor(full / 2));
-    },
+    // audit-09: the battle damage this card inflicts to the opponent is halved (whether it attacks or is attacked).
+    damageMod: (e, m, p, damaged, amount, byEffect) => (!byEffect && damaged === other(p) && inBattle(e, m) ? Math.floor(amount / 2) : undefined),
+    // audit-09: an opponent's effect that targets it: roll a die as it resolves; on a 3, negate it and destroy that card.
+    onChainLink: dieGuard('Shadowknight Archfiend', [3]),
   };
 
   E['Shard of Greed'] = contSpell({
-    // Greed Counters come with each of your normal draws (counted in your Standby Phase).
-    *onStandby(e, fc, p) {
-      if (e.state.turnPlayer === p && fc.placedTurn < e.state.turn) fc.counters++;
+    // audit-09: a Greed Counter for each of your normal draws in the Draw Phase.
+    *onDrawPhase(e, fc) {
+      fc.counters++;
+      e.log(null, `A Greed Counter is placed on ${fc.name} (${fc.counters})`);
     },
     ignition: {
       repeat: true,
@@ -1092,8 +1169,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Shield Spear'] = boostTrap('Shield Spear: which monster gains 400 ATK/DEF?', 400, 400);
 
-  const isSpirit = (e: E9, c: Card) => /flipped face-up this turn/.test(info(e, c).desc) && /to the hand/.test(info(e, c).desc);
+  // audit-09: Spirit monsters by their text ("... Normal Summoned or flipped face-up ...: Return it to the hand").
+  const isSpirit = (e: E9, c: Card) => /Normal Summoned or flipped face-up/.test(info(e, c).desc) && /hand/.test(info(e, c).desc);
   E['Shinobird Pigeon'] = {
+    cannotSpecialSummon: true, // audit-09
     *onSummon(e, m) {
       tag(m).spiritTurn = e.state.turn;
     },
@@ -1109,6 +1188,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Approximation: reacts to its controller changing its battle position (card effects that change it do not report it).
   E['Shore Knight'] = {
     *onPositionChange(e, m, p) {
       if (!m.faceUp || !e.oncePerTurn(`Shore Knight:${m.uid}`, p)) return;
@@ -1192,6 +1272,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (e.player(p).lp > 500) e.payLp(p, 500);
       else yield* e.destroy([m.uid]);
     },
+    // audit-09: before an opponent's effect that targets it resolves: roll a die; on 1, 3 or 6 negate it and destroy that card.
+    onChainLink: dieGuard('Skull Archfiend of Lightning', [1, 3, 6]),
   };
 
   E['Skyscraper'] = {
@@ -1211,17 +1293,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const heroDeadInBattle = (e: E9, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Elemental HERO') && !isExtraOrRitual(e, c) && e.state.fx.heroBattleDead?.[c.uid]);
+  // audit-09: the engine records every card in a GY that got there by being destroyed by battle (fx.battleDead).
+  const heroDeadInBattle = (e: E9, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Elemental HERO') && !isExtraOrRitual(e, c) && !!e.state.fx.battleDead?.[c.uid]);
   E['Skyscraper 2 - Hero City'] = contSpell({
-    // Records the monsters destroyed by battle while it is face-up (never offered as an option).
-    quick: {
-      repeat: true,
-      can: (e, _c, _p, _t, ctx) => {
-        if (ctx.prevController !== undefined && ctx.uid !== undefined) (e.state.fx.heroBattleDead ??= {})[ctx.uid] = 1;
-        return false;
-      },
-      *run() {},
-    },
     ignition: {
       repeat: true,
       can: (e, c, p) => e.oncePerTurn(`Hero City:${c.uid}`, p) && freeMZ(e, p) && heroDeadInBattle(e, p).length > 0,
@@ -1229,7 +1303,6 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const t = yield* pickOne(e, p, 'Skyscraper 2: Special Summon which "Elemental HERO"?', heroDeadInBattle(e, p), true);
         if (!t) return;
         e.useOnce(`Hero City:${c.uid}`, p);
-        delete e.state.fx.heroBattleDead[t.uid];
         yield* e.specialSummon(t.uid, p, 'atk');
       },
     },
@@ -1287,9 +1360,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Solemn Wishes'] = contTrap({
-    // Normal draws are counted in your Standby Phase; other draws as they happen.
-    *onStandby(e, fc, p) {
-      if (e.state.turnPlayer === p && fc.placedTurn < e.state.turn) e.gainLp(p, 500);
+    // audit-09: the normal draw (onDrawPhase) and every other draw (onDraw).
+    *onDrawPhase(e, _fc, p) {
+      e.gainLp(p, 500);
     },
     onDraw(e, _c, p, drawer) {
       if (drawer === p) e.gainLp(p, 500);
@@ -1317,8 +1390,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!foe || e.controller(foe.uid) === e.controller(host.uid)) return { atk: 0, def: 0 };
       return e.baseStats(host);
     },
-    *onAnySummon(e, w, wp, m, mp) {
-      if (mp === wp && w.equippedTo !== undefined && m.uid !== w.equippedTo && e.fieldCard(w.uid)) yield* e.sendToGrave(w.uid, 'used');
+    // audit-09: checked after every action, so it also catches a monster gained by a change of control.
+    *stateCheck(e, w, wp) {
+      if (w.equippedTo === undefined || !e.monsters(wp).some((x) => x.uid !== w.equippedTo)) return;
+      e.log(wp, `${w.name} is sent to the GY`);
+      yield* e.sendToGrave(w.uid, 'used');
     },
   };
 
@@ -1463,6 +1539,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Sphere Kuriboh'] = {
+    // audit-09: can be banished from the GY as 1 of the monsters for a Ritual Summon (the Ritual Spells offer it).
+    ritualFromGrave: true,
     quick: {
       from: 'hand',
       label: 'send it to the GY: the attacker goes to Defense Position',
@@ -1479,7 +1557,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Spider Egg'] = {
-    canActivate: (e, _c, p, t, ctx) => opponentAttack(e, p, t, ctx) !== null && e.state.battle?.target === null && e.player(p).gy.filter((c) => isMonster(e, c) && raceOf(e, c) === 'Insect').length >= 3,
+    // audit-09: it needs room for all 3 Tokens.
+    canActivate: (e, _c, p, t, ctx) => opponentAttack(e, p, t, ctx) !== null && e.state.battle?.target === null && e.openMonsterZones(p) >= 3 && e.player(p).gy.filter((c) => isMonster(e, c) && raceOf(e, c) === 'Insect').length >= 3,
     *resolve(e, _l, p) {
       if (!e.state.battle) return;
       e.endBattle();
@@ -1523,6 +1602,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Spirit of the Pharaoh'] = {
     cannotNormalSummon: true,
+    // audit-09: "cannot be Special Summoned except by the effect of The First Sarcophagus": that card Summons it in the End Phase
+    // right after sending the three Sarcophagi to the GY, which the recent events show (approximation of "by its effect").
+    cannotSpecial: (e, _c, p, from) => from !== null && !(e.state.phase === 'EP' && (e.state.events ?? []).slice(-12).some((ev) => ev.kind === 'to-gy' && ev.uid !== undefined && e.find(ev.uid)?.card.name === 'The First Sarcophagus' && e.find(ev.uid)?.loc.player === p)),
     *onSpecialSummon(e, _m, p) {
       const list = e.player(p).gy.filter((c) => isNormalMonster(e, c) && raceOf(e, c) === 'Zombie' && levelOf(e, c) <= 2);
       const room = e.player(p).mz.filter((z) => z === null).length;
@@ -1563,11 +1645,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // audit-09: at the end of the Battle Phase (direct attacks included), checking for another "roid" monster then.
   E['Stealthroid'] = {
-    *afterBattle(e, a, _t, p) {
-      if (!e.monsters(p).some((m) => m.uid !== a.uid && m.faceUp && named(m, 'roid')) || !allST(e).length) return;
-      const c = yield* pickOne(e, p, 'Stealthroid: destroy which Spell/Trap at the end of the Battle Phase?', allST(e));
-      if (c) (e.state.fx.endOfBattle ??= []).push(c.uid);
+    *onBattlePhaseEnd(e, m, p) {
+      if (!m.attacked || e.state.turnPlayer !== p || !e.monsters(p).some((x) => x.uid !== m.uid && x.faceUp && named(x, 'roid')) || !allST(e).length) return;
+      const c = yield* pickOne(e, p, 'Stealthroid: destroy which Spell/Trap?', allST(e));
+      if (c && e.fieldCard(c.uid)) yield* e.destroy([c.uid]);
     },
   };
 
@@ -1583,21 +1666,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Steelswarm Sting'] = {
     *onSentToGrave(e, _card, owner, from) {
       if (from !== 'mz') return;
-      const list = targetable(e, faceUpMonsters(e)).filter((m) => ['Fusion', 'Ritual'].includes(info(e, m).sub));
+      const list = targetable(e, faceUpMonsters(e)).filter((m) => ['Fusion', 'Ritual', 'Synchro'].includes(info(e, m).sub)); // audit-09: Synchro too
       const t = yield* pickOne(e, owner, 'Steelswarm Sting: destroy which Ritual/Fusion Monster?', list);
       if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
     },
   };
 
+  // audit-09: the doubling is applied to the battle damage itself.
   E['Stone Statue of the Aztecs'] = {
-    *onBeingAttacked(e, target, _a, p) {
-      tag(target).aztecLp = e.player(other(p)).lp + 1;
-    },
-    *onAttacked(e, target, _a, p) {
-      const before = (target.tags?.aztecLp ?? 0) - 1;
-      if (target.tags) target.tags.aztecLp = 0;
-      const lost = before - e.player(other(p)).lp;
-      if (before >= 0 && lost > 0 && e.state.winner === null) e.damage(other(p), lost);
+    damageMod: (e, m, p, damaged, amount, byEffect) => {
+      const b = e.state.battle;
+      return !byEffect && damaged === other(p) && b?.target === m.uid && e.controller(b.attacker) === damaged ? amount * 2 : undefined;
     },
   };
 
@@ -1626,8 +1705,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     canActivate: (e, _c, p, t) => isMain(t) && e.player(p).mz.filter((z) => z === null).length >= 2,
     *resolve(e, _l, p) {
       for (let i = 0; i < 2; i++) e.createToken('Lamb Token', p, 'def', true, { atk: 0, def: 0, level: 1, attribute: 'EARTH', race: 'Beast' });
-      // "You cannot Summon other monsters this turn": approximated as no more Normal Summons/Sets.
-      e.player(p).normalSummoned = true;
+      // audit-09: "You cannot Summon other monsters the turn you activate this card (but you can Set)" (Flip Summons are not covered).
+      ((e.state.fx.summonLocks ??= []) as SummonLock[]).push({ p, turn: e.state.turn, normal: true, special: true, only: [] });
     },
   };
 
@@ -1664,6 +1743,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (x?.faceUp) setFaceDown(e, x);
       },
     },
+    // audit-09: "When a face-up monster you control is flipped face-down, if you control no face-up monsters: You can Special Summon
+    // this card from your hand in Defense Position." Seen right after the action that flipped it (the engine's fx.flippedDown).
+    *inHand(e, card, owner) {
+      const fd = e.state.fx.flippedDown as { uid: number; p: Pid; turn: number; seq: number } | undefined;
+      const seen = (e.state.fx.stalagmoSeen ??= {}) as Record<number, number>;
+      if (!fd || fd.turn !== e.state.turn || fd.p !== owner || seen[card.uid] === fd.seq) return;
+      seen[card.uid] = fd.seq;
+      if (faceUpMonsters(e, owner).length || !freeMZ(e, owner) || e.summonBlocked(owner, card, 'special', 'hand')) return;
+      if (!(yield* e.yesno(owner, 'Subterror Behemoth Stalagmo: Special Summon it from your hand in Defense Position?'))) return;
+      yield* e.specialSummon(card.uid, owner, 'def');
+    },
   };
 
   const cloudians = (e: E9, p: Pid) => [...e.player(p).hand, ...e.player(0).gy, ...e.player(1).gy].filter((c) => isMonster(e, c) && named(c, 'Cloudian') && levelOf(e, c) <= 4);
@@ -1696,10 +1786,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     const pool = superPool(e, p);
     const out: { fusion: Card; mats: FieldCard[][] }[] = [];
     for (const fusion of e.player(p).fusion) {
+      if (info(e, fusion).sub !== 'Fusion' || e.summonBlocked(p, fusion, 'special', 'fusion')) continue; // audit-09
       const ids = e.fusionMaterials(fusion.name);
-      if (!ids) continue;
-      const mats = ids.map((id) => pool.filter((m) => info(e, m).id === id));
-      if (assignable(mats)) out.push({ fusion, mats });
+      // audit-09: Fusion Monsters whose materials are kinds of monsters (fusionTests) work too.
+      const tests = ids ? undefined : getEffect(fusion.name)?.fusionTests;
+      const mats = ids ? ids.map((id) => pool.filter((m) => info(e, m).id === id)) : tests?.map((t) => pool.filter((m) => t(e, m)));
+      if (mats && assignable(mats)) out.push({ fusion, mats });
     }
     return out;
   };
@@ -1718,14 +1810,21 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         chosen.push(c.uid);
       }
       if (!(yield* discardCost(e, p, 1))) return false;
-      link.payload = { fusion: plan.fusion.uid, mats: chosen };
+      // audit-09: noResponse: neither player can activate cards or effects in response to its activation.
+      link.payload = { fusion: plan.fusion.uid, mats: chosen, noResponse: true };
     },
     *resolve(e, link, p) {
       const { fusion, mats } = link.payload as { fusion: number; mats: number[] };
       if (e.find(fusion)?.loc.zone !== 'fusion' || mats.some((u) => !e.fieldCard(u))) return;
-      for (const u of mats) yield* e.sendToGrave(u, 'used');
+      yield* e.together(
+        (function* (): Step {
+          for (const u of mats) yield* e.sendToGrave(u, 'used');
+        })(),
+      );
       if (!freeMZ(e, p)) return;
-      yield* e.specialSummon(fusion, p, 'atk');
+      (e.state.fx.fusionMatList ??= {})[fusion] = mats.slice();
+      // audit-09: a real Fusion Summon (tags.fusS), like Polymerization.
+      yield* e.specialSummon(fusion, p, 'atk', true, (fc) => void ((fc.tags ??= {}).fusS = 1));
       e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
     },
   };
@@ -1762,15 +1861,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Swarm of Locusts'] = swarm('st');
   E['Swarm of Scarabs'] = swarm('monster');
 
-  // Normal Summon without Tributing: done as a Summon from the hand that uses up your Normal Summon.
+  // audit-09: a real Normal Summon without Tributing (face-up only) while it is the only card in your hand.
   E['Swift Gaia the Fierce Knight'] = {
-    summonProc: {
-      can: (e, c, p) => e.player(p).hand.length === 1 && e.player(p).hand[0].uid === c.uid && !e.player(p).normalSummoned && freeMZ(e, p),
-      *run(e, c, p) {
-        e.player(p).normalSummoned = true;
-        yield* e.specialSummon(c.uid, p, 'atk');
-      },
-    },
+    tributeOffer: (e, src, p, card) => (src === null && e.player(p).hand.length === 1 && e.player(p).hand[0].uid === card.uid ? { need: 0 } : undefined),
   };
 
   E['Swing of Memories'] = reviveCard('Swing of Memories: Special Summon which Normal Monster?', (e, c) => isNormalMonster(e, c), {
@@ -1791,7 +1884,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const m = fieldOrNull(e, link.targetUid);
       if (!m?.faceUp || ctrl(e, m) !== p) return;
       const lv = levelOf(e, m);
-      const list = e.monsters(other(p)).filter((x) => !x.faceUp || levelOf(e, x) < lv);
+      // audit-09: Xyz and Link Monsters have no Level, so only face-down ones of them qualify.
+      const list = e.monsters(other(p)).filter((x) => !x.faceUp || (levelOf(e, x) > 0 && levelOf(e, x) < lv));
       const r = yield* pick(e, p, 'Tail Swipe: return up to 2 monsters to the hand', list, 1, 2);
       for (const x of r ?? []) if (e.fieldCard(x.uid)) yield* toHandSafe(e, x.uid);
     },

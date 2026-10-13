@@ -168,6 +168,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
         }
       },
     },
+    // Approximated: a Sacred Beast leaving the field is seen when it goes to the GY (not when it is banished or returned).
     *onAnyToGrave(e, _fc, p, events) {
       if (!events.some((v) => v.from === 'mz' && v.faceUp && v.controller === p && LORDS.includes(v.card.name))) return;
       ((e.state.fx.noDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
@@ -426,8 +427,12 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       const { level, copied } = link.payload as { level: number; copied: string };
       e.log(p, `Copy Knight becomes a copy of ${copied} (Level ${level})`);
       yield* trapMonster(e, link.card, p, level, 'Warrior', 'LIGHT');
+      const me = e.fieldCard(link.card.uid);
+      if (me && copied) ((e.state.fx.copyKnight ??= {}) as Record<number, string>)[me.uid] = copied; // audit-02: "with the same name"
     },
     baseStats: () => ({ atk: 0, def: 0 }),
+    // audit-02: approximated, the copied name counts where card names on the field are read by name (Fusion Materials).
+    fieldName: (e, m) => (e.find(m.uid)?.loc.zone === 'mz' ? ((e.state.fx.copyKnight ?? {}) as Record<number, string>)[m.uid] : undefined),
   };
 
   E["Dragon's Rage"] = {
@@ -460,6 +465,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
   };
 
+  // Approximated: "This card's name becomes "Ring of Destruction" while on the field" is not modelled (no card in the pool reads it).
   E['Loop of Destruction'] = {
     ...continuousTrap(),
     *onAnyToGrave(e, fc, p, events) {

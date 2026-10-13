@@ -138,7 +138,7 @@ const toMain = (e: Engine) => {
   place(e, 0, 'Evoltile Lagosucho');
   const { can, fc } = proc(e, 0, 'Hi-Speedroid Puzzle');
   check(can && !!fc && fc.tags?.synS === 1, 'Synchro: summoned with Tuner + Level 3');
-  check(e.player(0).gy.some((c) => c.name === 'Lady of the Lake') && e.player(0).gy.some((c) => c.name === 'Evoltile Lagosucho') && e.monsters(0).length === 2, 'Synchro: materials went to the GY, the other monster stayed');
+  check(e.player(0).removed.some((c) => c.name === 'Lady of the Lake') && e.player(0).gy.some((c) => c.name === 'Evoltile Lagosucho') && e.monsters(0).length === 2, 'Synchro: materials left the field (Lady of the Lake is banished, as its text says), the other monster stayed');
 }
 // Link: 2+ Reptile monsters -> Cosmic Slicer Zer'oll.
 {

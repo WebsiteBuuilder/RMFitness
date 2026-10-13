@@ -120,6 +120,9 @@ p {
   color: var(--ink);
   font-size: 18px;
   padding: 0 6px;
+  /* the pixel font draws × as an "I": the close button uses a plain font */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 700;
 }
 .win-body {
   padding: 8px 10px;

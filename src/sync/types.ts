@@ -14,6 +14,8 @@ export interface SyncAdapter {
   subscribe(cb: (events: LoggedEvent[]) => void): () => void;
   onStatus(cb: (status: SyncStatus, detail: string) => void): () => void;
   close(): void;
+  /** starts over after an 'error' status (online rooms) */
+  retry?(): void;
 }
 
 /** Shared bookkeeping for adapters: listeners and a status value. */
