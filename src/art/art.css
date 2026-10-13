@@ -232,11 +232,13 @@
     transform: translateX(28px);
   }
 }
+/* the plate wipes in fast and its text comes with it (a slow wipe with the text still hidden
+   read as a stray empty teal box on a stalled frame) */
 @keyframes art-plate {
   0% {
     transform: skewX(-14deg) scaleX(0);
   }
-  14%,
+  8%,
   100% {
     transform: skewX(-14deg) scaleX(1);
   }
@@ -252,11 +254,11 @@
 }
 @keyframes art-text {
   0%,
-  6% {
+  2% {
     opacity: 0;
     transform: translateX(-26px);
   }
-  22% {
+  10% {
     opacity: 1;
     transform: none;
   }
@@ -615,6 +617,30 @@
 .art3d-on .tmid .tturn,
 .art3d-on .tmid .thint {
   text-shadow: 0 0 3px #000, 0 1px 4px #000c;
+}
+/* The tilted field (.tmat) is its own stacking layer, so the row inside it can never rise over
+   the figures canvas: TouchDuel draws a flat copy (.tmid-float) at the row's place, outside the
+   field, over the figures; the row in the field only keeps the space. */
+.tmid-float {
+  display: none;
+}
+.art3d-on .tmid.tmid-float {
+  display: flex;
+  position: fixed;
+  z-index: 3;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.art3d-on .tmat > .tmid {
+  visibility: hidden;
+}
+/* While a cinematic is on, the Life Points bars (raised over the stage, z 61) are opaque: a card
+   flying in from the opponent's hand passes under the bar, not visibly through it. */
+.art-on .duel .tbar.top {
+  background: linear-gradient(90deg, #0b1030, #1b2560);
+}
+.art-on .duel .tbar.bottom {
+  background: linear-gradient(90deg, #1b2560, #0b1030);
 }
 /* a direct hit: the defending duelist's Life Points plate jolts (raised over the dim) */
 .art-lp-shake,

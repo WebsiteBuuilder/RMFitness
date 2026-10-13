@@ -57,7 +57,36 @@ interface Pending {
   cine: boolean;
   /** the new state asks the player something: show it when the chain is over, not mid-way */
   prompt: boolean;
+  /**
+   * The monsters this chain summons, each with the count of commits (impacts, landings)
+   * the chain reaches by its own landing: an earlier commit (a Tribute's destruction
+   * before the Tribute Summon, say) shows the board without them, so a summoned card
+   * never sits in its zone before its own cinematic lands it.
+   */
+  lands?: { uid: number; at: number }[];
+  /** commits reached so far */
+  commits?: number;
 }
+
+/** The cinematics that mark a commit (runtime: tl.commit), in chain order. */
+const COMMITS = new Set<Cue['kind']>(['summon', 'hit', 'damage', 'destroy']);
+
+/** Where each monster summoned by `cues` lands, counted in commits (see Pending.lands). */
+export function landings(cues: Cue[]): { uid: number; at: number }[] {
+  let n = 0;
+  const out: { uid: number; at: number }[] = [];
+  for (const c of cues) {
+    if (COMMITS.has(c.kind)) n++;
+    if (c.kind === 'summon' && n > 1) out.push({ uid: c.card.uid, at: n });
+  }
+  return out;
+}
+
+/** `s` without the monsters `uids` on the field (their zones as empty). */
+const without = (s: DuelState, uids: Set<number>): DuelState => ({
+  ...s,
+  players: s.players.map((p) => (p.mz.some((m) => m && uids.has(m.uid)) ? { ...p, mz: p.mz.map((m) => (m && uids.has(m.uid) ? null : m)) } : p)) as DuelState['players'],
+});
 
 /** Spots a change in the engine's (in-place) state. */
 const signature = (s: DuelState) => {
@@ -228,7 +257,8 @@ export class Flow {
       });
       // the board keeps showing the duel as it was before this chain
       if (!this.pending.length) this.show(before);
-      this.pending.push({ id: batch, state: this.snap, cine: true, prompt: humanPrompt(real, seat) });
+      const lands = landings(cues);
+      this.pending.push({ id: batch, state: this.snap, cine: true, prompt: humanPrompt(real, seat), lands, commits: 0 });
       this.outbox.push({ cues, batch, scales });
       // the computer waits from this very moment; the field figures in it step aside
       setArtBusy(true);
@@ -268,7 +298,19 @@ export class Flow {
   commit(batch: number, end: boolean) {
     const i = this.pending.findIndex((p) => p.id === batch);
     if (i < 0) return;
-    if (!end && this.pending[i].prompt) {
+    const p = this.pending[i];
+    if (!end && p.lands?.length) {
+      // a monster of this chain has not landed yet: the board moves on without it
+      const n = (p.commits = (p.commits ?? 0) + 1);
+      const hide = new Set(p.lands.filter((l) => l.at > n).map((l) => l.uid));
+      if (hide.size && i === 0) {
+        const s = this.shown;
+        this.show(p.prompt && s ? withLp(s, p.state) : without(p.state, hide));
+        this.rerender();
+        return;
+      }
+    }
+    if (!end && p.prompt) {
       // The choice waits for the end of the chain, but the blow's damage lands now:
       // the Life Points tick down at the hit, not all at once when the stage closes.
       const s = this.shown;

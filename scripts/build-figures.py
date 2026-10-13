@@ -81,6 +81,13 @@ FILL_HOLES_CARD = {
     3657444: 0.02,    # Cyber Valley: coiled body
     23893227: 0.02,   # Cyber Dragon Core: coiled tail
 }
+# Relief per card: (weight of the depth guess against the rounded pillow, blur of the depth in px).
+# Where the depth guess steps hard inside the subject (Dark Magician Girl: her hat brim stands
+# far in front of her face and hair), the displaced mesh tears into a sheared slab across the
+# face with jagged strands; a softer, mostly pillow-shaped relief keeps the bust whole.
+RELIEF_CARD = {
+    38033121: (0.2, 6.0),   # Dark Magician Girl: hat brim vs face
+}
 # Feather (px of the 256 map) where the matte meets the artwork box, so a subject cut by the
 # frame fades out instead of ending in a straight edge with square corners.
 BORDER_FEATHER = 10.0
@@ -160,7 +167,7 @@ def matte_of(d, art=None, lo_k=0.7, cid=None):
     return np.clip(a, 0, 1)
 
 
-def relief_of(d, a):
+def relief_of(d, a, cid=None):
     """Depth inside the subject, blended with a rounded 'pillow' so thin parts still have body."""
     inside = a > 0.5
     if inside.sum() < 10:
@@ -169,7 +176,12 @@ def relief_of(d, a):
     rel = np.clip((d - lo) / (hi - lo + 1e-6), 0, 1)
     dist = ndi.distance_transform_edt(inside)
     pillow = cv2.GaussianBlur(((dist / (dist.max() + 1e-6)) ** 0.6).astype(np.float32), (0, 0), 3)
-    return np.clip(0.55 * rel + 0.45 * pillow, 0, 1) * (a > 0.02)
+    w, blur = RELIEF_CARD.get(cid, (0.55, 0.0))
+    if blur > 0:
+        # blurred inside the subject only (the background does not bleed into the edge)
+        m = inside.astype(np.float32)
+        rel = cv2.GaussianBlur(rel * m, (0, 0), blur) / np.maximum(cv2.GaussianBlur(m, (0, 0), blur), 1e-3)
+    return np.clip(w * rel + (1 - w) * pillow, 0, 1) * (a > 0.02)
 
 
 def palette_of(art, a):
@@ -240,7 +252,7 @@ def main():
         if not usable(a):
             done.pop(cid, None)
             continue
-        r = (relief_of(d, a) * 255).astype(np.uint8)
+        r = (relief_of(d, a, cid) * 255).astype(np.uint8)
         rgba = np.dstack([r, r, r, (a * 255).astype(np.uint8)])
         Image.fromarray(rgba, 'RGBA').save(os.path.join(out, '%d.webp' % cid), 'WEBP', quality=80, alpha_quality=80, method=6)
         done[cid] = palette_of(art, a)

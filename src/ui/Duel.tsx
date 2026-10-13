@@ -11,6 +11,7 @@ import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
+import { artBusy, onArtChange } from '../art/cues';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -106,7 +107,27 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (state.winner !== null && !finished.current) {
       finished.current = true;
     }
+    // the result goes up: no card inspector, info box or pile left open over it
+    if (state.winner !== null) {
+      setSel(null);
+      setMode(null);
+      setInfo(null);
+      setPile(null);
+    }
   }, [state.winner]);
+
+  // a cinematic starts: a card inspector or info box open over the board closes (the stage takes the screen)
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  useEffect(
+    () =>
+      onArtChange(() => {
+        if (!artBusy() || modeRef.current) return;
+        setSel(null);
+        setInfo(null);
+      }),
+    [],
+  );
 
   /** The last move sent, so a double tap can't send it twice before the game answers (online it takes a moment). */
   const sent = useRef<{ view: SessionView; at: number } | null>(null);

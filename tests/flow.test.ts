@@ -330,6 +330,43 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   ok(once('Burst Stream!') && !once('Burst Stream!') && once('Dark Magic!'), 'the same banner twice at once shows once');
 }
 
+{
+  // a Tribute Summon: the Tribute's destruction lands first, the summoned monster stays off the board until its own landing
+  const mid = SPEED.find((c) => c.kind === 'monster' && c.sub === 'Normal' && (c.level ?? 0) >= 5 && (c.level ?? 0) <= 6)!;
+  const deck = [...deckOf(strongest[0].name, 10), ...deckOf(mid.name, 10)];
+  const e = new Engine(DB);
+  e.apply({ type: 'START', first: 0, seed: 3, names: ['Yami', 'Jammy'], decks: [deck, deckOf(strongest[1].name)], fusions: [[], []], mode: 'speed', skills: [null, null] });
+  const low = e.player(0).hand.find((c) => c.name === strongest[0].name);
+  ok(!!low, 'tribute test: a low monster in hand');
+  e.apply({ type: 'SUMMON', player: 0, uid: low!.uid, zone: 0, pos: 'atk', faceUp: true });
+  e.apply({ type: 'END_TURN', player: 0 });
+  e.apply({ type: 'END_TURN', player: 1 });
+  const big = e.player(0).hand.find((c) => c.name === mid.name);
+  ok(!!big, 'tribute test: a Level 5/6 monster in hand');
+  // Cinematics: All (the opponent's everyday summons play too)
+  const g = globalThis as { localStorage?: unknown };
+  const saved = g.localStorage;
+  g.localStorage = { getItem: (k: string) => (k === 'eds.cinematics' ? 'all' : null) };
+  const f = new Flow();
+  f.update(e.state, 1);
+  e.apply({ type: 'SUMMON', player: 0, uid: big!.uid, zone: 1, pos: 'atk', faceUp: true });
+  e.apply({ type: 'CHOOSE', player: 0, picks: [0] });
+  const onField = (s: DuelState) => s.players[0].mz.some((m) => m?.uid === big!.uid);
+  ok(onField(e.state), 'the engine Tribute Summoned it');
+  ok(!onField(f.update(e.state, 1)), 'while the chain plays, the summoned monster is not on the board');
+  f.drawn();
+  const p = played[played.length - 1];
+  ok(p.cues.map((c) => c.kind).join() === 'destroy,summon', `the chain is destroy (the Tribute) → summon (${p.cues.map((c) => c.kind).join()})`);
+  f.commit(p.batch, false);
+  const mid1 = f.update(e.state, 1);
+  ok(!onField(mid1) && !mid1.players[0].mz.some((m) => m?.uid === low!.uid), "the Tribute's destruction lands: the Tribute leaves, the summoned monster is still not there");
+  ok(f.holding, 'the board is still held for the landing');
+  f.commit(p.batch, false);
+  ok(onField(f.update(e.state, 1)) && !f.holding, 'the monster appears as it lands');
+  f.dispose();
+  g.localStorage = saved;
+}
+
 if (fails) {
   console.log(`${fails} FAILED`);
   process.exit(1);
