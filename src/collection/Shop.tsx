@@ -6,7 +6,7 @@ import { CHIP_CAP, COPIES, owned, unplayableReason, type SpeedSave } from '../ed
 import { CardImg, CardInfoPanel } from '../ui/CardImg';
 import { Menu, Overlay, Win } from '../ui/Window';
 import { playBlip, playHit, playSummon, playWin } from '../ui/sound';
-import { RarityChip } from '../level/CardLevels';
+import { RarityChip, chipText } from '../level/CardLevels';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import {
   BREAK_SHARDS,
@@ -31,6 +31,7 @@ import {
   todaysPrizes,
   type Opened,
 } from './economy';
+import { oddsTable } from './finish';
 import { RARITIES, RARITY_SHORT, WINS_PER_SET, boosterSets, rarityIn, rarityOf, setByName, shortSetName, unlockedSets, type Rarity } from './sets';
 
 const setCards = (name: string): [string, Rarity][] => setByName(name)?.cards ?? [];
@@ -72,10 +73,10 @@ export function ChipBar({ save, cpus = [] }: { save: SpeedSave; cpus?: string[] 
               ◆ <b>Shards</b> come from breaking spare copies. {SHARDS_PER_CHIP} make a chip.
             </p>
             <p>
-              🂠 <b>Packs</b> come from your first win against each computer duelist each day, your first win over each campaign duelist, and up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns).
+              🂠 <b>Packs</b> come from your first win against each computer duelist each day, your first win over each campaign duelist, <b>every online win</b> over your brother, and up to 3 wins a day over your brother on one phone (duels of {RIVAL_MIN_TURNS}+ turns).
             </p>
             <p class="today">
-              <b>Still to win today:</b> {left.cpu.length ? `a pack from ${left.cpu.length} computer duelist${left.cpu.length === 1 ? '' : 's'}` : 'every computer duelist is beaten'}, {left.rivalPacks} rival pack{left.rivalPacks === 1 ? '' : 's'}
+              <b>Still to win today:</b> {left.cpu.length ? `a pack from ${left.cpu.length} computer duelist${left.cpu.length === 1 ? '' : 's'}` : 'every computer duelist is beaten'}, a pack for every online win, {left.rivalPacks} one-phone rival pack{left.rivalPacks === 1 ? '' : 's'}
               {left.rivalChip ? ' and the rival chip' : ''}.
             </p>
             <Menu items={[{ label: 'OK', onPick: () => setHelp(false) }]} />
@@ -143,6 +144,7 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
 
 /** The set's showpiece card (its rarest), drawn on the pack. */
 const coverOf = (cards: [string, Rarity][]) => [...cards].sort((a, b) => RARITIES.indexOf(b[1]) - RARITIES.indexOf(a[1]) || a[0].localeCompare(b[0]))[0]?.[0];
+const best = (f: number[]) => Math.max(0, ...f);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** How many of a set's cards the profile owns. */
@@ -192,6 +194,7 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
               <span class="pack-logo">SPEED DUEL</span>
               <span class="pack-name">{shortSetName(s.name)}</span>
               <span class="pack-note">{unlocked ? `${c.have}/${c.of} owned` : i === open.length ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
+              <span class="pack-odds">OVER 1 in {OVER_ONE_IN}</span>
             </button>
           );
         })}
@@ -204,7 +207,8 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
       <p class="pity">
         ✦ Ultra Rare or better guaranteed within <b>{plural(pityLeft(save), 'pack')}</b>
       </p>
-      <p class="hint">A pack has 5 cards: 4 Commons and one hit hiding among them: Rare 55%, Super Rare 30%, Ultra Rare 10%, Secret Rare 5% (the nearest rarity when the set has none). Copies past 3 break into shards by themselves.</p>
+      <p class="hint">A pack has 5 cards: 4 Commons and one hit hiding among them, printed Rare 55%, Super Rare 30%, Ultra Rare 10%, Secret Rare 5% (the nearest rarity when the set has none). Copies past 3 break into shards by themselves.</p>
+      <DropOdds />
       {pick && (
         <Overlay onClose={() => setPick(null)}>
           <Win title={shortSetName(pick)} onClose={() => setPick(null)}>
@@ -221,16 +225,66 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
   );
 }
 
+const ODDS = oddsTable();
+const OVER_ONE_IN = ODDS[ODDS.length - 1].oneIn;
+const pct = (n: number) => `${n < 1 ? n.toFixed(2).replace(/0$/, '') : n}%`;
+
+/** The fixed drop odds every pack carries: the rarity each card can come out at. */
+export function DropOdds() {
+  return (
+    <div class="drop-odds" aria-label="Drop odds">
+      <p class="drop-title">
+        <b>Drop odds</b> · the rarity each card comes out at
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Rarity</th>
+            <th>Each card</th>
+            <th>This or better in a pack</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ODDS.slice(1)
+            .reverse()
+            .map((o) => (
+              <tr key={o.tier} class={`od-${TIERS[o.tier].id}`}>
+                <td>
+                  <span class={`lv-chip lv-${TIERS[o.tier].id}`}>{chipText(TIERS[o.tier].id)}</span> {o.name}
+                </td>
+                <td>{pct(o.perCard)}</td>
+                <td>{o.perPack >= 40 ? `${Math.round(o.perPack)}% of packs` : `1 in ${o.oneIn} packs`}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+      <p class="drop-foot">The rest come out Normal. A card never comes out below the rarity its set prints it at, and pulling one lifts that card's rarity to at least what it came out at.</p>
+    </div>
+  );
+}
+
+/** Finishes worth a fanfare: Glossy, Royal, Overframe. */
+const BIG_FINISH = 4;
+
 function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: number; onAgain: (all: boolean) => void; onDone: () => void }) {
   const [torn, setTorn] = useState(false);
   const [flipped, setFlipped] = useState<boolean[]>(() => opened.cards.map(() => false));
   const [flash, setFlash] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const rar = opened.cards.map((n) => rarityIn(opened.set, n));
+  const fin = opened.cards.map((_, i) => opened.finishes?.[i] ?? 0);
+  const special = (i: number) => isHit(rar[i]) || fin[i] >= 3;
   const all = flipped.every(Boolean);
   const flipOne = (i: number, cur: boolean[]) => {
     const r = rar[i];
-    if (isHit(r)) {
+    const f = fin[i];
+    if (f >= BIG_FINISH) {
+      setFlash(`fin-${TIERS[f].id}`);
+      window.setTimeout(() => setFlash(null), f === TIERS.length - 1 ? 1600 : 1100);
+      buzz(f === TIERS.length - 1 ? [80, 40, 80, 40, 200] : [60, 40, 120]);
+      playWin();
+      window.setTimeout(playSummon, 250);
+    } else if (isHit(r) || f === 3) {
       setFlash(RCLASS[r]);
       window.setTimeout(() => setFlash(null), 900);
       buzz(r === 'Secret Rare' ? [60, 40, 120] : r === 'Ultra Rare' ? [50, 30, 80] : 40);
@@ -245,10 +299,14 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
   };
   // Flip all: the Commons first, then a beat, then the hit.
   const flipAll = () => {
-    const commons = flipped.map((f, i) => f || !isHit(rar[i]));
+    const commons = flipped.map((f, i) => f || !special(i));
     playBlip();
     setFlipped(commons);
-    const hits = rar.map((r, i) => (isHit(r) && !flipped[i] ? i : -1)).filter((i) => i >= 0);
+    // The hits flip last, best finish last.
+    const hits = rar
+      .map((_, i) => (special(i) && !flipped[i] ? i : -1))
+      .filter((i) => i >= 0)
+      .sort((a, b) => fin[a] - fin[b]);
     if (hits.length) window.setTimeout(() => setFlipped((cur) => hits.reduce((c, i) => flipOne(i, c), cur)), 700);
   };
   const tear = () => {
@@ -276,7 +334,7 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
               {opened.cards.map((n, i) => {
                 const r = rar[i];
                 return (
-                  <button key={i} class={`rv ${flipped[i] ? 'up' : ''} ${RCLASS[r]} ${isHit(r) ? 'hit' : ''}`} style={{ animationDelay: `${i * 90}ms` }} onClick={() => flip(i)}>
+                  <button key={i} class={`rv ${flipped[i] ? 'up' : ''} ${RCLASS[r]} ${special(i) ? 'hit' : ''} ${fin[i] >= BIG_FINISH ? `fin fin-${TIERS[fin[i]].id}` : ''}`} style={{ animationDelay: `${i * 90}ms` }} onClick={() => flip(i)}>
                     <span class="rv-in">
                       <span class="rv-back">
                         <i class="sd-back" />
@@ -284,6 +342,7 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
                       <span class="rv-face">
                         <CardImg name={n} />
                         <span class="rv-r">{RARITY_SHORT[r]}</span>
+                        {fin[i] > 0 && <span class={`rv-fin lv-chip lv-${TIERS[fin[i]].id}`}>{chipText(TIERS[fin[i]].id)}</span>}
                         {opened.fresh.includes(n) && <span class="rv-new">NEW</span>}
                       </span>
                     </span>
@@ -291,6 +350,7 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
                 );
               })}
             </div>
+            {all && best(fin) >= 3 && <p class="rv-best">Best pull: {TIERS[best(fin)].name}!</p>}
             {all && opened.shards > 0 && <p class="hint">Copies past 3 broke into {opened.shards} shards.</p>}
             <Menu
               items={
@@ -321,7 +381,10 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
 function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void }) {
   const set = opened[0].set;
   const fresh = new Set(opened.flatMap((o) => o.fresh));
-  const cards = opened.flatMap((o) => o.cards).sort((a, b) => RARITIES.indexOf(rarityIn(set, b)) - RARITIES.indexOf(rarityIn(set, a)));
+  const cards = opened
+    .flatMap((o) => o.cards.map((n, i) => ({ n, f: o.finishes?.[i] ?? 0 })))
+    .sort((a, b) => b.f - a.f || RARITIES.indexOf(rarityIn(set, b.n)) - RARITIES.indexOf(rarityIn(set, a.n)));
+  const top = best(cards.map((c) => c.f));
   const shards = opened.reduce((t, o) => t + o.shards, 0);
   return (
     <Overlay>
@@ -329,12 +392,14 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
         <p>
           <b>{opened.length} packs</b> of {shortSetName(set ?? '')}: {fresh.size} new card{fresh.size === 1 ? '' : 's'}
           {shards ? `, ${shards} shards from extra copies` : ''}.
+          {top >= 3 && ` Best pull: ${TIERS[top].name}!`}
         </p>
         <div class="binder">
-          {cards.map((n, i) => (
-            <span key={i} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]}`}>
+          {cards.map(({ n, f }, i) => (
+            <span key={i} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`}>
               <CardImg name={n} />
               <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
+              {f > 0 && <span class={`rv-fin lv-chip lv-${TIERS[f].id}`}>{chipText(TIERS[f].id)}</span>}
               {fresh.has(n) && <span class="bnew">NEW</span>}
             </span>
           ))}

@@ -4,7 +4,9 @@
 //
 // - Decks (except "Anything goes" decks) can only use copies the profile owns.
 // - Packs are prizes: 3 welcome packs, the first win against each computer duelist each
-//   day, up to 3 wins a day against another player, and whatever the campaign hands out.
+//   day, every online win against another player, up to 3 one-phone wins a day against
+//   another player, and whatever the campaign hands out. Every card in a pack rolls the
+//   rarity it comes out at (see finish.ts).
 // - Duel Chips are rare on purpose: at most 1 a day from beating another player, plus the
 //   campaign's own (first 3-star win, Labyrinth bosses). 10 shards also make a chip, and
 //   shards only come from breaking spare copies. A profile holds at most CHIP_CAP.
@@ -12,6 +14,7 @@
 import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
+import { rollFinishes, withFinishes } from './finish';
 import { openPack, rarityIn, rarityOf, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
@@ -244,6 +247,8 @@ export interface Opened {
   fresh: string[];
   /** shards from copies past 3 */
   shards: number;
+  /** the rarity each card came out at (a TIERS index, see finish.ts) */
+  finishes: number[];
 }
 
 /** Opens one of the profile's unopened packs from a set it has unlocked. */
@@ -255,8 +260,9 @@ export function openOwnedPack(s: SpeedSave, setName: string, seed = Date.now()):
   const cards = openPack(setName, [], seed, pityLeft(s) <= 1 ? 'Ultra Rare' : 'Rare');
   const big = cards.some((n) => ['Ultra Rare', 'Secret Rare'].includes(rarityIn(setName, n)));
   const fresh = [...new Set(cards.filter((n) => owned(s, n) === 0))];
+  const finishes = rollFinishes(setName, cards, seed);
   const { save, shards } = breakExtras(withCards({ ...s, packs: packsOf(s) - 1, dry: big ? 0 : (E(s).dry ?? 0) + 1 } as EconSave, cards));
-  return { save, set: setName, cards, fresh, shards };
+  return { save: withFinishes(save, cards, finishes), set: setName, cards, fresh, shards, finishes };
 }
 
 export const withPacks = (s: SpeedSave, n: number): SpeedSave => ({ ...s, packs: packsOf(s) + n }) as EconSave;
@@ -275,6 +281,8 @@ export interface RivalDuel {
   turns: number;
   /** both players are profiles with collection decks, so the duel pays prizes */
   counts: boolean;
+  /** played over the internet (each on their own phone): every win pays a pack, no daily cap */
+  online?: boolean;
 }
 
 /** A Link Battle against another player: the head-to-head record and the day's prizes. */
@@ -289,7 +297,10 @@ export function rivalResult(s: SpeedSave, r: RivalDuel, now = Date.now()): { sav
   // A quick surrender doesn't pay: prizes need a real duel of a few turns.
   const d = { ...daily(s, now) };
   if (r.result === 'w' && r.counts && r.turns >= RIVAL_MIN_TURNS && !d.spent) {
-    if (d.rivalPacks < RIVAL_PACKS_PER_DAY) {
+    if (r.online) {
+      next = withPacks(next, 1);
+      lines.push(`A booster pack for beating ${r.opp} online`);
+    } else if (d.rivalPacks < RIVAL_PACKS_PER_DAY) {
       d.rivalPacks++;
       next = withPacks(next, 1);
       lines.push(`A booster pack for beating ${r.opp}`);
