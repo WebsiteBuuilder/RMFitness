@@ -166,6 +166,7 @@ export function deleteProfile(id: string) {
   writeProfiles(loadProfiles().filter((p) => p.id !== id));
   eraseSave(id);
   removeKey(`eds.speed.${id}`); // the profile's Speed Duel decks and record
+  removeKey(`eds.speedsolo.${id}`); // Speed Duel campaign and Labyrinth progress
 }
 
 export function loadSave(id: string): SaveFile | null {

@@ -56,6 +56,7 @@ export function speedOpponents(): SpeedOpponent[] {
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels';
 
 export function SpeedHub({
+  onSolo,
   profile,
   save,
   onSave,
@@ -63,6 +64,8 @@ export function SpeedHub({
   onCpu,
   onLink,
 }: {
+  /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
+  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice') => void;
   profile: Profile;
   save: SpeedSave;
   onSave: (s: SpeedSave) => void;
@@ -122,7 +125,10 @@ export function SpeedHub({
         )}
         <Menu
           items={[
-            { label: 'Duel the Computer', note: 'Yugi, Kaiba, Joey, Mai and more', onPick: () => setSub('cpu') },
+            { label: 'The Millennium Road', note: 'story campaign: earn cards, beat the bosses', onPick: () => onSolo('campaign') },
+            { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
+            { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
+            { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
@@ -237,8 +243,11 @@ const PAGE = 60;
 type Tab = 'cards' | 'main' | 'extra' | 'skill';
 type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
 
-/** Deck editor: every Speed Duel card, 3 copies each, plus the deck's Skill. */
-export function SpeedDeckEdit({ deck, onChange, onBack }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void }) {
+/**
+ * Deck editor: every Speed Duel card, 3 copies each, plus the deck's Skill. With a
+ * `collection`, only cards (and Skills) owned there are offered, up to the copies owned.
+ */
+export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number> }) {
   const [tab, setTab] = useState<Tab>('cards');
   const [kind, setKind] = useState<Kind>('all');
   const [q, setQ] = useState('');
@@ -248,8 +257,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack }: { deck: SpeedDeck; onC
   const [sel, setSel] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const pool = useMemo(() => speedCards(), []);
-  const skills = useMemo(() => skillCards(), []);
+  const pool = useMemo(() => speedCards().filter((c) => !collection || (collection[c.name] ?? 0) > 0), [collection]);
+  const skills = useMemo(() => skillCards().filter((c) => !collection || (collection[c.name] ?? 0) > 0), [collection]);
+  const ownedCopies = (n: string) => (collection ? Math.min(COPIES, collection[n] ?? 0) : COPIES);
   const problems = speedDeckProblems(deck);
   const copies = (n: string) => deck.main.filter((x) => x === n).length + deck.extra.filter((x) => x === n).length;
 
@@ -276,7 +286,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack }: { deck: SpeedDeck; onC
     list.splice(list.indexOf(n), 1);
     set({ [from]: list });
   };
-  const canAdd = (n: string) => !unplayableReason(n) && copies(n) < COPIES && (isExtraCard(n) ? deck.extra.length < EXTRA_MAX : deck.main.length < MAIN_MAX) && limitStatus(n) !== 'Forbidden';
+  const canAdd = (n: string) => !unplayableReason(n) && copies(n) < ownedCopies(n) && (isExtraCard(n) ? deck.extra.length < EXTRA_MAX : deck.main.length < MAIN_MAX) && limitStatus(n) !== 'Forbidden';
 
   const counted = (list: string[]) => {
     const m = new Map<string, number>();
@@ -303,7 +313,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack }: { deck: SpeedDeck; onC
       <div class="tabs">
         {(['cards', 'main', 'extra', 'skill'] as Tab[]).map((t) => (
           <button key={t} class={`tab ${tab === t ? 'on' : ''}`} onClick={() => (setTab(t), setSel(null), setLimit(PAGE))}>
-            {t === 'cards' ? 'All cards' : t === 'main' ? `Main ${deck.main.length}` : t === 'extra' ? `Extra ${deck.extra.length}/${EXTRA_MAX}` : 'Skill'}
+            {t === 'cards' ? (collection ? 'Owned' : 'All cards') : t === 'main' ? `Main ${deck.main.length}` : t === 'extra' ? `Extra ${deck.extra.length}/${EXTRA_MAX}` : 'Skill'}
           </button>
         ))}
         <button class="tab x" onClick={onBack}>
@@ -391,7 +401,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack }: { deck: SpeedDeck; onC
           {unplayableReason(sel) && <p class="hint">Can't be used yet: {unplayableReason(sel)}.</p>}
           <Menu
             items={[
-              ...(!unplayableReason(sel) ? [{ label: isExtraCard(sel) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(sel), note: `${copies(sel)}/${COPIES}`, onPick: () => addCard(sel) }] : []),
+              ...(!unplayableReason(sel) ? [{ label: isExtraCard(sel) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(sel), note: `${copies(sel)}/${ownedCopies(sel)}`, onPick: () => addCard(sel) }] : []),
               ...(copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
               { label: 'Card Info', onPick: () => setInfo(sel) },
             ]}

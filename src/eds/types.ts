@@ -194,9 +194,28 @@ export interface DuelState {
   rules?: Rules;
 }
 
+/**
+ * How one side starts a duel when it doesn't start the usual way (campaign Duel Conditions,
+ * roguelite relics). Every card named here is a new card, on top of the deck.
+ */
+export interface SeatSetup {
+  /** starting Life Points instead of the rules' */
+  lp?: number;
+  /** cards already face-up in Attack Position */
+  monsters?: string[];
+  /** a Field Spell already face-up in the Field Zone */
+  field?: string;
+  /** Continuous Spells/Traps already face-up and active */
+  spells?: string[];
+  /** cards added to the opening hand */
+  hand?: string[];
+  /** draw this many more (or fewer, when negative) for the opening hand */
+  openingHand?: number;
+}
+
 /** What a player may ask the engine to do. */
 export type Action =
-  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]]; mode?: GameMode; skills?: [string | null, string | null] }
+  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]]; mode?: GameMode; skills?: [string | null, string | null]; setup?: [SeatSetup | null, SeatSetup | null] }
   | { type: 'SUMMON'; player: Pid; uid: number; zone: number; pos: Pos; faceUp: boolean }
   | { type: 'SET_ST'; player: Pid; uid: number; zone: number }
   | { type: 'ACTIVATE'; player: Pid; uid: number; zone?: number }

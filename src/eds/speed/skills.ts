@@ -1209,6 +1209,8 @@ K['Behold, Gate Guardian!'] = (() => {
         }
       },
     },
+    // The computer only trades its hand away once the hand is nearly spent.
+    ai: (e: Engine, p: Pid) => e.player(p).hand.length <= 2,
   } as SkillDef;
 })();
 K['Ancient Ruler Rises'] = (() => {
