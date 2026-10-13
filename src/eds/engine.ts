@@ -460,6 +460,11 @@ export class Engine {
     if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
 
+  /** The card a chain link targets, for the cinematics (a targeting beam from the card to it). */
+  private targetEvent(link: ChainLink) {
+    if (link.targetUid !== undefined) this.event('target', { uid: link.card.uid, player: link.player, target: link.targetUid });
+  }
+
   // ---------- lookups ----------
   player(p: Pid): PlayerState {
     return this.state.players[p];
@@ -2329,6 +2334,7 @@ export class Engine {
         return;
       }
     }
+    this.targetEvent(link);
     this.state.chain.push(link);
     yield* this.responseWindow(this.info(fc.name).kind === 'spell' ? 'spell' : 'trap', { uid: fc.uid, link });
     yield* this.resolveChain();
@@ -2464,6 +2470,7 @@ export class Engine {
           if (ok === false) {
             yield* this.afterResolve(link);
           } else {
+            this.targetEvent(link);
             this.state.chain.push(link);
             depth++;
             passes = 0;
@@ -2547,6 +2554,7 @@ export class Engine {
       if (ok === false) return null;
     }
     if (!q.repeat) this.useOnce(`quick:${f.card.name}:${from === 'field' ? uid : 0}`, player);
+    this.targetEvent(link);
     this.state.chain.push(link);
     return link;
   }

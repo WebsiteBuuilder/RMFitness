@@ -10,6 +10,7 @@ public/cards/fig/index.json ({id: three main colors of the subject}).
     curl -L -o depth.onnx https://github.com/fabio-sim/Depth-Anything-ONNX/releases/download/v2.0.0/depth_anything_v2_vits_dynamic.onnx
     python3 scripts/build-figures.py depth.onnx            # all monsters
     python3 scripts/build-figures.py depth.onnx --only 46986414 89631139
+    # --out <dir>: write somewhere else (to compare); --cache <dir>: keep the depth maps between runs
 """
 import json, os, sys
 import cv2
@@ -43,25 +44,130 @@ def otsu(a):
     return t / 255.0
 
 
-def matte_of(d, lo_k=0.7):
-    """The subject: everything clearly in front, plus what is connected to it (hysteresis)."""
+def border_colors(art):
+    """The art's background as seen at its border: Lab image and each pixel's distance to the nearest border color."""
+    lab = cv2.cvtColor(np.asarray(art.resize((SIZE, SIZE), Image.BILINEAR)), cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab = cv2.GaussianBlur(lab, (0, 0), 1.5)
+    ring = np.zeros((SIZE, SIZE), bool)
+    k = 4
+    ring[:k], ring[-k:], ring[:, :k], ring[:, -k:] = True, True, True, True
+    px = lab[ring].reshape(-1, 3)
+    crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+    _, _, cen = cv2.kmeans(px, 8, None, crit, 2, cv2.KMEANS_PP_CENTERS)
+    return np.min(np.linalg.norm(lab[:, :, None, :] - cen[None, None], axis=3), axis=2)
+
+
+# Per-card depth thresholds (0..1 of the normalized depth) where Otsu's split misreads the
+# subject: Blue-Eyes' coiled body sits behind its head, the Harpie Ladies' wings and sisters
+# stand at mid depth. Ids from public/cards/speed.json.
+THRESHOLDS = {
+    89631139: 0.4,   # Blue-Eyes White Dragon
+    23995346: 0.4,   # Blue-Eyes Ultimate Dragon
+    91932350: 0.5,   # Harpie Lady 1
+    12206212: 0.5,   # Harpie Lady Sisters
+}
+
+
+# Enclosed background holes filled after the cut, per card (smallest hole filled, as a fraction
+# of the art). A big window through a coiled subject (the space inside Blue-Eyes' neck) turns the
+# figure into a C-shaped cutout; filled, the painted background inside the coil reads as part of
+# the dragon. Not a global rule: on ~30 other cards the 2-9 % holes are the gaps between legs,
+# arms or wings, and filling those makes a slab of background.
+FILL_HOLES_CARD = {
+    89631139: 0.02,   # Blue-Eyes White Dragon: inside the coiled neck
+    70781052: 0.004,  # Summoned Skull: the notch beside its head
+    95231062: 0.02,   # Lost Blue Breaker: coiled body
+    96005454: 0.02,   # Hunter Dragon: curled neck and tail
+    3657444: 0.02,    # Cyber Valley: coiled body
+    23893227: 0.02,   # Cyber Dragon Core: coiled tail
+}
+# Relief per card: (weight of the depth guess against the rounded pillow, blur of the depth in px).
+# Where the depth guess steps hard inside the subject (Dark Magician Girl: her hat brim stands
+# far in front of her face and hair), the displaced mesh tears into a sheared slab across the
+# face with jagged strands; a softer, mostly pillow-shaped relief keeps the bust whole.
+RELIEF_CARD = {
+    38033121: (0.2, 6.0),   # Dark Magician Girl: hat brim vs face
+}
+# Feather (px of the 256 map) where the matte meets the artwork box, so a subject cut by the
+# frame fades out instead of ending in a straight edge with square corners.
+BORDER_FEATHER = 10.0
+
+
+def fill_big_holes(m, min_frac):
+    """Fill the enclosed holes of a mask that cover at least min_frac of the map."""
+    holes, n = ndi.label(ndi.binary_fill_holes(m) & ~m)
+    if not n:
+        return m
+    sizes = ndi.sum(np.ones_like(m), holes, range(1, n + 1))
+    big = [i + 1 for i, s in enumerate(sizes) if s >= SIZE * SIZE * min_frac]
+    return m | np.isin(holes, big) if big else m
+
+
+def border_ramp(size=SIZE, px=BORDER_FEATHER):
+    """1 inside, easing to 0 over px at the map's border (corners rounded by the product)."""
+    x = np.arange(size, dtype=np.float32)
+    e = np.minimum(x, size - 1 - x)
+    r = np.clip((e - 1.0) / px, 0, 1)
+    r = r * r * (3 - 2 * r)
+    return np.outer(r, r)
+
+
+def smooth_mask(m):
+    """Clean, smooth outline: close small gaps, blur and re-threshold (no staircase steps)."""
+    m = ndi.binary_closing(m, iterations=2)
+    return cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.5) > 0.5
+
+
+def matte_of(d, art=None, lo_k=0.7, cid=None):
+    """The subject: everything clearly in front, plus what is connected to it (hysteresis).
+
+    With the art: parts joined to the subject that stand somewhat forward and look
+    nothing like the border's colors join it too (a dragon's body behind its head),
+    and enclosed gaps that look like the background stay open (the space between
+    a neck and a wing) instead of being filled with a dark slab."""
     d = cv2.GaussianBlur(d, (0, 0), 1.0)
-    t = otsu(d)
+    t = THRESHOLDS.get(cid, otsu(d))
     strong, weak = d > t, d > t * lo_k
     lab, _ = ndi.label(weak)
     keep = np.unique(lab[strong])
     m = np.isin(lab, keep[keep > 0])
+    dist = border_colors(art) if art is not None else None
+    if dist is not None and m.any():
+        base = m.mean()
+        cand = ndi.binary_opening((dist > 34) & (d > t * 0.42), iterations=2)
+        lab2, _ = ndi.label(cand | m)
+        keep2 = np.unique(lab2[m])
+        m2 = np.isin(lab2, keep2[keep2 > 0])
+        if m2.mean() <= min(0.8, base * 1.6 + 0.03):
+            m = m2
     lab, n = ndi.label(m)
     if n:
         sizes = ndi.sum(m, lab, range(1, n + 1))
         m = np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s >= sizes.max() * 0.08])
-    m = ndi.binary_opening(ndi.binary_fill_holes(m), iterations=1)
+    filled = ndi.binary_fill_holes(m)
+    if dist is not None:
+        holes, nh = ndi.label(filled & ~m)
+        for i in range(1, nh + 1):
+            h = holes == i
+            if h.sum() <= SIZE * SIZE * 0.004 or (dist[h] < 22).mean() <= 0.6:
+                continue
+            # and far behind the subject (not a red panel on a red dragon): the more
+            # it looks like the border, the less depth evidence it needs
+            r = d[h].mean() / max(t, 1e-3)
+            if r < 0.36 or (r < 0.5 and (dist[h] < 14).mean() > 0.55):
+                filled &= ~h
+    m = smooth_mask(ndi.binary_opening(filled, iterations=1))
+    if cid in FILL_HOLES_CARD:
+        m = fill_big_holes(m, FILL_HOLES_CARD[cid])
     soft = np.clip((d - (t * lo_k - 0.03)) / 0.08, 0, 1)
-    a = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.2) * np.maximum(soft, ndi.binary_erosion(m, iterations=3))
+    inner = ndi.binary_erosion(m, iterations=3)
+    # a ~2 px feather across the smoothed outline
+    a = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.0) * np.maximum(soft, inner)
+    a = cv2.GaussianBlur(a, (0, 0), 0.6) * border_ramp()
     return np.clip(a, 0, 1)
 
 
-def relief_of(d, a):
+def relief_of(d, a, cid=None):
     """Depth inside the subject, blended with a rounded 'pillow' so thin parts still have body."""
     inside = a > 0.5
     if inside.sum() < 10:
@@ -70,7 +176,12 @@ def relief_of(d, a):
     rel = np.clip((d - lo) / (hi - lo + 1e-6), 0, 1)
     dist = ndi.distance_transform_edt(inside)
     pillow = cv2.GaussianBlur(((dist / (dist.max() + 1e-6)) ** 0.6).astype(np.float32), (0, 0), 3)
-    return np.clip(0.55 * rel + 0.45 * pillow, 0, 1) * (a > 0.02)
+    w, blur = RELIEF_CARD.get(cid, (0.55, 0.0))
+    if blur > 0:
+        # blurred inside the subject only (the background does not bleed into the edge)
+        m = inside.astype(np.float32)
+        rel = cv2.GaussianBlur(rel * m, (0, 0), blur) / np.maximum(cv2.GaussianBlur(m, (0, 0), blur), 1e-3)
+    return np.clip(w * rel + (1 - w) * pillow, 0, 1) * (a > 0.02)
 
 
 def palette_of(art, a):
@@ -115,25 +226,35 @@ def usable(a):
 def main():
     import onnxruntime as ort
     model = sys.argv[1]
-    only = set(map(int, sys.argv[sys.argv.index('--only') + 1:])) if '--only' in sys.argv else None
+    only = set(int(x) for x in sys.argv[sys.argv.index('--only') + 1:] if x.isdigit()) if '--only' in sys.argv else None
     cards = json.load(open(os.path.join(ROOT, 'speed.json')))
     ids = sorted({c['id'] for c in cards if 'Monster' in c.get('type', '') and c.get('img') and os.path.exists(os.path.join(ROOT, 'img', '%d.webp' % c['id']))})
     if only:
         ids = [i for i in ids if i in only]
     sess = ort.InferenceSession(model, providers=['CPUExecutionProvider'])
-    os.makedirs(OUT, exist_ok=True)
-    index_path = os.path.join(OUT, 'index.json')
+    cache = sys.argv[sys.argv.index('--cache') + 1] if '--cache' in sys.argv else None
+    if cache:
+        os.makedirs(cache, exist_ok=True)
+    out = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else OUT
+    os.makedirs(out, exist_ok=True)
+    index_path = os.path.join(out, 'index.json')
     done = {int(k): v for k, v in json.load(open(index_path)).items()} if os.path.exists(index_path) else {}
     for n, cid in enumerate(ids):
         art = crop_art(os.path.join(ROOT, 'img', '%d.webp' % cid))
-        d = depth_of(sess, art)
-        a = matte_of(d)
+        cp = os.path.join(cache, '%d.npy' % cid) if cache else None
+        if cp and os.path.exists(cp):
+            d = np.load(cp)
+        else:
+            d = depth_of(sess, art)
+            if cp:
+                np.save(cp, d)
+        a = matte_of(d, art, cid=cid)
         if not usable(a):
             done.pop(cid, None)
             continue
-        r = (relief_of(d, a) * 255).astype(np.uint8)
+        r = (relief_of(d, a, cid) * 255).astype(np.uint8)
         rgba = np.dstack([r, r, r, (a * 255).astype(np.uint8)])
-        Image.fromarray(rgba, 'RGBA').save(os.path.join(OUT, '%d.webp' % cid), 'WEBP', quality=80, alpha_quality=90, method=6)
+        Image.fromarray(rgba, 'RGBA').save(os.path.join(out, '%d.webp' % cid), 'WEBP', quality=80, alpha_quality=80, method=6)
         done[cid] = palette_of(art, a)
         if n % 100 == 0:
             print(n, len(ids), flush=True)

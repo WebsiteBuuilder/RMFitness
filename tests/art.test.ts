@@ -4,7 +4,7 @@ import { Engine } from '../src/eds/engine';
 import { card, DB as APP_DB } from '../src/eds/db';
 import type { DuelState, Pid } from '../src/eds/types';
 import { profileFor } from '../src/art/profile';
-import { toCues, type CueTrack } from '../src/art/cues';
+import { memoField, toCues, type CueTrack } from '../src/art/cues';
 import { OVERKILL_MARGIN, sealPick, sealedCards, cpuSealedCards, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../src/art/shadow';
 import { newSpeedSave } from '../src/eds/speedSave';
 import { DB, SPEED } from './speedkit';
@@ -65,6 +65,29 @@ function duel(): Engine {
   ok(cues.map((c) => c.kind).join() === 'attack,hit,damage', `a direct attack becomes attack → hit → damage cues (${cues.map((c) => c.kind).join()})`);
   const hit = cues.find((c) => c.kind === 'hit');
   ok(hit?.kind === 'hit' && hit.attacker?.uid === m.uid && hit.target === null, 'the hit knows its attacker');
+}
+
+{
+  // A face-down defender that is flipped and destroyed by the attack is still face-down
+  // (and unnamed) in the attack cue: the flip cinematic reveals it, not the attack.
+  const e = new Engine(DB);
+  e.apply({ type: 'START', first: 0, seed: 7, names: ['Jammy', 'Brother'], decks: [deckOf(big.name), deckOf(small.name)], fusions: [[], []], mode: 'speed', skills: [null, null] });
+  e.apply({ type: 'SUMMON', player: 0, uid: e.player(0).hand[0].uid, zone: 0, pos: 'atk', faceUp: true });
+  e.apply({ type: 'END_TURN', player: 0 });
+  e.apply({ type: 'SUMMON', player: 1, uid: e.player(1).hand[0].uid, zone: 0, pos: 'def', faceUp: false });
+  e.apply({ type: 'END_TURN', player: 1 });
+  e.apply({ type: 'NEXT_PHASE', player: 0 });
+  if (e.state.phase !== 'BP') e.apply({ type: 'NEXT_PHASE', player: 0 });
+  const def = e.monsters(1)[0];
+  const memo = memoField(e.state, 0, null);
+  const before = e.state.events!.at(-1)!.seq;
+  e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: def.uid });
+  const gone = !e.monsters(1).some((m) => m.uid === def.uid);
+  const cues = toCues(e.state.events!.filter((x) => x.seq > before), e.state, 0, null, memo, { battle: null });
+  const atk = cues.find((c) => c.kind === 'attack');
+  ok(gone, 'the face-down defender is destroyed by the attack');
+  ok(atk?.kind === 'attack' && atk.target?.uid === def.uid && !atk.target.faceUp && atk.target.name === '', 'the attack cue keeps a destroyed face-down defender face-down and unnamed');
+  ok(cues.some((c) => c.kind === 'destroy' && c.card.uid === def.uid), 'it still gets its destruction');
 }
 
 // ---------- the Shadow Realm ----------

@@ -3,9 +3,10 @@
 import { Engine } from '../src/eds/engine';
 import { DB as APP_DB } from '../src/eds/db';
 import type { DuelState, Prompt } from '../src/eds/types';
-import { coalesce, toCues, type Cue, type CardRef } from '../src/art/cues';
-import { attachArtSink, Flow, pickCues } from '../src/art/flow';
-import { Timeline } from '../src/art/runtime';
+import { artBusy, artFocus, bannerOnce, clearArtFocus, coalesce, cueUids, focusArt, onArtChange, setArtBusy, toCues, type Cue, type CardRef } from '../src/art/cues';
+import { attachArtSink, Flow, LP_TICK_MS, pickCues, START_GRACE_MS, WATCHDOG_SLACK_MS, WIN_AFTER_LP_MS } from '../src/art/flow';
+import { SKIP_W, skipSpot } from '../src/art/skipspot';
+import { cueOwner, flowRate, OPP_BACKLOG_RATE, Timeline } from '../src/art/runtime';
 import { DB, SPEED } from './speedkit';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
@@ -59,6 +60,14 @@ ok(pickCues(sample, 'all', 0).length === sample.length, 'All: everything');
 ok(pickCues(sample, 'off', 0).length === 0, 'Off: nothing');
 ok(pickCues(sample, 'mine', 0).length === 0, "My actions only: the opponent's moves play none");
 ok(kinds(pickCues(sample, 'mine', 1)) === 'summon:small,summon:big,set,activate,attack,damage:500,damage:1500,destroy', 'My actions only: my moves and what follows from them');
+{
+  // an opponent's long chain keeps moving
+  const act: Cue = { kind: 'activate', card: ref(spell.name, 1), what: 'spell' };
+  ok(cueOwner(act) === 1 && cueOwner({ kind: 'damage', player: 0, amount: 100 }) === null, 'a cue belongs to the controller of its card (damage to no one)');
+  ok(flowRate(act, undefined, 1) === 1 && flowRate(act, undefined, 1, true) >= OPP_BACKLOG_RATE, `an opponent cue with more queued behind plays at least ${OPP_BACKLOG_RATE}×`);
+  const atk: Cue = { kind: 'attack', attacker: ref(lowMon.name, 1), target: null, defender: 0 };
+  ok(flowRate(atk, { cue: { kind: 'hit', attacker: null, target: null, defender: 0 }, batch: 1, scale: 1 }, 1, true) === 1.6, 'a faster chain rate is kept');
+}
 const merged = coalesce([{ kind: 'hit', attacker: null, target: null, defender: 0 }, { kind: 'damage', player: 0, amount: 1200 }]);
 ok(merged.length === 1 && merged[0].kind === 'hit' && merged[0].dmg?.amount === 1200, 'battle damage plays with the blow (one moment)');
 
@@ -115,8 +124,13 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   ok(lp(held, 1) === 4000 && !held.prompt, "the opponent's attack holds the board for the defending player");
   f.drawn();
   const p = played[played.length - 1];
+  let redraws = 0;
+  f.rerender = () => redraws++;
   f.commit(p.batch, false);
-  ok(!f.update(e.state, 1).prompt, 'a chain that ends in a choice for the player does not show it mid-way');
+  const mid = f.update(e.state, 1);
+  ok(!mid.prompt, 'a chain that ends in a choice for the player does not show it mid-way');
+  ok(lp(mid, 1) === lp(e.state, 1) && lp(mid, 1) < 4000 && redraws === 1, `but its damage lands at the impact (LP ${lp(mid, 1)}, redrawn ${redraws}×), so the count ticks at the hit`);
+  ok(f.promptWaiting, 'the stage hears a choice is waiting (its tail fades out fast)');
   f.commit(p.batch, true);
   ok(f.update(e.state, 1).prompt?.player === 1, 'it shows when the chain is over');
   const before = skips;
@@ -169,9 +183,188 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
   f.update(e.state, 0);
   f.drawn();
-  await new Promise((r) => setTimeout(r, 4100));
-  ok(f.update(e.state, 0) === e.state, 'after 4 s the board catches up even if the cinematic never reports');
+  await new Promise((r) => setTimeout(r, START_GRACE_MS + 100));
+  ok(f.update(e.state, 0) === e.state, 'a chain whose cinematic never starts lets the board catch up after the start grace');
   f.dispose();
+}
+{
+  // the watchdog runs from the moment the cinematic starts, for its own length + slack
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
+  f.update(e.state, 0);
+  f.drawn();
+  const p = played[played.length - 1];
+  await new Promise((r) => setTimeout(r, 300));
+  f.started(p.batch + 1000, 0.1); // another chain: ignored
+  f.started(p.batch, 0.4);
+  await new Promise((r) => setTimeout(r, 0.4 * 1000 + WATCHDOG_SLACK_MS - 300));
+  ok(f.holding, 'the board still waits while the started cinematic (plus slack) is not over');
+  await new Promise((r) => setTimeout(r, 450));
+  ok(!f.holding && f.update(e.state, 0) === e.state, `then it catches up (${0.4 * 1000 + WATCHDOG_SLACK_MS} ms after the start, not ${START_GRACE_MS} ms after the queueing)`);
+  f.dispose();
+}
+{
+  // a long cinematic is not cut short by the watchdog
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
+  f.update(e.state, 0);
+  f.drawn();
+  const p = played[played.length - 1];
+  f.started(p.batch, (START_GRACE_MS + 1000) / 1000);
+  await new Promise((r) => setTimeout(r, START_GRACE_MS + 300));
+  ok(f.holding, 'a cinematic longer than the start grace keeps the board until it is over');
+  f.commit(p.batch, true);
+  ok(!f.holding, 'and lets it go when it ends');
+  f.dispose();
+}
+
+{
+  // the result waits for the Life Points to count down to 0
+  const e = duel();
+  const f = new Flow();
+  let redraws = 0;
+  f.rerender = () => redraws++;
+  f.update(e.state, 0);
+  e.state.players[1].lp = 0;
+  e.state.winner = 0;
+  const s1 = f.update(e.state, 0);
+  ok(lp(s1, 1) === 0 && s1.winner === null && f.winPending, 'a won duel shows its last Life Points first, without the result');
+  await new Promise((r) => setTimeout(r, LP_TICK_MS - 150));
+  ok(f.update(e.state, 0).winner === null, 'still no result while the count is running');
+  f.flushAll();
+  ok(f.update(e.state, 0).winner === null, 'a tap before the count reads 0 does not jump to the result');
+  await new Promise((r) => setTimeout(r, 150 + WIN_AFTER_LP_MS + 60));
+  ok(f.update(e.state, 0).winner === 0 && !f.winPending && redraws === 1, `then the result shows (${LP_TICK_MS + WIN_AFTER_LP_MS} ms after the LP change)`);
+  f.dispose();
+}
+{
+  // a tap once the count has reached 0 goes straight to the result
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.state.players[1].lp = 0;
+  e.state.winner = 0;
+  f.update(e.state, 0);
+  await new Promise((r) => setTimeout(r, LP_TICK_MS + 20));
+  f.flushAll();
+  ok(f.update(e.state, 0).winner === 0, 'a tap after the LP read 0 shows the result at once');
+  f.dispose();
+}
+{
+  // a win with no Life Points change (deck out, surrender) shows at once
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.state.winner = 1;
+  ok(f.update(e.state, 0).winner === 1 && !f.winPending, 'a win without a Life Points change shows its result at once');
+  f.dispose();
+}
+
+// ---------- the skip pill keeps clear of the bar's contents ----------
+{
+  // 412 wide: avatar, a short name, Skill, LP, menu
+  const bar: [number, number][] = [
+    [4, 48],
+    [44, 110],
+    [250, 304],
+    [300, 360],
+    [356, 408],
+  ];
+  const s = skipSpot(bar, 0, 412, 412);
+  const clear = (l: number) => bar.every(([a, b]) => l + SKIP_W <= a || l >= b);
+  ok(!s.below && clear(s.left) && s.left === 134, `in the gap between the name and Skill, as central as it fits (left ${s.left})`);
+  // 390 wide: the name runs up to Skill, so no gap is wide enough
+  const full: [number, number][] = [
+    [4, 48],
+    [44, 120],
+    [196, 250],
+    [262, 340],
+    [336, 386],
+  ];
+  const f = skipSpot(full, 0, 390, 390);
+  ok(f.below, `no gap between the name and Skill (390 wide): below the bar (left ${f.left})`);
+  const tight: [number, number][] = [
+    [4, 48],
+    [44, 150],
+    [160, 214],
+    [220, 320],
+    [316, 371],
+  ];
+  const t = skipSpot(tight, 0, 375, 375);
+  ok(t.below && Math.abs(t.left + SKIP_W / 2 - 187.5) < 1, 'no gap wide enough (375 wide): below the bar, centred');
+  const open = skipSpot([[300, 380]], 0, 390, 390);
+  ok(!open.below && Math.abs(open.left + SKIP_W / 2 - 195) < 1, 'an empty middle: centred');
+}
+
+// ---------- the busy flag, the focus (field figures step aside) and its listeners ----------
+{
+  let calls = 0;
+  const off = onArtChange(() => calls++);
+  setArtBusy(false);
+  clearArtFocus();
+  const c0 = calls;
+  setArtBusy(true);
+  setArtBusy(true);
+  ok(artBusy() && calls === c0 + 1, 'listeners hear the busy flag change (once per change, no polling)');
+  const a = ref('A', 0, 11);
+  const t = ref('B', 1, 12);
+  ok(cueUids({ kind: 'attack', attacker: a, target: t, defender: 1 }).join() === '11,12', 'an attack is about its attacker and its target');
+  ok(cueUids({ kind: 'hit', attacker: null, target: null, defender: 1 }).length === 0 && cueUids({ kind: 'damage', player: 0, amount: 100 }).length === 0, 'damage and an unknown hit put no monster on stage');
+  focusArt([11, 12]);
+  ok(artFocus().has(11) && artFocus().has(12) && !artFocus().has(13) && calls === c0 + 2, 'only the monsters in the cinematic step aside; bystanders keep standing');
+  setArtBusy(false);
+  ok(artFocus().size === 2 && artFocus().has(11), 'the computer going on does not bring them back while the stage still shows them');
+  clearArtFocus();
+  ok(artFocus().size === 0 && calls === c0 + 4, 'they come back when the stage is done');
+  off();
+  setArtBusy(true);
+  ok(calls === c0 + 4, 'an unsubscribed listener hears nothing');
+  setArtBusy(false);
+}
+{
+  const once = bannerOnce();
+  ok(once('Burst Stream!') && !once('Burst Stream!') && once('Dark Magic!'), 'the same banner twice at once shows once');
+}
+
+{
+  // a Tribute Summon: the Tribute's destruction lands first, the summoned monster stays off the board until its own landing
+  const mid = SPEED.find((c) => c.kind === 'monster' && c.sub === 'Normal' && (c.level ?? 0) >= 5 && (c.level ?? 0) <= 6)!;
+  const deck = [...deckOf(strongest[0].name, 10), ...deckOf(mid.name, 10)];
+  const e = new Engine(DB);
+  e.apply({ type: 'START', first: 0, seed: 3, names: ['Yami', 'Jammy'], decks: [deck, deckOf(strongest[1].name)], fusions: [[], []], mode: 'speed', skills: [null, null] });
+  const low = e.player(0).hand.find((c) => c.name === strongest[0].name);
+  ok(!!low, 'tribute test: a low monster in hand');
+  e.apply({ type: 'SUMMON', player: 0, uid: low!.uid, zone: 0, pos: 'atk', faceUp: true });
+  e.apply({ type: 'END_TURN', player: 0 });
+  e.apply({ type: 'END_TURN', player: 1 });
+  const big = e.player(0).hand.find((c) => c.name === mid.name);
+  ok(!!big, 'tribute test: a Level 5/6 monster in hand');
+  // Cinematics: All (the opponent's everyday summons play too)
+  const g = globalThis as { localStorage?: unknown };
+  const saved = g.localStorage;
+  g.localStorage = { getItem: (k: string) => (k === 'eds.cinematics' ? 'all' : null) };
+  const f = new Flow();
+  f.update(e.state, 1);
+  e.apply({ type: 'SUMMON', player: 0, uid: big!.uid, zone: 1, pos: 'atk', faceUp: true });
+  e.apply({ type: 'CHOOSE', player: 0, picks: [0] });
+  const onField = (s: DuelState) => s.players[0].mz.some((m) => m?.uid === big!.uid);
+  ok(onField(e.state), 'the engine Tribute Summoned it');
+  ok(!onField(f.update(e.state, 1)), 'while the chain plays, the summoned monster is not on the board');
+  f.drawn();
+  const p = played[played.length - 1];
+  ok(p.cues.map((c) => c.kind).join() === 'destroy,summon', `the chain is destroy (the Tribute) → summon (${p.cues.map((c) => c.kind).join()})`);
+  f.commit(p.batch, false);
+  const mid1 = f.update(e.state, 1);
+  ok(!onField(mid1) && !mid1.players[0].mz.some((m) => m?.uid === low!.uid), "the Tribute's destruction lands: the Tribute leaves, the summoned monster is still not there");
+  ok(f.holding, 'the board is still held for the landing');
+  f.commit(p.batch, false);
+  ok(onField(f.update(e.state, 1)) && !f.holding, 'the monster appears as it lands');
+  f.dispose();
+  g.localStorage = saved;
 }
 
 if (fails) {

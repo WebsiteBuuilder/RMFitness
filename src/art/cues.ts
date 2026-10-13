@@ -21,19 +21,29 @@ export interface CardRef {
   /** screen rectangle of the card on the board, when it is there */
   rect: Rect | null;
   def: boolean;
+  /** (activate's field list) destroyed by the effect in the same update */
+  dies?: boolean;
 }
 
 export type Cue =
   | { kind: 'summon'; card: CardRef; special: boolean }
   | { kind: 'set'; card: CardRef; monster: boolean }
   | { kind: 'flip'; card: CardRef }
-  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster' }
+  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster'; targets?: Target[]; field?: CardRef[] }
+  /** a chain link's target, picked after its activation already played (a human choosing) */
+  | { kind: 'target'; card: CardRef; targets: Target[] }
   | { kind: 'skill'; player: Pid; name: string }
   | { kind: 'attack'; attacker: CardRef; target: CardRef | null; defender: Pid }
   | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid; dmg?: { player: Pid; amount: number } }
   | { kind: 'damage'; player: Pid; amount: number }
   | { kind: 'destroy'; card: CardRef }
   | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null };
+
+/** What an effect targets, and whether it is destroyed in the same update. */
+export interface Target {
+  card: CardRef;
+  destroyed: boolean;
+}
 
 /** Field monsters as they were last seen on screen (a destroyed card's last place). */
 export type FieldMemo = Map<number, CardRef>;
@@ -66,6 +76,9 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
   const f = locate(state, uid);
   const old = memo.get(uid);
   if (!f) return old ?? null;
+  // A monster that has already left the field (destroyed in this batch) is shown as it
+  // last stood there: a face-down defender stays face-down until its flip is shown.
+  if (!f.field && old) return live({ ...old, rect: rectOf(uid, host) ?? old.rect }, host);
   const faceUp = f.field ? f.field.faceUp : true;
   const known = faceUp || f.controller === viewer;
   return live({ uid, name: known ? f.card.name : '', faceUp, controller: f.controller, rect: rectOf(uid, host) ?? old?.rect ?? null, def: f.field?.pos === 'def' }, host);
@@ -83,6 +96,17 @@ function live(c: CardRef, host: HTMLElement | null): CardRef {
     configurable: true,
     get: () => (last = rectOf(c.uid, host ?? (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'))) ?? last),
   });
+}
+
+/** Cards that leave the field after event `i`, before the next activation (what that effect destroyed). */
+function gone(events: EngineEvent[], i: number): Set<number> {
+  const s = new Set<number>();
+  for (let j = i + 1; j < events.length; j++) {
+    const e = events[j];
+    if (e.kind === 'activate') break;
+    if (e.kind === 'to-gy' && e.uid !== undefined) s.add(e.uid);
+  }
+  return s;
 }
 
 /** A battle's damage plays with the blow that dealt it (one moment, not two). */
@@ -115,7 +139,8 @@ export interface CueTrack {
 
 export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, host: HTMLElement | null, memo: FieldMemo, track: CueTrack = { battle: null }): Cue[] {
   const out: Cue[] = [];
-  for (const ev of events) {
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
     const r = (uid: number | undefined | null) => (uid === undefined || uid === null ? null : ref(state, uid, viewer, host, memo));
     switch (ev.kind) {
       case 'summon': {
@@ -146,7 +171,22 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         if (!c) break;
         const name = locate(state, c.uid)?.card.name ?? c.name;
         const k = card(name)?.kind ?? 'spell';
-        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k });
+        // the face-up monsters on the field as they stood before this update (board-wide effects strike them)
+        const doomed = gone(events, i);
+        const field: CardRef[] = [...memo.values()].filter((m) => m.faceUp && m.name).map((m) => ({ ...m, rect: rectOf(m.uid, host) ?? m.rect, dies: doomed.has(m.uid) }));
+        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field });
+        break;
+      }
+      case 'target': {
+        const t = r(ev.target);
+        if (!t) break;
+        const tg: Target = { card: t, destroyed: gone(events, i).has(t.uid) };
+        const prev = [...out].reverse().find((x) => x.kind === 'activate' && x.card.uid === ev.uid);
+        if (prev && prev.kind === 'activate') (prev.targets ??= []).push(tg);
+        else {
+          const c = r(ev.uid);
+          if (c) out.push({ kind: 'target', card: { ...c, name: locate(state, c.uid)?.card.name ?? c.name, faceUp: true }, targets: [tg] });
+        }
         break;
       }
       case 'attack': {
@@ -200,6 +240,7 @@ export function weight(c: Cue): number {
     case 'skill':
       return 4;
     case 'activate':
+    case 'target':
       return 3;
     default:
       return 1;
@@ -207,11 +248,21 @@ export function weight(c: Cue): number {
 }
 
 // ---------- busy flag: the computer waits for cinematics to finish ----------
+// `busy`: the computer must wait (a chain is queued or playing). `focus`: the
+// monsters (uids) a cinematic has on stage right now; the field figures of those
+// step aside while the rest keep standing. Listeners hear every change.
 let busy = false;
+const focus = new Set<number>();
 const idleWaiters = new Set<() => void>();
+const listeners = new Set<() => void>();
+const notify = () => {
+  for (const f of [...listeners]) f();
+};
 export function setArtBusy(b: boolean) {
+  const changed = b !== busy;
   busy = b;
   if (!b) for (const f of [...idleWaiters]) (idleWaiters.delete(f), f());
+  if (changed) notify();
 }
 export function artBusy() {
   return busy;
@@ -224,4 +275,54 @@ export function whenArtIdle(f: () => void): () => void {
   }
   idleWaiters.add(f);
   return () => idleWaiters.delete(f);
+}
+/** Calls `f` whenever the busy flag or the focus changes; returns an unsubscribe function. */
+export function onArtChange(f: () => void): () => void {
+  listeners.add(f);
+  return () => listeners.delete(f);
+}
+/** The monsters a cinematic is about (their field figures step aside for it). */
+export function focusArt(uids: Iterable<number>) {
+  let changed = false;
+  for (const u of uids) if (!focus.has(u)) (focus.add(u), (changed = true));
+  if (changed) notify();
+}
+/** The stage is empty again: every field figure stands. */
+export function clearArtFocus() {
+  if (!focus.size) return;
+  focus.clear();
+  notify();
+}
+export function artFocus(): ReadonlySet<number> {
+  return focus;
+}
+/** The monsters a cue puts on stage. */
+export function cueUids(c: Cue): number[] {
+  switch (c.kind) {
+    case 'summon':
+    case 'set':
+    case 'flip':
+    case 'activate':
+    case 'destroy':
+      return [c.card.uid];
+    case 'attack':
+      return c.target ? [c.attacker.uid, c.target.uid] : [c.attacker.uid];
+    case 'hit':
+      return [c.attacker?.uid, c.target?.uid].filter((u): u is number => u !== undefined);
+    default:
+      return [];
+  }
+}
+
+/** A banner shown twice at once (the same title within 100 ms) is shown once: call per banner, false = drop it. */
+export function bannerOnce(): (title: string) => boolean {
+  let last = '';
+  let at = -1e9;
+  return (title) => {
+    const now = performance.now();
+    if (title === last && now - at < 100) return false;
+    last = title;
+    at = now;
+    return true;
+  };
 }

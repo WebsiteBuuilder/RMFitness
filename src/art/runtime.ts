@@ -1,15 +1,18 @@
-// The 3D art engine's director and cinematics (loaded on demand: three.js only
-// downloads once the first animation is needed). The director plays cues one at
-// a time; battle figures stay on stage between the attack, the hit and the
-// destruction, then fade when nothing more is coming.
-import { PerspectiveCamera, Vector2, Vector3 } from 'three';
+// The 3D art engine's director and cinematics (loaded on demand, ahead of the
+// duel). The director plays cues one at a time; battle figures stay on stage
+// between the attack, the hit and the destruction (an attack declared on its own
+// holds its pose for the blow that follows a beat later, while the computer is
+// already free to go on; a shatter starts in the hit's recoil), then fade when
+// nothing more is coming. The duel is told it may go on as soon as the dim is
+// nearly gone; leftover particles finish without holding anything up.
+import { DataTexture, PerspectiveCamera, RGBAFormat, Vector2, Vector3, type Mesh, type PlaneGeometry } from 'three';
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
-import type { CardRef, Cue } from './cues';
+import { cueUids, type CardRef, type Cue, type Target } from './cues';
 import { artFor, cardBack, type ArtData } from './depth';
-import { profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
+import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
-import { backOut, BASE_FOV, CardPanel, clamp01, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Fx, type Quality } from './stage';
+import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Fx, type Quality } from './stage';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
@@ -18,7 +21,35 @@ export interface Ui {
   number(o: { text: string; color: number; side: 'top' | 'bottom'; size: number }): void;
   flash(color: number, strength: number): void;
   caption(text: string, dur: number, cls?: string): void;
+  /** removes every banner, caption and number still showing (a new chain, or leaving) */
+  clear?(): void;
 }
+
+/** The Life Points plate on one side of the screen (Classic and Touch both show one per duelist). */
+function lpPlate(side: 'top' | 'bottom'): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  const mid = window.innerHeight / 2;
+  for (const n of document.querySelectorAll<HTMLElement>('.lp-count')) {
+    const el = n.closest<HTMLElement>('.lp, .tlp') ?? n;
+    const r = el.getBoundingClientRect();
+    if (r.height > 0 && (r.top + r.height / 2 < mid) === (side === 'top')) return el;
+  }
+  return null;
+}
+
+/** Plays a CSS beat on a duelist's Life Points plate ('art-lp-shake', 'art-lp-shatter'); returns where it is. */
+export function lpBeat(side: 'top' | 'bottom', cls: string, ms = 400): DOMRect | null {
+  const el = lpPlate(side);
+  if (!el) return null;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), ms);
+  return el.getBoundingClientRect();
+}
+
+/** Summed screen flash (WebGL flash layer + post flash) never goes past this: the subject stays readable. */
+const FLASH_CAP = 0.38;
 
 const css = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
 const brighten = (hex: number, min = 170) => {
@@ -49,6 +80,12 @@ export class Timeline implements Fx {
   rate = 1;
   /** called at the commit marker: the moment the board catches up with the cinematic */
   onCommit: (() => void) | null = null;
+  /**
+   * From this moment (cinematic seconds) the next cinematic of the same chain may
+   * start while this one plays out underneath (a blow still recoiling as the
+   * shatter begins). null: the next one waits for the end.
+   */
+  handoff: number | null = null;
   private items: { t0: number; t1: number; fn: SpanFn; done: boolean; cosmetic: boolean }[] = [];
   owned: Fx[] = [];
   constructor(
@@ -127,6 +164,8 @@ interface Actor {
   entered: boolean;
   /** its card on the field (where it flies in from) */
   from: { x: number; y: number };
+  /** stands on its own card (struck by a Spell/Trap), facing the camera */
+  field?: boolean;
 }
 
 type Role = 'att' | 'def';
@@ -147,13 +186,65 @@ interface Queued {
 }
 
 /** How much faster a cinematic plays when it flows straight into the next one of its chain. */
-function flowRate(cue: Cue, next: Queued | undefined, batch: number): number {
+export function flowRate(cue: Cue, next: Queued | undefined, batch: number, oppBacklog = false): number {
+  const r = chainRate(cue, next, batch);
+  // the opponent's turn with more queued behind: it keeps moving
+  return oppBacklog ? Math.max(OPP_BACKLOG_RATE, r) : r;
+}
+
+/** An opponent's cue with more cues queued behind it plays at least this fast. */
+export const OPP_BACKLOG_RATE = 1.35;
+/** Under Cinematics: All, the opponent's quick cues (spells, sets, skills, damage...) beyond this many queued are dropped. */
+export const QUEUE_KEEP = 3;
+
+/** Whose cue it is (null: it follows whatever caused it). */
+export function cueOwner(c: Cue): Pid | null {
+  switch (c.kind) {
+    case 'summon':
+    case 'set':
+    case 'flip':
+    case 'activate':
+    case 'target':
+      return c.card.controller;
+    case 'skill':
+      return c.player;
+    case 'attack':
+      return c.attacker.controller;
+    case 'hit':
+      return c.attacker?.controller ?? (c.defender === 0 ? 1 : 0);
+    default:
+      return null;
+  }
+}
+
+function chainRate(cue: Cue, next: Queued | undefined, batch: number): number {
   const same = next && next.batch === batch ? next.cue.kind : null;
   if (cue.kind === 'attack') return same === 'hit' ? 1.6 : 1.25;
-  if (cue.kind === 'hit') return 1.25;
-  if (cue.kind === 'destroy' || cue.kind === 'damage') return same ? 1.4 : 1.2;
+  if (cue.kind === 'hit') return same === 'destroy' ? 1.4 : 1.25;
+  if (cue.kind === 'destroy') return same === 'damage' ? 1.6 : same ? 1.4 : 1.2;
+  if (cue.kind === 'damage') return same ? 1.4 : 1.2;
   return 1;
 }
+
+/** Battle figures linger this long (s at 1x) after the last cinematic, then fade over FADE. */
+const LINGER = 0.3;
+const LINGER_AFTER_SHATTER = 0.1;
+const FADE = 0.25;
+const FAST_FADE = 0.15;
+/** With a choice for the player waiting, the tail is short: this linger, then FAST_FADE. */
+const HURRY_LINGER = 0.1;
+/** Particles still drifting once the stage reported idle get at most this long (s; none when hurried). */
+const PARTICLE_TAIL = 0.25;
+/**
+ * After an attack declaration with nothing queued behind it, the fighters hold
+ * their pose this long (s at 1x, at least HOLD_MIN real seconds) waiting for the
+ * blow, which usually arrives a beat later in its own chain (after the response
+ * window). The computer is released at once, so the hold costs it nothing.
+ */
+const HOLD = 1.1;
+const HOLD_MIN = 0.6;
+/** Report the stage idle once the dim is under this (what is left is particles fading on their own). */
+const IDLE_DIM = 0.1;
 
 export class Director {
   stage: Stage;
@@ -161,6 +252,8 @@ export class Director {
   private current: Timeline | null = null;
   /** the chain (event batch) the current cinematic belongs to; -1 when none */
   private curBatch = -1;
+  /** the chain the last cinematic belonged to (a new one clears the captions) */
+  private lastBatch = -1;
   /** after a skip, figures left on stage fade at once */
   private fastFade = false;
   /** Animation speed setting: 1, 1.5 or 2 */
@@ -175,9 +268,30 @@ export class Director {
   private bg = 0;
   private skipAll = false;
   private watchdog = 0;
+  /** the stage is done for the duel (the dim is nearly gone): the board may show everything again */
   onIdle: (() => void) | null = null;
   onBusy: (() => void) | null = null;
+  /** the computer may go on (the stage may still hold the fighters for a follow-up, or be fading out) */
+  onSettle: (() => void) | null = null;
+  /** a cinematic of chain `batch` started; it lasts `seconds` of real time */
+  onCueStart: ((batch: number, seconds: number) => void) | null = null;
+  /** the WebGL context was lost (everything was dropped and reported) */
+  onLost: (() => void) | null = null;
   viewer: Pid = 0;
+  /** cinematics still playing out under the current one (see Timeline.handoff) */
+  private trailing: Timeline[] = [];
+  /** the finished attack declaration, kept on stage while the fighters wait for the blow */
+  private held: Timeline | null = null;
+  /** seconds left of that hold */
+  private holdLeft = 0;
+  private curKind: Cue['kind'] | null = null;
+  /** the kind of the last cinematic that ended (sets the linger after it) */
+  private lastKind: Cue['kind'] | null = null;
+  /** battle figures fading away under a new, unrelated cinematic */
+  private outgoing: Actor[] = [];
+  /** onSettle / onIdle already sent since the last push */
+  private settledSent = true;
+  private idleSent = true;
   /** the full-screen dim behind every cinematic, and the layer over it (flashes, cracks, speed lines) */
   private veil = new Veil(false);
   private front = new Veil(true);
@@ -190,6 +304,8 @@ export class Director {
   private probe = new PerspectiveCamera(BASE_FOV, 1, 0.1, 100);
   /** which side attacks in the battle on stage (mirrors the layout) */
   private battleSide: 'near' | 'far' = 'near';
+  /** camera roll (radians): the dutch-angle punch on impacts */
+  private roll = 0;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -202,7 +318,10 @@ export class Director {
     this.stage.scene.add(this.veil.mesh, this.front.mesh);
     // WebGL context lost (backgrounded phone, GPU reset): drop everything and report
     // idle so the duel never waits on a cinematic that cannot draw; play again once restored.
-    this.stage.onLost = () => this.clear();
+    this.stage.onLost = () => {
+      this.clear();
+      this.onLost?.();
+    };
   }
 
   /** Compiles every shader ahead of the first cinematic (call right after construction). */
@@ -220,14 +339,31 @@ export class Director {
     this.stage.speed = q === 'fast' ? 1.8 : 1;
   }
 
+  /**
+   * The computer must wait: a cinematic is queued or playing, or the last one's
+   * dim has not cleared yet. A hold for a follow-up blow, and the last particles
+   * fading, do not count.
+   */
   get busy() {
-    return this.queue.length > 0 || this.current !== null || this.actors.size > 0;
+    return this.queue.length > 0 || this.current !== null || this.trailing.length > 0 || !this.settledSent;
+  }
+
+  /** Something is still drawn (busy, holding, or fading out). */
+  get onStage() {
+    return this.busy || this.actors.size > 0 || this.held !== null || this.outgoing.length > 0 || !this.idleSent;
   }
 
   /** Playback speed of what is on now (for the DOM banners' timing). */
   get rate() {
     return this.current?.rate ?? this.timeScale;
   }
+
+  /** The Cinematics setting (the art stage keeps it current): under 'all' a long opponent backlog is trimmed. */
+  cinematics = 'big';
+  /** A choice for the player is waiting on the stage (the flow says): what is left fades out fast. */
+  hurry: () => boolean = () => false;
+  /** idleFor when the stage last reported idle (particles get PARTICLE_TAIL more) */
+  private idleMark = -1;
 
   /** Plays one chain: the cues of one engine update. `scales` speeds single cinematics up (2 = half as long). */
   push(cues: Cue[], batch = 0, scales?: number[]) {
@@ -244,11 +380,70 @@ export class Director {
       this.queue = this.queue.filter((q) => SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'damage' || q.cue.kind === 'destroy').slice(-10);
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
+    } else if (this.cinematics === 'all' && this.queue.length > QUEUE_KEEP) {
+      // Everything plays under All, but an opponent's long chain (a spell, a set, a skill, a
+      // flip... one after the other) keeps only its big beats past the first few.
+      const v = this.viewer;
+      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || cueOwner(q.cue) === v);
+      const left = new Set(this.queue.map((q) => q.batch));
+      for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
+    // Upload the pictures of every card this chain shows now, one texture per frame,
+    // so no cinematic stalls the GPU uploading one mid-shot.
+    for (const cue of cues) {
+      const refs = cue.kind === 'attack' || cue.kind === 'hit' ? [cue.attacker, cue.target] : 'card' in cue ? [cue.card] : [];
+      for (const r of refs) if (r?.name) void artFor(r.name).then((a) => this.stage.upload(a), () => {});
+    }
+    // From idle, the stage stays clear until the first cinematic is built (a chain with
+    // nothing to draw never dims the screen for a few frames).
+    if (!this.current && !this.held) this.dimTarget = 0;
     this.fastFade = false;
+    this.settledSent = false;
+    this.idleSent = false;
     this.onBusy?.();
     this.stage.start();
     if (!this.current) this.next();
+  }
+
+  private settle() {
+    if (this.settledSent) return;
+    this.settledSent = true;
+    this.onSettle?.();
+  }
+
+  private idle() {
+    this.settle();
+    if (this.idleSent) return;
+    this.idleSent = true;
+    this.onIdle?.();
+  }
+
+  /** Linger before the battle figures fade (shorter at a faster Animation speed; none after a skip; a short one after a shatter, which is its own beat). */
+  private get linger() {
+    if (this.fastFade) return 0;
+    if (this.hurry()) return HURRY_LINGER / this.timeScale;
+    return (this.lastKind === 'destroy' ? LINGER_AFTER_SHATTER : LINGER) / this.timeScale;
+  }
+
+  /** Drops the attack declaration kept for a follow-up. */
+  private dropHeld() {
+    this.holdLeft = 0;
+    if (!this.held) return;
+    this.held.dispose();
+    this.held = null;
+  }
+
+  /** The current cinematic plays out underneath while the next one of its chain starts. */
+  private handOff() {
+    const tl = this.current!;
+    this.trailing.push(tl);
+    this.current = null;
+    this.next();
+  }
+
+  private finishTrailing() {
+    for (const t of this.trailing) (t.finish(), t.dispose());
+    this.trailing = [];
   }
 
   /** Tap: skip the whole current chain (every cue of the same event batch). */
@@ -256,6 +451,8 @@ export class Director {
     this.fastFade = true;
     const b = this.curBatch;
     if (b >= 0) this.queue = this.queue.filter((q) => q.batch !== b);
+    this.finishTrailing();
+    this.dropHeld();
     this.endCurrent(true);
     if (!this.current && !this.queue.length) this.stage.particles.clear();
   }
@@ -266,9 +463,49 @@ export class Director {
     this.fastFade = true;
     const rest = [...new Set(this.queue.map((q) => q.batch))];
     this.queue = [];
+    this.finishTrailing();
+    this.dropHeld();
     this.endCurrent(true);
     for (const b of rest) this.onBatchEnd?.(b);
     this.stage.particles.clear();
+  }
+
+  /**
+   * After a skip with nothing else to play: the stage goes blank this very frame
+   * (no fast fade) and reports idle, so the board and the duel get the screen back
+   * at once. False (nothing done) while a cinematic is still playing or queued.
+   */
+  hideNow(): boolean {
+    if (this.current || this.queue.length || this.trailing.length) return false;
+    this.dropHeld();
+    for (const a of this.actors.values()) this.dropActor(a);
+    this.actors.clear();
+    for (const a of this.outgoing) this.dropActor(a);
+    this.outgoing = [];
+    this.stage.clear();
+    this.ui.clear?.();
+    this.bg = this.bgTarget = 0;
+    this.dim = this.dimTarget = 0;
+    this.veil.u.uDim.value = 0;
+    this.front.u.uFlash.value = 0;
+    this.stage.backdrop.u.uOpacity.value = 0;
+    this.resetCam();
+    this.stage.camera.up.set(0, 1, 0);
+    // stop() clears the canvas: blank on the next composite
+    this.stage.stop();
+    this.skipAll = false;
+    this.fastFade = false;
+    this.idleFor = 0;
+    this.idle();
+    return true;
+  }
+
+  /**
+   * The dim covers the duel almost completely (a cinematic is playing at full dim):
+   * the field figures layer under it need not draw (board.ts).
+   */
+  get covering(): boolean {
+    return this.current !== null && this.dim > 0.7 && this.dimTarget > 0.7;
   }
 
   /** Ends the cinematic on stage (finishing it first when skipped), reports a finished chain, starts the next. */
@@ -276,8 +513,15 @@ export class Director {
     const tl = this.current;
     if (!tl) return;
     if (skipped) tl.finish();
-    tl.dispose();
+    // An attack declaration with nothing behind it: the fighters hold their pose for the blow.
+    if (!skipped && this.curKind === 'attack' && !this.queue.length && !this.fastFade && !this.skipAll && this.actors.size) {
+      this.dropHeld();
+      this.held = tl;
+      this.holdLeft = Math.max(HOLD / this.timeScale, HOLD_MIN);
+    } else tl.dispose();
     this.current = null;
+    this.lastKind = this.curKind;
+    this.curKind = null;
     const b = this.curBatch;
     if (b >= 0 && !this.queue.some((q) => q.batch === b)) {
       this.curBatch = -1;
@@ -293,16 +537,25 @@ export class Director {
     this.current?.finish();
     this.current?.dispose();
     this.current = null;
+    this.curKind = null;
     this.curBatch = -1;
     this.skipAll = false;
+    this.finishTrailing();
+    this.dropHeld();
     for (const b of rest) this.onBatchEnd?.(b);
     for (const a of this.actors.values()) this.dropActor(a);
     this.actors.clear();
+    for (const a of this.outgoing) this.dropActor(a);
+    this.outgoing = [];
     this.stage.clear();
+    this.ui.clear?.();
+    this.stage.camera.up.set(0, 1, 0);
     this.bg = this.bgTarget = 0;
     this.stage.backdrop.u.uOpacity.value = 0;
     this.stage.stop();
-    this.onIdle?.();
+    this.settledSent = false;
+    this.idleSent = false;
+    this.idle();
   }
 
   dispose() {
@@ -317,23 +570,55 @@ export class Director {
   }
 
   private frame(dt: number) {
+    const ts = this.timeScale;
+    const following = !this.current && this.held !== null && !this.fastFade;
+    const lingering = !this.fastFade && this.actors.size > 0 && this.idleFor < this.linger;
     // Backdrop eases toward what the current cinematic wants.
     // (the battle figures' backdrop fades with them, not after them)
-    const want = this.current ? this.bgTarget : this.actors.size && !this.fastFade && this.idleFor < 0.3 ? 0.6 : 0;
-    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * (this.fastFade ? 20 : 7)));
+    const want = this.current || following ? this.bgTarget : lingering ? 0.6 : 0;
+    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * (this.fastFade ? 20 : 7) * ts));
     if (this.fastFade && !this.current && this.bg < 0.03) this.bg = 0;
     this.stage.backdrop.u.uOpacity.value = this.bg * 0.7;
-    this.veils(dt);
+    this.veils(dt, following, lingering);
+    // figures of an earlier battle fading under a new cinematic
+    if (this.outgoing.length) {
+      for (const a of this.outgoing) this.setOpacity(a, Math.max(0, (a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0) - dt * 6 * ts));
+      this.outgoing = this.outgoing.filter((a) => {
+        if ((a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0) > 0) return true;
+        this.dropActor(a);
+        return false;
+      });
+    }
+    // a blow still playing out under the shatter
+    for (let i = this.trailing.length - 1; i >= 0; i--) {
+      const t = this.trailing[i];
+      if (!t.update(dt)) {
+        t.dispose();
+        this.trailing.splice(i, 1);
+      }
+    }
     if (this.current) {
+      const tl = this.current;
       this.watchdog += dt;
-      if (!this.current.update(dt) || this.watchdog > this.current.duration / this.current.rate + 3) this.endCurrent(false);
+      if (!tl.update(dt) || this.watchdog > tl.duration / tl.rate + 3) this.endCurrent(false);
+      else if (tl.handoff !== null && tl.t >= tl.handoff && this.queue[0]?.batch === this.curBatch) this.handOff();
+      this.capFlash();
       return;
+    }
+    if (this.trailing.length) return;
+    if (following) {
+      // the fighters hold their pose for the blow; the computer goes on meanwhile
+      this.settle();
+      this.holdLeft -= dt;
+      if (this.holdLeft > 0) return;
+      this.dropHeld();
+      this.idleFor = this.linger;
     }
     // Nothing playing: battle figures linger a moment, then fade away (at once after a skip).
     this.idleFor += dt;
-    const linger = this.fastFade ? 0 : 0.3;
+    const linger = this.linger;
     if (this.actors.size && this.idleFor > linger) {
-      const k = clamp01((this.idleFor - linger) / (this.fastFade ? 0.15 : 0.25));
+      const k = clamp01((this.idleFor - linger) / ((this.fastFade || this.hurry() ? FAST_FADE : FADE) / ts));
       for (const a of this.actors.values()) {
         if (a.fig) a.fig.u.uOpacity.value = Math.min(a.fig.u.uOpacity.value, 1 - k);
         if (a.back) a.back.u.uOpacity.value = Math.min(a.back.u.uOpacity.value, 1 - k);
@@ -343,23 +628,44 @@ export class Director {
         this.actors.clear();
       }
     }
-    if (!this.actors.size && this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || this.idleFor > 0.7)) {
+    if (this.actors.size || this.outgoing.length) return;
+    // The dim is nearly gone: the duel goes on now; particles finish on their own.
+    if (this.dim < IDLE_DIM) {
+      if (!this.idleSent) this.idleMark = this.idleFor;
+      this.idle();
+    }
+    // once the duel has the screen back, drifting particles get a short tail (none with a choice waiting)
+    const tailDone = this.idleSent && (this.hurry() || this.idleFor - this.idleMark > PARTICLE_TAIL);
+    if (this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || tailDone || this.idleFor > 1.5)) {
       this.stage.particles.clear();
       this.stage.backdrop.u.uOpacity.value = 0;
       this.stage.stop();
       this.skipAll = false;
       this.fastFade = false;
-      this.onIdle?.();
+      this.idle();
+    }
+  }
+
+  /** Flash discipline: the colored flash layer and the post flash share one budget. */
+  private capFlash() {
+    const st = this.stage as unknown as { flash: number };
+    const f = this.front.u.uFlash;
+    const sum = f.value + st.flash * 0.85;
+    if (sum > FLASH_CAP) {
+      const k = FLASH_CAP / sum;
+      f.value *= k;
+      st.flash *= k;
     }
   }
 
   /** The dim eases toward what the cinematic wants; flashes and overlays decay; the camera drifts home when idle. */
-  private veils(dt: number) {
-    const want = this.current ? this.dimTarget : this.actors.size && !this.fastFade && this.idleFor < 0.3 ? 0.75 : 0;
-    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade ? 22 : 8)));
+  private veils(dt: number, following: boolean, lingering: boolean) {
+    const want = this.current || following ? this.dimTarget : lingering ? 0.75 : 0;
+    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade || (!this.current && this.hurry()) ? 22 : 8) * (this.current ? 1 : this.timeScale)));
     if (want === 0 && this.dim < 0.01) this.dim = 0;
     const v = this.veil.u;
     v.uDim.value = this.dim;
+    this.stage.dim = this.dim;
     v.uAspect.value = this.stage.camera.aspect;
     v.uFocus.value.lerp(this.focus, 1 - Math.exp(-dt * 6));
     const f = this.front.u;
@@ -370,8 +676,11 @@ export class Director {
     f.uRed.value *= fade;
     f.uSpeed.value *= fade;
     f.uCrackOp.value *= fade;
-    if (!this.current) {
-      const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6));
+    // the dutch angle eases back level unless a cinematic holds it
+    if (!this.current) this.roll *= Math.exp(-dt * 8);
+    this.stage.camera.up.set(Math.sin(this.roll), Math.cos(this.roll), 0);
+    if (!this.current && !following) {
+      const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6) * this.timeScale);
       this.stage.camBase.lerp(REST.pos, c);
       this.stage.camLook.lerp(REST.look, c);
     }
@@ -386,13 +695,26 @@ export class Director {
       this.idleFor = 0;
       return;
     }
+    this.retire(item.cue);
     this.idleFor = 0;
     this.fastFade = false;
+    // a new chain: whatever the last one left on screen (captions, banners) goes
+    if (item.batch !== this.lastBatch) this.ui.clear?.();
+    this.lastBatch = item.batch;
     this.curBatch = item.batch;
     const placeholder = new Timeline(99, this.stage);
+    placeholder.rate = this.timeScale;
     this.current = placeholder;
-    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch);
-    this.build(item.cue)
+    this.curKind = item.cue.kind;
+    const own = cueOwner(item.cue);
+    // (an opponent cue with more queued behind it: shifted off already, so one left means two were waiting)
+    // (a cue already sped up, like their everyday summon, is fast enough)
+    const oppBacklog = this.queue.length >= 1 && own !== null && own !== this.viewer && item.scale < OPP_BACKLOG_RATE;
+    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
+    // Never draw a cinematic before its shaders are ready (a first-use link stalls for a whole second on some phones).
+    const warm = Promise.race([this.stage.prewarm(), new Promise((ok) => setTimeout(ok, 2500))]);
+    warm
+      .then(() => (this.current === placeholder ? this.build(item.cue) : null))
       .then((tl) => {
         if (this.current !== placeholder) {
           tl?.dispose();
@@ -404,13 +726,35 @@ export class Director {
         }
         tl.rate = rate;
         tl.onCommit = () => this.onCommit?.(item.batch);
+        // the attack declaration held for this blow gives way to it
+        if (this.held) this.dropHeld();
         this.current = tl;
+        this.onCueStart?.(item.batch, tl.duration / rate);
         if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
         console.warn('art engine: cinematic failed', err);
         if (this.current === placeholder) this.endCurrent(false);
       });
+  }
+
+  /**
+   * Before a new cinematic: battle figures already fading (or skipped away) stay
+   * gone unless it is about them; fighters held for a blow give way to a new
+   * battle or summon that is not about them. They fade out under it.
+   */
+  private retire(cue: Cue) {
+    if (!this.actors.size || this.current) return;
+    const fading = !this.held && (this.fastFade || this.idleFor > this.linger);
+    const keep = new Set(cueUids(cue));
+    const about = [...this.actors.keys()].some((u) => keep.has(u));
+    const newScene = !!this.held && !about && (cue.kind === 'attack' || cue.kind === 'summon');
+    if (!fading && !newScene) return;
+    if (newScene) this.dropHeld();
+    for (const a of [...this.actors.values()]) {
+      if (keep.has(a.uid)) this.setOpacity(a, 1);
+      else (this.actors.delete(a.uid), this.outgoing.push(a));
+    }
   }
 
   // ------------------------------------------------------------ helpers
@@ -480,10 +824,33 @@ export class Director {
       a.fig = this.stage.add(this.figure(art, size, prof, col.main));
       a.fig.u.uOpacity.value = 0;
     } else {
-      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x8a5a2a));
+      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
       if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
       a.back.u.uOpacity.value = 0;
     }
+    this.actors.set(c.uid, a);
+    this.place(a);
+    return a;
+  }
+
+  /** A monster on the field rising off its own card (a board-wide or targeted effect is about to strike it). */
+  private async fieldActor(c: CardRef): Promise<Actor> {
+    const have = this.actors.get(c.uid);
+    if (have) return have;
+    const prof = profileFor(card(c.name), c.name || 'face-down');
+    const art = c.name && c.faceUp ? await this.art(c.name) : null;
+    const side = this.side(c.controller);
+    const at = this.anchor(c, side);
+    const size = 0.95 * this.U;
+    const a: Actor = { uid: c.uid, name: c.name, side, role: side === 'near' ? 'att' : 'def', prof, art, fig: null, back: null, x: at.x, y: at.y + size * 0.28, z: 0.35, size, ox: 0, oy: 0, oz: 0, lean: 0, entered: true, from: at, field: true };
+    if (art) {
+      a.fig = this.stage.add(this.figure(art, size, prof, this.colors(prof, art).main));
+      a.fig.mesh.scale.setScalar(size);
+    } else {
+      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
+      if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
+    }
+    this.setOpacity(a, 0);
     this.actors.set(c.uid, a);
     this.place(a);
     return a;
@@ -495,8 +862,8 @@ export class Director {
     m.position.set(a.x + a.ox, a.y + a.oy, a.z + a.oz);
     // the fighters turn a little toward each other; the lean is the wind-up and the recoil
     const t = this.battleSide === 'near' ? 1 : -1;
-    m.rotation.x = (a.role === 'att' ? -0.06 : 0.04) + a.lean;
-    m.rotation.y = (a.role === 'att' ? 0.22 : -0.18) * t;
+    m.rotation.x = (a.field ? 0 : a.role === 'att' ? -0.06 : 0.04) + a.lean;
+    m.rotation.y = a.field ? 0 : (a.role === 'att' ? 0.22 : -0.18) * t;
   }
 
   private setOpacity(a: Actor, o: number) {
@@ -570,11 +937,11 @@ export class Director {
     const st = this.stage;
     const U = this.U;
     const pw = clamp01(o.power);
-    const flare = tl.own(new Glow((1.6 + pw * 1.1) * U, (1.6 + pw * 1.1) * U, 'flare', o.color, o.light));
+    const flare = tl.own(new Glow((1.25 + pw * 0.8) * U, (1.25 + pw * 0.8) * U, 'flare', o.color, o.light));
     flare.mesh.position.set(p.x, p.y, p.z + 0.5);
     flare.u.uK.value = 1;
     tl.span(at, at + 0.4, (k) => {
-      flare.u.uOpacity.value = 0.85 * (k < 0.15 ? 1 : 1 - easeOut((k - 0.15) / 0.85));
+      flare.u.uOpacity.value = 0.5 * (k < 0.12 ? 1 : 1 - easeOut((k - 0.12) / 0.88));
       flare.mesh.scale.setScalar(lerp(0.6, 1.15, easeOut(k)));
     });
     const ring = tl.own(new Glow(3.6 * U, 3.6 * U, 'shock', o.color, o.light));
@@ -597,8 +964,8 @@ export class Director {
         st.punch(3 + 4 * pw);
       }
       st.pulse('chroma', 0.35 + 0.6 * pw);
-      st.pulse('flash', 0.08 + 0.16 * pw);
-      this.flash(o.light, 0.12 + 0.16 * pw);
+      st.pulse('flash', 0.03 + 0.05 * pw);
+      this.flash(o.light, 0.05 + 0.08 * pw);
       st.shake(0.45 + 0.6 * pw);
       const P = st.particles;
       const q = this.q;
@@ -621,6 +988,7 @@ export class Director {
   private resetCam() {
     this.stage.camBase.copy(REST.pos);
     this.stage.camLook.copy(REST.look);
+    this.roll = 0;
   }
 
   /**
@@ -639,9 +1007,10 @@ export class Director {
       if (t >= 0) top = t / r.height;
       if (b >= 0) bottom = b / r.height;
       // anything laid over the canvas's lower part (the viewer's panel)
-      const panel = document.querySelector('.artlab-panel');
-      if (panel) {
-        const pr = panel.getBoundingClientRect();
+      const panel = document.querySelector<HTMLElement>('.artlab-panel');
+      const pr = panel?.getBoundingClientRect();
+      // (a hidden or collapsed panel covers nothing)
+      if (panel && pr && pr.height > 8 && pr.top < r.bottom && getComputedStyle(panel).visibility !== 'hidden') {
         const cover = (r.bottom - pr.top) / r.height;
         top = Math.min(top, 0.07);
         bottom = Math.max(0.05, cover > 0 ? cover + 0.03 : 0.05);
@@ -654,16 +1023,20 @@ export class Director {
    * A camera that fits every box inside the safe area: from direction (yaw, pitch),
    * as close as it can get with the boxes filling `fill` of the safe area, centered in it.
    */
-  private fit(boxes: Box[], yaw: number, pitch: number, o: { fill?: number; minD?: number } = {}): Shot {
+  private fit(boxes: Box[], yaw: number, pitch: number, o: { fill?: number; minD?: number; at?: number } = {}): Shot {
     const cam = this.probe;
     cam.aspect = this.stage.camera.aspect;
     cam.fov = BASE_FOV;
     cam.updateProjectionMatrix();
     const safe = this.safe();
     const fill = o.fill ?? 1;
+    // `at`: where the boxes' center sits, as a fraction of the safe area's height from its top
+    // (off center, they get only twice the room to the nearer edge)
+    const at = Math.min(0.8, Math.max(0.2, o.at ?? 0.5));
     const maxW = 2 * 0.9 * fill;
-    const maxH = 2 * (1 - safe.top - safe.bottom) * fill;
-    const targetY = safe.bottom - safe.top;
+    const maxH = 2 * (1 - safe.top - safe.bottom) * fill * 2 * Math.min(at, 1 - at);
+    const yTop = 1 - 2 * safe.top;
+    const targetY = yTop - at * (yTop - (-1 + 2 * safe.bottom));
     const pts: Vector3[] = [];
     const look = new Vector3();
     for (const b of boxes) {
@@ -718,12 +1091,87 @@ export class Director {
   }
 
   /** The over-the-shoulder battle camera: behind the attacker, ~25° off, the defender deep in the frame. */
-  private battleShot(att: Actor | null, tgt: Actor | null, T: P3): Shot {
+  private battleShot(att: Actor | null, tgt: Actor | null, T: P3, yaw = 0.3, pitch = 0.1, fill = 0.86): Shot {
     const U = this.U;
     const m = this.battleSide === 'near' ? 1 : -1;
-    const boxes: Box[] = [tgt ? this.boxOf(tgt) : { ...T, w: 0.5 * U, h: 0.5 * U }];
-    if (att) boxes.push(this.boxOf(att));
-    return this.fit(boxes, -0.44 * m, 0.1, { fill: 0.86 });
+    // (much more than ~20° off its front and a relief figure shows its extrusion as streaky slices)
+    yaw = Math.min(yaw, 0.35);
+    // (the figure's painted subject fills ~90% of its box: framed on that, not on the empty margin)
+    const boxes: Box[] = [tgt ? { ...this.boxOf(tgt), h: this.boxOf(tgt).h * 0.92 } : { ...T, w: 0.5 * U, h: 0.5 * U }];
+    let ab: Box | null = null;
+    if (att) {
+      // the attacker from the hips up, with headroom over it (its feet may run off the frame;
+      // its head, hat or horns never run off the top)
+      const b = this.boxOf(att);
+      ab = { ...b, y: b.y + b.h * 0.3, h: b.h * 0.8 };
+      boxes.push(ab);
+    }
+    const shot = this.fit(boxes, -yaw * m, pitch, { fill });
+    if (!att) return shot;
+    // pull back until the attacker (in the foreground) takes at most ~55% of the frame's height
+    // (measured on its painted subject, ~92% of its box)
+    const full = { ...this.boxOf(att), h: this.boxOf(att).h * 0.92 };
+    const cam = this.probe;
+    const v = new Vector3();
+    const dir = shot.pos.clone().sub(shot.look);
+    const d0 = dir.length();
+    dir.normalize();
+    const tall = (d: number) => {
+      cam.position.copy(shot.look).addScaledVector(dir, d);
+      cam.lookAt(shot.look);
+      cam.updateMatrixWorld();
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const sy of [-1, 1])
+        for (const sx of [-1, 1]) {
+          v.set(full.x + sx * full.w, full.y + sy * full.h, full.z).project(cam);
+          if (v.z > 1 || v.z < -1) return 2;
+          y0 = Math.min(y0, v.y);
+          y1 = Math.max(y1, v.y);
+        }
+      return (y1 - y0) / 2;
+    };
+    let d = d0;
+    for (let i = 0; i < 24 && tall(d) > 0.55; i++) d *= 1.06;
+    return { pos: shot.look.clone().addScaledVector(dir, d), look: shot.look };
+  }
+
+  /**
+   * Leans the camera toward `shot` on top of whatever the cinematic sets: the weight
+   * eases in over [a, b] and back out over [c, d] (a preset framing its own subject
+   * while the activation's push-in, drift and return keep running underneath).
+   */
+  private lean(tl: Timeline, shot: Shot, a: number, b: number, c: number, d: number) {
+    tl.span(a, d, (k) => {
+      const t = a + k * (d - a);
+      const w = easeInOut(clamp01((t - a) / (b - a))) * (1 - easeInOut(clamp01((t - c) / (d - c))));
+      this.stage.camBase.lerp(shot.pos, w);
+      this.stage.camLook.lerp(shot.look, w);
+    });
+  }
+
+  /**
+   * What an effect strikes, framed: the boxes filling ~0.7 of the width (as far as the
+   * safe area's height allows), their center ~40% down the safe area so a burst above them
+   * (bolts, beams, shatter) still has room under the HUD.
+   */
+  private effectShot(boxes: Box[], yaw = 0, pitch = 0.05): Shot {
+    return this.fit(boxes, yaw, pitch, { fill: 0.8, at: 0.42 });
+  }
+
+  /** The world y at depth `z` above `x` that sits at the safe area's top edge, seen from `shot`. */
+  private skyY(shot: Shot, x: number, z: number): number {
+    const cam = this.probe;
+    cam.aspect = this.stage.camera.aspect;
+    cam.fov = BASE_FOV;
+    cam.updateProjectionMatrix();
+    cam.position.copy(shot.pos);
+    cam.lookAt(shot.look);
+    cam.updateMatrixWorld();
+    const ndcX = new Vector3(x, shot.look.y, z).project(cam).x;
+    const dir = new Vector3(ndcX, 1 - 2 * this.safe().top - 0.02, 0.5).unproject(cam).sub(cam.position).normalize();
+    if (Math.abs(dir.z) < 1e-4) return shot.look.y + 4 * this.U;
+    return cam.position.y + dir.y * ((z - cam.position.z) / dir.z);
   }
 
   // ------------------------------------------------------------ cinematics
@@ -736,7 +1184,9 @@ export class Director {
       case 'flip':
         return this.flip(cue.card);
       case 'activate':
-        return cue.what === 'monster' ? this.monsterEffect(cue.card) : this.activate(cue.card, cue.what);
+        return cue.what === 'monster' ? this.monsterEffect(cue.card) : this.activate(cue.card, cue.what, cue.targets ?? [], cue.field ?? []);
+      case 'target':
+        return this.targetBeat(cue.card, cue.targets);
       case 'skill':
         return this.skill(cue.player, cue.name);
       case 'attack':
@@ -787,7 +1237,9 @@ export class Director {
     const fusionish = entr === 'fusion' || entr === 'ritual';
     const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0);
     const LAND = 0.42;
-    const D = C + E + LAND;
+    // the summon starts under the cut-in's exit (no dead air between them)
+    const S = C ? C - 0.3 : 0;
+    const D = S + E + LAND;
     const tl = new Timeline(D, st);
     this.bgTarget = 0.4 + tier * 0.08;
     this.dimTarget = 0.84;
@@ -798,8 +1250,8 @@ export class Director {
     const size = (1.3 + tier * 0.1) * U;
     const restY = 0;
     const ground = restY - size * 0.46;
-    const at = (t: number, fn: () => void) => tl.at(C + t, fn);
-    const span = (a: number, b: number, fn: (k: number, dt: number) => void) => tl.span(C + a, C + b, fn);
+    const at = (t: number, fn: () => void) => tl.at(S + t, fn);
+    const span = (a: number, b: number, fn: (k: number, dt: number) => void) => tl.span(S + a, S + b, fn);
     const sub = !info ? '' : info.kind === 'monster' ? `${'★'.repeat(Math.min(12, info.level ?? 0))}  ATK ${info.atk ?? '?'} / DEF ${info.def ?? '?'}` : '';
     const how = entr === 'fusion' ? 'Fusion Summon' : entr === 'ritual' ? 'Ritual Summon' : (info?.level ?? 0) >= 5 ? 'Tribute Summon' : '';
 
@@ -812,8 +1264,8 @@ export class Director {
       });
       tl.at(0, () => (swell(0.7), whoosh(0.35, 500, 3200, 0.2)));
       tl.at(C - 0.07, () => {
-        st.pulse('flash', 0.7);
-        this.flash(0xffffff, 0.5);
+        st.pulse('flash', 0.35);
+        this.flash(0xffffff, 0.3);
         st.hitStop(0.085);
         boom(0.45);
       });
@@ -821,14 +1273,17 @@ export class Director {
     }
 
     // camera: hold at rest while the card leaves its zone, swing to a framed low (near) / high (far) angle, drift
-    const yaw = prof.camYaw * 0.32;
+    // a big monster lands under a slow orbit (±~17°: the flat figure reads as 3D, never edge-on)
+    const orbit = C > 0 || tier >= 2;
+    const yaw = orbit ? (prof.camYaw >= 0 ? 0.3 : -0.3) : prof.camYaw * 0.32;
     const pitch = side === 'near' ? -0.1 - prof.camPitch * 0.06 : 0.14 + prof.camPitch * 0.06;
     const boxes: Box[] = [
       { x: 0, y: restY, z: 0, w: size * 0.42, h: size * 0.5 },
       { x: 0, y: ground, z: 0, w: 1.05 * U, h: 0.12 * U },
     ];
-    const s0 = this.fit(boxes, yaw, pitch, { fill: 0.8 + tier * 0.03 });
-    const s1 = this.fit(boxes, -yaw * 0.5, pitch * 0.6, { fill: 0.88 + tier * 0.04 });
+    // the figure never fills more than ~70% of the safe area's height: it reads as a creature, not a smear of pixels
+    const s0 = this.fit(boxes, yaw, pitch, { fill: Math.min(0.68, 0.62 + tier * 0.02) });
+    const s1 = this.fit(boxes, orbit ? -yaw * 0.85 : -yaw * 0.5, pitch * 0.6, { fill: Math.min(0.72, 0.66 + tier * 0.02) });
     let sStart: Shot | null = null;
     span(0, 0.45, (k) => this.setShot((sStart ??= this.shot()), s0, easeInOut(k)));
     span(0.45, E, (k) => this.setShot(s0, s1, easeInOut(k)));
@@ -836,14 +1291,29 @@ export class Director {
     span(E, E + LAND, (k) => this.setShot((sEnd ??= this.shot()), REST, easeInOut(k)));
 
     // the card flies up from its zone and flips
-    const flyer = tl.own(new CardPanel(art?.full ?? null, 0.9 * U, col.main));
+    const flyer = tl.own(new CardPanel(art?.full ?? null, 1.2 * U, col.main));
     flyer.u.uOpacity.value = 0;
     span(0, 0.32, (k) => {
       const e = easeOut(k);
       flyer.mesh.position.set(lerp(from.x, 0, e), lerp(from.y, ground + 0.4 * U, e), lerp(0, 1.2, e));
       flyer.mesh.rotation.set(-0.5 * e, Math.PI * 2 * e, 0);
-      flyer.u.uOpacity.value = 1 - easeIn(k);
-      flyer.u.uTint.value = k;
+      flyer.mesh.scale.setScalar(lerp(0.55, 1.35, e));
+      // solid, in its own colors, while it flies (a pale fading card reads as a grey slab)
+      flyer.u.uOpacity.value = 1;
+      flyer.u.uTint.value = 0.35 * clamp01((k - 0.6) / 0.4);
+      // a light sweep across its face as it turns toward the camera
+      flyer.u.uSheen.value = lerp(-0.4, 1.8, clamp01((k - 0.35) / 0.65));
+    });
+    // it dissolves into light as the monster's reveal starts (showAt, below)
+    span(0.32, 0.5, (k) => {
+      flyer.u.uOpacity.value = 1 - easeOut(k);
+      flyer.u.uTint.value = lerp(0.35, 0.5, k);
+      flyer.mesh.scale.setScalar(1.35 * (1 + 0.08 * easeOut(k)));
+    });
+    span(0.34, 0.5, (_k, dt) => {
+      const n = Math.floor(160 * this.q * dt + 0.5);
+      const p = flyer.mesh.position;
+      for (let i = 0; i < n; i++) st.particles.emit({ x: p.x + (r() - 0.5) * 1.1 * U, y: p.y + (r() - 0.5) * 1.6 * U, z: p.z, vy: 1.2 * U, life: 0.5, size: 0.08 * U, color: i % 2 ? col.light : col.main, drag: 1.5 });
     });
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
 
@@ -872,7 +1342,7 @@ export class Director {
 
     // light shafts behind the monster
     const showAt = 0.42;
-    this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, C + showAt - 0.1, C + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
 
     // the monster
     const fig = art ? tl.own(this.figure(art, size, prof, col.main)) : null;
@@ -912,7 +1382,7 @@ export class Director {
           fig.mesh.position.y = lerp(3.2 * U, restY, e);
           fig.u.uOpacity.value = clamp01(k * 3);
           fig.u.uReveal.value = 1;
-          fig.u.uTint.value = 1 - k;
+          fig.u.uTint.value = 0.6 * (1 - k);
         });
         span(showAt, showAt + 0.5, (_k, dt) => emit(80 * q, dt, () => P.emit({ x: (Math.random() - 0.5) * 2.4 * U, y: 3 * U, vy: -6 * U, life: 0.5, size: 0.07 * U, color: col.light, drag: 0 })));
         at(landAt - 0.05, () => {
@@ -947,7 +1417,7 @@ export class Director {
           if (!fig) return;
           fig.u.uOpacity.value = 1;
           fig.u.uReveal.value = 1;
-          fig.u.uTint.value = 1 - k;
+          fig.u.uTint.value = 0.6 * (1 - k);
           fig.mesh.scale.setScalar(size * lerp(0.6, 1, backOut(k)));
         });
         break;
@@ -1006,8 +1476,8 @@ export class Director {
         );
         at(showAt + 0.2, () => {
           for (const h of heads) h.u.uOpacity.value = 0;
-          st.pulse('flash', 0.6);
-          this.flash(col.light, 0.6);
+          st.pulse('flash', 0.35);
+          this.flash(col.light, 0.3);
           boom(0.6);
           chime(r());
           P.emit({ x: 0, y: restY, burst: 5 * U, life: 0.8, size: 0.13 * U, color: col.light }, Math.round(120 * q));
@@ -1016,7 +1486,7 @@ export class Director {
           if (!fig) return;
           fig.u.uOpacity.value = 1;
           fig.u.uReveal.value = 1;
-          fig.u.uTint.value = 1 - k;
+          fig.u.uTint.value = 0.6 * (1 - k);
           fig.mesh.scale.setScalar(size * lerp(1.15, 1, easeOut(k)));
         });
         break;
@@ -1056,7 +1526,9 @@ export class Director {
       emit(60 * q, dt, () => P.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, r: s * 0.3, life: 0.35, size: 0.07 * U, color: col.light, drag: 2 }));
     });
     // the monster lands: its card appears in its zone as the figure arrives there
-    tl.commit(C + E + LAND * 0.6);
+    tl.commit(S + E + LAND * 0.6);
+    // the next cinematic of the chain starts as it lands (no dead air while it settles)
+    tl.handoff = S + E + LAND * 0.6;
     tl.at(
       D,
       () => {
@@ -1101,6 +1573,7 @@ export class Director {
     ring.u.uOpacity.value = 0;
     tl.span(0.3, 0.6, (k) => (ring.mesh.scale.setScalar(lerp(0.3, 1.2, easeOut(k))), (ring.u.uOpacity.value = 1 - k)));
     tl.span(0.42, 0.6, (k) => (panel.u.uOpacity.value = 1 - k));
+    tl.handoff = 0.42;
     return tl;
   }
 
@@ -1136,6 +1609,8 @@ export class Director {
         () => {
           if (have.back) this.stage.remove(have.back);
           have.back = null;
+          // never leave an earlier figure of this card behind on the stage
+          if (have.fig && have.fig !== fig) this.stage.remove(have.fig);
           have.fig = fig;
           have.name = c.name;
           have.prof = prof;
@@ -1151,9 +1626,10 @@ export class Director {
       tl.span(0.35, 0.7, (k) => {
         fig.u.uOpacity.value = 1;
         fig.u.uReveal.value = easeOut(k);
-        fig.u.uTint.value = 1 - k;
+        fig.u.uTint.value = 0.6 * (1 - k);
       });
       tl.at(0.4, () => this.ui.banner({ title: c.name, sub: 'Flip!', color: col.main, dur: 0.6, pos: this.side(c.controller) === 'near' ? 'bottom' : 'top' }));
+      tl.handoff = 0.55;
       return tl;
     }
     const at = this.anchor(c, this.side(c.controller));
@@ -1171,7 +1647,7 @@ export class Director {
       tl.span(0.3, 0.75, (k) => {
         fig.u.uOpacity.value = 1;
         fig.u.uReveal.value = easeOut(k);
-        fig.u.uTint.value = 1 - k;
+        fig.u.uTint.value = 0.6 * (1 - k);
       });
       tl.span(0.85, 1.1, (k) => (fig.u.uOpacity.value = 1 - k));
       this.shafts(tl, { x: 0, y: -0.65 * U, z: 0 }, 3.6 * U, col.main, 0.3, 1.1, 2, 0.6);
@@ -1181,55 +1657,117 @@ export class Director {
       st.pulse('flash', 0.3);
       this.ui.banner({ title: c.name, sub: 'Flip Summon', color: col.main, dur: 0.7, pos: 'bottom' });
     });
+    tl.handoff = 0.85;
     return tl;
   }
 
   /**
    * A Spell or Trap. Spells rise from their zone and open in a green rune burst;
    * traps flip up and slam toward the camera ("TRAP!", the screen's edge cracks).
-   * Iconic cards play their own preset on top (SPELL_PRESETS).
+   * Iconic cards play their own preset on top (SPELL_PRESETS); the monsters it
+   * strikes rise off their cards first so the effect lands on them. A targeted card
+   * sends a beam to its target and the effect resolves there.
    */
-  private async activate(c: CardRef, what: 'spell' | 'trap'): Promise<Timeline> {
+  private async activate(c: CardRef, what: 'spell' | 'trap', targets: Target[] = [], field: CardRef[] = []): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
     const info = card(c.name);
     const prof = profileFor(info, c.name);
     const art = await this.art(c.name);
     const base = what === 'spell' ? SPELL : TRAP;
-    const accent = art ? brighten(art.palette[0]) : 0xffffff;
-    const preset = SPELL_PRESETS[c.name];
+    const preset = presetFor(c.name);
+    const accent = preset?.accent ?? (art ? brighten(art.palette[0]) : 0xffffff);
     const side = this.side(c.controller);
+    // who it strikes: the monsters it destroys in this update, else the preset's reach
+    const foe = (f: CardRef) => f.controller !== c.controller;
+    let victims = field.filter((f) => f.dies);
+    if (!victims.length && preset?.scope) victims = field.filter((f) => preset.scope === 'all' || (foe(f) && (preset.scope === 'opp' || !f.def)));
+    const monTargets = targets.filter((t) => t.card.faceUp && t.card.name && !victims.some((v) => v.uid === t.card.uid) && (field.some((f) => f.uid === t.card.uid) || card(t.card.name)?.kind === 'monster'));
+    const figs: Actor[] = [];
+    for (const v of [...victims, ...monTargets.map((t) => t.card)]) figs.push(await this.fieldActor(v));
+    const hits = figs.slice(0, victims.length);
     const X = preset ? preset.dur : 0;
+    const aimed = !preset && (targets.length > 0 || hits.length > 0);
     const open = what === 'spell' ? 0.36 : 0.3;
-    const D = 1.3 + X;
+    const D = preset ? 1.3 + X : aimed ? 1.6 : 1.15;
     const tl = new Timeline(D, st);
     this.bgTarget = 0.45;
     this.dimTarget = 0.82;
     this.focus.set(0.5, 0.52);
     this.stage.backdrop.u.uColor.value.set(what === 'spell' ? 0.02 : 0.08, what === 'spell' ? 0.08 : 0.02, what === 'spell' ? 0.06 : 0.07);
     const from = this.anchor(c, side);
-    const H = 2.1 * U;
-    const cy = 0.15 * U;
+    const struck = figs.length > 0 || targets.length > 0;
+    const H = (struck ? 1.25 : 2.1) * U;
+    // the stage's center; a card that strikes monsters hovers over its own zone instead, out of their way
+    const mid = 0.15 * U;
+    const cx = struck ? from.x * 0.5 : 0;
+    const cy = struck ? lerp(from.y, 0, 0.25) : mid;
     const panel = tl.own(new CardPanel(art?.full ?? null, H, base));
     panel.u.uOpacity.value = 0;
-    const ring = tl.own(new Ring(3.1 * U, base, prof.glyphs, { inner: 0.6, outer: 0.95, star: what === 'trap' ? 3 : 4 }));
-    ring.mesh.position.set(0, cy, -0.6);
+    const ring = tl.own(new Ring(H * 1.48, base, prof.glyphs, { inner: 0.6, outer: 0.95, star: what === 'trap' ? 3 : 4 }));
+    ring.mesh.position.set(cx, cy, -0.6);
     ring.spinSpeed = what === 'spell' ? 0.8 : -1.2;
     ring.u.uOpacity.value = 0;
-    // a gentle push toward the card (the field stays where it is, for presets that strike it)
-    const cardBox: Box[] = [{ x: 0, y: cy, z: 0.8, w: H * 0.36, h: H * 0.52 }];
-    // presets that strike the field keep both rows in frame
+
+    // the monsters it strikes rise off their cards
+    tl.span(0.12, 0.45, (k) => {
+      for (const a of figs) {
+        a.oy = -0.3 * a.size * (1 - easeOut(k));
+        this.setOpacity(a, Math.max(clamp01(k * 2), a.fig?.u.uOpacity.value ?? 0));
+        this.place(a);
+      }
+    });
+    // Spell/Trap targets: their cards light up where they lie
+    const tPanels = new Map<number, CardPanel>();
+    for (const t of targets) {
+      if (figs.some((f) => f.uid === t.card.uid)) continue;
+      const tart = t.card.faceUp && t.card.name ? await this.art(t.card.name) : null;
+      const p = tl.own(new CardPanel(tart?.full ?? cardBack(), 0.78 * U, 0xffe08a));
+      const at = this.anchor(t.card, this.side(t.card.controller));
+      p.mesh.position.set(at.x, at.y, 0.2);
+      if (t.card.def) p.mesh.rotation.z = Math.PI / 2;
+      p.u.uOpacity.value = 0;
+      tl.span(0.15, 0.4, (k) => (p.u.uOpacity.value = easeOut(k)));
+      tPanels.set(t.card.uid, p);
+    }
+    const pointOf = (uid: number): P3 | null => {
+      const a = figs.find((f) => f.uid === uid);
+      if (a) return this.center(a);
+      const p = tPanels.get(uid);
+      return p ? { x: p.mesh.position.x, y: p.mesh.position.y, z: 0.3 } : null;
+    };
+
+    // the camera: a gentle push toward the card; whatever it strikes stays in frame
+    const cardBox: Box[] = [{ x: cx, y: cy, z: 0.8, w: H * 0.36, h: H * 0.52 }];
     if (preset) cardBox.push({ x: 0, y: (side === 'near' ? 1 : -1) * 1.5 * U, z: 0, w: 1.4 * U, h: 0.5 * U }, { x: 0, y: (side === 'near' ? -1 : 1) * 1.3 * U, z: 0, w: 1.4 * U, h: 0.3 * U });
-    const shot = this.fit(cardBox, prof.camYaw * 0.08, 0.02, { fill: preset ? 0.92 : 0.72 });
+    for (const a of figs) cardBox.push(this.boxOf(a));
+    for (const p of tPanels.values()) cardBox.push({ x: p.mesh.position.x, y: p.mesh.position.y, z: 0.2, w: 0.4 * U, h: 0.5 * U });
+    const shot = this.fit(cardBox, prof.camYaw * 0.08, 0.02, { fill: preset || struck ? 0.92 : 0.72 });
     let s0: Shot | null = null;
     tl.span(0, 0.5, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
+    // once the card has opened, the camera leaves it for what it strikes: those framed big and a
+    // little above the middle of the safe area, so the bursts over them stay in frame
+    const struckBoxes: Box[] = [...figs.map((a) => this.boxOf(a)), ...[...tPanels.values()].map((p) => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: 0.2, w: 0.4 * U, h: 0.5 * U }))];
+    if (struckBoxes.length && (preset || aimed) && !preset?.ownCam) {
+      const yaw0 = prof.camYaw * 0.08;
+      const onto = this.effectShot(struckBoxes, yaw0, 0.05);
+      const drift = this.effectShot(struckBoxes, yaw0 + (side === 'near' ? -0.1 : 0.1), 0.08);
+      const a = Math.max(0.5, open + 0.12);
+      const b = Math.min(D - 0.45, a + 0.42);
+      tl.span(a, b, (k) => this.setShot(shot, onto, easeInOut(k)));
+      tl.span(b, D - 0.35, (k) => this.setShot(onto, drift, easeInOut(k)));
+    } else if (struck || preset) {
+      // a slow drift while the effect plays (flat figures read as 3D when the camera moves)
+      const drift = this.fit(cardBox, prof.camYaw * 0.08 + (side === 'near' ? -0.12 : 0.12), 0.05, { fill: 0.94 });
+      tl.span(0.5, D - 0.35, (k) => this.setShot(shot, drift, easeInOut(k)));
+    }
     let s1: Shot | null = null;
     tl.span(D - 0.35, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
     if (what === 'spell') {
       tl.at(0, () => chime(0.7));
       tl.span(0, open, (k) => {
         const e = easeOut(k);
-        panel.mesh.position.set(lerp(from.x, 0, e), lerp(from.y, cy, e), lerp(0, 0.8, e));
+        panel.mesh.position.set(lerp(from.x, cx, e), lerp(from.y, cy, e), lerp(0, 0.8, e));
         panel.mesh.scale.setScalar(lerp(0.3, 1, e));
         panel.mesh.rotation.set(lerp(-1, 0, e), lerp(Math.PI, 0, e), 0);
         panel.u.uOpacity.value = clamp01(k * 3);
@@ -1239,7 +1777,7 @@ export class Director {
       tl.at(0, () => zap(0.4));
       tl.span(0, open, (k) => {
         const e = easeIn(k);
-        panel.mesh.position.set(lerp(from.x, 0, easeOut(k)), lerp(from.y, cy, easeOut(k)), lerp(0, 2.2, e));
+        panel.mesh.position.set(lerp(from.x, cx, easeOut(k)), lerp(from.y, cy, easeOut(k)), lerp(0, 2.2, e));
         panel.mesh.scale.setScalar(lerp(0.3, 1.08, e));
         panel.mesh.rotation.set(lerp(-1.45, 0.1, easeOut(k)), 0, lerp(0.3, -0.05, k));
         panel.u.uOpacity.value = clamp01(k * 3);
@@ -1254,14 +1792,15 @@ export class Director {
       tl.at(open, () => {
         st.hitStop(0.06);
         st.shake(0.7);
-        st.punch(5);
+        st.punch(4);
         st.pulse('chroma', 0.7);
         boom(0.5);
         zap(0.3);
-        this.flash(TRAP, 0.5);
+        this.flash(TRAP, 0.35);
         this.ui.banner({ title: 'TRAP!', color: TRAP, big: true, dur: 0.75, pos: 'top' });
         // the screen's edge cracks like glass
         this.crackAt.set(side === 'near' ? 0.88 : 0.12, 0.8);
+        setRgb(this.front.u.uCrackColor.value, 0xebf5ff);
       });
       tl.span(open, open + 0.18, (k) => {
         this.front.u.uCrack.value = easeOut(k);
@@ -1272,47 +1811,253 @@ export class Director {
     }
     tl.span(open - 0.15, open + 0.25, (k) => (ring.mesh.scale.setScalar(easeOut(k) * 1.05), (ring.u.uOpacity.value = k)));
     tl.span(open, open + 0.5, (k) => (panel.u.uSheen.value = lerp(-0.4, 1.8, k)));
-    this.shafts(tl, { x: 0, y: cy - H * 0.6, z: 0 }, 4.4 * U, base, open - 0.1, D - 0.3, 3, 0.55);
+    this.shafts(tl, { x: cx, y: cy - H * 0.6, z: 0 }, 4.4 * U, base, open - 0.1, D - 0.3, 3, 0.55);
     // the rune burst
-    const burst = tl.own(new Glow(4 * U, 4 * U, 'flare', base, accent));
-    burst.mesh.position.set(0, cy, 0.2);
+    const burst = tl.own(new Glow(H * 1.9, H * 1.9, 'flare', base, accent));
+    burst.mesh.position.set(cx, cy, 0.2);
     burst.u.uK.value = 0.6;
     tl.span(open, open + 0.5, (k) => {
-      burst.u.uOpacity.value = k < 0.12 ? k / 0.12 : 1 - easeOut((k - 0.12) / 0.88);
+      burst.u.uOpacity.value = 0.8 * (k < 0.12 ? k / 0.12 : 1 - easeOut((k - 0.12) / 0.88));
       burst.mesh.scale.setScalar(lerp(0.4, 1.2, easeOut(k)));
     });
-    const rune = tl.own(new Ring(4.2 * U, base, prof.glyphs + 11, { inner: 0.8, outer: 0.9 }));
-    rune.mesh.position.set(0, cy, 0.3);
+    const rune = tl.own(new Ring(H * 2, base, prof.glyphs + 11, { inner: 0.8, outer: 0.9 }));
+    rune.mesh.position.set(cx, cy, 0.3);
     rune.u.uOpacity.value = 0;
     rune.spinSpeed = 2;
     tl.span(open, open + 0.5, (k) => (rune.mesh.scale.setScalar(lerp(0.3, 1.3, easeOut(k))), (rune.u.uOpacity.value = 1 - easeIn(k))));
     tl.at(open, () => {
-      st.particles.emit({ x: 0, y: cy, burst: 5 * U, life: 0.8, size: 0.09 * U, color: base }, Math.round(70 * this.q));
-      st.particles.emit({ x: 0, y: cy, burst: 3 * U, life: 0.9, size: 0.12 * U, color: accent }, Math.round(40 * this.q));
-      st.pulse('flash', 0.25);
-      this.ui.banner({ title: c.name, sub: info ? `${info.sub} ${what === 'spell' ? 'Spell' : 'Trap'}` : '', color: base, dur: D - open - 0.3, pos: 'bottom' });
+      st.particles.emit({ x: cx, y: cy, burst: 5 * U, life: 0.8, size: 0.09 * U, color: base }, Math.round(70 * this.q));
+      st.particles.emit({ x: cx, y: cy, burst: 3 * U, life: 0.9, size: 0.12 * U, color: accent }, Math.round(40 * this.q));
+      st.pulse('flash', 0.2);
+      this.ui.banner({ title: c.name, sub: info ? `${info.sub} ${what === 'spell' ? 'Spell' : 'Trap'}` : '', color: base, dur: D - open - 0.3, pos: side === 'near' ? 'bottom' : 'top' });
     });
-    if (preset) {
-      const t0 = open + 0.35;
-      // the card steps back to make room for its effect
+    // the card steps back to make room for its effect
+    const back = !!preset || aimed;
+    if (back) {
+      const t0 = open + 0.3;
       tl.span(t0 - 0.1, t0 + 0.25, (k) => {
         const e = easeInOut(k);
         panel.mesh.scale.setScalar(lerp(1, 0.68, e));
         panel.mesh.position.z = lerp(0.8, -0.4, e);
         panel.u.uOpacity.value = lerp(1, 0.85, e);
       });
-      preset.play({ d: this, st, tl, U, t0, t1: t0 + X + 0.35, panel, cy, side, color: base, accent, opp: (side === 'near' ? 1 : -1) * 1.5 * U, own: (side === 'near' ? -1 : 1) * 1.5 * U });
     }
-    const z1 = preset ? -0.4 : 0.8;
-    const sc1 = preset ? 0.68 : 1;
+    const cardPt: P3 = { x: cx, y: cy, z: 0.2 };
+    if (preset) {
+      const t0 = open + 0.35;
+      const tpts = targets.map((t) => pointOf(t.card.uid)).filter((p): p is P3 => !!p);
+      preset.play({ d: this, st, tl, U, t0, t1: t0 + X + 0.35, panel, cy: mid, side, color: base, accent, opp: (side === 'near' ? 1 : -1) * 1.5 * U, own: (side === 'near' ? -1 : 1) * 1.5 * U, hits, pts: hits.map((a) => this.center(a)), targets: tpts, figs, card: cardPt });
+    } else if (aimed) {
+      // a beam from the card to each target; the effect resolves there
+      const tB = open + 0.32;
+      const list: { p: P3; uid: number; destroyed: boolean }[] = [];
+      for (const t of targets) {
+        const p = pointOf(t.card.uid);
+        if (p) list.push({ p, uid: t.card.uid, destroyed: t.destroyed });
+      }
+      for (const a of hits) if (!list.some((x) => x.uid === a.uid)) list.push({ p: this.center(a), uid: a.uid, destroyed: true });
+      list.forEach((x, i) => {
+        const tt = tB + i * 0.07;
+        this.ray(tl, cardPt, x.p, tt, 0.24, base, accent);
+        this.resolveAt(tl, x.p, tt + 0.24, x.destroyed, base, accent, figs.find((f) => f.uid === x.uid) ?? null, tPanels.get(x.uid) ?? null);
+      });
+    }
+    const z1 = back ? -0.4 : 0.8;
+    const sc1 = back ? 0.68 : 1;
     tl.span(D - 0.35, D, (k) => {
-      panel.mesh.position.set(lerp(0, from.x, easeIn(k)), lerp(cy, from.y, easeIn(k)), lerp(z1, 0, k));
+      panel.mesh.position.set(lerp(cx, from.x, easeIn(k)), lerp(cy, from.y, easeIn(k)), lerp(z1, 0, k));
       panel.mesh.scale.setScalar(lerp(sc1, 0.3, easeIn(k)));
-      panel.u.uOpacity.value = (preset ? 0.85 : 1) * (1 - easeIn(k));
+      panel.u.uOpacity.value = (back ? 0.85 : 1) * (1 - easeIn(k));
       ring.u.uOpacity.value = 1 - k;
     });
-    tl.at(D, () => this.resetCam(), false);
+    // figures nothing destroys next sink back onto their cards instead of lingering after the camera resets
+    // (read before the hand-off below: the next cue leaves the queue when it starts)
+    let keep: Set<number> | null = null;
+    const readKeep = () => (keep ??= new Set(this.queue.filter((q) => q.cue.kind === 'destroy').map((q) => (q.cue as { card: CardRef }).card.uid)));
+    tl.at(D - 0.4, readKeep, false);
+    tl.span(D - 0.3, D, (k) => {
+      keep = readKeep();
+      for (const a of figs) if (!keep.has(a.uid) && this.actors.get(a.uid) === a) this.setOpacity(a, Math.min(a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0, 1 - k));
+    });
+    tl.at(D, () => {
+      for (const a of figs) if (keep && !keep.has(a.uid) && this.actors.get(a.uid) === a) (this.dropActor(a), this.actors.delete(a.uid));
+      this.resetCam();
+    }, false);
+    // the effect has landed: what follows in the chain (a destruction) starts as the card flies home
+    tl.handoff = D - 0.35;
     return tl;
+  }
+
+  /** A target picked after the card's activation already played: a beam from its zone and the effect resolving. */
+  private async targetBeat(c: CardRef, targets: Target[]): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    const info = card(c.name);
+    const color = info?.kind === 'trap' ? TRAP : info?.kind === 'monster' ? GOLD : SPELL;
+    const preset = presetFor(c.name);
+    const accent = preset?.accent ?? 0xffffff;
+    const D = 1.0;
+    const tl = new Timeline(D, st);
+    this.bgTarget = 0.3;
+    this.dimTarget = 0.6;
+    const side = this.side(c.controller);
+    const from = this.anchor(c, side);
+    const src: P3 = { x: from.x, y: from.y, z: 0.5 };
+    const glow = tl.own(new Glow(1.6 * U, 1.6 * U, 'flare', color, accent));
+    glow.mesh.position.set(src.x, src.y, src.z);
+    tl.span(0, 0.3, (k) => (glow.u.uOpacity.value = 0.7 * easeOut(k)));
+    tl.span(0.6, D, (k) => (glow.u.uOpacity.value = 0.7 * (1 - k)));
+    tl.at(0, () => chime(0.6));
+    const boxes: Box[] = [{ x: src.x, y: src.y, z: 0.3, w: 0.5 * U, h: 0.5 * U }];
+    let i = 0;
+    for (const t of targets) {
+      const mon = t.card.faceUp && !!t.card.name && card(t.card.name)?.kind === 'monster';
+      const a = mon ? await this.fieldActor(t.card) : null;
+      let panel: CardPanel | null = null;
+      if (a) tl.span(0, 0.25, (k) => (this.setOpacity(a, Math.max(k, a.fig?.u.uOpacity.value ?? 0)), this.place(a)));
+      else {
+        const tart = t.card.faceUp && t.card.name ? await this.art(t.card.name) : null;
+        const pp = tl.own(new CardPanel(tart?.full ?? cardBack(), 0.78 * U, 0xffe08a));
+        panel = pp;
+        const at = this.anchor(t.card, this.side(t.card.controller));
+        pp.mesh.position.set(at.x, at.y, 0.2);
+        if (t.card.def) pp.mesh.rotation.z = Math.PI / 2;
+        pp.u.uOpacity.value = 0;
+        tl.span(0, 0.2, (k) => (pp.u.uOpacity.value = k));
+      }
+      const p = a ? this.center(a) : { x: panel!.mesh.position.x, y: panel!.mesh.position.y, z: 0.3 };
+      boxes.push({ ...p, w: 0.5 * U, h: 0.55 * U });
+      const t0 = 0.2 + i++ * 0.07;
+      this.ray(tl, src, p, t0, 0.22, color, accent);
+      this.resolveAt(tl, p, t0 + 0.22, t.destroyed, color, accent, a, panel);
+    }
+    const shot = this.fit(boxes, 0, 0.03, { fill: 0.9 });
+    let s0: Shot | null = null;
+    tl.span(0, 0.3, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
+    let s1: Shot | null = null;
+    tl.span(D - 0.3, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+    tl.at(D, () => this.resetCam(), false);
+    tl.handoff = D - 0.3;
+    return tl;
+  }
+
+  /** A targeting beam: a glowing line racing from `a` to `b`, then fading from the tail. */
+  private ray(tl: Timeline, a: P3, b: P3, t0: number, travel: number, color: number, light: number, width = 1) {
+    const U = this.U;
+    const layers: [Ribbon, number, number][] = [
+      [tl.own(new Ribbon(16, color, 1)), 0.26 * width, 0.5],
+      [tl.own(new Ribbon(16, light, 1)), 0.1 * width, 0.9],
+      [tl.own(new Ribbon(16, 0xffffff, 0)), 0.035 * width, 1],
+    ];
+    const pts = [a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.25 * U, z: Math.max(a.z, b.z) + 0.4 }, b];
+    const curve = Array.from({ length: 12 }, (_, j) => bez3(pts, j / 11));
+    for (const [r, w, op] of layers) {
+      r.set(curve, (k) => w * U * (0.55 + 0.45 * Math.sin(k * Math.PI)));
+      r.u.uHead.value = 0;
+      r.u.uOpacity.value = op;
+    }
+    tl.span(t0, t0 + travel, (k) => {
+      for (const [r] of layers) r.u.uHead.value = easeIn(k) * 1.05;
+    });
+    tl.span(t0 + travel + 0.12, t0 + travel + 0.4, (k) => {
+      for (const [r, , op] of layers) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = op * (1 - k)));
+    });
+    tl.at(t0, () => whoosh(travel + 0.1, 900, 3200, 0.14));
+    tl.span(t0, t0 + travel, (k, dt) => {
+      const p = bez3(pts, easeIn(k));
+      for (let i = 0; i < rate(90 * this.q, dt); i++) this.stage.particles.emit({ x: p.x, y: p.y, z: p.z, burst: 0.5 * U, life: 0.35, size: 0.07 * U, color: i % 2 ? light : color, drag: 3 });
+    });
+  }
+
+  /**
+   * The effect resolving on its target: a destroy ray crashing down onto it (a card
+   * shatters, a monster goes white-hot before its destruction), or an equip glow.
+   */
+  private resolveAt(tl: Timeline, p: P3, t: number, destroyed: boolean, color: number, light: number, a: Actor | null, panel: CardPanel | null) {
+    const st = this.stage;
+    const U = this.U;
+    const P = st.particles;
+    if (destroyed) {
+      const core = tl.own(new Ribbon(10, 0xffffff, 0));
+      const glow = tl.own(new Ribbon(10, color, 1));
+      const pts = [
+        { x: p.x, y: p.y + 3.2 * U, z: p.z + 0.4 },
+        { x: p.x, y: p.y, z: p.z + 0.4 },
+      ];
+      core.set(pts, 0.06 * U);
+      glow.set(pts, 0.32 * U);
+      core.u.uHead.value = glow.u.uHead.value = 0;
+      tl.span(t, t + 0.1, (k) => (core.u.uHead.value = glow.u.uHead.value = easeIn(k) * 1.05));
+      tl.span(t + 0.16, t + 0.45, (k) => ((core.u.uTail.value = glow.u.uTail.value = easeIn(k)), (glow.u.uOpacity.value = 1 - k)));
+      const ring = tl.own(new Glow(2.2 * U, 2.2 * U, 'shock', color, light));
+      ring.mesh.position.set(p.x, p.y - 0.3 * U, p.z);
+      ring.mesh.rotation.x = -1.15;
+      tl.span(t + 0.1, t + 0.5, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k * 0.3)));
+      tl.at(t + 0.1, () => {
+        zap(0.3);
+        boom(0.35);
+        st.shake(0.45);
+        st.pulse('chroma', 0.45);
+        this.flash(light, 0.2);
+        P.emit({ x: p.x, y: p.y, z: p.z + 0.3, burst: 3.5 * U, vy: 1 * U, gravity: 5 * U, life: 0.6, size: 0.08 * U, color: light }, Math.round(40 * this.q));
+      });
+      if (a) this.strike(tl, a, t + 0.1);
+      if (panel) tl.at(t + 0.12, () => void this.panelShards(tl, panel, color, 2.6 * U), false);
+    } else {
+      const ring = tl.own(new Ring(1.5 * U, color, 3131, { inner: 0.72, outer: 0.92, star: 4 }));
+      ring.mesh.position.set(p.x, p.y - 0.45 * U, p.z);
+      ring.mesh.rotation.x = -1.15;
+      ring.spinSpeed = 2.5;
+      ring.u.uOpacity.value = 0;
+      tl.span(t, t + 0.25, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
+      tl.span(t + 0.4, t + 0.75, (k) => (ring.u.uOpacity.value = 1 - k));
+      const halo = tl.own(new Glow(1.8 * U, 1.8 * U, 'flare', color, light));
+      halo.mesh.position.set(p.x, p.y, p.z + 0.2);
+      tl.span(t, t + 0.7, (k) => (halo.u.uOpacity.value = 0.6 * Math.sin(k * Math.PI)));
+      tl.at(t, () => (chime(0.85), P.emit({ x: p.x, y: p.y - 0.4 * U, z: p.z + 0.2, r: 0.4 * U, vy: 1.8 * U, life: 0.8, size: 0.08 * U, color: light, drag: 0.8 }, Math.round(45 * this.q))));
+      if (a) tl.span(t, t + 0.6, (k) => void (a.fig && (a.fig.u.uTint.value = 0.28 * Math.sin(k * Math.PI))));
+      if (panel) tl.span(t, t + 0.6, (k) => (panel.u.uTint.value = 0.5 * Math.sin(k * Math.PI)));
+    }
+  }
+
+  /** A struck figure: white-hot and jolted back (its destruction follows). */
+  /**
+   * A struck figure's tint goes toward its attribute's color with its painted detail kept
+   * (never a flat white blob); its uTint then says how much.
+   */
+  private hurtTint(f: Figure | null, prof: ArtProfile) {
+    if (!f) return;
+    setRgb(f.u.uTintCol.value, (ELEMENT_COLORS[prof.element] ?? ELEMENT_COLORS.LIGHT)[0]);
+    f.u.uTintKeep.value = 1;
+  }
+
+  private strike(tl: Timeline, a: Actor, t: number, power = 1) {
+    tl.at(t, () => this.hurtTint(a.fig, a.prof));
+    tl.span(t, t + 0.4, (k) => {
+      const kick = Math.sin(Math.min(1, k * 1.8) * Math.PI) * (1 - k * 0.5);
+      a.oz = -0.4 * kick * power;
+      a.lean = 0.25 * kick * power;
+      a.ox = noise(k * 30 + a.uid) * 0.03 * this.U * (1 - k);
+      if (a.fig) a.fig.u.uTint.value = Math.max(0.08, 0.45 * (1 - easeOut(k))) * power;
+      if (a.back) a.back.u.uTint.value = 0.65 * (1 - easeOut(k)) * power;
+      this.place(a);
+    });
+  }
+
+  /** A card (panel) breaking into pieces of itself. */
+  private panelShards(tl: Timeline, panel: CardPanel, color: number, power: number, gravity = 9 * this.U) {
+    const m = panel.mesh;
+    const g = m.geometry as PlaneGeometry;
+    const like = {
+      mesh: { position: m.position, rotation: m.rotation, scale: { x: g.parameters.width * m.scale.x, y: g.parameters.height * m.scale.y } } as unknown as Mesh,
+      u: { uArt: panel.u.uMap, uDepth: { value: solidTex() }, uMatte: { value: 1 } },
+    };
+    const sh = tl.own(new Shards(like, color, 4, 5, gravity));
+    sh.burst(m.position.x, m.position.y - 0.1 * this.U, power, { x: 0, y: 0.3 * this.U });
+    sh.life = 0.9;
+    panel.u.uOpacity.value = 0;
+    this.stage.particles.emit({ x: m.position.x, y: m.position.y, z: m.position.z + 0.2, r: 0.3 * this.U, burst: 2.5 * this.U, life: 0.6, size: 0.06 * this.U, color, drag: 2 }, Math.round(36 * this.q));
+    return sh;
   }
 
   /** A monster uses its effect: it rises glowing. */
@@ -1354,6 +2099,7 @@ export class Director {
       }
     });
     tl.at(0.2, () => this.ui.banner({ title: c.name, sub: 'Effect', color: col.main, dur: 0.7, pos: this.side(c.controller) === 'near' ? 'bottom' : 'top' }));
+    tl.handoff = D - 0.3;
     return tl;
   }
 
@@ -1375,6 +2121,7 @@ export class Director {
       st.particles.emit({ x: 0, y: 0, burst: 4 * U, life: 0.8, size: 0.1 * U, color: 0x9affff }, 60);
       this.ui.banner({ title: name.replace(/ \(Skill Card\)$/, ''), sub: `Skill · ${this.side(p) === 'near' ? 'you' : 'opponent'}`, color: 0x4ad8ff, big: true, dur: 0.9, pos: 'mid' });
     });
+    tl.handoff = 0.9;
     return tl;
   }
 
@@ -1398,9 +2145,12 @@ export class Director {
       if (tgt) this.enter(tgt, k);
     });
     const T = tgt ? this.center(tgt) : this.directPoint();
-    const shot = this.battleShot(att, tgt, T);
+    // camera: down low over the attacker's shoulder, then a slow push-in through the wind-up
+    const low = this.battleShot(att, tgt, T, 0.32, -0.05, 0.9);
+    const push = this.battleShot(att, tgt, T, 0.35, -0.02, 0.97);
     let s0: Shot | null = null;
-    tl.span(0, 0.5, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
+    tl.span(0, 0.42, (k) => this.setShot((s0 ??= this.shot()), low, easeInOut(k)));
+    tl.span(0.42, D, (k) => this.setShot(low, push, easeOut(k)));
     // light behind the attacker
     this.shafts(tl, { x: att.x, y: att.y - att.size * 0.46, z: att.z }, 3.8 * U, col.main, 0.15, D + 3, 2, 0.5);
     // direct attack: the defending duelist's spot lights up as the target
@@ -1420,8 +2170,9 @@ export class Director {
       att.lean = -0.3 * easeOut(k);
       att.oz = -0.25 * easeOut(k);
       this.place(att);
-      charge.u.uOpacity.value = easeIn(k) * 0.7;
-      charge.mesh.scale.setScalar(lerp(0.3, 1, easeOut(k)));
+      // kept soft so the glow at the muzzle never blows out the attacker's face
+      charge.u.uOpacity.value = easeIn(k) * 0.42;
+      charge.mesh.scale.setScalar(lerp(0.3, 0.8, easeOut(k)));
       const n = Math.floor(140 * this.q * dt + Math.random());
       for (let i = 0; i < n; i++) {
         const ang = Math.random() * Math.PI * 2;
@@ -1476,50 +2227,86 @@ export class Director {
         this.place(att);
       });
     }
+    // (the blow's camera: see below)
+    const lunges = ['slash', 'claw', 'ram'].includes(sig?.style ?? prof.style);
+    // (a clash holds both fighters on screen for the whole exchange: framed tighter)
+    const whip = this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, clash ? 1 : tgt ? 0.95 : 0.95);
+    // monster against monster: the numbers that decide it, up early (its text has faded in well
+    // before the blow lands) and held a little past the impact
+    if (a && t && t.faceUp && t.name) {
+      const ai = card(a.name);
+      const ti = card(t.name);
+      const av = ai?.atk;
+      const tv = t.def ? ti?.def : ti?.atk;
+      if (typeof av === 'number' && typeof tv === 'number') {
+        const fireAt = Math.max(0.02, W * 0.5);
+        tl.at(fireAt, () => {
+          const title = `${av}  vs  ${tv}`;
+          this.ui.banner({ title, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: hitAt - fireAt + (clash ? 0.75 : 0.6), pos: 'mid' });
+          // the plate goes in the gap between the two fighters (never on the defender's chin)
+          if (att && tgt) this.placeBetween(title, att, tgt, whip);
+        });
+      }
+    }
     STYLES[sig?.style ?? prof.style](ctx, 1);
     if (prof.style2 && !sig) STYLES[prof.style2](ctx, 0.55);
     sig?.travel?.(ctx);
-    // the camera: hold over the shoulder; a direct attack rushes in toward the duelist
+    // the camera: a whip-pan with the blow, a dutch-angle punch on impact, then it settles;
+    // every shot is fitted to the safe area, so attacker and target both stay framed
     const base = this.shot();
+    const m = this.battleSide === 'near' ? 1 : -1;
+    const settle = this.battleShot(att, tgt, T, 0.3, 0.09, clash ? 0.98 : 0.92);
+    tl.span(W * 0.5, hitAt, (k) => this.setShot(base, whip, easeInOut(k)));
+    tl.span(hitAt + 0.08, D, (k) => this.setShot(whip, settle, easeInOut(k)));
+    const rollTo = 0.085 * m * (tgt ? 1 : 1.3);
+    tl.span(hitAt, hitAt + 0.06, (k) => (this.roll = rollTo * easeOut(k)));
+    tl.span(hitAt + 0.06, D, (k) => (this.roll = rollTo * (1 - easeInOut(k))));
     if (!tgt) {
-      const rush: Shot = { pos: base.pos.clone().lerp(new Vector3(T.x, T.y, T.z), 0.35), look: base.look.clone().lerp(new Vector3(T.x, T.y, T.z), 0.5) };
-      tl.span(W, hitAt + 0.05, (k) => this.setShot(base, rush, easeIn(k)));
-      tl.span(hitAt + 0.05, D, (k) => this.setShot(rush, base, easeInOut(k)));
       this.front.u.uSpeed.value = 0;
       tl.span(W, hitAt, (k) => (this.front.u.uSpeed.value = easeIn(k)));
-      tl.span(hitAt, hitAt + 0.3, (k) => {
-        this.front.u.uSpeed.value = 1 - k;
-        this.front.u.uRed.value = Math.max(this.front.u.uRed.value, 0.6 * (1 - easeIn(k)));
-        this.front.u.uCrack.value = easeOut(clamp01(k * 4)) * 1.2;
-        this.front.u.uCrackOp.value = 1 - easeIn(k);
-        this.front.u.uCrackAt.value.set(0.5, 0.62);
+      // the defending duelist takes it: their side cracks red and their Life Points plate shakes
+      const defSide: 'top' | 'bottom' = this.side(defender) === 'near' ? 'bottom' : 'top';
+      const crackAt = new Vector2(0.5, defSide === 'top' ? 0.86 : 0.14);
+      tl.at(hitAt, () => {
+        const r = lpBeat(defSide, 'art-lp-shake', 450);
+        const cv = st.canvas.getBoundingClientRect();
+        if (r && cv.height > 0) crackAt.set(clamp01((r.left + r.width / 2 - cv.left) / cv.width), clamp01(1 - (r.top + r.height / 2 - cv.top) / cv.height));
+        setRgb(this.front.u.uCrackColor.value, 0xff6a5a);
+        this.dimTarget = 0.62;
       });
-    } else {
-      const push: Shot = { pos: base.pos.clone().lerp(base.look, 0.03), look: base.look.clone() };
-      tl.span(W, D, (k) => this.setShot(base, push, easeOut(k)));
+      tl.span(hitAt, hitAt + 0.5, (k) => {
+        this.front.u.uSpeed.value = 1 - clamp01(k * 1.6);
+        this.front.u.uRed.value = Math.max(this.front.u.uRed.value, 0.24 * (1 - easeIn(k)));
+        this.front.u.uCrack.value = easeOut(clamp01(k * 3)) * 1.7;
+        this.front.u.uCrackOp.value = 1 - easeIn(k);
+        this.front.u.uCrackAt.value.copy(crackAt);
+      });
     }
     const debris = [tcol.main, tcol.accent];
     this.impact(tl, hitAt, P, { color: col.main, light: col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow
-      if (dmg) this.ui.number({ text: `-${dmg.amount}`, color: 0xff4a4a, side: this.side(dmg.player) === 'near' ? 'bottom' : 'top', size: 1 + Math.min(1, dmg.amount / 3000) * 1.2 });
+      // (big: it has to read in the ~0.9 s it pops and flies to the Life Points)
+      if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1.45 : 1.6) + Math.min(1, dmg.amount / 3000) * 0.7);
     });
     tl.commit(hitAt);
     if (dmg) {
       const k = Math.min(1, dmg.amount / 3000);
-      tl.span(hitAt, hitAt + 0.45, (x) => (this.front.u.uRed.value = (tgt ? 0.25 + k * 0.3 : 0.55) * (1 - easeOut(x))));
+      // a direct hit keeps its red wash; monster against monster only tints the edges a
+      // little, so both fighters stay readable through the blow
+      tl.span(hitAt, hitAt + 0.45, (x) => (this.front.u.uRed.value = (tgt ? Math.min(0.12, 0.06 + k * 0.06) : 0.22) * (1 - easeOut(x))));
     }
-    void defender;
     if (tgt && !clash) {
-      // the defender takes it: knocked back, white-hot
+      // the defender takes it: knocked back, flaring in its attribute's color
+      tl.at(hitAt, () => this.hurtTint(tgt.fig, tgt.prof));
       tl.span(hitAt, hitAt + 0.45, (k) => {
         const kick = Math.sin(Math.min(1, k * 1.6) * Math.PI) * (1 - k * 0.5);
         tgt.oz = -0.7 * kick;
         tgt.oy = 0.12 * U * kick;
         tgt.lean = 0.35 * kick;
-        if (tgt.fig) tgt.fig.u.uTint.value = 1 - easeOut(k);
-        if (tgt.back) tgt.back.u.uTint.value = 1 - easeOut(k);
+        if (tgt.fig) tgt.fig.u.uTint.value = 0.5 * (1 - easeOut(k));
+        if (tgt.back) tgt.back.u.uTint.value = 0.62 * (1 - easeOut(k));
         this.place(tgt);
       });
     }
@@ -1554,12 +2341,13 @@ export class Director {
       if (loser) {
         const Lp = this.center(loser);
         this.impact(tl, knock, Lp, { color: (winner ? (winner === att ? col : tcol) : col).main, light: 0xffffff, debris: [loser === att ? col.main : tcol.main], power: 0.55, ground: loser.y - loser.size * 0.46, quiet: true });
+        tl.at(knock, () => this.hurtTint(loser.fig, loser.prof));
         tl.span(knock, knock + 0.45, (k) => {
           const kick = Math.sin(Math.min(1, k * 1.6) * Math.PI) * (1 - k * 0.5);
           loser.ox = 0;
           loser.oz = (loser === att ? 0.6 : -0.7) * kick;
           loser.lean = (loser === att ? -0.4 : 0.35) * kick;
-          if (loser.fig) loser.fig.u.uTint.value = 0.8 * (1 - easeOut(k));
+          if (loser.fig) loser.fig.u.uTint.value = 0.55 * (1 - easeOut(k));
           this.place(loser);
         });
         tl.at(knock, () => boom(0.4));
@@ -1571,8 +2359,92 @@ export class Director {
         },
         false,
       );
+      // the loser's shatter starts while it is still thrown back
+      if (loser && dies(loser.uid)) tl.handoff = knock + 0.15;
     }
+    // the defender's shatter starts in the recoil
+    if (tgt && !clash) tl.handoff = hitAt + 0.2;
+    // otherwise (a clash both survive, a direct hit) what follows starts as the blow settles
+    tl.handoff ??= Math.max(hitAt + 0.3, D - 0.3);
     return tl;
+  }
+
+  /**
+   * A damage number that pops where the blow landed, then flies into the Life Points
+   * plate of the side that took it (toward that edge of the screen when there is none),
+   * and the plate shakes as it arrives.
+   */
+  /**
+   * Moves the banner just shown (by its title) into the gap between the defender (above) and
+   * the attacker (below) as `shot` frames them; with no room between them, above the defender
+   * or, failing that, over the attacker's chest: never on either fighter's face.
+   */
+  private placeBetween(title: string, att: Actor, tgt: Actor, shot: Shot) {
+    if (typeof document === 'undefined') return;
+    const all = document.querySelectorAll<HTMLElement>('.art-banner');
+    const el = all[all.length - 1];
+    if (!el || !el.textContent?.includes(title)) return;
+    const cv = this.stage.canvas.getBoundingClientRect();
+    const host = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+    if (!host || cv.height <= 0) return;
+    const cam = this.probe;
+    cam.aspect = this.stage.camera.aspect;
+    cam.fov = BASE_FOV;
+    cam.updateProjectionMatrix();
+    cam.position.copy(shot.pos);
+    cam.lookAt(shot.look);
+    cam.updateMatrixWorld();
+    const v = new Vector3();
+    // screen extent (fractions of the canvas height from its top) of a fighter's figure
+    const ext = (a: Actor) => {
+      const b = this.boxOf(a);
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const sy of [-0.92, 0.92]) {
+        v.set(b.x, b.y + sy * b.h, b.z).project(cam);
+        const f = (1 - v.y) / 2;
+        y0 = Math.min(y0, f);
+        y1 = Math.max(y1, f);
+      }
+      return { top: y0, bottom: y1 };
+    };
+    const d = ext(tgt);
+    const a = ext(att);
+    const safe = this.safe();
+    const h = (el.offsetHeight || 56) / cv.height;
+    const pad = 6 / cv.height;
+    let y: number;
+    if (a.top - d.bottom >= h + pad) y = (a.top + d.bottom) / 2;
+    else if (d.top - safe.top >= h + 2 * pad) y = d.top - h / 2 - pad;
+    else y = Math.max(d.bottom + h / 2 + pad, a.top + (a.bottom - a.top) * 0.45);
+    y = Math.min(1 - safe.bottom - h / 2, Math.max(safe.top + h / 2, y));
+    el.style.top = `${Math.round(cv.top - host.top + y * cv.height - (el.offsetHeight || 56) / 2)}px`;
+    el.style.bottom = 'auto';
+  }
+
+  private damageNumber(side: 'top' | 'bottom', text: string, size: number) {
+    this.ui.number({ text, color: 0xff4a4a, side, size });
+    if (typeof document === 'undefined') return;
+    const all = document.querySelectorAll<HTMLElement>('.art-number');
+    const el = all[all.length - 1];
+    if (!el) return;
+    // it pops in at 2.2x: kept narrow enough to stay on screen through the pop (narrower still
+    // when the Shadow Realm opens right after it, under the eye and the overkill count)
+    const shadow = this.queue.some((q) => q.cue.kind === 'win' && !!q.cue.shadow);
+    const maxW = (this.stage.canvas.clientWidth || window.innerWidth) * (shadow ? 0.4 : 0.62);
+    if (el.offsetWidth > maxW) el.style.setProperty('--s', (size * (maxW / el.offsetWidth)).toFixed(3));
+    const a = el.getBoundingClientRect();
+    const ax = a.left + a.width / 2;
+    const ay = a.top + a.height / 2;
+    const plate = lpPlate(side)?.getBoundingClientRect();
+    const tx = plate ? plate.left + plate.width / 2 - ax : 0;
+    const ty = plate ? plate.top + plate.height / 2 - ay : side === 'top' ? -ay + 24 : window.innerHeight - ay - 24;
+    el.style.setProperty('--tx', `${Math.round(tx)}px`);
+    el.style.setProperty('--ty', `${Math.round(ty)}px`);
+    el.classList.add('art-fly');
+    // (the number lives 0.9 s at the cinematic's speed; it reaches the plate at ~80% of that)
+    const speed = Math.max(0.1, this.stage.speed * this.rate);
+    if (plate) setTimeout(() => lpBeat(side, 'art-lp-shake', 420), (0.9 * 0.8 * 1000) / speed);
   }
 
   private async damage(p: Pid, amount: number): Promise<Timeline> {
@@ -1582,111 +2454,163 @@ export class Director {
     this.dimTarget = this.actors.size ? 0.8 : 0.3;
     const k = Math.min(1, amount / 3000);
     tl.at(0, () => {
-      this.ui.number({ text: `-${amount}`, color: 0xff4a4a, side: this.side(p) === 'near' ? 'bottom' : 'top', size: 1 + k * 1.2 });
+      this.damageNumber(this.side(p) === 'near' ? 'bottom' : 'top', `-${amount}`, 1 + k * 1.2);
       st.shake(0.25 + k * 0.6);
       st.pulse('chroma', 0.3 + k * 0.4);
     });
     tl.commit(0);
     tl.span(0, 0.45, (x) => (this.front.u.uRed.value = (0.3 + k * 0.4) * (1 - easeOut(x))));
+    tl.handoff = 0.3;
     return tl;
   }
 
-  /** A monster is destroyed: a freeze, cracks of light run over it, then it bursts into pieces of its own art. */
+  /**
+   * A monster is destroyed: a freeze, cracks of light run over it, then it goes the
+   * way of its attribute (FIRE burns to embers, WATER splashes, DARK dissolves into
+   * smoke, LIGHT shatters into motes, EARTH crumbles, WIND blows away, DIVINE bursts
+   * in gold). A card with no figure shatters as a card. Monsters a Spell/Trap struck
+   * together (Raigeki, Dark Hole...) break together.
+   */
   private async destroy(c: CardRef): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const D = 1.4;
+    // (the burst at BREAK, then ~0.8 s of pieces and embers: no empty tail after them)
+    const D = 1.3;
     const tl = new Timeline(D, st);
     this.bgTarget = this.actors.size ? 0.45 : 0.25;
     this.dimTarget = this.actors.size ? 0.86 : 0.6;
-    let act = this.actors.get(c.uid) ?? null;
-    let own: Figure | null = null;
-    const prof = act?.prof ?? profileFor(card(c.name), c.name);
-    if (!act) {
-      const art = await this.art(c.name);
-      if (!art) {
-        tl.commit(0);
-        return tl;
-      }
-      own = tl.own(this.figure(art, 1.2 * U, prof, this.colors(prof, art).main));
-      const at = this.anchor(c, this.side(c.controller));
-      own.mesh.position.set(at.x, at.y + 0.3 * U, 0.3);
-      this.focusAt(at);
-      tl.span(0, 0.12, (k) => (own!.u.uOpacity.value = k));
-    }
-    // a face-down card destroyed in battle shows what it was as it breaks
-    if (act && !act.fig && c.name) {
-      const art = await this.art(c.name);
-      if (art) {
-        if (act.back) this.stage.remove(act.back);
-        act.back = null;
-        act.fig = this.stage.add(this.figure(art, act.size, prof, this.colors(prof, art).main));
-        act.fig.mesh.scale.setScalar(act.size);
-        act.art = art;
-        this.place(act);
-      }
-    }
-    const col = this.colors(prof, act?.art ?? null);
-    const fig = act?.fig ?? own;
+    // (the board waits on the break: it stays at 0.48 s)
     const BREAK = 0.48;
+    const RECOIL = 0.12;
+    // the others struck by the same card go with it
+    const group: CardRef[] = [c];
+    if (this.actors.get(c.uid)?.field) {
+      while (this.queue[0] && this.queue[0].batch === this.curBatch && this.queue[0].cue.kind === 'destroy' && this.actors.get(this.queue[0].cue.card.uid)?.field) {
+        const q = this.queue.shift()!;
+        if (q.cue.kind === 'destroy') group.push(q.cue.card);
+      }
+    }
+    const done: Actor[] = [];
+    let first = true;
+    for (const g of group) {
+      let act = this.actors.get(g.uid) ?? null;
+      const prof = act?.prof ?? profileFor(card(g.name), g.name);
+      let fig: Figure | null = act?.fig ?? null;
+      let panel: CardPanel | null = act?.back ?? null;
+      if (!act) {
+        const art = await this.art(g.name);
+        // (no place on the board, as in the 3D Card Viewer: center stage)
+        const at = g.rect ? this.anchor(g, this.side(g.controller)) : { x: 0, y: -0.2 * U };
+        if (group.length === 1) this.focusAt(at);
+        if (art) {
+          const f = tl.own(this.figure(art, 1.2 * U, prof, this.colors(prof, art).main));
+          f.mesh.position.set(at.x, at.y + 0.3 * U, 0.3);
+          f.mesh.scale.setScalar(1.2 * U);
+          tl.span(0, 0.12, (k) => (f.u.uOpacity.value = k));
+          fig = f;
+        } else {
+          // no art: the card itself shatters
+          const p = tl.own(new CardPanel(g.name ? null : cardBack(), 1.1 * U, 0xffc070));
+          p.mesh.position.set(at.x, at.y, 0.3);
+          if (g.def) p.mesh.rotation.z = Math.PI / 2;
+          tl.span(0, 0.12, (k) => (p.u.uOpacity.value = k));
+          panel = p;
+        }
+      } else if (!fig && g.name) {
+        // a face-down card destroyed in battle shows what it was as it breaks
+        const art = await this.art(g.name);
+        if (art) {
+          if (act.back) this.stage.remove(act.back);
+          act.back = null;
+          panel = null;
+          act.fig = this.stage.add(this.figure(art, act.size, prof, this.colors(prof, art).main));
+          act.fig.mesh.scale.setScalar(act.size);
+          act.art = art;
+          this.place(act);
+          fig = act.fig;
+        }
+      }
+      if (act) done.push(act);
+      const col = this.colors(prof, act?.art ?? null);
+      const lag = first ? 0 : 0.04 * done.length;
+      if (fig) {
+        const f = fig;
+        const crack = tl.own(new Crack(f, col.light, { u: 0.5 + (Math.random() - 0.5) * 0.3, v: 0.55 }));
+        // (Stage.add puts every mesh in the scene: the cracks belong on the figure, moving with it)
+        f.mesh.add(crack.mesh);
+        const home = { x: f.mesh.position.x, y: f.mesh.position.y, z: f.mesh.position.z, rx: f.mesh.rotation.x };
+        const a = act;
+        // where a battle recoil left it (the blow's recoil may still be writing these as this starts)
+        let from: { lean: number; oz: number } | null = null;
+        const B = BREAK + lag;
+        // 0..RECOIL: struck, it leans back flaring in its attribute's color (its painted detail
+        // kept: never a white blob); then cracks run over it and it starts coming apart
+        // (pieces part a hair, the light leaks through) until the burst at B
+        this.hurtTint(f, prof);
+        tl.span(0, B, (k) => {
+          const t = k * B;
+          const r = clamp01(t / RECOIL);
+          const c = clamp01((t - RECOIL) / (B - RECOIL));
+          const lean = t < RECOIL ? easeOut(r) * 0.3 : lerp(0.3, 0.14, easeInOut(c));
+          const back = t < RECOIL ? easeOut(r) * 0.25 : lerp(0.25, 0.12, easeInOut(c));
+          if (a && a.fig === f) {
+            from ??= { lean: a.lean, oz: a.oz };
+            a.lean = lerp(from.lean, lean, t < RECOIL ? easeOut(r) : 1);
+            a.oz = lerp(from.oz, -back, t < RECOIL ? easeOut(r) : 1);
+            this.place(a);
+          } else {
+            f.mesh.rotation.x = home.rx + lean;
+            f.mesh.position.set(home.x, home.y, home.z - back);
+          }
+          crack.u.uCrack.value = easeOut(c);
+          f.u.uTint.value = t < RECOIL ? 0.45 * easeOut(r) : lerp(0.45, 0.08, easeOut(c)) + 0.1 * Math.sin(c * 20) ** 2 * c;
+          f.u.uShatter.value = 0.045 * easeIn(c);
+          // trembling: smooth noise, growing toward the break
+          f.mesh.position.x += noise(k * 25 + 3) * 0.03 * U * c;
+          f.mesh.position.y += noise(k * 25 + 9) * 0.02 * U * c;
+        });
+        tl.at(BREAK + lag, () => (crack.u.uOpacity.value = 0));
+        this.breakAs(tl, f, prof.element, col, BREAK + lag, D, first);
+      } else if (panel) {
+        const p = panel;
+        tl.span(0.04, BREAK + lag, (k) => {
+          p.u.uTint.value = 0.2 + 0.3 * Math.sin(k * 20) ** 2;
+          p.mesh.position.x += noise(k * 25 + 3) * 0.004 * U * k;
+        });
+        tl.at(BREAK + lag, () => {
+          this.panelShards(tl, p, 0xffc070, 3 * U);
+          if (first) (st.shake(0.5), boom(0.4), st.pulse('chroma', 0.5));
+        });
+      }
+      first = false;
+    }
+    // monsters an effect struck break where the effect left them: framed big and a little above
+    // the middle of the safe area (at the resting camera they sit under the top HUD and their
+    // burst runs off the screen); the camera goes home as the pieces fall
+    const struck = done.filter((a) => a.field);
+    if (struck.length) {
+      const onto = this.effectShot(struck.map((a) => ({ ...this.boxOf(a), x: a.x + a.ox, y: a.y + a.oy })), 0, 0.05);
+      let s0: Shot | null = null;
+      tl.span(0, 0.3, (k) => this.setShot((s0 ??= this.shot()), onto, easeInOut(k)));
+      tl.span(0.3, D - 0.4, () => this.setShot(onto, onto, 1));
+      let s1: Shot | null = null;
+      tl.span(D - 0.4, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+      tl.at(D, () => this.resetCam(), false);
+    }
     tl.at(0, () => {
       st.hitStop(0.15, 0.03);
       whoosh(0.5, 3000, 400, 0.15);
       zap(0.2);
     });
-    if (fig) {
-      const crack = tl.own(new Crack(fig, col.light, { u: 0.5 + (Math.random() - 0.5) * 0.3, v: 0.55 }));
-      const home = { x: fig.mesh.position.x, y: fig.mesh.position.y };
-      tl.span(0.04, BREAK, (k) => {
-        crack.u.uCrack.value = easeOut(k);
-        fig.u.uTint.value = 0.15 + 0.25 * Math.sin(k * 20) ** 2;
-        // trembling: smooth noise, growing toward the break
-        fig.mesh.position.x = home.x + noise(k * 25 + 3) * 0.03 * U * k;
-        fig.mesh.position.y = home.y + noise(k * 25 + 9) * 0.02 * U * k;
-      });
-      tl.at(BREAK, () => {
-        crack.u.uOpacity.value = 0;
-        fig.u.uOpacity.value = 0;
-        const sh = tl.own(new Shards(fig, col.light, 5, 6, 7 * U));
-        const p = fig.mesh.position;
-        sh.burst(p.x, p.y - 0.1 * U, 3 * U, { x: 0, y: 0.4 * U });
-        sh.life = D - BREAK;
-        const P = st.particles;
-        const q = this.q;
-        P.emit({ x: p.x, y: p.y, z: p.z + 0.2, r: 0.4 * U, burst: 4 * U, vy: 1.5 * U, gravity: 5 * U, life: 1, size: 0.08 * U, size1: 0.02 * U, color: col.main, drag: 1.2 }, Math.round(70 * q));
-        P.emit({ x: p.x, y: p.y, z: p.z + 0.2, r: 0.4 * U, burst: 3 * U, vy: 1 * U, gravity: 3 * U, life: 1.1, size: 0.06 * U, color: 0xffc070, drag: 1.5 }, Math.round(50 * q));
-        // smoke: slow, wide, dim puffs
-        P.emit({ x: p.x, y: p.y - 0.2 * U, z: p.z, r: 0.5 * U, burst: 0.8 * U, vy: 0.6 * U, life: 1.1, size: 0.55 * U, size1: 0.9 * U, color: 0x2a2630, drag: 1.5 }, Math.round(16 * q));
-        st.pulse('flash', 0.4);
-        st.pulse('chroma', 0.6);
-        this.flash(col.light, 0.35);
-        st.shake(0.7);
-        st.punch(3);
-        boom(0.5);
-      });
-      tl.commit(BREAK);
-      const flare = tl.own(new Glow(3 * U, 3 * U, 'flare', col.main, col.light));
-      flare.mesh.position.set(home.x, home.y, fig.mesh.position.z + 0.4);
-      tl.span(BREAK, BREAK + 0.4, (k) => (flare.u.uOpacity.value = 1 - easeOut(k)));
-    } else {
-      tl.span(0, 0.5, (k) => {
-        if (act?.back) act.back.u.uOpacity.value = 1 - k;
-      });
-      tl.at(0.3, () => {
-        const p = act ? this.center(act) : { x: 0, y: 0, z: 0 };
-        st.particles.emit({ x: p.x, y: p.y, burst: 3.5 * U, life: 0.9, size: 0.1 * U, color: col.main, gravity: 3 * U, drag: 1.5 }, 60);
-        st.shake(0.4);
-        boom(0.35);
-      });
-      tl.commit(0.3);
-    }
+    tl.commit(BREAK);
+    // the rest of the chain goes on once it has burst; the pieces fall under it
+    tl.handoff = BREAK + 0.3;
     tl.at(
       D,
       () => {
-        if (act) {
-          this.dropActor(act);
-          this.actors.delete(act.uid);
-          act = null;
+        for (const a of done) {
+          this.dropActor(a);
+          this.actors.delete(a.uid);
         }
       },
       false,
@@ -1694,19 +2618,160 @@ export class Director {
     return tl;
   }
 
+  /** The break itself, by attribute. `loud`: the one that shakes the screen (several break at once). */
+  private breakAs(tl: Timeline, fig: Figure, el: string, col: Colors, at: number, D: number, loud: boolean) {
+    const st = this.stage;
+    const U = this.U;
+    const P = st.particles;
+    const q = this.q;
+    const shards = (color: number, cols: number, rows: number, gravity: number, power: number, push = { x: 0, y: 0.4 * U }) => {
+      const sh = tl.own(new Shards(fig, color, cols, rows, gravity));
+      const p = fig.mesh.position;
+      sh.burst(p.x, p.y - 0.1 * U, power, push);
+      sh.life = D - at;
+      return sh;
+    };
+    const flare = (color: number, light: number, size: number, op = 0.8) => {
+      const g = tl.own(new Glow(size * U, size * U, 'flare', color, light));
+      g.mesh.position.set(fig.mesh.position.x, fig.mesh.position.y, fig.mesh.position.z + 0.4);
+      tl.span(at, at + 0.4, (k) => (g.u.uOpacity.value = op * (1 - easeOut(k))));
+    };
+    tl.at(at, () => {
+      if (el !== 'DARK') fig.u.uOpacity.value = 0;
+      if (loud) {
+        // (a beat of light, not a grey wash over the whole frame)
+        st.pulse('flash', 0.14);
+        st.pulse('chroma', 0.45);
+        this.flash(col.light, 0.12);
+        st.shake(0.7);
+        st.punch(3);
+        boom(0.5);
+      }
+    });
+    const p = () => fig.mesh.position;
+    switch (el) {
+      case 'FIRE':
+        tl.at(at, () => {
+          shards(0xff7a2a, 4, 5, 3 * U, 2.4 * U, { x: 0, y: 0.8 * U });
+          const o = p();
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.5 * U, vy: 2.2 * U, gravity: -1.5 * U, burst: 1.2 * U, life: 1.2, size: 0.07 * U, size1: 0.01 * U, color: 0xffb040, drag: 1.5 }, Math.round(90 * q));
+          P.emit({ x: o.x, y: o.y - 0.2 * U, z: o.z + 0.2, r: 0.4 * U, vy: 1.5 * U, burst: 0.8 * U, life: 0.55, size: 0.4 * U, size1: 0.08 * U, color: 0xff5a1a, drag: 2 }, Math.round(28 * q));
+          zap(0.15);
+        });
+        tl.span(at, at + 0.8, (_k, dt) => {
+          const o = p();
+          for (let i = 0; i < rate(60 * q, dt); i++) P.emit({ x: o.x + (Math.random() - 0.5) * 0.8 * U, y: o.y - 0.4 * U, z: o.z, vy: 1.8 * U, life: 0.9, size: 0.05 * U, color: i % 2 ? 0xffd070 : 0xff5a1a, drag: 0.8 });
+        });
+        flare(0xff6a1a, 0xffe08a, 3);
+        break;
+      case 'WATER': {
+        tl.at(at, () => {
+          shards(0x7fd8ff, 4, 4, 8 * U, 2.6 * U);
+          const o = p();
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.4 * U, vy: 4 * U, burst: 2.5 * U, gravity: 10 * U, life: 0.9, size: 0.09 * U, color: 0x8fe0ff, drag: 0.4 }, Math.round(110 * q));
+          P.emit({ x: o.x, y: o.y - 0.5 * U, z: o.z + 0.2, r: 0.6 * U, vy: 2.5 * U, burst: 1.2 * U, gravity: 8 * U, life: 0.8, size: 0.13 * U, color: 0xffffff, drag: 0.4 }, Math.round(40 * q));
+          whoosh(0.5, 400, 1400, 0.25);
+        });
+        const crown = tl.own(new Glow(3 * U, 3 * U, 'shock', 0x2aa7ff, 0xbfefff));
+        tl.at(at, () => crown.mesh.position.set(p().x, p().y - 0.5 * U, p().z), false);
+        crown.mesh.rotation.x = -1.2;
+        tl.span(at, at + 0.6, (k) => ((crown.u.uK.value = easeOut(k)), (crown.u.uOpacity.value = 1 - k * 0.3)));
+        flare(0x2aa7ff, 0xbfefff, 2.4, 0.6);
+        break;
+      }
+      case 'DARK':
+        // it dissolves from the edges into smoke
+        tl.span(at, at + 0.55, (k) => {
+          fig.u.uDark.value = clamp01(k * 2);
+          fig.u.uShatter.value = lerp(0.045, 1, easeIn(k));
+          fig.u.uOpacity.value = 1 - easeIn(k);
+        });
+        tl.at(at, () => {
+          const o = p();
+          P.emit({ x: o.x, y: o.y - 0.1 * U, z: o.z, r: 0.5 * U, burst: 0.7 * U, vy: 0.9 * U, life: 1.3, size: 0.5 * U, size1: 1.1 * U, color: 0x2a1040, drag: 1.4 }, Math.round(26 * q));
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.6 * U, burst: 1.2 * U, vy: 1.4 * U, life: 1, size: 0.08 * U, color: 0xb070ff, drag: 1, gravity: -1 * U }, Math.round(70 * q));
+          drone(0.6);
+        });
+        tl.span(at, at + 0.5, (_k, dt) => {
+          const o = p();
+          for (let i = 0; i < rate(40 * q, dt); i++) P.emit({ x: o.x + (Math.random() - 0.5) * U, y: o.y + (Math.random() - 0.5) * U, z: o.z, vy: 0.8 * U, life: 1, size: 0.35 * U, size1: 0.8 * U, color: i % 2 ? 0x3a1460 : 0x1a0a24, drag: 1 });
+        });
+        break;
+      case 'LIGHT':
+        tl.at(at, () => {
+          shards(0xfff6c0, 5, 6, 3 * U, 2.6 * U);
+          const o = p();
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.6 * U, vy: 1.2 * U, gravity: -0.8 * U, burst: 1.5 * U, life: 1.3, size: 0.1 * U, size1: 0.02 * U, color: 0xfff6c0, drag: 2 }, Math.round(120 * q));
+          chime(0.95);
+        });
+        for (let i = 0; i < 5; i++) {
+          const g = tl.own(new Glow(0.5 * U, 0.5 * U, 'star', 0xfff1a8, 0xffffff));
+          const a = (i / 5) * Math.PI * 2;
+          tl.span(at, at + 0.8, (k) => {
+            const o = p();
+            g.mesh.position.set(o.x + Math.cos(a) * 0.9 * U * easeOut(k), o.y + Math.sin(a) * 0.6 * U * easeOut(k) + k * 0.5 * U, o.z + 0.5);
+            g.u.uOpacity.value = Math.sin(k * Math.PI);
+          });
+        }
+        flare(0xfff1a8, 0xffffff, 2.6, 0.7);
+        break;
+      case 'EARTH':
+        tl.at(at, () => {
+          shards(0xc98a3c, 6, 6, 14 * U, 1.4 * U, { x: 0, y: -0.2 * U });
+          const o = p();
+          P.emit({ x: o.x, y: o.y - 0.5 * U, z: o.z, r: 0.6 * U, vy: 0.4 * U, burst: 0.8 * U, life: 1.1, size: 0.4 * U, size1: 0.9 * U, color: 0x5a4430, drag: 1.5 }, Math.round(22 * q));
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.5 * U, vy: 1.5 * U, burst: 1.5 * U, gravity: 12 * U, life: 0.9, size: 0.09 * U, color: 0xa07a4a, drag: 0.3 }, Math.round(60 * q));
+          boom(0.3);
+        });
+        break;
+      case 'WIND': {
+        const dir = fig.mesh.position.x >= 0 ? 1 : -1;
+        tl.at(at, () => {
+          shards(0xd9ffe9, 5, 6, 0.8 * U, 1.1 * U, { x: dir * 2.2 * U, y: 0.7 * U });
+          whoosh(0.7, 800, 4000, 0.3);
+        });
+        tl.span(at, at + 0.7, (_k, dt) => {
+          const o = p();
+          for (let i = 0; i < rate(110 * q, dt); i++) P.emit({ x: o.x - dir * U + Math.random() * 0.6 * U, y: o.y + (Math.random() - 0.5) * 1.6 * U, z: o.z + 0.2, vx: dir * 3.5 * U, vy: 0.5 * U, life: 0.7, size: 0.09 * U, color: i % 2 ? 0xd9ffe9 : 0x55f0a0, drag: 0.5 });
+        });
+        break;
+      }
+      case 'DIVINE':
+        tl.at(at, () => {
+          shards(0xffd700, 5, 6, 4 * U, 3.4 * U);
+          const o = p();
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.3, burst: 6 * U, life: 1.1, size: 0.12 * U, color: 0xffd75a, drag: 1.5 }, Math.round(150 * q));
+        });
+        flare(0xffd700, 0xfff6c0, 4.4, 0.9);
+        this.shafts(tl, { x: fig.mesh.position.x, y: fig.mesh.position.y - 0.6 * U, z: fig.mesh.position.z }, 4.2 * U, 0xffd700, at, D, 3, 0.7);
+        break;
+      default:
+        tl.at(at, () => {
+          shards(col.light, 5, 6, 7 * U, 3 * U);
+          const o = p();
+          P.emit({ x: o.x, y: o.y, z: o.z + 0.2, r: 0.4 * U, burst: 4 * U, vy: 1.5 * U, gravity: 5 * U, life: 1, size: 0.08 * U, size1: 0.02 * U, color: col.main, drag: 1.2 }, Math.round(70 * q));
+        });
+        flare(col.main, col.light, 3);
+    }
+  }
+
   private async victory(winner: Pid | 'draw'): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const tl = new Timeline(1.6, st);
+    // short: the result window follows about 2 s after the Life Points hit 0
+    const D = 1.1;
+    const tl = new Timeline(D, st);
     this.bgTarget = 0.5;
     this.dimTarget = 0.8;
     const color = winner === 'draw' ? 0xc0c0ff : winner === this.viewer ? 0xffd75a : 0xff5a5a;
     const ring = tl.own(new Ring(3.2 * U, color, 99, { inner: 0.7, outer: 0.95, star: 8 }));
     ring.spinSpeed = 1.2;
     ring.u.uOpacity.value = 0;
-    tl.span(0, 0.5, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
-    tl.span(1.1, 1.6, (k) => (ring.u.uOpacity.value = 1 - k));
-    this.shafts(tl, { x: 0, y: -1.6 * U, z: -0.5 }, 5 * U, color, 0, 1.6, 3, 0.7);
+    tl.span(0, 0.4, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
+    tl.span(0.75, D, (k) => (ring.u.uOpacity.value = 1 - k));
+    this.shafts(tl, { x: 0, y: -1.6 * U, z: -0.5 }, 5 * U, color, 0, D, 3, 0.7);
+    // no linger after it: the fighters and the dim go at once
+    tl.at(D, () => (this.fastFade = true), false);
     tl.at(0.1, () => {
       boom(0.7);
       st.pulse('flash', 0.5);
@@ -1716,80 +2781,155 @@ export class Director {
     return tl;
   }
 
-  /** The overkill finish: the eye opens and drags the loser into the Shadow Realm. */
+  /** The overkill finish: the eye opens, the loser's Life Points plate shatters, the sealed monster is chained and dragged into the Shadow Realm. */
   private async shadowRealm(sr: import('./shadow').ShadowResult): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const D = 6.4;
+    const D = 4.9;
     const tl = new Timeline(D, st);
     this.bgTarget = 1;
     this.dimTarget = 0.9;
     this.focus.set(0.5, 0.5);
-    st.backdrop.u.uColor.value.set(0.35, 0.08, 0.55);
+    // (deep violet, not neon: the vortex and the motes bring the magenta)
+    st.backdrop.u.uColor.value.set(0.2, 0.05, 0.34);
     const purple = 0x9a3cff;
     const magenta = 0xff4fd8;
     const gold = 0xffc94a;
-    // everything stays inside the safe frame at the resting camera
+    // everything is laid out inside the safe frame at the resting camera
     const safe = this.safe();
     const topY = st.halfH * (1 - 2 * safe.top);
     const botY = -st.halfH * (1 - 2 * safe.bottom);
-    let s0: Shot | null = null;
-    tl.span(0, 0.6, (k) => this.setShot((s0 ??= this.shot()), REST, easeInOut(k)));
-    tl.span(0.6, D, (k) => {
-      st.camBase.set(Math.sin(k * 3) * 0.5, lerp(0, 0.2, k), 10 - 0.5 * easeInOut(k));
-      st.camLook.set(0, 0, 0);
-    });
-    tl.at(0, () => drone(D - 0.3));
-    tl.span(0, 1.2, (k) => (st.backdrop.u.uVortex.value = easeInOut(k)));
-    tl.span(D - 0.8, D, (k) => (st.backdrop.u.uVortex.value = 1 - k));
-    // the eye
     const eyeSize = Math.min(2.6 * U, st.halfW * 1.8);
+    const eyeAt = { x: 0, y: topY - eyeSize * 0.3, z: -1 };
+    // camera: home, a slow drift, then a creeping zoom into the eye as the soul goes in
+    const all: Box[] = [{ x: 0, y: (topY + botY) / 2, z: 0, w: st.halfW * 0.8, h: (topY - botY) * 0.48 }];
+    const wide = this.fit(all, 0, 0, { fill: 1 });
+    const drift = this.fit(all, 0.12, 0.04, { fill: 1 });
+    // the vortex's heart, where the soul goes in and its card stays sealed through the end
+    const center = { x: 0, y: lerp(botY, topY, 0.42) };
+    const cardH = Math.min(1.9 * U, (topY - botY) * 0.4);
+    const into = this.fit([{ ...eyeAt, w: eyeSize * 0.4, h: eyeSize * 0.3 }, { x: center.x, y: center.y, z: 0.4, w: cardH * 0.4, h: cardH * 0.55 }], -0.05, 0.02, { fill: 0.92 });
+    let s0: Shot | null = null;
+    tl.span(0, 0.5, (k) => this.setShot((s0 ??= this.shot()), wide, easeInOut(k)));
+    tl.span(0.5, 2.6, (k) => this.setShot(wide, drift, easeInOut(k)));
+    tl.span(2.6, D - 0.5, (k) => this.setShot(drift, into, easeIn(k)));
+    let s1: Shot | null = null;
+    tl.span(D - 0.5, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+    tl.at(0, () => drone(D - 0.3));
+    tl.span(0, 0.9, (k) => (st.backdrop.u.uVortex.value = easeInOut(k)));
+    tl.span(D - 0.6, D, (k) => (st.backdrop.u.uVortex.value = 1 - k));
+    // the eye
     const eye = tl.own(new Ring(eyeSize, gold, 4242, { inner: 0.9, outer: 0.97, eye: true }));
-    eye.mesh.position.set(0, topY - eyeSize * 0.3, -1);
+    eye.mesh.position.set(eyeAt.x, eyeAt.y, eyeAt.z);
     eye.spinSpeed = 0.3;
     eye.u.uOpacity.value = 0;
-    tl.span(0.4, 1.7, (k) => {
+    setRgb(eye.u.uColor.value, 0xffa82e);
+    eye.u.uColor.value.multiplyScalar(0.68);
+    tl.span(0.25, 1.15, (k) => {
       eye.u.uEye.value = Math.max(0.001, easeOut(k));
       eye.u.uOpacity.value = clamp01(k * 2);
     });
-    tl.at(1.0, () => (st.pulse('flash', 0.5), this.flash(magenta, 0.45), st.shake(0.8), boom(0.9)));
-    tl.span(D - 1.0, D - 0.2, (k) => (eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k))));
+    tl.at(0.7, () => (st.pulse('flash', 0.3), this.flash(magenta, 0.3), st.shake(0.8), boom(0.9)));
+    tl.span(D - 0.7, D - 0.15, (k) => (eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k))));
     // the vortex
-    const center = { x: 0, y: lerp(botY, topY, 0.42) };
     const vortex = tl.own(new Glow(4.2 * U, 4.2 * U, 'vortex', purple, magenta));
     vortex.mesh.position.set(center.x, center.y, -0.9);
-    tl.span(0.8, 1.8, (k) => (vortex.u.uOpacity.value = k * 0.9));
-    tl.span(D - 1.0, D - 0.2, (k) => (vortex.u.uOpacity.value = 0.9 * (1 - k)));
+    tl.span(0.5, 1.3, (k) => (vortex.u.uOpacity.value = k * 0.55));
+    tl.span(D - 0.7, D - 0.15, (k) => (vortex.u.uOpacity.value = 0.55 * (1 - k)));
     const ring = tl.own(new Ring(3.2 * U, purple, 666, { inner: 0.82, outer: 0.92, star: 7 }));
     ring.mesh.position.set(center.x, center.y, -0.8);
     ring.spinSpeed = -2.5;
     ring.u.uOpacity.value = 0;
-    tl.span(0.8, 1.8, (k) => (ring.u.uOpacity.value = k * 0.5));
-    tl.span(D - 1.0, D - 0.2, (k) => (ring.u.uOpacity.value = 0.5 * (1 - k)));
-    tl.span(0.8, D - 1.1, (_k, dt) => {
-      const n = Math.floor((st.quality === 'full' ? 240 : 110) * dt + Math.random());
+    tl.span(0.5, 1.3, (k) => (ring.u.uOpacity.value = k * 0.5));
+    tl.span(D - 0.7, D - 0.15, (k) => (ring.u.uOpacity.value = 0.5 * (1 - k)));
+    tl.span(0.5, D - 0.8, (_k, dt) => {
+      // (clamped: a few hundred additive magenta motes saturate the whole frame)
+      const n = Math.floor(Math.min(120, (st.quality === 'full' ? 130 : 70) * this.q) * dt + Math.random());
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const rr = (1.8 + Math.random() * 1.2) * U;
-        st.particles.emit({ x: center.x + Math.cos(a) * rr, y: center.y + Math.sin(a) * rr, life: 1.1, size: 0.12 * U, color: Math.random() < 0.6 ? purple : magenta, drag: 0.2, pull: { x: center.x, y: center.y, strength: 6 * U, swirl: 9 * U } });
+        st.particles.emit({ x: center.x + Math.cos(a) * rr, y: center.y + Math.sin(a) * rr, life: 1.1, size: 0.075 * U, color: Math.random() < 0.75 ? purple : magenta, drag: 0.2, pull: { x: center.x, y: center.y, strength: 6 * U, swirl: 9 * U } });
       }
     });
-    // the soul: the sealed card (or the loser's last monster) is dragged in
+    // the loser's Life Points plate breaks apart
     const loserSide = this.side(sr.loser);
+    const plateSide: 'top' | 'bottom' = loserSide === 'near' ? 'bottom' : 'top';
+    const plate = tl.own(new CardPanel(lpPlateArt(sr.loserName), 0.62 * U, magenta));
+    plate.mesh.scale.set(2.8, 0.82, 1);
+    plate.u.uOpacity.value = 0;
+    tl.at(
+      0.85,
+      () => {
+        lpBeat(plateSide, 'art-lp-shatter', 1600);
+        // centered in the safe area, just inside its edge on the loser's side (clear of the
+        // Life Points bar and the hand), at most ~60% of the screen wide: placed through the
+        // camera as it is now, not the resting one
+        const cam = st.camera;
+        cam.updateMatrixWorld();
+        const sf = this.safe();
+        const at = (nx: number, ny: number) => {
+          const dir = new Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position);
+          const k = Math.abs(dir.z) < 1e-6 ? 0 : (0.6 - cam.position.z) / dir.z;
+          return cam.position.clone().addScaledVector(dir, k);
+        };
+        const span = at(0.6, 0).distanceTo(at(-0.6, 0));
+        const w0 = 0.62 * U * 0.686 * 2.8;
+        const f = Math.min(1, span / w0);
+        plate.mesh.scale.set(2.8 * f, 0.82 * f, 1);
+        const hNdc = (2 * (0.62 * U * 0.82 * f)) / Math.max(1e-6, at(0, 1).distanceTo(at(0, -1)));
+        const yN = plateSide === 'top' ? 1 - 2 * sf.top - hNdc / 2 - 0.04 : -1 + 2 * sf.bottom + hNdc / 2 + 0.04;
+        plate.mesh.position.copy(at(0, yN));
+        plate.u.uOpacity.value = 1;
+      },
+      false,
+    );
+    tl.span(0.85, 1.25, (k) => {
+      plate.u.uTint.value = 0.5 * Math.sin(k * 30) ** 2;
+      plate.mesh.position.x += noise(k * 40) * 0.01 * U;
+    });
+    tl.at(1.25, () => {
+      this.panelShards(tl, plate, magenta, 2.4 * U, 6 * U);
+      boom(0.6);
+      st.shake(0.6);
+      st.pulse('chroma', 0.6);
+    });
+    // the soul: the sealed card (or the loser's last monster) is chained and dragged in
     const soulName = sr.sealed ?? [...this.actors.values()].find((x) => x.side === loserSide && x.name)?.name ?? '';
     const art = soulName ? await this.art(soulName) : null;
     if (art) {
       const prof = profileFor(card(soulName), soulName);
       const soulSize = Math.min(1.4 * U, (topY - botY) * 0.36);
       const fig = tl.own(this.figure(art, soulSize, prof, magenta));
-      const start = { x: 0, y: loserSide === 'near' ? botY + soulSize * 0.55 : center.y + soulSize * 0.2 };
+      fig.mesh.scale.setScalar(soulSize);
+      const start = { x: 0, y: loserSide === 'near' ? botY + soulSize * 0.6 : center.y + soulSize * 0.2 };
       fig.mesh.position.set(start.x, start.y, 0.5);
       fig.u.uOpacity.value = 0;
-      tl.span(1.6, 2.2, (k) => {
+      tl.span(1.0, 1.4, (k) => {
         fig.u.uOpacity.value = k;
         fig.u.uTint.value = 0.5 * (1 - k);
       });
-      tl.span(2.4, 4.9, (k, dt) => {
+      // chains of gold-and-violet links coil around it
+      const links = Array.from({ length: st.quality === 'full' ? 16 : 10 }, (_, i) => {
+        const l = tl.own(new Ring(soulSize * 0.26, i % 2 ? gold : 0xd8b0ff, 77 + i, { inner: 0.5, outer: 0.95 }));
+        l.u.uOpacity.value = 0;
+        return l;
+      });
+      const coil = (k: number, rot: number) => {
+        const p = fig.mesh.position;
+        const s = fig.mesh.scale.x / soulSize;
+        links.forEach((l, i) => {
+          const q = i / links.length;
+          const ang = q * Math.PI * 5 + rot;
+          const rr = soulSize * 0.42 * s * (1.25 - 0.25 * easeOut(k));
+          l.mesh.position.set(p.x + Math.cos(ang) * rr, p.y + (q - 0.5) * soulSize * 0.8 * s, p.z + Math.sin(ang) * rr * 0.6 + 0.1);
+          l.mesh.rotation.set(0, i % 2 ? Math.PI / 2.4 : 0, ang);
+          l.mesh.scale.setScalar(s);
+          l.u.uOpacity.value = clamp01(k * links.length - i) * (Math.sin(ang) > -0.3 ? 1 : 0.35);
+        });
+      };
+      tl.span(1.35, 1.9, (k) => coil(k, 0));
+      tl.at(1.9, () => (zap(0.4), st.shake(0.5), chime(0.2)));
+      tl.span(2.0, 3.6, (k, dt) => {
         const e = easeIn(k);
         const ang = e * 9;
         const rr = (1 - e) * Math.hypot(start.x - center.x, start.y - center.y);
@@ -1799,8 +2939,48 @@ export class Director {
         fig.mesh.scale.setScalar(soulSize * (1 - e * 0.9));
         fig.u.uDark.value = clamp01(k * 2);
         fig.u.uShatter.value = clamp01((k - 0.55) * 2.2);
-        const n = Math.floor(80 * dt + Math.random());
-        for (let i = 0; i < n; i++) st.particles.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, burst: 0.6 * U, life: 0.6, size: 0.1 * U, color: magenta, pull: { x: center.x, y: center.y, strength: 8 * U, swirl: 10 * U } });
+        coil(1, ang * 0.6);
+        for (const l of links) l.u.uOpacity.value *= 1 - clamp01((k - 0.6) * 2.5);
+        const n = Math.floor(Math.min(45, 45 * this.q) * dt + Math.random());
+        for (let i = 0; i < n; i++) st.particles.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, burst: 0.6 * U, life: 0.6, size: 0.065 * U, color: i % 2 ? purple : magenta, pull: { x: center.x, y: center.y, strength: 8 * U, swirl: 10 * U } });
+      });
+      // sealed: out of the flash its card comes back from the vortex, bound in the same chains
+      // and lit magenta, and it stays there under the eye until the end
+      const sealT = 3.6;
+      tl.at(sealT, () => (fig.u.uOpacity.value = 0), false);
+      const aura = tl.own(new Glow(cardH * 1.5, cardH * 1.5, 'flare', magenta, 0xffd0f4));
+      aura.mesh.position.set(center.x, center.y, 0.2);
+      const sealed = tl.own(new CardPanel(art.full, cardH, magenta));
+      sealed.mesh.position.set(center.x, center.y, 0.4);
+      sealed.u.uOpacity.value = 0;
+      tl.span(sealT, sealT + 0.4, (k) => {
+        sealed.mesh.scale.setScalar(lerp(0.15, 1, backOut(k)));
+        sealed.mesh.rotation.y = (1 - easeOut(k)) * Math.PI;
+        sealed.u.uOpacity.value = clamp01(k * 3);
+        sealed.u.uTint.value = 0.7 * (1 - easeOut(k)) + 0.08;
+      });
+      tl.span(sealT + 0.3, D - 0.2, (k) => {
+        sealed.u.uSheen.value = lerp(-0.4, 1.8, clamp01(k * 2.2));
+        sealed.mesh.rotation.z = Math.sin(k * 7) * 0.025;
+        aura.u.uOpacity.value = 0.7 * clamp01(k * 4) * (0.85 + 0.15 * Math.sin(k * 18));
+      });
+      const ls = cardH / soulSize;
+      tl.span(sealT + 0.1, D - 0.2, (k) => {
+        links.forEach((l, i) => {
+          const q = i / links.length;
+          const ang = q * Math.PI * 4 + k * 1.2;
+          const rr = cardH * 0.42;
+          l.mesh.position.set(center.x + Math.cos(ang) * rr, center.y + (q - 0.5) * cardH * 0.85, 0.4 + Math.sin(ang) * rr * 0.5 + 0.12);
+          l.mesh.rotation.set(0, i % 2 ? Math.PI / 2.4 : 0, ang);
+          l.mesh.scale.setScalar(ls * 0.8);
+          l.u.uOpacity.value = clamp01(k * 6 * links.length - i * 1.5) * (Math.sin(ang) > -0.3 ? 1 : 0.35);
+        });
+      });
+      tl.at(sealT + 0.15, () => (zap(0.35), chime(0.25)));
+      tl.span(D - 0.2, D, (k) => {
+        sealed.u.uOpacity.value = 1 - k;
+        aura.u.uOpacity.value = 0.7 * (1 - k);
+        for (const l of links) l.u.uOpacity.value *= 1 - k;
       });
     }
     // the winner's fighters step out of the way
@@ -1808,7 +2988,7 @@ export class Director {
       for (const a of this.actors.values()) if (a.side !== loserSide) this.setOpacity(a, 1 - k);
     });
     // whatever was still on the loser's side goes dark and breaks
-    tl.span(2.0, 3.4, (k) => {
+    tl.span(1.4, 2.6, (k) => {
       for (const a of this.actors.values()) {
         if (a.side !== loserSide) continue;
         if (a.fig) {
@@ -1818,16 +2998,16 @@ export class Director {
         if (a.back) a.back.u.uOpacity.value = 1 - k;
       }
     });
-    tl.at(4.9, () => (st.pulse('flash', 0.7), this.flash(0xffffff, 0.6), boom(1), st.shake(1)));
+    tl.at(3.6, () => (st.pulse('flash', 0.4), this.flash(0xffffff, 0.3), boom(1), st.shake(1)));
     // overkill: the number ticks up, then lands
     const steps = 10;
     for (let i = 1; i <= steps; i++) {
       const n = Math.round((sr.excess * i) / steps);
-      if (i < steps) tl.at(1.2 + i * 0.06, () => this.ui.caption(`OVERKILL  +${n.toLocaleString()}`, 0.08, 'overkill tick'));
+      if (i < steps) tl.at(0.75 + i * 0.05, () => this.ui.caption(`OVERKILL  +${n.toLocaleString()}`, 0.07, 'overkill tick'));
     }
-    tl.at(1.2 + steps * 0.06, () => (this.ui.caption(`OVERKILL  +${sr.excess.toLocaleString()}`, 1.3, 'overkill land'), st.shake(0.4)));
-    tl.at(2.3, () => this.ui.caption(`${sr.loserName} has been sent to the Shadow Realm!`, 3.2, 'shadow'));
-    if (sr.sealed) tl.at(4.0, () => this.ui.caption(`${sr.sealed} is sealed away until ${sr.loserName} wins a duel.`, 2.2, 'sealed'));
+    tl.at(0.75 + steps * 0.05, () => (this.ui.caption(`OVERKILL  +${sr.excess.toLocaleString()}`, 1.3, 'overkill land'), st.shake(0.4)));
+    tl.at(1.6, () => this.ui.caption(`${sr.loserName} has been sent to the Shadow Realm!`, 2.6, 'shadow'));
+    if (sr.sealed) tl.at(2.7, () => this.ui.caption(`${sr.sealed} is sealed away until ${sr.loserName} wins a duel.`, 2, 'sealed'));
     tl.at(
       D,
       () => {
@@ -1839,6 +3019,30 @@ export class Director {
     );
     return tl;
   }
+}
+
+/** A Life Points plate reading 0, drawn to shatter. */
+function lpPlateArt(name: string): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 108;
+  const g = c.getContext('2d');
+  if (!g) return c;
+  const bg = g.createLinearGradient(0, 0, 0, c.height);
+  bg.addColorStop(0, '#2c0842');
+  bg.addColorStop(1, '#0c001a');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#ffc94a';
+  g.lineWidth = 6;
+  g.strokeRect(3, 3, c.width - 6, c.height - 6);
+  g.fillStyle = '#ffd8f6';
+  g.font = 'bold 20px system-ui, sans-serif';
+  g.fillText(name.slice(0, 16), 14, 32);
+  g.fillStyle = '#ff4a4a';
+  g.font = 'italic 900 52px "Arial Black", Impact, sans-serif';
+  g.fillText('LP 0', 14, 92);
+  return c;
 }
 
 // ---------------------------------------------------------------- types and tables
@@ -1869,6 +3073,23 @@ const GOLD = 0xffc94a;
 function isBig(info: ReturnType<typeof card>, prof: ArtProfile): boolean {
   if (!info || info.kind !== 'monster') return false;
   return (info.level ?? 0) >= 7 || prof.entrance === 'fusion' || prof.entrance === 'ritual' || (SIGNATURE_CARDS.includes(prof.name) && prof.tier >= 2);
+}
+
+let solid: DataTexture | null = null;
+/** A 1x1 opaque texture: a card's "depth" (the whole card is the subject when it shatters). */
+function solidTex(): DataTexture {
+  if (!solid) {
+    solid = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, RGBAFormat);
+    solid.needsUpdate = true;
+  }
+  return solid;
+}
+
+/** A point on a quadratic curve through three points. */
+function bez3(p: P3[], k: number): P3 {
+  const u = 1 - k;
+  const [a, b, c] = p;
+  return { x: u * u * a.x + 2 * u * k * b.x + k * k * c.x, y: u * u * a.y + 2 * u * k * b.y + k * k * c.y, z: u * u * a.z + 2 * u * k * b.z + k * k * c.z };
 }
 
 /** Smooth 1D noise in -1..1 (trembling, clash jitter). */
@@ -1948,8 +3169,11 @@ function lunge(c: HitCtx, reach: number) {
   });
 }
 
+/** The spiral ribbons wound round a beam stay a light accent (bright, they read as a white squiggle). */
+const SPIRAL_OP = 0.5;
+
 /** A volumetric beam: soft outer glow, colored body, white-hot core, spiral ribbons, a muzzle flare. */
-function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3 } = {}) {
+function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number } = {}) {
   const { tl, U, A, T, col, s, travel } = c;
   const main = o.main ?? col.main;
   const light = o.light ?? col.light;
@@ -1958,18 +3182,20 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   const a = { x: A.x + off.x, y: A.y + off.y, z: A.z + off.z };
   const w = 0.11 * U * Math.pow(c.w, 0.85) * power * (o.widthMul ?? 1);
   const layers: [Ribbon, number, number][] = [
-    [tl.own(new Ribbon(24, main, 1)), 2.1, 0.32],
+    // (a wide, soft outer glow gives the beam its volume)
+    [tl.own(new Ribbon(24, main, 1)), 2.3, 0.45],
     [tl.own(new Ribbon(24, main, 1)), 1.3, 1],
     [tl.own(new Ribbon(24, light, 1)), 0.55, 0.8],
     [tl.own(new Ribbon(24, 0xffffff, 0)), 0.22, 0.85],
   ];
   const nSp = o.spirals ?? (c.w > 1.5 ? 3 : 2);
-  const spirals = Array.from({ length: nSp }, (_, i) => tl.own(new Ribbon(48, i % 2 ? accent : light, 1)));
-  const end = s + travel + 0.28;
+  const spirals = Array.from({ length: nSp }, (_, i) => tl.own(new Ribbon(80, i % 2 ? accent : light, 1)));
+  // (how long the full beam holds after it reaches T)
+  const end = s + travel + (o.hold ?? 0.28);
   const pts = [a, T];
   const len = Math.hypot(T.x - a.x, T.y - a.y);
   for (const [r] of layers) r.u.uHead.value = 0;
-  for (const r of spirals) r.u.uHead.value = 0;
+  for (const r of spirals) ((r.u.uHead.value = 0), (r.u.uOpacity.value = SPIRAL_OP));
   tl.span(s, end + 0.2, (k, dt) => {
     const t = (k * (end + 0.2 - s)) / 1;
     const pulse = 1 + 0.12 * Math.sin(t * 50);
@@ -1981,8 +3207,8 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
       const ph = (i / spirals.length) * Math.PI * 2 + t * 18;
       const turns = len / (0.9 * U);
       spirals[i].set(
-        Array.from({ length: 24 }, (_, j) => {
-          const u = j / 23;
+        Array.from({ length: 40 }, (_, j) => {
+          const u = j / 39;
           const ang = ph + u * turns * Math.PI * 2;
           const rr = w * 1.1 * (0.6 + 0.4 * Math.sin(u * 9 + t * 6));
           // perpendicular in screen plane: (-dy, dx)
@@ -1990,7 +3216,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
           const dy = (T.y - a.y) / (len || 1);
           return { x: lerp(a.x, T.x, u) - dy * Math.cos(ang) * rr, y: lerp(a.y, T.y, u) + dx * Math.cos(ang) * rr, z: lerp(a.z, T.z, u) + Math.sin(ang) * rr };
         }),
-        w * 0.22,
+        w * 0.14,
       );
     }
     void dt;
@@ -2002,7 +3228,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   });
   tl.span(end, end + 0.2, (k) => {
     for (const [r, , op] of layers) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = op * (1 - k)));
-    for (const r of spirals) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = 1 - k));
+    for (const r of spirals) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = SPIRAL_OP * (1 - k)));
   });
   const ms = 0.9 * U * Math.sqrt(Math.min(2.4, c.w * power));
   const muzzle = tl.own(new Glow(ms, ms, 'flare', main, light));
@@ -2123,7 +3349,7 @@ const STYLES: Record<AttackStyle, StyleFn> = {
       tl.at(t0, () => {
         zap(0.25);
         st.shake(0.25);
-        c.d['flash'](col.light, 0.18);
+        c.d['flash'](col.light, 0.1);
         st.particles.emit({ x: T.x, y: T.y, z: T.z + 0.4, burst: 3 * U, life: 0.3, size: 0.08 * U, color: col.light }, Math.round(25 * c.q));
       });
     }
@@ -2276,7 +3502,8 @@ const SIG_ATTACKS: Record<string, SigAttack> = {
   },
   'Blue-Eyes White Dragon': {
     style: 'beam',
-    width: 1.25,
+    // Burst Stream: a thick, volumetric beam (the base beam is ~0.3 U wide at tier 3; this is ~0.45 U)
+    width: 1.8,
     charge: 1.6,
     windup({ tl, st, U, M, t0, t1 }) {
       tl.span(t0, t1, (k, dt) => {
@@ -2284,7 +3511,8 @@ const SIG_ATTACKS: Record<string, SigAttack> = {
       });
     },
     travel(c) {
-      c.tl.at(c.s, () => (c.st.pulse('flash', 0.25), c.d['flash'](0x9fdcff, 0.15), c.st.shake(0.5)));
+      // (a light flash: the beam itself is the bright thing on screen)
+      c.tl.at(c.s, () => (c.st.pulse('flash', 0.12), c.d['flash'](0x9fdcff, 0.1), c.st.shake(0.5)));
     },
   },
   'Red-Eyes Black Dragon': {
@@ -2345,145 +3573,459 @@ interface PresetCtx {
   /** y of the opponent's / own side of the field (resting camera) */
   opp: number;
   own: number;
+  /** the monsters it strikes (standing on their cards) and their centers */
+  hits: Actor[];
+  pts: P3[];
+  /** where its chosen targets are (monsters or Spell/Trap cards) */
+  targets: P3[];
+  /** every figure on stage for it (strikes, then targets) */
+  figs: Actor[];
+  /** the activated card, in front of the camera */
+  card: P3;
 }
 interface Preset {
   /** extra seconds the preset adds */
   dur: number;
+  /** its own accent color */
+  accent?: number;
+  /** which face-up monsters it strikes when the duel does not say (board-wide cards) */
+  scope?: 'opp' | 'all' | 'oppAtk';
+  /** it moves its figures off their cards and frames them itself (the activation keeps its own drift) */
+  ownCam?: boolean;
   play(c: PresetCtx): void;
 }
 
-/** Lightning from the sky onto a point. */
-function bolt(c: PresetCtx, x: number, y: number, t: number, color: number) {
+const strike = (c: PresetCtx, a: Actor, t: number, power = 1) => c.d['strike'](c.tl, a, t, power);
+/** The points it aims at: its targets, else what it strikes, else `fallback` (the viewer has no field). */
+const aims = (c: PresetCtx, fallback: P3[]) => (c.targets.length ? c.targets : c.pts.length ? c.pts : fallback);
+const figAt = (c: PresetCtx, p: P3) => c.figs.find((a) => Math.abs(a.x - p.x) < 1e-3 && Math.abs(a.y + a.oy - p.y) < 1e-3) ?? null;
+const rowPts = (c: PresetCtx, y: number, n = 3): P3[] => Array.from({ length: n }, (_, i) => ({ x: (i - (n - 1) / 2) * 1.1 * c.U, y, z: 0.3 }));
+
+/** The bolts already flashing the screen, per cinematic: only the first one does. */
+const FLASHED = new WeakSet<Timeline>();
+
+/**
+ * Lightning from the sky onto a point: a thick jagged core in a wide glow, two forked
+ * branches, a tight ground ring and a scorch mark that stays a moment. Only the first
+ * bolt of a cinematic flashes the screen (several in a row would wash it grey).
+ */
+function bolt(c: PresetCtx, x: number, y: number, t: number, color: number, foot = y, top = Infinity) {
   const { tl, U, st } = c;
-  const core = tl.own(new Ribbon(14, 0xffffff, 0));
-  const glow = tl.own(new Ribbon(14, color, 1));
-  let seed = Math.random() * 99;
+  // it strikes from the top of the frame (the safe area's), not from off screen
+  const y0 = Math.max(y + 1.2 * U, Math.min(y + 4.5 * U, top));
+  const N = 12;
+  const core = tl.own(new Ribbon(18, 0xffffff, 0));
+  const glow = tl.own(new Ribbon(18, color, 1));
+  const forks = [0, 1].map(() => ({ core: tl.own(new Ribbon(8, 0xffffff, 0)), glow: tl.own(new Ribbon(8, color, 1)) }));
+  // seeded by where and when it strikes: the same bolt every time
+  let seed = (x / U) * 13.7 + (y / U) * 5.3 + t * 31;
   const reroll = () => {
     seed += 2.3;
-    const pts = Array.from({ length: 9 }, (_, j) => ({ x: x + (j === 0 || j === 8 ? 0 : noise(seed + j * 2.7) * 0.35 * U), y: lerp(y + 4.5 * U, y, j / 8), z: 0.6 }));
-    core.set(pts, 0.07 * U);
-    glow.set(pts, 0.3 * U);
+    const pts = Array.from({ length: N }, (_, j) => ({ x: x + (j === 0 || j === N - 1 ? 0 : noise(seed + j * 2.7) * 0.4 * U), y: lerp(y0, y, j / (N - 1)), z: 0.6 }));
+    core.set(pts, (q) => 0.16 * U * (0.55 + 0.45 * q));
+    glow.set(pts, (q) => 0.6 * U * (0.6 + 0.4 * q));
+    forks.forEach((f, i) => {
+      // a branch splits off a third / half of the way down and runs out sideways
+      const j0 = 3 + i * 2;
+      const o = pts[j0];
+      const dir = (i ? 1 : -1) * (0.8 + 0.3 * noise(seed + i * 9.1));
+      const fp = Array.from({ length: 4 }, (_, k) => ({ x: o.x + dir * k * 0.28 * U + noise(seed + i * 5 + k * 1.9) * 0.1 * U, y: o.y - k * 0.42 * U, z: 0.6 }));
+      f.core.set(fp, (q) => 0.07 * U * (1 - 0.6 * q));
+      f.glow.set(fp, (q) => 0.28 * U * (1 - 0.5 * q));
+    });
   };
   reroll();
-  core.u.uOpacity.value = glow.u.uOpacity.value = 0;
+  const all = [core, glow, ...forks.flatMap((f) => [f.core, f.glow])];
+  for (const r of all) r.u.uOpacity.value = 0;
   let acc = 0;
   tl.span(t, t + 0.3, (k, dt) => {
     acc += dt;
     if (acc > 0.05) ((acc = 0), reroll());
-    core.u.uOpacity.value = glow.u.uOpacity.value = k < 0.75 ? 1 : (1 - k) / 0.25;
+    const o = k < 0.75 ? 1 : (1 - k) / 0.25;
+    core.u.uOpacity.value = glow.u.uOpacity.value = o;
+    // the branches flicker out first
+    for (const f of forks) f.core.u.uOpacity.value = f.glow.u.uOpacity.value = k < 0.5 ? 0.9 : Math.max(0, (0.8 - k) / 0.3) * 0.9;
   });
-  const ring = tl.own(new Glow(2.4 * U, 2.4 * U, 'shock', color, 0xffffff));
+  // a tight ground ring (a wide one reads as a horizontal halo across the frame)
+  const ring = tl.own(new Glow(1.2 * U, 1.2 * U, 'shock', color, 0xffffff));
   ring.mesh.position.set(x, y, 0.3);
   ring.mesh.rotation.x = -1.1;
-  tl.span(t, t + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k * 0.3)));
+  tl.span(t, t + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 0.6 * (1 - k))));
+  // the scorch where it struck, holding a moment after the bolt is gone
+  const scorch = tl.own(new ContactShadow(color, 0.2));
+  scorch.mesh.position.set(x, foot - 0.05 * U, 0.32);
+  scorch.mesh.rotation.x = -1.2;
+  scorch.mesh.scale.set(1.1 * U, 0.9 * U, 1);
+  scorch.mesh.renderOrder = -2;
+  scorch.u.uOpacity.value = 0;
+  tl.span(t, t + 0.9, (k) => {
+    const s = k * 0.9;
+    scorch.u.uOpacity.value = s < 0.05 ? s / 0.05 : s < 0.65 ? 1 : Math.max(0, 1 - (s - 0.65) / 0.25);
+    scorch.u.uRingAmt.value = 0.2 * Math.max(0, 1 - s / 0.6);
+  });
+  const first = !FLASHED.has(tl);
+  FLASHED.add(tl);
   tl.at(t, () => {
     zap(0.3);
-    st.shake(0.45);
-    st.pulse('chroma', 0.5);
-    c.d['flash'](color, 0.3);
+    st.shake(first ? 0.45 : 0.25);
+    if (first) {
+      st.pulse('chroma', 0.5);
+      c.d['flash'](color, 0.22);
+    } else c.d['flash'](color, 0.06);
     st.particles.emit({ x, y, z: 0.4, burst: 3.5 * U, vy: 1 * U, gravity: 6 * U, life: 0.6, size: 0.09 * U, color: 0xffffff }, Math.round(30 * c.d['q']));
   });
 }
 
+/** A whirling column (tornadoes, typhoons) on a point. */
+function tornado(c: PresetCtx, p: P3, t0: number, t1: number, color: number, light: number) {
+  const { tl, U, st } = c;
+  for (let i = 0; i < 4; i++) {
+    const rib = tl.own(new Ribbon(40, i % 2 ? light : color, 1));
+    tl.span(t0, t1, (k) => {
+      const grow = easeOut(clamp01(k * 2.5));
+      rib.set(
+        Array.from({ length: 28 }, (_, j) => {
+          const q = j / 27;
+          const ang = q * 16 + (i * Math.PI) / 2 + k * 22;
+          const rr = (0.18 + q * 0.75) * U;
+          return { x: p.x + Math.cos(ang) * rr, y: p.y - 0.5 * U + q * 2.6 * U * grow, z: p.z + 0.3 + Math.sin(ang) * rr * 0.5 };
+        }),
+        (q) => 0.07 * U * (0.4 + q),
+      );
+      rib.u.uOpacity.value = k > 0.8 ? (1 - k) * 5 : 1;
+    });
+  }
+  tl.at(t0, () => whoosh(t1 - t0, 300, 2600, 0.3));
+  tl.span(t0, t1, (_k, dt) => {
+    for (let j = 0; j < rate(120 * c.d['q'], dt); j++) {
+      const a = Math.random() * Math.PI * 2;
+      st.particles.emit({ x: p.x + Math.cos(a) * 0.8 * U, y: p.y - 0.4 * U, z: p.z + 0.3, vy: 3 * U, life: 0.7, size: 0.07 * U, color: j % 2 ? light : color, drag: 0.5, pull: { x: p.x, y: p.y + 0.6 * U, strength: 6 * U, swirl: 14 * U } });
+    }
+  });
+}
+
+/** A wide energy sweep from the bottom of the frame onto `p` (Burst Stream, beams from a card). */
+function sweep(c: PresetCtx, a: P3, b: P3, t: number, travel: number, color: number, light: number, width: number) {
+  c.d['ray'](c.tl, a, b, t, travel, color, light, width);
+}
+
+const MIRROR_FORCE: Preset = {
+  dur: 0.7,
+  accent: 0x7affff,
+  scope: 'oppAtk',
+  play(c) {
+    const { tl, U, t0, own, opp } = c;
+    const dome = tl.own(new Glow(2.7 * U, 2.7 * U, 'dome', 0x7affff, 0xffffff));
+    dome.mesh.position.set(0, own * 0.6, 0.9);
+    tl.span(t0, t0 + 0.3, (k) => ((dome.u.uOpacity.value = 0.7 * easeOut(k)), dome.mesh.scale.setScalar(lerp(0.3, 1, backOut(k)))));
+    // the attack strikes the barrier and is thrown back as rays onto every attacker
+    const hitT = t0 + 0.35;
+    tl.span(t0, hitT, () => (dome.u.uK.value = 0));
+    tl.span(hitT, hitT + 0.5, (k) => (dome.u.uK.value = k * 1.1));
+    const goal = c.pts.length ? c.pts : Array.from({ length: 5 }, (_, i) => ({ x: Math.sin(-0.9 + (i / 4) * 1.8) * 3 * U, y: opp * 1.3, z: 0.3 }));
+    goal.forEach((to, i) => {
+      const r = tl.own(new Ribbon(12, i % 2 ? 0xffffff : 0x7affff, 1));
+      const from = { x: 0, y: own * 0.6 + Math.sign(opp) * 1.2 * U, z: 1 };
+      r.u.uHead.value = 0;
+      r.set([from, to], 0.14 * U);
+      tl.span(hitT, hitT + 0.22, (k) => (r.u.uHead.value = easeOut(k) * 1.05));
+      tl.span(hitT + 0.25, c.t1, (k) => (r.u.uTail.value = easeIn(k)));
+    });
+    for (const a of c.hits) strike(c, a, hitT + 0.2);
+    // as the rays turn back, the camera follows them up onto the attackers
+    if (c.hits.length) {
+      const shot = c.d['effectShot'](c.hits.map((a) => c.d['boxOf'](a)), 0, 0.05);
+      c.d['lean'](tl, shot, hitT - 0.05, hitT + 0.25, c.t1 - 0.3, c.t1);
+    }
+    tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.14), boom(0.6), chime(0.95)));
+    tl.span(c.t1 - 0.3, c.t1, (k) => (dome.u.uOpacity.value = 0.7 * (1 - k)));
+  },
+};
+
+const RAIGEKI: Preset = {
+  dur: 0.7,
+  accent: 0xfff27a,
+  scope: 'opp',
+  play(c) {
+    const { U, tl, t0, t1, d } = c;
+    // the camera leaves the card and frames what the bolts strike (~60% of the safe area),
+    // so the monsters read and every bolt starts inside the frame
+    const boxes: Box[] = c.hits.length ? c.hits.map((a) => d['boxOf'](a)) : rowPts(c, c.opp, 3).map((p) => ({ ...p, w: 0.5 * U, h: 0.5 * U }));
+    const shot = d['effectShot'](boxes, 0, 0.06);
+    d['lean'](tl, shot, t0 - 0.3, t0 + 0.02, t1 - 0.3, t1);
+    const top = (x: number) => d['skyY'](shot, x, 0.6);
+    if (c.hits.length) {
+      c.hits.forEach((a, i) => {
+        const p = c.pts[i];
+        bolt(c, p.x, p.y + a.size * 0.1, t0 + i * 0.1, 0xfff27a, p.y - a.size * 0.48, top(p.x));
+        strike(c, a, t0 + i * 0.1);
+      });
+      // and a couple of strays between and beside them
+      const xs = c.pts.map((p) => p.x);
+      const x0 = Math.min(...xs);
+      const x1 = Math.max(...xs);
+      const gy = Math.min(...c.hits.map((a) => a.y - a.size * 0.35));
+      [lerp(x0, x1, 0.5) - 0.25 * U, x1 + 0.7 * U].forEach((x, i) => bolt(c, x, gy, t0 + 0.05 + i * 0.12, 0xfff27a, gy, top(x)));
+    } else for (let i = 0; i < 5; i++) bolt(c, (i - 2) * 0.55 * U + noise(i * 3.1 + 0.7) * 0.1 * U, c.opp, t0 + i * 0.1, 0xfff27a, c.opp, top((i - 2) * 0.55 * U));
+  },
+};
+
+const DARK_HOLE: Preset = {
+  dur: 0.8,
+  accent: 0xff4fd8,
+  scope: 'all',
+  play(c) {
+    const { tl, U, st, t0, t1 } = c;
+    const v = tl.own(new Glow(6 * U, 6 * U, 'vortex', 0x6a2aff, 0xff4fd8));
+    v.mesh.position.set(0, c.cy, -1.2);
+    tl.span(t0 - 0.2, t0 + 0.3, (k) => (v.u.uOpacity.value = easeOut(k)));
+    tl.span(t1 - 0.35, t1, (k) => (v.u.uOpacity.value = 1 - k));
+    tl.span(t0, t1 - 0.3, (_k, dt) => {
+      for (let i = 0; i < rate(200 * c.d['q'], dt); i++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = (2 + Math.random() * 1.5) * U;
+        st.particles.emit({ x: Math.cos(a) * rr, y: c.cy + Math.sin(a) * rr, life: 0.9, size: 0.1 * U, color: Math.random() < 0.5 ? 0x9a3cff : 0xff4fd8, drag: 0.2, pull: { x: 0, y: c.cy, strength: 9 * U, swirl: 10 * U } });
+      }
+      if (Math.random() < dt * 8) st.shake(0.35);
+    });
+    // every monster is dragged toward the hole, twisting and darkening
+    for (const a of c.hits) {
+      const home = { x: a.ox, y: a.oy };
+      tl.span(t0, t1 - 0.2, (k) => {
+        const e = easeIn(k) * 0.45;
+        a.ox = home.x + (0 - a.x) * e;
+        a.oy = home.y + (c.cy - a.y) * e;
+        a.lean = -0.4 * e;
+        if (a.fig) ((a.fig.u.uDark.value = clamp01(k * 1.5)), (a.fig.mesh.rotation.z = (a.x > 0 ? 1 : -1) * e * 1.2));
+        c.d['place'](a);
+      });
+    }
+    tl.at(t0, () => (drone(1.2), boom(0.6)));
+    tl.at(t1 - 0.3, () => (st.pulse('flash', 0.35), st.pulse('chroma', 0.7), boom(0.8)));
+  },
+};
+
+const POT_OF_GREED: Preset = {
+  dur: 0.6,
+  accent: 0xffd75a,
+  play(c) {
+    const { tl, U, t0, own } = c;
+    for (let i = 0; i < 8; i++) {
+      const g = tl.own(new Glow(0.7 * U, 0.7 * U, 'star', 0xffd75a, 0xffffff));
+      const a = (i / 8) * Math.PI * 2 + 0.3;
+      tl.span(t0 + i * 0.03, t0 + 0.6, (k) => {
+        g.mesh.position.set(Math.cos(a) * 1.4 * U * easeOut(k), c.cy + Math.sin(a) * 1.6 * U * easeOut(k), 1);
+        g.u.uOpacity.value = Math.sin(k * Math.PI);
+      });
+    }
+    // draw two: two cards fly out to the hand
+    for (let i = 0; i < 2; i++) {
+      const p = tl.own(new CardPanel(cardBack(), 0.9 * U, 0xffd75a));
+      p.u.uOpacity.value = 0;
+      const t = t0 + 0.2 + i * 0.14;
+      tl.span(t, t + 0.45, (k) => {
+        const e = easeIn(k);
+        p.mesh.position.set(lerp(0, (i - 0.5) * 1.2 * U, e), lerp(c.cy, own * 1.4, e), lerp(1, 2, e));
+        p.mesh.rotation.z = (i - 0.5) * 0.5 * e;
+        p.u.uOpacity.value = k < 0.8 ? 1 : (1 - k) * 5;
+      });
+      tl.at(t, () => whoosh(0.25, 800, 2400, 0.15));
+    }
+    tl.at(t0, () => (chime(0.8), chime(0.95)));
+  },
+};
+
+const MONSTER_REBORN: Preset = {
+  dur: 0.9,
+  accent: 0xffe9a0,
+  ownCam: true,
+  play(c) {
+    const { tl, U, t0, t1, st } = c;
+    // the revived monster (its target), when the duel names it
+    const tp = c.targets[0];
+    const a = tp ? figAt(c, tp) : null;
+    const rise = !!a?.fig;
+    // the ankh rises to the middle of the stage; with no monster to raise it stands behind the card and lights it
+    const ankh = tl.own(new Glow(2 * U, 2.6 * U, 'ankh', 0xffe9a0, 0xffffff));
+    // drawn before the figures (with the shafts): the rising monster passes in front of it, never its stem over the monster
+    ankh.mesh.renderOrder = -5;
+    const peak = rise ? 0.5 : 0.38;
+    tl.span(t0, t0 + 0.6, (k) => {
+      const px = rise ? 0 : c.panel.mesh.position.x;
+      const py = rise ? c.cy + 0.8 * U : c.panel.mesh.position.y + 0.3 * U;
+      ankh.mesh.position.set(px, lerp(c.own * 1.2, py, easeOut(k)), rise ? -0.5 : -0.9);
+      ankh.mesh.scale.setScalar(rise ? 1 : 1.75);
+      ankh.u.uOpacity.value = peak * easeOut(k);
+    });
+    tl.span(t1 - 0.3, t1, (k) => (ankh.u.uOpacity.value = peak * (1 - k)));
+    // the shafts climb from the graveyard's side of the field
+    const gx = (c.side === 'near' ? 1 : -1) * 1.2 * U;
+    const gy = c.own * 1.15;
+    const sx = rise ? gx * 0.5 : 0;
+    c.d['shafts'](tl, { x: sx, y: gy, z: 0.4 }, 5 * U, 0xffe9a0, t0, t1, rise ? 3 : 1, 0.75);
+    let seed = 0;
+    tl.span(t0, t1 - 0.25, (_k, dt) => {
+      for (let i = 0; i < rate(70 * c.d['q'], dt); i++) c.st.particles.emit({ x: sx + noise(++seed * 1.7) * 0.8 * U, y: gy, z: 0.6, vy: 3 * U, life: 0.9, size: 0.08 * U, color: 0xffe9a0, drag: 0.4 });
+    });
+    if (a && a.fig) {
+      const fig = a.fig;
+      const size = a.size;
+      const R0 = t0 + 0.12;
+      const R1 = t0 + 0.72;
+      const L = R1 + 0.25;
+      const cy = c.cy - 0.05 * U;
+      // hidden until the ankh calls it (the activation would raise it off its card)
+      tl.span(0.1, R0, () => {
+        a.ox = gx - a.x;
+        a.oy = gy - a.y;
+        a.oz = 0.6;
+        fig.u.uOpacity.value = 0;
+        c.d['place'](a);
+      });
+      // up from the graveyard through the shafts to the middle of the stage, coming into being as it climbs
+      // (lit gold, its painted detail kept: never a white silhouette)
+      tl.at(R0, () => (setRgb(fig.u.uTintCol.value, 0xffe9a0), (fig.u.uTintKeep.value = 1)));
+      tl.span(R0, R1, (k) => {
+        const e = easeInOut(k);
+        a.ox = lerp(gx, 0, e) - a.x;
+        a.oy = lerp(gy, cy, e) - a.y + Math.sin(k * Math.PI) * 0.25 * U;
+        a.oz = lerp(0.6, 1.2, e);
+        fig.mesh.scale.setScalar(size * lerp(0.75, 1.3, e));
+        fig.u.uOpacity.value = clamp01(k * 3);
+        fig.u.uReveal.value = easeOut(clamp01(k * 1.3));
+        fig.u.uTint.value = 0.6;
+        c.d['place'](a);
+      });
+      // it lands: the golden glow drains out of it in a flash and it stands there revived
+      tl.span(R1, L, (k) => {
+        fig.u.uReveal.value = 1;
+        fig.u.uTint.value = 0.6 * (1 - easeOut(k));
+      });
+      tl.span(R1, t1 + 0.4, (k) => {
+        a.oy = cy - a.y + Math.sin(k * Math.PI * 2) * 0.03 * U;
+        fig.mesh.scale.setScalar(size * 1.3);
+        c.d['place'](a);
+      });
+      const shock = tl.own(new Glow(3.2 * U, 3.2 * U, 'shock', 0xffe9a0, 0xffffff));
+      shock.mesh.position.set(0, cy - size * 0.6, 1.2);
+      shock.mesh.rotation.x = -1.2;
+      tl.span(R1, R1 + 0.5, (k) => ((shock.u.uK.value = easeOut(k)), (shock.u.uOpacity.value = 0.8 * (1 - k))));
+      tl.at(R1, () => {
+        chime(0.9);
+        st.pulse('flash', 0.22);
+        c.d['flash'](0xffe9a0, 0.12);
+        st.particles.emit({ x: 0, y: cy, z: 1.4, burst: 3.5 * U, life: 0.7, size: 0.09 * U, color: 0xffe9a0, drag: 2 }, Math.round(60 * c.d['q']));
+      });
+      // the camera rises with it and frames it in the middle
+      const shot = c.d['fit']([{ x: 0, y: cy, z: 1.2 + size * 0.3, w: size * 0.62, h: size * 0.7 }], 0, 0.04, { fill: 0.62 });
+      c.d['lean'](tl, shot, R0, R1, t1 - 0.3, t1);
+    } else {
+      // no monster to show: the card itself takes the ankh's light
+      const panel = c.panel;
+      tl.span(t0 + 0.35, t0 + 0.95, (k) => (panel.u.uSheen.value = lerp(-0.4, 1.8, k)));
+      tl.span(t0 + 0.3, t1, (k) => (panel.u.uTint.value = 0.22 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5) * (1 - easeIn(clamp01((k - 0.7) / 0.3)))));
+      tl.at(t0 + 0.6, () => (chime(0.9), st.pulse('flash', 0.2)));
+    }
+  },
+};
+
+const POLYMERIZATION: Preset = {
+  dur: 0.7,
+  accent: 0xffd75a,
+  play(c) {
+    const { tl, U, t0, st } = c;
+    const cols = [0xff6a3a, 0x3a9aff];
+    const orbs = cols.map((col) => tl.own(new Glow(1.2 * U, 1.2 * U, 'flare', col, 0xffffff)));
+    tl.span(t0, t0 + 0.55, (k, dt) => {
+      orbs.forEach((g, i) => {
+        const a = i * Math.PI + k * 10;
+        const r = (1 - easeIn(k)) * 1.5 * U;
+        g.mesh.position.set(Math.cos(a) * r, c.cy + Math.sin(a) * r * 0.7, 1.2);
+        g.u.uOpacity.value = 1;
+        for (let j = 0; j < rate(60 * c.d['q'], dt); j++) st.particles.emit({ x: g.mesh.position.x, y: g.mesh.position.y, z: 1.2, burst: 0.3 * U, life: 0.4, size: 0.14 * U, color: cols[i], drag: 3 });
+      });
+    });
+    const star = tl.own(new Ring(3.4 * U, 0xffd75a, 6006, { inner: 0.7, outer: 0.9, star: 6 }));
+    star.mesh.position.set(0, c.cy, 1.1);
+    star.spinSpeed = 2;
+    star.u.uOpacity.value = 0;
+    tl.at(t0 + 0.55, () => {
+      for (const g of orbs) g.u.uOpacity.value = 0;
+      st.pulse('flash', 0.4);
+      c.d['flash'](0xffd75a, 0.3);
+      boom(0.5);
+      st.particles.emit({ x: 0, y: c.cy, z: 1.2, burst: 5 * U, life: 0.8, size: 0.12 * U, color: 0xffd75a }, Math.round(90 * c.d['q']));
+    });
+    tl.span(t0 + 0.5, c.t1, (k) => ((star.u.uOpacity.value = Math.sin(k * Math.PI)), star.mesh.scale.setScalar(lerp(0.5, 1.1, easeOut(k)))));
+  },
+};
+
+/** A pit opening under its victim; the monster sinks into it (Trap Hole family). */
+const trapHole = (color: number, light: number): Preset => ({
+  dur: 0.6,
+  accent: light,
+  play(c) {
+    const { tl, U, t0, t1, st } = c;
+    const where = aims(c, [{ x: 0, y: c.opp, z: 0.3 }]);
+    for (const p of where) {
+      const a = figAt(c, p);
+      const foot = a ? a.y - a.size * 0.42 : p.y - 0.4 * U;
+      const pit = tl.own(new Glow(2.6 * U, 2.6 * U, 'vortex', color, light));
+      pit.mesh.position.set(p.x, foot, p.z - 0.1);
+      pit.mesh.rotation.x = -1.2;
+      tl.span(t0, t0 + 0.25, (k) => ((pit.u.uOpacity.value = easeOut(k)), pit.mesh.scale.setScalar(lerp(0.2, 1, backOut(k)))));
+      tl.span(t1 - 0.25, t1, (k) => (pit.u.uOpacity.value = 1 - k));
+      const rim = tl.own(new Ring(2.2 * U, light, 909, { inner: 0.86, outer: 0.95 }));
+      rim.mesh.position.set(p.x, foot, p.z);
+      rim.mesh.rotation.x = -1.2;
+      rim.spinSpeed = 3;
+      rim.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.25, (k) => (rim.u.uOpacity.value = k));
+      tl.span(t1 - 0.25, t1, (k) => (rim.u.uOpacity.value = 1 - k));
+      if (a) {
+        const home = a.oy;
+        tl.span(t0 + 0.15, t1 - 0.1, (k) => {
+          a.oy = home - easeIn(k) * a.size * 0.35;
+          a.ox = noise(k * 20 + a.uid) * 0.03 * U;
+          if (a.fig) a.fig.u.uDark.value = clamp01(k * 1.4) * 0.8;
+          c.d['place'](a);
+        });
+      }
+      tl.at(t0, () => (boom(0.45), st.shake(0.5), st.particles.emit({ x: p.x, y: foot, z: p.z + 0.2, r: 0.5 * U, vy: 2.5 * U, burst: 1.5 * U, gravity: 8 * U, life: 0.8, size: 0.1 * U, color: light, drag: 0.5 }, Math.round(60 * c.d['q']))));
+    }
+  },
+});
+
+/** Barriers that stop an attack (Negate Attack, Waboku). */
+const barrier = (color: number, light: number, vortex: boolean): Preset => ({
+  dur: 0.6,
+  accent: light,
+  play(c) {
+    const { tl, U, t0, t1, own, st } = c;
+    const dome = tl.own(new Glow(3.8 * U, 3.8 * U, 'dome', color, light));
+    dome.mesh.position.set(0, own * 0.55, 1.1);
+    tl.span(t0, t0 + 0.3, (k) => ((dome.u.uOpacity.value = easeOut(k)), dome.mesh.scale.setScalar(lerp(0.3, 1, backOut(k)))));
+    tl.span(t0 + 0.25, t1, (k) => (dome.u.uK.value = (k * 2.2) % 1.1));
+    tl.span(t1 - 0.25, t1, (k) => (dome.u.uOpacity.value = 1 - k));
+    if (vortex) {
+      const v = tl.own(new Glow(2.6 * U, 2.6 * U, 'vortex', color, light));
+      v.mesh.position.set(0, own * 0.55 - Math.sign(own) * 1.3 * U, 1.3);
+      tl.span(t0 + 0.1, t0 + 0.4, (k) => (v.u.uOpacity.value = k));
+      tl.span(t1 - 0.25, t1, (k) => (v.u.uOpacity.value = 1 - k));
+    }
+    tl.at(t0 + 0.2, () => (chime(0.9), st.shake(0.4), st.pulse('chroma', 0.4)));
+  },
+});
+
 const SPELL_PRESETS: Record<string, Preset> = {
-  'Mirror Force': {
-    dur: 0.7,
-    play(c) {
-      const { tl, U, t0, own, opp } = c;
-      const dome = tl.own(new Glow(3.6 * U, 3.6 * U, 'dome', 0x7affff, 0xffffff));
-      dome.mesh.position.set(0, own * 0.55, 1.2);
-      tl.span(t0, t0 + 0.3, (k) => ((dome.u.uOpacity.value = easeOut(k)), dome.mesh.scale.setScalar(lerp(0.3, 1, backOut(k)))));
-      // incoming attacks strike the barrier and are thrown back as a spray of rays
-      const hitT = t0 + 0.35;
-      tl.span(t0, hitT, (k) => (dome.u.uK.value = 0));
-      tl.span(hitT, hitT + 0.5, (k) => (dome.u.uK.value = k * 1.1));
-      for (let i = 0; i < 5; i++) {
-        const r = tl.own(new Ribbon(12, i % 2 ? 0xffffff : 0x7affff, 1));
-        const ang = -0.9 + (i / 4) * 1.8;
-        const from = { x: 0, y: own * 0.55 + Math.sign(opp) * 1.6 * U, z: 1.3 };
-        const to = { x: Math.sin(ang) * 3 * U, y: opp * 1.3, z: 0.3 };
-        r.u.uHead.value = 0;
-        r.set([from, to], 0.14 * U);
-        tl.span(hitT, hitT + 0.22, (k) => (r.u.uHead.value = easeOut(k) * 1.05));
-        tl.span(hitT + 0.25, c.t1, (k) => (r.u.uTail.value = easeIn(k)));
-      }
-      tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.5), boom(0.6), chime(0.95)));
-      tl.span(c.t1 - 0.3, c.t1, (k) => (dome.u.uOpacity.value = 1 - k));
-    },
-  },
-  Raigeki: {
-    dur: 0.7,
-    play(c) {
-      for (let i = 0; i < 5; i++) bolt(c, (i - 2) * 0.55 * c.U + (Math.random() - 0.5) * 0.2 * c.U, c.opp, c.t0 + i * 0.1, 0xfff27a);
-    },
-  },
-  'Dark Hole': {
-    dur: 0.8,
-    play(c) {
-      const { tl, U, st, t0, t1 } = c;
-      const v = tl.own(new Glow(6 * U, 6 * U, 'vortex', 0x6a2aff, 0xff4fd8));
-      v.mesh.position.set(0, c.cy, -1.2);
-      tl.span(t0 - 0.2, t0 + 0.3, (k) => (v.u.uOpacity.value = easeOut(k)));
-      tl.span(t1 - 0.35, t1, (k) => (v.u.uOpacity.value = 1 - k));
-      tl.span(t0, t1 - 0.3, (_k, dt) => {
-        for (let i = 0; i < rate(200 * c.d['q'], dt); i++) {
-          const a = Math.random() * Math.PI * 2;
-          const rr = (2 + Math.random() * 1.5) * U;
-          st.particles.emit({ x: Math.cos(a) * rr, y: c.cy + Math.sin(a) * rr, life: 0.9, size: 0.1 * U, color: Math.random() < 0.5 ? 0x9a3cff : 0xff4fd8, drag: 0.2, pull: { x: 0, y: c.cy, strength: 9 * U, swirl: 10 * U } });
-        }
-        if (Math.random() < dt * 8) st.shake(0.35);
-      });
-      tl.at(t0, () => (drone(1.2), boom(0.6)));
-      tl.at(t1 - 0.3, () => (st.pulse('flash', 0.5), st.pulse('chroma', 0.7), boom(0.8)));
-    },
-  },
-  'Pot of Greed': {
-    dur: 0.6,
-    play(c) {
-      const { tl, U, t0, own } = c;
-      for (let i = 0; i < 8; i++) {
-        const g = tl.own(new Glow(0.7 * U, 0.7 * U, 'star', 0xffd75a, 0xffffff));
-        const a = (i / 8) * Math.PI * 2 + 0.3;
-        tl.span(t0 + i * 0.03, t0 + 0.6, (k) => {
-          g.mesh.position.set(Math.cos(a) * 1.4 * U * easeOut(k), c.cy + Math.sin(a) * 1.6 * U * easeOut(k), 1);
-          g.u.uOpacity.value = Math.sin(k * Math.PI);
-        });
-      }
-      // draw two: two cards fly out to the hand
-      for (let i = 0; i < 2; i++) {
-        const p = tl.own(new CardPanel(cardBack(), 0.9 * U, 0xffd75a));
-        p.u.uOpacity.value = 0;
-        const t = t0 + 0.2 + i * 0.14;
-        tl.span(t, t + 0.45, (k) => {
-          const e = easeIn(k);
-          p.mesh.position.set(lerp(0, (i - 0.5) * 1.2 * U, e), lerp(c.cy, own * 1.4, e), lerp(1, 2, e));
-          p.mesh.rotation.z = (i - 0.5) * 0.5 * e;
-          p.u.uOpacity.value = k < 0.8 ? 1 : (1 - k) * 5;
-        });
-        tl.at(t, () => whoosh(0.25, 800, 2400, 0.15));
-      }
-      tl.at(t0, () => (chime(0.8), chime(0.95)));
-    },
-  },
-  'Monster Reborn': {
-    dur: 0.7,
-    play(c) {
-      const { tl, U, t0, t1 } = c;
-      const ankh = tl.own(new Glow(2 * U, 2.6 * U, 'ankh', 0xffe9a0, 0xffffff));
-      tl.span(t0, t0 + 0.6, (k) => {
-        ankh.mesh.position.set(0, lerp(c.own * 1.2, c.cy + 0.2 * U, easeOut(k)), 1.4);
-        ankh.u.uOpacity.value = easeOut(k);
-      });
-      tl.span(t1 - 0.3, t1, (k) => (ankh.u.uOpacity.value = 1 - k));
-      c.d['shafts'](tl, { x: 0, y: c.own * 1.2, z: 1 }, 5 * U, 0xffe9a0, t0, t1, 1, 0.9);
-      tl.span(t0, t1, (_k, dt) => {
-        for (let i = 0; i < rate(80 * c.d['q'], dt); i++) c.st.particles.emit({ x: (Math.random() - 0.5) * 1.6 * U, y: c.own, z: 1, vy: 3 * U, life: 0.9, size: 0.08 * U, color: 0xffe9a0, drag: 0.4 });
-      });
-      tl.at(t0 + 0.6, () => (chime(0.9), c.st.pulse('flash', 0.4)));
-    },
-  },
+  'Mirror Force': MIRROR_FORCE,
+  Raigeki: RAIGEKI,
+  'Dark Hole': DARK_HOLE,
+  'Pot of Greed': POT_OF_GREED,
+  'Monster Reborn': MONSTER_REBORN,
   'Swords of Revealing Light': {
     dur: 0.8,
+    accent: 0xfff1a8,
     play(c) {
       const { tl, U, t0, t1, st } = c;
       for (let i = 0; i < 3; i++) {
@@ -2498,47 +4040,342 @@ const SPELL_PRESETS: Record<string, Preset> = {
         tl.at(t + 0.25, () => {
           st.shake(0.4);
           boom(0.35);
-          c.d['flash'](0xfff1a8, 0.25);
+          c.d['flash'](0xfff1a8, 0.2);
           st.particles.emit({ x, y: yEnd - 1 * U, z: 0.8, burst: 2.5 * U, vy: 1.5 * U, gravity: 6 * U, life: 0.6, size: 0.08 * U, color: 0xffffff }, Math.round(30 * c.d['q']));
         });
         tl.span(t1 - 0.3, t1, (k) => (g.u.uOpacity.value = 1 - k));
       }
     },
   },
-  Polymerization: {
-    dur: 0.7,
+  Polymerization: POLYMERIZATION,
+  // ---- Speed Duel staples
+  'Dark Magic Attack': {
+    dur: 0.8,
+    accent: 0xb070ff,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // the staff's pentagram, then dark magic sweeps their back row
+      const ring = tl.own(new Ring(3 * U, 0xb070ff, 5555, { inner: 0.78, outer: 0.92, star: 5 }));
+      ring.mesh.position.set(0, c.cy, 1.2);
+      ring.spinSpeed = 3;
+      ring.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => ((ring.u.uOpacity.value = easeOut(k)), ring.mesh.scale.setScalar(lerp(0.4, 1, easeOut(k)))));
+      tl.span(t1 - 0.3, t1, (k) => (ring.u.uOpacity.value = 1 - k));
+      const row = c.opp * 1.25;
+      const where = c.targets.length ? c.targets : rowPts(c, row, 3);
+      where.forEach((p, i) => {
+        const t = t0 + 0.25 + i * 0.1;
+        sweep(c, c.card, p, t, 0.18, 0x6a1aaa, 0xff4fd8, 1.4);
+        const blast = tl.own(new Glow(2 * U, 2 * U, 'flare', 0x9a3cff, 0xff4fd8));
+        blast.mesh.position.set(p.x, p.y, p.z + 0.4);
+        tl.span(t + 0.18, t + 0.55, (k) => ((blast.u.uOpacity.value = 0.8 * (1 - easeOut(k))), blast.mesh.scale.setScalar(lerp(0.5, 1.2, easeOut(k)))));
+        tl.at(t + 0.18, () => (boom(0.4), st.shake(0.45), st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.3, burst: 3.5 * U, life: 0.7, size: 0.1 * U, color: i % 2 ? 0xff4fd8 : 0xb070ff, drag: 2 }, Math.round(50 * c.d['q']))));
+      });
+      tl.at(t0, () => (drone(0.8), chime(0.4)));
+    },
+  },
+  'Magic Jammer': {
+    dur: 0.55,
+    accent: 0x7affff,
     play(c) {
       const { tl, U, t0, st } = c;
-      const cols = [0xff6a3a, 0x3a9aff];
-      const orbs = cols.map((col) => tl.own(new Glow(1.2 * U, 1.2 * U, 'flare', col, 0xffffff)));
-      tl.span(t0, t0 + 0.55, (k, dt) => {
-        orbs.forEach((g, i) => {
-          const a = i * Math.PI + k * 10;
-          const r = (1 - easeIn(k)) * 1.5 * U;
-          g.mesh.position.set(Math.cos(a) * r, c.cy + Math.sin(a) * r * 0.7, 1.2);
-          g.u.uOpacity.value = 1;
-          for (let j = 0; j < rate(60 * c.d['q'], dt); j++) st.particles.emit({ x: g.mesh.position.x, y: g.mesh.position.y, z: 1.2, burst: 0.3 * U, life: 0.4, size: 0.14 * U, color: cols[i], drag: 3 });
+      // a jamming wave rolls out, then a cross slashes the card it negates
+      const p = c.targets[0] ?? { x: 0, y: c.opp * 0.9, z: 0.6 };
+      for (let i = 0; i < 3; i++) {
+        const w = tl.own(new Glow(2.2 * U, 2.2 * U, 'shock', 0x7affff, 0xff4fd8));
+        w.mesh.position.set(p.x, p.y, p.z + 0.3);
+        tl.span(t0 + i * 0.09, t0 + i * 0.09 + 0.4, (k) => ((w.u.uK.value = easeOut(k)), (w.u.uOpacity.value = 1 - k * 0.4)));
+      }
+      for (let i = 0; i < 2; i++) {
+        const r = tl.own(new Ribbon(8, i ? 0xff4fd8 : 0x7affff, 1));
+        const s = i ? 1 : -1;
+        r.set(
+          [
+            { x: p.x - 0.8 * U, y: p.y + s * 0.8 * U, z: p.z + 0.6 },
+            { x: p.x + 0.8 * U, y: p.y - s * 0.8 * U, z: p.z + 0.6 },
+          ],
+          (k) => 0.16 * U * Math.sin(k * Math.PI),
+        );
+        r.u.uHead.value = 0;
+        const t = t0 + 0.25 + i * 0.08;
+        tl.span(t, t + 0.1, (k) => (r.u.uHead.value = k * 1.1));
+        tl.span(t + 0.3, c.t1, (k) => (r.u.uOpacity.value = 1 - k));
+        tl.at(t, () => (zap(0.3), st.shake(0.35)));
+      }
+      tl.at(t0 + 0.3, () => c.d['ui'].banner({ title: 'Negated!', color: 0x7affff, big: true, dur: 0.6, pos: 'mid' }));
+    },
+  },
+  'Wonder Wand': {
+    dur: 0.55,
+    accent: 0x9adfff,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      const p = aims(c, [{ x: 0, y: c.own, z: 0.4 }])[0];
+      const wand = tl.own(new Glow(0.9 * U, 0.9 * U, 'star', 0x9adfff, 0xffffff));
+      tl.span(t0, t0 + 0.3, (k) => {
+        const q = bez3([c.card, { x: (c.card.x + p.x) / 2, y: (c.card.y + p.y) / 2 + 0.8 * U, z: 1.4 }, p], easeInOut(k));
+        wand.mesh.position.set(q.x, q.y, q.z + 0.3);
+        wand.u.uOpacity.value = 1;
+        wand.mesh.rotation.z = k * 6;
+      });
+      tl.at(t0 + 0.3, () => (wand.u.uOpacity.value = 0));
+      tl.span(t0, t0 + 0.3, (_k, dt) => {
+        for (let i = 0; i < rate(100 * c.d['q'], dt); i++) st.particles.emit({ x: wand.mesh.position.x, y: wand.mesh.position.y, z: wand.mesh.position.z, burst: 0.6 * U, life: 0.5, size: 0.08 * U, color: i % 2 ? 0x9adfff : 0xffffff, drag: 2 });
+      });
+      c.d['resolveAt'](tl, p, t0 + 0.3, false, 0x9adfff, 0xffffff, figAt(c, p), null);
+    },
+  },
+  Riryoku: {
+    dur: 0.65,
+    accent: 0x7affb0,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // power drains out of one monster and pours into another
+      const src = c.targets[0] ?? { x: 0, y: c.opp, z: 0.4 };
+      const dst = c.targets[1] ?? (c.figs.find((a) => a.side === c.side) ? c.d['center'](c.figs.find((a) => a.side === c.side)!) : { x: 0, y: c.own, z: 0.4 });
+      tl.span(t0, t1 - 0.15, (_k, dt) => {
+        for (let i = 0; i < rate(160 * c.d['q'], dt); i++) {
+          const off = (Math.random() - 0.5) * 0.4 * U;
+          st.particles.emit({ x: src.x + off, y: src.y + off, z: src.z + 0.3, life: 0.6, size: 0.09 * U, color: i % 3 ? 0x7affb0 : 0xff5a5a, drag: 0, pull: { x: dst.x, y: dst.y, strength: 18 * U, swirl: 4 * U } });
+        }
+      });
+      sweep(c, src, dst, t0, 0.35, 0x2ad070, 0xd9ffe9, 0.8);
+      const a = figAt(c, src);
+      if (a) tl.span(t0, t1, (k) => void (a.fig && (a.fig.u.uDark.value = 0.6 * Math.sin(k * Math.PI))));
+      c.d['resolveAt'](tl, dst, t0 + 0.4, false, 0x2ad070, 0xd9ffe9, figAt(c, dst), null);
+      tl.at(t0, () => (drone(0.6), chime(0.5)));
+    },
+  },
+  'Tribute Doll': {
+    dur: 0.6,
+    accent: 0xff5a3a,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // an altar of red light; the offering rises, then a golden column answers
+      const y = c.own * 0.9;
+      const altar = tl.own(new Ring(2.6 * U, 0xff3a3a, 6660, { inner: 0.7, outer: 0.92, star: 6 }));
+      altar.mesh.position.set(0, y, 0.6);
+      altar.mesh.rotation.x = -1.15;
+      altar.spinSpeed = -2;
+      altar.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.25, (k) => ((altar.u.uOpacity.value = k), altar.mesh.scale.setScalar(easeOut(k))));
+      tl.span(t1 - 0.25, t1, (k) => (altar.u.uOpacity.value = 1 - k));
+      tl.span(t0, t0 + 0.4, (_k, dt) => {
+        for (let i = 0; i < rate(140 * c.d['q'], dt); i++) {
+          const a = Math.random() * Math.PI * 2;
+          st.particles.emit({ x: Math.cos(a) * U, y: y + Math.sin(a) * 0.35 * U, z: 0.7, vy: 2.5 * U, life: 0.7, size: 0.09 * U, color: i % 2 ? 0xff3a3a : 0xffb070, drag: 0.4 });
+        }
+      });
+      c.d['shafts'](tl, { x: 0, y: y - 0.3 * U, z: 0.6 }, 4.5 * U, 0xffc94a, t0 + 0.3, t1, 2, 0.8);
+      tl.at(t0 + 0.32, () => (boom(0.5), chime(0.7), st.shake(0.4), c.d['flash'](0xffc94a, 0.2)));
+    },
+  },
+  'Book of Moon': {
+    dur: 0.6,
+    accent: 0xbfd8ff,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      // a pale moon rises over the target; it turns face-down
+      const moon = tl.own(new Glow(2.4 * U, 2.4 * U, 'flare', 0x9ab8ff, 0xffffff));
+      const halo = tl.own(new Ring(2.4 * U, 0xbfd8ff, 3030, { inner: 0.82, outer: 0.9 }));
+      tl.span(t0, t0 + 0.3, (k) => {
+        moon.mesh.position.set(p.x, p.y + lerp(1.4, 0.4, easeOut(k)) * U, p.z + 0.6);
+        halo.mesh.position.copy(moon.mesh.position);
+        moon.u.uOpacity.value = 0.4 * easeOut(k);
+        halo.u.uOpacity.value = easeOut(k);
+      });
+      tl.span(c.t1 - 0.25, c.t1, (k) => ((moon.u.uOpacity.value = 0.4 * (1 - k)), (halo.u.uOpacity.value = 1 - k)));
+      const a = figAt(c, p);
+      if (a) {
+        const back = tl.own(new CardPanel(cardBack(), a.size * 0.8, 0xbfd8ff));
+        back.mesh.position.set(p.x, p.y, p.z);
+        back.u.uOpacity.value = 0;
+        tl.span(t0 + 0.25, t0 + 0.45, (k) => {
+          const m = a.fig?.mesh ?? a.back?.mesh;
+          if (m) m.rotation.y = (Math.PI / 2) * easeIn(k);
+          c.d['setOpacity'](a, 1 - easeIn(k));
         });
+        tl.span(t0 + 0.45, t0 + 0.65, (k) => {
+          back.mesh.rotation.set(0, (Math.PI / 2) * (1 - easeOut(k)), Math.PI / 2);
+          back.u.uOpacity.value = 1;
+        });
+      }
+      tl.at(t0 + 0.3, () => (chime(0.3), whoosh(0.3, 2400, 600, 0.15), st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.4, burst: 2 * U, life: 0.7, size: 0.07 * U, color: 0xdfeaff, drag: 2 }, Math.round(40 * c.d['q']))));
+    },
+  },
+  "Magician's Circle": {
+    dur: 0.6,
+    accent: 0xb070ff,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      for (const y of [c.own * 0.9, c.opp * 0.9]) {
+        const ring = tl.own(new Ring(2.8 * U, 0xb070ff, 5150, { inner: 0.72, outer: 0.93, star: 5 }));
+        ring.mesh.position.set(0, y, 0.4);
+        ring.mesh.rotation.x = -1.15;
+        ring.spinSpeed = 1.8;
+        ring.u.uOpacity.value = 0;
+        tl.span(t0, t0 + 0.3, (k) => ((ring.u.uOpacity.value = easeOut(k)), ring.mesh.scale.setScalar(lerp(0.3, 1, backOut(k)))));
+        tl.span(t1 - 0.25, t1, (k) => (ring.u.uOpacity.value = 1 - k));
+        c.d['shafts'](tl, { x: 0, y: y - 0.3 * U, z: 0.4 }, 3.8 * U, 0xb070ff, t0 + 0.15, t1, 2, 0.6);
+      }
+      tl.at(t0 + 0.2, () => (chime(0.75), st.pulse('chroma', 0.3)));
+    },
+  },
+  'Thousand Knives': {
+    dur: 0.55,
+    accent: 0xdfe8ff,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      for (let i = 0; i < 12; i++) {
+        const r = tl.own(new Ribbon(4, i % 3 ? 0xdfe8ff : 0xb070ff, 0));
+        const a = { x: c.card.x + (Math.random() - 0.5) * 2.4 * U, y: c.card.y + (Math.random() - 0.5) * 1.2 * U, z: 1.4 };
+        const b = { x: p.x + (Math.random() - 0.5) * 0.5 * U, y: p.y + (Math.random() - 0.5) * 0.5 * U, z: p.z + 0.4 };
+        const t = t0 + i * 0.025;
+        tl.span(t, t + 0.18, (k) => {
+          const e = easeIn(k);
+          const h = P3lerp(a, b, e);
+          const tail = P3lerp(a, b, Math.max(0, e - 0.28));
+          r.set([tail, h], (q) => 0.05 * U * q);
+          r.u.uOpacity.value = 1;
+        });
+        tl.at(t + 0.18, () => (r.u.uOpacity.value = 0));
+      }
+      tl.at(t0, () => whoosh(0.3, 3000, 1200, 0.25));
+      tl.at(t0 + 0.2, () => (zap(0.3), st.shake(0.5), st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.4, burst: 3 * U, life: 0.4, size: 0.06 * U, color: 0xffffff, drag: 3 }, Math.round(60 * c.d['q']))));
+      const a = figAt(c, p);
+      if (a) strike(c, a, t0 + 0.2);
+    },
+  },
+  'Wild Tornado': {
+    dur: 0.65,
+    accent: 0xd9ffe9,
+    play(c) {
+      const p = aims(c, [{ x: 0, y: c.opp * 1.2, z: 0.4 }])[0];
+      tornado(c, p, c.t0, c.t1 - 0.05, 0x55f0a0, 0xd9ffe9);
+      const a = figAt(c, p);
+      if (a) strike(c, a, c.t0 + 0.3);
+    },
+  },
+  'Mystical Space Typhoon': {
+    dur: 0.55,
+    accent: 0x9affd0,
+    play(c) {
+      const p = aims(c, [{ x: 0, y: c.opp * 1.2, z: 0.4 }])[0];
+      tornado(c, p, c.t0, c.t1 - 0.05, 0x1fd39a, 0xe0fff4);
+    },
+  },
+  'Burst Stream of Destruction': {
+    // a 0.35 s charge at the dragon's mouth, then one thick volumetric beam, a flare where it lands
+    dur: 1.15,
+    accent: 0x9fdcff,
+    scope: 'opp',
+    play(c) {
+      const { tl, U, t0, st } = c;
+      const where = c.pts.length ? c.pts : rowPts(c, c.opp, 3);
+      const src = { x: 0, y: c.own * 1.6, z: 1.6 };
+      // one beam onto the middle of what it strikes (wide enough to swallow them all)
+      const T = { x: where.reduce((s, p) => s + p.x, 0) / where.length, y: where.reduce((s, p) => s + p.y, 0) / where.length, z: where.reduce((s, p) => s + p.z, 0) / where.length };
+      const spread = Math.max(...where.map((p) => Math.abs(p.x - T.x)));
+      const CHARGE = 0.35;
+      const travel = 0.14;
+      const fire = t0 + CHARGE;
+      const hitT = fire + travel;
+      const r = rand(0xb5d);
+      // the charge: the mouth swells while light converges on it
+      const orb = tl.own(new Glow(2.2 * U, 2.2 * U, 'flare', 0x2a8aff, 0xeaf6ff));
+      orb.mesh.position.set(src.x, src.y, src.z + 0.1);
+      orb.u.uK.value = 0.6;
+      tl.span(t0, fire, (k, dt) => {
+        orb.u.uOpacity.value = 0.25 + 0.6 * easeIn(k);
+        orb.mesh.scale.setScalar(lerp(0.25, 1, easeIn(k)) * (1 + 0.06 * Math.sin(k * 40)));
+        for (let i = 0; i < rate(160 * c.d['q'], dt); i++) {
+          const a = r() * Math.PI * 2;
+          const rr = (1 + r() * 0.8) * U;
+          st.particles.emit({ x: src.x + Math.cos(a) * rr, y: src.y + Math.sin(a) * rr * 0.7, z: src.z, life: 0.3, size: 0.07 * U, color: i % 2 ? 0x9fdcff : 0xffffff, drag: 0, pull: { x: src.x, y: src.y, strength: 26 * U, swirl: 4 * U } });
+        }
       });
-      const star = tl.own(new Ring(3.4 * U, 0xffd75a, 6006, { inner: 0.7, outer: 0.9, star: 6 }));
-      star.mesh.position.set(0, c.cy, 1.1);
-      star.spinSpeed = 2;
-      star.u.uOpacity.value = 0;
-      tl.at(t0 + 0.55, () => {
-        for (const g of orbs) g.u.uOpacity.value = 0;
-        st.pulse('flash', 0.6);
-        c.d['flash'](0xffd75a, 0.4);
-        boom(0.5);
-        st.particles.emit({ x: 0, y: c.cy, z: 1.2, burst: 5 * U, life: 0.8, size: 0.12 * U, color: 0xffd75a }, Math.round(90 * c.d['q']));
+      tl.span(fire, fire + 0.5, (k) => (orb.u.uOpacity.value = 0.85 * (1 - easeOut(k))));
+      tl.at(t0, () => (swell(0.6), st.shake(0.15)));
+      tl.at(fire, () => (zap(0.7), st.pulse('flash', 0.2), st.shake(0.45)));
+      // the beam itself: the attack beam's layers (glow, body, white core, spirals), ~2.5x wide
+      const hc: HitCtx = { d: c.d, st, tl, U, A: src, T, col: { main: 0x2a8aff, accent: 0x9fdcff, light: 0xeaf6ff }, prof: profileFor(undefined, 'Burst Stream of Destruction'), s: fire, travel, att: null, q: c.d['q'], w: 1.6 };
+      beamFx(hc, 1, { spirals: 2, widthMul: 2.5 * (1 + Math.min(1, spread / (2 * U)) * 0.4), hold: 0.55 });
+      // the push-in rides the blast
+      tl.at(fire, () => st.punch(4, 0.35));
+      // impact: a wide flare where it lands, the struck light up and break
+      const flare = tl.own(new Glow(3.4 * U, 3.4 * U, 'flare', 0x2a8aff, 0xffffff));
+      flare.mesh.position.set(T.x, T.y, T.z + 0.4);
+      flare.u.uK.value = 0.5;
+      flare.u.uOpacity.value = 0;
+      tl.span(hitT, hitT + 0.55, (k) => {
+        flare.u.uOpacity.value = 0.85 * (k < 0.1 ? k / 0.1 : 1 - easeOut((k - 0.1) / 0.9));
+        flare.mesh.scale.setScalar(lerp(0.5, 1.25, easeOut(k)));
       });
-      tl.span(t0 + 0.5, c.t1, (k) => ((star.u.uOpacity.value = Math.sin(k * Math.PI)), star.mesh.scale.setScalar(lerp(0.5, 1.1, easeOut(k)))));
+      const shock = tl.own(new Glow(3.6 * U, 3.6 * U, 'shock', 0x2a8aff, 0xbfefff));
+      shock.mesh.position.set(T.x, T.y - 0.3 * U, T.z);
+      shock.mesh.rotation.x = -1.2;
+      tl.span(hitT, hitT + 0.5, (k) => ((shock.u.uK.value = easeOut(k)), (shock.u.uOpacity.value = 1 - k)));
+      for (const a of c.hits) strike(c, a, hitT);
+      tl.at(hitT, () => {
+        boom(0.8);
+        st.shake(0.8);
+        st.hitStop(0.06);
+        st.pulse('chroma', 0.6);
+        c.d['flash'](0x9fdcff, 0.25);
+        st.particles.emit({ x: T.x, y: T.y, z: T.z + 0.3, burst: 5 * U, life: 0.7, size: 0.09 * U, color: 0xbfefff, drag: 2.5 }, Math.round(90 * c.d['q']));
+      });
+    },
+  },
+  'Acid Trap Hole': trapHole(0x3aff6a, 0xd9ffb0),
+  'Negate Attack': barrier(0x4ad8ff, 0xffffff, true),
+  Waboku: barrier(0xffd75a, 0xfff6c0, false),
+  Fissure: {
+    dur: 0.55,
+    accent: 0xffd28a,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      // the ground splits in a line toward its victim
+      for (let i = 0; i < 4; i++) {
+        const q = P3lerp({ x: c.card.x, y: c.own * 0.6, z: 0.3 }, p, i / 3);
+        const ring = tl.own(new Glow(2.2 * U, 2.2 * U, 'shock', 0xc98a3c, 0xffe0b0));
+        ring.mesh.position.set(q.x, q.y - 0.4 * U, q.z);
+        ring.mesh.rotation.x = -1.2;
+        const t = t0 + i * 0.08;
+        tl.span(t, t + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k * 0.3)));
+        tl.at(t, () => (st.shake(0.35), boom(0.25)));
+      }
+      tl.at(t0 + 0.3, () => st.particles.emit({ x: p.x, y: p.y - 0.5 * U, z: p.z, r: 0.5 * U, vy: 4 * U, burst: 1.5 * U, gravity: 12 * U, life: 0.9, size: 0.14 * U, color: 0x9a7a5a, drag: 0.3 }, Math.round(60 * c.d['q'])));
+      const a = figAt(c, p);
+      if (a) strike(c, a, t0 + 0.3);
     },
   },
 };
 
+/** Speed Duel's versions of the classics play the classic's preset (and a few families share one). */
+const PRESET_ALIASES: Record<string, string> = {
+  'Quaking Mirror Force': 'Mirror Force',
+  'Crystal Raigeki': 'Raigeki',
+  'Pot of Avarice': 'Pot of Greed',
+  'Jar of Greed': 'Pot of Greed',
+  'Monster Rebirth': 'Monster Reborn',
+  'Super Polymerization': 'Polymerization',
+};
+const EXTRA_PRESETS: Record<string, Preset> = {
+  'Chaos Trap Hole': trapHole(0x9a3cff, 0xfff1a8),
+  'Adhesion Trap Hole': trapHole(0xffb030, 0xffe9a0),
+  'Floodgate Trap Hole': trapHole(0x2a8aff, 0xbfefff),
+};
+
+function presetFor(name: string): Preset | undefined {
+  return SPELL_PRESETS[name] ?? EXTRA_PRESETS[name] ?? SPELL_PRESETS[PRESET_ALIASES[name] ?? ''];
+}
+
 export type { Quality };
 export const ATTACK_STYLES = Object.keys(STYLES) as AttackStyle[];
 /** Spells and traps with their own preset, and monsters with a signature attack. */
-export const SPELL_PRESET_CARDS = Object.keys(SPELL_PRESETS);
+export const SPELL_PRESET_CARDS = [...Object.keys(SPELL_PRESETS), ...Object.keys(EXTRA_PRESETS), ...Object.keys(PRESET_ALIASES)];
 export const SIGNATURE_ATTACK_CARDS = Object.keys(SIG_ATTACKS);
 export { css };

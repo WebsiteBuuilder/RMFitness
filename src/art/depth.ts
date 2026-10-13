@@ -22,6 +22,8 @@ export interface ArtData {
   relief: HTMLImageElement | null;
   /** three main colors of the art, most striking first (0xRRGGBB) */
   palette: number[];
+  /** the card's id when known (per-card figure tunes, src/art/overrides.ts) */
+  id?: number;
 }
 
 const cache = new Map<string, Promise<ArtData>>();
@@ -217,12 +219,13 @@ async function build(name: string): Promise<ArtData> {
   const art = canvas(256, 256);
   art.getContext('2d')!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
-  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette };
+  const id = card(name)?.id;
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
-  return { art, full, depth, relief: null, palette };
+  return { art, full, depth, relief: null, palette, id };
 }
 
 /** Art data for a card, built once and cached (the last 40 cards). */
@@ -231,28 +234,110 @@ export function artFor(name: string): Promise<ArtData> {
   if (!p) {
     p = build(name);
     cache.set(name, p);
-    if (cache.size > 40) cache.delete(cache.keys().next().value!);
+    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  } else {
+    // most recently used last: what a duel keeps using stays cached
+    cache.delete(name);
+    cache.set(name, p);
   }
   return p;
 }
 
-/** A plain card back, drawn once. */
+const CACHE_MAX = 48;
+
+/**
+ * Gets the art of these cards ready ahead of time (both decks at the start of a
+ * duel), two at a time, a short pause between each, so a cinematic never waits
+ * for a picture. Stops when `stop()` turns true. At most CACHE_MAX - 8 names.
+ */
+export async function preloadArt(names: string[], stop: () => boolean = () => false, each?: (art: ArtData) => void): Promise<void> {
+  const list = names.filter((n) => !!card(n)).slice(0, CACHE_MAX - 8);
+  let i = 0;
+  const pause = () => new Promise<void>((ok) => setTimeout(ok, 60));
+  const worker = async () => {
+    while (i < list.length && !stop()) {
+      const n = list[i++];
+      const art = await artFor(n).catch(() => null);
+      if (art && each && !stop()) each(art);
+      await pause();
+    }
+  };
+  await Promise.all([worker(), worker()]);
+}
+
+/**
+ * A card back, drawn once: a dark bronze border, a deep swirl of dark smoke and a
+ * central oval with a thin gold rim. Matte (no glow of its own): a face-down card
+ * reads as a card, not a lit panel.
+ */
 let back: HTMLCanvasElement | null = null;
 export function cardBack(): HTMLCanvasElement {
   if (back) return back;
-  back = canvas(300, 437);
+  const W = 300;
+  const H = 437;
+  back = canvas(W, H);
   const g = back.getContext('2d')!;
-  g.fillStyle = '#4a2a10';
-  g.fillRect(0, 0, 300, 437);
-  g.fillStyle = '#2a1408';
-  g.fillRect(14, 14, 272, 409);
-  const grd = g.createRadialGradient(150, 218, 10, 150, 218, 120);
-  grd.addColorStop(0, '#ffcf6a');
-  grd.addColorStop(0.35, '#d0621a');
-  grd.addColorStop(1, '#2a1408');
-  g.fillStyle = grd;
+  // the border: dark bronze with a thin lighter bevel
+  g.fillStyle = '#3a2614';
+  g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#7a5a34';
+  g.lineWidth = 3;
+  g.strokeRect(4, 4, W - 8, H - 8);
+  // the field: near black-brown, darker toward the edges
+  const fx = 16;
+  const fy = 16;
+  const fw = W - 32;
+  const fh = H - 32;
+  const bg = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 260);
+  bg.addColorStop(0, '#3b2416');
+  bg.addColorStop(1, '#0f0805');
+  g.fillStyle = bg;
+  g.fillRect(fx, fy, fw, fh);
+  g.save();
   g.beginPath();
-  g.ellipse(150, 218, 95, 130, 0, 0, Math.PI * 2);
+  g.rect(fx, fy, fw, fh);
+  g.clip();
+  // the swirl: spiral arms of dark smoke turning into the middle (deterministic)
+  g.lineCap = 'round';
+  for (let arm = 0; arm < 7; arm++) {
+    const a0 = (arm / 7) * Math.PI * 2;
+    for (let pass = 0; pass < 2; pass++) {
+      g.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const k = i / 60;
+        const r = 18 + k * 210;
+        const a = a0 + k * 3.4 + pass * 0.12;
+        const x = W / 2 + Math.cos(a) * r * 0.78;
+        const y = H / 2 + Math.sin(a) * r;
+        if (i) g.lineTo(x, y);
+        else g.moveTo(x, y);
+      }
+      g.strokeStyle = pass ? 'rgba(20, 10, 6, 0.55)' : 'rgba(110, 62, 34, 0.35)';
+      g.lineWidth = pass ? 10 : 16;
+      g.stroke();
+    }
+  }
+  g.restore();
+  // the central oval: a dark core with a gold rim, a faint warm light inside (no glow)
+  const ov = g.createRadialGradient(W / 2, H / 2, 6, W / 2, H / 2, 100);
+  ov.addColorStop(0, '#5a3a20');
+  ov.addColorStop(0.7, '#24140a');
+  ov.addColorStop(1, '#140a05');
+  g.fillStyle = ov;
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, 74, 104, 0, 0, Math.PI * 2);
   g.fill();
+  g.strokeStyle = '#a8803e';
+  g.lineWidth = 4;
+  g.stroke();
+  g.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, 66, 96, 0, 0, Math.PI * 2);
+  g.stroke();
+  // the inner frame line
+  g.strokeStyle = 'rgba(168, 128, 62, 0.55)';
+  g.lineWidth = 2;
+  g.strokeRect(fx + 6, fy + 6, fw - 12, fh - 12);
   return back;
 }

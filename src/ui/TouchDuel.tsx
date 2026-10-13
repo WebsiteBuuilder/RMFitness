@@ -76,6 +76,21 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   /** set after a drag so the click that follows the finger lifting doesn't also select */
   const dragged = useRef(false);
   const root = useRef<HTMLDivElement>(null);
+  // where the turn / phase row sits on screen (its flat copy over the field figures follows it)
+  const midRef = useRef<HTMLDivElement>(null);
+  const [midBox, setMidBox] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [, setResized] = useState(0);
+  useEffect(() => {
+    const on = () => setResized((n) => n + 1);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  useLayoutEffect(() => {
+    const el = midRef.current;
+    const b = el && document.body.classList.contains('art3d-on') ? el.getBoundingClientRect() : null;
+    const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
+    if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
+  });
 
   const idle = canAct && !prompt && state.winner === null;
   const actions = commands.filter((c) => !c.disabled && c.label !== 'Card Info');
@@ -376,7 +391,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         )}
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
-          <LpCount value={ps.lp} />
+          <LpCount value={ps.lp} who={p} />
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
         {top && (
@@ -531,6 +546,15 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const room = Math.min(window.innerWidth, 560) - 20;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
+  const midText = (
+    <>
+      <span class={`tturn ${myTurn ? 'mine' : ''}`}>
+        {myTurn ? 'Your turn' : `${opp.name}'s turn`} · {PHASE_NAMES[state.phase]}
+      </span>
+      {hint() && <span class="thint">{hint()}</span>}
+    </>
+  );
+
   return (
     <div
       class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''}`}
@@ -567,11 +591,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               .reverse()}
             <div class="tz-spacer" />
           </div>
-          <div class="tmid">
-            <span class={`tturn ${myTurn ? 'mine' : ''}`}>
-              {myTurn ? 'Your turn' : `${opp.name}'s turn`} · {PHASE_NAMES[state.phase]}
-            </span>
-            {hint() && <span class="thint">{hint()}</span>}
+          <div class="tmid" ref={midRef}>
+            {midText}
           </div>
           <div class="trow">
             <div class="tz-spacer" />
@@ -622,6 +643,13 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         )}
       </div>
 
+      {/* the turn / phase row again, flat over the 3D field figures (the field's tilt keeps the
+          row itself under the figures layer); only while the figures are on */}
+      {midBox && (
+        <div class="tmid tmid-float" style={{ top: `${midBox.top}px`, left: `${midBox.left}px`, width: `${midBox.width}px` }}>
+          {midText}
+        </div>
+      )}
       {lpBar(acting, false)}
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
         {me.hand.map((c) => (
