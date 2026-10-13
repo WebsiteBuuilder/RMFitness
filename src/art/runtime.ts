@@ -10,9 +10,9 @@ import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
 import { cueUids, type CardRef, type Cue, type Target } from './cues';
 import { artFor, cardBack, type ArtData } from './depth';
-import { profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
+import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
-import { backOut, BASE_FOV, CardPanel, clamp01, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Fx, type Quality } from './stage';
+import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Fx, type Quality } from './stage';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
@@ -824,7 +824,7 @@ export class Director {
       a.fig = this.stage.add(this.figure(art, size, prof, col.main));
       a.fig.u.uOpacity.value = 0;
     } else {
-      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x8a5a2a));
+      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
       if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
       a.back.u.uOpacity.value = 0;
     }
@@ -847,7 +847,7 @@ export class Director {
       a.fig = this.stage.add(this.figure(art, size, prof, this.colors(prof, art).main));
       a.fig.mesh.scale.setScalar(size);
     } else {
-      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x8a5a2a));
+      a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
       if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
     }
     this.setOpacity(a, 0);
@@ -1087,12 +1087,46 @@ export class Director {
   }
 
   /** The over-the-shoulder battle camera: behind the attacker, ~25° off, the defender deep in the frame. */
-  private battleShot(att: Actor | null, tgt: Actor | null, T: P3, yaw = 0.44, pitch = 0.1, fill = 0.86): Shot {
+  private battleShot(att: Actor | null, tgt: Actor | null, T: P3, yaw = 0.3, pitch = 0.1, fill = 0.86): Shot {
     const U = this.U;
     const m = this.battleSide === 'near' ? 1 : -1;
+    // (much more than ~20° off its front and a relief figure shows its extrusion as streaky slices)
+    yaw = Math.min(yaw, 0.35);
     const boxes: Box[] = [tgt ? this.boxOf(tgt) : { ...T, w: 0.5 * U, h: 0.5 * U }];
-    if (att) boxes.push(this.boxOf(att));
-    return this.fit(boxes, -yaw * m, pitch, { fill });
+    let ab: Box | null = null;
+    if (att) {
+      // the attacker's head and shoulders: the top ~60% of it (its feet may run off the frame)
+      const b = this.boxOf(att);
+      ab = { ...b, y: b.y + b.h * 0.4, h: b.h * 0.6 };
+      boxes.push(ab);
+    }
+    const shot = this.fit(boxes, -yaw * m, pitch, { fill });
+    if (!att) return shot;
+    // pull back until the attacker (in the foreground) takes at most ~55% of the frame's height
+    const full = this.boxOf(att);
+    const cam = this.probe;
+    const v = new Vector3();
+    const dir = shot.pos.clone().sub(shot.look);
+    const d0 = dir.length();
+    dir.normalize();
+    const tall = (d: number) => {
+      cam.position.copy(shot.look).addScaledVector(dir, d);
+      cam.lookAt(shot.look);
+      cam.updateMatrixWorld();
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const sy of [-1, 1])
+        for (const sx of [-1, 1]) {
+          v.set(full.x + sx * full.w, full.y + sy * full.h, full.z).project(cam);
+          if (v.z > 1 || v.z < -1) return 2;
+          y0 = Math.min(y0, v.y);
+          y1 = Math.max(y1, v.y);
+        }
+      return (y1 - y0) / 2;
+    };
+    let d = d0;
+    for (let i = 0; i < 24 && tall(d) > 0.55; i++) d *= 1.06;
+    return { pos: shot.look.clone().addScaledVector(dir, d), look: shot.look };
   }
 
   // ------------------------------------------------------------ cinematics
@@ -1917,13 +1951,24 @@ export class Director {
   }
 
   /** A struck figure: white-hot and jolted back (its destruction follows). */
+  /**
+   * A struck figure's tint goes toward its attribute's color with its painted detail kept
+   * (never a flat white blob); its uTint then says how much.
+   */
+  private hurtTint(f: Figure | null, prof: ArtProfile) {
+    if (!f) return;
+    setRgb(f.u.uTintCol.value, (ELEMENT_COLORS[prof.element] ?? ELEMENT_COLORS.LIGHT)[0]);
+    f.u.uTintKeep.value = 1;
+  }
+
   private strike(tl: Timeline, a: Actor, t: number, power = 1) {
+    tl.at(t, () => this.hurtTint(a.fig, a.prof));
     tl.span(t, t + 0.4, (k) => {
       const kick = Math.sin(Math.min(1, k * 1.8) * Math.PI) * (1 - k * 0.5);
       a.oz = -0.4 * kick * power;
       a.lean = 0.25 * kick * power;
       a.ox = noise(k * 30 + a.uid) * 0.03 * this.U * (1 - k);
-      if (a.fig) a.fig.u.uTint.value = Math.max(0.1, 0.55 * (1 - easeOut(k))) * power;
+      if (a.fig) a.fig.u.uTint.value = Math.max(0.08, 0.45 * (1 - easeOut(k))) * power;
       if (a.back) a.back.u.uTint.value = 0.65 * (1 - easeOut(k)) * power;
       this.place(a);
     });
@@ -2031,8 +2076,8 @@ export class Director {
     });
     const T = tgt ? this.center(tgt) : this.directPoint();
     // camera: down low over the attacker's shoulder, then a slow push-in through the wind-up
-    const low = this.battleShot(att, tgt, T, 0.5, -0.05, 0.84);
-    const push = this.battleShot(att, tgt, T, 0.56, -0.02, 0.95);
+    const low = this.battleShot(att, tgt, T, 0.32, -0.05, 0.84);
+    const push = this.battleShot(att, tgt, T, 0.35, -0.02, 0.92);
     let s0: Shot | null = null;
     tl.span(0, 0.42, (k) => this.setShot((s0 ??= this.shot()), low, easeInOut(k)));
     tl.span(0.42, D, (k) => this.setShot(low, push, easeOut(k)));
@@ -2111,15 +2156,17 @@ export class Director {
         this.place(att);
       });
     }
-    // monster against monster: the numbers that decide it, a beat before the blow lands
+    // monster against monster: the numbers that decide it, up early (its text has faded in well
+    // before the blow lands) and held a little past the impact
     if (a && t && t.faceUp && t.name) {
       const ai = card(a.name);
       const ti = card(t.name);
       const av = ai?.atk;
       const tv = t.def ? ti?.def : ti?.atk;
       if (typeof av === 'number' && typeof tv === 'number') {
-        tl.at(Math.max(0.02, hitAt - 0.3), () =>
-          this.ui.banner({ title: `${av}  vs  ${tv}`, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: clash ? 1.0 : 0.8, pos: 'mid' }),
+        const fireAt = Math.max(0.02, W * 0.5);
+        tl.at(fireAt, () =>
+          this.ui.banner({ title: `${av}  vs  ${tv}`, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: hitAt - fireAt + (clash ? 0.75 : 0.6), pos: 'mid' }),
         );
       }
     }
@@ -2164,7 +2211,8 @@ export class Director {
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow
-      if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1 : 1.3) + Math.min(1, dmg.amount / 3000) * 0.9);
+      // (big: it has to read in the ~0.9 s it pops and flies to the Life Points)
+      if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1.45 : 1.6) + Math.min(1, dmg.amount / 3000) * 0.7);
     });
     tl.commit(hitAt);
     if (dmg) {
@@ -2172,13 +2220,14 @@ export class Director {
       tl.span(hitAt, hitAt + 0.45, (x) => (this.front.u.uRed.value = (tgt ? 0.2 + k * 0.25 : 0.22) * (1 - easeOut(x))));
     }
     if (tgt && !clash) {
-      // the defender takes it: knocked back, white-hot
+      // the defender takes it: knocked back, flaring in its attribute's color
+      tl.at(hitAt, () => this.hurtTint(tgt.fig, tgt.prof));
       tl.span(hitAt, hitAt + 0.45, (k) => {
         const kick = Math.sin(Math.min(1, k * 1.6) * Math.PI) * (1 - k * 0.5);
         tgt.oz = -0.7 * kick;
         tgt.oy = 0.12 * U * kick;
         tgt.lean = 0.35 * kick;
-        if (tgt.fig) tgt.fig.u.uTint.value = 0.62 * (1 - easeOut(k));
+        if (tgt.fig) tgt.fig.u.uTint.value = 0.5 * (1 - easeOut(k));
         if (tgt.back) tgt.back.u.uTint.value = 0.62 * (1 - easeOut(k));
         this.place(tgt);
       });
@@ -2214,12 +2263,13 @@ export class Director {
       if (loser) {
         const Lp = this.center(loser);
         this.impact(tl, knock, Lp, { color: (winner ? (winner === att ? col : tcol) : col).main, light: 0xffffff, debris: [loser === att ? col.main : tcol.main], power: 0.55, ground: loser.y - loser.size * 0.46, quiet: true });
+        tl.at(knock, () => this.hurtTint(loser.fig, loser.prof));
         tl.span(knock, knock + 0.45, (k) => {
           const kick = Math.sin(Math.min(1, k * 1.6) * Math.PI) * (1 - k * 0.5);
           loser.ox = 0;
           loser.oz = (loser === att ? 0.6 : -0.7) * kick;
           loser.lean = (loser === att ? -0.4 : 0.35) * kick;
-          if (loser.fig) loser.fig.u.uTint.value = 0.8 * (1 - easeOut(k));
+          if (loser.fig) loser.fig.u.uTint.value = 0.55 * (1 - easeOut(k));
           this.place(loser);
         });
         tl.at(knock, () => boom(0.4));
@@ -2362,8 +2412,10 @@ export class Director {
         // where a battle recoil left it (the blow's recoil may still be writing these as this starts)
         let from: { lean: number; oz: number } | null = null;
         const B = BREAK + lag;
-        // 0..RECOIL: struck, it leans back white-hot; then cracks run over it and it starts
-        // coming apart (pieces part a hair, the light leaks through) until the burst at B
+        // 0..RECOIL: struck, it leans back flaring in its attribute's color (its painted detail
+        // kept: never a white blob); then cracks run over it and it starts coming apart
+        // (pieces part a hair, the light leaks through) until the burst at B
+        this.hurtTint(f, prof);
         tl.span(0, B, (k) => {
           const t = k * B;
           const r = clamp01(t / RECOIL);
@@ -2380,7 +2432,7 @@ export class Director {
             f.mesh.position.set(home.x, home.y, home.z - back);
           }
           crack.u.uCrack.value = easeOut(c);
-          f.u.uTint.value = t < RECOIL ? 0.75 * easeOut(r) : lerp(0.75, 0.1, easeOut(c)) + 0.12 * Math.sin(c * 20) ** 2 * c;
+          f.u.uTint.value = t < RECOIL ? 0.45 * easeOut(r) : lerp(0.45, 0.08, easeOut(c)) + 0.1 * Math.sin(c * 20) ** 2 * c;
           f.u.uShatter.value = 0.045 * easeIn(c);
           // trembling: smooth noise, growing toward the break
           f.mesh.position.x += noise(k * 25 + 3) * 0.03 * U * c;
@@ -2443,9 +2495,10 @@ export class Director {
     tl.at(at, () => {
       if (el !== 'DARK') fig.u.uOpacity.value = 0;
       if (loud) {
-        st.pulse('flash', 0.25);
-        st.pulse('chroma', 0.6);
-        this.flash(col.light, 0.2);
+        // (a beat of light, not a grey wash over the whole frame)
+        st.pulse('flash', 0.14);
+        st.pulse('chroma', 0.45);
+        this.flash(col.light, 0.12);
         st.shake(0.7);
         st.punch(3);
         boom(0.5);
@@ -3345,35 +3398,75 @@ const aims = (c: PresetCtx, fallback: P3[]) => (c.targets.length ? c.targets : c
 const figAt = (c: PresetCtx, p: P3) => c.figs.find((a) => Math.abs(a.x - p.x) < 1e-3 && Math.abs(a.y + a.oy - p.y) < 1e-3) ?? null;
 const rowPts = (c: PresetCtx, y: number, n = 3): P3[] => Array.from({ length: n }, (_, i) => ({ x: (i - (n - 1) / 2) * 1.1 * c.U, y, z: 0.3 }));
 
-/** Lightning from the sky onto a point. */
-function bolt(c: PresetCtx, x: number, y: number, t: number, color: number) {
+/** The bolts already flashing the screen, per cinematic: only the first one does. */
+const FLASHED = new WeakSet<Timeline>();
+
+/**
+ * Lightning from the sky onto a point: a thick jagged core in a wide glow, two forked
+ * branches, a tight ground ring and a scorch mark that stays a moment. Only the first
+ * bolt of a cinematic flashes the screen (several in a row would wash it grey).
+ */
+function bolt(c: PresetCtx, x: number, y: number, t: number, color: number, foot = y) {
   const { tl, U, st } = c;
-  const core = tl.own(new Ribbon(14, 0xffffff, 0));
-  const glow = tl.own(new Ribbon(14, color, 1));
-  let seed = Math.random() * 99;
+  const N = 12;
+  const core = tl.own(new Ribbon(18, 0xffffff, 0));
+  const glow = tl.own(new Ribbon(18, color, 1));
+  const forks = [0, 1].map(() => ({ core: tl.own(new Ribbon(8, 0xffffff, 0)), glow: tl.own(new Ribbon(8, color, 1)) }));
+  // seeded by where and when it strikes: the same bolt every time
+  let seed = (x / U) * 13.7 + (y / U) * 5.3 + t * 31;
   const reroll = () => {
     seed += 2.3;
-    const pts = Array.from({ length: 9 }, (_, j) => ({ x: x + (j === 0 || j === 8 ? 0 : noise(seed + j * 2.7) * 0.35 * U), y: lerp(y + 4.5 * U, y, j / 8), z: 0.6 }));
-    core.set(pts, 0.07 * U);
-    glow.set(pts, 0.3 * U);
+    const pts = Array.from({ length: N }, (_, j) => ({ x: x + (j === 0 || j === N - 1 ? 0 : noise(seed + j * 2.7) * 0.4 * U), y: lerp(y + 4.5 * U, y, j / (N - 1)), z: 0.6 }));
+    core.set(pts, (q) => 0.16 * U * (0.55 + 0.45 * q));
+    glow.set(pts, (q) => 0.6 * U * (0.6 + 0.4 * q));
+    forks.forEach((f, i) => {
+      // a branch splits off a third / half of the way down and runs out sideways
+      const j0 = 3 + i * 2;
+      const o = pts[j0];
+      const dir = (i ? 1 : -1) * (0.8 + 0.3 * noise(seed + i * 9.1));
+      const fp = Array.from({ length: 4 }, (_, k) => ({ x: o.x + dir * k * 0.28 * U + noise(seed + i * 5 + k * 1.9) * 0.1 * U, y: o.y - k * 0.42 * U, z: 0.6 }));
+      f.core.set(fp, (q) => 0.07 * U * (1 - 0.6 * q));
+      f.glow.set(fp, (q) => 0.28 * U * (1 - 0.5 * q));
+    });
   };
   reroll();
-  core.u.uOpacity.value = glow.u.uOpacity.value = 0;
+  const all = [core, glow, ...forks.flatMap((f) => [f.core, f.glow])];
+  for (const r of all) r.u.uOpacity.value = 0;
   let acc = 0;
   tl.span(t, t + 0.3, (k, dt) => {
     acc += dt;
     if (acc > 0.05) ((acc = 0), reroll());
-    core.u.uOpacity.value = glow.u.uOpacity.value = k < 0.75 ? 1 : (1 - k) / 0.25;
+    const o = k < 0.75 ? 1 : (1 - k) / 0.25;
+    core.u.uOpacity.value = glow.u.uOpacity.value = o;
+    // the branches flicker out first
+    for (const f of forks) f.core.u.uOpacity.value = f.glow.u.uOpacity.value = k < 0.5 ? 0.9 : Math.max(0, (0.8 - k) / 0.3) * 0.9;
   });
-  const ring = tl.own(new Glow(2.4 * U, 2.4 * U, 'shock', color, 0xffffff));
+  // a tight ground ring (a wide one reads as a horizontal halo across the frame)
+  const ring = tl.own(new Glow(1.2 * U, 1.2 * U, 'shock', color, 0xffffff));
   ring.mesh.position.set(x, y, 0.3);
   ring.mesh.rotation.x = -1.1;
-  tl.span(t, t + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k * 0.3)));
+  tl.span(t, t + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 0.6 * (1 - k))));
+  // the scorch where it struck, holding a moment after the bolt is gone
+  const scorch = tl.own(new ContactShadow(color, 0.2));
+  scorch.mesh.position.set(x, foot - 0.05 * U, 0.32);
+  scorch.mesh.rotation.x = -1.2;
+  scorch.mesh.scale.set(1.1 * U, 0.9 * U, 1);
+  scorch.mesh.renderOrder = -2;
+  scorch.u.uOpacity.value = 0;
+  tl.span(t, t + 0.9, (k) => {
+    const s = k * 0.9;
+    scorch.u.uOpacity.value = s < 0.05 ? s / 0.05 : s < 0.65 ? 1 : Math.max(0, 1 - (s - 0.65) / 0.25);
+    scorch.u.uRingAmt.value = 0.2 * Math.max(0, 1 - s / 0.6);
+  });
+  const first = !FLASHED.has(tl);
+  FLASHED.add(tl);
   tl.at(t, () => {
     zap(0.3);
-    st.shake(0.45);
-    st.pulse('chroma', 0.5);
-    c.d['flash'](color, 0.22);
+    st.shake(first ? 0.45 : 0.25);
+    if (first) {
+      st.pulse('chroma', 0.5);
+      c.d['flash'](color, 0.22);
+    } else c.d['flash'](color, 0.06);
     st.particles.emit({ x, y, z: 0.4, burst: 3.5 * U, vy: 1 * U, gravity: 6 * U, life: 0.6, size: 0.09 * U, color: 0xffffff }, Math.round(30 * c.d['q']));
   });
 }
@@ -3434,7 +3527,7 @@ const MIRROR_FORCE: Preset = {
       tl.span(hitT + 0.25, c.t1, (k) => (r.u.uTail.value = easeIn(k)));
     });
     for (const a of c.hits) strike(c, a, hitT + 0.2);
-    tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.2), boom(0.6), chime(0.95)));
+    tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.14), boom(0.6), chime(0.95)));
     tl.span(c.t1 - 0.3, c.t1, (k) => (dome.u.uOpacity.value = 0.7 * (1 - k)));
   },
 };
@@ -3447,7 +3540,7 @@ const RAIGEKI: Preset = {
     if (c.hits.length) {
       c.hits.forEach((a, i) => {
         const p = c.pts[i];
-        bolt(c, p.x, p.y + a.size * 0.1, c.t0 + i * 0.1, 0xfff27a);
+        bolt(c, p.x, p.y + a.size * 0.1, c.t0 + i * 0.1, 0xfff27a, p.y - a.size * 0.48);
         strike(c, a, c.t0 + i * 0.1);
       });
       // and a few strays across their side

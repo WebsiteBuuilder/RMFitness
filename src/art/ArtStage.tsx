@@ -71,7 +71,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
         { "--c": hex(o.color) },
       ),
     number: (o) =>
-      add(`art-number side-${o.side}`, esc(o.text), 0.9, {
+      add(`art-number side-${o.side}`, esc(o.text), 1.3, {
         "--c": hex(o.color),
         "--s": String(o.size),
       }),

@@ -57,7 +57,24 @@ def border_colors(art):
     return np.min(np.linalg.norm(lab[:, :, None, :] - cen[None, None], axis=3), axis=2)
 
 
-def matte_of(d, art=None, lo_k=0.7):
+# Per-card depth thresholds (0..1 of the normalized depth) where Otsu's split misreads the
+# subject: Blue-Eyes' coiled body sits behind its head, the Harpie Ladies' wings and sisters
+# stand at mid depth. Ids from public/cards/speed.json.
+THRESHOLDS = {
+    89631139: 0.4,   # Blue-Eyes White Dragon
+    23995346: 0.4,   # Blue-Eyes Ultimate Dragon
+    91932350: 0.5,   # Harpie Lady 1
+    12206212: 0.5,   # Harpie Lady Sisters
+}
+
+
+def smooth_mask(m):
+    """Clean, smooth outline: close small gaps, blur and re-threshold (no staircase steps)."""
+    m = ndi.binary_closing(m, iterations=2)
+    return cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.5) > 0.5
+
+
+def matte_of(d, art=None, lo_k=0.7, cid=None):
     """The subject: everything clearly in front, plus what is connected to it (hysteresis).
 
     With the art: parts joined to the subject that stand somewhat forward and look
@@ -65,7 +82,7 @@ def matte_of(d, art=None, lo_k=0.7):
     and enclosed gaps that look like the background stay open (the space between
     a neck and a wing) instead of being filled with a dark slab."""
     d = cv2.GaussianBlur(d, (0, 0), 1.0)
-    t = otsu(d)
+    t = THRESHOLDS.get(cid, otsu(d))
     strong, weak = d > t, d > t * lo_k
     lab, _ = ndi.label(weak)
     keep = np.unique(lab[strong])
@@ -95,10 +112,12 @@ def matte_of(d, art=None, lo_k=0.7):
             r = d[h].mean() / max(t, 1e-3)
             if r < 0.36 or (r < 0.5 and (dist[h] < 14).mean() > 0.55):
                 filled &= ~h
-    m = ndi.binary_opening(filled, iterations=1)
+    m = smooth_mask(ndi.binary_opening(filled, iterations=1))
     soft = np.clip((d - (t * lo_k - 0.03)) / 0.08, 0, 1)
     inner = ndi.binary_erosion(m, iterations=3)
-    a = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.2) * np.maximum(soft, inner)
+    # a ~2 px feather across the smoothed outline
+    a = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 1.0) * np.maximum(soft, inner)
+    a = cv2.GaussianBlur(a, (0, 0), 0.6)
     return np.clip(a, 0, 1)
 
 
@@ -178,13 +197,13 @@ def main():
             d = depth_of(sess, art)
             if cp:
                 np.save(cp, d)
-        a = matte_of(d, art)
+        a = matte_of(d, art, cid=cid)
         if not usable(a):
             done.pop(cid, None)
             continue
         r = (relief_of(d, a) * 255).astype(np.uint8)
         rgba = np.dstack([r, r, r, (a * 255).astype(np.uint8)])
-        Image.fromarray(rgba, 'RGBA').save(os.path.join(out, '%d.webp' % cid), 'WEBP', quality=80, alpha_quality=90, method=6)
+        Image.fromarray(rgba, 'RGBA').save(os.path.join(out, '%d.webp' % cid), 'WEBP', quality=80, alpha_quality=80, method=6)
         done[cid] = palette_of(art, a)
         if n % 100 == 0:
             print(n, len(ids), flush=True)

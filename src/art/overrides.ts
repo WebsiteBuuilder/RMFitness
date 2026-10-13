@@ -29,8 +29,8 @@ export const FIGURE_TUNES: Record<number, FigureTune> = {
   // Dark Magician: robe fills the bottom edge, staff crosses the frame
   46986414: { relief: 0.9, fade: 0.11, rim: 0.8 },
   // Blue-Eyes White Dragon: white chrome scales, wing cut by the right edge. Near-flat: a parallax
-  // billboard keeps the painted head, wings and tail reading as a dragon (deep relief melts the white art)
-  89631139: { tame: 0.75, relief: 0.35, fade: 0.08, spec: 0.5, rim: 0.9, scale: 1.2 },
+  // billboard keeps the painted head, coiled body and tail reading as a dragon (any real relief turns the coil into a C-shaped slab)
+  89631139: { tame: 0.75, relief: 0.2, fade: 0.12, spec: 0.5, rim: 0.9, scale: 1.2 },
   // Red-Eyes Black Dragon: dark metal; wings run off both sides
   74677422: { tame: 0.35, relief: 0.85, fade: 0.13, rim: 0.8 },
   // Summoned Skull: silver bone over purple flesh, fills the whole art

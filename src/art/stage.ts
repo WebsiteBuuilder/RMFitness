@@ -145,6 +145,12 @@ float vedge(vec2 x){ vec2 n = floor(x); vec2 f = fract(x); float d1 = 8.0; float
 const FIG_DISP_GLSL = /* glsl */ `
 vec2 artUv(vec2 m){ return uFoot + (m - uFoot) * uZoom; }
 float borderIn(vec2 a){ return min(min(a.x, 1.0 - a.x), min(a.y, 1.0 - a.y)); }
+/** how far off its front the camera sees the figure (radians, at its center) */
+float figOff(){
+  vec3 fN = normalize(normalMatrix * vec3(0.0, 0.0, 1.0));
+  vec3 toCam = normalize(-(modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
+  return acos(clamp(abs(dot(fN, toCam)), 0.0, 1.0));
+}
 float figHeight(vec2 a){
   vec4 t = texture2D(uDepth, a);
   float d = t.r;
@@ -159,6 +165,8 @@ float figHeight(vec2 a){
     // and to exactly 0 at the silhouette itself: no relief left to stretch the rim into streaks
     d *= smoothstep(0.35, 0.85, t.a);
   }
+  // seen well off axis (from ~20°, mostly gone by ~43°) the relief flattens toward a billboard: its extrusion would read as streaky slices
+  d *= mix(1.0, 0.35, smoothstep(0.35, 0.75, figOff()));
   // flat toward the art's border (and outside it, when zoomed out)
   return d * smoothstep(0.0, uFade * 1.3 + 0.02, borderIn(a));
 }
@@ -186,12 +194,17 @@ varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
+varying float vOff;
 ${FIG_DISP_GLSL}
 void main(){
   vMesh = uv;
   vec2 a = artUv(uv);
   vUv = a;
   vD = texture2D(uDepth, a).r;
+  // how far off its front the camera sees this figure (radians, at its center): seen well off
+  // axis, the relief flattens toward a billboard instead of showing its extrusion as streaky slices
+  // (figHeight applies it; the cracks' vertex shader shares it, so they stay on the surface)
+  vOff = figOff();
   float d = figHeight(a);
   vec3 p = position;
   // the back of the slab: flatter, a little behind
@@ -205,6 +218,9 @@ void main(){
     vec3 local = p - c;
     float s = uShatter;
     vec3 dir = normalize(vec3(c.xy * 2.2 + (rnd.xy - 0.5) * 1.6, 0.5 + rnd.z));
+    // mostly outward, only a little toward the camera: pieces flying into the lens fill the
+    // frame with huge blurred fragments (a grey wash over the whole screen)
+    dir.z *= 0.3;
     local *= max(0.0, 1.0 - s * 0.85);
     float a = s * (rnd.x - 0.5) * 14.0;
     local.xy = mat2(cos(a), -sin(a), sin(a), cos(a)) * local.xy;
@@ -227,6 +243,8 @@ uniform float uMatte;
 uniform float uReveal;
 uniform float uOpacity;
 uniform float uTint;
+uniform vec3 uTintCol;
+uniform float uTintKeep;
 uniform float uCut;
 uniform float uShatter;
 uniform float uTime;
@@ -251,6 +269,7 @@ varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
+varying float vOff;
 ${NOISE_GLSL}
 /** relief for the normals, flattened across the matte's edge like the mesh */
 float hgt(vec2 uv){ vec4 t = texture2D(uDepth, uv); return t.r * mix(1.0, smoothstep(0.3, 0.9, t.a), uMatte); }
@@ -285,6 +304,8 @@ void main(){
   if (uWall > 0.5) {
     c = c * 0.16 + uRim * 0.05;
     a *= 1.0 - smoothstep(0.0, 0.12, uShatter);
+    // more than ~30° off its front the wall only reads as dark slices beside the figure
+    a *= 1.0 - smoothstep(0.4, 0.52, vOff);
   } else {
     // normals from the relief (central differences, tamed so painted detail stays painted)
     vec2 t = uTexel * 1.5;
@@ -331,7 +352,8 @@ void main(){
     // hit: a red flash
     c = mix(c, c * 0.5 + uFlash, clamp(max(uFlash.r, max(uFlash.g, uFlash.b)), 0.0, 1.0) * 0.6);
   }
-  c = mix(c, vec3(1.0), uTint);
+  // tint: toward white by default; struck (uTintKeep 1), toward a color with the painted detail kept
+  c = mix(c, mix(uTintCol, c * 0.55 + uTintCol * 0.55, uTintKeep), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
   c += uGlow * rim * 2.2;
   float alpha = (a * vis + rim * a) * uOpacity;
@@ -1921,6 +1943,8 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uReveal: 1,
         uOpacity: 1,
         uTint: 0,
+        uTintCol: new Vector3(1, 1, 1),
+        uTintKeep: 0,
         uCut: 1,
         uDark: 0,
         uGlow: new Vector3(1, 1, 1),
@@ -2026,7 +2050,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
   bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.72 }) }),
   kawase: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: KAWASE_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uOff: 0 }) }),
   composite: () =>
-    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.45, uVig: 0.3, uChroma: 0, uFlash: 0, uDim: 0 }) }),
+    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.35, uVig: 0.3, uChroma: 0, uFlash: 0, uDim: 0 }) }),
 };
 
 const BASE = new Map<MaterialKind, ShaderMaterial>();

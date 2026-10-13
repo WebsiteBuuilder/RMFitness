@@ -47,7 +47,7 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
         const once = bannerOnce();
         const d = new Director(canvas.current, getArtSetting() === 'fast' ? 'fast' : 'full', {
           banner: (o) => void (once(o.title) && add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) })),
-          number: (o) => add(`art-number side-${o.side}`, esc(o.text), 0.9, { '--c': hx(o.color), '--s': String(o.size) }),
+          number: (o) => add(`art-number side-${o.side}`, esc(o.text), 1.3, { '--c': hx(o.color), '--s': String(o.size) }),
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
           clear: () => ui.replaceChildren(),
