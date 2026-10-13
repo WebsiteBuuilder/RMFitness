@@ -2,7 +2,7 @@
 // computer opponents and record, sharing profiles and the duel screen with EDS.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
-import type { Profile } from '../eds/save';
+import { CONTROL_NAMES, type ControlStyle, type Profile } from '../eds/save';
 import { getSkill } from '../eds/skills';
 import {
   COPIES,
@@ -38,6 +38,7 @@ import { CardShop, ChipBar } from '../collection/Shop';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
+import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
 
 /** Speed Duel products, oldest first (codes as in public/cards/speed.json `sets`). */
 const SPEED_SETS: [string, string][] = [
@@ -72,6 +73,8 @@ export interface SpeedOpponent {
   main: string[];
   extra: string[];
   skill: string | null;
+  /** how sharp the computer plays */
+  level?: Difficulty;
 }
 
 export function speedOpponents(): SpeedOpponent[] {
@@ -81,9 +84,17 @@ export function speedOpponents(): SpeedOpponent[] {
   });
 }
 
+/** Android back inside the Speed Duel menu: steps back to the hub before leaving it (see App). */
+let hubBack: (() => boolean) | null = null;
+export function speedHubBack(): boolean {
+  return hubBack ? hubBack() : false;
+}
+
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
 
 export function SpeedHub({
+  controls,
+  onControls,
   onSolo,
   profile,
   save,
@@ -92,6 +103,9 @@ export function SpeedHub({
   onCpu,
   onLink,
 }: {
+  /** this profile's Speed Duel control style (EDS keeps its own) */
+  controls: ControlStyle;
+  onControls: () => void;
   /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice') => void;
   profile: Profile;
@@ -110,6 +124,16 @@ export function SpeedHub({
   // Card pictures on these screens show this profile's card rarities.
   showProfileLevels(cardLevels(save));
   useEffect(() => () => showProfileLevels(null), []);
+  useEffect(() => {
+    hubBack = () => {
+      if (sub === 'menu' || save.decks.length === 0) return false;
+      setSub(sub === 'edit' ? 'decks' : 'menu');
+      return true;
+    };
+    return () => {
+      hubBack = null;
+    };
+  });
 
   if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
@@ -171,13 +195,14 @@ export function SpeedHub({
             { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
             { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
             { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
-            { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
+            { label: 'Link Battle', note: 'Speed Duel rules: online or on one phone', onPick: () => setSub('link') },
             { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
             { label: 'Record', onPick: () => setSub('record') },
             { label: '3D Card Viewer', note: "watch any card's summon and attack", onPick: () => setSub('art') },
             { label: 'Shadow Realm', note: sealed.length ? `${sealed.length} card${sealed.length === 1 ? '' : 's'} sealed` : 'who got sent there', onPick: () => setSub('shadow') },
+            { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
             { label: 'Back to Eternal Duelist Soul', onPick: onExit },
           ]}
         />
@@ -495,6 +520,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
 function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems: string[]; onPick: (o: SpeedOpponent) => void; onBack: () => void }) {
   const opps = useMemo(() => speedOpponents(), []);
   const [sel, setSel] = useState<SpeedOpponent | null>(null);
+  const [level, setLevel] = useState<Difficulty>(savedDifficulty);
+  const pickLevel = (d: Difficulty) => (setLevel(d), saveDifficulty(d));
   return (
     <div class="screen">
       <Win title="Duel the Computer" onClose={onBack}>
@@ -513,7 +540,9 @@ function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems
               {sel.title} · {sel.main.length}-card deck{sel.extra.length ? ` + ${sel.extra.length} Extra` : ''}
               {sel.skill ? ` · Skill: ${sel.skill}` : ''}
             </p>
-            <Menu items={[{ label: 'Duel!', onPick: () => onPick(sel) }, { label: 'Back', onPick: () => setSel(null) }]} />
+            <p class="hint">Computer level</p>
+            <Menu items={DIFFICULTIES.map((d) => ({ label: DIFFICULTY_LABEL[d], note: DIFFICULTY_NOTE[d], selected: level === d, onPick: () => pickLevel(d) }))} />
+            <Menu items={[{ label: 'Duel!', onPick: () => onPick({ ...sel, level }) }, { label: 'Back', onPick: () => setSel(null) }]} />
           </Win>
         </Overlay>
       )}

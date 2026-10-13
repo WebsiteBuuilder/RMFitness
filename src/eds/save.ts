@@ -1,5 +1,6 @@
 // The player's save file: trunk, decks, record, calendar and unlocked packs.
 // Stored in localStorage on this device, one save per profile.
+import type { GameMode } from './types';
 
 export interface SaveFile {
   version: 1;
@@ -21,13 +22,37 @@ export interface SaveFile {
   pendingPacks: number;
   starter: string | null;
   created: number;
-  /** how this player works the duel screen; missing means the original Classic controls */
+  /** each game's duel controls (see controlsOf); a game missing here uses its default */
+  controlsBy?: Partial<Record<GameMode, ControlStyle>>;
+  /** older saves: one control style shared by both games (read by controlsOf, dropped on the next change) */
   controls?: ControlStyle;
 }
 
 /** Classic: the original game's menu window. Touch: tap and drag, like Master Duel. */
 export type ControlStyle = 'classic' | 'touch';
 export const CONTROL_NAMES: Record<ControlStyle, string> = { classic: 'Classic', touch: 'Touch' };
+/** Eternal Duelist Soul plays on the GBA-style Classic screen, Speed Duel on the Master Duel-style Touch screen. */
+export const DEFAULT_CONTROLS: Record<GameMode, ControlStyle> = { eds: 'classic', speed: 'touch' };
+
+/**
+ * A game's control style for this save. Older saves kept one setting that both games
+ * overwrote (switching to Touch in a Speed Duel also switched EDS), so it says nothing
+ * reliable about either game: it only carries over to the game whose default it is, and
+ * each game otherwise starts from its own default.
+ */
+export function controlsOf(s: SaveFile | null | undefined, game: GameMode): ControlStyle {
+  const own = s?.controlsBy?.[game];
+  if (own) return own;
+  return s?.controls === DEFAULT_CONTROLS[game] ? s.controls : DEFAULT_CONTROLS[game];
+}
+
+/** A copy of the save with one game's control style changed (the other game keeps its own). */
+export function withControls(s: SaveFile, game: GameMode, c: ControlStyle): SaveFile {
+  const by: Partial<Record<GameMode, ControlStyle>> = { eds: controlsOf(s, 'eds'), speed: controlsOf(s, 'speed'), [game]: c };
+  const next: SaveFile = { ...s, controlsBy: by };
+  delete next.controls;
+  return next;
+}
 
 export function newSave(name: string): SaveFile {
   return {

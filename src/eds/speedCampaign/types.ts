@@ -2,6 +2,7 @@
 // the roguelite (Shadow Gauntlet) and Practice Duels.
 import type { SeatSetup } from '../types';
 import type { Tactics } from '../tactics';
+import type { Difficulty } from '../difficulty';
 
 /** A deck written compactly: "Card Name" or "Card Name*3". */
 export type DeckList = string[];
@@ -76,6 +77,8 @@ export interface CpuDuelSpec {
   cpu: { name: string; main: string[]; extra: string[]; skill: string | null; setup?: SeatSetup };
   first: 'me' | 'cpu' | 'coin';
   context: DuelContext;
+  /** how sharp the computer plays (Normal when not set) */
+  level?: Difficulty;
   /** the computer plays both sides, each with its own pep talk (Practice: watch a duel) */
   watch?: { tactics: [Tactics, Tactics] };
   /** a fixed duel shuffle (the Daily deals the same duels to everyone) */

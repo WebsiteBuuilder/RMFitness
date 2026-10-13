@@ -3,7 +3,7 @@
 import { useState } from 'preact/hooks';
 import { allCards, card, cardByPassword } from '../eds/db';
 import { PACKS, RARITY_SHORT, openPack, packByName, type PackCard } from '../eds/packs';
-import { MONTHS, WEEKDAYS, CONTROL_NAMES, addToTrunk, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
+import { MONTHS, WEEKDAYS, CONTROL_NAMES, addToTrunk, controlsOf, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
 import { Avatar } from './Profiles';
 import { DUELISTS, STAGE_WINS_NEEDED, displayName, isUnlocked, lockReason, stageReached, type Duelist } from '../eds/campaign';
 import { STARTER_BLURB, STARTER_COLORS, buildStarterDeck, type StarterColor } from '../eds/starter';
@@ -96,13 +96,13 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
           items={[
             ...(save.pendingPacks > 0 ? [{ label: 'Open Booster Pack', note: `${save.pendingPacks} waiting`, onPick: () => onPick('pack') }] : []),
             { label: 'Campaign', note: 'duel the computer', onPick: () => onPick('campaign') },
-            { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => onPick('link') },
+            { label: 'Link Battle', note: 'Eternal Duelist Soul rules: online or on one phone', onPick: () => onPick('link') },
             { label: 'Speed Duel', note: 'its own decks: Speed Duel cards only', onPick: () => onPick('speed') },
             { label: 'Deck Edit', note: `Main ${save.main.length}/40`, onPick: () => onPick('deck') },
             { label: 'Record', onPick: () => onPick('record') },
             { label: 'Calendar', onPick: () => onPick('calendar') },
             { label: 'Password', onPick: () => onPick('password') },
-            { label: `Controls: ${CONTROL_NAMES[save.controls ?? 'classic']}`, note: save.controls === 'touch' ? 'tap and drag, like Master Duel' : 'the original game menus', onPick: () => onPick('controls') },
+            { label: `Controls: ${CONTROL_NAMES[controlsOf(save, 'eds')]}`, note: controlsOf(save, 'eds') === 'touch' ? 'tap and drag, like Master Duel' : 'the original game menus', onPick: () => onPick('controls') },
             { label: 'Switch Profile', note: "who's dueling?", onPick: () => onPick('switch') },
           ]}
         />

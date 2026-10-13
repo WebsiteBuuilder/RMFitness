@@ -6,6 +6,7 @@ import limited from './data/speedLimited.json';
 import { card } from './db';
 import { hasEffect } from './effects';
 import { getSkill } from './skills';
+import { loadSolo } from './speedCampaign/save';
 
 export interface SpeedDeck {
   id: string;
@@ -35,6 +36,11 @@ export interface SpeedSave {
   collection?: Record<string, number>;
   /** Duel Chips: the rare currency (at most CHIP_CAP) */
   chips?: number;
+  /**
+   * A copy of the Millennium Road deck (kept in the solo save), so bets and shard-breaking
+   * count its cards as used. Refreshed every time the save is loaded.
+   */
+  road?: SpeedDeck | null;
 }
 
 export const CHIP_CAP = 30;
@@ -56,7 +62,7 @@ export function loadSpeedSave(profileId: string): SpeedSave {
   try {
     const raw = localStorage.getItem(key(profileId));
     const s = raw ? (JSON.parse(raw) as SpeedSave) : null;
-    if (s && s.version === 1 && Array.isArray(s.decks)) return s;
+    if (s && s.version === 1 && Array.isArray(s.decks)) return { ...s, road: loadSolo(profileId).campaign.deck };
   } catch {
     /* storage blocked: fall back to memory */
   }

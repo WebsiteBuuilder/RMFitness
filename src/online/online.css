@@ -74,6 +74,9 @@
 }
 
 .win.ol-panel {
+  /* solid in both themes (the Speed Duel theme's windows are see-through) */
+  background: linear-gradient(180deg, #16296e 0%, #0d1a4a 100%);
+  backdrop-filter: none;
   width: 100%;
   margin: 0;
   max-height: calc(92dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
