@@ -11,7 +11,9 @@ import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
-import type { Tactics } from '../eds/tactics';
+import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
+import { savedDifficulty, type Difficulty } from '../eds/difficulty';
+import { cpuDelay, spotUid, spotlight } from './cpuPace';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
@@ -76,6 +78,8 @@ export function App() {
   const [session, setSession] = useState<DuelSession | null>(null);
   const [hotseat, setHotseat] = useState(false);
   const [cpu, setCpu] = useState(false);
+  /** how sharp the computer plays this duel */
+  const [cpuLevel, setCpuLevel] = useState<Difficulty>('normal');
   const [mySeat, setMySeat] = useState<Pid>(0);
   /** the profile sitting in Player 2's seat of a hotseat duel, if any */
   const [p2Profile, setP2Profile] = useState<string | null>(null);
@@ -241,6 +245,7 @@ export function App() {
     ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, displayName(d.name)], decks: [save.main, d.deck], fusions: [save.fusion, d.fusion] });
     setHotseat(false);
     setCpu(true);
+    setCpuLevel('normal');
     setMySeat(0);
     setP2Profile(null);
     setDuelMode('eds');
@@ -261,6 +266,7 @@ export function App() {
     ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] });
     setHotseat(false);
     setCpu(true);
+    setCpuLevel(o.level ?? savedDifficulty());
     setMySeat(0);
     setP2Profile(null);
     setDuelMode('speed');
@@ -283,6 +289,7 @@ export function App() {
     setSoloReport(null);
     setHotseat(false);
     setCpu(true);
+    setCpuLevel(spec.level ?? 'normal');
     setMySeat(0);
     setP2Profile(null);
     setDuelMode('speed');
@@ -410,7 +417,7 @@ export function App() {
         if (!st || !seats || !seats[other(seat)].stakes?.profile) return s;
         const bet = settleStakes(s, seat, st, [seats[0], seats[1]], winner);
         const before = crownHolder(s, opp);
-        const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes), online: !hotseat });
+        const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes), online: !hotseat, surrender: /surrendered$/.test(st.winReason), damage: lpLostIn(st) });
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         cards.push({ who: seats[seat].name, won: bet.won, lost: bet.lost });
@@ -739,7 +746,7 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
@@ -784,6 +791,8 @@ function resultOf(st: DuelState, mySeat: Pid, hotseat: boolean, before: SpeedSav
   for (const l of lines) rewards.push({ kind: 'line', text: l });
   return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards };
 }
+/** Life Points both players lost (damage and costs) over the whole duel. */
+const lpLostIn = (st: DuelState) => ((st.fx.lpLost ?? [0, 0]) as number[]).reduce((a, b) => a + (b ?? 0), 0);
 
 function newCode(): string {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -796,6 +805,7 @@ function Running({
   session,
   hotseat,
   cpu,
+  cpuLevel = 'normal',
   mySeat,
   mode,
   entries,
@@ -812,6 +822,8 @@ function Running({
   session: DuelSession;
   hotseat: boolean;
   cpu: boolean;
+  /** how sharp the computer plays (not used when watching: each side has its own tactics) */
+  cpuLevel?: Difficulty;
   mySeat: Pid;
   mode: GameMode;
   entries: Partial<Record<GameMode, SeatEntry>>;
@@ -834,6 +846,9 @@ function Running({
     if (view.state.started && view.state.winner === null && !cpu && view.state.rules?.mode === 'speed') onStarted?.(view.seats, String(view.state.seed));
   }, [view.state.started]);
   const cpuStreak = useRef(0);
+  // When the current turn began (its banner went up): the computer waits for the banner to finish.
+  const turnAt = useRef({ turn: -1, at: 0 });
+  if (view.state.turn !== turnAt.current.turn) turnAt.current = { turn: view.state.turn, at: Date.now() };
   // Dev builds only: lets UI tests reach the end of a duel.
   if (import.meta.env.DEV) (window as unknown as { __session?: DuelSession }).__session = session;
   // The computer takes its turn a beat after each change, so the player can follow along.
@@ -841,7 +856,7 @@ function Running({
     if (!cpu || !view.state.started || view.state.winner !== null || watch?.paused) return;
     // Watching: whichever seat has something to do moves, each with its own pep talk.
     let seat: Pid = mySeat === 0 ? 1 : 0;
-    let action = watch ? null : aiAction(session.engine, seat);
+    let action = watch ? null : aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel });
     if (watch) {
       const st = session.engine.state;
       const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
@@ -865,13 +880,20 @@ function Running({
       return;
     }
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    // (the beat is shorter at a faster Animation speed)
-    const pace = watch ? (quick ? 250 : 900) / watch.speed : (quick ? 150 : 300) / getAnimSpeed();
+    // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
+    // faster Animation speed) with a spotlight on the card it moves...
+    const st = session.engine.state;
+    const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
+    const send = () => {
+      const uid = spotUid(action!);
+      session.send(action!);
+      if (uid !== null) spotlight(uid);
+    };
     // ...and never in the middle of a 3D cinematic.
     let t = 0;
-    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action!), pace)));
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(send, pace)));
     return () => (stopWaiting(), clearTimeout(t));
-  }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
+  }, [cpu, cpuLevel, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [view.seats[0].rarity, view.seats[1].rarity] : null);
   useEffect(() => () => showDuelRarity(null), []);
