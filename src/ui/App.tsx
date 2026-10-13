@@ -19,7 +19,7 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
-import { SoloHud, Solo, type SoloMode } from './Solo';
+import { DuelBackGuard, SoloHud, Solo, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
@@ -403,6 +403,7 @@ export function App() {
         <>
           <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
+          {soloDuel.current && <DuelBackGuard key={soloDuel.current.spec.context.kind} labyrinth={soloDuel.current.ctx.kind === 'labyrinth'} onLeave={leaveDuel} />}
         </>
       );
     default:

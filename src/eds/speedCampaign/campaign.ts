@@ -146,11 +146,14 @@ export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string,
     three.forEach((n) => offered.add(n));
     if (three.length) picks.push(three);
   }
-  const campaign = { ...g.solo.campaign, stars: { ...g.solo.campaign.stars, [nodeId]: stars }, wins: { ...g.solo.campaign.wins, [nodeId]: (g.solo.campaign.wins[nodeId] ?? 0) + 1 } };
+  const campaign = { ...g.solo.campaign, pendingPicks: [...(g.solo.campaign.pendingPicks ?? []), ...picks], stars: { ...g.solo.campaign.stars, [nodeId]: stars }, wins: { ...g.solo.campaign.wins, [nodeId]: (g.solo.campaign.wins[nodeId] ?? 0) + 1 } };
   const cleared = firstWin && node.boss ? chapter : null;
   if (cleared) campaign.cleared = chapter.id;
   return { speed: g.speed, solo: { ...g.solo, campaign }, stars, newStars, lines: g.lines, cards: g.cards, picks, firstWin, cleared };
 }
 
-/** The player picked one card of a star's three. */
-export const takePick = (speed: SpeedSave, name: string) => withCards(speed, [name]);
+/** The player picked one card of the first waiting star pick. */
+export function takePick(speed: SpeedSave, solo: SoloSave, name: string | null): { speed: SpeedSave; solo: SoloSave } {
+  const rest = (solo.campaign.pendingPicks ?? []).slice(1);
+  return { speed: name ? withCards(speed, [name]) : speed, solo: { ...solo, campaign: { ...solo.campaign, pendingPicks: rest } } };
+}

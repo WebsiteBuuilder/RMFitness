@@ -17,6 +17,8 @@ export interface CampaignProgress {
   /** Millennium Items won */
   items: string[];
   titles: string[];
+  /** star picks won but not yet chosen (kept so closing the app doesn't lose them) */
+  pendingPicks?: string[][];
   /** a chapter-clear screen still to show */
   cleared?: string;
 }
@@ -30,6 +32,8 @@ export interface LabyrinthProgress {
   curseUnlocked: number;
   history: RunSummary[];
   best: RunSummary | null;
+  /** the last day a Labyrinth boss paid a Duel Chip (one a day) */
+  chipDay?: string;
 }
 
 export interface PracticePrefs {

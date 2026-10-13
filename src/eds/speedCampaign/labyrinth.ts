@@ -69,11 +69,11 @@ export interface Run {
 }
 
 export type Pending =
-  | { kind: 'draft'; options: string[]; dp: number; heal?: boolean; relic?: string }
+  | { kind: 'draft'; options: string[]; dp: number; heal?: boolean; relic?: string; chip?: boolean }
   | { kind: 'shop'; items: ShopItem[] }
   | { kind: 'event'; event: string }
   | { kind: 'rest' }
-  | { kind: 'remove'; then?: Pending }
+  | { kind: 'remove'; then?: Pending; pay?: number }
   | { kind: 'swap'; card: string; then?: Pending }
   | { kind: 'treasure'; relic: string };
 
@@ -322,9 +322,12 @@ function draftSize(r: Run, upgrades: string[]): number {
   return Math.max(2, n);
 }
 
+/** Cards that can't do anything in a run deck (no way to summon them), never offered. */
+const DEAD = new Set(['Gate Guardian', 'Polymerization']);
+
 function draftOptions(r: Run, upgrades: string[], floor: number, better = false): string[] {
   const next = stepRng(r, 7);
-  const pool = floorPool(Math.min(2, floor + (better ? 1 : 0))).filter((n) => [...r.main, ...r.extra].filter((x) => x === n).length < COPIES);
+  const pool = floorPool(Math.min(2, floor + (better ? 1 : 0))).filter((n) => !DEAD.has(n) && !floorExtra.has(n) && [...r.main, ...r.extra].filter((x) => x === n).length < COPIES);
   const out: string[] = [];
   const size = draftSize(r, upgrades);
   for (let guard = 0; out.length < size && guard < 200; guard++) {
@@ -396,8 +399,8 @@ export function duelFor(r: Run, upgrades: string[]): { foe: CpuDuelist; me: Seat
   const meParts: (SeatSetup | undefined)[] = r.relics.map((n) => relic(n)?.me);
   const cpuParts: (SeatSetup | undefined)[] = r.relics.map((n) => relic(n)?.cpu);
   if (upgrades.includes('lp')) meParts.push({ lp: 4300 });
-  // Floor 1's elites and boss play without their Duel Condition: a 20-card starter needs a chance.
-  if ((s.kind === 'elite' || s.kind === 'boss') && r.floor > 0) {
+  // Only floor 3's elites and boss bring their Duel Condition: a young run deck needs a chance.
+  if ((s.kind === 'elite' || s.kind === 'boss') && r.floor > 1) {
     const cond = conditionOf(foe.id);
     if (cond) {
       meParts.push(cond.player);
@@ -525,7 +528,7 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
           return done(accept && x.hearts > 1 ? withRelic({ ...x, hearts: x.hearts - 1 }, randomRelic(x, 13)) : x);
         case 'graveyard': {
           // Nothing to bury at 20 cards, so nothing is paid.
-          if (accept) return x.main.length > 20 ? { ...x, dp: x.dp + 20, pending: { kind: 'remove' } } : done(x);
+          if (accept) return x.main.length > 20 ? { ...x, pending: { kind: 'remove', pay: 20 } } : done(x);
           const dug = draftOptions(x, upgrades, x.floor)[0];
           const y = dug ? addCard(x, dug) : x;
           return y.pending ? y : done(y);
@@ -535,7 +538,7 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
         case 'kaiba':
           return done(accept ? { ...x, nextDuel: { me: { openingHand: 2, lp: 3000 }, text: 'Kaiba Corp Prototype: 2 extra cards, 3000 LP' } } : x);
         case 'shadi': {
-          if (!accept) return done(x);
+          if (!accept || x.hearts <= 1) return done(x);
           const heads = stepRng(x, 17)() < 0.5;
           if (heads) return done(withRelic(x, randomRelic(x, 19, true)));
           const hearts = x.hearts - 1;
@@ -577,6 +580,8 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
       if (c.kind !== 'remove') return r;
       let x: Run = { ...r, pending: p.then };
       if (c.card) {
+        // The Graveyard's payment comes only when a card is really buried.
+        if (p.pay && x.main.includes(c.card) && x.main.length > 20) x = { ...x, dp: x.dp + p.pay };
         if (x.main.includes(c.card) && x.main.length > 20) {
           const i = x.main.indexOf(c.card);
           x = { ...x, main: [...x.main.slice(0, i), ...x.main.slice(i + 1)] };
@@ -589,10 +594,12 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
     }
     case 'swap': {
       if (c.kind !== 'swap') return r;
+      // Only a Main Deck card can make room; anything else is ignored.
+      if (c.out && !r.main.includes(c.out)) return r;
       let x: Run = { ...r, pending: p.then };
       if (c.out) {
         const i = x.main.indexOf(c.out);
-        if (i >= 0) x = { ...x, main: [...x.main.slice(0, i), ...x.main.slice(i + 1), p.card] };
+        x = { ...x, main: [...x.main.slice(0, i), ...x.main.slice(i + 1), p.card] };
       }
       return x.pending ? x : done(x);
     }
@@ -615,14 +622,25 @@ export function summaryOf(r: Run): RunSummary {
 export const better = (a: RunSummary, b: RunSummary | null) => !b || a.floor * 100 + a.wins + (a.won ? 1000 : 0) > b.floor * 100 + b.wins + (b.won ? 1000 : 0);
 
 // ---------- Daily result codes ----------
+/** A 4-letter check so a result code can't just be typed up. */
+function check(body: string): string {
+  let h = 2166136261;
+  for (const ch of `speed-realm:${body}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return (h >>> 0).toString(36).slice(-4).toUpperCase().padStart(4, '0');
+}
+
 /** A short code for a Daily Labyrinth result, to text your brother. */
 export function resultCode(s: RunSummary, name: string): string {
   if (!s.daily) return '';
-  return `DL-${s.daily.replace(/-/g, '')}-${s.won ? 'W' : 'F' + s.floor}-${s.wins}-${encodeURIComponent(name.slice(0, 16))}`;
+  const body = `DL-${s.daily.replace(/-/g, '')}-${s.won ? 'W' : 'F' + s.floor}-${s.wins}-${encodeURIComponent(name.slice(0, 16))}`;
+  return `${body}.${check(body)}`;
 }
 
 export function readResultCode(code: string): { daily: string; won: boolean; floor: number; wins: number; name: string } | null {
-  const m = code.trim().match(/^DL-(\d{4})(\d{2})(\d{2})-(W|F(\d))-(\d+)-(.*)$/i);
+  const full = code.trim();
+  const dot = full.lastIndexOf('.');
+  if (dot < 0 || check(full.slice(0, dot)) !== full.slice(dot + 1).toUpperCase()) return null;
+  const m = full.slice(0, dot).match(/^DL-(\d{4})(\d{2})(\d{2})-(W|F(\d))-(\d+)-(.*)$/);
   if (!m) return null;
   try {
     return { daily: `${m[1]}-${m[2]}-${m[3]}`, won: m[4].toUpperCase() === 'W', floor: m[4].toUpperCase() === 'W' ? 3 : Number(m[5]), wins: Number(m[6]), name: decodeURIComponent(m[7]) || 'Your brother' };

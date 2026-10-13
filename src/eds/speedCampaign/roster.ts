@@ -380,7 +380,8 @@ export const CHAPTERS: Chapter[] = [
           onLose: 'Whoa there... you just made the dino-history books.',
           signature: ['Black Tyranno', 'Dark Driceratops', 'Ultra Evolution Pill'],
         },
-        goal: { kind: 'lp', n: 2500 },
+        condition: { text: "Hassleberry is showing off for the crowd: he starts with only 3000 LP.", cpu: { lp: 3000 } },
+        goal: { kind: 'turns', n: 12 },
       },
       {
         id: 'c4-alexis',
@@ -397,6 +398,7 @@ export const CHAPTERS: Chapter[] = [
           onLose: "Impressive. Zane is waiting at the lighthouse. Don't underestimate him.",
           signature: ['Cyber Angel Benten', 'Cyber Prima', 'Machine Angel Ritual'],
         },
+        condition: { text: 'Alexis likes a fair fight: you start with one extra card in hand.', player: { openingHand: 1 } },
         goal: { kind: 'turns', n: 12 },
       },
       {
@@ -433,7 +435,7 @@ export const CHAPTERS: Chapter[] = [
           signature: ['Cyber End Dragon', 'Cyber Dragon', 'Cyberdark Dragon'],
         },
         condition: { text: "Zane's respect is earned the hard way: you start with only 3000 LP.", player: { lp: 3000 } },
-        goal: { kind: 'lp', n: 2000 },
+        goal: { kind: 'turns', n: 14 },
       },
     ],
   },
@@ -462,6 +464,7 @@ export const CHAPTERS: Chapter[] = [
           signature: ['Skull Archfiend of Lightning', 'Archfiend Soldier', "Archfiend's Oath"],
         },
         story: JADEN_STORY,
+        condition: { text: "Jaden's got his game on: you start with 5000 LP.", player: { lp: 5000 } },
         goal: { kind: 'turns', n: 12 },
       },
       {
@@ -479,7 +482,7 @@ export const CHAPTERS: Chapter[] = [
           onLose: 'Outflanked... a fine maneuver. Carry on.',
           signature: ['Bitelon', 'Granadora', "Snake Deity's Command"],
         },
-        goal: { kind: 'lp', n: 2000 },
+        goal: { kind: 'fullField' },
       },
       {
         id: 'c5-amnael',
@@ -659,7 +662,7 @@ export const CHAPTERS: Chapter[] = [
           signature: ['Blue-Eyes White Dragon', 'Divine Dragon Lord Felgrand', 'Burst Stream of Destruction'],
         },
         story: YUGI_STORY,
-        goal: { kind: 'lp', n: 2000 },
+        goal: { kind: 'turns', n: 14 },
       },
       {
         id: 'c7-dealer',
@@ -709,7 +712,7 @@ export const CHAPTERS: Chapter[] = [
           signature: ['Dark Magician', 'Dark Magician Girl', 'Valkyrion the Magna Warrior'],
         },
         condition: { text: 'Two conditions: the King starts with 6000 LP, and Dark Magician Girl is already on his field.', cpu: { lp: 6000, monsters: ['Dark Magician Girl'] } },
-        goal: { kind: 'lp', n: 2000 },
+        goal: { kind: 'turns', n: 16 },
       },
     ],
   },

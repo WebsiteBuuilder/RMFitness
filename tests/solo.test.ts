@@ -221,6 +221,30 @@ for (let s = 1; s <= 40; s++) {
   ok(offered.every((n) => (won.speed.collection?.[n] ?? 0) < 3), 'picks are cards you can still use');
 }
 
+// ---------- review round 3 ----------
+{
+  let r = newRun({ starter: STARTERS[1].character, seed: 41, curse: 0, upgrades: [] });
+  const full: Run = { ...r, main: [...r.main, ...r.main].slice(0, 30), extra: ['Thousand Dragon'], pending: { kind: 'swap', card: 'Kuriboh' } };
+  ok(choose(full, { kind: 'swap', out: 'Thousand Dragon' }, []).pending?.kind === 'swap', 'an Extra Deck card cannot make room');
+  r = { ...r, main: [...r.main, r.main[0], r.main[1]] };
+  const g: Run = { ...r, pending: { kind: 'event', event: 'graveyard' } };
+  const buried = choose(g, { kind: 'event', option: 0 }, []);
+  ok(buried.dp === r.dp && buried.pending?.kind === 'remove', 'graveyard pays on burial, not on accepting');
+  ok(choose(buried, { kind: 'remove', card: null }, []).dp === r.dp, 'cutting nothing pays nothing');
+  ok(choose(buried, { kind: 'remove', card: r.main[0] }, []).dp === r.dp + 20, 'burying a card pays 20');
+  const code = resultCode({ date: 0, daily: '2026-10-12', starter: 'x', floor: 2, wins: 5, won: false, curse: 0, fragments: 0 }, 'Jammy');
+  ok(readResultCode(code)?.wins === 5, 'result code reads back');
+  ok(readResultCode(code.replace('-5-', '-9-')) === null, 'a hand-edited result code is rejected');
+}
+{
+  let speed = newSpeedSave();
+  let solo = newSoloSave();
+  ({ speed, solo } = startRoad(speed, solo, STARTERS[0].character));
+  const node = CHAPTERS[0].nodes[0];
+  const w = settleCampaign(speed, solo, node.id, { result: 'w', myLp: 4000, myStartLp: 4000, oppLp: 0, turns: 1, usedSkill: false, myMonsters: 3 }, 5);
+  ok((w.solo.campaign.pendingPicks ?? []).length === w.picks.length, 'star picks are saved until chosen');
+}
+
 // ---------- real duels: every computer deck under its Duel Condition ----------
 const games = Number(process.argv.find((a) => /^\d+$/.test(a)) ?? 1);
 const brains = [aiAction, aiAction];

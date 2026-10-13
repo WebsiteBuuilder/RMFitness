@@ -1,7 +1,7 @@
 // After a solo duel: writes its result into the right mode and says what to show.
 import type { SpeedSave } from '../speedSave';
 import { settleCampaign, type Settled } from './campaign';
-import { afterDuel, better, stopById, summaryOf, type Run, type RunSummary } from './labyrinth';
+import { afterDuel, better, stopById, summaryOf, todayString, type Run, type RunSummary } from './labyrinth';
 import type { SoloSave } from './save';
 import { grant } from './rewards';
 import type { DuelContext, DuelOutcome } from './types';
@@ -41,12 +41,17 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   }
   const run = solo.labyrinth.run;
   if (!run || run.id !== ctx.runId) return { speed, solo, report: { kind: 'labyrinth', outcome: o, run, ended: null } };
-  const next = afterDuel(run, o.result, solo.labyrinth.upgrades);
-  // Beating a Labyrinth boss pays a Duel Chip to the profile.
+  // The Daily plays without upgrades, so both brothers race the same run.
+  const next = afterDuel(run, o.result, run.daily ? [] : solo.labyrinth.upgrades);
+  // Beating a Labyrinth boss pays a Duel Chip, at most once a day (so a quick
+  // floor-1 boss and Give up can't farm them).
   const stop = run.inDuel ? stopById(run, run.inDuel) : null;
-  if (o.result === 'w' && stop?.kind === 'boss') {
+  const today = todayString();
+  if (o.result === 'w' && stop?.kind === 'boss' && solo.labyrinth.chipDay !== today) {
     const g = grant(speed, solo, [{ kind: 'chips', n: 1 }]);
     speed = g.speed;
+    solo = { ...solo, labyrinth: { ...solo.labyrinth, chipDay: today } };
+    if (next.pending?.kind === 'draft') next.pending = { ...next.pending, chip: true };
   }
   if (next.over) {
     const done = endRun(solo, next);

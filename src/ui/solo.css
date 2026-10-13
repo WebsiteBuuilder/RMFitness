@@ -125,7 +125,9 @@
   transform: scale(0.97);
 }
 .so-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
+  filter: grayscale(0.8);
+  box-shadow: none;
 }
 .so-btn.gold {
   background: linear-gradient(180deg, #ffd978, var(--so-gold) 45%, var(--so-gold2));
@@ -384,9 +386,11 @@
 .so-cards.reveal .so-card {
   animation: so-flip 0.55s cubic-bezier(0.3, 1.3, 0.5, 1) both;
 }
+/* Turns in from edge-on (never past 90 degrees, so the face is never mirrored). */
 @keyframes so-flip {
-  0% { transform: perspective(500px) rotateY(180deg) scale(0.7); opacity: 0; filter: brightness(3); }
-  60% { opacity: 1; filter: brightness(1.6); box-shadow: 0 0 22px rgba(242, 193, 78, 0.7); }
+  0% { transform: perspective(500px) rotateY(-90deg) scale(0.8); opacity: 0; filter: brightness(3); }
+  15% { opacity: 1; }
+  60% { transform: perspective(500px) rotateY(8deg) scale(1.05); filter: brightness(1.6); box-shadow: 0 0 22px rgba(242, 193, 78, 0.7); }
   100% { transform: none; filter: none; }
 }
 .so-card { position: relative; }
@@ -1119,3 +1123,40 @@
     transition: none !important;
   }
 }
+
+/* The main action stays in reach at the bottom of a long sheet. */
+.so-sheet-b > .so-btn.gold:last-child {
+  position: sticky;
+  bottom: 8px;
+  z-index: 2;
+  box-shadow: 0 -10px 24px 6px rgba(14, 23, 48, 0.95), 0 4px 18px rgba(242, 193, 78, 0.25);
+}
+/* A duel stop shows who waits there. */
+.so-stop-a {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--so-line);
+}
+.so-stop-a .cimg {
+  position: absolute;
+  width: 150%;
+  left: -25%;
+  top: -30%;
+  height: auto;
+}
+.so-stop-a i {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(8, 12, 28, 0.85);
+  border-radius: 6px;
+  padding: 1px 2px;
+}
+.so-stop.live .so-stop-a { border-color: var(--so-gold); }
+.so-stop.k-boss .so-stop-a { width: 40px; height: 40px; border-color: #dc3c5a; }

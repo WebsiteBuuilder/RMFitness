@@ -88,7 +88,8 @@ function useBackGesture() {
     window.addEventListener('popstate', onPop);
     return () => {
       window.removeEventListener('popstate', onPop);
-      if ((history.state as { solo?: number } | null)?.solo) history.back();
+      // Neutralise our entry rather than going back: a duel screen may be pushing its own now.
+      if ((history.state as { solo?: number } | null)?.solo) history.replaceState(null, '');
     };
   }, []);
 }
@@ -105,7 +106,7 @@ function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => voi
     buzz([40, 60, 90]);
   }, []);
   return (
-    <div class="so vs" onClick={onGo}>
+    <div class="so vs">
       <div class="vs-label">{v.label}</div>
       <div class="vs-side me">
         <div class="vs-art">
@@ -141,6 +142,42 @@ function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => voi
       <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), onGo())}>
         Duel!
       </button>
+    </div>
+  );
+}
+
+/** On a solo duel, the phone's Back asks before leaving instead of closing the app. */
+export function DuelBackGuard({ labyrinth, onLeave }: { labyrinth: boolean; onLeave: () => void }) {
+  const [ask, setAsk] = useState(false);
+  useEffect(() => {
+    history.pushState({ duel: 1 }, '');
+    const onPop = () => {
+      history.pushState({ duel: 1 }, '');
+      setAsk(true);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if ((history.state as { duel?: number } | null)?.duel) history.replaceState(null, '');
+    };
+  }, []);
+  if (!ask) return null;
+  return (
+    <div class="so">
+      <div class="so-shade" onClick={() => setAsk(false)}>
+        <div class="so-sheet" onClick={(e) => e.stopPropagation()}>
+          <div class="so-sheet-b">
+            <h3 class="so-center">Leave this duel?</h3>
+            <p class="so-center so-dim">{labyrinth ? 'It counts as a loss and costs a heart.' : "It won't count for anything."}</p>
+            <button class="so-btn red" onClick={() => (setAsk(false), onLeave())}>
+              Leave the duel
+            </button>
+            <button class="so-btn gold" onClick={() => setAsk(false)}>
+              Keep dueling
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -608,15 +645,16 @@ function Road(p: Ctx) {
 
   const rep = p.report?.kind === 'campaign' ? p.report : null;
   const repNode = rep ? findNode(rep.nodeId) : null;
-  const pickList = rep?.settled.picks ?? [];
-  const clearedCh = rep?.outcome.result === 'w' ? rep.settled.cleared : null;
-  const advance = (from: number) => {
-    const next = from + 1;
-    if (next >= 1 && next <= pickList.length) return setStage(next);
-    if (clearedCh && next <= pickList.length + 1) return setStage(pickList.length + 1);
+  // Star picks and the chapter-clear screen are saved, so they come back if the app closed.
+  const pickList = c.pendingPicks ?? [];
+  const clearedCh = c.cleared ? (CHAPTERS.find((x) => x.id === c.cleared) ?? null) : null;
+  const afterResult = !rep || stage === 1;
+  /** Moves past whatever was just shown; when nothing is left, the next duel's intro opens. */
+  const advance = (next: SoloSave) => {
+    if ((next.campaign.pendingPicks ?? []).length || next.campaign.cleared) return setStage(1);
     setStage(0);
-    if (clearedCh) setSolo({ ...solo, campaign: { ...solo.campaign, cleared: undefined } });
-    p.onReportSeen();
+    if (rep?.outcome.result === 'w' && nextUp) (setChId(nextUp.chapter.id), setSel(nextUp.node));
+    if (rep) p.onReportSeen();
   };
 
   return (
@@ -669,7 +707,7 @@ function Road(p: Ctx) {
             <div class="so-chapter-h">
               <span>{ch.postgame ? 'Post-game' : `Chapter ${ch.n}`}</span>
               <b>{ch.title}</b>
-              <Stars s={[starCount(solo, ch.nodes.map((n) => n.id)) >= ch.nodes.length, starCount(solo, ch.nodes.map((n) => n.id)) >= ch.nodes.length * 2, starCount(solo, ch.nodes.map((n) => n.id)) >= ch.nodes.length * 3]} />
+              <Stars s={[0, 1, 2].map((k) => ch.nodes.every((n) => c.stars[n.id]?.[k]))} />
             </div>
             <p class="so-blurb">{ch.blurb}</p>
           </div>
@@ -792,29 +830,40 @@ function Road(p: Ctx) {
           ) : (
             <p class="so-center">Tune your road deck and try again. A loss here costs nothing.</p>
           )}
-          <Btn kind="gold" onClick={() => advance(0)}>
+          <Btn kind="gold" onClick={() => advance(solo)}>
             Continue
           </Btn>
         </Sheet>
       )}
-      {rep && stage >= 1 && stage <= pickList.length && (
+      {afterResult && pickList.length > 0 && (
         <Sheet>
           <div class="so-group">New star! Choose one card to keep</div>
-          <CardRow names={pickList[stage - 1]} picked={picked} onPick={setPicked} own={(n) => ownedCopies(speed, n)} />
+          <CardRow names={pickList[0]} picked={picked} onPick={setPicked} own={(n) => ownedCopies(speed, n)} />
           <Btn
             kind="gold"
             disabled={!picked}
             onClick={() => {
-              p.onSpeed(takePick(speed, picked!));
+              const t = takePick(speed, solo, picked!);
+              p.onSpeed(t.speed);
+              setSolo(t.solo);
               setPicked(null);
-              advance(stage);
+              advance(t.solo);
             }}
           >
             Take it
           </Btn>
         </Sheet>
       )}
-      {rep && clearedCh && stage === pickList.length + 1 && <ChapterClear ch={clearedCh} onDone={() => advance(stage)} />}
+      {afterResult && pickList.length === 0 && clearedCh && (
+        <ChapterClear
+          ch={clearedCh}
+          onDone={() => {
+            const next = { ...solo, campaign: { ...solo.campaign, cleared: undefined } };
+            setSolo(next);
+            advance(next);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1171,21 +1220,25 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
   const floor = run.floors[run.floor];
   const act = (c: Choice) => setRun(choose(run, c, up));
 
-  const startDuel = () => {
-    const d = duelFor(run, up);
+  /** Steps onto a duel stop (or the one you're on) and opens the VS screen. */
+  const startDuel = (at: Run = run) => {
+    if (at !== run) setRun(at);
+    const d = duelFor(at, up);
     if (!d) return;
     const deck = deckOf(d.foe);
-    const kind = stopById(run, run.inDuel!)?.kind;
+    const kind = stopById(at, at.inDuel!)?.kind;
     p.onDuel({
-      me: { name: p.name, main: run.main, extra: run.extra, skill: run.skill, setup: d.me },
+      me: { name: p.name, main: at.main, extra: at.extra, skill: at.skill, setup: d.me },
       cpu: { name: d.foe.name, main: deck.main, extra: deck.extra, skill: deck.skill, setup: d.cpu },
       first: 'coin',
-      context: { kind: 'labyrinth', runId: run.id, stopId: run.inDuel! },
-      vs: { label: `FLOOR ${run.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(run.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(run.relics.length ? [`Relics: ${run.relics.join(', ')}`] : [])], goals: [] },
+      context: { kind: 'labyrinth', runId: at.id, stopId: at.inDuel! },
+      vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : [])], goals: [] },
     });
   };
 
   const inDuel = run.inDuel ? stopById(run, run.inDuel) : null;
+  const lastStop = run.at ? stopById(run, run.at) : null;
+  const beatBy = lastStop?.foe ? duelistById(lastStop.foe) : undefined;
   const duelInfo = run.inDuel ? duelFor(run, up) : null;
   const pend = run.pending;
 
@@ -1238,8 +1291,15 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
                   const here = run.at === st.id;
                   const foe = st.foe ? duelistById(st.foe) : null;
                   return (
-                    <button key={st.id} style={{ left: `${mapX(st.col, row.length)}%` }} class={`so-stop k-${st.kind} ${live ? 'live' : ''} ${seen ? 'seen' : ''} ${here ? 'here' : ''}`} disabled={!live} onClick={() => setPeek(st)}>
-                      <span class="so-stop-i">{STOP_ICON[st.kind]}</span>
+                    <button key={st.id} style={{ left: `${mapX(st.col, row.length)}%` }} class={`so-stop k-${st.kind} ${live ? 'live' : ''} ${seen ? 'seen' : ''} ${here ? 'here' : ''}`} disabled={!live} onClick={() => (foe ? startDuel(enter(run, st.id, up)) : setPeek(st))}>
+                      {foe ? (
+                        <span class="so-stop-a">
+                          <CardImg name={foe.portrait} />
+                          <i>{STOP_ICON[st.kind]}</i>
+                        </span>
+                      ) : (
+                        <span class="so-stop-i">{STOP_ICON[st.kind]}</span>
+                      )}
                       <span class="so-stop-n">{foe ? foe.name : STOP_NAME[st.kind]}</span>
                     </button>
                   );
@@ -1257,7 +1317,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
                 <em key={n}>{n}</em>
               ))}
             </div>
-            <Btn kind="gold" onClick={startDuel}>
+            <Btn kind="gold" onClick={() => startDuel()}>
               Duel!
             </Btn>
           </div>
@@ -1339,7 +1399,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
                 </div>
               </div>
               {ev.choices.map((c, i) => (
-                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={i === 0 && ((ev.id === 'ring' && run.hearts <= 1) || (ev.id === 'graveyard' && run.main.length <= 20) || (ev.id === 'rebecca' && run.main.length <= 21))} onClick={() => act({ kind: 'event', option: i })}>
+                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={i === 0 && ((ev.id === 'ring' && run.hearts <= 1) || (ev.id === 'graveyard' && run.main.length <= 20) || (ev.id === 'shadi' && run.hearts <= 1) || (ev.id === 'rebecca' && run.main.length <= 21))} onClick={() => act({ kind: 'event', option: i })}>
                   {c.label} · {c.note}
                 </Btn>
               ))}
@@ -1395,7 +1455,13 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
       )}
       {lost && !run.pending && (
         <Sheet>
-          <ResultBanner result="l" />
+          <ResultBanner result={p.report?.kind === 'labyrinth' && p.report.outcome.result === 'd' ? 'd' : 'l'} />
+          {beatBy && (
+            <div class="so-intro">
+              <Portrait d={beatBy} size="s" />
+              <p class="so-quote">“{beatBy.onWin}”</p>
+            </div>
+          )}
           <p class="so-center">
             You lost a heart. <Hearts n={run.hearts} max={run.maxHearts} />
           </p>
@@ -1418,7 +1484,7 @@ function DraftSheet({ run, act }: { run: Run; act: (c: Choice) => void }) {
     <Sheet>
       <ResultBanner result="w" />
       <p class="so-center">
-        +{pend.dp} Duel Points{pend.heal ? ' · a heart back' : ''}
+        +{pend.dp} Duel Points{pend.heal ? ' · a heart back' : ''}{pend.chip ? ' · +1 Duel Chip' : ''}
       </p>
       {pend.relic && (
         <div class="so-reward">
@@ -1446,7 +1512,9 @@ function DraftSheet({ run, act }: { run: Run; act: (c: Choice) => void }) {
 }
 
 function PickFromDeck({ title, note, run, onPick }: { title: string; note: string; run: Run; onPick: (n: string | null) => void }) {
-  const names = [...new Set([...run.main, ...run.extra])].sort((a, b) => (card(a)?.kind ?? '').localeCompare(card(b)?.kind ?? '') || a.localeCompare(b));
+  const swap = run.pending?.kind === 'swap';
+  // Making room swaps out a Main Deck card, so the Extra Deck isn't offered then.
+  const names = [...new Set(swap ? run.main : [...run.main, ...run.extra])].sort((a, b) => (card(a)?.kind ?? '').localeCompare(card(b)?.kind ?? '') || a.localeCompare(b));
   const canCut = (n: string) => run.extra.includes(n) || run.main.length > 20 || run.pending?.kind === 'swap';
   return (
     <Sheet title={title} wide>
