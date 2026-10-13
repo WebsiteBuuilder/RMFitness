@@ -20,6 +20,8 @@ interface RawCard {
   alias?: string;
   /** Skill Cards: whose Skill it is */
   character?: string;
+  /** Speed Duel products it was printed in */
+  sets?: string[];
 }
 
 // (import.meta.env is missing when tests load this file under Node)
@@ -123,10 +125,11 @@ export function addSpeedCards(list: RawCard[]) {
     const known = byId.get(r.id) ?? (r.type !== 'Skill Card' && DB.get(r.name)?.name === r.name ? DB.get(r.name) : undefined);
     if (known && r.type !== 'Skill Card') {
       known.speed = true;
+      if (r.sets) known.speedSets = [...new Set([...(known.speedSets ?? []), ...r.sets])];
       if (known.name !== r.name && !DB.has(r.name)) (DB.set(r.name, known), DB.set(norm(r.name), known));
       continue;
     }
-    const info = { ...toInfo(r), speed: true };
+    const info = { ...toInfo(r), speed: true, speedSets: r.sets };
     if (!DB.has(info.name)) DB.set(info.name, info);
     if (!DB.has(norm(info.name))) DB.set(norm(info.name), info);
     byId.set(info.id, info);
