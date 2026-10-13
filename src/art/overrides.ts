@@ -28,8 +28,9 @@ export const DEFAULT_FADE = 0.08;
 export const FIGURE_TUNES: Record<number, FigureTune> = {
   // Dark Magician: robe fills the bottom edge, staff crosses the frame
   46986414: { relief: 0.9, fade: 0.11, rim: 0.8 },
-  // Blue-Eyes White Dragon: white chrome scales, wing cut by the right edge
-  89631139: { tame: 0.75, relief: 0.8, fade: 0.13, spec: 0.5, rim: 0.55, scale: 1.05 },
+  // Blue-Eyes White Dragon: white chrome scales, wing cut by the right edge. Near-flat: a parallax
+  // billboard keeps the painted head, wings and tail reading as a dragon (deep relief melts the white art)
+  89631139: { tame: 0.75, relief: 0.35, fade: 0.08, spec: 0.5, rim: 0.9, scale: 1.2 },
   // Red-Eyes Black Dragon: dark metal; wings run off both sides
   74677422: { tame: 0.35, relief: 0.85, fade: 0.13, rim: 0.8 },
   // Summoned Skull: silver bone over purple flesh, fills the whole art
@@ -40,8 +41,8 @@ export const FIGURE_TUNES: Record<number, FigureTune> = {
   91152256: { relief: 0.85, fade: 0.15 },
   // Cyber Dragon: polished silver coils
   70095154: { tame: 0.85, relief: 0.75, fade: 0.11, spec: 0.4, rim: 0.5 },
-  // Blue-Eyes Ultimate Dragon: three heads, the top one at the art edge
-  23995346: { tame: 0.7, relief: 0.75, fade: 0.17, spec: 0.45, rim: 0.55, scale: 1.05 },
+  // Blue-Eyes Ultimate Dragon: three heads, the top one at the art edge; near-flat like Blue-Eyes
+  23995346: { tame: 0.7, relief: 0.35, fade: 0.08, spec: 0.45, rim: 0.9, scale: 1.2 },
   // Gaia The Fierce Knight: lance and horse run off the frame
   6368038: { relief: 0.85, fade: 0.13 },
   // Jinzo: cut at the waist

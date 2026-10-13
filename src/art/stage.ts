@@ -156,6 +156,8 @@ float figHeight(vec2 a){
     g *= 2.0;
     s += 0.08 * (texture2D(uDepth, a + vec2(g, g)).a + texture2D(uDepth, a - vec2(g, g)).a + texture2D(uDepth, a + vec2(g, -g)).a + texture2D(uDepth, a - vec2(g, -g)).a);
     d *= smoothstep(0.42, 0.95, s);
+    // and to exactly 0 at the silhouette itself: no relief left to stretch the rim into streaks
+    d *= smoothstep(0.35, 0.85, t.a);
   }
   // flat toward the art's border (and outside it, when zoomed out)
   return d * smoothstep(0.0, uFade * 1.3 + 0.02, borderIn(a));
@@ -261,6 +263,11 @@ void main(){
   float edge = smoothstep(0.0, uFade, bn) * smoothstep(0.0, 0.02, bIn(vMesh));
   float ma = dm.a;
   float guess = vD;
+  if (uWall < 0.5 && uMatte > 0.5) {
+    // erode the cut-out ~2 px: the matte's soft outer rim (background bleeding into it) never shows
+    vec2 t = uTexel * 2.0;
+    ma = min(ma, min(min(texture2D(uDepth, vUv + vec2(t.x, 0.0)).a, texture2D(uDepth, vUv - vec2(t.x, 0.0)).a), min(texture2D(uDepth, vUv + vec2(0.0, t.y)).a, texture2D(uDepth, vUv - vec2(0.0, t.y)).a)));
+  }
   if (uWall > 0.5) {
     // the wall's matte is dilated ~1.5 px so it also rims the figure with a dark outline
     vec2 t = uTexel * 1.5;
@@ -1801,6 +1808,7 @@ uniform float uBloom;
 uniform float uVig;
 uniform float uChroma;
 uniform float uFlash;
+uniform float uDim;
 varying vec2 vUv;
 void main(){
   vec4 c = texture2D(tScene, vUv);
@@ -1814,7 +1822,8 @@ void main(){
   float v = 1.0 - uVig * smoothstep(0.3, 0.8, length(q));
   // soft shoulder instead of a hard clip: stacked additive glow rolls off toward white
   // (and the bloom is held back where the scene is already bright) so silhouettes survive
-  vec3 x = c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
+  // (a dimmed stage gets less: the glow stays around what glows instead of washing the frame out)
+  vec3 x = c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
   vec3 col = min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-max(x - 0.72, 0.0) * 3.6));
   float a = max(c.a, max(col.r, max(col.g, col.b)));
   col = vec3(uFlash) + col * (1.0 - uFlash);
@@ -1961,10 +1970,10 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       blending: NormalBlending,
       uniforms: uniforms({ uArt: null, uText: null, uK: 0, uAspect: 0.5, uTime: 0, uOpacity: 1, uTextAspect: 4, uColor: new Vector3(1, 1, 1), uColor2: new Vector3(1, 1, 1) }),
     }),
-  bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.6 }) }),
+  bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.72 }) }),
   kawase: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: KAWASE_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uOff: 0 }) }),
   composite: () =>
-    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.7, uVig: 0.3, uChroma: 0, uFlash: 0 }) }),
+    new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, ...PASS, uniforms: uniforms({ tScene: null, tBloom: null, uBloom: 0.45, uVig: 0.3, uChroma: 0, uFlash: 0, uDim: 0 }) }),
 };
 
 const BASE = new Map<MaterialKind, ShaderMaterial>();
@@ -2171,6 +2180,8 @@ export class Stage {
   private warm: Promise<void> | null = null;
   private post: Post | null = null;
   private chroma = 0;
+  /** how dimmed the stage is (0..1, set by the director): the bloom backs off under the dim */
+  dim = 0;
   private flash = 0;
   private disposed = false;
 
@@ -2474,6 +2485,7 @@ export class Stage {
       const u = this.post.comp.uniforms;
       u.uChroma.value = this.chroma * 0.035;
       u.uFlash.value = this.flash * 0.85;
+      u.uDim.value = this.dim;
       this.post.render(this.renderer, this.scene, this.camera);
     } else this.renderer.render(this.scene, this.camera);
     // pulses last a beat (a few frames), not a whole effect

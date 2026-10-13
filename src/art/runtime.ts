@@ -562,6 +562,7 @@ export class Director {
     if (want === 0 && this.dim < 0.01) this.dim = 0;
     const v = this.veil.u;
     v.uDim.value = this.dim;
+    this.stage.dim = this.dim;
     v.uAspect.value = this.stage.camera.aspect;
     v.uFocus.value.lerp(this.focus, 1 - Math.exp(-dt * 6));
     const f = this.front.u;
@@ -1094,8 +1095,9 @@ export class Director {
       { x: 0, y: restY, z: 0, w: size * 0.42, h: size * 0.5 },
       { x: 0, y: ground, z: 0, w: 1.05 * U, h: 0.12 * U },
     ];
-    const s0 = this.fit(boxes, yaw, pitch, { fill: 0.8 + tier * 0.03 });
-    const s1 = this.fit(boxes, orbit ? -yaw * 0.85 : -yaw * 0.5, pitch * 0.6, { fill: 0.88 + tier * 0.04 });
+    // the figure never fills more than ~70% of the safe area's height: it reads as a creature, not a smear of pixels
+    const s0 = this.fit(boxes, yaw, pitch, { fill: Math.min(0.68, 0.62 + tier * 0.02) });
+    const s1 = this.fit(boxes, orbit ? -yaw * 0.85 : -yaw * 0.5, pitch * 0.6, { fill: Math.min(0.72, 0.66 + tier * 0.02) });
     let sStart: Shot | null = null;
     span(0, 0.45, (k) => this.setShot((sStart ??= this.shot()), s0, easeInOut(k)));
     span(0.45, E, (k) => this.setShot(s0, s1, easeInOut(k)));
@@ -1325,6 +1327,8 @@ export class Director {
     });
     // the monster lands: its card appears in its zone as the figure arrives there
     tl.commit(S + E + LAND * 0.6);
+    // the next cinematic of the chain starts as it lands (no dead air while it settles)
+    tl.handoff = S + E + LAND * 0.6;
     tl.at(
       D,
       () => {
@@ -1369,6 +1373,7 @@ export class Director {
     ring.u.uOpacity.value = 0;
     tl.span(0.3, 0.6, (k) => (ring.mesh.scale.setScalar(lerp(0.3, 1.2, easeOut(k))), (ring.u.uOpacity.value = 1 - k)));
     tl.span(0.42, 0.6, (k) => (panel.u.uOpacity.value = 1 - k));
+    tl.handoff = 0.42;
     return tl;
   }
 
@@ -1424,6 +1429,7 @@ export class Director {
         fig.u.uTint.value = 0.6 * (1 - k);
       });
       tl.at(0.4, () => this.ui.banner({ title: c.name, sub: 'Flip!', color: col.main, dur: 0.6, pos: this.side(c.controller) === 'near' ? 'bottom' : 'top' }));
+      tl.handoff = 0.55;
       return tl;
     }
     const at = this.anchor(c, this.side(c.controller));
@@ -1451,6 +1457,7 @@ export class Director {
       st.pulse('flash', 0.3);
       this.ui.banner({ title: c.name, sub: 'Flip Summon', color: col.main, dur: 0.7, pos: 'bottom' });
     });
+    tl.handoff = 0.85;
     return tl;
   }
 
@@ -1653,15 +1660,20 @@ export class Director {
       ring.u.uOpacity.value = 1 - k;
     });
     // figures nothing destroys next sink back onto their cards instead of lingering after the camera resets
+    // (read before the hand-off below: the next cue leaves the queue when it starts)
     let keep: Set<number> | null = null;
+    const readKeep = () => (keep ??= new Set(this.queue.filter((q) => q.cue.kind === 'destroy').map((q) => (q.cue as { card: CardRef }).card.uid)));
+    tl.at(D - 0.4, readKeep, false);
     tl.span(D - 0.3, D, (k) => {
-      keep ??= new Set(this.queue.filter((q) => q.cue.kind === 'destroy').map((q) => (q.cue as { card: CardRef }).card.uid));
+      keep = readKeep();
       for (const a of figs) if (!keep.has(a.uid) && this.actors.get(a.uid) === a) this.setOpacity(a, Math.min(a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0, 1 - k));
     });
     tl.at(D, () => {
       for (const a of figs) if (keep && !keep.has(a.uid) && this.actors.get(a.uid) === a) (this.dropActor(a), this.actors.delete(a.uid));
       this.resetCam();
     }, false);
+    // the effect has landed: what follows in the chain (a destruction) starts as the card flies home
+    tl.handoff = D - 0.35;
     return tl;
   }
 
@@ -1714,6 +1726,7 @@ export class Director {
     let s1: Shot | null = null;
     tl.span(D - 0.3, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
     tl.at(D, () => this.resetCam(), false);
+    tl.handoff = D - 0.3;
     return tl;
   }
 
@@ -1864,6 +1877,7 @@ export class Director {
       }
     });
     tl.at(0.2, () => this.ui.banner({ title: c.name, sub: 'Effect', color: col.main, dur: 0.7, pos: this.side(c.controller) === 'near' ? 'bottom' : 'top' }));
+    tl.handoff = D - 0.3;
     return tl;
   }
 
@@ -1885,6 +1899,7 @@ export class Director {
       st.particles.emit({ x: 0, y: 0, burst: 4 * U, life: 0.8, size: 0.1 * U, color: 0x9affff }, 60);
       this.ui.banner({ title: name.replace(/ \(Skill Card\)$/, ''), sub: `Skill · ${this.side(p) === 'near' ? 'you' : 'opponent'}`, color: 0x4ad8ff, big: true, dur: 0.9, pos: 'mid' });
     });
+    tl.handoff = 0.9;
     return tl;
   }
 
@@ -1989,6 +2004,18 @@ export class Director {
         this.place(att);
       });
     }
+    // monster against monster: the numbers that decide it, a beat before the blow lands
+    if (a && t && t.faceUp && t.name) {
+      const ai = card(a.name);
+      const ti = card(t.name);
+      const av = ai?.atk;
+      const tv = t.def ? ti?.def : ti?.atk;
+      if (typeof av === 'number' && typeof tv === 'number') {
+        tl.at(Math.max(0.02, hitAt - 0.3), () =>
+          this.ui.banner({ title: `${av}  vs  ${tv}`, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: clash ? 1.0 : 0.8, pos: 'mid' }),
+        );
+      }
+    }
     STYLES[sig?.style ?? prof.style](ctx, 1);
     if (prof.style2 && !sig) STYLES[prof.style2](ctx, 0.55);
     sig?.travel?.(ctx);
@@ -2030,8 +2057,7 @@ export class Director {
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow
-      if (dmg) this.ui.number({ text: `-${dmg.amount}`, color: 0xff4a4a, side: this.side(dmg.player) === 'near' ? 'bottom' : 'top', size: (tgt ? 1 : 1.3) + Math.min(1, dmg.amount / 3000) * 0.9 });
-      if (dmg && tgt) lpBeat(this.side(dmg.player) === 'near' ? 'bottom' : 'top', 'art-lp-shake', 400);
+      if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1 : 1.3) + Math.min(1, dmg.amount / 3000) * 0.9);
     });
     tl.commit(hitAt);
     if (dmg) {
@@ -2103,7 +2129,34 @@ export class Director {
     }
     // the defender's shatter starts in the recoil
     if (tgt && !clash) tl.handoff = hitAt + 0.2;
+    // otherwise (a clash both survive, a direct hit) what follows starts as the blow settles
+    tl.handoff ??= Math.max(hitAt + 0.3, D - 0.3);
     return tl;
+  }
+
+  /**
+   * A damage number that pops where the blow landed, then flies into the Life Points
+   * plate of the side that took it (toward that edge of the screen when there is none),
+   * and the plate shakes as it arrives.
+   */
+  private damageNumber(side: 'top' | 'bottom', text: string, size: number) {
+    this.ui.number({ text, color: 0xff4a4a, side, size });
+    if (typeof document === 'undefined') return;
+    const all = document.querySelectorAll<HTMLElement>('.art-number');
+    const el = all[all.length - 1];
+    if (!el) return;
+    const a = el.getBoundingClientRect();
+    const ax = a.left + a.width / 2;
+    const ay = a.top + a.height / 2;
+    const plate = lpPlate(side)?.getBoundingClientRect();
+    const tx = plate ? plate.left + plate.width / 2 - ax : 0;
+    const ty = plate ? plate.top + plate.height / 2 - ay : side === 'top' ? -ay + 24 : window.innerHeight - ay - 24;
+    el.style.setProperty('--tx', `${Math.round(tx)}px`);
+    el.style.setProperty('--ty', `${Math.round(ty)}px`);
+    el.classList.add('art-fly');
+    // (the number lives 0.9 s at the cinematic's speed; it reaches the plate at ~80% of that)
+    const speed = Math.max(0.1, this.stage.speed * this.rate);
+    if (plate) setTimeout(() => lpBeat(side, 'art-lp-shake', 420), (0.9 * 0.8 * 1000) / speed);
   }
 
   private async damage(p: Pid, amount: number): Promise<Timeline> {
@@ -2113,13 +2166,13 @@ export class Director {
     this.dimTarget = this.actors.size ? 0.8 : 0.3;
     const k = Math.min(1, amount / 3000);
     tl.at(0, () => {
-      this.ui.number({ text: `-${amount}`, color: 0xff4a4a, side: this.side(p) === 'near' ? 'bottom' : 'top', size: 1 + k * 1.2 });
-      lpBeat(this.side(p) === 'near' ? 'bottom' : 'top', 'art-lp-shake', 400);
+      this.damageNumber(this.side(p) === 'near' ? 'bottom' : 'top', `-${amount}`, 1 + k * 1.2);
       st.shake(0.25 + k * 0.6);
       st.pulse('chroma', 0.3 + k * 0.4);
     });
     tl.commit(0);
     tl.span(0, 0.45, (x) => (this.front.u.uRed.value = (0.3 + k * 0.4) * (1 - easeOut(x))));
+    tl.handoff = 0.3;
     return tl;
   }
 
@@ -2133,11 +2186,14 @@ export class Director {
   private async destroy(c: CardRef): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const D = 1.4;
+    // (the burst at BREAK, then ~0.8 s of pieces and embers: no empty tail after them)
+    const D = 1.3;
     const tl = new Timeline(D, st);
     this.bgTarget = this.actors.size ? 0.45 : 0.25;
     this.dimTarget = this.actors.size ? 0.86 : 0.6;
+    // (the board waits on the break: it stays at 0.48 s)
     const BREAK = 0.48;
+    const RECOIL = 0.12;
     // the others struck by the same card go with it
     const group: CardRef[] = [c];
     if (this.actors.get(c.uid)?.field) {
@@ -2194,13 +2250,34 @@ export class Director {
         const crack = tl.own(new Crack(f, col.light, { u: 0.5 + (Math.random() - 0.5) * 0.3, v: 0.55 }));
         // (Stage.add puts every mesh in the scene: the cracks belong on the figure, moving with it)
         f.mesh.add(crack.mesh);
-        const home = { x: f.mesh.position.x, y: f.mesh.position.y };
-        tl.span(0.04, BREAK + lag, (k) => {
-          crack.u.uCrack.value = easeOut(k);
-          f.u.uTint.value = 0.06 + 0.14 * Math.sin(k * 20) ** 2;
+        const home = { x: f.mesh.position.x, y: f.mesh.position.y, z: f.mesh.position.z, rx: f.mesh.rotation.x };
+        const a = act;
+        // where a battle recoil left it (the blow's recoil may still be writing these as this starts)
+        let from: { lean: number; oz: number } | null = null;
+        const B = BREAK + lag;
+        // 0..RECOIL: struck, it leans back white-hot; then cracks run over it and it starts
+        // coming apart (pieces part a hair, the light leaks through) until the burst at B
+        tl.span(0, B, (k) => {
+          const t = k * B;
+          const r = clamp01(t / RECOIL);
+          const c = clamp01((t - RECOIL) / (B - RECOIL));
+          const lean = t < RECOIL ? easeOut(r) * 0.3 : lerp(0.3, 0.14, easeInOut(c));
+          const back = t < RECOIL ? easeOut(r) * 0.25 : lerp(0.25, 0.12, easeInOut(c));
+          if (a && a.fig === f) {
+            from ??= { lean: a.lean, oz: a.oz };
+            a.lean = lerp(from.lean, lean, t < RECOIL ? easeOut(r) : 1);
+            a.oz = lerp(from.oz, -back, t < RECOIL ? easeOut(r) : 1);
+            this.place(a);
+          } else {
+            f.mesh.rotation.x = home.rx + lean;
+            f.mesh.position.set(home.x, home.y, home.z - back);
+          }
+          crack.u.uCrack.value = easeOut(c);
+          f.u.uTint.value = t < RECOIL ? 0.75 * easeOut(r) : lerp(0.75, 0.1, easeOut(c)) + 0.12 * Math.sin(c * 20) ** 2 * c;
+          f.u.uShatter.value = 0.045 * easeIn(c);
           // trembling: smooth noise, growing toward the break
-          f.mesh.position.x = home.x + noise(k * 25 + 3) * 0.03 * U * k;
-          f.mesh.position.y = home.y + noise(k * 25 + 9) * 0.02 * U * k;
+          f.mesh.position.x += noise(k * 25 + 3) * 0.03 * U * c;
+          f.mesh.position.y += noise(k * 25 + 9) * 0.02 * U * c;
         });
         tl.at(BREAK + lag, () => (crack.u.uOpacity.value = 0));
         this.breakAs(tl, f, prof.element, col, BREAK + lag, D, first);
@@ -2223,6 +2300,8 @@ export class Director {
       zap(0.2);
     });
     tl.commit(BREAK);
+    // the rest of the chain goes on once it has burst; the pieces fall under it
+    tl.handoff = BREAK + 0.3;
     tl.at(
       D,
       () => {
@@ -2300,7 +2379,7 @@ export class Director {
         // it dissolves from the edges into smoke
         tl.span(at, at + 0.55, (k) => {
           fig.u.uDark.value = clamp01(k * 2);
-          fig.u.uShatter.value = easeIn(k);
+          fig.u.uShatter.value = lerp(0.045, 1, easeIn(k));
           fig.u.uOpacity.value = 1 - easeIn(k);
         });
         tl.at(at, () => {
@@ -2403,7 +2482,8 @@ export class Director {
     this.bgTarget = 1;
     this.dimTarget = 0.9;
     this.focus.set(0.5, 0.5);
-    st.backdrop.u.uColor.value.set(0.35, 0.08, 0.55);
+    // (deep violet, not neon: the vortex and the motes bring the magenta)
+    st.backdrop.u.uColor.value.set(0.2, 0.05, 0.34);
     const purple = 0x9a3cff;
     const magenta = 0xff4fd8;
     const gold = 0xffc94a;
@@ -2442,8 +2522,8 @@ export class Director {
     const center = { x: 0, y: lerp(botY, topY, 0.42) };
     const vortex = tl.own(new Glow(4.2 * U, 4.2 * U, 'vortex', purple, magenta));
     vortex.mesh.position.set(center.x, center.y, -0.9);
-    tl.span(0.5, 1.3, (k) => (vortex.u.uOpacity.value = k * 0.9));
-    tl.span(D - 0.7, D - 0.15, (k) => (vortex.u.uOpacity.value = 0.9 * (1 - k)));
+    tl.span(0.5, 1.3, (k) => (vortex.u.uOpacity.value = k * 0.55));
+    tl.span(D - 0.7, D - 0.15, (k) => (vortex.u.uOpacity.value = 0.55 * (1 - k)));
     const ring = tl.own(new Ring(3.2 * U, purple, 666, { inner: 0.82, outer: 0.92, star: 7 }));
     ring.mesh.position.set(center.x, center.y, -0.8);
     ring.spinSpeed = -2.5;
@@ -2451,11 +2531,12 @@ export class Director {
     tl.span(0.5, 1.3, (k) => (ring.u.uOpacity.value = k * 0.5));
     tl.span(D - 0.7, D - 0.15, (k) => (ring.u.uOpacity.value = 0.5 * (1 - k)));
     tl.span(0.5, D - 0.8, (_k, dt) => {
-      const n = Math.floor((st.quality === 'full' ? 240 : 110) * dt + Math.random());
+      // (clamped: a few hundred additive magenta motes saturate the whole frame)
+      const n = Math.floor(Math.min(120, (st.quality === 'full' ? 130 : 70) * this.q) * dt + Math.random());
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const rr = (1.8 + Math.random() * 1.2) * U;
-        st.particles.emit({ x: center.x + Math.cos(a) * rr, y: center.y + Math.sin(a) * rr, life: 1.1, size: 0.12 * U, color: Math.random() < 0.6 ? purple : magenta, drag: 0.2, pull: { x: center.x, y: center.y, strength: 6 * U, swirl: 9 * U } });
+        st.particles.emit({ x: center.x + Math.cos(a) * rr, y: center.y + Math.sin(a) * rr, life: 1.1, size: 0.075 * U, color: Math.random() < 0.75 ? purple : magenta, drag: 0.2, pull: { x: center.x, y: center.y, strength: 6 * U, swirl: 9 * U } });
       }
     });
     // the loser's Life Points plate breaks apart
@@ -2533,8 +2614,8 @@ export class Director {
         fig.u.uShatter.value = clamp01((k - 0.55) * 2.2);
         coil(1, ang * 0.6);
         for (const l of links) l.u.uOpacity.value *= 1 - clamp01((k - 0.6) * 2.5);
-        const n = Math.floor(80 * dt + Math.random());
-        for (let i = 0; i < n; i++) st.particles.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, burst: 0.6 * U, life: 0.6, size: 0.1 * U, color: magenta, pull: { x: center.x, y: center.y, strength: 8 * U, swirl: 10 * U } });
+        const n = Math.floor(Math.min(45, 45 * this.q) * dt + Math.random());
+        for (let i = 0; i < n; i++) st.particles.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, burst: 0.6 * U, life: 0.6, size: 0.065 * U, color: i % 2 ? purple : magenta, pull: { x: center.x, y: center.y, strength: 8 * U, swirl: 10 * U } });
       });
     }
     // the winner's fighters step out of the way
@@ -2723,8 +2804,11 @@ function lunge(c: HitCtx, reach: number) {
   });
 }
 
+/** The spiral ribbons wound round a beam stay a light accent (bright, they read as a white squiggle). */
+const SPIRAL_OP = 0.5;
+
 /** A volumetric beam: soft outer glow, colored body, white-hot core, spiral ribbons, a muzzle flare. */
-function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3 } = {}) {
+function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number } = {}) {
   const { tl, U, A, T, col, s, travel } = c;
   const main = o.main ?? col.main;
   const light = o.light ?? col.light;
@@ -2733,18 +2817,20 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   const a = { x: A.x + off.x, y: A.y + off.y, z: A.z + off.z };
   const w = 0.11 * U * Math.pow(c.w, 0.85) * power * (o.widthMul ?? 1);
   const layers: [Ribbon, number, number][] = [
-    [tl.own(new Ribbon(24, main, 1)), 2.1, 0.32],
+    // (a wide, soft outer glow gives the beam its volume)
+    [tl.own(new Ribbon(24, main, 1)), 2.3, 0.45],
     [tl.own(new Ribbon(24, main, 1)), 1.3, 1],
     [tl.own(new Ribbon(24, light, 1)), 0.55, 0.8],
     [tl.own(new Ribbon(24, 0xffffff, 0)), 0.22, 0.85],
   ];
   const nSp = o.spirals ?? (c.w > 1.5 ? 3 : 2);
-  const spirals = Array.from({ length: nSp }, (_, i) => tl.own(new Ribbon(48, i % 2 ? accent : light, 1)));
-  const end = s + travel + 0.28;
+  const spirals = Array.from({ length: nSp }, (_, i) => tl.own(new Ribbon(80, i % 2 ? accent : light, 1)));
+  // (how long the full beam holds after it reaches T)
+  const end = s + travel + (o.hold ?? 0.28);
   const pts = [a, T];
   const len = Math.hypot(T.x - a.x, T.y - a.y);
   for (const [r] of layers) r.u.uHead.value = 0;
-  for (const r of spirals) r.u.uHead.value = 0;
+  for (const r of spirals) ((r.u.uHead.value = 0), (r.u.uOpacity.value = SPIRAL_OP));
   tl.span(s, end + 0.2, (k, dt) => {
     const t = (k * (end + 0.2 - s)) / 1;
     const pulse = 1 + 0.12 * Math.sin(t * 50);
@@ -2756,8 +2842,8 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
       const ph = (i / spirals.length) * Math.PI * 2 + t * 18;
       const turns = len / (0.9 * U);
       spirals[i].set(
-        Array.from({ length: 24 }, (_, j) => {
-          const u = j / 23;
+        Array.from({ length: 40 }, (_, j) => {
+          const u = j / 39;
           const ang = ph + u * turns * Math.PI * 2;
           const rr = w * 1.1 * (0.6 + 0.4 * Math.sin(u * 9 + t * 6));
           // perpendicular in screen plane: (-dy, dx)
@@ -2765,7 +2851,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
           const dy = (T.y - a.y) / (len || 1);
           return { x: lerp(a.x, T.x, u) - dy * Math.cos(ang) * rr, y: lerp(a.y, T.y, u) + dx * Math.cos(ang) * rr, z: lerp(a.z, T.z, u) + Math.sin(ang) * rr };
         }),
-        w * 0.22,
+        w * 0.14,
       );
     }
     void dt;
@@ -2777,7 +2863,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   });
   tl.span(end, end + 0.2, (k) => {
     for (const [r, , op] of layers) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = op * (1 - k)));
-    for (const r of spirals) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = 1 - k));
+    for (const r of spirals) ((r.u.uTail.value = easeIn(k)), (r.u.uOpacity.value = SPIRAL_OP * (1 - k)));
   });
   const ms = 0.9 * U * Math.sqrt(Math.min(2.4, c.w * power));
   const muzzle = tl.own(new Glow(ms, ms, 'flare', main, light));
@@ -3051,7 +3137,8 @@ const SIG_ATTACKS: Record<string, SigAttack> = {
   },
   'Blue-Eyes White Dragon': {
     style: 'beam',
-    width: 1.25,
+    // Burst Stream: a thick, volumetric beam (the base beam is ~0.3 U wide at tier 3; this is ~0.45 U)
+    width: 1.8,
     charge: 1.6,
     windup({ tl, st, U, M, t0, t1 }) {
       tl.span(t0, t1, (k, dt) => {
@@ -3059,7 +3146,8 @@ const SIG_ATTACKS: Record<string, SigAttack> = {
       });
     },
     travel(c) {
-      c.tl.at(c.s, () => (c.st.pulse('flash', 0.25), c.d['flash'](0x9fdcff, 0.15), c.st.shake(0.5)));
+      // (a light flash: the beam itself is the bright thing on screen)
+      c.tl.at(c.s, () => (c.st.pulse('flash', 0.12), c.d['flash'](0x9fdcff, 0.1), c.st.shake(0.5)));
     },
   },
   'Red-Eyes Black Dragon': {
@@ -3679,18 +3767,65 @@ const SPELL_PRESETS: Record<string, Preset> = {
     },
   },
   'Burst Stream of Destruction': {
-    dur: 0.7,
+    // a 0.35 s charge at the dragon's mouth, then one thick volumetric beam, a flare where it lands
+    dur: 1.15,
     accent: 0x9fdcff,
     scope: 'opp',
     play(c) {
       const { tl, U, t0, st } = c;
       const where = c.pts.length ? c.pts : rowPts(c, c.opp, 3);
       const src = { x: 0, y: c.own * 1.6, z: 1.6 };
-      where.forEach((p, i) => sweep(c, src, p, t0 + i * 0.06, 0.22, 0x2a8aff, 0xeaf6ff, 2.6));
-      for (const a of c.hits) strike(c, a, t0 + 0.24);
-      tl.at(t0, () => (swell(0.6), zap(0.6)));
-      tl.at(t0 + 0.24, () => (boom(0.8), st.shake(0.8), st.hitStop(0.06), st.pulse('chroma', 0.7), c.d['flash'](0x9fdcff, 0.3)));
-      void U;
+      // one beam onto the middle of what it strikes (wide enough to swallow them all)
+      const T = { x: where.reduce((s, p) => s + p.x, 0) / where.length, y: where.reduce((s, p) => s + p.y, 0) / where.length, z: where.reduce((s, p) => s + p.z, 0) / where.length };
+      const spread = Math.max(...where.map((p) => Math.abs(p.x - T.x)));
+      const CHARGE = 0.35;
+      const travel = 0.14;
+      const fire = t0 + CHARGE;
+      const hitT = fire + travel;
+      const r = rand(0xb5d);
+      // the charge: the mouth swells while light converges on it
+      const orb = tl.own(new Glow(2.2 * U, 2.2 * U, 'flare', 0x2a8aff, 0xeaf6ff));
+      orb.mesh.position.set(src.x, src.y, src.z + 0.1);
+      orb.u.uK.value = 0.6;
+      tl.span(t0, fire, (k, dt) => {
+        orb.u.uOpacity.value = 0.25 + 0.6 * easeIn(k);
+        orb.mesh.scale.setScalar(lerp(0.25, 1, easeIn(k)) * (1 + 0.06 * Math.sin(k * 40)));
+        for (let i = 0; i < rate(160 * c.d['q'], dt); i++) {
+          const a = r() * Math.PI * 2;
+          const rr = (1 + r() * 0.8) * U;
+          st.particles.emit({ x: src.x + Math.cos(a) * rr, y: src.y + Math.sin(a) * rr * 0.7, z: src.z, life: 0.3, size: 0.07 * U, color: i % 2 ? 0x9fdcff : 0xffffff, drag: 0, pull: { x: src.x, y: src.y, strength: 26 * U, swirl: 4 * U } });
+        }
+      });
+      tl.span(fire, fire + 0.5, (k) => (orb.u.uOpacity.value = 0.85 * (1 - easeOut(k))));
+      tl.at(t0, () => (swell(0.6), st.shake(0.15)));
+      tl.at(fire, () => (zap(0.7), st.pulse('flash', 0.2), st.shake(0.45)));
+      // the beam itself: the attack beam's layers (glow, body, white core, spirals), ~2.5x wide
+      const hc: HitCtx = { d: c.d, st, tl, U, A: src, T, col: { main: 0x2a8aff, accent: 0x9fdcff, light: 0xeaf6ff }, prof: profileFor(undefined, 'Burst Stream of Destruction'), s: fire, travel, att: null, q: c.d['q'], w: 1.6 };
+      beamFx(hc, 1, { spirals: 2, widthMul: 2.5 * (1 + Math.min(1, spread / (2 * U)) * 0.4), hold: 0.55 });
+      // the push-in rides the blast
+      tl.at(fire, () => st.punch(4, 0.35));
+      // impact: a wide flare where it lands, the struck light up and break
+      const flare = tl.own(new Glow(3.4 * U, 3.4 * U, 'flare', 0x2a8aff, 0xffffff));
+      flare.mesh.position.set(T.x, T.y, T.z + 0.4);
+      flare.u.uK.value = 0.5;
+      flare.u.uOpacity.value = 0;
+      tl.span(hitT, hitT + 0.55, (k) => {
+        flare.u.uOpacity.value = 0.85 * (k < 0.1 ? k / 0.1 : 1 - easeOut((k - 0.1) / 0.9));
+        flare.mesh.scale.setScalar(lerp(0.5, 1.25, easeOut(k)));
+      });
+      const shock = tl.own(new Glow(3.6 * U, 3.6 * U, 'shock', 0x2a8aff, 0xbfefff));
+      shock.mesh.position.set(T.x, T.y - 0.3 * U, T.z);
+      shock.mesh.rotation.x = -1.2;
+      tl.span(hitT, hitT + 0.5, (k) => ((shock.u.uK.value = easeOut(k)), (shock.u.uOpacity.value = 1 - k)));
+      for (const a of c.hits) strike(c, a, hitT);
+      tl.at(hitT, () => {
+        boom(0.8);
+        st.shake(0.8);
+        st.hitStop(0.06);
+        st.pulse('chroma', 0.6);
+        c.d['flash'](0x9fdcff, 0.25);
+        st.particles.emit({ x: T.x, y: T.y, z: T.z + 0.3, burst: 5 * U, life: 0.7, size: 0.09 * U, color: 0xbfefff, drag: 2.5 }, Math.round(90 * c.d['q']));
+      });
     },
   },
   'Acid Trap Hole': trapHole(0x3aff6a, 0xd9ffb0),
