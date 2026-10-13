@@ -320,6 +320,13 @@ export interface EffectDef {
   onAttackDeclaredInGrave?(e: Engine, card: Card, owner: Pid, attacker: FieldCard, target: FieldCard | null): Step;
   /** audit-08: an active Spell/Trap: the face-up monster `m` does not apply its End Phase effects (Neo Space). */
   skipsEndPhase?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard): boolean;
+  // ---------- audit-06 hooks ----------
+  /** audit-06: this face-up card keeps Necrovalley-style GY locks (locksGrave) off `card` (Gravekeeper's Chief: "Your GY is unaffected by Necrovalley"). */
+  freesGrave?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** audit-06: battle damage this face-up monster inflicts to the opponent is treated as effect damage (Gravekeeper's Vassal). */
+  battleAsEffect?: boolean;
+  /** audit-06: while this monster is face-up, the effects of all Trap Cards on the field are negated (Jinzo - Lord). */
+  negatesTraps?: boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';

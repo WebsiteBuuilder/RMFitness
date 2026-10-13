@@ -316,6 +316,8 @@ export class Engine {
     if (!this.speed) return false;
     const fx = this.state.fx;
     if (this.nameLocked(card.name)) return true;
+    // audit-06: "for the rest of this turn, you cannot activate cards, or the effects of cards, with that name" (Generation Next): fx.turnNameLocks.
+    if (((fx.turnNameLocks ?? []) as { p: Pid; name: string; turn: number }[]).some((x) => x.p === player && x.name === card.name && x.turn === this.state.turn)) return true;
     if (((card as FieldCard).tags?.noActTurn ?? -1) === this.state.turn && this.find(card.uid)?.loc.zone === 'sz') return true;
     const kind = this.info(card.name).kind;
     if (kind === 'trap' && (fx.noTrapTurn as number[] | undefined)?.[player] === this.state.turn) return true;
@@ -599,6 +601,7 @@ export class Engine {
 
   /** Royal Decree: other Trap effects are negated. */
   trapsNegated(except?: string): boolean {
+    if (this.speed && [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.negatesTraps)) return true; // audit-06: Jinzo - Lord
     return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing');
   }
 
@@ -1309,6 +1312,8 @@ export class Engine {
     if (!this.speed) return false;
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'gy') return false;
+    // audit-06: an effect unaffected by Necrovalley is resolving (fx.graveFree: Gravekeeper's Stele, Ambusher), or a face-up card frees this GY (Gravekeeper's Chief).
+    if (this.state.fx.graveFree || this.liveCards().some((x) => x.eff.freesGrave?.(this, x.c, x.p, f.card) === true)) return false;
     const lock = this.liveCards().find((x) => x.eff.locksGrave?.(this, x.c, x.p, f.card) === true);
     if (lock) this.log(null, `${lock.c.name}: ${f.card.name} cannot leave the Graveyard`);
     return !!lock;
@@ -1999,6 +2004,7 @@ export class Engine {
     const fc = this.toField(card, faceUp ? pos : 'def', faceUp);
     ps.mz[zone] = fc;
     ps.normalSummoned = true;
+    if (this.speed && faceUp && need > 0) (fc.tags ??= {}).tribS = need; // audit-06: it was Tribute Summoned (Granmarg, Gravekeeper's Chief, Infestation Wave)
     if (usesExtra) (this.state.fx.extraTribute as number[])[player] = -1;
     yield* this.chainEnergy(player);
     this.event(faceUp ? 'summon' : 'set', { uid, player });
@@ -2019,6 +2025,39 @@ export class Engine {
             if (h && this.fieldCard(uid) && this.state.winner === null) yield* this.as(q, h(this, w, q, fc, player));
           }
     }
+  }
+
+  /**
+   * audit-06: a Tribute Summon with Tributes a card's own procedure chose ("You can Tribute 3 monsters to Tribute Summon (but not Set)
+   * this card": Gilford the Lightning, Gravekeeper's Oracle). Uses the Normal Summon; the Tributed monsters (name, Level) are kept
+   * in fx.tributedFor[uid] and the monster gets tags.tribS. Returns false when it could not be Summoned.
+   */
+  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk'): Generator<Prompt, boolean, Choice> {
+    const f = this.find(uid);
+    if (!f || f.loc.zone !== 'hand' || this.summonBlocked(player, f.card, 'normal', 'hand')) return false;
+    const ps = this.player(player);
+    const used = tributes.map((t) => this.fieldCard(t)).filter((m): m is FieldCard => !!m);
+    ((this.state.fx.tributedFor ??= {}) as Record<number, { name: string; level: number }[]>)[uid] = used.map((m) => ({ name: m.name, level: this.info(m.name).level ?? 0 }));
+    const self = this;
+    yield* this.together((function* (): Step {
+      for (const m of used) {
+        yield* self.sendToGrave(m.uid, 'tribute');
+        self.log(player, `${ps.name} Tributed ${m.name}`);
+      }
+    })());
+    const zone = this.freeMonsterZone(player);
+    if (zone < 0 || this.find(uid)?.loc.zone !== 'hand') return false;
+    const fc = this.toField(this.detach(uid)!, pos, true);
+    fc.tags = { tribS: used.length };
+    ps.mz[zone] = fc;
+    ps.normalSummoned = true;
+    this.event('summon', { uid, player });
+    this.log(player, `${ps.name} Tribute Summoned ${fc.name}`);
+    yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
+    const eff = this.effectOn(fc);
+    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
+    if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
+    return true;
   }
 
   private *flipSummon(player: Pid, uid: number): Step {
@@ -2687,6 +2726,7 @@ export class Engine {
     if (m.pos !== 'atk' && !eff?.attackInDefense) return false;
     if (eff?.cannotAttack?.(this, m, player)) return false;
     if ((m.tags?.noAttackTurn ?? -1) === s.turn) return false;
+    if (this.speed && (m.tags?.noAttackTurn2 ?? -1) === s.turn) return false; // audit-06: a second turn it cannot attack (Harpie Lady 3)
     // Speed Duel: "you cannot declare an attack / conduct your Battle Phase this turn" (Soul Exchange, Destiny HERO - Doom Lord).
     if (this.speed && ((s.fx.noDeclare ?? []) as number[])[player] === s.turn) return false;
     const ill = m.tags?.illusionBy;
@@ -2833,6 +2873,8 @@ export class Engine {
   /** Battle damage, with Relinquished passing it back to the opponent. */
   private battleDamage(p: Pid, amount: number, a: FieldCard, t: FieldCard | null): void {
     if (amount <= 0) return;
+    // audit-06: battle damage a monster inflicts is treated as effect damage (Gravekeeper's Vassal): battle-damage protection does not apply.
+    if (this.speed && [a, t].some((m) => m && m.faceUp && this.controller(m.uid) === other(p) && this.effectOn(m)?.battleAsEffect)) return this.damage(p, amount);
     for (const m of [a, t]) {
       if (!m || this.controller(m.uid) !== p) continue;
       // Speed Duel: the damage goes to the opponent instead (Magical Reflect Slime).
@@ -2954,7 +2996,8 @@ export class Engine {
         const pierce = aEff?.piercing;
         const granted = this.liveCards().some((x) => x.eff.grantsPiercing?.(this, x.c, x.p, attacker) === true);
         const tagged = this.speed && !!attacker.tags?.pierceBattle && attacker.tags.pierceBattle === this.state.fx.battleNo;
-        if ((pierce && (typeof pierce !== 'function' || pierce(this, attacker))) || granted || tagged) {
+        const turnPierce = this.speed && attacker.tags?.pierceTurn === this.state.turn; // audit-06: piercing until the end of the turn (H - Heated Heart)
+        if ((pierce && (typeof pierce !== 'function' || pierce(this, attacker))) || granted || tagged || turnPierce) {
           this.log(player, `${attacker.name} pierces the defense`);
           const lp = this.player(opp).lp;
           this.battleDamage(opp, atk - tDef, attacker, target);
