@@ -7,6 +7,7 @@ import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, ru
 import { extraProcFor, getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
 import { getSkill } from './skills';
 import { noteLevelEvent } from '../level/leveling';
+import { TAG_LP, swapIn, type TagTeam } from './tag';
 
 export type Choice = { picks: number[] } | 'cancel' | 'pass' | true | false;
 export type Step = Generator<Prompt, void, Choice>;
@@ -1636,15 +1637,42 @@ export class Engine {
         ps.skillUses = 0;
       }
     }
+    if (a.tag) this.startTag(a.tag);
     s.started = true;
     s.turn = 1;
     s.turnPlayer = a.first;
     s.phase = 'DP';
     this.log(null, `Duel start! ${s.players[a.first].name} goes first.`);
     for (const p of [0, 1] as Pid[]) this.draw(p, Math.max(0, rules.openingHand + (a.setup?.[p]?.openingHand ?? 0)), true);
+    if (s.tag) {
+      // Tag Duel: the second duelists draw their own opening hands from their own Decks.
+      s.tag.teams[a.first].played = true;
+      for (const p of [0, 1] as Pid[]) {
+        swapIn(this.player(p), s.tag.teams[p]);
+        this.draw(p, rules.openingHand, true);
+        swapIn(this.player(p), s.tag.teams[p]);
+      }
+    }
     if (rules.firstPlayerDraws) this.draw(a.first, 1, true);
     for (const p of [0, 1] as Pid[]) if (a.setup?.[p]) this.applySetup(p, a.setup[p]!);
     this.run(this.duelOpening());
+  }
+
+  /** Tag Duel: the second duelist of each team waits on the bench with their own Deck, Extra Deck and Skill. */
+  private startTag(t: NonNullable<Extract<Action, { type: 'START' }>['tag']>) {
+    const teams = ([0, 1] as Pid[]).map((p): TagTeam => {
+      const ps = this.player(p);
+      ps.lp = t.lp ?? TAG_LP;
+      const skill = t.skills?.[p] ?? null;
+      const ok = !!(skill && getSkill(skill));
+      return {
+        names: [ps.name, t.names[p]],
+        active: 0,
+        played: false,
+        bench: { name: t.names[p], deck: this.shuffle(t.decks[p].map((n) => this.newCard(n, p))), hand: [], fusion: t.fusions[p].map((n) => this.newCard(n, p)), skill: ok ? skill : null, ...(ok ? { skillRevealed: false, skillUses: 0 } : {}) },
+      };
+    });
+    this.state.tag = { teams: [teams[0], teams[1]] };
   }
 
   /** A Duel Condition: different LP, cards already in play, extra cards in hand. */
@@ -1680,6 +1708,20 @@ export class Engine {
         ps.skillRevealed = true;
         this.log(p, `${ps.name}'s Skill: ${ps.skill}`);
         yield* this.as(p, sk.startOfDuel(this, p));
+      }
+    }
+    // Tag Duel: the benched duelists' start-of-Duel Skills, each with their own Deck and hand swapped in.
+    const tag = this.state.tag;
+    if (tag) {
+      for (const p of [this.state.turnPlayer, other(this.state.turnPlayer)]) {
+        const sk = tag.teams[p].bench.skill ? getSkill(tag.teams[p].bench.skill!) : undefined;
+        if (!sk?.startOfDuel || this.state.winner !== null) continue;
+        swapIn(this.player(p), tag.teams[p]);
+        const ps = this.player(p);
+        ps.skillRevealed = true;
+        this.log(p, `${ps.name}'s Skill: ${ps.skill}`);
+        yield* this.as(p, sk.startOfDuel(this, p));
+        swapIn(this.player(p), tag.teams[p]);
       }
     }
     if (this.state.winner === null) yield* this.enterPhase('SP');
@@ -1958,6 +2000,12 @@ export class Engine {
       this.log(s.turnPlayer, `${this.player(s.turnPlayer).name}'s turn is skipped`);
       s.turn += 1;
       s.turnPlayer = prev;
+    }
+    // Tag Duel: the team's other duelist steps in for this turn (a team's first turn keeps its first duelist).
+    if (s.tag) {
+      const team = s.tag.teams[s.turnPlayer];
+      if (team.played) swapIn(this.player(s.turnPlayer), team);
+      team.played = true;
     }
     s.phase = 'DP';
     this.log(s.turnPlayer, `Turn ${s.turn}: ${this.player(s.turnPlayer).name}`);

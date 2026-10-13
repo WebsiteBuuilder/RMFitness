@@ -1,6 +1,7 @@
 // Eternal Duelist Soul remake: core types for the enforced duel engine.
 // The engine is deterministic: both players replay the same action log with
 // the same seed and arrive at the same state.
+import type { TagStart, TagState } from './tag';
 
 export type Pid = 0 | 1;
 export type Pos = 'atk' | 'def';
@@ -202,6 +203,8 @@ export interface DuelState {
   fx: Record<string, any>;
   /** the rule set (missing in duels recorded before Speed Duel existed: EDS) */
   rules?: Rules;
+  /** a Tag Duel (2v2): each side's two duelists and the one on the bench */
+  tag?: TagState;
 }
 
 /**
@@ -225,7 +228,7 @@ export interface SeatSetup {
 
 /** What a player may ask the engine to do. */
 export type Action =
-  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]]; mode?: GameMode; skills?: [string | null, string | null]; setup?: [SeatSetup | null, SeatSetup | null] }
+  | { type: 'START'; first: Pid; seed: number; names: [string, string]; decks: [string[], string[]]; fusions: [string[], string[]]; mode?: GameMode; skills?: [string | null, string | null]; setup?: [SeatSetup | null, SeatSetup | null]; tag?: TagStart }
   | { type: 'SUMMON'; player: Pid; uid: number; zone: number; pos: Pos; faceUp: boolean }
   | { type: 'SET_ST'; player: Pid; uid: number; zone: number }
   | { type: 'ACTIVATE'; player: Pid; uid: number; zone?: number }
