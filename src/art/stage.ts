@@ -33,6 +33,9 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Points,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Object3D,
   RedFormat,
   Scene,
   ShaderMaterial,
@@ -99,6 +102,18 @@ const NOISE_GLSL = /* glsl */ `
 float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f);
   return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y); }
+`;
+/** Value noise periodic in x with period `per` (an integer): wraps around a circle with no seam. */
+const PNOISE_GLSL = /* glsl */ `
+float pnoise(vec2 p, float per){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+  float i0 = mod(i.x, per); float i1 = mod(i.x + 1.0, per);
+  return mix(mix(hash12(vec2(i0, i.y)), hash12(vec2(i1, i.y)), u.x), mix(hash12(vec2(i0, i.y + 1.0)), hash12(vec2(i1, i.y + 1.0)), u.x), u.y); }
+vec2 hash22(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+/** distance to the nearest Voronoi cell edge (F2 - F1): crack lines */
+float vedge(vec2 x){ vec2 n = floor(x); vec2 f = fract(x); float d1 = 8.0; float d2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec2 g = vec2(float(i), float(j)); vec2 r = g + hash22(n + g) - f; float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
+  return sqrt(d2) - sqrt(d1); }
 `;
 
 // ---------------------------------------------------------------- Figure
@@ -899,6 +914,7 @@ uniform float uEye;
 uniform float uTime;
 varying vec2 vUv;
 ${NOISE_GLSL}
+${PNOISE_GLSL}
 #define PI 3.14159265
 float line(vec2 p, vec2 a, vec2 b, float w){ vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return 1.0 - smoothstep(0.0, w, length(pa - ba * h)); }
 void main(){
@@ -910,7 +926,7 @@ void main(){
   float innerLine = 1.0 - smoothstep(0.0, 0.02, abs(r - uInner));
   // runes: a seeded on/off pattern of blocks around the band
   float segs = 24.0 + floor(hash12(vec2(uGlyph, 1.0)) * 24.0);
-  float seg = floor((ang / (2.0 * PI) + 0.5) * segs);
+  float seg = mod(floor((ang / (2.0 * PI) + 0.5) * segs), segs);
   float on = step(0.45, hash12(vec2(seg, uGlyph)));
   float rr = (r - uInner) / max(0.001, uOuter - uInner);
   float glyph = on * step(0.3, rr) * step(rr, 0.7) * step(0.15, fract((ang / (2.0 * PI) + 0.5) * segs)) * band;
@@ -934,7 +950,7 @@ void main(){
     float lidLine = 1.0 - smoothstep(0.0, 0.06, abs(length(q) - 1.0));
     float iris = 1.0 - smoothstep(0.28, 0.31, length(p / vec2(1.0, 1.0)));
     float pupil = 1.0 - smoothstep(0.08, 0.11, length(p / vec2(0.45, 1.0)));
-    float swirl = vnoise(vec2(ang * 3.0, r * 6.0 - uTime * 2.0));
+    float swirl = pnoise(vec2((ang / (2.0 * PI) + 0.5) * 18.0, r * 6.0 - uTime * 2.0), 18.0);
     g += lidLine * 1.4 + lid * (iris * (0.8 + swirl * 0.6) - pupil * 1.5) + lid * 0.1;
   }
   ${GLOW_OUT.replace('OUT', 'uColor * g * uOpacity')}
@@ -980,11 +996,13 @@ uniform float uTime;
 uniform float uVortex;
 varying vec2 vUv;
 ${NOISE_GLSL}
+${PNOISE_GLSL}
 void main(){
   vec2 p = vUv * 2.0 - 1.0;
   float r = length(p);
-  float a = atan(p.y, p.x);
-  float v = vnoise(vec2(a * 2.0 + r * 4.0 * uVortex - uTime * 1.5 * uVortex, r * 3.0 - uTime * 0.5));
+  // the angle wraps seamlessly: periodic noise around the circle (no atan seam)
+  float a = atan(p.y, p.x) / 6.2831853 + 0.5;
+  float v = pnoise(vec2(a * 12.0 + r * 4.0 * uVortex - uTime * 1.5 * uVortex, r * 3.0 - uTime * 0.5), 12.0);
   vec3 c = uColor * (0.25 + 0.75 * v * uVortex) * (1.0 - r * 0.6);
   float al = uOpacity * mix(0.72, 0.95, uVortex);
   gl_FragColor = vec4(c * al, al);
@@ -1011,6 +1029,576 @@ export class Backdrop implements Fx {
     this.mesh.geometry.dispose();
     this.mat.dispose();
   }
+}
+
+// ---------------------------------------------------------------- cinematic effects
+// Veil (screen-space dim, vignette, colored flash, speed lines, glass crack),
+// Glow (light shafts, flares, barrier dome, shockwave, vortex, ankh, sword, star),
+// Crack (glowing fractures over a figure, riding its own geometry), Shards (one
+// instanced mesh of pieces cut from a figure's art + matte) and CutIn (the slanted
+// Master Duel-style summon band). One pooled material kind each.
+const SCREEN_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+const VEIL_FRAG = /* glsl */ `
+uniform float uDim;
+uniform float uFlash;
+uniform vec3 uFlashColor;
+uniform float uCrack;
+uniform float uCrackOp;
+uniform vec2 uCrackAt;
+uniform float uRed;
+uniform float uSpeed;
+uniform vec2 uFocus;
+uniform float uAspect;
+uniform float uTime;
+varying vec2 vUv;
+${NOISE_GLSL}
+${PNOISE_GLSL}
+void main(){
+  vec2 asp = vec2(uAspect, 1.0);
+  vec2 p = (vUv - uFocus) * asp;
+  float r = length(p);
+  // dim: a pool of light around the subject, darker toward the edges
+  float vig = smoothstep(0.1, 0.75, length((vUv - 0.5) * vec2(max(uAspect, 0.7), 1.0)) * 1.25 + r * 0.35);
+  float a = uDim * mix(0.7, 0.96, vig);
+  vec3 L = vec3(0.0);
+  if (uSpeed > 0.0) {
+    float ang = atan(p.y, p.x) / 6.2831853 + 0.5;
+    float s = pnoise(vec2(ang * 120.0, r * 2.5 - uTime * 7.0), 120.0);
+    float line = smoothstep(0.7, 0.95, s) * smoothstep(0.14, 0.55, r);
+    L += vec3(1.0) * line * uSpeed * 0.6;
+  }
+  if (uRed > 0.0) {
+    float e = smoothstep(0.35, 1.0, length((vUv - 0.5) * 2.0));
+    L += vec3(1.0, 0.1, 0.06) * e * uRed * 0.85;
+    a = max(a, e * uRed * 0.5);
+  }
+  if (uCrack > 0.0) {
+    vec2 q = (vUv - uCrackAt) * asp;
+    float d = length(q);
+    float m = 1.0 - smoothstep(uCrack * 0.55, uCrack * 0.75, d);
+    float ang = atan(q.y, q.x) / 6.2831853 + 0.5;
+    float jit = (pnoise(vec2(ang * 13.0, d * 9.0), 13.0) - 0.5) * 0.7;
+    float rl = abs(fract(ang * 13.0 + jit) - 0.5);
+    float radial = 1.0 - smoothstep(0.0, 0.006 / max(d, 0.03) + 0.004, rl);
+    float cells = 1.0 - smoothstep(0.0, 0.035, vedge(q * (5.0 / (0.25 + d * 1.5)) + 3.7));
+    float line = max(radial, cells * (1.0 - smoothstep(0.05, 0.35, d)) * 0.9 + cells * 0.35);
+    L += vec3(0.92, 0.96, 1.0) * line * m * uCrackOp;
+    a = max(a, line * m * 0.4 * uCrackOp);
+  }
+  L += uFlashColor * uFlash * (1.0 - 0.35 * min(r, 1.0));
+  L = min(L, vec3(1.0));
+  gl_FragColor = vec4(L, clamp(max(a, max(L.r, max(L.g, L.b))), 0.0, 1.0));
+}`;
+
+/** A full-screen layer: behind (the dim) or in front (flash, crack, speed lines). Persistent, driven by the director. */
+export class Veil implements Fx {
+  mesh: Mesh;
+  mat: ShaderMaterial;
+  constructor(front: boolean) {
+    this.mat = material('veil', {});
+    this.mesh = new Mesh(new PlaneGeometry(2, 2), this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = front ? 60 : -20;
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  /** true when it draws nothing (and can be hidden) */
+  get idle() {
+    const u = this.u;
+    return u.uDim.value < 0.003 && u.uFlash.value < 0.003 && (u.uCrack.value < 0.003 || u.uCrackOp.value < 0.003) && u.uRed.value < 0.003 && u.uSpeed.value < 0.003;
+  }
+  update(dt: number) {
+    this.u.uTime.value += dt;
+    this.mesh.visible = !this.idle;
+    return true;
+  }
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mat.dispose();
+  }
+}
+
+const GLOW_FRAG = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uColor2;
+uniform float uOpacity;
+uniform float uTime;
+uniform float uMode;
+uniform float uK;
+uniform float uSeed;
+varying vec2 vUv;
+${NOISE_GLSL}
+${PNOISE_GLSL}
+float box(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+void main(){
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  vec3 c = vec3(0.0);
+  if (uMode < 0.5) {
+    // light shaft: soft vertical beam, brightest low, flickering upward
+    float core = exp(-p.x * p.x * 7.0);
+    float fy = smoothstep(-1.0, -0.6, p.y) * (1.0 - smoothstep(0.0, 1.0, p.y));
+    float n = 0.55 + 0.7 * vnoise(vec2(p.x * 2.5 + uSeed, p.y * 1.5 - uTime * 1.2));
+    c = mix(uColor, vec3(1.0), core * core * 0.35) * core * fy * n * 0.75;
+  } else if (uMode < 1.5) {
+    // flare: hot core, halo, rays and a horizontal streak
+    float core = exp(-r * r * 38.0);
+    float halo = exp(-r * r * 5.0) * 0.5;
+    float rays = pow(0.5 + 0.5 * sin(atan(p.y, p.x) * 7.0 + uSeed + uTime * 0.7), 10.0) * exp(-r * 3.2) * 0.5;
+    float streak = exp(-abs(p.y) * 34.0) * exp(-abs(p.x) * 1.6) * uK;
+    c = vec3(1.0) * core * 1.2 + uColor * (halo + rays) + mix(uColor, vec3(1.0), 0.5) * streak;
+  } else if (uMode < 2.5) {
+    // barrier dome: bright rim, lattice, a ripple running out
+    float inside = 1.0 - smoothstep(0.96, 1.0, r);
+    float lat = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float a = float(i) * 2.0943951 + 0.3;
+      float g = abs(fract(dot(p, vec2(cos(a), sin(a))) * 6.0) - 0.5);
+      lat = max(lat, 1.0 - smoothstep(0.0, 0.05, g));
+    }
+    float fres = pow(r, 3.0);
+    float ripple = exp(-pow((r - uK) * 9.0, 2.0));
+    c = (uColor * (fres * 0.9 + lat * 0.22 * (0.25 + fres) + 0.06) + mix(uColor, vec3(1.0), 0.6) * ripple * 0.9) * inside;
+    c += vec3(1.0) * exp(-pow((r - 0.97) * 40.0, 2.0)) * 0.7;
+  } else if (uMode < 3.5) {
+    // shockwave: a soft ring at radius uK, breaking up as it spreads
+    float w = 0.06 + 0.14 * uK;
+    float ring = exp(-pow((r - uK * 0.9) / w, 2.0));
+    float n = 0.65 + 0.6 * pnoise(vec2((atan(p.y, p.x) / 6.2831853 + 0.5) * 18.0, r * 4.0 - uTime * 3.0), 18.0);
+    c = mix(uColor, vec3(1.0), ring * 0.45) * ring * n * (1.0 - uK * 0.7);
+  } else if (uMode < 4.5) {
+    // vortex (Dark Hole): spiral arms around a black eye
+    float a01 = atan(p.y, p.x) / 6.2831853 + 0.5;
+    float sw = pnoise(vec2(a01 * 7.0 + log(r + 0.04) * 2.6 - uTime * 0.9, r * 2.0 - uTime * 0.4), 7.0);
+    float arms = smoothstep(0.4, 0.85, sw);
+    float hole = smoothstep(0.1, 0.32, r);
+    float edge = 1.0 - smoothstep(0.65, 1.0, r);
+    c = (uColor * arms * 1.3 + uColor2 * 0.25) * edge * hole + uColor2 * exp(-pow((r - 0.2) * 16.0, 2.0)) * 1.4;
+  } else if (uMode < 5.5) {
+    // ankh (Monster Reborn)
+    float d = min(box(p - vec2(0.0, -0.38), vec2(0.085, 0.56)), box(p - vec2(0.0, 0.17), vec2(0.5, 0.075)));
+    d = min(d, (abs(length((p - vec2(0.0, 0.56)) / vec2(0.28, 0.36)) - 1.0) - 0.26) * 0.3);
+    float fill = 1.0 - smoothstep(0.0, 0.02, d);
+    c = mix(uColor, vec3(1.0), 0.65) * fill + uColor * exp(-max(d, 0.0) * 12.0) * 0.75;
+  } else if (uMode < 6.5) {
+    // sword of light, point down (Swords of Revealing Light)
+    float taper = clamp((p.y + 0.95) / 0.35, 0.0, 1.0);
+    float blade = max(abs(p.x) - 0.1 * taper, abs(p.y + 0.2) - 0.75);
+    float d = min(blade, box(p - vec2(0.0, 0.6), vec2(0.36, 0.05)));
+    d = min(d, box(p - vec2(0.0, 0.78), vec2(0.05, 0.14)));
+    d = min(d, length(p - vec2(0.0, 0.95)) - 0.06);
+    float fill = 1.0 - smoothstep(0.0, 0.02, d);
+    c = mix(uColor, vec3(1.0), 0.7) * fill + uColor * exp(-max(d, 0.0) * 10.0) * 0.8;
+  } else {
+    // four-point star (sparkles, greed)
+    float star = exp(-abs(p.x * p.y) * 90.0) * exp(-r * 2.2) + exp(-r * r * 28.0);
+    c = mix(uColor, vec3(1.0), 0.5) * star;
+  }
+  ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
+}`;
+
+export type GlowMode = 'shaft' | 'flare' | 'dome' | 'shock' | 'vortex' | 'ankh' | 'sword' | 'star';
+const GLOW_MODES: Record<GlowMode, number> = { shaft: 0, flare: 1, dome: 2, shock: 3, vortex: 4, ankh: 5, sword: 6, star: 7 };
+
+/** An additive quad drawn by a procedural shape (see GlowMode). */
+export class Glow implements Fx {
+  mesh: Mesh;
+  mat: ShaderMaterial;
+  alive = true;
+  constructor(w: number, h: number, mode: GlowMode, color: number, color2 = color) {
+    this.mat = material('glow', { uColor: rgb(color), uColor2: rgb(color2), uMode: GLOW_MODES[mode], uSeed: Math.random() * 10, uOpacity: 0 });
+    this.mesh = new Mesh(new PlaneGeometry(w, h), this.mat);
+    this.mesh.renderOrder = mode === 'shaft' || mode === 'vortex' ? -5 : 7;
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  update(dt: number) {
+    this.u.uTime.value += dt;
+    return this.alive;
+  }
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mat.dispose();
+  }
+}
+
+const CRACK_VERT = /* glsl */ `
+uniform sampler2D uDepth;
+uniform float uDepthAmt;
+uniform float uTime;
+uniform float uMatte;
+uniform float uGrid;
+varying vec2 vUv;
+varying float vD;
+float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+void main(){
+  vUv = uv;
+  float d = rel(uv);
+  vD = d;
+  // the same plateau as the figure's own vertex shader, so the cracks sit on its surface
+  if (uMatte > 0.5) {
+    float g = uGrid;
+    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
+    d = max(d, m * 0.9);
+  }
+  vec3 p = position;
+  p.z += d * uDepthAmt + 0.004;
+  p.z += sin(uTime * 2.0 + p.y * 3.0) * 0.015 * d;
+  p.x += sin(uTime * 1.3 + p.y * 2.0) * 0.01 * d;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}`;
+const CRACK_FRAG = /* glsl */ `
+uniform sampler2D uDepth;
+uniform float uMatte;
+uniform float uCrack;
+uniform float uOpacity;
+uniform float uSeed;
+uniform vec2 uOrigin;
+uniform vec3 uColor;
+varying vec2 vUv;
+varying float vD;
+${NOISE_GLSL}
+${PNOISE_GLSL}
+void main(){
+  float subj = mix(smoothstep(0.22, 0.5, vD), smoothstep(0.3, 0.7, texture2D(uDepth, vUv).a), uMatte);
+  float d = length(vUv - uOrigin);
+  float m = 1.0 - smoothstep(uCrack * 1.25 - 0.12, uCrack * 1.25, d);
+  float e = vedge(vUv * 6.0 + uSeed);
+  float e2 = vedge(vUv * 14.0 + uSeed * 1.7);
+  float line = (1.0 - smoothstep(0.0, 0.045, e)) + (1.0 - smoothstep(0.0, 0.03, e2)) * 0.6 * smoothstep(0.35, 1.0, uCrack);
+  vec3 c = (mix(uColor, vec3(1.0), 0.55) * line * 1.3 + uColor * exp(-e * 9.0) * 0.4) * m * subj;
+  c += uColor * subj * uCrack * 0.18;
+  ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
+}`;
+
+type FigureLike = { mesh: Mesh; u: Record<string, { value: any }> };
+
+/** Glowing fractures spreading over a figure (a child of its mesh, sharing its geometry). */
+export class Crack implements Fx {
+  mesh: Mesh;
+  mat: ShaderMaterial;
+  alive = true;
+  constructor(
+    private fig: FigureLike,
+    color: number,
+    origin = { u: 0.5, v: 0.55 },
+  ) {
+    const f = fig.u;
+    this.mat = material('crack', { uDepth: f.uDepth.value, uDepthAmt: f.uDepthAmt.value, uMatte: f.uMatte.value, uGrid: f.uGrid?.value ?? 0.02, uColor: rgb(color), uSeed: Math.random() * 50, uOrigin: new Vector2(origin.u, origin.v) });
+    this.mesh = new Mesh(fig.mesh.geometry, this.mat);
+    this.mesh.renderOrder = 9;
+    this.mesh.frustumCulled = false;
+    fig.mesh.add(this.mesh);
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  update() {
+    this.u.uTime.value = this.fig.u.uTime.value;
+    this.u.uDepthAmt.value = this.fig.u.uDepthAmt.value;
+    return this.alive;
+  }
+  dispose() {
+    // the geometry belongs to the figure
+    this.mesh.removeFromParent();
+    this.mat.dispose();
+  }
+}
+
+const SHARD_VERT = /* glsl */ `
+attribute vec4 aRect;
+attribute vec4 aSeed;
+varying vec2 vUv;
+varying vec2 vL;
+varying vec4 vSeed;
+void main(){
+  vL = uv;
+  vUv = aRect.xy + uv * aRect.zw;
+  vSeed = aSeed;
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+}`;
+const SHARD_FRAG = /* glsl */ `
+uniform sampler2D uArt;
+uniform sampler2D uDepth;
+uniform float uMatte;
+uniform float uOpacity;
+uniform float uHeat;
+uniform vec3 uColor;
+varying vec2 vUv;
+varying vec2 vL;
+varying vec4 vSeed;
+void main(){
+  // an irregular piece: three random cuts through the cell
+  vec2 q = vL - 0.5;
+  float m = 1.0;
+  float edge = 0.5 - max(abs(q.x), abs(q.y));
+  for (int i = 0; i < 3; i++) {
+    float a = vSeed[i] * 6.2831853;
+    float dd = 0.24 + 0.18 * fract(vSeed.w * float(i + 3) * 7.13);
+    float s = dd - dot(q, vec2(cos(a), sin(a)));
+    m *= step(0.0, s);
+    edge = min(edge, s);
+  }
+  if (vUv.x < 0.0 || vUv.y < 0.0 || vUv.x > 1.0 || vUv.y > 1.0) discard;
+  vec4 dm = texture2D(uDepth, vUv);
+  float subj = uMatte > 0.5 ? smoothstep(0.3, 0.7, dm.a) : smoothstep(0.22, 0.5, dm.r);
+  float a = m * subj * uOpacity;
+  if (a < 0.01) discard;
+  float rim = 1.0 - smoothstep(0.0, 0.06, edge);
+  vec3 c = texture2D(uArt, vUv).rgb * (1.0 - uHeat * 0.3) + uColor * (rim * 1.3 + uHeat * 0.6);
+  gl_FragColor = vec4(min(c, vec3(1.0)) * a, a);
+}`;
+
+/** A figure breaking apart: cols×rows instanced pieces of its own art, flying with gravity and spin. */
+export class Shards implements Fx {
+  mesh: InstancedMesh;
+  mat: ShaderMaterial;
+  alive = true;
+  private n: number;
+  private p: Float32Array; // x y z
+  private v: Float32Array;
+  private r: Float32Array; // rx ry rz
+  private w: Float32Array;
+  private s: Float32Array;
+  private dummy = new Object3D();
+  t = 0;
+  gravity: number;
+  life = 1.3;
+  constructor(fig: FigureLike, color: number, cols = 5, rows = 6, gravity = 9) {
+    const f = fig.u;
+    this.n = cols * rows;
+    this.gravity = gravity;
+    this.mat = material('shards', { uArt: f.uArt.value, uDepth: f.uDepth.value, uMatte: f.uMatte.value, uColor: rgb(color) });
+    const geo = new PlaneGeometry(1, 1);
+    const rect = new Float32Array(this.n * 4);
+    const seed = new Float32Array(this.n * 4);
+    this.p = new Float32Array(this.n * 3);
+    this.v = new Float32Array(this.n * 3);
+    this.r = new Float32Array(this.n * 3);
+    this.w = new Float32Array(this.n * 3);
+    this.s = new Float32Array(this.n);
+    const m = fig.mesh;
+    const size = m.scale.x;
+    const sizeY = m.scale.y;
+    const pad = 1.3;
+    for (let j = 0; j < rows; j++)
+      for (let i = 0; i < cols; i++) {
+        const k = j * cols + i;
+        const du = 1 / cols;
+        const dv = 1 / rows;
+        const u0 = i * du - (du * (pad - 1)) / 2;
+        const v0 = j * dv - (dv * (pad - 1)) / 2;
+        rect.set([u0, v0, du * pad, dv * pad], k * 4);
+        seed.set([Math.random(), Math.random(), Math.random(), Math.random()], k * 4);
+        const lx = ((i + 0.5) * du - 0.5) * size;
+        const ly = ((j + 0.5) * dv - 0.5) * sizeY;
+        this.p.set([m.position.x + lx, m.position.y + ly * Math.cos(m.rotation.x), m.position.z + ly * Math.sin(m.rotation.x) + 0.1], k * 3);
+        this.r.set([m.rotation.x, 0, (Math.random() - 0.5) * 0.3], k * 3);
+        this.s[k] = du * size * pad;
+      }
+    geo.setAttribute('aRect', new InstancedBufferAttribute(rect, 4));
+    geo.setAttribute('aSeed', new InstancedBufferAttribute(seed, 4));
+    this.mesh = new InstancedMesh(geo, this.mat, this.n);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 9;
+    this.place();
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  /** Sends every piece flying out from (cx, cy), `power` world units per second. */
+  burst(cx: number, cy: number, power: number, push = { x: 0, y: 0 }) {
+    for (let k = 0; k < this.n; k++) {
+      const dx = this.p[k * 3] - cx;
+      const dy = this.p[k * 3 + 1] - cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const sp = power * (0.5 + Math.random() * 0.8);
+      this.v.set([(dx / d) * sp + push.x + (Math.random() - 0.5) * power * 0.4, (dy / d) * sp * 0.8 + push.y + power * (0.25 + Math.random() * 0.5), (0.4 + Math.random()) * power * 0.6], k * 3);
+      this.w.set([(Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10], k * 3);
+    }
+  }
+  private place() {
+    const d = this.dummy;
+    const shrink = 1 - clamp01((this.t - this.life * 0.55) / (this.life * 0.45)) * 0.6;
+    for (let k = 0; k < this.n; k++) {
+      d.position.set(this.p[k * 3], this.p[k * 3 + 1], this.p[k * 3 + 2]);
+      d.rotation.set(this.r[k * 3], this.r[k * 3 + 1], this.r[k * 3 + 2]);
+      d.scale.setScalar(this.s[k] * shrink);
+      d.updateMatrix();
+      this.mesh.setMatrixAt(k, d.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+  update(dt: number) {
+    this.t += dt;
+    const drag = Math.exp(-0.8 * dt);
+    for (let k = 0; k < this.n; k++) {
+      this.v[k * 3] *= drag;
+      this.v[k * 3 + 1] = this.v[k * 3 + 1] * drag - this.gravity * dt;
+      this.v[k * 3 + 2] *= drag;
+      for (let a = 0; a < 3; a++) {
+        this.p[k * 3 + a] += this.v[k * 3 + a] * dt;
+        this.r[k * 3 + a] += this.w[k * 3 + a] * dt;
+      }
+    }
+    this.place();
+    this.u.uHeat.value = Math.max(0, 1 - this.t * 2.5);
+    this.u.uOpacity.value = 1 - clamp01((this.t - this.life * 0.6) / (this.life * 0.4));
+    return this.alive && this.t < this.life + 0.05;
+  }
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mesh.dispose();
+    this.mat.dispose();
+  }
+}
+
+const CUTIN_FRAG = /* glsl */ `
+uniform sampler2D uArt;
+uniform sampler2D uText;
+uniform float uK;
+uniform float uAspect;
+uniform float uTime;
+uniform float uOpacity;
+uniform float uTextAspect;
+uniform vec3 uColor;
+uniform vec3 uColor2;
+varying vec2 vUv;
+${NOISE_GLSL}
+void main(){
+  vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
+  float cs = 0.9781476;
+  float sn = -0.2079117; // -12 degrees
+  vec2 q = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
+  q.y -= 0.03;
+  float open = smoothstep(0.0, 0.12, uK) * (1.0 - smoothstep(0.88, 1.0, uK));
+  float H = 0.16 * (0.25 + 0.75 * open);
+  float W = uAspect * 0.5 / cs + 0.25;
+  float xIn = q.x / (2.0 * W) + 0.5;
+  float wipe = smoothstep(0.0, 0.2, uK) * 1.25;
+  vec3 c = vec3(0.0);
+  float a = 0.5 * open;
+  // outside the band: dark, with fast diagonal streaks in the attribute color
+  float st = smoothstep(0.78, 0.97, vnoise(vec2(q.y * 60.0, q.x * 0.7 + uTime * 12.0)));
+  c += uColor * st * 0.6 * open;
+  a = max(a, st * 0.6 * open);
+  float inBand = step(abs(q.y), H) * step(xIn, wipe) * step(0.001, open);
+  if (inBand > 0.5) {
+    float slide = uK * 0.14 - 0.07;
+    vec2 auv = vec2(0.5 + q.x * 1.5 + slide, 0.56 + q.y * 1.5);
+    vec3 art = texture2D(uArt, clamp(auv, 0.0, 1.0)).rgb;
+    float sp = smoothstep(0.62, 0.95, vnoise(vec2(q.y * 140.0, q.x * 1.1 - uTime * 26.0)));
+    vec3 bc = art * 0.92 + vec3(1.0) * sp * 0.3;
+    // shade toward the band's lower edge so the name reads
+    bc *= mix(1.0, 0.45, smoothstep(0.0, -H, q.y) * 0.9);
+    float edge = 1.0 - smoothstep(0.0, 0.012, H - abs(q.y));
+    bc = mix(bc, mix(uColor2, vec3(1.0), 0.35), edge);
+    float lead = exp(-pow((xIn - wipe) * 22.0, 2.0)) * (1.0 - smoothstep(0.12, 0.3, uK));
+    bc += vec3(1.0) * lead;
+    c = bc;
+    a = 1.0;
+  }
+  // the name plate rides over the band, sliding in from the right
+  float tk = smoothstep(0.08, 0.38, uK);
+  float tx = (1.0 - tk) * (1.0 - tk) * 0.5 - uK * 0.03;
+  float TW = min(uAspect * 0.94, 0.9);
+  vec2 tuv = (q - vec2(tx, -0.07)) / vec2(TW, TW / uTextAspect) + 0.5;
+  if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
+    vec4 t = texture2D(uText, tuv);
+    float ta = t.a * open * step(0.001, tk);
+    c = mix(c, t.rgb, ta);
+    a = max(a, ta);
+  }
+  gl_FragColor = vec4(c * a, a) * uOpacity;
+}`;
+
+/** The slanted cut-in for a big summon: the art races across a band, the name slams in. */
+export class CutIn implements Fx {
+  mesh: Mesh;
+  mat: ShaderMaterial;
+  alive = true;
+  private art: CanvasTexture;
+  private text: CanvasTexture;
+  constructor(art: HTMLCanvasElement, title: string, sub: string, color: number, edge: number) {
+    this.art = new CanvasTexture(art);
+    this.art.minFilter = LinearFilter;
+    this.art.generateMipmaps = false;
+    const tc = cutInText(title, sub, color, edge);
+    this.text = new CanvasTexture(tc);
+    this.text.minFilter = LinearFilter;
+    this.text.generateMipmaps = false;
+    this.mat = material('cutin', { uArt: this.art, uText: this.text, uColor: rgb(color), uColor2: rgb(edge), uTextAspect: tc.width / tc.height });
+    this.mesh = new Mesh(new PlaneGeometry(2, 2), this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 55;
+  }
+  get u() {
+    return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  update(dt: number) {
+    this.u.uTime.value += dt;
+    return this.alive;
+  }
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.mat.dispose();
+    this.art.dispose();
+    this.text.dispose();
+  }
+}
+
+const hexCss = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+const DISPLAY_FONT = `"Arial Black", "Helvetica Neue", Impact, system-ui, sans-serif`;
+
+/** The cut-in's name plate: big italic name with a gold/attribute edge, stats under it. */
+function cutInText(title: string, sub: string, color: number, edge: number): HTMLCanvasElement {
+  const W = 1024;
+  const H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  if (!g) return cv;
+  let fs = 92;
+  const fontOf = (s: number) => `italic 900 ${s}px ${DISPLAY_FONT}`;
+  g.font = fontOf(fs);
+  const name = title.toUpperCase();
+  while (fs > 34 && g.measureText(name).width > W - 70) g.font = fontOf((fs -= 4));
+  g.textAlign = 'center';
+  g.textBaseline = 'alphabetic';
+  const y = 40 + fs;
+  g.lineJoin = 'round';
+  g.shadowColor = hexCss(color);
+  g.shadowBlur = 24;
+  g.lineWidth = 12;
+  g.strokeStyle = '#000';
+  g.strokeText(name, W / 2, y);
+  g.shadowBlur = 0;
+  g.lineWidth = 4;
+  g.strokeStyle = hexCss(edge);
+  g.strokeText(name, W / 2, y);
+  const grad = g.createLinearGradient(0, y - fs, 0, y);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.6, '#fff6dc');
+  grad.addColorStop(1, hexCss(edge));
+  g.fillStyle = grad;
+  g.fillText(name, W / 2, y);
+  if (sub) {
+    g.font = `italic 800 40px ${DISPLAY_FONT}`;
+    g.lineWidth = 8;
+    g.strokeStyle = '#000';
+    g.strokeText(sub, W / 2, y + 58);
+    g.fillStyle = hexCss(edge);
+    g.fillText(sub, W / 2, y + 58);
+  }
+  return cv;
 }
 
 // ---------------------------------------------------------------- post passes
@@ -1080,8 +1668,8 @@ void main(){
  * holding the program in every renderer that compiled it (prewarm), disposing an
  * instance never deletes the program and the next cinematic links nothing.
  */
-export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'bright' | 'kawase' | 'composite';
-export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'bright', 'kawase', 'composite'];
+export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'veil' | 'glow' | 'crack' | 'shards' | 'cutin' | 'bright' | 'kawase' | 'composite';
+export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'veil', 'glow', 'crack', 'shards', 'cutin', 'bright', 'kawase', 'composite'];
 
 const uniforms = (o: Record<string, unknown>) => {
   const r: Record<string, IUniform> = {};
@@ -1160,6 +1748,50 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       blending: NormalBlending,
       uniforms: uniforms({ uColor: rgb(0x0a1030), uOpacity: 0, uTime: 0, uVortex: 0 }),
     }),
+  veil: () =>
+    new ShaderMaterial({
+      vertexShader: SCREEN_VERT,
+      fragmentShader: VEIL_FRAG,
+      ...FX,
+      depthTest: false,
+      blending: NormalBlending,
+      uniforms: uniforms({ uDim: 0, uFlash: 0, uFlashColor: new Vector3(1, 1, 1), uCrack: 0, uCrackOp: 1, uCrackAt: new Vector2(0.5, 0.5), uRed: 0, uSpeed: 0, uFocus: new Vector2(0.5, 0.5), uAspect: 0.5, uTime: 0 }),
+    }),
+  glow: () =>
+    new ShaderMaterial({
+      vertexShader: BASIC_VERT,
+      fragmentShader: GLOW_FRAG,
+      ...FX,
+      ...GLOW,
+      side: DoubleSide,
+      uniforms: uniforms({ uColor: new Vector3(1, 1, 1), uColor2: new Vector3(1, 1, 1), uOpacity: 1, uTime: 0, uMode: 0, uK: 0, uSeed: 0 }),
+    }),
+  crack: () =>
+    new ShaderMaterial({
+      vertexShader: CRACK_VERT,
+      fragmentShader: CRACK_FRAG,
+      ...FX,
+      ...GLOW,
+      side: DoubleSide,
+      uniforms: uniforms({ uDepth: null, uDepthAmt: 0.3, uTime: 0, uMatte: 0, uGrid: 0.02, uCrack: 0, uOpacity: 1, uSeed: 0, uOrigin: new Vector2(0.5, 0.5), uColor: new Vector3(1, 1, 1) }),
+    }),
+  shards: () =>
+    new ShaderMaterial({
+      vertexShader: SHARD_VERT,
+      fragmentShader: SHARD_FRAG,
+      ...FX,
+      side: DoubleSide,
+      uniforms: uniforms({ uArt: null, uDepth: null, uMatte: 0, uOpacity: 1, uHeat: 1, uColor: new Vector3(1, 1, 1) }),
+    }),
+  cutin: () =>
+    new ShaderMaterial({
+      vertexShader: SCREEN_VERT,
+      fragmentShader: CUTIN_FRAG,
+      ...FX,
+      depthTest: false,
+      blending: NormalBlending,
+      uniforms: uniforms({ uArt: null, uText: null, uK: 0, uAspect: 0.5, uTime: 0, uOpacity: 1, uTextAspect: 4, uColor: new Vector3(1, 1, 1), uColor2: new Vector3(1, 1, 1) }),
+    }),
   bright: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BRIGHT_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uThreshold: 0.6 }) }),
   kawase: () => new ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: KAWASE_FRAG, ...PASS, uniforms: uniforms({ tMap: null, uTexel: new Vector2(), uOff: 0 }) }),
   composite: () =>
@@ -1191,7 +1823,8 @@ export function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: 
   const dot = new BufferGeometry();
   dot.setAttribute('position', new BufferAttribute(new Float32Array(3), 3));
   for (const k of kinds) {
-    const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : new Mesh(plane, baseMaterial(k));
+    // shards draw instanced: warm the instanced variant of their program
+    const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
     o.frustumCulled = false;
     scene.add(o);
   }
@@ -1290,6 +1923,20 @@ interface Level {
 /** Post-processing (bloom, vignette, pulses) on the 'full' setting's upper tiers. */
 export const POST_ENABLED = true;
 
+export const BASE_FOV = 38;
+
+/** Smooth 1D value noise in -1..1 (camera shake: no per-frame random jitter). */
+function noise1(t: number, seed: number): number {
+  const i = Math.floor(t);
+  const f = t - i;
+  const h = (n: number) => {
+    const x = Math.sin((n + seed * 57.13) * 127.1) * 43758.5453;
+    return (x - Math.floor(x)) * 2 - 1;
+  };
+  const u = f * f * (3 - 2 * f);
+  return h(i) + (h(i + 1) - h(i)) * u;
+}
+
 const SLOW_MS = 22;
 const FAST_MS = 14;
 const WINDOW = 60;
@@ -1297,7 +1944,7 @@ const WINDOW = 60;
 export class Stage {
   renderer: WebGLRenderer;
   scene = new Scene();
-  camera = new PerspectiveCamera(38, 1, 0.1, 100);
+  camera = new PerspectiveCamera(BASE_FOV, 1, 0.1, 100);
   particles: Particles;
   backdrop = new Backdrop();
   private fx = new Set<Fx>();
@@ -1305,6 +1952,12 @@ export class Stage {
   private raf = 0;
   private last = 0;
   private shakeAmt = 0;
+  private shakeT = 0;
+  private shakeLook = new Vector3();
+  private holdFor = 0;
+  private holdScale = 1;
+  private punchDeg = 0;
+  private punchHold = 0;
   camBase = new Vector3(0, 0, 10);
   camLook = new Vector3(0, 0, 0);
   /** visible half-width and half-height at z = 0 */
@@ -1439,9 +2092,10 @@ export class Stage {
     this.post?.setSize(this.renderer);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.halfH = Math.tan((this.camera.fov * Math.PI) / 360) * this.camBase.z;
+    // measured at the resting camera (z = 10, base fov) so a cinematic's camera moves never change the unit
+    this.halfH = Math.tan((BASE_FOV * Math.PI) / 360) * 10;
     this.halfW = this.halfH * this.camera.aspect;
-    this.particles.mat.uniforms.uPx.value = (h * dpr) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+    this.particles.mat.uniforms.uPx.value = (h * dpr) / (2 * Math.tan((BASE_FOV * Math.PI) / 360));
   }
 
   /** A comfortable unit for sizing things: fits a phone in portrait and a wide screen. */
@@ -1473,6 +2127,21 @@ export class Stage {
   }
 
   /**
+   * Hit-stop: for `seconds` of real time everything runs at `scale` speed (a frozen
+   * beat on impact). Measured in wall-clock time, so it never stretches at 0.05×.
+   */
+  hitStop(seconds: number, scale = 0.05) {
+    this.holdFor = Math.max(this.holdFor, seconds);
+    this.holdScale = scale;
+  }
+
+  /** Punch-in: narrows the field of view by `deg` for a beat, then eases back. */
+  punch(deg: number, hold = 0.12) {
+    this.punchDeg = Math.max(this.punchDeg, deg);
+    this.punchHold = Math.max(this.punchHold, hold);
+  }
+
+  /**
    * A one-beat screen effect for impacts: 'chroma' splits the colors outward,
    * 'flash' lays white over everything. `strength` 0..1. Drawn by the post pass,
    * so it shows only on the tiers that have it.
@@ -1500,7 +2169,11 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     const ms = now - this.last;
-    const dt = Math.min(0.05, ms / 1000) * this.speed;
+    let dt = Math.min(0.05, ms / 1000) * this.speed;
+    if (this.holdFor > 0) {
+      this.holdFor -= Math.min(0.05, ms / 1000);
+      dt *= this.holdScale;
+    }
     this.last = now;
     const t0 = performance.now();
     this.step(dt);
@@ -1528,10 +2201,25 @@ export class Stage {
     list.length = 0;
     this.particles.update(dt);
     this.backdrop.update(dt);
+    // shake: smooth value noise under a decaying envelope (no per-frame random jitter)
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 2.2);
-    const s = this.shakeAmt * this.shakeAmt * 0.35;
-    this.camera.position.set(this.camBase.x + (Math.random() - 0.5) * s, this.camBase.y + (Math.random() - 0.5) * s, this.camBase.z);
-    this.camera.lookAt(this.camLook);
+    this.shakeT += dt * 22;
+    const s = this.shakeAmt * this.shakeAmt * 0.32;
+    const sx = noise1(this.shakeT, 1) * s;
+    const sy = noise1(this.shakeT, 2) * s;
+    this.camera.position.set(this.camBase.x + sx, this.camBase.y + sy, this.camBase.z);
+    this.shakeLook.set(this.camLook.x + sx * 0.6, this.camLook.y + sy * 0.6, this.camLook.z);
+    this.camera.lookAt(this.shakeLook);
+    this.camera.rotateZ(noise1(this.shakeT * 0.7, 3) * s * 0.05);
+    // punch-in zoom
+    if (this.punchHold > 0) this.punchHold -= dt;
+    else this.punchDeg *= Math.exp(-dt * 9);
+    if (this.punchDeg < 0.02) this.punchDeg = 0;
+    const fov = BASE_FOV - this.punchDeg;
+    if (Math.abs(this.camera.fov - fov) > 1e-4) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
     if (this.lost) return;
     if (this.post) {
       const u = this.post.comp.uniforms;
