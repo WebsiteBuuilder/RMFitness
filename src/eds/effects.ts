@@ -289,6 +289,13 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // audit-08 hooks
+  /** audit-08: a face-up monster or active Spell/Trap, right after an attack is declared (mandatory "when ... attacks" effects: Neo-Spacian Glow Moss, Ordeal of a Traveler). */
+  onAttackDeclared?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: this card in its owner's GY, right after an attack is declared (Performapal Inflater Tapir). */
+  onAttackDeclaredInGrave?(e: Engine, card: Card, owner: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: an active Spell/Trap: the face-up monster `m` does not apply its End Phase effects (Neo Space). */
+  skipsEndPhase?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard): boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
