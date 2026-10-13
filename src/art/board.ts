@@ -14,13 +14,19 @@ import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } 
 import { card } from "../eds/db";
 import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { ContactShadow, Figure, clamp01, dprCap, easeOut, footprint, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, type Footprint } from "./stage";
+import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, type Footprint } from "./stage";
 import { artBusy } from "./cues";
 
 export interface BoardMonster {
   uid: number;
   name: string;
   def: boolean;
+  /** it may attack now (its controller's Battle Phase): a soft glow pulse */
+  ready?: boolean;
+  /** an attack or a card effect is aimed at it: it recoils with a red flash */
+  hit?: boolean;
+  /** its controller's LP: a drop makes it flinch */
+  lp?: number;
 }
 
 /** Where a field figure stands on screen. Every length is in viewport CSS px. */
@@ -57,6 +63,8 @@ const STAND_TILT = -0.1;
 const KNEEL_TILT = -0.45;
 
 const FALLBACK_FOOT: Footprint = { u: 0.5, v: 0.08, w: 0.5, top: 0.92, left: 0.2, right: 0.8, relief: 0.5 };
+/** A field figure is never wider than this share of its zone, so neighbours never crowd each other. */
+const MAX_ZONE_W = 0.95;
 
 /** Writes the field pose for a card on screen into `out` (no allocation). */
 function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
@@ -64,7 +72,9 @@ function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
   const cw = Math.min(r.width, r.height);
   // the subject (not the whole art square) is ~1.2× the card's width tall (1.0× in Defense)
   const subjH = Math.max(0.55, Math.min(1, f.top - f.v));
-  const size = (cw * (def ? 1.0 : 1.2)) / subjH;
+  // per-card size (overrides.ts), then no wider than its zone
+  const subjW = Math.max(0.2, f.right - f.left);
+  const size = Math.min(((cw * (def ? 1.0 : 1.2)) / subjH) * (f.scale ?? 1), (r.width * MAX_ZONE_W) / subjW);
   const scaleY = def ? 0.85 : 1;
   out.cx = r.left + r.width / 2;
   // feet a little above the card's middle-low, clear of the ATK label at its bottom edge
@@ -87,7 +97,7 @@ function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
  * exactly on it. `art` null uses a generic footprint.
  */
 export function fieldPose(rect: RectLike, def: boolean, art: ArtData | null): FieldPose {
-  return poseInto({ cx: 0, foot: 0, x: 0, y: 0, size: 0, w: 0, h: 0, scaleY: 1, rotX: 0, footU: 0.5, footV: 0.08 }, rect, def, art ? footprint(art) : FALLBACK_FOOT);
+  return poseInto({ cx: 0, foot: 0, x: 0, y: 0, size: 0, w: 0, h: 0, scaleY: 1, rotX: 0, footU: 0.5, footV: 0.08 }, rect, def, art ? figureFoot(art) : FALLBACK_FOOT);
 }
 
 const landed = new Map<number, number>();
@@ -122,9 +132,27 @@ interface Piece {
   /** the card on screen, as last measured (cw 0 = not on screen) */
   cw: number;
   pose: FieldPose;
+  /** reactions: may attack (glow pulse, smoothed), a hit to play, its controller's LP */
+  ready: boolean;
+  pulse: number;
+  hitPending: boolean;
+  wasHit: boolean;
+  /** 0..1 progress of the recoil, or -1 */
+  hitT: number;
+  lp: number;
+  /** when the next idle flourish starts (ms), its kind (0 hop, 1 lean left, 2 lean right), its progress 0..1 or -1 */
+  flourishAt: number;
+  flourishKind: number;
+  flourishT: number;
 }
 
 const DEF_GLOW = 0x4a8aff;
+const HIT_FLASH = 0xff2a1a;
+/** Idle flourishes (a hop or a lean) come every FLOURISH_MIN_MS..+FLOURISH_SPREAD_MS per figure. */
+const FLOURISH_MIN_MS = 6000;
+const FLOURISH_SPREAD_MS = 4000;
+const FLOURISH_S = 0.7;
+const HIT_S = 0.6;
 /** Card positions are re-measured at least this often (ms). */
 const REMEASURE_MS = 500;
 /** After the field changes, cards may still be sliding into place: measure every frame for this long (ms). */
@@ -187,7 +215,13 @@ export class BoardLayer {
     for (const p of this.pieces.values()) {
       const m = want.get(p.uid);
       if (!m || m.name !== p.name) p.leaving = true;
-      else p.def = m.def;
+      else {
+        p.def = m.def;
+        p.ready = !!m.ready;
+        if ((m.hit && !p.wasHit) || (m.lp !== undefined && m.lp < p.lp)) p.hitPending = true;
+        p.wasHit = !!m.hit;
+        if (m.lp !== undefined) p.lp = m.lp;
+      }
     }
     for (const m of list) {
       const have = this.pieces.get(m.uid);
@@ -211,6 +245,15 @@ export class BoardLayer {
         kneel: m.def ? 1 : 0,
         cw: 0,
         pose: { cx: 0, foot: 0, x: 0, y: 0, size: 0, w: 0, h: 0, scaleY: 1, rotX: 0, footU: 0.5, footV: 0.08 },
+        ready: !!m.ready,
+        pulse: 0,
+        hitPending: false,
+        wasHit: !!m.hit,
+        hitT: -1,
+        lp: m.lp ?? Infinity,
+        flourishAt: performance.now() + FLOURISH_MIN_MS + (prof.seed % 4000),
+        flourishKind: prof.seed % 3,
+        flourishT: -1,
       };
       this.pieces.set(m.uid, piece);
       artFor(m.name)
@@ -378,30 +421,76 @@ export class BoardLayer {
       const t = fig.time;
       // kneeling eases in and out instead of snapping
       p.kneel += ((p.def ? 1 : 0) - p.kneel) * Math.min(1, dt * 6);
+      // reactions: a recoil when hit, an idle flourish now and then, a pulse when it may attack
+      if (p.hitPending && p.show >= 1) {
+        p.hitPending = false;
+        p.hitT = 0;
+      }
+      let recoil = 0;
+      let shake = 0;
+      if (p.hitT >= 0) {
+        p.hitT += dt / HIT_S;
+        if (p.hitT >= 1) p.hitT = -1;
+        else {
+          const h = p.hitT;
+          recoil = Math.sin(Math.min(1, h * 2.2) * Math.PI) * (1 - h * 0.5);
+          shake = Math.sin(h * 46) * (1 - h) * (1 - h);
+        }
+      }
+      if (p.flourishT < 0 && p.hitT < 0 && !p.leaving && p.show >= 1 && now >= p.flourishAt) {
+        p.flourishT = 0;
+        p.flourishKind = (p.flourishKind + 1 + (p.seed & 1)) % 3;
+        if (p.def && p.flourishKind === 0) p.flourishKind = 1;
+      }
+      let hop = 0;
+      let squash = 0;
+      let lean = 0;
+      if (p.flourishT >= 0) {
+        p.flourishT += dt / FLOURISH_S;
+        const f = p.flourishT;
+        if (f >= 1) {
+          p.flourishT = -1;
+          p.flourishAt = now + FLOURISH_MIN_MS + Math.random() * FLOURISH_SPREAD_MS;
+        } else if (p.flourishKind === 0) {
+          // a small hop: crouch, spring up, land with a squash
+          hop = Math.max(0, Math.sin(((f - 0.15) / 0.7) * Math.PI)) * (f > 0.15 && f < 0.85 ? 1 : 0);
+          squash = f < 0.15 ? Math.sin((f / 0.15) * Math.PI) : f > 0.85 ? Math.sin(((f - 0.85) / 0.15) * Math.PI) : -hop * 0.4;
+        } else lean = Math.sin(f * Math.PI) ** 2 * (p.flourishKind === 1 ? 1 : -1);
+      }
+      p.pulse += ((p.ready && !p.def ? 1 : 0) - p.pulse) * Math.min(1, dt * 4);
       const breath = 1 + Math.sin(t * 1.9 + p.seed) * 0.006;
       const grow = p.quick ? 1 : lerp(0.75, 1, k);
       // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
       const s = pose.size * grow * breath;
-      const sy = lerp(1, 0.85, p.kneel);
+      const sy = lerp(1, 0.85, p.kneel) * (1 - squash * 0.08);
+      const sx = 1 + squash * 0.05;
       // pivot at the feet on the card; the figure hangs from it
-      const fx = pose.cx - this.w / 2;
-      const fy = this.h / 2 - pose.foot;
+      const fx = pose.cx - this.w / 2 + shake * p.cw * 0.05;
+      const fy = this.h / 2 - pose.foot + hop * p.cw * 0.16;
       p.pivot.position.set(fx, fy, 0);
-      p.pivot.rotation.set(lerp(STAND_TILT, KNEEL_TILT, p.kneel), Math.sin(t * 0.45 + p.seed) * 0.14, 0);
-      fig.mesh.scale.set(s, s * sy * (1 + (breath - 1) * 0.5), s);
-      fig.mesh.position.set(-(pose.footU - 0.5) * s, -(pose.footV - 0.5) * s * sy, -fig.foot.relief * fig.u.uDepthAmt.value * 0.45 * s);
+      p.pivot.rotation.set(lerp(STAND_TILT, KNEEL_TILT, p.kneel) - recoil * 0.4 + Math.abs(lean) * 0.08, Math.sin(t * 0.45 + p.seed) * 0.14, lean * 0.13 + shake * 0.06);
+      fig.mesh.scale.set(s * sx, s * sy * (1 + (breath - 1) * 0.5), s);
+      fig.mesh.position.set(-(pose.footU - 0.5) * s * sx, -(pose.footV - 0.5) * s * sy, -fig.foot.relief * fig.u.uDepthAmt.value * 0.45 * s);
+      // nearer rows (lower on screen) draw over farther ones
+      const order = Math.round(pose.foot);
+      fig.mesh.renderOrder = order;
+      fig.wall.renderOrder = order - 0.5;
       const u = fig.u;
       u.uReveal.value = p.quick ? 1 : k;
       u.uOpacity.value = p.leaving ? Math.max(0, p.show) : p.quick ? k : 1;
       setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : p.glow);
       u.uDark.value = p.kneel * 0.2;
-      // the base disc + shadow lies on the card under the feet
+      u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
+      setRgb(u.uFlash.value as Vector3, HIT_FLASH);
+      (u.uFlash.value as Vector3).multiplyScalar(recoil * 0.9);
+      // the base disc + shadow lies on the card under the feet (it stays put while the figure hops)
       const d = p.disc;
       const dsz = Math.max(p.cw * 0.55, fig.foot.w * s * 1.15);
-      d.mesh.position.set(fx, fy - p.cw * 0.02, 1);
-      d.mesh.scale.set(dsz, dsz * 0.42, 1);
+      const lift = 1 - hop * 0.35;
+      d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
+      d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k);
-      d.u.uRingAmt.value = p.def ? 0.8 : 1.3;
+      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
     }
   }

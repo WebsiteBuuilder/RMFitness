@@ -201,14 +201,22 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   }, [on3d]);
 
   // Monsters standing on their cards: every face-up monster on the field.
+  // (ready: may attack in its controller's Battle Phase; hit: an attack or effect aims at it)
   const standing: BoardMonster[] = [];
   if (on3d && state.winner === null)
     for (const p of [0, 1] as Pid[])
       for (const c of state.players[p].mz)
         if (c?.faceUp)
-          standing.push({ uid: c.uid, name: c.name, def: c.pos === "def" });
+          standing.push({
+            uid: c.uid,
+            name: c.name,
+            def: c.pos === "def",
+            ready: state.phase === "BP" && state.turnPlayer === p && !state.firstTurn && c.pos === "atk" && !c.attacked,
+            hit: state.battle?.target === c.uid || state.chain.some((l) => l.targetUid === c.uid),
+            lp: state.players[p].lp,
+          });
   const standKey = standing
-    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}`)
+    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}`)
     .join(",");
   useEffect(() => {
     if (board.current) return board.current.sync(standing);

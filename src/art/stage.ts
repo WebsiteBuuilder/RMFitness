@@ -48,6 +48,7 @@ import {
   type IUniform,
 } from 'three';
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
+import { DEFAULT_FADE, tuneFor } from './overrides';
 
 export type Quality = 'full' | 'fast';
 
@@ -124,6 +125,38 @@ float vedge(vec2 x){ vec2 n = floor(x); vec2 f = fract(x); float d1 = 8.0; float
 // (uWall = 1), pushed back and darkened with the matte dilated, is the slab's
 // side wall when the camera swings round; a ContactShadow sits under the feet.
 // Both are children of figure.mesh, so they come and go with it.
+//
+// Silhouettes: the relief falls to 0 across the matte's edge band (and toward the
+// art's border), so the outline sits flat on the plane instead of ballooning out
+// or smearing the art across a stretched skirt; the art's border fades out along
+// a broken line instead of a hard straight cut.
+// Lighting discipline: white / chrome / low-saturation subjects (measured once per
+// art, plus per-pixel brightness) get less specular, rim and key light, so they
+// keep their painted texture; lighting adds form without washing out the colors.
+// Per-card tunes (src/art/overrides.ts) scale the subject about its feet (uZoom),
+// set its relief, caps and border fade.
+
+/** Shared by the figure and the cracks on it: art uv from mesh uv and the displaced height. */
+const FIG_DISP_GLSL = /* glsl */ `
+vec2 artUv(vec2 m){ return uFoot + (m - uFoot) * uZoom; }
+float borderIn(vec2 a){ return min(min(a.x, 1.0 - a.x), min(a.y, 1.0 - a.y)); }
+float figHeight(vec2 a){
+  vec4 t = texture2D(uDepth, a);
+  float d = t.r;
+  if (uMatte > 0.5) {
+    // a blurred matte (9 taps over ~3 grid cells): 0 outside, 1 well inside
+    float g = uGrid * 1.5;
+    float s = t.a * 0.36;
+    s += 0.08 * (texture2D(uDepth, a + vec2(g, 0.0)).a + texture2D(uDepth, a - vec2(g, 0.0)).a + texture2D(uDepth, a + vec2(0.0, g)).a + texture2D(uDepth, a - vec2(0.0, g)).a);
+    g *= 2.0;
+    s += 0.08 * (texture2D(uDepth, a + vec2(g, g)).a + texture2D(uDepth, a - vec2(g, g)).a + texture2D(uDepth, a + vec2(g, -g)).a + texture2D(uDepth, a - vec2(g, -g)).a);
+    d *= smoothstep(0.42, 0.95, s);
+  }
+  // flat toward the art's border (and outside it, when zoomed out)
+  return d * smoothstep(0.0, uFade * 1.3 + 0.02, borderIn(a));
+}
+`;
+
 const FIG_VERT = /* glsl */ `
 attribute vec3 aCenter;
 attribute vec3 rnd;
@@ -136,25 +169,23 @@ uniform float uMatte;
 uniform float uWall;
 uniform float uThick;
 uniform float uGrid;
+uniform float uZoom;
+uniform float uFade;
+uniform vec2 uFoot;
 varying vec2 vUv;
+varying vec2 vMesh;
 varying float vD;
 varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+${FIG_DISP_GLSL}
 void main(){
-  vUv = uv;
-  float d = rel(uv);
-  vD = d;
-  if (uMatte > 0.5) {
-    // keep the silhouette on a plateau: the vertices just outside the subject take
-    // its depth, so the steep skirt falls where the matte is already transparent
-    // instead of smearing the art across a stretched edge
-    float g = uGrid;
-    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
-    d = max(d, m * 0.9);
-  }
+  vMesh = uv;
+  vec2 a = artUv(uv);
+  vUv = a;
+  vD = texture2D(uDepth, a).r;
+  float d = figHeight(a);
   vec3 p = position;
   // the back of the slab: flatter, a little behind
   p.z += uWall > 0.5 ? d * uDepthAmt * 0.35 - uThick : d * uDepthAmt;
@@ -163,7 +194,7 @@ void main(){
   p.x += sin(uTime * 1.3 + p.y * 2.0) * 0.01 * d * uWave;
   if (uShatter > 0.0) {
     vec3 c = aCenter;
-    c.z += rel(c.xy + 0.5) * uDepthAmt;
+    c.z += figHeight(artUv(c.xy + 0.5)) * uDepthAmt;
     vec3 local = p - c;
     float s = uShatter;
     vec3 dir = normalize(vec3(c.xy * 2.2 + (rnd.xy - 0.5) * 1.6, 0.5 + rnd.z));
@@ -197,21 +228,32 @@ uniform float uWall;
 uniform float uHQ;
 uniform float uEdge;
 uniform float uLight;
+uniform float uTame;
+uniform float uSpec;
+uniform float uRimAmt;
+uniform float uFade;
+uniform float uPulse;
+uniform vec3 uFlash;
 uniform vec2 uTexel;
 uniform vec3 uGlow;
 uniform vec3 uRim;
 varying vec2 vUv;
+varying vec2 vMesh;
 varying float vD;
 varying vec3 vViewPos;
 varying vec3 vNx;
 varying vec3 vNy;
 varying vec3 vNz;
 ${NOISE_GLSL}
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+/** relief for the normals, flattened across the matte's edge like the mesh */
+float hgt(vec2 uv){ vec4 t = texture2D(uDepth, uv); return t.r * mix(1.0, smoothstep(0.3, 0.9, t.a), uMatte); }
+float bIn(vec2 a){ return min(min(a.x, 1.0 - a.x), min(a.y, 1.0 - a.y)); }
 void main(){
   vec4 col = texture2D(uArt, vUv);
   vec4 dm = texture2D(uDepth, vUv);
-  float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.07, vUv.y) * smoothstep(0.0, 0.07, 1.0 - vUv.y);
+  // the art's border fades out along a broken line (never a straight cut); the mesh's own edge too
+  float bn = bIn(vUv) + (vnoise(vUv * 11.0 + 3.7) - 0.5) * uFade * 0.9;
+  float edge = smoothstep(0.0, uFade, bn) * smoothstep(0.0, 0.02, bIn(vMesh));
   float ma = dm.a;
   float guess = vD;
   if (uWall > 0.5) {
@@ -223,8 +265,8 @@ void main(){
   // prebuilt figure maps carry the cut-out subject in alpha; otherwise guess it from depth
   float subj = mix(smoothstep(0.22, 0.5, guess), smoothstep(0.35, 0.65, ma), uMatte);
   float a = edge * mix(1.0, subj, uCut);
-  float n = vnoise(vUv * 9.0 + uTime * 0.3) * 0.28;
-  float r = uReveal * 1.35 - (vUv.y * 0.95 + n);
+  float n = vnoise(vMesh * 9.0 + uTime * 0.3) * 0.28;
+  float r = uReveal * 1.35 - (vMesh.y * 0.95 + n);
   float vis = smoothstep(0.0, 0.03, r);
   float rim = (1.0 - smoothstep(0.0, 0.1, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999);
   vec3 c = col.rgb;
@@ -234,10 +276,10 @@ void main(){
   } else {
     // normals from the relief (central differences, tamed so painted detail stays painted)
     vec2 t = uTexel * 1.5;
-    float hl = rel(vUv - vec2(t.x, 0.0));
-    float hr = rel(vUv + vec2(t.x, 0.0));
-    float hd = rel(vUv - vec2(0.0, t.y));
-    float hu = rel(vUv + vec2(0.0, t.y));
+    float hl = hgt(vUv - vec2(t.x, 0.0));
+    float hr = hgt(vUv + vec2(t.x, 0.0));
+    float hd = hgt(vUv - vec2(0.0, t.y));
+    float hu = hgt(vUv + vec2(0.0, t.y));
     vec3 on = normalize(vec3((hl - hr) * 0.16, (hd - hu) * 0.16, t.x * 2.0));
     vec3 N = normalize(on.x * vNx + on.y * vNy + on.z * vNz);
     if (!gl_FrontFacing) N = -N;
@@ -248,29 +290,44 @@ void main(){
     float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.2);
     float ao = 1.0;
     float spec = 0.0;
+    // bright, colorless pixels (white scales, silver bone, chrome) are tamed as well as bright arts
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    float tame = clamp(uTame + smoothstep(0.55, 0.9, lum) * (1.0 - smoothstep(0.15, 0.4, sat)) * 0.6, 0.0, 1.0);
     if (uHQ > 0.5) {
       // cheap AO: darker where the relief sits below its wider neighbourhood
       vec2 w = uTexel * 6.0;
-      float nb = (rel(vUv + w) + rel(vUv - w) + rel(vUv + vec2(w.x, -w.y)) + rel(vUv + vec2(-w.x, w.y))) * 0.25;
-      ao = clamp(1.0 - max(0.0, nb - dm.r) * 3.0, 0.5, 1.0);
-      spec = pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * 0.22;
+      float nb = (hgt(vUv + w) + hgt(vUv - w) + hgt(vUv + vec2(w.x, -w.y)) + hgt(vUv + vec2(-w.x, w.y))) * 0.25;
+      ao = clamp(1.0 - max(0.0, nb - hgt(vUv)) * 3.0, 0.55, 1.0);
+      spec = pow(max(dot(N, normalize(L + V)), 0.0), 28.0) * 0.2 * uSpec * (1.0 - 0.85 * tame);
     }
-    vec3 lit = c * (vec3(0.42, 0.44, 0.52) * ao * (0.75 + 0.5 * hemi) + vec3(1.0, 0.9, 0.74) * dif * 0.82 * mix(1.0, ao, 0.5));
+    // form, not wash-out: ambient + key stays near 1, and below 1 for tamed (bright) art
+    vec3 shade = vec3(0.46, 0.47, 0.54) * ao * (0.78 + 0.4 * hemi) + vec3(1.0, 0.92, 0.8) * dif * 0.66 * mix(1.0, ao, 0.5);
+    shade = min(shade, vec3(mix(1.28, 1.02, tame)));
+    vec3 lit = c * shade;
     lit += vec3(1.0, 0.95, 0.85) * spec * ao;
-    lit += uRim * fres * 1.25 * (0.4 + 0.6 * subj);
+    lit += uRim * fres * uRimAmt * (1.0 - 0.7 * tame) * (0.4 + 0.6 * subj);
     // a palette glow just inside the silhouette (big monsters)
     float inner = smoothstep(0.35, 0.6, ma) * (1.0 - smoothstep(0.6, 0.97, ma)) * uMatte;
-    lit += uRim * inner * uEdge * 0.9;
+    lit += uRim * inner * uEdge * 0.8 * (1.0 - 0.5 * tame);
     c = mix(c, lit, uLight);
     float subjEdge = (1.0 - abs(subj * 2.0 - 1.0)) * uCut;
-    float scan = 0.5 + 0.5 * sin(vUv.y * 160.0 - uTime * 6.0);
-    c += uGlow * subjEdge * (0.55 + 0.25 * scan);
+    float scan = 0.5 + 0.5 * sin(vMesh.y * 160.0 - uTime * 6.0);
+    c += uGlow * subjEdge * ((0.4 + 0.2 * scan) * (1.0 - 0.4 * tame) + uPulse * 1.6);
+    // ready to attack: a soft palette pulse over the body and its rim
+    c += uGlow * uPulse * (0.1 + fres * 0.5);
+    // hit: a red flash
+    c = mix(c, c * 0.5 + uFlash, clamp(max(uFlash.r, max(uFlash.g, uFlash.b)), 0.0, 1.0) * 0.6);
   }
   c = mix(c, vec3(1.0), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
   c += uGlow * rim * 2.2;
   float alpha = (a * vis + rim * a) * uOpacity;
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
+  // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
+  vec3 fn = cross(dFdx(vViewPos), dFdy(vViewPos));
+  float facing = abs(dot(fn, normalize(vViewPos))) / max(length(fn), 1e-12);
+  alpha *= mix(1.0, smoothstep(0.1, 0.32, facing), uMatte * (1.0 - step(0.001, uShatter)));
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
@@ -289,6 +346,8 @@ export interface Footprint {
   right: number;
   /** relief 0..1 around the feet */
   relief: number;
+  /** the per-card size multiplier already folded into this footprint (figureFoot); 1 for footprint() */
+  scale?: number;
 }
 
 const FOOTPRINTS = new WeakMap<ArtData, Footprint>();
@@ -380,6 +439,88 @@ export function footprint(art: ArtData): Footprint {
   return fp;
 }
 
+const FIGURE_FEET = new WeakMap<ArtData, Footprint>();
+
+/**
+ * The footprint as the Figure's mesh shows it: the per-card tune's foot point and
+ * size (scaled about the feet, src/art/overrides.ts) folded in, in mesh uv.
+ * Board and cinematics place figures with this.
+ */
+export function figureFoot(art: ArtData): Footprint {
+  const have = FIGURE_FEET.get(art);
+  if (have) return have;
+  const f = footprint(art);
+  const t = tuneFor(art.id);
+  const k = t.scale ?? 1;
+  const u = t.footU ?? f.u;
+  const v = t.footV ?? f.v;
+  const fp: Footprint = {
+    u,
+    v,
+    w: f.w * k,
+    top: Math.min(1, v + (f.top - v) * k),
+    left: clamp01(u + (f.left - u) * k),
+    right: clamp01(u + (f.right - u) * k),
+    relief: f.relief,
+    scale: k,
+  };
+  FIGURE_FEET.set(art, fp);
+  return fp;
+}
+
+/** How bright and colorless a subject is: 0 = colorful mid-tones, 1 = white / silver / chrome. */
+const LOOKS = new WeakMap<ArtData, number>();
+export function artTame(art: ArtData): number {
+  const have = LOOKS.get(art);
+  if (have !== undefined) return have;
+  let tame = 0;
+  try {
+    const n = 32;
+    const c = document.createElement('canvas');
+    c.width = c.height = n;
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(art.art, 0, 0, n, n);
+    const px = g.getImageData(0, 0, n, n).data;
+    let ma: Uint8ClampedArray | null = null;
+    if (art.relief) {
+      g.clearRect(0, 0, n, n);
+      g.drawImage(art.relief, 0, 0, n, n);
+      ma = g.getImageData(0, 0, n, n).data;
+    }
+    let w = 0;
+    let lum = 0;
+    let sat = 0;
+    let chrome = 0;
+    for (let i = 0; i < n * n; i++) {
+      // the subject only (its matte), or the middle of the art
+      const x = i % n;
+      const y = (i / n) | 0;
+      const k = ma ? ma[i * 4 + 3] / 255 : Math.max(0, 1 - Math.hypot(x / n - 0.5, y / n - 0.55) * 2.2);
+      if (k < 0.05) continue;
+      const r = px[i * 4] / 255;
+      const gg = px[i * 4 + 1] / 255;
+      const b = px[i * 4 + 2] / 255;
+      const l = 0.299 * r + 0.587 * gg + 0.114 * b;
+      const s = Math.max(r, gg, b) - Math.min(r, gg, b);
+      w += k;
+      lum += l * k;
+      sat += s * k;
+      if (l > 0.6 && s < 0.22) chrome += k;
+    }
+    if (w > 0) {
+      lum /= w;
+      sat /= w;
+      chrome /= w;
+      tame = clamp01(Math.max(clamp01((lum - 0.4) / 0.3) * clamp01((0.42 - sat) / 0.25), chrome * 1.6));
+    }
+  } catch {
+    tame = 0;
+  }
+  tame = Math.max(tame, tuneFor(art.id).tame ?? 0);
+  LOOKS.set(art, tame);
+  return tame;
+}
+
 /**
  * Figure detail, set by the stage's quality governor: 0 = no side wall, no AO or
  * specular (fewest texture taps); 1 = side wall; 2 = everything.
@@ -459,10 +600,20 @@ export class Figure implements Fx {
     this.depthTex.generateMipmaps = false;
     this.depthTex.needsUpdate = true;
     const texN = art.relief ? art.relief.naturalWidth || 256 : DEPTH_SIZE;
+    const tune = tuneFor(art.id);
+    this.foot = figureFoot(art);
+    const f = this.foot;
     this.mat = material('figure', {
       uArt: this.tex,
       uDepth: this.depthTex,
-      uDepthAmt: depthAmt,
+      uDepthAmt: depthAmt * (tune.relief ?? 1),
+      uZoom: 1 / (f.scale ?? 1),
+      uFoot: new Vector2(f.u, f.v),
+      uFade: tune.fade ?? DEFAULT_FADE,
+      uTame: artTame(art),
+      uSpec: tune.spec ?? 1,
+      uRimAmt: tune.rim ?? 1,
+      uFlash: new Vector3(0, 0, 0),
       uMatte: art.relief ? 1 : 0,
       uGlow: rgb(glow),
       uRim: rimColor(opts.rim ?? glow),
@@ -480,14 +631,12 @@ export class Figure implements Fx {
     this.wall.renderOrder = -1;
     this.mesh.add(this.wall);
     // the contact shadow, flat on the ground under the feet
-    this.foot = footprint(art);
-    const f = this.foot;
     this.shadow = new ContactShadow();
     const sw = Math.max(0.3, f.w * 1.35);
     const sm = this.shadow.mesh;
     sm.scale.set(sw, sw * 0.9, 1);
     sm.rotation.x = -1.2;
-    sm.position.set(f.u - 0.5, f.v - 0.5 + 0.01, f.relief * depthAmt * 0.45);
+    sm.position.set(f.u - 0.5, f.v - 0.5 + 0.01, f.relief * this.u.uDepthAmt.value * 0.45);
     sm.renderOrder = -2;
     this.mesh.add(sm);
     this.applyDetail();
@@ -1233,19 +1382,17 @@ uniform float uDepthAmt;
 uniform float uTime;
 uniform float uMatte;
 uniform float uGrid;
+uniform float uZoom;
+uniform float uFade;
+uniform vec2 uFoot;
 varying vec2 vUv;
 varying float vD;
-float rel(vec2 uv){ return texture2D(uDepth, uv).r; }
+${FIG_DISP_GLSL}
 void main(){
-  vUv = uv;
-  float d = rel(uv);
-  vD = d;
-  // the same plateau as the figure's own vertex shader, so the cracks sit on its surface
-  if (uMatte > 0.5) {
-    float g = uGrid;
-    float m = max(max(rel(uv + vec2(g, 0.0)), rel(uv - vec2(g, 0.0))), max(rel(uv + vec2(0.0, g)), rel(uv - vec2(0.0, g))));
-    d = max(d, m * 0.9);
-  }
+  // the same art uv and height as the figure's own vertex shader, so the cracks sit on its surface
+  vUv = artUv(uv);
+  vD = texture2D(uDepth, vUv).r;
+  float d = figHeight(vUv);
   vec3 p = position;
   p.z += d * uDepthAmt + 0.004;
   p.z += sin(uTime * 2.0 + p.y * 3.0) * 0.015 * d;
@@ -1289,7 +1436,7 @@ export class Crack implements Fx {
     origin = { u: 0.5, v: 0.55 },
   ) {
     const f = fig.u;
-    this.mat = material('crack', { uDepth: f.uDepth.value, uDepthAmt: f.uDepthAmt.value, uMatte: f.uMatte.value, uGrid: f.uGrid?.value ?? 0.02, uColor: rgb(color), uSeed: Math.random() * 50, uOrigin: new Vector2(origin.u, origin.v) });
+    this.mat = material('crack', { uDepth: f.uDepth.value, uDepthAmt: f.uDepthAmt.value, uMatte: f.uMatte.value, uGrid: f.uGrid?.value ?? 0.02, uZoom: f.uZoom?.value ?? 1, uFade: f.uFade?.value ?? DEFAULT_FADE, uFoot: f.uFoot?.value ?? new Vector2(0.5, 0.08), uColor: rgb(color), uSeed: Math.random() * 50, uOrigin: new Vector2(origin.u, origin.v) });
     this.mesh = new Mesh(fig.mesh.geometry, this.mat);
     this.mesh.renderOrder = 9;
     this.mesh.frustumCulled = false;
@@ -1313,12 +1460,14 @@ export class Crack implements Fx {
 const SHARD_VERT = /* glsl */ `
 attribute vec4 aRect;
 attribute vec4 aSeed;
+uniform float uZoom;
+uniform vec2 uFoot;
 varying vec2 vUv;
 varying vec2 vL;
 varying vec4 vSeed;
 void main(){
   vL = uv;
-  vUv = aRect.xy + uv * aRect.zw;
+  vUv = uFoot + (aRect.xy + uv * aRect.zw - uFoot) * uZoom;
   vSeed = aSeed;
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
 }`;
@@ -1373,7 +1522,7 @@ export class Shards implements Fx {
     const f = fig.u;
     this.n = cols * rows;
     this.gravity = gravity;
-    this.mat = material('shards', { uArt: f.uArt.value, uDepth: f.uDepth.value, uMatte: f.uMatte.value, uColor: rgb(color) });
+    this.mat = material('shards', { uArt: f.uArt.value, uDepth: f.uDepth.value, uMatte: f.uMatte.value, uColor: rgb(color), uZoom: f.uZoom?.value ?? 1, uFoot: f.uFoot?.value ?? new Vector2(0.5, 0.08) });
     const geo = new PlaneGeometry(1, 1);
     const rect = new Float32Array(this.n * 4);
     const seed = new Float32Array(this.n * 4);
@@ -1709,6 +1858,14 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uThick: 0.035,
         uGrid: 1 / 32,
         uTexel: new Vector2(1 / 256, 1 / 256),
+        uZoom: 1,
+        uFoot: new Vector2(0.5, 0.08),
+        uFade: DEFAULT_FADE,
+        uTame: 0,
+        uSpec: 1,
+        uRimAmt: 1,
+        uPulse: 0,
+        uFlash: new Vector3(0, 0, 0),
       }),
     }),
   shadow: () =>
@@ -1773,7 +1930,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       ...FX,
       ...GLOW,
       side: DoubleSide,
-      uniforms: uniforms({ uDepth: null, uDepthAmt: 0.3, uTime: 0, uMatte: 0, uGrid: 0.02, uCrack: 0, uOpacity: 1, uSeed: 0, uOrigin: new Vector2(0.5, 0.5), uColor: new Vector3(1, 1, 1) }),
+      uniforms: uniforms({ uDepth: null, uDepthAmt: 0.3, uTime: 0, uMatte: 0, uGrid: 0.02, uZoom: 1, uFade: DEFAULT_FADE, uFoot: new Vector2(0.5, 0.08), uCrack: 0, uOpacity: 1, uSeed: 0, uOrigin: new Vector2(0.5, 0.5), uColor: new Vector3(1, 1, 1) }),
     }),
   shards: () =>
     new ShaderMaterial({
@@ -1781,7 +1938,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       fragmentShader: SHARD_FRAG,
       ...FX,
       side: DoubleSide,
-      uniforms: uniforms({ uArt: null, uDepth: null, uMatte: 0, uOpacity: 1, uHeat: 1, uColor: new Vector3(1, 1, 1) }),
+      uniforms: uniforms({ uArt: null, uDepth: null, uMatte: 0, uOpacity: 1, uHeat: 1, uColor: new Vector3(1, 1, 1), uZoom: 1, uFoot: new Vector2(0.5, 0.08) }),
     }),
   cutin: () =>
     new ShaderMaterial({

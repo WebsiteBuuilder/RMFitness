@@ -22,6 +22,8 @@ export interface ArtData {
   relief: HTMLImageElement | null;
   /** three main colors of the art, most striking first (0xRRGGBB) */
   palette: number[];
+  /** the card's id when known (per-card figure tunes, src/art/overrides.ts) */
+  id?: number;
 }
 
 const cache = new Map<string, Promise<ArtData>>();
@@ -217,12 +219,13 @@ async function build(name: string): Promise<ArtData> {
   const art = canvas(256, 256);
   art.getContext('2d')!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
-  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette };
+  const id = card(name)?.id;
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
-  return { art, full, depth, relief: null, palette };
+  return { art, full, depth, relief: null, palette, id };
 }
 
 /** Art data for a card, built once and cached (the last 40 cards). */
