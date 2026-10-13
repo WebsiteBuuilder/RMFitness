@@ -705,3 +705,96 @@
 .menu.start-duel .menu-item.off {
   opacity: 0.6;
 }
+
+/* ---- pack finishes: the rarity each pulled card comes out at, and the drop odds ---- */
+.pack-odds {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0cc, #ffb84fcc, #4fe0ffcc, #a24fffcc);
+  text-shadow: 0 1px 1px #0008;
+}
+.drop-odds {
+  margin: 4px 2px 8px;
+  padding: 6px 8px;
+  border: 1px solid #ffffff33;
+  border-radius: 6px;
+  background: #0006;
+  font-size: 12px;
+}
+.drop-odds .drop-title {
+  margin: 0 0 4px;
+  color: #ffe08a;
+}
+.drop-odds table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.drop-odds th {
+  text-align: left;
+  font-weight: normal;
+  font-size: 11px;
+  color: #fffa;
+  padding: 2px 0;
+}
+.drop-odds td {
+  padding: 2px 0;
+  border-top: 1px solid #ffffff14;
+  white-space: nowrap;
+}
+.drop-odds td:first-child {
+  white-space: normal;
+}
+.drop-odds .lv-chip {
+  min-width: 34px;
+  margin-right: 4px;
+}
+.drop-odds .od-OF td {
+  color: #ffd2f6;
+  font-weight: bold;
+}
+.drop-odds .drop-foot {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #fffb;
+}
+.rv-fin {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  z-index: 2;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 14px;
+}
+.rv-best {
+  margin: 8px 0 0;
+  text-align: center;
+  font-weight: bold;
+  color: #ffe08a;
+}
+.rv.fin.up .rv-face,
+.bcard.fin {
+  box-shadow: 0 0 0 2px #fff, 0 0 12px var(--fin-glow, #ffe08a);
+  border-radius: 4px;
+}
+.rv.fin-GL,
+.bcard.fin-GL { --fin-glow: #6ce3ff; }
+.rv.fin-RO,
+.bcard.fin-RO { --fin-glow: #ffd34f; }
+.rv.fin-OF,
+.bcard.fin-OF { --fin-glow: #ff5ad8; }
+.rv.fin-OF.up {
+  animation: hit-pop 1.4s ease-out;
+}
+.reveal.flash.fin-GL::before { background: radial-gradient(circle, #9ef0ffcc 0%, transparent 70%); }
+.reveal.flash.fin-RO::before { background: radial-gradient(circle, #fff3c2ee 0%, #ffd34f88 40%, transparent 75%); }
+.reveal.flash.fin-OF::before {
+  background: conic-gradient(from 0deg, #ff4fd0cc, #ffb84fcc, #4fe0ffcc, #a24fffcc, #ff4fd0cc);
+  animation-duration: 1.6s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rv.fin-OF.up { animation: none; }
+}

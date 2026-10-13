@@ -395,7 +395,7 @@ export function App() {
         if (!st || !seats || !seats[other(seat)].stakes?.profile) return s;
         const bet = settleStakes(s, seat, st, [seats[0], seats[1]], winner);
         const before = crownHolder(s, opp);
-        const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes) });
+        const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes), online: !hotseat });
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         cards.push({ who: seats[seat].name, won: bet.won, lost: bet.lost });
