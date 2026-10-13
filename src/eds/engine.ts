@@ -948,6 +948,11 @@ export class Engine {
     for (const uid of uids) {
       const m = this.fieldCard(uid);
       if (m && m.faceUp && this.shielded(m, byBattle ? 'battle' : 'effect')) {
+        // The battle line was written before protection was known: "X destroys Y" becomes "X wins the battle against Y".
+        if (byBattle) {
+          const e = this.state.log.slice().reverse().find((l) => l.turn === this.state.turn && l.text.endsWith(` destroys ${m.name}`));
+          if (e) e.text = e.text.replace(/ destroys ([^]*)$/, ' wins the battle against $1');
+        }
         this.log(null, `${m.name} is not destroyed ${byBattle ? 'by battle' : 'by the card effect'}`);
         continue;
       }

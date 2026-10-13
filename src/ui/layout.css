@@ -64,7 +64,10 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 2px 3px 3px;
+  /* Bottom spacing is a border, not padding: overflow clips at the padding edge, so a third line can't peek into it. */
+  padding: 2px 3px 0;
+  border-bottom: 3px solid transparent;
+  box-sizing: border-box;
   font: 700 10px/1.15 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #fff;
   text-align: center;
