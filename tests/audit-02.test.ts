@@ -1411,10 +1411,12 @@ section('Verdant Sanctuary');
 section('Awakening of the Sacred Beasts');
 {
   const e = duel(['Awakening of the Sacred Beasts', 'Uria, Lord of Searing Flames', 'Hamon, Lord of Striking Thunder', 'Raviel, Lord of Phantasms', 'Coffin Seller'], ['Vorse Raider', 'Cloudian - Cirrostratus']);
+  e.state.fx.ignoreCond = e.player(0).deck.find((x) => x.name === 'Uria, Lord of Searing Flames')!.uid; // test setup: a Sacred Beast placed ignoring its Summoning condition
   place(e, 0, 'Uria, Lord of Searing Flames');
   const aw = playTrap(e, 0, 'Awakening of the Sacred Beasts');
   const v = place(e, 1, 'Vorse Raider');
   check(lp(e, 0) === 4000 + 1900, 'Awakening: 1 Sacred Beast: gain LP equal to the ATK of a monster the opponent Summons');
+  e.state.fx.ignoreCond = e.player(0).deck.find((x) => x.name === 'Hamon, Lord of Striking Thunder')!.uid; // test setup: a Sacred Beast placed ignoring its Summoning condition
   place(e, 0, 'Hamon, Lord of Striking Thunder');
   const c = place(e, 1, 'Cloudian - Cirrostratus');
   c!.tags!.fog = 2;
@@ -1422,6 +1424,7 @@ section('Awakening of the Sacred Beasts');
   effect(e, 1, c, { pick: ['Hamon, Lord of Striking Thunder'] });
   e.state.turnPlayer = 0;
   check(e.monsters(0).length === 2 && logHas(e, "Cloudian - Cirrostratus's effect was negated"), "Awakening: 2 Sacred Beasts: the opponent's monster effects are negated");
+  e.state.fx.ignoreCond = e.player(0).deck.find((x) => x.name === 'Raviel, Lord of Phantasms')!.uid; // test setup: a Sacred Beast placed ignoring its Summoning condition
   place(e, 0, 'Raviel, Lord of Phantasms');
   kill(e, [v], 0);
   check(zone(e, v) === 'removed', "Awakening: 3 Sacred Beasts: monsters sent to the opponent's GY are banished instead");
