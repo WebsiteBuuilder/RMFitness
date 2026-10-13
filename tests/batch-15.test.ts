@@ -560,6 +560,7 @@ section('Overlay Regen');
 section('Triangle Ecstasy Spark');
 {
   const e = duel(['Triangle Ecstasy Spark', 'Harpie Lady Sisters'], ['Mirror Force']);
+  e.state.fx.ignoreCond = e.player(0).deck.find((c) => c.name === 'Harpie Lady Sisters')!.uid; // audit-eds: it must first be Special Summoned by "Elegant Egotist"
   const hls = place(e, 0, 'Harpie Lady Sisters');
   const mf = putST(e, 1, 'Mirror Force');
   playSpell(e, 0, 'Triangle Ecstasy Spark');

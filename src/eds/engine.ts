@@ -542,7 +542,7 @@ export class Engine {
     let b = { atk: info.atk ?? 0, def: info.def ?? 0 };
     const set = this.effectOn(m)?.baseStats?.(this, m);
     if (set) b = set;
-    if (this.state.fx.swapTurn === this.state.turn) b = { atk: b.def, def: b.atk };
+    if (this.state.fx.swapTurn === this.state.turn || (m.tags?.swapTurn !== undefined && m.tags.swapTurn === this.state.turn)) b = { atk: b.def, def: b.atk }; // audit-eds: Shield & Sword (only monsters on the field then)
     return b;
   }
 
@@ -607,7 +607,13 @@ export class Engine {
   /** Royal Decree: other Trap effects are negated. */
   trapsNegated(except?: string): boolean {
     if (this.speed && [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.negatesTraps)) return true; // audit-06: Jinzo - Lord
-    return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing');
+    return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing') || this.jinzoNegates(); // audit-eds
+  }
+
+  /** audit-eds: Speed Duel: a face-up Jinzo negates all Trap effects on the field (unless an Amplifier frees it). */
+  private jinzoNegates(): boolean {
+    if (!this.speed) return false;
+    return [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.sealsTraps && !m.equips.some((u) => !!getEffect(this.fieldCard(u)?.name ?? '')?.freesOwnTraps));
   }
 
   /**
@@ -1637,6 +1643,11 @@ export class Engine {
     const doomed = ((fx.endOfBattle ?? []) as number[]).filter((u) => this.fieldCard(u));
     fx.endOfBattle = [];
     if (doomed.length) yield* this.destroy(doomed);
+    // audit-eds: control taken "until the end of the Battle Phase" goes back (Magical Arm Shield).
+    for (const x of ((fx.returnAfterBattle ?? []) as { uid: number; to: Pid }[]).splice(0)) {
+      const m = this.fieldCard(x.uid);
+      if (m && this.controller(x.uid) !== x.to && this.takeControl(x.uid, x.to)) (m.returnAtEnd = undefined), this.log(null, `${m.name} returns to ${this.player(x.to).name}`);
+    }
     if (this.speed)
       for (const p of [this.state.turnPlayer, other(this.state.turnPlayer)])
         for (const m of this.monsters(p)) {
@@ -1891,7 +1902,8 @@ export class Engine {
     const level = Math.max(1, (info.level ?? 1) - (down?.turn === this.state.turn ? down.n : 0) + lvMod);
     let less = 0;
     if (this.speed) for (const x of this.liveST()) less += x.eff.tributeDiscount?.(this, x.c, x.p, card, player) ?? 0;
-    let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, this.tributesNeeded(level) - less) };
+    const fixed = getEffect(card.name)?.tributeCount?.(this, card, player); // audit-eds: Divine-Beasts need 3
+    let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, (fixed ?? this.tributesNeeded(level)) - less) };
     if (!this.speed || faceUp === false || plan.need === 0) return plan;
     const offers = [getEffect(card.name)?.tributeOffer?.(this, null, player, card, plan.need), ...this.liveST().filter((x) => x.p === player).map((x) => x.eff.tributeOffer?.(this, x.c, x.p, card, plan.need))];
     for (const l of this.lingering()) if (l.p === player) offers.push(l.eff.lingering?.tributeOffer?.(this, l.p, card, plan.need)); // audit-10 (Vampire Sorcerer)
@@ -1908,6 +1920,7 @@ export class Engine {
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
     if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
+    if (faceUp === false && getEffect(card.name)?.cannotNormalSet) return false; // audit-eds
     if (this.chainEnergyBlocks(player)) return false;
     if (faceUp === false && this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: Absorbing Jar
     const plan = this.tributePlan(player, card, faceUp);
@@ -2037,7 +2050,7 @@ export class Engine {
     this.event(faceUp ? 'summon' : 'set', { uid, player });
     if (faceUp) {
       this.log(player, `${ps.name} ${need ? 'Tribute ' : ''}Summoned ${card.name}${pos === 'def' ? ' in Defense Position' : ''}`);
-      yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
+      if (!(this.speed && getEffect(card.name)?.noSummonResponse)) yield* this.responseWindow('summon', { uid, summonKind: 'normal' }); // audit-eds
       const eff = this.effectOn(fc);
       if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
@@ -2670,7 +2683,7 @@ export class Engine {
       if (!q || (q.from ?? 'field') !== from || this.prohibited(c.name, from === 'field' ? c.uid : undefined)) return;
       if (from === 'field') {
         const fc = c as FieldCard;
-        if (!fc.faceUp) return;
+        if (!fc.faceUp && !(q.faceDown && this.find(c.uid)?.loc.zone === 'mz')) return; // audit-eds: Big Shield Gardna
         const kind = this.info(c.name).kind;
         if (kind !== 'monster' && !fc.active) return;
         if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) return;
