@@ -138,9 +138,35 @@ export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | nul
   return m;
 }
 
-/** Turns new engine events into cues. `memo` is the field before these events. */
 export type SummonHow = 'normal' | 'tribute' | 'special' | 'fusion' | 'ritual' | 'xyz' | 'synchro' | 'link';
+const HOWS = new Set<SummonHow>(['normal', 'tribute', 'special', 'fusion', 'ritual', 'xyz', 'synchro', 'link']);
 
+/** The engine's `to` on a card that moves (to-hand / to-gy events) → the leave cue's destination. */
+const LEAVE_TO: Record<string, 'hand' | 'deck' | 'banish' | 'extra'> = { hand: 'hand', deck: 'deck', banish: 'banish', extra: 'extra' };
+
+/**
+ * Which moves get a leave cue: anything leaving the field, the GY or the banishment, a card added
+ * from the Deck to the hand (a search is shown to both players), and cards banished from the
+ * hand or Deck (face-up). A card shuffled from the hand into the Deck stays quiet (nothing is revealed).
+ */
+function shownLeave(zone: string | undefined, to: 'hand' | 'deck' | 'banish' | 'extra'): boolean {
+  switch (zone) {
+    case 'mz':
+    case 'sz':
+    case 'field':
+    case 'gy':
+    case 'removed':
+      return true;
+    case 'deck':
+      return to === 'hand' || to === 'banish';
+    case 'hand':
+      return to === 'banish';
+    default:
+      return false;
+  }
+}
+
+/** Turns new engine events into cues. `memo` is the field before these events. */
 export interface CueTrack {
   /** the attack being animated (its hit can arrive in a later batch, after responses) */
   battle: { attacker: number; target: number | null } | null;
@@ -155,8 +181,9 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
       case 'summon': {
         const c = r(ev.uid);
         if (!c) break;
+        const how = HOWS.has(ev.how as SummonHow) ? (ev.how as SummonHow) : undefined;
         if (!c.faceUp && c.controller !== viewer) out.push({ kind: 'set', card: c, monster: true });
-        else out.push({ kind: 'summon', card: c, special: false });
+        else out.push(how ? { kind: 'summon', card: c, special: how !== 'normal' && how !== 'tribute', how } : { kind: 'summon', card: c, special: false });
         break;
       }
       case 'set': {
@@ -169,6 +196,8 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         if (c) out.push({ kind: 'flip', card: { ...c, name: locate(state, c.uid)?.card.name ?? c.name } });
         break;
       }
+      // 'effect': a triggered or continuous effect at work (the engine's lazy announcement, see Engine.trig)
+      case 'effect':
       case 'activate': {
         if (ev.uid === undefined) {
           const p = ev.player ?? 0;
@@ -217,13 +246,36 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
       case 'damage':
         if ((ev.amount ?? 0) > 0) out.push({ kind: 'damage', player: (ev.player ?? 0) as Pid, amount: ev.amount ?? 0 });
         break;
+      case 'to-hand':
       case 'to-gy': {
+        const to = LEAVE_TO[ev.to ?? ''];
+        if (to || ev.kind === 'to-hand') {
+          // A card moved without being destroyed: banished, bounced, searched, shuffled away.
+          if (!to || !shownLeave(ev.zone, to)) break;
+          const c = r(ev.uid);
+          if (!c) break;
+          const name = ev.down && c.controller !== viewer ? '' : locate(state, c.uid)?.card.name ?? c.name;
+          out.push({ kind: 'leave', card: { ...c, name, faceUp: !!name }, to });
+          break;
+        }
         // Only monsters leaving the field get a destruction; discards and used spells are quiet.
         const was = memo.get(ev.uid ?? -1);
         if (was) {
           const name = locate(state, was.uid)?.card.name ?? was.name;
           out.push({ kind: 'destroy', card: { ...was, name, faceUp: true } });
         }
+        break;
+      }
+      case 'heal':
+        if ((ev.amount ?? 0) > 0) out.push({ kind: 'heal', player: (ev.player ?? 0) as Pid, amount: ev.amount ?? 0 });
+        break;
+      case 'draw': {
+        // Only draws by an effect: the Draw Phase draw is the board's own animation.
+        if (!ev.effect) break;
+        const p = (ev.player ?? 0) as Pid;
+        const prev = out[out.length - 1];
+        if (prev?.kind === 'draw' && prev.player === p) prev.count++;
+        else out.push({ kind: 'draw', player: p, count: 1 });
         break;
       }
       case 'win':
@@ -250,7 +302,11 @@ export function weight(c: Cue): number {
       return 4;
     case 'activate':
     case 'target':
+    case 'leave':
       return 3;
+    case 'heal':
+    case 'draw':
+      return 2;
     default:
       return 1;
   }
@@ -313,6 +369,7 @@ export function cueUids(c: Cue): number[] {
     case 'flip':
     case 'activate':
     case 'destroy':
+    case 'leave':
       return [c.card.uid];
     case 'attack':
       return c.target ? [c.attacker.uid, c.target.uid] : [c.attacker.uid];
