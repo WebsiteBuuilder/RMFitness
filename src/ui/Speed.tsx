@@ -35,6 +35,9 @@ import { CardLevels, levelHeadline } from '../level/CardLevels';
 import { cardLevels } from '../level/leveling';
 import { showProfileLevels } from '../level/view';
 import { CardShop, ChipBar } from '../collection/Shop';
+import { RequestsScreen, StampsScreen } from '../collection/Earn';
+import { boardOf } from '../collection/requests';
+import { stampsToClaim } from '../collection/stamps';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
@@ -90,7 +93,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
 
 export function SpeedHub({
   controls,
@@ -144,6 +147,8 @@ export function SpeedHub({
   }
   if (sub === 'cpu') return <CpuPick save={save} problems={problems} onPick={onCpu} onBack={() => setSub('menu')} />;
   if (sub === 'shop') return <CardShop save={save} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
   if (sub === 'art') return <ArtLab onBack={() => setSub('menu')} />;
   if (sub === 'shadow') return <ShadowRealmScreen save={save} onBack={() => setSub('menu')} />;
@@ -197,6 +202,8 @@ export function SpeedHub({
             { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'Speed Duel rules: online or on one phone', onPick: () => setSub('link') },
             { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
+            { label: 'Duelist Requests', note: requestsNote(save), onPick: () => setSub('requests') },
+            { label: 'Set Stamps', note: stampsToClaim(save) ? `${stampsToClaim(save)} stamp${stampsToClaim(save) === 1 ? '' : 's'} to claim!` : 'collect a set, earn its rewards', onPick: () => setSub('stamps') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
             { label: 'Record', onPick: () => setSub('record') },
@@ -209,6 +216,13 @@ export function SpeedHub({
       </Win>
     </div>
   );
+}
+
+function requestsNote(save: SpeedSave): string {
+  const b = boardOf(save);
+  if (!b) return 'back once the clock catches up';
+  const done = b.list.filter((r) => r.done).length;
+  return done === b.list.length ? 'all done today ✓ new ones tomorrow' : `${done}/${b.list.length} done today · each pays a card`;
 }
 
 function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExit: () => void }) {

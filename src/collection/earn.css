@@ -1,0 +1,177 @@
+/* Duelist Requests and Set Stamps. */
+.earn .win {
+  max-width: 640px;
+  margin: 0 auto;
+}
+.req-sum {
+  text-align: center;
+  color: var(--gold);
+  font-size: 13px;
+  margin: 6px 0 10px;
+}
+.req {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--panel2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+}
+.req.done {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px #f7c94844;
+}
+.req-face {
+  flex: none;
+  width: 64px;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.req-face .cimg,
+.stamp-card .cimg,
+.stamp-opt .cimg {
+  width: 100%;
+  height: auto;
+}
+.req-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.req-title {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.req-text {
+  font-size: 14px;
+  line-height: 1.3;
+}
+.req-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: #0006;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.req-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #4fb3ff, #f7c948);
+}
+.req-prog {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.req-swap {
+  align-self: flex-start;
+  margin-top: 4px;
+  min-height: 36px;
+}
+.stamp-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.stamp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+}
+.stamp.ready {
+  border-color: var(--gold);
+  animation: stamp-glow 1.6s ease-in-out infinite;
+}
+.stamp.full {
+  border-color: #b48cff;
+}
+@keyframes stamp-glow {
+  50% {
+    box-shadow: 0 0 14px #f7c94877;
+  }
+}
+.stamp-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.stamp-top > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.stamp-card {
+  flex: none;
+  width: 48px;
+}
+.stamp-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.stamp-marks {
+  display: flex;
+  gap: 6px;
+}
+.stamp-marks i {
+  font-style: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 13px;
+  border: 2px dashed var(--border);
+  font-size: 11px;
+}
+.stamp-marks i.due {
+  border-style: solid;
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.stamp-marks i.on {
+  border-style: solid;
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #2a1a00;
+  font-size: 14px;
+}
+.stamp-next {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.stamp-claim {
+  width: 100%;
+}
+.stamp-pick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+.stamp-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  padding: 4px;
+  background: none;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+.stamp-opt:active {
+  border-color: var(--gold);
+}
