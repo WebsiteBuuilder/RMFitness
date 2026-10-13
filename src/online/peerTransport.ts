@@ -4,25 +4,33 @@ import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
 import type { Link, Transport, TransportHandlers, Wire } from './protocol';
 
 const PREFIX = 'eds-remake-u-';
-const RETRY_MS = 5_000;
-/** The same profile open on another phone or tab holds the code; check back now and then. */
-const ELSEWHERE_MS = 30_000;
+const RETRY_MS = 4_000;
+/**
+ * The broker keeps a phone's code for about a minute after its connection dies (the app
+ * was put away, the network changed), so "code taken" at first usually means our own
+ * old connection: keep retrying quietly, and only say it's open elsewhere after this.
+ */
+const STALE_ID_MS = 75_000;
+/** A broker connection that hasn't come back by then is rebuilt from scratch. */
+const REOPEN_MS = 8_000;
 
 /**
- * Broker and relay settings. Same public STUN and the PeerJS TURN relay (also over
- * TCP, for mobile networks that block UDP) that duel rooms fall back to.
+ * Connection routes, tried in turn when two online phones can't link: PeerJS's own
+ * defaults first (the same ones duel rooms start with), then a wider set of public STUN
+ * servers plus the PeerJS TURN relay over UDP and TCP, for networks that block UDP.
  */
-export function peerOptions(): PeerOptions {
-  const opts: PeerOptions = {
-    config: {
-      iceServers: [
-        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478?transport=tcp'], username: 'peerjs', credential: 'peerjsp' },
-      ],
-    },
-  };
-  return localBroker() ?? opts;
+const ICE: (RTCIceServer[] | undefined)[] = [
+  undefined,
+  [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478', 'turn:eu-0.turn.peerjs.com:3478?transport=tcp', 'turn:us-0.turn.peerjs.com:3478?transport=tcp'], username: 'peerjs', credential: 'peerjsp' },
+  ],
+];
+
+export function peerOptions(ice = 0): PeerOptions {
+  const servers = ICE[ice % ICE.length];
+  return localBroker() ?? (servers ? { config: { iceServers: servers } } : {});
 }
 
 /** `?peerhost=host:port`: a local PeerServer instead of the public broker (tests). */
@@ -84,7 +92,14 @@ export class PeerTransport implements Transport {
   private h: TransportHandlers | null = null;
   private code = '';
   private stopped = false;
+  private ready = false;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  private reopen: ReturnType<typeof setTimeout> | null = null;
+  /** when "code taken" answers started, for telling our own stale code from another phone */
+  private takenSince = 0;
+  private ice = 0;
+  private troubles = 0;
+  private openedAt = 0;
 
   start(myCode: string, h: TransportHandlers) {
     this.code = myCode;
@@ -103,12 +118,21 @@ export class PeerTransport implements Transport {
   private open() {
     if (this.stopped || !this.h) return;
     const h = this.h;
+    if (this.reopen) clearTimeout(this.reopen);
+    this.reopen = null;
     this.peer?.destroy();
+    this.ready = false;
+    this.openedAt = Date.now();
     h.onState('connecting');
-    const peer = new Peer(PREFIX + this.code, peerOptions());
+    const peer = new Peer(PREFIX + this.code, peerOptions(this.ice));
     this.peer = peer;
     peer.on('open', () => {
-      if (this.peer === peer) h.onState('ready');
+      if (this.peer !== peer) return;
+      if (this.reopen) clearTimeout(this.reopen);
+      this.reopen = null;
+      this.ready = true;
+      this.takenSince = 0;
+      h.onState('ready');
     });
     peer.on('connection', (conn) => {
       if (this.peer !== peer) return conn.close();
@@ -117,12 +141,18 @@ export class PeerTransport implements Transport {
     peer.on('disconnected', () => {
       if (this.peer !== peer || this.stopped) return;
       // The broker dropped; links already open keep working. Get back on it.
+      this.ready = false;
       h.onState('connecting');
       try {
         peer.reconnect();
       } catch {
-        this.later(RETRY_MS);
+        return this.later(RETRY_MS);
       }
+      if (this.reopen) clearTimeout(this.reopen);
+      this.reopen = setTimeout(() => {
+        this.reopen = null;
+        if (this.peer === peer && !this.ready) this.open();
+      }, REOPEN_MS);
     });
     peer.on('error', (err: Error & { type?: string }) => {
       if (this.peer !== peer || this.stopped) return;
@@ -131,11 +161,15 @@ export class PeerTransport implements Transport {
         const m = /eds-remake-u-([A-Z0-9]+)/.exec(err.message);
         if (m) h.onUnavailable(m[1]);
       } else if (type === 'unavailable-id') {
-        h.onState('elsewhere');
+        const t = Date.now();
+        if (!this.takenSince) this.takenSince = t;
+        h.onState(t - this.takenSince > STALE_ID_MS ? 'elsewhere' : 'connecting');
         this.peer?.destroy();
         this.peer = null;
-        this.later(ELSEWHERE_MS);
+        this.ready = false;
+        this.later(RETRY_MS);
       } else if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed' || type === 'disconnected') {
+        this.ready = false;
         h.onState('offline');
         this.later(RETRY_MS);
       }
@@ -148,9 +182,22 @@ export class PeerTransport implements Transport {
     return new PeerLink(conn, true);
   }
 
+  trouble() {
+    // Two failed links in a row: come back on the other connection routes.
+    if (++this.troubles < 2 || localBroker()) return;
+    this.troubles = 0;
+    this.ice++;
+    this.open();
+  }
+
   wake() {
     if (this.stopped) return;
     if (!this.peer || this.peer.destroyed) return this.open();
+    if (!this.ready) {
+      // still getting on the broker: give a fresh start only if it's taking long
+      if (Date.now() - this.openedAt > REOPEN_MS) this.open();
+      return;
+    }
     if (this.peer.disconnected) {
       try {
         this.peer.reconnect();
@@ -163,6 +210,7 @@ export class PeerTransport implements Transport {
   stop() {
     this.stopped = true;
     if (this.retry) clearTimeout(this.retry);
+    if (this.reopen) clearTimeout(this.reopen);
     this.peer?.destroy();
     this.peer = null;
   }

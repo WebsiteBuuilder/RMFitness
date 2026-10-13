@@ -106,6 +106,10 @@ export class Presence {
   private now: () => number;
   /** called when an invite this player sent gets a yes */
   onAccepted: ((inv: OutgoingInvite) => void) | null = null;
+  /** short news for the player ("Bro added you as a friend") */
+  onNotice: ((text: string) => void) | null = null;
+  /** why a friend who isn't online couldn't be reached: not open, or the phones couldn't link */
+  reach = new Map<string, 'away' | 'blocked'>();
 
   constructor(o: PresenceOptions) {
     this.o = o;
@@ -125,6 +129,10 @@ export class Presence {
       onUnavailable: (code) => {
         const ls = this.links.get(code);
         if (ls && !ls.open) this.drop(code, ls.link);
+        if (this.reach.get(code) !== 'away') {
+          this.reach.set(code, 'away');
+          this.changed();
+        }
       },
     });
     const si = this.o.setInterval ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
@@ -386,15 +394,23 @@ export class Presence {
         ls.hello = true;
         this.activities.set(code, m.activity);
         let r = this.rec(code);
+        let answer = false;
         if (m.friend) {
+          // Having someone's code means they gave it out: adding by code needs no accept step.
           if (!r) {
             if (this.data.ignored.includes(code)) return this.drop(code, ls.link);
-            r = { code, name: m.name, color: m.color, status: 'request', since: this.now(), lastSeen: 0 };
+            r = { code, name: m.name, color: m.color, status: 'friend', since: this.now(), lastSeen: 0 };
             this.data.friends.push(r);
-          } else if (r.status === 'sent') r.status = 'friend';
+            answer = true;
+            this.onNotice?.(`${m.name.slice(0, 24) || 'Someone'} added you as a friend`);
+          } else if (r.status !== 'friend') {
+            answer = r.status === 'request';
+            r.status = 'friend';
+          }
         } else if (r?.status === 'friend') {
           // their phone lost this player (a new phone, cleared data): ask again
           r.status = 'sent';
+          answer = true;
         } else if (r?.status === 'request') {
           this.data.friends = this.data.friends.filter((f) => f !== r);
           r = undefined;
@@ -404,8 +420,11 @@ export class Presence {
           r.color = m.color;
           r.lastSeen = this.now();
         }
+        this.reach.delete(code);
         this.persist();
         if (!r && !m.friend) return this.drop(code, ls.link);
+        // tell them where they stand now, so both lists agree
+        if (answer) this.sayHi(code);
         this.changed();
         return;
       }
@@ -450,7 +469,14 @@ export class Presence {
     let dirty = false;
     for (const [code, ls] of [...this.links]) {
       if (!ls.open) {
-        if (t - ls.dialedAt > DIAL_TIMEOUT) this.drop(code, ls.link);
+        if (t - ls.dialedAt > DIAL_TIMEOUT) {
+          // Their phone is there but the two couldn't link: try other relay routes next time.
+          if (ls.link.outgoing) {
+            this.reach.set(code, 'blocked');
+            this.o.transport.trouble?.();
+          }
+          this.drop(code, ls.link);
+        }
         continue;
       }
       if (t - ls.heardAt > SILENT_MS) {
