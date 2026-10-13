@@ -1,7 +1,8 @@
 // The Millennium Road: which duels are open, how a duel's result turns into stars and
 // rewards, and the deck rule (your road deck is built only from cards you own).
 import { rng } from '../rng';
-import { COPIES, STARTERS, deckFromStarter, owned, speedDeckProblems, withCards, type SpeedDeck, type SpeedSave } from '../speedSave';
+import { COPIES, MAIN_MIN, STARTERS, deckFromStarter, isExtraCard, owned, speedDeckProblems, unplayableReason, withCards, type SpeedDeck, type SpeedSave } from '../speedSave';
+import { card } from '../db';
 import { CHAPTERS, type CampaignNode, type Chapter } from './roster';
 import { grant } from './rewards';
 import type { SoloSave } from './save';
@@ -60,7 +61,39 @@ export function startRoad(speed: SpeedSave, solo: SoloSave, character: string): 
     counts[n] = (counts[n] ?? 0) + 1;
     if (counts[n] > owned(speed, n)) need.push(n);
   }
-  return { speed: withCards(speed, need), solo: { ...solo, campaign: { ...solo.campaign, starter: st.character, deck } } };
+  return { speed: { ...withCards(speed, need), road: deck }, solo: { ...solo, campaign: { ...solo.campaign, starter: st.character, deck } } };
+}
+
+/**
+ * A road deck that uses copies the profile no longer owns (lost in a bet or broken before the
+ * road deck counted as a deck): the missing copies come out and the Main Deck is topped back
+ * up to its minimum from cards the profile owns. Null when nothing needs fixing.
+ */
+export function repairRoadDeck(speed: SpeedSave, d: SpeedDeck): { deck: SpeedDeck; removed: string[] } | null {
+  const used: Record<string, number> = {};
+  const removed: string[] = [];
+  const keep = (n: string) => {
+    used[n] = (used[n] ?? 0) + 1;
+    if (used[n] <= owned(speed, n)) return true;
+    removed.push(n);
+    return false;
+  };
+  const main = d.main.filter(keep);
+  const extra = d.extra.filter(keep);
+  const skill = d.skill && owned(speed, d.skill) === 0 ? null : d.skill;
+  if (!removed.length && skill === d.skill) return null;
+  // Top up: more copies of what the deck already plays first, then the rest of the collection.
+  const pool = [...new Set(main), ...Object.keys(speed.collection ?? {}).sort()];
+  for (const n of pool) {
+    if (main.length >= MAIN_MIN) break;
+    const c = card(n);
+    if (!c || c.sub === 'Skill' || isExtraCard(n) || unplayableReason(n)) continue;
+    while (main.length < MAIN_MIN && (used[n] ?? 0) < Math.min(COPIES, owned(speed, n))) {
+      used[n] = (used[n] ?? 0) + 1;
+      main.push(n);
+    }
+  }
+  return { deck: { ...d, main, extra, skill }, removed };
 }
 
 /** Everything wrong with the road deck, including cards you don't own enough of. */

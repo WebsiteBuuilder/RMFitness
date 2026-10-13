@@ -123,10 +123,10 @@ export function withStarter(s: SpeedSave, d: SpeedDeck): SpeedSave {
   return withCards(s, deckCards(d));
 }
 
-/** The most copies of a card any of the profile's collection decks uses. */
+/** The most copies of a card any of the profile's collection decks uses (the Millennium Road deck included). */
 export function copiesInDecks(s: SpeedSave, name: string): number {
   let most = 0;
-  for (const d of s.decks) if (!d.open) most = Math.max(most, deckCards(d).filter((n) => n === name).length);
+  for (const d of [...s.decks, ...(s.road ? [s.road] : [])]) if (!d.open) most = Math.max(most, deckCards(d).filter((n) => n === name).length);
   return most;
 }
 
@@ -283,10 +283,21 @@ export interface RivalDuel {
   counts: boolean;
   /** played over the internet (each on their own phone): every win pays a pack, no daily cap */
   online?: boolean;
+  /** the duel ended by one player giving up */
+  surrender?: boolean;
+  /** Life Points either player lost during the duel */
+  damage?: number;
 }
+
+/**
+ * A duel that's too short to say anything: given up before each player has had a full turn
+ * and before any damage. It counts for neither the King of Games record nor rival prizes.
+ */
+export const tooQuick = (r: Pick<RivalDuel, 'surrender' | 'turns' | 'damage'>) => !!r.surrender && r.turns < RIVAL_MIN_TURNS && !(r.damage ?? 0);
 
 /** A Link Battle against another player: the head-to-head record and the day's prizes. */
 export function rivalResult(s: SpeedSave, r: RivalDuel, now = Date.now()): { save: SpeedSave; lines: string[] } {
+  if (tooQuick(r)) return { save: s, lines: r.result === 'w' ? [`${r.opp} gave up before the duel got going: it doesn't count for your record with them`] : [] };
   const rivals = { ...rivalsOf(s) };
   const old = rivals[r.opp] ?? { w: 0, l: 0, d: 0, streak: 0 };
   const rec = { ...old, [r.result]: old[r.result] + 1 };
