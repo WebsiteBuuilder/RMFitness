@@ -74,6 +74,7 @@ function place(e: Engine, p: Pid, name: string, pos: Pos = 'atk', faceUp = true,
   const ps = e.player(p);
   const c = [...ps.deck, ...ps.gy, ...ps.fusion, ...ps.hand].find((x) => x.name === name);
   if (!c) throw new Error(`no ${name} for player ${p}`);
+  e.state.fx.ignoreCond = c.uid; // test setup: place it ignoring Summoning conditions (Toon "must be Special Summoned from the hand")
   run(e, e.specialSummon(c.uid, p, pos, faceUp), ...ans);
   const f = e.fieldCard(c.uid);
   if (f && !faceUp) f.placedTurn = -1;

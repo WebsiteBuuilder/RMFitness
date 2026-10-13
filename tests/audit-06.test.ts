@@ -247,7 +247,7 @@ section('Gearfried the Red-Eyes Iron Knight');
   const gf = place(e, 0, 'Gearfried the Red-Eyes Iron Knight')!;
   const st = putST(e, 1, 'Jar of Greed');
   const axe = grab(e, 0, 'Axe of Despair');
-  act(e, 0, axe.uid, 'yes', 'yes');
+  act(e, 0, axe.uid, 'yes', 'no', 'yes'); // 'no': decline Axe of Despair's own "Tribute 1 monster; put it on top of the Deck"
   check(zone(e, axe) === 'gy' && zone(e, st) === 'gy' && zone(e, gf) === 'mz', 'equipped: destroy the Equip Card, then a Spell/Trap the opponent controls');
 }
 {
