@@ -38,6 +38,15 @@ export const START_GRACE_MS = 4000;
 export const WATCHDOG_SLACK_MS = 1500;
 /** An opponent's summon that is not a big one plays this much faster (a short version). */
 export const OPP_SUMMON_SCALE = 2.5;
+/** Life Points count to their new value over this long (LpCount). */
+export const LP_TICK_MS = 600;
+/** The result shows this long after the Life Points have finished counting down. */
+export const WIN_AFTER_LP_MS = 250;
+/** ...but never waits longer than this after the Life Points changed. */
+export const WIN_MAX_WAIT_MS = 4000;
+const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** The Life Points counters on screen read `s`'s values (a player with no counter counts as done). */
+const lpCounted = (s: DuelState) => s.players.every((p, k) => (lpShown.get(k as Pid) ?? p.lp) === p.lp);
 const stageEl = () => (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'));
 const SIGNATURES = new Set(SIGNATURE_CARDS);
 
@@ -59,6 +68,12 @@ const signature = (s: DuelState) => {
 const copy = (s: DuelState): DuelState => (typeof structuredClone === 'function' ? structuredClone(s) : JSON.parse(JSON.stringify(s)));
 
 const humanPrompt = (s: DuelState, seat: Pid | null) => !!s.prompt && (seat === null || s.prompt.player === seat);
+const lpOf = (s: DuelState) => `${s.players[0].lp}|${s.players[1].lp}`;
+/** `s` with the Life Points of `from` (the rest of the board as it is). */
+const withLp = (s: DuelState, from: DuelState): DuelState => ({
+  ...s,
+  players: s.players.map((p, k) => (p.lp === from.players[k].lp ? p : { ...p, lp: from.players[k].lp })) as DuelState['players'],
+});
 
 /** A summon worth a cinematic under "Big moments": level 7+, Fusion, Ritual, or a signature card. */
 function bigCard(name: string): boolean {
@@ -138,6 +153,13 @@ export class Flow {
   private dogAt = 0;
   private dogLeft = -1;
   private promptSkipped: unknown = null;
+  /** when the Life Points on screen last changed (performance.now() ms) */
+  private lpAt = -1e9;
+  /** the won duel waiting for its Life Points to finish counting before the result shows */
+  private winHeld: DuelState | null = null;
+  private winTimer = 0;
+  /** the copy of the live state taken at the update before this one */
+  private prevSnap: DuelState | null = null;
   seat: Pid | null = null;
   rerender: () => void = () => {};
 
@@ -170,6 +192,7 @@ export class Flow {
     this.real = real;
     this.sig = sig;
     const before = this.snap;
+    this.prevSnap = before;
     this.snap = copy(real);
     const evs = real.events ?? [];
     const top = evs.length ? evs[evs.length - 1].seq : 0;
@@ -179,7 +202,7 @@ export class Flow {
       // First look, or the duel was rebuilt from its log: start from here, replay nothing.
       this.lastSeq = top;
       this.flushAll();
-      this.shown = real;
+      this.show(real);
       this.memo = memoField(real, viewer, host);
       return real;
     }
@@ -204,7 +227,7 @@ export class Flow {
         return again ? 2 : 1;
       });
       // the board keeps showing the duel as it was before this chain
-      if (!this.pending.length) this.shown = before;
+      if (!this.pending.length) this.show(before);
       this.pending.push({ id: batch, state: this.snap, cine: true, prompt: humanPrompt(real, seat) });
       this.outbox.push({ cues, batch, scales });
       // the computer waits from this very moment; the field figures in it step aside
@@ -216,7 +239,7 @@ export class Flow {
       const last = this.pending[this.pending.length - 1];
       if (!last.cine) last.state = this.snap;
       else this.pending.push({ id: this.nextId++, state: this.snap, cine: false, prompt: false });
-    } else this.shown = real;
+    } else this.show(real);
     return this.shown ?? real;
   }
 
@@ -245,8 +268,67 @@ export class Flow {
   commit(batch: number, end: boolean) {
     const i = this.pending.findIndex((p) => p.id === batch);
     if (i < 0) return;
-    if (!end && this.pending[i].prompt) return;
+    if (!end && this.pending[i].prompt) {
+      // The choice waits for the end of the chain, but the blow's damage lands now:
+      // the Life Points tick down at the hit, not all at once when the stage closes.
+      const s = this.shown;
+      const at = this.pending[i].state;
+      if (s && lpOf(s) !== lpOf(at)) {
+        this.show(withLp(s, at));
+        this.rerender();
+      }
+      return;
+    }
     this.advance(i);
+  }
+
+  /**
+   * Puts `next` on screen. A duel that has just been won shows its last Life Points
+   * first and its result only once they have counted down (LP_TICK_MS + WIN_AFTER_LP_MS).
+   */
+  private show(next: DuelState) {
+    // (the live state changes in place: what it showed before is the copy taken at the last update)
+    const prev = this.shown === this.real && this.prevSnap ? this.prevSnap : this.shown;
+    const now = clock();
+    if (prev && lpOf(prev) !== lpOf(next)) this.lpAt = now;
+    clearTimeout(this.winTimer);
+    this.winHeld = null;
+    if (prev && next.winner !== null && prev.winner === null) {
+      const wait = this.lpAt + LP_TICK_MS + WIN_AFTER_LP_MS - now;
+      if (wait > 0) {
+        this.winHeld = next;
+        this.shown = { ...next, winner: null };
+        this.winTimer = setTimeout(() => this.revealWin(), wait) as unknown as number;
+        return;
+      }
+    }
+    this.shown = next;
+  }
+
+  /**
+   * The won duel's result goes up once its Life Points have counted down on screen
+   * (on a struggling device the count can run late: it is checked, not assumed;
+   * WIN_MAX_WAIT_MS at most). `now`: at once.
+   */
+  private revealWin(now = false) {
+    const w = this.winHeld;
+    if (!w) return;
+    clearTimeout(this.winTimer);
+    if (!now && !lpCounted(w) && clock() - this.lpAt < WIN_MAX_WAIT_MS) {
+      this.winTimer = setTimeout(() => {
+        if (lpCounted(w)) this.winTimer = setTimeout(() => this.revealWin(true), WIN_AFTER_LP_MS) as unknown as number;
+        else this.revealWin();
+      }, 80) as unknown as number;
+      return;
+    }
+    this.winHeld = null;
+    this.shown = w;
+    this.rerender();
+  }
+
+  /** The result is waiting for the Life Points to count down. */
+  get winPending() {
+    return this.winHeld !== null;
   }
 
   /** Shows the state of pending[i] (and of the quiet updates right behind it). */
@@ -254,7 +336,7 @@ export class Flow {
     let j = i;
     while (j + 1 < this.pending.length && !this.pending[j + 1].cine) j++;
     // all caught up: back to the live state
-    this.shown = j === this.pending.length - 1 && this.real ? this.real : this.pending[j].state;
+    this.show(j === this.pending.length - 1 && this.real ? this.real : this.pending[j].state);
     this.pending.splice(0, j + 1);
     this.armWatchdog();
     this.rerender();
@@ -291,6 +373,8 @@ export class Flow {
   flushAll() {
     this.outbox = [];
     if (this.pending.length) this.advance(this.pending.length - 1);
+    // a tap once the Life Points read their last value goes straight to the result
+    else if (this.winHeld && clock() >= this.lpAt + LP_TICK_MS && lpCounted(this.winHeld)) this.revealWin(true);
   }
 
   /** Hold to skip all: during the opponent's turn, no more cinematics until it ends. */
@@ -304,8 +388,15 @@ export class Flow {
     return this.pending.length > 0;
   }
 
+  /** A choice for the player is waiting behind the stage (or already up). */
+  get promptWaiting() {
+    return this.pending.some((p) => p.prompt) || (!!this.shown && humanPrompt(this.shown, this.seat));
+  }
+
   dispose() {
     clearTimeout(this.watchdog);
+    clearTimeout(this.winTimer);
+    this.winHeld = null;
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
     this.pending = [];
     this.outbox = [];
@@ -341,6 +432,16 @@ export function releaseBoard() {
 /** Long press / double tap on the art stage. */
 export function skipAllChains() {
   flow?.skipAll();
+}
+
+/** A tap while a won duel waits for its Life Points: once they read their last value, the result shows at once. */
+export function tapToResult() {
+  if (flow?.winPending) flow.flushAll();
+}
+
+/** A choice for the player waits for the stage: what is left on it fades out fast. */
+export function promptWaiting(): boolean {
+  return !!flow?.promptWaiting;
 }
 
 /** True while the board lags behind a cinematic (the stage then takes every tap). */
@@ -384,7 +485,8 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
 
 /** The Life Points last on screen per player: a remounted counter ticks on from there instead of jumping. */
 const lpShown = new Map<Pid, number>();
-const LP_TICK_MS = 600;
+/** A drop never lands in fewer than this many drawn steps (a stalled frame advances it by at most 1/n). */
+const LP_MIN_STEPS = 6;
 
 /**
  * Life Points that count down (or up) over 0.6 s, flashing red when they drop.
@@ -407,16 +509,24 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     if (value < from) setHits((h) => h + 1);
     const t0 = performance.now();
     let raf = 0;
-    const tick = () => {
-      const k = Math.min(1, (performance.now() - t0) / LP_TICK_MS);
+    let k = 0;
+    let frameAt = t0;
+    const tick = (frame: boolean) => {
+      const now = performance.now();
+      if (frame) frameAt = now;
+      // wall time, but a drawn frame moves it at most 1/LP_MIN_STEPS: after a long frame
+      // the count still visibly ticks instead of landing at once (never past 2.5× its time,
+      // though). Frames that stopped coming (a hidden tab): the backup timer lands it on time.
+      const t = Math.min(1, (now - t0) / LP_TICK_MS);
+      k = frame ? (now - t0 > LP_TICK_MS * 2.5 ? t : Math.min(t, k + 1 / LP_MIN_STEPS)) : now - frameAt > 1000 ? t : k;
       show(Math.round(from + (value - from) * (1 - (1 - k) ** 3)));
       return k >= 1;
     };
     const step = () => {
-      raf = tick() ? 0 : requestAnimationFrame(step);
+      raf = tick(true) ? 0 : requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
-    const backup = setInterval(() => tick() && clearInterval(backup), 100);
+    const backup = setInterval(() => tick(false) && clearInterval(backup), 100);
     return () => (cancelAnimationFrame(raf), clearInterval(backup));
   }, [value]);
   return (

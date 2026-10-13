@@ -4,8 +4,9 @@ import { Engine } from '../src/eds/engine';
 import { DB as APP_DB } from '../src/eds/db';
 import type { DuelState, Prompt } from '../src/eds/types';
 import { artBusy, artFocus, bannerOnce, clearArtFocus, coalesce, cueUids, focusArt, onArtChange, setArtBusy, toCues, type Cue, type CardRef } from '../src/art/cues';
-import { attachArtSink, Flow, pickCues, START_GRACE_MS, WATCHDOG_SLACK_MS } from '../src/art/flow';
-import { Timeline } from '../src/art/runtime';
+import { attachArtSink, Flow, LP_TICK_MS, pickCues, START_GRACE_MS, WATCHDOG_SLACK_MS, WIN_AFTER_LP_MS } from '../src/art/flow';
+import { SKIP_W, skipSpot } from '../src/art/skipspot';
+import { cueOwner, flowRate, OPP_BACKLOG_RATE, Timeline } from '../src/art/runtime';
 import { DB, SPEED } from './speedkit';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
@@ -59,6 +60,14 @@ ok(pickCues(sample, 'all', 0).length === sample.length, 'All: everything');
 ok(pickCues(sample, 'off', 0).length === 0, 'Off: nothing');
 ok(pickCues(sample, 'mine', 0).length === 0, "My actions only: the opponent's moves play none");
 ok(kinds(pickCues(sample, 'mine', 1)) === 'summon:small,summon:big,set,activate,attack,damage:500,damage:1500,destroy', 'My actions only: my moves and what follows from them');
+{
+  // an opponent's long chain keeps moving
+  const act: Cue = { kind: 'activate', card: ref(spell.name, 1), what: 'spell' };
+  ok(cueOwner(act) === 1 && cueOwner({ kind: 'damage', player: 0, amount: 100 }) === null, 'a cue belongs to the controller of its card (damage to no one)');
+  ok(flowRate(act, undefined, 1) === 1 && flowRate(act, undefined, 1, true) >= OPP_BACKLOG_RATE, `an opponent cue with more queued behind plays at least ${OPP_BACKLOG_RATE}×`);
+  const atk: Cue = { kind: 'attack', attacker: ref(lowMon.name, 1), target: null, defender: 0 };
+  ok(flowRate(atk, { cue: { kind: 'hit', attacker: null, target: null, defender: 0 }, batch: 1, scale: 1 }, 1, true) === 1.6, 'a faster chain rate is kept');
+}
 const merged = coalesce([{ kind: 'hit', attacker: null, target: null, defender: 0 }, { kind: 'damage', player: 0, amount: 1200 }]);
 ok(merged.length === 1 && merged[0].kind === 'hit' && merged[0].dmg?.amount === 1200, 'battle damage plays with the blow (one moment)');
 
@@ -115,8 +124,13 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   ok(lp(held, 1) === 4000 && !held.prompt, "the opponent's attack holds the board for the defending player");
   f.drawn();
   const p = played[played.length - 1];
+  let redraws = 0;
+  f.rerender = () => redraws++;
   f.commit(p.batch, false);
-  ok(!f.update(e.state, 1).prompt, 'a chain that ends in a choice for the player does not show it mid-way');
+  const mid = f.update(e.state, 1);
+  ok(!mid.prompt, 'a chain that ends in a choice for the player does not show it mid-way');
+  ok(lp(mid, 1) === lp(e.state, 1) && lp(mid, 1) < 4000 && redraws === 1, `but its damage lands at the impact (LP ${lp(mid, 1)}, redrawn ${redraws}×), so the count ticks at the hit`);
+  ok(f.promptWaiting, 'the stage hears a choice is waiting (its tail fades out fast)');
   f.commit(p.batch, true);
   ok(f.update(e.state, 1).prompt?.player === 1, 'it shows when the chain is over');
   const before = skips;
@@ -206,6 +220,84 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   f.commit(p.batch, true);
   ok(!f.holding, 'and lets it go when it ends');
   f.dispose();
+}
+
+{
+  // the result waits for the Life Points to count down to 0
+  const e = duel();
+  const f = new Flow();
+  let redraws = 0;
+  f.rerender = () => redraws++;
+  f.update(e.state, 0);
+  e.state.players[1].lp = 0;
+  e.state.winner = 0;
+  const s1 = f.update(e.state, 0);
+  ok(lp(s1, 1) === 0 && s1.winner === null && f.winPending, 'a won duel shows its last Life Points first, without the result');
+  await new Promise((r) => setTimeout(r, LP_TICK_MS - 150));
+  ok(f.update(e.state, 0).winner === null, 'still no result while the count is running');
+  f.flushAll();
+  ok(f.update(e.state, 0).winner === null, 'a tap before the count reads 0 does not jump to the result');
+  await new Promise((r) => setTimeout(r, 150 + WIN_AFTER_LP_MS + 60));
+  ok(f.update(e.state, 0).winner === 0 && !f.winPending && redraws === 1, `then the result shows (${LP_TICK_MS + WIN_AFTER_LP_MS} ms after the LP change)`);
+  f.dispose();
+}
+{
+  // a tap once the count has reached 0 goes straight to the result
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.state.players[1].lp = 0;
+  e.state.winner = 0;
+  f.update(e.state, 0);
+  await new Promise((r) => setTimeout(r, LP_TICK_MS + 20));
+  f.flushAll();
+  ok(f.update(e.state, 0).winner === 0, 'a tap after the LP read 0 shows the result at once');
+  f.dispose();
+}
+{
+  // a win with no Life Points change (deck out, surrender) shows at once
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.state.winner = 1;
+  ok(f.update(e.state, 0).winner === 1 && !f.winPending, 'a win without a Life Points change shows its result at once');
+  f.dispose();
+}
+
+// ---------- the skip pill keeps clear of the bar's contents ----------
+{
+  // 412 wide: avatar, a short name, Skill, LP, menu
+  const bar: [number, number][] = [
+    [4, 48],
+    [44, 110],
+    [250, 304],
+    [300, 360],
+    [356, 408],
+  ];
+  const s = skipSpot(bar, 0, 412, 412);
+  const clear = (l: number) => bar.every(([a, b]) => l + SKIP_W <= a || l >= b);
+  ok(!s.below && clear(s.left) && s.left === 134, `in the gap between the name and Skill, as central as it fits (left ${s.left})`);
+  // 390 wide: the name runs up to Skill, so no gap is wide enough
+  const full: [number, number][] = [
+    [4, 48],
+    [44, 120],
+    [196, 250],
+    [262, 340],
+    [336, 386],
+  ];
+  const f = skipSpot(full, 0, 390, 390);
+  ok(f.below, `no gap between the name and Skill (390 wide): below the bar (left ${f.left})`);
+  const tight: [number, number][] = [
+    [4, 48],
+    [44, 150],
+    [160, 214],
+    [220, 320],
+    [316, 371],
+  ];
+  const t = skipSpot(tight, 0, 375, 375);
+  ok(t.below && Math.abs(t.left + SKIP_W / 2 - 187.5) < 1, 'no gap wide enough (375 wide): below the bar, centred');
+  const open = skipSpot([[300, 380]], 0, 390, 390);
+  ok(!open.below && Math.abs(open.left + SKIP_W / 2 - 195) < 1, 'an empty middle: centred');
 }
 
 // ---------- the busy flag, the focus (field figures step aside) and its listeners ----------

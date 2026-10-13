@@ -6,11 +6,13 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DuelState, Pid } from "../eds/types";
 import { bannerOnce, clearArtFocus, setArtBusy, type Cue } from "./cues";
-import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, releaseBoard, skipAllChains } from "./flow";
+import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, promptWaiting, releaseBoard, skipAllChains, tapToResult } from "./flow";
 import { shadowRealmOf } from "./shadow";
 import { getAnimSpeed, useAnimSpeed, useCinematics } from "./settings";
 import type { Director, Ui } from "./runtime";
 import type { BoardLayer, BoardMonster } from "./board";
+import type { ArtData } from "./depth";
+import { skipSpot } from "./skipspot";
 import "./art.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
@@ -30,8 +32,6 @@ export function getArtSetting(): ArtSetting {
 /** Hold this long to skip everything (long enough that a slow tap never does). */
 const HOLD_MS = 575;
 const DOUBLE_TAP_MS = 350;
-/** the skip pill's width (art.css) */
-const SKIP_W = 116;
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
@@ -82,6 +82,21 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
   };
 }
 
+/** What in a bar the skip pill must not cover, as padded [left, right] spans: each child's box (a name: just its text). */
+function barObstacles(bar: HTMLElement): [number, number][] {
+  const out: [number, number][] = [];
+  for (const c of Array.from(bar.children) as HTMLElement[]) {
+    let b: DOMRect;
+    if (/name/.test(c.className)) {
+      const rg = document.createRange();
+      rg.selectNodeContents(c);
+      b = rg.getBoundingClientRect();
+    } else b = c.getBoundingClientRect();
+    if (b.width > 0) out.push([b.left - 6, b.right + 6]);
+  }
+  return out;
+}
+
 const idle = (f: () => void) => {
   const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
   // Safari has no requestIdleCallback
@@ -101,6 +116,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   const loading = useRef<Promise<Director | null> | null>(null);
   const broken = useRef(false);
   const waiting = useRef<{ cues: Cue[]; batch: number; scales: number[] }[]>([]);
+  const cineRef = useRef<string>(cine);
+  cineRef.current = cine;
   const viewerRef = useRef(viewer);
   viewerRef.current = viewer;
   /** a cinematic is on screen (from its first built frame until the stage is idle) */
@@ -150,6 +167,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         // no WebGL mid-cinematic: the board shows the duel as it is at once
         d.onLost = releaseBoard;
         d.viewer = viewerRef.current;
+        d.cinematics = cineRef.current;
+        d.hurry = promptWaiting;
         void Promise.resolve(d.prewarm?.()).catch(() => {});
         dir.current = d;
         const q = waiting.current;
@@ -204,6 +223,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
     if (stateRef.current.winner !== null) return skipAll(false);
+    tapToResult();
     clearLayer();
     if (dir.current) dir.current.skip();
     else dropWaiting();
@@ -222,9 +242,11 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   };
 
   /**
-   * The skip pill sits small at the top centre, inside the opponent's bar (clear of
-   * the hand, the Spell/Trap row and their Life Points). And the cinematic's
-   * figures keep clear of the bottom bar: --art-safe-bottom (read by the director).
+   * The skip pill sits small in the opponent's bar, in the free gap between what is
+   * in it (name, Skill, Life Points, the menu button) nearest the centre; when no gap
+   * is wide enough (a narrow phone), just below the bar. Never over a hand's cards in
+   * play or the Spell/Trap row. And the cinematic's figures keep clear of the bottom
+   * bar: --art-safe-bottom (read by the director).
    */
   const placeSkip = () => {
     const bar = document.querySelector<HTMLElement>(".duel .tbar.top, .duel .pbar.top");
@@ -235,13 +257,14 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         const cs = getComputedStyle(bar);
         const pt = parseFloat(cs.paddingTop) || 0;
         const inner = r.height - pt - (parseFloat(cs.paddingBottom) || 0);
-        // centred on the bar's content (below a notch's padding)
-        el.style.top = `${Math.round(r.top + pt + Math.max(0, (inner - 24) / 2))}px`;
-        // centred, but never over their Life Points
-        const lp = bar.querySelector<HTMLElement>(".tlp, .lp");
-        const mid = window.innerWidth / 2 - SKIP_W / 2;
-        el.style.left = `${Math.round(Math.max(4, lp ? Math.min(mid, lp.getBoundingClientRect().left - 6 - SKIP_W) : mid))}px`;
-      } else el.style.top = "";
+        const spot = skipSpot(barObstacles(bar), r.left, r.right, window.innerWidth);
+        // centred on the bar's content (below a notch's padding), or tucked under the bar
+        el.style.top = `${Math.round(spot.below ? r.bottom + 4 : r.top + pt + Math.max(0, (inner - 24) / 2))}px`;
+        el.style.left = `${Math.round(spot.left)}px`;
+      } else {
+        el.style.top = "";
+        el.style.left = "";
+      }
     }
     placeSafe();
   };
@@ -289,7 +312,10 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   useEffect(() => {
     if (!on3d) return;
     let gone = false;
-    void ensure();
+    // the director's shaders first (the first cinematic waits for them), then the figures layer's
+    void ensure()
+      .then((d) => d?.prewarm())
+      .then(() => !gone && ensureBoard(), () => {});
     import("./board").catch(() => {});
     idle(() => {
       if (gone) return;
@@ -300,11 +326,29 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         for (const c of [...ps.mz, ...ps.hand, ...ps.deck, ...ps.fusion, ...ps.gy]) if (c?.name) names.add(c.name);
       }
       // also measure each figure's feet and look now: those small canvas reads stall a frame
-      // when a monster's figure first appears mid-duel
+      // when a monster's figure first appears mid-duel. One card per idle moment, and never
+      // while a cinematic is on (a burst of reads there was a 0.6 s hitch on the first summon).
       Promise.all([import("./depth"), import("./stage")])
-        .then(([{ preloadArt }, { figureFoot, artTame }]) =>
-          gone ? undefined : preloadArt([...names], () => gone, (a) => (figureFoot(a), artTame(a))),
-        )
+        .then(([{ preloadArt }, { figureFoot, artTame }]) => {
+          if (gone) return;
+          const q: ArtData[] = [];
+          let pumping = false;
+          const pump = () => {
+            pumping = true;
+            idle(() => {
+              if (gone) return;
+              if (dir.current?.onStage) return void setTimeout(pump, 500);
+              const a = q.shift();
+              if (a) (figureFoot(a), artTame(a));
+              if (q.length) pump();
+              else pumping = false;
+            });
+          };
+          return preloadArt([...names], () => gone, (a) => {
+            q.push(a);
+            if (!pumping) pump();
+          });
+        })
         .catch(() => {});
     });
     return () => void (gone = true);
@@ -359,6 +403,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   latest.current = standing;
 
   useEffect(() => {
+    if (dir.current) dir.current.cinematics = cine;
     if (cine === "off") (dir.current?.clear(), dropWaiting(), clearLayer());
   }, [cine]);
   useEffect(() => {

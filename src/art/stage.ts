@@ -2488,11 +2488,32 @@ export class Stage {
     else this.flash = Math.max(this.flash, s);
   }
 
+  /** the stopped stage's tidy-up (clear, resize, save the tier), waiting for a quiet moment */
+  private parkId = 0;
+  /** the canvas was hidden by stop(): it shows again once a new frame is drawn */
+  private hidden = false;
+  /** A frame this long (ms), SPIKE_RUN times in a row, drops a quality tier at once. */
+  static readonly SPIKE_MS = 50;
+  static readonly SPIKE_RUN = 3;
+  /** consecutive frames over SPIKE_MS */
+  private spikes = 0;
+
   start() {
     if (this.running || this.lost || this.disposed) return;
     this.running = true;
+    // a tidy-up still waiting is moot: the next frame draws over the canvas anyway
+    this.cancelPark();
     this.resetGovernor();
+    this.spikes = 0;
     this.schedule();
+  }
+
+  private cancelPark() {
+    if (!this.parkId) return;
+    const w = window as Window & { cancelIdleCallback?: (id: number) => void };
+    if (w.cancelIdleCallback) w.cancelIdleCallback(this.parkId);
+    clearTimeout(this.parkId);
+    this.parkId = 0;
   }
 
   private schedule() {
@@ -2505,9 +2526,9 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     const ms = now - this.last;
-    // Cinematics keep real time down to 10 fps (a slow phone sees fewer frames, not
-    // slow motion); physics and particles step at most 50 ms at a time.
-    let dt = Math.min(0.1, ms / 1000) * this.speed;
+    // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
+    // not slow motion); physics and particles step at most 50 ms at a time.
+    let dt = Math.min(0.2, ms / 1000) * this.speed;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;
@@ -2516,21 +2537,44 @@ export class Stage {
     const t0 = performance.now();
     this.step(Math.min(dt, 0.05 * this.speed), dt);
     if (!this.running) return;
+    // stopped earlier (hidden at once): it shows again now that a fresh frame is drawn
+    if (this.hidden) {
+      this.hidden = false;
+      this.canvas.style.visibility = '';
+    }
     this.raf = requestAnimationFrame(this.loop);
     if (this.governor) this.govern(ms, performance.now() - t0);
   };
 
+  /**
+   * Stops drawing. The canvas is hidden this very moment (a tap-skip gives the duel
+   * the screen back without a stall); clearing it, a new buffer size the governor
+   * asked for mid-shot and saving the tier wait for a quiet moment.
+   */
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    if (this.disposed) return;
+    if (this.lost) return void this.saveTier();
+    if (!this.hidden) {
+      this.hidden = true;
+      this.canvas.style.visibility = 'hidden';
+    }
+    if (this.parkId) return;
+    const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+    this.parkId = w.requestIdleCallback ? w.requestIdleCallback(this.park, { timeout: 600 }) : (setTimeout(this.park, 60) as unknown as number);
+  }
+
+  private park = () => {
+    this.parkId = 0;
+    if (this.running || this.disposed) return;
     this.saveTier();
     if (this.lost) return;
-    // idle now: the new buffer size the governor asked for mid-shot
     if (this.sizeDirty) this.resize();
     this.renderer.setRenderTarget(null);
     this.renderer.clear();
-  }
+  };
 
   /** One frame: `dt` steps effects and particles, `cineDt` (default `dt`) the cinematic's own clock. */
   step(dt: number, cineDt = dt) {
@@ -2592,6 +2636,14 @@ export class Stage {
    * Stepping up and then straight back down doubles the wait before trying again.
    */
   private govern(ms: number, workMs: number) {
+    // a run of very long frames (a busy phone): step down now, not after a whole window
+    this.spikes = ms > Stage.SPIKE_MS ? this.spikes + 1 : 0;
+    if (this.spikes >= Stage.SPIKE_RUN && this.level > 0) {
+      this.spikes = 0;
+      if (performance.now() - this.lastUp < 5000) this.upWait = Math.min(this.upWait * 2, 48);
+      this.tier = this.level - 1;
+      return;
+    }
     const x = Math.min(ms, 50);
     const i = this.ftI;
     this.ftSum += x - this.ft[i];
@@ -2657,6 +2709,7 @@ export class Stage {
 
   dispose() {
     this.stop();
+    this.cancelPark();
     this.clear();
     this.disposed = true;
     cancelAnimationFrame(this.uploadRaf);

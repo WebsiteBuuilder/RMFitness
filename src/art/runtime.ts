@@ -186,7 +186,38 @@ interface Queued {
 }
 
 /** How much faster a cinematic plays when it flows straight into the next one of its chain. */
-function flowRate(cue: Cue, next: Queued | undefined, batch: number): number {
+export function flowRate(cue: Cue, next: Queued | undefined, batch: number, oppBacklog = false): number {
+  const r = chainRate(cue, next, batch);
+  // the opponent's turn with more queued behind: it keeps moving
+  return oppBacklog ? Math.max(OPP_BACKLOG_RATE, r) : r;
+}
+
+/** An opponent's cue with more cues queued behind it plays at least this fast. */
+export const OPP_BACKLOG_RATE = 1.35;
+/** Under Cinematics: All, the opponent's quick cues (spells, sets, skills, damage...) beyond this many queued are dropped. */
+export const QUEUE_KEEP = 3;
+
+/** Whose cue it is (null: it follows whatever caused it). */
+export function cueOwner(c: Cue): Pid | null {
+  switch (c.kind) {
+    case 'summon':
+    case 'set':
+    case 'flip':
+    case 'activate':
+    case 'target':
+      return c.card.controller;
+    case 'skill':
+      return c.player;
+    case 'attack':
+      return c.attacker.controller;
+    case 'hit':
+      return c.attacker?.controller ?? (c.defender === 0 ? 1 : 0);
+    default:
+      return null;
+  }
+}
+
+function chainRate(cue: Cue, next: Queued | undefined, batch: number): number {
   const same = next && next.batch === batch ? next.cue.kind : null;
   if (cue.kind === 'attack') return same === 'hit' ? 1.6 : 1.25;
   if (cue.kind === 'hit') return same === 'destroy' ? 1.4 : 1.25;
@@ -200,6 +231,10 @@ const LINGER = 0.3;
 const LINGER_AFTER_SHATTER = 0.1;
 const FADE = 0.25;
 const FAST_FADE = 0.15;
+/** With a choice for the player waiting, the tail is short: this linger, then FAST_FADE. */
+const HURRY_LINGER = 0.1;
+/** Particles still drifting once the stage reported idle get at most this long (s; none when hurried). */
+const PARTICLE_TAIL = 0.25;
 /**
  * After an attack declaration with nothing queued behind it, the fighters hold
  * their pose this long (s at 1x, at least HOLD_MIN real seconds) waiting for the
@@ -323,6 +358,13 @@ export class Director {
     return this.current?.rate ?? this.timeScale;
   }
 
+  /** The Cinematics setting (the art stage keeps it current): under 'all' a long opponent backlog is trimmed. */
+  cinematics = 'big';
+  /** A choice for the player is waiting on the stage (the flow says): what is left fades out fast. */
+  hurry: () => boolean = () => false;
+  /** idleFor when the stage last reported idle (particles get PARTICLE_TAIL more) */
+  private idleMark = -1;
+
   /** Plays one chain: the cues of one engine update. `scales` speeds single cinematics up (2 = half as long). */
   push(cues: Cue[], batch = 0, scales?: number[]) {
     if (!cues.length || this.skipAll || this.stage.lost) {
@@ -336,6 +378,13 @@ export class Director {
     this.queue.push(...cues.map((cue, i) => ({ cue, batch, scale: scales?.[i] ?? 1 })));
     if (this.queue.length > 10) {
       this.queue = this.queue.filter((q) => SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'damage' || q.cue.kind === 'destroy').slice(-10);
+      const left = new Set(this.queue.map((q) => q.batch));
+      for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
+    } else if (this.cinematics === 'all' && this.queue.length > QUEUE_KEEP) {
+      // Everything plays under All, but an opponent's long chain (a spell, a set, a skill, a
+      // flip... one after the other) keeps only its big beats past the first few.
+      const v = this.viewer;
+      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || cueOwner(q.cue) === v);
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
@@ -371,7 +420,9 @@ export class Director {
 
   /** Linger before the battle figures fade (shorter at a faster Animation speed; none after a skip; a short one after a shatter, which is its own beat). */
   private get linger() {
-    return this.fastFade ? 0 : (this.lastKind === 'destroy' ? LINGER_AFTER_SHATTER : LINGER) / this.timeScale;
+    if (this.fastFade) return 0;
+    if (this.hurry()) return HURRY_LINGER / this.timeScale;
+    return (this.lastKind === 'destroy' ? LINGER_AFTER_SHATTER : LINGER) / this.timeScale;
   }
 
   /** Drops the attack declaration kept for a follow-up. */
@@ -567,7 +618,7 @@ export class Director {
     this.idleFor += dt;
     const linger = this.linger;
     if (this.actors.size && this.idleFor > linger) {
-      const k = clamp01((this.idleFor - linger) / ((this.fastFade ? FAST_FADE : FADE) / ts));
+      const k = clamp01((this.idleFor - linger) / ((this.fastFade || this.hurry() ? FAST_FADE : FADE) / ts));
       for (const a of this.actors.values()) {
         if (a.fig) a.fig.u.uOpacity.value = Math.min(a.fig.u.uOpacity.value, 1 - k);
         if (a.back) a.back.u.uOpacity.value = Math.min(a.back.u.uOpacity.value, 1 - k);
@@ -579,8 +630,13 @@ export class Director {
     }
     if (this.actors.size || this.outgoing.length) return;
     // The dim is nearly gone: the duel goes on now; particles finish on their own.
-    if (this.dim < IDLE_DIM) this.idle();
-    if (this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || this.idleFor > 1.5)) {
+    if (this.dim < IDLE_DIM) {
+      if (!this.idleSent) this.idleMark = this.idleFor;
+      this.idle();
+    }
+    // once the duel has the screen back, drifting particles get a short tail (none with a choice waiting)
+    const tailDone = this.idleSent && (this.hurry() || this.idleFor - this.idleMark > PARTICLE_TAIL);
+    if (this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || tailDone || this.idleFor > 1.5)) {
       this.stage.particles.clear();
       this.stage.backdrop.u.uOpacity.value = 0;
       this.stage.stop();
@@ -605,7 +661,7 @@ export class Director {
   /** The dim eases toward what the cinematic wants; flashes and overlays decay; the camera drifts home when idle. */
   private veils(dt: number, following: boolean, lingering: boolean) {
     const want = this.current || following ? this.dimTarget : lingering ? 0.75 : 0;
-    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade ? 22 : 8) * (this.current ? 1 : this.timeScale)));
+    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade || (!this.current && this.hurry()) ? 22 : 8) * (this.current ? 1 : this.timeScale)));
     if (want === 0 && this.dim < 0.01) this.dim = 0;
     const v = this.veil.u;
     v.uDim.value = this.dim;
@@ -650,7 +706,11 @@ export class Director {
     placeholder.rate = this.timeScale;
     this.current = placeholder;
     this.curKind = item.cue.kind;
-    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch);
+    const own = cueOwner(item.cue);
+    // (an opponent cue with more queued behind it: shifted off already, so one left means two were waiting)
+    // (a cue already sped up, like their everyday summon, is fast enough)
+    const oppBacklog = this.queue.length >= 1 && own !== null && own !== this.viewer && item.scale < OPP_BACKLOG_RATE;
+    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
     // Never draw a cinematic before its shaders are ready (a first-use link stalls for a whole second on some phones).
     const warm = Promise.race([this.stage.prewarm(), new Promise((ok) => setTimeout(ok, 2500))]);
     warm
