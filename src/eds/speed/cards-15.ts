@@ -61,12 +61,6 @@ function shiftLevel(e: Engine, m: FieldCard, delta: number) {
   t.lvDelta += delta;
   e.log(null, `${m.name} is now Level ${levelOf(e, m)}`);
 }
-/** The name an effect gave a monster until the end of this turn (Ancient Gear Gadget, Neo-Spacian Dark Panther). */
-const nameAs = (e: Engine) => (fx(e).nameAs ??= {}) as Record<number, { name: string; turn: number }>;
-const tempName = (e: Engine, m: FieldCard) => {
-  const n = nameAs(e)[m.uid];
-  return n && n.turn === e.state.turn ? n.name : undefined;
-};
 /** The card whose chain link is resolving right now, if any. */
 const resolvingCard = (e: Engine): Card | null => {
   const uid = (e as unknown as { levelSource: number | null }).levelSource;
@@ -156,7 +150,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* e.sendToGrave(c.uid, 'tribute');
       },
       *run(e, _c, p) {
-        const list = faceUpMonsters(e, p).filter((m) => named(m, 'Amazoness'));
+        const list = faceUpMonsters(e, p).filter((m) => named(e, m, 'Amazoness'));
         for (const m of list) {
           tag(m).effProofTurn = e.state.turn;
           tag(m).oppNoTargetUntil = e.state.turn;
@@ -168,7 +162,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   let gadgets: string[] | null = null;
   const gadgetNames = (e: Engine) =>
-    (gadgets ??= [...new Set([...e.db.values()].filter((c) => c.kind === 'monster' && named(c.name, 'Gadget') && c.name !== 'Ancient Gear Gadget').map((c) => c.name))].sort());
+    (gadgets ??= [...new Set([...e.db.values()].filter((c) => c.kind === 'monster' && named(e, c.name, 'Gadget') && !e.isNamed(c, 'Ancient Gear Gadget')).map((c) => c.name))].sort());
   function* gadgetDeclare(e: Engine, _m: FieldCard, p: Pid): Step {
     if (!(yield* e.yesno(p, 'Ancient Gear Gadget: declare a card type your opponent cannot activate while your monsters attack this turn?'))) return;
     const k = yield* chooseOption(e, p, 'Ancient Gear Gadget: declare a card type', ['Monster', 'Spell', 'Trap']);
@@ -188,11 +182,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const names = gadgetNames(e);
         const k = yield* chooseOption(e, p, 'Ancient Gear Gadget: declare a "Gadget" monster name', names);
         if (k === null || !e.fieldCard(m.uid)) return;
-        nameAs(e)[m.uid] = { name: names[k], turn: e.state.turn };
+        e.renameUntilEnd(m.uid, names[k]);
         e.log(p, `Ancient Gear Gadget's name becomes "${names[k]}" until the End Phase`);
       },
     },
-    fieldName: (e, m) => tempName(e, m),
   };
 
   // "When this card is Summoned, toss a coin" (tags.coin: 1 Heads, 2 Tails).
@@ -340,7 +333,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       from: 'hand',
       repeat: true,
       label: 'send it to the GY to revive Terrorking Archfiend',
-      can: (e, _c, p, t, ctx) => t === 'destroyed' && ctx.uid !== undefined && ctx.prevController === p && e.find(ctx.uid)?.card.name === 'Terrorking Archfiend' && inZone(e, ctx.uid, 'gy') && e.find(ctx.uid)!.card.owner === p,
+      can: (e, _c, p, t, ctx) => t === 'destroyed' && ctx.uid !== undefined && ctx.prevController === p && !!e.find(ctx.uid) && e.isNamed(e.find(ctx.uid)!.card, 'Terrorking Archfiend') && inZone(e, ctx.uid, 'gy') && e.find(ctx.uid)!.card.owner === p,
       *cost(e, c, _p, link, ctx) {
         yield* e.sendToGrave(c.uid, 'cost');
         link.targetUid = ctx.uid;
@@ -386,7 +379,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   const gyLevels = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && (info(e, c).level ?? 0) > 0 && !['Xyz', 'Link'].includes(info(e, c).sub));
   E['Gagaga Caesar'] = {
-    cannotAttack: (e, m, p) => !faceUpMonsters(e, p).some((x) => x.uid !== m.uid && named(x, 'Gagaga')),
+    cannotAttack: (e, m, p) => !faceUpMonsters(e, p).some((x) => x.uid !== m.uid && named(e, x, 'Gagaga')),
     ignition: {
       can: (e, _m, p) => gyLevels(e, p).length > 0,
       *run(e, _m, p) {
@@ -394,7 +387,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (!c) return;
         const lv = info(e, c).level ?? 1;
         e.banish(c.uid);
-        for (const m of faceUpMonsters(e, p).filter((x) => named(x, 'Gagaga'))) {
+        for (const m of faceUpMonsters(e, p).filter((x) => named(e, x, 'Gagaga'))) {
           tag(m).lvSet = lv;
           tag(m).lvTurn = -1;
         }
@@ -409,8 +402,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Heroic Challenger - Clasp Sword'] = {
     *onSpecialSummon(e, m, p) {
       const src = resolvingCard(e);
-      const byHc = (src && src.uid !== m.uid && named(src, 'Heroic Challenger') && isMonster(e, src)) || faceUpMonsters(e, p).some((x) => x.uid !== m.uid && named(x, 'Heroic Challenger'));
-      const test = (c: Card) => isMonster(e, c) && named(c, 'Heroic Challenger');
+      const byHc = (src && src.uid !== m.uid && named(e, src, 'Heroic Challenger') && isMonster(e, src)) || faceUpMonsters(e, p).some((x) => x.uid !== m.uid && named(e, x, 'Heroic Challenger'));
+      const test = (c: Card) => isMonster(e, c) && named(e, c, 'Heroic Challenger');
       if (!byHc || !opt(e, m.name, p) || !e.player(p).deck.some(test) || !(yield* e.yesno(p, 'Heroic Challenger - Clasp Sword: add a "Heroic Challenger" monster from your Deck to your hand?'))) return;
       useOpt(e, m.name, p);
       yield* searchDeck(e, p, 'Add which "Heroic Challenger" monster?', test);
@@ -442,21 +435,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       *run(e, m, p) {
         const t = yield* pickOne(e, p, 'Neo-Spacian Dark Panther: copy which monster?', targetable(e, faceUpMonsters(e, other(p))));
         if (!t || !e.fieldCard(m.uid)) return;
-        nameAs(e)[m.uid] = { name: t.name, turn: e.state.turn };
-        e.log(p, `Neo-Spacian Dark Panther's name becomes "${t.name}" until the End Phase`);
+        e.renameUntilEnd(m.uid, e.nameOf(t));
+        e.log(p, `Neo-Spacian Dark Panther's name becomes "${e.nameOf(t)}" until the End Phase`);
       },
     },
-    fieldName: (e, m) => tempName(e, m),
   };
 
   E['Phantom Beast Cross-Wing'] = {
-    graveAura: (_e, _c, m) => (m.name === 'Gazelle the King of Mythical Beasts' || named(m, 'Phantom Beast') ? { atk: 300, def: 0 } : undefined),
+    graveAura: (e, _c, m) => (e.isNamed(m, 'Gazelle the King of Mythical Beasts') || named(e, m, 'Phantom Beast') ? { atk: 300, def: 0 } : undefined),
   };
 
   E['Proto-Cyber Dragon'] = { fieldName: () => 'Cyber Dragon' };
 
   // Speed Duel has no Main Phase 2, so its effect never applies.
-  const scraps = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(m, 'Scrap') && m.name !== 'Scrap Mind Reader');
+  const scraps = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(e, m, 'Scrap') && !e.isNamed(m, 'Scrap Mind Reader'));
   E['Scrap Mind Reader'] = {
     graveIgnition: {
       can: (e, c, p) => e.state.phase === 'M2' && opt(e, c.name, p) && scraps(e, p).length > 0,
@@ -515,7 +507,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     attacks: (e, m) => Math.max(1, chimeraN(e, m)),
   };
 
-  const dheroLow = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Destiny HERO') && (info(e, c).level ?? 0) <= 4);
+  const dheroLow = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(e, c, 'Destiny HERO') && (info(e, c).level ?? 0) <= 4);
   E['Destiny HERO - Dystopia'] = {
     *onSpecialSummon(e, m, p) {
       if (!opt(e, m.name, p) || !dheroLow(e, p).length || !(yield* e.yesno(p, 'Destiny HERO - Dystopia: inflict damage equal to a Level 4 or lower "Destiny HERO" in your GY?'))) return;
@@ -570,7 +562,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     guardsFromAttack: () => true,
   };
 
-  const crystalBeasts = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Crystal Beast'));
+  const crystalBeasts = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(e, c, 'Crystal Beast'));
   E['Rainbow Overdragon'] = {
     ignition: {
       can: (e, _m, p) => crystalBeasts(e, p).length > 0,
@@ -611,7 +603,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ======================= Ritual Monster =======================
   // A Special Summon from the hand counts as its Ritual Summon. The delayed destruction happens in your next Standby Phase.
-  const nephRituals = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => isMonster(e, c) && named(c, 'Nephthys') && info(e, c).sub === 'Ritual' && c.name !== 'Conductor of Nephthys');
+  const nephRituals = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => isMonster(e, c) && named(e, c, 'Nephthys') && info(e, c).sub === 'Ritual' && !e.isNamed(c, 'Conductor of Nephthys'));
   const conductorDue = (e: Engine) => (fx(e).conductor ??= {}) as Record<number, number>;
   E['Conductor of Nephthys'] = {
     *onSpecialSummon(e, m, p) {
@@ -622,7 +614,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *onSentToGrave(e, card, owner, from, reason) {
       const src = resolvingCard(e);
-      const ok = reason === 'tribute' || (reason === 'destroyed' && from === 'mz' && !!src && named(src, 'Nephthys'));
+      const ok = reason === 'tribute' || (reason === 'destroyed' && from === 'mz' && !!src && named(e, src, 'Nephthys'));
       if (!ok || !opt(e, card.name, owner, 2) || !(yield* e.yesno(owner, 'Conductor of Nephthys: destroy up to 3 "Nephthys" cards during the next Standby Phase?'))) return;
       useOpt(e, card.name, owner, 2);
       conductorDue(e)[card.uid] = e.state.turn;
@@ -631,7 +623,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const at = conductorDue(e)[card.uid];
       if (at === undefined || at >= e.state.turn) return;
       delete conductorDue(e)[card.uid];
-      const test = (c: Card) => named(c, 'Nephthys') && !(isMonster(e, c) && info(e, c).sub === 'Ritual');
+      const test = (c: Card) => named(e, c, 'Nephthys') && !(isMonster(e, c) && info(e, c).sub === 'Ritual');
       const ps = e.player(p);
       for (const [where, list] of [
         ['hand', () => ps.hand.filter(test)],
@@ -652,7 +644,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ======================= Spells =======================
   // "Cannot be used as Fusion Material" is not scripted.
-  const dustons = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Duston');
+  const dustons = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Duston');
   E['Magicalized Duston Mop'] = h.equip(undefined, {
     canActivate: (e, _c, p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp) && !e.anyActive('Magicalized Duston Mop', p),
     cannotBeTributed: () => true,
@@ -666,7 +658,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   });
 
-  const polys = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Polymerization');
+  const polys = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Polymerization'));
   const frp = (e: Engine) => (fx(e).frp ??= { turn: -1, pending: [] as number[], mats: [] as number[] }) as { turn: number; pending: number[]; mats: number[] };
   const frpNow = (e: Engine) => {
     const s = frp(e);
@@ -718,10 +710,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve() {},
     *onAnyToGrave(e, _fc, _p, events) {
       for (const v of events) {
-        if (v.from !== 'mz' || v.reason !== 'destroyed' || v.byBattle || !v.toGy || v.token || !named(v.card, 'Archfiend') || !isMonster(e, v.card)) continue;
+        if (v.from !== 'mz' || v.reason !== 'destroyed' || v.byBattle || !v.toGy || v.token || !named(e, v.card, 'Archfiend') || !isMonster(e, v.card)) continue;
         const q = v.controller;
         const lv = info(e, v.card).level ?? 0;
-        const test = (c: Card) => isMonster(e, c) && named(c, 'Archfiend') && (info(e, c).level ?? 0) < lv;
+        const test = (c: Card) => isMonster(e, c) && named(e, c, 'Archfiend') && (info(e, c).level ?? 0) < lv;
         if (!e.player(q).deck.some(test) || !(yield* e.yesno(q, `Pandemonium: add an "Archfiend" monster lower than Level ${lv} from your Deck?`))) continue;
         const prev = e.actor;
         e.actor = q;
@@ -732,7 +724,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // The banishing happens from the GY, right after the battle (the destroyed monster's printed ATK is compared).
-  const bujins = (e: Engine) => targetable(e, faceUpMonsters(e)).filter((m) => named(m, 'Bujin'));
+  const bujins = (e: Engine) => targetable(e, faceUpMonsters(e)).filter((m) => named(e, m, 'Bujin'));
   E['Bujintervention'] = {
     canActivate: (e, _c, _p, t) => isMain(t) && bujins(e).length > 0,
     *activate(e, link, p) {
@@ -809,7 +801,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Triangle Ecstasy Spark'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve(e, _link, p) {
-      for (const m of faceUpMonsters(e).filter((x) => x.name === 'Harpie Lady Sisters')) {
+      for (const m of faceUpMonsters(e).filter((x) => e.isNamed(x, 'Harpie Lady Sisters'))) {
         m.atkMod += 2700 - e.atkOf(m);
         e.log(p, `${m.name}'s ATK becomes 2700 until the end of this turn`);
       }

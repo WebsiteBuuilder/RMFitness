@@ -3,6 +3,7 @@
 // doubleTribute, tributeDiscount, onBattlePhaseEnd, onGraveEvents, countsAs, sealsSpells, inHand, lingering)
 // and the engine's summon locks (state.fx.summonLocks).
 import type { EffectDef, GraveEvent } from '../effects';
+import { nameEngine } from '../names';
 import type { SummonLock } from '../engine';
 import type { SpeedHelpers } from './helpers';
 import {
@@ -93,7 +94,7 @@ function toExtraDeck(e: Engine, uid: number) {
 }
 /** Union monsters (their text lets them unequip themselves). */
 const isUnion = (e: Engine, c: Card) => isMonster(e, c) && /Unequip/i.test(info(e, c).desc);
-const dHero = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Destiny HERO');
+const dHero = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Destiny HERO');
 const spellResolving = (e: Engine) => {
   const c = e.resolvingCard();
   return !!c && info(e, c).kind === 'spell';
@@ -164,12 +165,12 @@ function fusionSpell(test: (f: Card) => boolean, title: string): EffectDef {
 
 export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // ======================= Effect Monsters =======================
-  const amazoness = (m: FieldCard) => m.faceUp && named(m, 'Amazoness');
+  const amazoness = (m: FieldCard) => m.faceUp && named(nameEngine(), m, 'Amazoness');
   E['Amazoness Tiger'] = {
     selfBonus: (e, m) => ({ atk: 400 * e.monsters(ctrl(e, m)).filter(amazoness).length, def: 0 }),
     attackGuard: (e, src, sp, attacker, target) => e.controller(attacker.uid) !== sp && target.uid !== src.uid && e.controller(target.uid) === sp && amazoness(target),
     // "You can only control 1": no second copy can be Summoned while one is face-up.
-    forbidsSummon: (_e, _m, q, monster, who, how) => who === q && how !== 'set' && monster.name === 'Amazoness Tiger',
+    forbidsSummon: (e, _m, q, monster, who, how) => who === q && how !== 'set' && e.isNamed(monster, 'Amazoness Tiger'),
   };
 
   E['Ancient Gear Golem'] = { cannotSpecialSummon: true, piercing: true, attackSealsST: true };
@@ -181,8 +182,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Arcana Force VI - The Lovers'] = {
     onSummon: (e, m, p) => lovers(e, m, p),
     onSpecialSummon: lovers,
-    doubleTribute: (_e, m, monster) => m.tags?.coin === 1 && named(monster, 'Arcana Force'),
-    forbidsSummon: (e, m, q, monster, who, how) => m.tags?.coin === 2 && who === q && how === 'normal' && named(monster, 'Arcana Force') && e.tributeNeed(who, monster) > 0,
+    doubleTribute: (e, m, monster) => m.tags?.coin === 1 && named(e, monster, 'Arcana Force'),
+    forbidsSummon: (e, m, q, monster, who, how) => m.tags?.coin === 2 && who === q && how === 'normal' && named(e, monster, 'Arcana Force') && e.tributeNeed(who, monster) > 0,
   };
 
   // Cards sent to its controller's GY during the Battle Phase while it was face-up (fx.battleSurvivor[uid]).
@@ -191,7 +192,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (e.state.phase !== 'BP') return;
       const rec = fxMap<{ turn: number; uids: number[] }>(e, 'battleSurvivor');
       if (rec[m.uid]?.turn !== e.state.turn) rec[m.uid] = { turn: e.state.turn, uids: [] };
-      for (const v of events) if (v.toGy && !v.token && v.card.owner === p && v.card.name !== 'Battle Survivor') rec[m.uid].uids.push(v.card.uid);
+      for (const v of events) if (v.toGy && !v.token && v.card.owner === p && !e.isNamed(v.card, 'Battle Survivor')) rec[m.uid].uids.push(v.card.uid);
     },
     *onBattlePhaseEnd(e, m, p) {
       const rec = fxMap<{ turn: number; uids: number[] }>(e, 'battleSurvivor')[m.uid];
@@ -230,7 +231,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const chronomaly = (m: FieldCard) => m.faceUp && named(m, 'Chronomaly');
+  const chronomaly = (m: FieldCard) => m.faceUp && named(nameEngine(), m, 'Chronomaly');
   E['Chronomaly Sol Monolith'] = {
     ignition: {
       can: (e, _m, p) => e.monsters(p).some(chronomaly),
@@ -245,8 +246,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Being treated as a "Destiny HERO" after a Normal Summon is only logged (archetype checks go by name).
-  const dCubes = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'D Cubed');
+  const dCubes = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'D Cubed'));
   E['D Cubed'] = {
+    // "If this card is Normal Summoned: It is also treated as a "Destiny HERO" monster while face-up on the field."
+    extraNames: (_e, m) => (m.tags?.dHero === 1 ? ['Destiny HERO'] : undefined),
     *onSummon(e, m, p, kind) {
       if (kind !== 'normal') return;
       tag(m).dHero = 1;
@@ -464,7 +467,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const phantom = (m: FieldCard) => m.faceUp && (m.name === 'Gazelle the King of Mythical Beasts' || named(m, 'Phantom Beast'));
+  const phantom = (m: FieldCard) => m.faceUp && (nameEngine().isNamed(m, 'Gazelle the King of Mythical Beasts') || named(nameEngine(), m, 'Phantom Beast'));
   E['Phantom Beast Thunder-Pegasus'] = {
     quick: {
       from: 'gy',
@@ -492,7 +495,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     quick: {
       from: 'hand',
       label: 'protect your monsters from card effects',
-      can: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && e.monsters(p).some((m) => m.faceUp && named(m, 'Red Dragon Archfiend')),
+      can: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && e.monsters(p).some((m) => m.faceUp && named(e, m, 'Red Dragon Archfiend')),
       *cost(e, card) {
         yield* e.sendToGrave(card.uid, 'cost');
       },
@@ -601,7 +604,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ======================= Ritual Monster =======================
-  const nouvelles = (e: Engine, c: Card) => isMonster(e, c) && info(e, c).sub === 'Ritual' && named(c, 'Nouvelles') && [3, 4].includes(info(e, c).level ?? 0);
+  const nouvelles = (e: Engine, c: Card) => isMonster(e, c) && info(e, c).sub === 'Ritual' && named(e, c, 'Nouvelles') && [3, 4].includes(info(e, c).level ?? 0);
   const confirasTargeted = (e: Engine, card: Card, t: string, ctx: ChainCtx) => (t === 'attack' && e.state.battle?.target === card.uid) || ((t === 'spell' || t === 'trap' || t === 'effect') && ctx.link?.targetUid === card.uid);
   E['Confiras de Nouvelles'] = {
     *onSpecialSummon(e, _m, p) {
@@ -631,7 +634,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ======================= Spells =======================
   E['Reverse Breaker'] = {
-    ...h.equipFor((_e, m) => named(m, 'Utopia'), () => ({ atk: 0, def: 0 })),
+    ...h.equipFor((e, m) => named(e, m, 'Utopia'), () => ({ atk: 0, def: 0 })),
     quick: {
       label: 'destroy a Spell/Trap your opponent controls',
       can: (e, card, p, t, ctx) => {
@@ -652,11 +655,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const ancientGear = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Ancient Gear') && !isExtraOrRitual(e, c);
+  const ancientGear = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Ancient Gear') && !isExtraOrRitual(e, c);
   E['Geartown'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
-    tributeDiscount: (_e, _src, _sp, monster) => (named(monster, 'Ancient Gear') ? 1 : 0),
+    tributeDiscount: (e, _src, _sp, monster) => (named(e, monster, 'Ancient Gear') ? 1 : 0),
     *onDestroyed(e, _card, p) {
       const pool = () => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => ancientGear(e, c) && !e.summonBlocked(p, c, 'special', zoneOf(e, c.uid) ?? null));
       if (!freeMZ(e, p) || !pool().length || !(yield* e.yesno(p, 'Geartown: Special Summon an "Ancient Gear" monster from your hand, Deck or GY?'))) return;
@@ -665,7 +668,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Only the first effect: the Set-card effect needs a face-up Pendulum Monster in the Extra Deck.
-  const abyssActors = (e: Engine, p: Pid) => targetable(e, e.monsters(p).filter((m) => m.faceUp && named(m, 'Abyss Actor')));
+  const abyssActors = (e: Engine, p: Pid) => targetable(e, e.monsters(p).filter((m) => m.faceUp && named(e, m, 'Abyss Actor')));
   E['Abyss Script - Fantasy Magic'] = {
     canActivate: (e, _c, p, t) => isMain(t) && abyssActors(e, p).length > 0,
     *activate(e, link, p) {
@@ -711,7 +714,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Needs 4 free Monster Zones, so it can never be activated with the 3 zones of a Speed Duel.
-  const cardians = (e: Engine, p: Pid) => e.player(p).deck.filter((c) => isMonster(e, c) && named(c, 'Flower Cardian') && info(e, c).atk === 100);
+  const cardians = (e: Engine, p: Pid) => e.player(p).deck.filter((c) => isMonster(e, c) && named(e, c, 'Flower Cardian') && info(e, c).atk === 100);
   const cardianNames = (e: Engine, p: Pid) => new Set(cardians(e, p).map((c) => c.name));
   E['Flower Gathering'] = {
     canActivate: (e, _c, p, t) => isMain(t) && e.oncePerTurn('Flower Gathering', p) && e.player(p).mz.filter((z) => z === null).length >= 4 && cardianNames(e, p).size >= 4,
@@ -723,7 +726,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (e.player(p).mz.filter((z) => z === null).length < 4 || cardianNames(e, p).size < 4) return;
       const used: string[] = [];
       for (let i = 0; i < 4; i++) {
-        const s = yield* summonOneOf(e, p, 'Flower Gathering: Special Summon which "Flower Cardian"?', cardians(e, p).filter((c) => !used.includes(c.name)));
+        const s = yield* summonOneOf(e, p, 'Flower Gathering: Special Summon which "Flower Cardian"?', cardians(e, p).filter((c) => !e.namesOf(c).some((nm) => used.includes(nm))));
         if (!s) break;
         used.push(s.name);
         tag(s).negated = 1;
@@ -742,11 +745,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  E['Fullmetalfoes Fusion'] = fusionSpell((f) => named(f, 'Metalfoes'), 'Fullmetalfoes Fusion');
+  E['Fullmetalfoes Fusion'] = fusionSpell((f) => named(nameEngine(), f, 'Metalfoes'), 'Fullmetalfoes Fusion');
 
   // ======================= Traps =======================
   // A-Counters are kept in tags.aCounter.
-  const alienOut = (e: Engine, p: Pid) => e.monsters(p).some((m) => m.faceUp && named(m, 'Alien'));
+  const alienOut = (e: Engine, p: Pid) => e.monsters(p).some((m) => m.faceUp && named(e, m, 'Alien'));
   const hypnoTargets = (e: Engine, p: Pid) => targetable(e, e.monsters(other(p)).filter((m) => (m.tags?.aCounter ?? 0) > 0));
   E['Mass Hypnosis'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && alienOut(e, p) && hypnoTargets(e, p).length > 0 && freeMZ(e, p),
