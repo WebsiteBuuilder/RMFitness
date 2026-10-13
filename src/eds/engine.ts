@@ -23,6 +23,8 @@ export interface SummonLock {
   only?: string[];
   /** monsters of these Levels cannot be Summoned */
   levels?: number[];
+  /** only monsters of these card types (CardInfo.sub: 'Fusion', 'Synchro'...) can be Summoned */ // audit-04
+  subs?: string[];
   /** this card is exempt */
   except?: number;
 }
@@ -288,6 +290,7 @@ export class Engine {
       if (!(how === 'special' ? l.special : how === 'normal' && l.normal)) continue;
       if (l.only && !l.only.some((n) => c.name.includes(n))) return true;
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
+      if (l.subs && !l.subs.includes(this.info(c.name).sub)) return true; // audit-04: "except Fusion Monsters" (Elemental HERO Blazeman)
     }
     if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
     return this.liveCards().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
@@ -2809,6 +2812,8 @@ export class Engine {
       this.log(opp, `${target.name} was flipped face-up`);
     }
     if (tEff?.onBeingAttacked) yield* this.as(opp, tEff.onBeingAttacked(this, target, attacker, opp));
+    // audit-04: the attacker's own "before damage calculation" effect (Drillroid, Eater of Millions).
+    if (this.speed && aEff?.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.as(player, aEff.beforeDamageCalc(this, attacker, target, player));
     if (!this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     let atk = this.atkOf(attacker) + this.attackBonus(attacker, target);
     if (this.state.fx.zeroAttack === attacker.uid) {

@@ -97,6 +97,8 @@ export interface EffectDef {
   interceptAttack?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Generator<Prompt, boolean, Choice>;
   /** Before damage calculation, when attacked (Kazejin, Sanga, Suijin). */
   onBeingAttacked?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Step;
+  /** audit-04: Speed Duel: this attacker's effect before damage calculation, after the target was flipped face-up (Drillroid). */
+  beforeDamageCalc?(e: Engine, attacker: FieldCard, target: FieldCard, controller: Pid): Step;
   /** DEF multiplier during damage calculation (Dark Artist). */
   defenseMult?(e: Engine, target: FieldCard, attacker: FieldCard): number;
   /** Destroy this uid instead when the monster would be destroyed by battle (Relinquished). */
