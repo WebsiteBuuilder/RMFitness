@@ -175,6 +175,7 @@ export class Engine {
       for (const c of this.activeSpells(p)) {
         const kind = this.info(c.name).kind;
         if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
+        if (this.isNegated(c)) continue; // b17: a Spell/Trap whose effects a card negated (Number 45: Crumble Logos)
         const eff = getEffect(c.name);
         if (eff) out.push({ c, p, eff });
       }
@@ -231,12 +232,19 @@ export class Engine {
   activationBlocked(player: Pid, card: Card): boolean {
     if (!this.speed) return false;
     const fx = this.state.fx;
+    if (this.nameLocked(card.name)) return true;
     if (((card as FieldCard).tags?.noActTurn ?? -1) === this.state.turn && this.find(card.uid)?.loc.zone === 'sz') return true;
     const kind = this.info(card.name).kind;
     if (kind === 'trap' && (fx.noTrapTurn as number[] | undefined)?.[player] === this.state.turn) return true;
     const lock = fx.battleLock as { player: Pid; turn: number; kind: string } | undefined;
     if (lock && lock.player === player && lock.turn === this.state.turn && this.state.battle && this.controller(this.state.battle.attacker) === other(player) && lock.kind === kind) return true;
     return false;
+  }
+
+  /** b17: "cards with that name, and their effects, cannot be activated" while a given card stays on the field (Number 45: Crumble Logos). fx.nameLocks: { name, src }. */
+  nameLocked(name: string): boolean {
+    const list = (this.state.fx.nameLocks ?? []) as { name: string; src: number }[];
+    return list.some((x) => x.name === name && !!this.fieldCard(x.src));
   }
 
   /** Speed Duel: extra attacks a monster was granted (Evil HERO Infernal Gainer, Diffusion Wave-Motion). */
@@ -625,6 +633,8 @@ export class Engine {
         ps.mz[f.loc.index] = null;
         // Xyz Materials go to the GY when the Xyz Monster leaves the field.
         const mats = (f.card as FieldCard).mats;
+        // b17: remember how many Xyz Materials it had and whose card effect moved it (null: a game action) for "leaves the field" effects.
+        if (this.speed && !f.card.token) Object.assign(((f.card as FieldCard).tags ??= {}), { lastMats: mats?.length ?? 0, leftBy: this.actor ?? -1 });
         if (mats?.length) {
           for (const m of mats) this.player(m.owner).gy.push(m);
           (f.card as FieldCard).mats = [];
@@ -723,6 +733,7 @@ export class Engine {
     const muted = byBattle && ((this.state.fx.battleMuted ?? []) as number[]).includes(uid);
     const ev: GraveEvent | null = this.speed ? { card: { uid, name: f.card.name, owner: f.card.owner }, from: f.loc.zone, controller, reason, byBattle, faceUp: !!fc?.faceUp, pos: fc?.pos, race: fc ? this.raceOf(fc) : this.info(f.card.name).race ?? '', toGy: false, token: !!f.card.token, by: this.actor } : null;
     const card = this.detach(uid)!;
+    if (byBattle && fc?.tags) fc.tags.leftBy = -1; // b17: destroyed by battle, not by a card effect
     if (card.token || card.name.startsWith('__token')) {
       if (fc) {
         for (const eqUid of fc.equips.slice()) yield* this.sendToGrave(eqUid, 'used');
@@ -2004,7 +2015,7 @@ export class Engine {
   canUseMonsterEffect(player: Pid, m: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(m.uid);
-    if (!f || f.loc.player !== player || this.prohibited(m.name, m.uid)) return false;
+    if (!f || f.loc.player !== player || this.prohibited(m.name, m.uid) || this.nameLocked(m.name)) return false;
     const eff = this.effectOn(m);
     if (f.loc.zone === 'hand') return !!eff?.handIgnition && eff.handIgnition.can(this, m, player);
     const fc = m as FieldCard;
@@ -2024,10 +2035,23 @@ export class Engine {
     this.log(player, `${f.card.name}'s effect activates`);
     if (f.loc.zone === 'hand') return yield* this.as(player, eff.handIgnition!.run(this, f.card, player));
     const m = f.card as FieldCard;
+    const onChain = this.speed && f.loc.zone === 'mz' && eff.ignition!.chain !== false;
+    const link: ChainLink = { card: m, loc: f.loc, player, label: m.name, negated: false, payload: { effect: 'ignition' } };
+    // b17: a cost paid as the effect is activated (detach Xyz Materials), before the opponent can respond.
+    if (eff.ignition!.cost) {
+      const prev = this.actor;
+      this.actor = player;
+      let ok: boolean | void;
+      try {
+        ok = yield* eff.ignition!.cost(this, m, player, link);
+      } finally {
+        this.actor = prev;
+      }
+      if (ok === false) return;
+    }
     if (!eff.ignition!.repeat) m.effectUsed = true;
-    if (this.speed && f.loc.zone === 'mz' && eff.ignition!.chain !== false) {
+    if (onChain) {
       // Speed Duel: the effect goes on a chain the opponent can respond to (targets and costs happen as it resolves).
-      const link: ChainLink = { card: m, loc: f.loc, player, label: m.name, negated: false, payload: { effect: 'ignition' } };
       this.state.chain.push(link);
       this.event('activate', { uid, player });
       yield* this.responseWindow('effect', { uid, link });

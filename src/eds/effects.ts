@@ -31,7 +31,15 @@ export interface EffectDef {
   /** After this monster is Normal/Flip Summoned face-up. */
   onSummon?(e: Engine, m: FieldCard, controller: Pid, kind?: 'normal' | 'flip'): Step;
   /** Ignition effect usable once per turn during the controller's Main Phase. */
-  ignition?: { can(e: Engine, m: FieldCard, p: Pid): boolean; run(e: Engine, m: FieldCard, p: Pid): Step; repeat?: boolean; /** Speed Duel puts monster ignition effects on a chain the opponent can respond to (run happens at resolution); false opts out */ chain?: boolean };
+  ignition?: {
+    can(e: Engine, m: FieldCard, p: Pid): boolean;
+    run(e: Engine, m: FieldCard, p: Pid): Step;
+    repeat?: boolean;
+    /** b17: a cost paid when the effect is activated, before anyone can respond (detach Xyz Materials: set link.payload.detach). Return false to back out. */
+    cost?(e: Engine, m: FieldCard, p: Pid, link: ChainLink): Generator<Prompt, boolean | void, Choice>;
+    /** Speed Duel puts monster ignition effects on a chain the opponent can respond to (run happens at resolution); false opts out */
+    chain?: boolean;
+  };
   onPositionChange?(e: Engine, m: FieldCard, p: Pid): Step;
   /** A price to attack (Spirit of the Books etc.). */
   attackCost?: { can(e: Engine, m: FieldCard, p: Pid): boolean; pay(e: Engine, m: FieldCard, p: Pid): Step };
