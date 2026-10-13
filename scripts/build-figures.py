@@ -65,6 +65,28 @@ THRESHOLDS = {
     23995346: 0.4,   # Blue-Eyes Ultimate Dragon
     91932350: 0.5,   # Harpie Lady 1
     12206212: 0.5,   # Harpie Lady Sisters
+    89558090: 0.6,   # Dark Prisoner: the chains behind him stay out
+    17286057: 0.5,   # Helios Trice Megistus: three mummies and their three suns
+}
+
+# Pictures whose depth cannot cut a subject (an abstract burst, a painted card, a figure
+# inside a wall of fire that the model reads as far away): the figure is a shape cut from
+# the art instead ('disc': a soft-edged round medallion; 'panel': the picture as a standee
+# with rounded corners), with a mostly rounded relief.
+SHAPE_CARD = {
+    3806388: 'disc',    # Core of Chaos
+    81752019: 'panel',  # Flower Cardian Pine
+    52860176: 'disc',   # Possessed Dark Soul
+}
+
+# Subjects made of many parts on purpose (the parts check would drop them).
+PARTS_CARD = {
+    17286057: 6,  # Helios Trice Megistus
+}
+
+# Speed Duel monsters the card list files under their classic entry (cards.json, not speed.json).
+EXTRA_IDS = {
+    83011277,  # Mystic Tomato
 }
 
 
@@ -87,6 +109,9 @@ FILL_HOLES_CARD = {
 # face with jagged strands; a softer, mostly pillow-shaped relief keeps the bust whole.
 RELIEF_CARD = {
     38033121: (0.2, 6.0),   # Dark Magician Girl: hat brim vs face
+    3806388: (0.15, 3.0),   # Core of Chaos (disc)
+    81752019: (0.1, 3.0),   # Flower Cardian Pine (panel)
+    52860176: (0.25, 3.0),  # Possessed Dark Soul (disc)
 }
 # Feather (px of the 256 map) where the matte meets the artwork box, so a subject cut by the
 # frame fades out instead of ending in a straight edge with square corners.
@@ -213,14 +238,26 @@ def palette_of(art, a):
     return cols
 
 
-def usable(a):
+def shape_matte(kind):
+    """A matte cut as a shape: a round medallion or a rounded standee (SHAPE_CARD)."""
+    y, x = np.mgrid[0:SIZE, 0:SIZE].astype(np.float32) / (SIZE - 1) * 2 - 1
+    if kind == 'disc':
+        r = np.sqrt((x / 0.86) ** 2 + (y / 0.9) ** 2)
+        a = np.clip((1 - r) / 0.06, 0, 1)
+    else:
+        q = np.maximum(np.abs(x) - 0.78, 0) ** 2 + np.maximum(np.abs(y) - 0.8, 0) ** 2
+        a = np.clip((0.12 - np.sqrt(q)) / 0.04, 0, 1)
+    return (a * a * (3 - 2 * a)).astype(np.float32)
+
+
+def usable(a, cid=None):
     cov = (a > 0.5).mean()
     lab, n = ndi.label(a > 0.5)
     parts = 0
     if n:
         sizes = ndi.sum(a > 0.5, lab, range(1, n + 1))
         parts = int((sizes > sizes.max() * 0.15).sum())
-    return 0.06 <= cov <= 0.88 and parts <= 3
+    return 0.06 <= cov <= 0.88 and parts <= PARTS_CARD.get(cid, 3)
 
 
 def main():
@@ -228,7 +265,7 @@ def main():
     model = sys.argv[1]
     only = set(int(x) for x in sys.argv[sys.argv.index('--only') + 1:] if x.isdigit()) if '--only' in sys.argv else None
     cards = json.load(open(os.path.join(ROOT, 'speed.json')))
-    ids = sorted({c['id'] for c in cards if 'Monster' in c.get('type', '') and c.get('img') and os.path.exists(os.path.join(ROOT, 'img', '%d.webp' % c['id']))})
+    ids = sorted({c['id'] for c in cards if 'Monster' in c.get('type', '') and c.get('img') and os.path.exists(os.path.join(ROOT, 'img', '%d.webp' % c['id']))} | {i for i in EXTRA_IDS if os.path.exists(os.path.join(ROOT, 'img', '%d.webp' % i))})
     if only:
         ids = [i for i in ids if i in only]
     sess = ort.InferenceSession(model, providers=['CPUExecutionProvider'])
@@ -248,8 +285,8 @@ def main():
             d = depth_of(sess, art)
             if cp:
                 np.save(cp, d)
-        a = matte_of(d, art, cid=cid)
-        if not usable(a):
+        a = shape_matte(SHAPE_CARD[cid]) if cid in SHAPE_CARD else matte_of(d, art, cid=cid)
+        if not usable(a, cid):
             done.pop(cid, None)
             continue
         r = (relief_of(d, a, cid) * 255).astype(np.uint8)
