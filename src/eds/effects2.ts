@@ -475,9 +475,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
     },
   };
   E['The Flute of Summoning Dragon'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && faceUp(e).some((m) => m.name === 'Lord of D.') && hasFreeZone(e, p) && e.player(p).hand.some((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon'),
+    canActivate: (e, _c, p, t) => isMain(t) && faceUp(e).some((m) => m.name === 'Lord of D.' || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.') && hasFreeZone(e, p) && e.player(p).hand.some((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon'), // audit-10
     *resolve(e, _l, p) {
-      if (!faceUp(e).some((m) => m.name === 'Lord of D.')) return;
+      if (!faceUp(e).some((m) => m.name === 'Lord of D.' || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.')) return; // audit-10: The King of D. is "Lord of D." on the field
       const list = e.player(p).hand.filter((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon' && e.info(c.name).sub !== 'Ritual');
       const picks = yield* e.select(p, 'Special Summon up to 2 Dragons from your hand', e.optionsFor(list), 1, 2);
       for (const i of picks ?? []) if (hasFreeZone(e, p)) yield* e.specialSummon(list[i].uid, p, 'atk');

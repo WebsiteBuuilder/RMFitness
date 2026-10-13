@@ -121,6 +121,7 @@ export class Engine {
     if (how === 'effect' && own?.effectProof?.(this, m)) return true;
     // "This turn, cannot be destroyed by card effects" that outlasts its source (Amazoness Scouts).
     if (how === 'effect' && (m.tags?.effProofTurn ?? -1) === this.state.turn) return true;
+    if (how === 'effect' && this.speed && m.tags?.effProof) return true; // audit-10: "it cannot be destroyed by card effects" for good (Vehicroid Connection Zone)
     for (const p of [0, 1] as Pid[]) {
       const sources = [...this.monsters(p).filter((x) => x.faceUp), ...this.activeSpells(p)];
       for (const src of sources) {
@@ -235,6 +236,7 @@ export class Engine {
   }
 
   isNegated(m: FieldCard): boolean {
+    if (m.tags?.unnegatable) return false; // audit-10: "its effects cannot be negated" (Vehicroid Connection Zone)
     return !!m.faceUp && (m.tags?.negated === 1 || m.tags?.negatedTurn === this.state.turn);
   }
 
@@ -736,9 +738,11 @@ export class Engine {
       }
       case 'sz':
         ps.sz[f.loc.index] = null;
+        if (this.speed && !f.card.token) ((f.card as FieldCard).tags ??= {}).leftBy = this.actor ?? -1; // audit-10: whose card effect moved it (Waking the Dragon)
         break;
       case 'field':
         ps.field = null;
+        if (this.speed && !f.card.token) ((f.card as FieldCard).tags ??= {}).leftBy = this.actor ?? -1; // audit-10
         break;
     }
     return f.card.token ? { uid: f.card.uid, name: f.card.name, owner: f.card.owner, token: true } : { uid: f.card.uid, name: f.card.name, owner: f.card.owner };
@@ -1651,6 +1655,13 @@ export class Engine {
           const eff = getEffect(c.name);
           if (eff?.onStandbyInGrave && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(tp, eff.onStandbyInGrave(this, c, tp));
         }
+        // audit-10: "during the Standby Phase of the next turn" from the GY, on either player's turn (Vampire's Curse).
+        if (this.speed)
+          for (const p of [tp, other(tp)])
+            for (const c of this.player(p).gy.slice()) {
+              const h = getEffect(c.name)?.onStandbyInGraveAny;
+              if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+            }
         if (this.speed)
           for (const c of this.player(tp).removed.slice()) {
             const h = getEffect(c.name)?.onStandbyBanished;
@@ -1844,6 +1855,7 @@ export class Engine {
     let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, this.tributesNeeded(level) - less) };
     if (!this.speed || faceUp === false || plan.need === 0) return plan;
     const offers = [getEffect(card.name)?.tributeOffer?.(this, null, player, card, plan.need), ...this.liveST().filter((x) => x.p === player).map((x) => x.eff.tributeOffer?.(this, x.c, x.p, card, plan.need))];
+    for (const l of this.lingering()) if (l.p === player) offers.push(l.eff.lingering?.tributeOffer?.(this, l.p, card, plan.need)); // audit-10 (Vampire Sorcerer)
     for (const o of offers) if (o && o.need < plan.need && (!o.only || this.monsters(player).filter(o.only).length >= o.need)) plan = o;
     return plan;
   }
@@ -2049,11 +2061,17 @@ export class Engine {
     if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
     const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
-    this.state.fx.procCheck = card.uid; // audit-07: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways")
-    const blocked = !!proc && this.summonBlocked(player, card, 'special', f.loc.zone);
-    this.state.fx.procCheck = undefined;
-    if (blocked) return false;
-    return !!proc && proc.can(this, card, player);
+    // audit-07 + audit-10: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways"); batch 07 reads fx.procCheck, batch 10 fx.procSS.
+    const prevProc = this.state.fx.procSS;
+    this.state.fx.procSS = card.uid;
+    this.state.fx.procCheck = card.uid;
+    try {
+      if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
+      return !!proc && proc.can(this, card, player);
+    } finally {
+      this.state.fx.procSS = prevProc;
+      this.state.fx.procCheck = undefined;
+    }
   }
 
   /** The summon procedure for a card in the hand (its script) or the Extra Deck (Xyz/Synchro/Link Summons, or its script). */
@@ -2162,7 +2180,12 @@ export class Engine {
     const f = this.find(uid);
     if (!f || !this.canSpecialProc(player, f.card)) return;
     const fromHand = f.loc.zone === 'hand';
-    yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
+    this.state.fx.procSS = uid; // audit-10
+    try {
+      yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
+    } finally {
+      this.state.fx.procSS = undefined; // audit-10
+    }
     // Chain Energy charges for a card Special Summoned from the hand.
     if (fromHand && this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
   }
@@ -2848,6 +2871,7 @@ export class Engine {
     if (tEff?.onBeingAttacked) yield* this.as(opp, tEff.onBeingAttacked(this, target, attacker, opp));
     // audit-04: the attacker's own "before damage calculation" effect (Drillroid, Eater of Millions).
     if (this.speed && aEff?.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.as(player, aEff.beforeDamageCalc(this, attacker, target, player));
+    if (this.speed && aEff?.attackerDamageStep && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.as(player, aEff.attackerDamageStep(this, attacker, target, player)); // audit-10
     if (!this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     let atk = this.atkOf(attacker) + this.attackBonus(attacker, target);
     if (this.state.fx.zeroAttack === attacker.uid) {
@@ -2870,8 +2894,10 @@ export class Engine {
         }
       } else if (atk < tAtk) {
         destroyed.push(attacker.uid);
+        const lp0 = this.player(player).lp; // audit-10
         this.battleDamage(player, tAtk - atk, attacker, target);
         this.log(opp, `${target.name} destroys ${attacker.name}`);
+        if (this.speed && this.player(player).lp < lp0 && this.state.winner === null && tEff?.onTargetBattleDamage) yield* this.as(opp, tEff.onTargetBattleDamage(this, target, attacker, opp)); // audit-10
       } else if (atk > 0) {
         destroyed.push(target.uid, attacker.uid);
         this.log(null, `${attacker.name} and ${target.name} destroy each other`);
@@ -2894,8 +2920,10 @@ export class Engine {
           if (this.player(opp).lp < lp) yield* this.battleDamageDealt(player, attacker);
         }
       } else if (atk < tDef) {
+        const lp0 = this.player(player).lp; // audit-10
         this.battleDamage(player, tDef - atk, attacker, target);
         this.log(opp, `${target.name} holds; ${attacker.name}'s controller takes damage`);
+        if (this.speed && this.player(player).lp < lp0 && this.state.winner === null && tEff?.onTargetBattleDamage) yield* this.as(opp, tEff.onTargetBattleDamage(this, target, attacker, opp)); // audit-10
       } else {
         this.log(null, `${attacker.name} bounces off ${target.name}`);
       }
@@ -2973,6 +3001,7 @@ export class Engine {
     const victimCtl = this.controller(uid);
     const killerCtl = this.controller(killer.uid);
     if (victimCtl === null || killerCtl === null || victimCtl === killerCtl || !killer.faceUp) return false;
+    if (killer.equips.some((u) => { const eq = this.fieldCard(u); return !!eq && eq.faceUp && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && getEffect(eq.name)?.negatesBattleVictims?.(this, eq, killer, killerCtl) === true; })) return true; // audit-10: an Equip Spell on the killer (Wicked-Breaking Flamberge - Baou)
     return this.monsters(killerCtl).some((s) => s.faceUp && this.effectOn(s)?.negatesBattleVictims?.(this, s, killer, killerCtl) === true);
   }
 
