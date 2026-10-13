@@ -46,7 +46,7 @@ export interface SeatProfile {
   save: SaveFile | null;
   /** their Speed Duel deck, when they have one */
   /** `play` is the deck as dealt: without cards sealed in the Shadow Realm */
-  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null };
+  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null; rarity?: Record<string, number> };
 }
 
 /** What a player brings to the table for one of the two games. */
@@ -55,6 +55,8 @@ export interface SeatEntry {
   deck: string[];
   fusion: string[];
   skill?: string | null;
+  /** Speed Duel card rarities (card leveling) */
+  rarity?: Record<string, number>;
   problems: string[];
 }
 
@@ -111,7 +113,7 @@ export function Lobby({
   const sameGame = (seats[0].mode ?? 'eds') === (seats[1].mode ?? 'eds');
   const iAmReady = seats[mySeat].ready && (seats[mySeat].mode ?? 'eds') === roomMode;
 
-  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null });
+  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null, ...(roomMode === 'speed' && e.rarity ? { rarity: e.rarity } : {}) });
   const ready = () => mine && mine.problems.length === 0 && join(mySeat, mine);
   const readyGuest = () => {
     onSeatProfile?.(null);
@@ -127,7 +129,7 @@ export function Lobby({
   const seatFor = (o: SeatProfile): SeatEntry | null => {
     if (roomMode === 'speed') {
       const d = o.speed?.deck;
-      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, problems: speedDeckProblems(d) } : null;
+      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, rarity: o.speed?.rarity, problems: speedDeckProblems(d) } : null;
     }
     return o.save ? { name: o.profile.alias, deck: o.save.main, fusion: o.save.fusion, problems: deckProblems(o.save) } : null;
   };
