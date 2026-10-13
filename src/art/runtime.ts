@@ -11,6 +11,7 @@ import type { Pid } from '../eds/types';
 import { cueUids, type CardRef, type Cue, type SummonHow, type Target } from './cues';
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
+import { cueSting } from './cueSound';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
 import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
@@ -733,6 +734,7 @@ export class Director {
         // the attack declaration held for this blow gives way to it
         if (this.held) this.dropHeld();
         this.current = tl;
+        if (!this.skipAll) cueSting(item.cue);
         this.onCueStart?.(item.batch, tl.duration / rate);
         if (this.skipAll) this.endCurrent(true);
       })
