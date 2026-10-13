@@ -51,7 +51,7 @@ const resolvingIs = (e: Engine, name: string) => {
   const u = e.resolvingCard();
   return u !== null && e.find(u)?.card.name === name;
 };
-const ssTagged = (m: FieldCard) => m.tags?.ss === 1;
+const ssTagged = (m: FieldCard) => !!m.tags?.ss;
 /** The face-up card's battle partner in the current battle. */
 function battlePartner(e: Engine, uid: number): FieldCard | null {
   const b = e.state.battle;
