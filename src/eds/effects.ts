@@ -289,6 +289,11 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // audit-09 hooks
+  /** audit-09: this attacker, at the start of the Damage Step, before a face-down target is flipped (Sasuke Samurai). */
+  startDamageStep?(e: Engine, attacker: FieldCard, target: FieldCard, p: Pid): Step;
+  /** audit-09: "If this card is banished" (Resonance Insect); runs once the current action or chain has finished. */
+  onBanished?(e: Engine, card: Card, owner: Pid): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';

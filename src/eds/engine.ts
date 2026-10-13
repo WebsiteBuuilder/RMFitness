@@ -456,6 +456,11 @@ export class Engine {
     this.state.lastEvent = ev;
     const list = (this.state.events ??= []);
     list.push(ev);
+    // audit-09: the last face-up monster turned face-down (scripts report it with a 'position' event): Subterror Behemoth Stalagmo.
+    if (kind === 'position' && extra.uid !== undefined && this.speed) {
+      const f = this.find(extra.uid);
+      if (f?.loc.zone === 'mz' && !(f.card as FieldCard).faceUp) this.state.fx.flippedDown = { uid: extra.uid, p: f.loc.player, turn: this.state.turn, seq: ev.seq };
+    }
     if (list.length > 40) list.splice(0, list.length - 40);
     if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
@@ -813,6 +818,12 @@ export class Engine {
     }
     // Dark Ruler Ha Des: the effects of a monster destroyed by battle with its controller's Fiends are negated.
     const muted = byBattle && ((this.state.fx.battleMuted ?? []) as number[]).includes(uid);
+    // audit-09: cards in the GY that got there by being destroyed by battle (Skyscraper 2 - Hero City).
+    if (this.speed) {
+      const bd = (this.state.fx.battleDead ??= {}) as Record<number, number>;
+      if (byBattle && f.loc.zone === 'mz') bd[uid] = 1;
+      else delete bd[uid];
+    }
     const ev: GraveEvent | null = this.speed ? { card: { uid, name: f.card.name, owner: f.card.owner }, from: f.loc.zone, controller, reason, byBattle, faceUp: !!fc?.faceUp, pos: fc?.pos, race: fc ? this.raceOf(fc) : this.info(f.card.name).race ?? '', toGy: false, token: !!f.card.token, by: this.actor } : null;
     const card = this.detach(uid)!;
     if (byBattle && fc?.tags) fc.tags.leftBy = -1; // b17: destroyed by battle, not by a card effect
@@ -833,6 +844,7 @@ export class Engine {
       if (this.speed) ((this.state.fx.banishedAt ??= {}) as Record<number, number>)[uid] = this.state.turn;
       this.player(card.owner).removed.push(card);
       this.log(card.owner, `${card.name} is removed from play instead`);
+      this.queueBanished(card); // audit-09
     } else if (toDeck) {
       const ps = this.player(card.owner);
       if (this.isExtraCard(card.name)) ps.fusion.push(card);
@@ -1225,6 +1237,12 @@ export class Engine {
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
     this.log(card.owner, `${card.name} was removed from play`);
+    this.queueBanished(card); // audit-09
+  }
+
+  /** audit-09: a banished card whose script has onBanished runs it once the current action or chain has finished (see flushLeaves). */
+  private queueBanished(card: Card) {
+    if (this.speed && !card.token && getEffect(card.name)?.onBanished) ((this.state.fx.pendingBanished ??= []) as { uid: number; owner: Pid }[]).push({ uid: card.uid, owner: card.owner });
   }
 
   /**
@@ -1247,6 +1265,14 @@ export class Engine {
       for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
       const eff = fc.token ? undefined : getEffect(fc.name);
       if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
+    }
+    // audit-09: "If this card is banished" (Resonance Insect).
+    const gone = (this.state.fx.pendingBanished ?? []) as { uid: number; owner: Pid }[];
+    while (gone.length && this.state.winner === null) {
+      const { uid, owner } = gone.shift()!;
+      const f = this.find(uid);
+      const h = f?.loc.zone === 'removed' ? getEffect(f.card.name)?.onBanished : undefined;
+      if (f && h) yield* this.as(owner, h(this, f.card, owner));
     }
   }
 
@@ -1273,6 +1299,7 @@ export class Engine {
     if (!this.speed) return false;
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'gy') return false;
+    if (this.state.fx.ignoreGraveLock === uid) return false; // audit-09: an effect unaffected by Necrovalley (Rite of Spirit)
     const lock = this.liveCards().find((x) => x.eff.locksGrave?.(this, x.c, x.p, f.card) === true);
     if (lock) this.log(null, `${lock.c.name}: ${f.card.name} cannot leave the Graveyard`);
     return !!lock;
@@ -2428,6 +2455,8 @@ export class Engine {
   /** Gives each player (opponent first) a chance to respond with a set card. Up to 3 responses, like EDS. */
   *responseWindow(trigger: Trigger, ctx: ChainCtx): Step {
     const rootHasLink = !!ctx.link;
+    // audit-09: "neither player can activate cards or effects in response to this card's activation" (Super Polymerization).
+    if (this.speed && (ctx.link?.payload as { noResponse?: boolean } | undefined)?.noResponse) return;
     let responder: Pid = other(this.state.turnPlayer);
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
@@ -2793,6 +2822,11 @@ export class Engine {
       }
       yield* this.damageWindow(true);
       return;
+    }
+    // audit-09: the attacker acts at the start of the Damage Step, before a face-down target is flipped (Sasuke Samurai).
+    if (this.speed && aEff?.startDamageStep) {
+      yield* this.as(player, aEff.startDamageStep(this, attacker, target, player));
+      if (this.state.winner !== null || !this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     }
     const tEff = this.effectOn(target);
     const wasFaceDown = !target.faceUp;
