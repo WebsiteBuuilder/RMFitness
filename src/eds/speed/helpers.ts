@@ -59,8 +59,21 @@ export const isTrap = (e: Engine, c: Card) => info(e, c).kind === 'trap';
 const trapMonster = (e: Engine, c: Card) => (e.find(c.uid)?.loc.zone === 'mz' ? ((e.state.fx.trapMonster ?? {}) as Record<number, { level?: number; attribute?: string }>)[c.uid] : undefined);
 /** Level/Attribute, including what a Trap Monster took on while it is on the field (Copy Knight, Swamp Mirrorer). */
 const declared = (e: Engine, c: Card, key: 'declLevel' | 'declAttr') => ('faceUp' in c && e.state.fx[key]?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx[key][c.uid] : undefined);
-export const levelOf = (e: Engine, c: Card): number => declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
-export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? info(e, c).attribute ?? '';
+/**
+ * Level changes: tags.lvSet (until the End Phase of turn tags.lvSetTurn: Star Light, Star Bright), tags.lvMod (while face-up on
+ * the field: Risebell the Star Psycher) and fx.lvDown[uid] (this turn, in the hand and after the Summon: Cost Down).
+ */
+function levelChanges(e: Engine, c: Card, lv: number): number {
+  if (lv <= 0) return lv;
+  const t = 'faceUp' in c && e.find(c.uid)?.loc.zone === 'mz' ? (c as FieldCard).tags : undefined;
+  if (t?.lvSetTurn === e.state.turn && t.lvSet) return t.lvSet;
+  const down = (e.state.fx.lvDown as Record<number, { turn: number; n: number }> | undefined)?.[c.uid];
+  return Math.max(1, lv + (t?.lvMod ?? 0) - (down?.turn === e.state.turn ? down.n : 0));
+}
+export const levelOf = (e: Engine, c: Card): number => levelChanges(e, c, declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0);
+/** Advanced Dark: "Crystal Beast" monsters on the field and in the GY are DARK. */
+const advancedDark = (e: Engine, c: Card) => named(c, 'Crystal Beast') && info(e, c).kind === 'monster' && ['mz', 'gy'].includes(e.find(c.uid)?.loc.zone ?? '') && e.liveST().some((x) => x.c.name === 'Advanced Dark');
+export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? (advancedDark(e, c) ? 'DARK' : info(e, c).attribute ?? '');
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
 export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);

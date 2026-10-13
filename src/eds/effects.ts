@@ -172,6 +172,31 @@ export interface EffectDef {
   onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
   /** Its controller drew these cards for their normal draw in the Draw Phase. */
   onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+
+  // ---------- more Speed Duel hooks ----------
+  /** This card's own Summoning condition: false = `summoner` cannot Summon it this way ("Cannot be Special Summoned", "Must be Fusion Summoned"). */
+  summonRule?(e: Engine, card: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `player` from activating the Spell/Trap Card `card` right now. */
+  locksActivation?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  /** An Equip Spell: the equipped Jinzo no longer stops its controller's Traps (Amplifier). */
+  freesOwnTraps?: boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `attacker` from choosing `target` as an attack target (Prickle Fairy, Hero Ring). */
+  guardsFromAttack?(e: Engine, src: FieldCard, srcController: Pid, target: FieldCard, attacker: FieldCard): boolean;
+  /** This face-up card keeps `card` in its Graveyard: card effects cannot move it out (Necrovalley). */
+  locksGrave?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** This card, in its owner's hand or GY, sees cards sent to the GY (one call per event, like onAnyToGrave). */
+  watchGrave?(e: Engine, card: Card, owner: Pid, zone: 'hand' | 'gy', events: GraveEvent[]): Step;
+  /** During each Standby Phase while this card is banished. */
+  onStandbyBanished?(e: Engine, card: Card, owner: Pid): Step;
+  /** During each End Phase while this card is banished. */
+  onEndPhaseBanished?(e: Engine, card: Card, owner: Pid): Step;
+  /**
+   * Fewer Tributes for a face-up Normal Summon of `monster`: on the monster itself (`src` null) or on an active Spell/Trap
+   * (Super-Ancient Dinobeast, Big Evolution Pill). `only`: which monsters may be Tributed then.
+   */
+  tributeDiscount?(e: Engine, src: FieldCard | null, controller: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
+  /** Can be banished from the GY as a Ritual Summon material (Djinn Disserere of Rituals). */
+  ritualFromGy?: boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1599,7 +1624,7 @@ E['Polymerization'] = {
 // ---------- Ritual Spells ----------
 function ritualSpell(): EffectDef {
   const levelOf = (e: Engine, c: Card) => e.info(c.name).level ?? 1;
-  const pool = (e: Engine, p: Pid, ritualUid: number) => [...e.player(p).hand.filter((c) => isMonster(e, c) && c.uid !== ritualUid), ...e.monsters(p)];
+  const pool = (e: Engine, p: Pid, ritualUid: number) => [...e.player(p).hand.filter((c) => isMonster(e, c) && c.uid !== ritualUid), ...e.monsters(p), ...(e.speed ? e.player(p).gy.filter((c) => getEffect(c.name)?.ritualFromGy) : [])];
   return {
     canActivate: (e, c, p, t) => {
       if (!isMain(t)) return false;
@@ -1631,9 +1656,15 @@ function ritualSpell(): EffectDef {
     *resolve(e, link, p) {
       const { monster, tributes } = link.payload as { monster: number; tributes: number[] };
       if (!e.find(monster)) return;
-      for (const u of tributes) if (e.find(u)) yield* e.sendToGrave(u, 'tribute');
+      const fromGy = tributes.filter((u) => e.find(u)?.loc.zone === 'gy');
+      for (const u of tributes) {
+        if (e.find(u)?.loc.zone === 'gy') e.banish(u);
+        else if (e.find(u)) yield* e.sendToGrave(u, 'tribute');
+      }
       if (!hasFreeZone(e, p)) return;
       yield* e.specialSummon(monster, p, 'atk');
+      const rm = e.fieldCard(monster);
+      if (rm && fromGy.some((u) => getEffect(e.find(u)?.card.name ?? '')?.ritualFromGy)) (rm.tags ??= {}).trapImmune = 1;
       e.log(p, `${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
     },
   };
