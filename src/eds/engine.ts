@@ -290,6 +290,12 @@ export class Engine {
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
     }
     if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
+    // audit-03: "you cannot Special Summon monsters from the Extra Deck this turn, except ..." (fx.extraLocks: allowed race/attributes/kinds).
+    if (how === 'special' && from === 'fusion') {
+      const ci = this.info(c.name);
+      for (const l of (fx.extraLocks ?? []) as { p: Pid; turn: number; race?: string; attrs?: string[]; subs?: string[] }[])
+        if (l.p === p && l.turn === this.state.turn && ((l.race && ci.race !== l.race) || (l.attrs && !l.attrs.includes(ci.attribute ?? '')) || (l.subs && !l.subs.includes(ci.sub)))) return true;
+    }
     return this.liveCards().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
   }
 
@@ -308,6 +314,8 @@ export class Engine {
     const lock = fx.battleLock as { player: Pid; turn: number; kind: string } | undefined;
     if (lock && lock.player === player && lock.turn === this.state.turn && this.state.battle && this.controller(this.state.battle.attacker) === other(player) && lock.kind === kind) return true;
     if (kind === 'monster' && this.monsterEffectsLocked(player, card)) return true;
+    // audit-03: "cannot activate cards with that name for the rest of this Duel" (Cursed Seal of the Forbidden Spell): fx.duelNameLocks.
+    if (((fx.duelNameLocks ?? []) as { p: Pid; name: string }[]).some((x) => x.p === player && x.name === card.name)) return true;
     return false;
   }
 
@@ -2863,6 +2871,19 @@ export class Engine {
     }
     if (this.state.winner !== null) return;
     yield* this.damageWindow(false);
+    if (this.state.winner !== null) return;
+    // audit-03: "after damage calculation" effects of either battling monster, before battle destruction (D.D. Warrior Lady).
+    if (this.speed) {
+      let hit = false;
+      for (const [m, ctl, foe] of [[attacker, player, target], [target, opp, attacker]] as [FieldCard, Pid, FieldCard][]) {
+        const h = this.fieldCard(m.uid)?.faceUp ? this.effectOn(m)?.afterDamageCalc : undefined;
+        if (!h || this.state.winner !== null || !this.fieldCard(foe.uid)) continue;
+        hit = true;
+        yield* this.as(ctl, h(this, m, ctl, foe));
+      }
+      // Monsters that already left the field (banished) are no longer destroyed by this battle.
+      if (hit) for (let i = destroyed.length - 1; i >= 0; i--) if (!this.fieldCard(destroyed[i])) destroyed.splice(i, 1);
+    }
     if (this.state.winner !== null) return;
     // Relinquished sacrifices the monster it absorbed instead.
     for (let i = 0; i < destroyed.length; i++) {

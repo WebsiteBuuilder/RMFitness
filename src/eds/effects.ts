@@ -289,6 +289,11 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // ---------- audit-03 hooks ----------
+  /** audit-03: after damage calculation, before battle destruction, while both battling monsters are still on the field (D.D. Warrior Lady). */
+  afterDamageCalc?(e: Engine, m: FieldCard, controller: Pid, foe: FieldCard): Step;
+  /** audit-03: "A Fusion Summon of this card can only be done with the above Fusion Materials" (no substitutes: Cyber End Dragon). */
+  noFusionSub?: boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1688,7 +1693,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
       continue;
     }
     // Beastking of the Swamps & co. can stand in for any one material.
-    const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
+    const subs = getEffect(fusion.name)?.noFusionSub ? [] : pool.filter((c) => getEffect(c.name)?.fusionSub); // audit-03: noFusionSub
     const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
