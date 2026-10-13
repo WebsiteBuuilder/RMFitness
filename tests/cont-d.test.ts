@@ -601,7 +601,10 @@ section('Awakening of the Sacred Beasts');
   const e = duel(['Awakening of the Sacred Beasts', 'Uria, Lord of Searing Flames', 'Hamon, Lord of Striking Thunder', 'Raviel, Lord of Phantasms', 'Coffin Seller'], ['Axe Raider', 'Cyber Valley', 'Axe Raider']);
   const aw = playTrap(e, 0, 'Awakening of the Sacred Beasts');
   check(active(e, aw), 'activates and stays face-up');
+  // audit-10: Uria can only be Special Summoned by its own procedure; this setup shortcut ignores its Summoning condition.
+  e.state.fx.ignoreCond = e.player(0).deck.find((c) => c.name === 'Uria, Lord of Searing Flames')!.uid;
   place(e, 0, 'Uria, Lord of Searing Flames');
+  e.state.fx.ignoreCond = undefined;
   endTurn(e);
   summon(e, 1, FILL);
   check(e.player(0).lp === 4000 + 1400, '1 Sacred Beast: gain LP equal to the ATK of a monster the opponent Normal Summons');

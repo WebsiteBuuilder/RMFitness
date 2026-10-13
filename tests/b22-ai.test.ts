@@ -249,10 +249,11 @@ const logHas = (e: Engine, re: RegExp) => e.state.log.some((l) => re.test(l.text
   const rb = place(e, 0, 'Reversible Beetle', 'def', false)!;
   const zi = e.find(rb.uid)!.loc.index;
   toCpu(e);
-  // The opponent's monster in the same column.
+  // The opponent's monster in the same column (their zone n-1-i faces zone i).
   const cg = e.player(1).deck.find((c) => c.name === 'Celtic Guardian')!;
   const card = (e as any).detach(cg.uid);
-  e.player(1).mz[zi] = { ...card, pos: 'atk', faceUp: true, placedTurn: -1, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
+  const oz = e.player(1).mz.length - 1 - zi; // the opponent's zones face yours mirrored
+  e.player(1).mz[oz] = { ...card, pos: 'atk', faceUp: true, placedTurn: -1, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
   e.apply({ type: 'END_TURN', player: 1 });
   settle(e);
   e.apply({ type: 'FLIP_SUMMON', player: 0, uid: rb.uid });
