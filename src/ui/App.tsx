@@ -825,20 +825,20 @@ export function App() {
       if (soloMode)
         return (
           <>
-          <Solo
-            mode={soloMode}
-            profile={profile}
-            name={save.name}
-            speed={speedSave ?? speedSaveOf(profile.id)}
-            onSpeed={setSpeedSave}
-            report={soloReport}
-            lastSpec={lastSoloSpec.current}
-            onReportSeen={() => setSoloReport(null)}
-            onDuel={startSoloDuel}
-            onMode={setSoloMode}
-            onExit={() => (setSoloReport(null), setSoloMode(null))}
-          />
-          {!soloReport && newsOverlay}
+            <Solo
+              mode={soloMode}
+              profile={profile}
+              name={save.name}
+              speed={speedSave ?? speedSaveOf(profile.id)}
+              onSpeed={setSpeedSave}
+              report={soloReport}
+              lastSpec={lastSoloSpec.current}
+              onReportSeen={() => setSoloReport(null)}
+              onDuel={startSoloDuel}
+              onMode={setSoloMode}
+              onExit={() => (setSoloReport(null), setSoloMode(null))}
+            />
+            {!soloReport && newsOverlay}
           </>
         );
       return (
