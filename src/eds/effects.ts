@@ -246,6 +246,28 @@ export interface EffectDef {
   ritualLevel?(e: Engine, card: Card, ritual: Card): number | undefined;
   /** Can be banished from the GY as one of the monsters for a Ritual Summon (Djinn Prognosticator of Rituals). */
   ritualFromGrave?: boolean;
+  // ---------- more Speed Duel hooks ----------
+  /** This card's own Summoning condition: false = `summoner` cannot Summon it this way ("Cannot be Special Summoned", "Must be Fusion Summoned"). */
+  summonRule?(e: Engine, card: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `player` from activating the Spell/Trap Card `card` right now. */
+  locksCardActivation?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  /** An Equip Spell: the equipped Jinzo no longer stops its controller's Traps (Amplifier). */
+  freesOwnTraps?: boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `attacker` from choosing `target` as an attack target (Prickle Fairy, Hero Ring). */
+  guardsTarget?(e: Engine, src: FieldCard, srcController: Pid, target: FieldCard, attacker: FieldCard): boolean;
+  /** This face-up card keeps `card` in its Graveyard: card effects cannot move it out (Necrovalley). */
+  locksGrave?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** This card, in its owner's hand or GY, sees cards sent to the GY (one call per event, like onAnyToGrave). */
+  watchGrave?(e: Engine, card: Card, owner: Pid, zone: 'hand' | 'gy', events: GraveEvent[]): Step;
+  /** During each Standby Phase while this card is banished. */
+  onStandbyBanishedAny?(e: Engine, card: Card, owner: Pid): Step;
+  /**
+   * Fewer Tributes for a face-up Normal Summon of `monster`: on the monster itself (`src` null) or on an active Spell/Trap
+   * (Super-Ancient Dinobeast, Big Evolution Pill). `only`: which monsters may be Tributed then.
+   */
+  tributeOffer?(e: Engine, src: FieldCard | null, controller: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
+  /** Can be banished from the GY as a Ritual Summon material (Djinn Disserere of Rituals). */
+  ritualFromGy?: boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1685,7 +1707,7 @@ function ritualSpell(): EffectDef {
   const pool = (e: Engine, p: Pid, ritualUid: number) => [
     ...e.player(p).hand.filter((c) => isMonster(e, c) && c.uid !== ritualUid),
     ...e.monsters(p),
-    ...(e.speed ? e.player(p).gy.filter((c) => getEffect(c.name)?.ritualFromGrave) : []),
+    ...(e.speed ? e.player(p).gy.filter((c) => getEffect(c.name)?.ritualFromGrave || getEffect(c.name)?.ritualFromGy) : []),
   ];
   return {
     canActivate: (e, c, p, t) => {
@@ -1718,16 +1740,18 @@ function ritualSpell(): EffectDef {
     *resolve(e, link, p) {
       const { monster, tributes } = link.payload as { monster: number; tributes: number[] };
       if (!e.find(monster)) return;
+      const fromGy = tributes.filter((u) => e.find(u)?.loc.zone === 'gy');
       for (const u of tributes) {
-        const f = e.find(u);
-        if (f?.loc.zone === 'gy') e.banish(u);
-        else if (f) yield* e.sendToGrave(u, 'tribute');
+        if (e.find(u)?.loc.zone === 'gy') e.banish(u);
+        else if (e.find(u)) yield* e.sendToGrave(u, 'tribute');
       }
       if (!hasFreeZone(e, p)) return;
       // Speed Duel: what it was Ritual Summoned with (Djinn Prognosticator of Rituals, Oracle of Zefra read it).
       if (e.speed) ((e.state.fx.ritualMats ??= {}) as Record<number, { mats: number[]; turn: number }>)[monster] = { mats: tributes.slice(), turn: e.state.turn };
       yield* e.specialSummon(monster, p, 'atk');
-      e.log(p,`${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
+      const rm = e.fieldCard(monster);
+      if (rm && fromGy.some((u) => getEffect(e.find(u)?.card.name ?? '')?.ritualFromGy)) (rm.tags ??= {}).trapImmune = 1;
+      e.log(p, `${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
     },
   };
 }

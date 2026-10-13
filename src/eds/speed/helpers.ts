@@ -60,16 +60,25 @@ const trapMonster = (e: Engine, c: Card) => (e.find(c.uid)?.loc.zone === 'mz' ? 
 /** Level/Attribute, including what a Trap Monster took on while it is on the field (Copy Knight, Swamp Mirrorer). */
 const declared = (e: Engine, c: Card, key: 'declLevel' | 'declAttr') => ('faceUp' in c && e.state.fx[key]?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx[key][c.uid] : undefined);
 /**
- * Level as it is now. On the field, effects can set it (tags.lvSet: Gagaga Caesar) or change it until the end of
- * the turn (tags.lvTurn/lvDelta: Flelf, Mischief of the Yokai); a Level never drops below 1.
+ * Level as it is now. On the field, effects can set it for good (tags.lvSet: Gagaga Caesar) or until the End Phase of turn
+ * tags.lvSetTurn (Star Light, Star Bright), change it until the end of the turn (tags.lvTurn/lvDelta: Flelf, Mischief of the
+ * Yokai) or while face-up (tags.lvMod: Risebell the Star Psycher); fx.lvDown[uid] lowers it this turn (Cost Down).
+ * A Level never drops below 1.
  */
-export const levelOf = (e: Engine, c: Card): number => {
+function levelChanges(e: Engine, c: Card, lv: number): number {
+  if (lv <= 0) return lv;
   const t = 'faceUp' in c && e.find(c.uid)?.loc.zone === 'mz' ? (c as FieldCard).tags : undefined;
-  const base = t?.lvSet ?? declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
-  const d = t && t.lvTurn === e.state.turn ? t.lvDelta ?? 0 : 0;
-  return d && base > 0 ? Math.max(1, base + d) : base;
-};
-export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? info(e, c).attribute ?? '';
+  if (t?.lvSet && t.lvSetTurn === e.state.turn) return t.lvSet;
+  const base = t?.lvSet && t.lvSetTurn === undefined ? t.lvSet : lv;
+  const delta = t && t.lvTurn === e.state.turn ? t.lvDelta ?? 0 : 0;
+  const down = (e.state.fx.lvDown as Record<number, { turn: number; n: number }> | undefined)?.[c.uid];
+  const n = base + delta + (t?.lvMod ?? 0) - (down?.turn === e.state.turn ? down.n : 0);
+  return n === base ? base : Math.max(1, n);
+}
+export const levelOf = (e: Engine, c: Card): number => levelChanges(e, c, declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0);
+/** Advanced Dark: "Crystal Beast" monsters on the field and in the GY are DARK. */
+const advancedDark = (e: Engine, c: Card) => named(c, 'Crystal Beast') && info(e, c).kind === 'monster' && ['mz', 'gy'].includes(e.find(c.uid)?.loc.zone ?? '') && e.liveST().some((x) => x.c.name === 'Advanced Dark');
+export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? (advancedDark(e, c) ? 'DARK' : info(e, c).attribute ?? '');
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
 export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);
