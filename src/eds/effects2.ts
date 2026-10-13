@@ -111,7 +111,7 @@ function toon(tributes: number): EffectDef {
         if (m) tag(m).toonTurn = e.state.turn;
       },
     },
-    cannotAttack: (e, m) => m.tags?.toonTurn === e.state.turn,
+    cannotAttack: (e, m) => m.tags?.toonTurn === e.state.turn || (e.speed && m.tags?.ssAt === e.state.turn), // audit-eds: any Special Summon
     attackCost: {
       can: (e, _m, p) => e.player(p).lp > 500,
       *pay(e, _m, p) {
@@ -167,8 +167,82 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
 
   // ===== Cards with nothing extra to script (handled by the rules themselves) =====
-  def(['Exodia the Forbidden One', 'Kuriboh', 'Banisher of the Light', 'Lord of D.', 'Ceremonial Bell', 'Insect Monster Token'], {});
-  def(['Obelisk the Tormentor', 'Slifer the Sky Dragon', 'The Winged Dragon of Ra'], { cannotNormalSummon: true, cannotAttack: () => true });
+  def(['Exodia the Forbidden One', 'Kuriboh', 'Banisher of the Light', 'Lord of D.', 'Ceremonial Bell'], {});
+  // audit-eds: Insect/EARTH/Level 1/ATK 100/DEF 100 (the card database has no stats for it).
+  def('Insect Monster Token', { baseStats: () => ({ atk: 100, def: 100 }) });
+  // audit-eds: the Egyptian God cards. EDS: they cannot be Normal Summoned and cannot attack. Speed Duel: their real text.
+  const divine = (extra: EffectDef): EffectDef => ({
+    tributeCount: (e) => (e.speed ? 3 : 99),
+    cannotNormalSet: true,
+    noSummonResponse: true,
+    cannotAttack: (e) => !e.speed,
+    ...extra,
+  });
+  /** "Once per turn, during the End Phase, if this card was Special Summoned: Send it to the GY." */
+  const godLeaves = function* (e: Engine, m: FieldCard, p: Pid): Step {
+    if (!e.speed || !m.tags?.ss || !e.oncePerTurn(`${m.name}:end:${m.uid}`, p)) return;
+    e.useOnce(`${m.name}:end:${m.uid}`, p);
+    e.log(p, `${m.name} was Special Summoned and is sent to the Graveyard`);
+    yield* e.sendToGrave(m.uid, 'used');
+  };
+  E['Obelisk the Tormentor'] = divine({
+    cannotBeTargeted: (e) => e.speed,
+    onEndPhase: godLeaves,
+    ignition: {
+      can: (e, m, p) => e.speed && e.monsters(p).filter((x) => x.uid !== m.uid && !e.untributable(x)).length >= 2,
+      *cost(e, m, p) {
+        const list = e.monsters(p).filter((x) => x.uid !== m.uid && !e.untributable(x));
+        const picks = yield* e.select(p, 'Obelisk the Tormentor: Tribute 2 monsters', e.optionsFor(list), 2, 2, true);
+        if (!picks || picks.length < 2) return false;
+        for (const i of picks) yield* e.sendToGrave(list[i].uid, 'tribute');
+        tag(m).noAttackTurn = e.state.turn;
+      },
+      *run(e, _m, p) {
+        e.log(p, "Obelisk the Tormentor destroys all of the opponent's monsters");
+        yield* e.destroy(e.monsters(other(p)).map((x) => x.uid));
+      },
+    },
+  });
+  E['Slifer the Sky Dragon'] = divine({
+    baseStats: (e) => (e.speed ? { atk: 0, def: 0 } : undefined),
+    selfBonus: (e, m) => {
+      const n = e.speed ? 1000 * e.player(ctrl(e, m)).hand.length : 0;
+      return { atk: n, def: n };
+    },
+    onEndPhase: godLeaves,
+    *onAnySummon(e, w, wp, m, c, kind) {
+      if (!e.speed || kind === 'flip' || c !== other(wp) || !m.faceUp || m.pos !== 'atk' || !e.fieldCard(w.uid)) return;
+      tag(m).permAtk = (m.tags?.permAtk ?? 0) - 2000;
+      e.log(wp, `Slifer the Sky Dragon: ${m.name} loses 2000 ATK`);
+      if (e.atkOf(m) === 0) yield* e.destroy([m.uid]);
+    },
+  });
+  E['The Winged Dragon of Ra'] = divine({
+    summonRule: (e, _c, p, how, from) => how !== 'special' || (from === 'gy' && (e.state.fx.revelation as number[] | undefined)?.[p] === e.state.turn),
+    baseStats: (e) => (e.speed ? { atk: 0, def: 0 } : undefined),
+    *onSummon(e, m, p, kind) {
+      const paid = e.player(p).lp - 100;
+      if (!e.speed || kind !== 'normal' || paid <= 0 || !(yield* e.yesno(p, `The Winged Dragon of Ra: pay ${paid} LP to give it ${paid} ATK/DEF?`))) return;
+      e.payLp(p, paid);
+      tag(m).permAtk = (m.tags?.permAtk ?? 0) + paid;
+      tag(m).permDef = (m.tags?.permDef ?? 0) + paid;
+    },
+    ignition: {
+      repeat: true,
+      can: (e, _m, p) => e.speed && e.player(p).lp > 1000 && targetable(e, allMonsters(e)).length > 0,
+      *cost(e, m, p) {
+        const list = targetable(e, allMonsters(e));
+        const picks = yield* e.select(p, 'The Winged Dragon of Ra: pay 1000 LP to destroy which monster?', e.optionsFor(list, true), 1, 1, true);
+        if (!picks || !list[picks[0]]) return false;
+        e.payLp(p, 1000);
+        tag(m).raTarget = list[picks[0]].uid;
+      },
+      *run(e, m) {
+        const t = m.tags?.raTarget ? e.fieldCard(m.tags.raTarget) : null;
+        if (t) yield* e.destroy([t.uid]);
+      },
+    },
+  });
   def(['Beastking of the Swamps', 'Goddess with the Third Eye', 'Mystical Sheep #1', 'Versago the Destroyer'], { fusionSub: true });
   def(['Wall Shadow', 'Metalzoa', 'Red-Eyes Black Metal Dragon', 'Dark Sage'], { cannotNormalSummon: true });
   def('Rainbow Flower', { directAttack: true });
@@ -204,10 +278,23 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         e.log(fc.owner, 'Sword of Deep-Seated returns to the top of the Deck');
       }
     },
+    // audit-eds: Speed Duel: "If this card is sent to your GY" from the hand or Deck too.
+    *onSentToGrave(e, card, owner) {
+      if (!e.speed || e.find(card.uid)?.loc.zone !== 'gy') return;
+      e.toDeckTop(card.uid);
+      e.log(owner, 'Sword of Deep-Seated returns to the top of the Deck');
+    },
   });
   E["Sword of Dragon's Soul"] = equipFor((e, m) => e.raceOf(m) === 'Warrior', () => ({ atk: 700, def: 0 }), {
     *hostAfterBattle(e, _eq, _host, target) {
+      if (e.speed) return;
       if (target && e.fieldCard(target.uid) && e.raceOf(target) === 'Dragon') (e.state.fx.endOfBattle ??= []).push(target.uid);
+    },
+    // audit-eds: Speed Duel: "if the equipped monster battled a Dragon monster" (attacking or attacked).
+    *afterAnyBattle(e, eq, _p, attacker, target) {
+      if (!e.speed || !target || eq.equippedTo === undefined) return;
+      const foe = eq.equippedTo === attacker.uid ? target : eq.equippedTo === target.uid ? attacker : null;
+      if (foe && e.fieldCard(foe.uid) && e.raceOf(foe) === 'Dragon') (e.state.fx.endOfBattle ??= []).push(foe.uid);
     },
   });
   E['Stim-Pack'] = equip((_e, eq) => ({ atk: 700 - 200 * (eq.tags?.decay ?? 0), def: 0 }), {
@@ -258,6 +345,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       hostAttackBonus: (e, _eq, _host, target) => (target ? Math.floor(e.atkOf(target) / 2) : 0),
       ignition: {
         can: (e, eq, p) => {
+          if (e.speed) return false; // audit-eds: not part of the card's text
           const u = upgradeFor(e, eq);
           return !!u && e.player(p).deck.some((c) => e.info(c.name).name === u.to || c.name === u.to);
         },
@@ -362,6 +450,18 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
 
   // ===== Special Summon procedures =====
+  /**
+   * audit-eds: Speed Duel: "Must first be Special Summoned (from your hand) by ...": from the hand (its own procedure; other
+   * effects that Special Summon from the hand are not told apart), and from the GY/banished once it was properly Summoned.
+   */
+  const mustFirst = (d: EffectDef): EffectDef => ({
+    ...d,
+    summonRule: (e, c, _p, how, from) => how !== 'special' || from === null || from === 'hand' || ((from === 'gy' || from === 'removed') && !!(e.state.fx.properSS as Record<number, number> | undefined)?.[c.uid]),
+    *onSpecialSummon(e, m, p) {
+      if (m.tags?.ssFrom === 1) ((e.state.fx.properSS ??= {}) as Record<number, number>)[m.uid] = 1;
+      if (d.onSpecialSummon) yield* d.onSpecialSummon(e, m, p);
+    },
+  });
   E['Gate Guardian'] = {
     cannotNormalSummon: true,
     summonProc: {
@@ -397,9 +497,11 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       },
     },
   };
+  E['Gate Guardian'] = mustFirst(E['Gate Guardian']);
+  E['Valkyrion the Magna Warrior'] = mustFirst(E['Valkyrion the Magna Warrior']);
   E['Larvae Moth'] = mothProc(2);
   E['Great Moth'] = mothProc(4);
-  E['Perfectly Ultimate Great Moth'] = mothProc(6);
+  E['Perfectly Ultimate Great Moth'] = mustFirst(mothProc(6));
   E['Cocoon of Evolution'] = {
     handIgnition: {
       can: (e, _c, p) => freeST(e, p) >= 0 && e.monsters(p).some((m) => m.faceUp && m.name === 'Petit Moth'),
@@ -430,7 +532,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       return { atk: i.atk ?? 0, def: i.def ?? 0 };
     },
   };
-  for (const [n, t] of [['Blue-Eyes Toon Dragon', 2], ['Manga Ryu-Ran', 2], ['Toon Summoned Skull', 1], ['Toon Mermaid', 0]] as const) E[n] = toon(t);
+  for (const [n, t] of [['Blue-Eyes Toon Dragon', 2], ['Manga Ryu-Ran', 2], ['Toon Summoned Skull', 1], ['Toon Mermaid', 0]] as const) E[n] = mustFirst(toon(t));
   E['Toon World'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     activateCost: {
@@ -527,11 +629,19 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Gale Dogra'] = {
     ignition: {
       can: (e, _m, p) => e.player(p).lp > 3000 && e.player(p).fusion.length > 0,
-      *run(e, _m, p) {
-        const list = e.player(p).fusion;
-        const picks = yield* e.select(p, 'Gale Dogra: send which Fusion Monster to the Graveyard?', e.optionsFor(list), 1, 1, true);
-        if (!picks) return;
+      // audit-eds: Speed Duel: the 3000 LP are paid when the effect is activated; the monster is chosen as it resolves.
+      *cost(e, m, p) {
+        if (!e.speed) return;
         e.payLp(p, 3000);
+        tag(m).dograPaid = e.state.turn;
+      },
+      *run(e, m, p) {
+        const list = e.player(p).fusion;
+        const paid = e.speed && m.tags?.dograPaid === e.state.turn;
+        if (paid) m.tags!.dograPaid = 0;
+        const picks = yield* e.select(p, 'Gale Dogra: send which monster from your Extra Deck to the Graveyard?', e.optionsFor(list), 1, 1, !paid);
+        if (!picks || !list[picks[0]]) return;
+        if (!paid) e.payLp(p, 3000);
         yield* e.sendToGrave(list[picks[0]].uid, 'cost');
       },
       repeat: true,
@@ -586,8 +696,8 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         if (heads === toss) {
           e.log(p, `Time Wizard: ${toss ? 'Heads' : 'Tails'}! Time Magic destroys the opponent's monsters`);
           yield* e.destroy(e.monsters(other(p)).map((m) => m.uid));
-          // Dark Magician ages into Dark Sage.
-          const dm = e.monsters(p).find((m) => m.faceUp && m.name === 'Dark Magician');
+          // Dark Magician ages into Dark Sage (EDS only: not part of the Speed Duel text). audit-eds
+          const dm = e.speed ? undefined : e.monsters(p).find((m) => m.faceUp && m.name === 'Dark Magician');
           const ps = e.player(p);
           const sage = [...ps.hand, ...ps.deck].find((c) => c.name === 'Dark Sage');
           if (dm && sage && (yield* e.yesno(p, 'Time passes for Dark Magician... Tribute it to Special Summon Dark Sage?'))) {
@@ -600,9 +710,12 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
           }
         } else {
           const mine = e.monsters(p);
-          const dmg = Math.floor(mine.filter((m) => m.faceUp).reduce((a, m) => a + e.atkOf(m), 0) / 2);
+          const atk = new Map(mine.map((m) => [m.uid, m.faceUp ? e.atkOf(m) : 0]));
+          let dmg = Math.floor(mine.filter((m) => m.faceUp).reduce((a, m) => a + e.atkOf(m), 0) / 2);
           e.log(p, `Time Wizard: ${toss ? 'Heads' : 'Tails'}. Wrong call! Your monsters are destroyed`);
           yield* e.destroy(mine.map((m) => m.uid));
+          // audit-eds: Speed Duel: half the ATK of the monsters that were really destroyed.
+          if (e.speed) dmg = Math.floor(mine.filter((m) => !e.fieldCard(m.uid)).reduce((a, m) => a + (atk.get(m.uid) ?? 0), 0) / 2);
           if (dmg) e.damage(p, dmg);
         }
       },
@@ -667,7 +780,20 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Sinister Serpent'] = {
     *onStandbyInGrave(e, card, p) {
-      if (yield* e.yesno(p, 'Sinister Serpent: return it from the Graveyard to your hand?')) e.toHand(card.uid);
+      // audit-eds: Speed Duel: once per turn, and 1 "Sinister Serpent" in the GY is banished during the opponent's next End Phase.
+      if (e.speed && !e.oncePerTurn('Sinister Serpent', p)) return;
+      if (!(yield* e.yesno(p, 'Sinister Serpent: return it from the Graveyard to your hand?'))) return;
+      e.toHand(card.uid);
+      if (!e.speed) return;
+      e.useOnce('Sinister Serpent', p);
+      ((e.state.fx.serpentBanish ??= [-1, -1]) as number[])[p] = e.state.turn + 1;
+    },
+    *onEndPhaseInGrave(e, card, owner) {
+      const due = (e.state.fx.serpentBanish as number[] | undefined)?.[owner];
+      if (due === undefined || due !== e.state.turn || e.state.turnPlayer === owner) return;
+      (e.state.fx.serpentBanish as number[])[owner] = -1;
+      e.log(owner, 'Sinister Serpent is banished');
+      e.banish(card.uid);
     },
   };
   {
@@ -678,7 +804,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         if (destroyed) tag(m).won = e.state.turn;
       },
       *onEndPhase(e, m, p) {
-        if (m.tags?.won === e.state.turn) e.createToken('Insect Monster Token', p, 'atk');
+        if (m.tags?.won !== e.state.turn) return;
+        const t = e.createToken('Insect Monster Token', p, 'atk');
+        if (t) ((e.state.fx.trapMonster ??= {}) as Record<number, unknown>)[t.uid] = { level: 1, attribute: 'EARTH', race: 'Insect' }; // audit-eds
       },
     };
   }
@@ -787,6 +915,11 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       const hp = ctrl(e, host);
       e.log(p, `Blast Sphere explodes with ${host.name}!`);
       yield* e.destroy([host.uid]);
+      // audit-eds: Speed Duel: "and if you do, inflict damage to your opponent".
+      if (e.speed) {
+        if (!e.fieldCard(host.uid)) e.damage(other(p), dmg);
+        return;
+      }
       e.damage(hp, dmg);
     },
   };
@@ -911,7 +1044,41 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Tainted Wisdom'] = {
     *onPositionChange(e, m, p) {
+      tag(m).lastPos = m.pos === 'atk' ? 1 : 2;
       if (m.pos === 'def') e.player(p).deck = e.shuffle(e.player(p).deck);
+    },
+    // audit-eds: Speed Duel: card effects that change its position count too.
+    *stateCheck(e, m, p) {
+      const last = m.tags?.lastPos;
+      tag(m).lastPos = m.pos === 'atk' ? 1 : 2;
+      if (m.faceUp && last === 1 && m.pos === 'def') {
+        e.log(p, 'Tainted Wisdom shuffles the Deck');
+        e.player(p).deck = e.shuffle(e.player(p).deck);
+      }
+    },
+    *onSummon(_e, m) {
+      tag(m).lastPos = m.pos === 'atk' ? 1 : 2;
+    },
+  };
+  // audit-eds: "When a Spell Card is activated that targets this face-down card (and no other cards)": flip it to face-up Defense Position and negate the activation.
+  E['Big Shield Gardna'] = {
+    ...E['Big Shield Gardna'],
+    quick: {
+      faceDown: true,
+      label: 'flip it and negate the Spell',
+      can: (e, card, _p, t, ctx) => t === 'spell' && !!ctx.link && ctx.link.targetUid === card.uid && e.info(ctx.link.card.name).kind === 'spell' && !(card as FieldCard).faceUp,
+      *run(e, card, p, link) {
+        const m = e.fieldCard(card.uid);
+        const target = (link.payload as { ctx?: ChainCtx } | undefined)?.ctx?.link;
+        if (!m) return;
+        if (!m.faceUp) {
+          m.faceUp = true;
+          m.pos = 'def';
+          e.event('flip', { uid: m.uid, player: p });
+          e.log(p, 'Big Shield Gardna is changed to face-up Defense Position');
+        }
+        negate(e, target, p);
+      },
     },
   };
   E['Yado Karu'] = {
@@ -982,7 +1149,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Shield & Sword'] = spell(
     (e, _c, _p, t) => isMain(t) && faceUp(e).length > 0,
     function* (e, l) {
-      e.state.fx.swapTurn = e.state.turn;
+      // audit-eds: Speed Duel: "all face-up monsters currently on the field" (monsters Summoned later keep their stats).
+      if (e.speed) for (const m of faceUp(e)) tag(m).swapTurn = m.tags?.swapTurn === e.state.turn ? -1 : e.state.turn;
+      else e.state.fx.swapTurn = e.state.turn;
       e.log(l.player, 'Shield & Sword swaps every monster\'s ATK and DEF');
     },
   );
@@ -1068,19 +1237,35 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       (e.state.fx.lastWillUsed ??= {})[`${p}:${e.state.turn}`] = true;
     },
   );
-  E['Nobleman of Crossout'] = spell(
-    (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => !m.faceUp),
-    function* (e, _l, p) {
-      const list = allMonsters(e).filter((m) => !m.faceUp);
-      const picks = yield* e.select(p, 'Nobleman of Crossout: destroy which face-down monster?', e.optionsFor(list, true), 1, 1);
-      if (!picks || !list[picks[0]]) return;
-      const t = list[picks[0]];
-      const isFlip = /FLIP/i.test(e.info(t.name).desc);
-      e.log(p, `Nobleman of Crossout removes ${t.name} from play`);
-      e.banish(t.uid);
-      if (isFlip) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => x.name === t.name)) e.banish(c.uid);
+  E['Nobleman of Crossout'] = {
+    ...spell(
+      (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => !m.faceUp),
+      function* (e, l, p) {
+        // audit-eds: Speed Duel: the face-down target chosen on activation is destroyed, and if it is, banished.
+        const chosen = e.speed && l.targetUid !== undefined ? e.fieldCard(l.targetUid) : null;
+        if (e.speed && !chosen) return;
+        const list = allMonsters(e).filter((m) => !m.faceUp);
+        const picks = chosen ? [0] : yield* e.select(p, 'Nobleman of Crossout: destroy which face-down monster?', e.optionsFor(list, true), 1, 1);
+        const t = chosen ?? (picks ? list[picks[0]] : undefined);
+        if (!t) return;
+        const isFlip = /FLIP/i.test(e.info(t.name).desc);
+        if (e.speed) {
+          yield* e.destroy([t.uid]);
+          if (e.fieldCard(t.uid)) return;
+          if (e.find(t.uid)?.loc.zone === 'gy') e.banish(t.uid);
+        } else e.banish(t.uid);
+        e.log(p, `Nobleman of Crossout removes ${t.name} from play`);
+        if (isFlip) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => x.name === t.name)) e.banish(c.uid);
+      },
+    ),
+    *activate(e, link, p) {
+      if (!e.speed) return;
+      const list = targetable(e, allMonsters(e).filter((m) => !m.faceUp));
+      const picks = yield* e.select(p, 'Nobleman of Crossout: target which face-down monster?', e.optionsFor(list, true), 1, 1, true);
+      if (!picks || !list[picks[0]]) return false;
+      link.targetUid = list[picks[0]].uid;
     },
-  );
+  };
   E['Nobleman of Extermination'] = spell(
     (e, c, _p, t) => isMain(t) && allST(e).some((x) => !x.faceUp && x.uid !== c.uid),
     function* (e, l, p) {
@@ -1089,8 +1274,13 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       if (!picks || !list[picks[0]]) return;
       const t = list[picks[0]];
       const trap = e.info(t.name).kind === 'trap';
+      // audit-eds: Speed Duel: "destroy, and remove from play".
+      if (e.speed) {
+        yield* e.destroy([t.uid]);
+        if (e.fieldCard(t.uid)) return;
+        if (e.find(t.uid)?.loc.zone === 'gy') e.banish(t.uid);
+      } else e.banish(t.uid);
       e.log(p, `Nobleman of Extermination removes ${t.name} from play`);
-      e.banish(t.uid);
       if (trap) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => x.name === t.name)) e.banish(c.uid);
     },
   );
@@ -1288,15 +1478,32 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   const trap = (canActivate: EffectDef['canActivate'], resolve: EffectDef['resolve'], activate?: EffectDef['activate']): EffectDef => ({ canActivate, resolve, activate });
   E['Acid Trap Hole'] = trap(
     (e, _c, _p, t) => anyTime(t) && allMonsters(e).some((m) => !m.faceUp && m.pos === 'def'),
-    function* (e, _l, p) {
+    function* (e, l, p) {
+      // audit-eds: Speed Duel: the target is chosen on activation; flipping it face-up activates its FLIP effect.
+      const chosen = e.speed && l.targetUid !== undefined ? e.fieldCard(l.targetUid) : null;
+      if (e.speed && (!chosen || chosen.faceUp || chosen.pos !== 'def')) return;
       const list = allMonsters(e).filter((m) => !m.faceUp && m.pos === 'def');
-      const picks = yield* e.select(p, 'Acid Trap Hole: which face-down monster?', e.optionsFor(list, true), 1, 1);
-      if (!picks || !list[picks[0]]) return;
-      const m = list[picks[0]];
+      const picks = chosen ? [0] : yield* e.select(p, 'Acid Trap Hole: which face-down monster?', e.optionsFor(list, true), 1, 1);
+      const m = chosen ?? (picks ? list[picks[0]] : undefined);
+      if (!m) return;
       m.faceUp = true;
       e.log(p, `Acid Trap Hole reveals ${m.name}`);
+      const ctl = ctrl(e, m);
+      if (e.speed) e.event('flip', { uid: m.uid, player: ctl });
       if (e.defOf(m) <= 2000) yield* e.destroy([m.uid]);
       else m.faceUp = false;
+      const flip = e.speed ? E[m.name]?.flip ?? undefined : undefined;
+      if (flip && e.state.winner === null) {
+        e.log(ctl, `${m.name}'s FLIP effect activates`);
+        yield* e.as(ctl, flip(e, m, ctl, !e.fieldCard(m.uid)));
+      }
+    },
+    function* (e, link, p) {
+      if (!e.speed) return;
+      const list = allMonsters(e).filter((m) => !m.faceUp && m.pos === 'def');
+      const picks = yield* e.select(p, 'Acid Trap Hole: target which face-down monster?', e.optionsFor(list, true), 1, 1, true);
+      if (!picks || !list[picks[0]]) return false;
+      link.targetUid = list[picks[0]].uid;
     },
   );
   E['Ceasefire'] = trap(
@@ -1401,11 +1608,14 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       const m = list[picks[0]];
       if (e.takeControl(m.uid, p)) {
         m.returnAtEnd = other(p);
+        // audit-eds: Speed Duel: control returns at the end of the Battle Phase.
+        if (e.speed) ((e.state.fx.returnAfterBattle ??= []) as { uid: number; to: Pid }[]).push({ uid: m.uid, to: other(p) });
         if (e.state.battle) e.state.battle.target = m.uid;
         e.log(link.player, `${m.name} is pulled in front of the attack`);
       }
     },
   );
+  // Approximation: offered when the opponent declares an attack in their Battle Phase; the decoys are Special Summoned as 0/0 monsters.
   E['Magical Hats'] = trap(
     (e, _c, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p) && e.monsters(p).length > 0,
     function* (e, _l, p) {
@@ -1587,7 +1797,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['DNA Surgery'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && faceUp(e).length > 0,
     *activate(e, link, p) {
-      const r = yield* choose(e, p, 'DNA Surgery: declare a Type', RACES);
+      const r = yield* choose(e, p, 'DNA Surgery: declare a Type', e.speed ? [...RACES, 'Psychic', 'Wyrm', 'Cyberse'] : RACES); // audit-eds: newer Types too
       if (!r) return false;
       link.payload = r[0];
     },
