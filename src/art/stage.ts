@@ -353,8 +353,11 @@ void main(){
     c = mix(c, c * 0.5 + uFlash, clamp(max(uFlash.r, max(uFlash.g, uFlash.b)), 0.0, 1.0) * 0.6);
   }
   // tint: toward white by default; struck (uTintKeep 1), toward a color with the painted detail kept
-  c = mix(c, mix(uTintCol, c * 0.55 + uTintCol * 0.55, uTintKeep), uTint);
+  // (even the white tint keeps some of the painting: a flash never turns a figure into a solid white cut-out)
+  c = mix(c, mix(uTintCol, c * 0.55 + uTintCol * 0.55, max(uTintKeep, 0.45)), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
+  // capped below white before the bloom (hue kept): a bright figure under a flash stays a painting
+  if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2;
   float alpha = (a * vis + rim * a) * uOpacity;
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
@@ -1906,11 +1909,13 @@ void main(){
   // (and the bloom is held back where the scene is already bright) so silhouettes survive
   // (a dimmed stage gets less: the glow stays around what glows instead of washing the frame out)
   vec3 bl = texture2D(tBloom, vUv).rgb;
-  vec3 x = c.rgb * v + bl * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
+  vec3 x = c.rgb * v + bl * uBloom * (1.0 - 0.6 * uDim) * (1.0 - 0.75 * smoothstep(0.55, 0.9, max(c.r, max(c.g, c.b))));
   vec3 col = min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-max(x - 0.72, 0.0) * 3.6));
   float a = max(c.a, max(col.r, max(col.g, col.b)));
   // (only what is already bright: a tinted veil or a dim backdrop is not pushed toward a solid color)
-  col = min(col + col * smoothstep(0.25, 0.8, dot(col, vec3(0.299, 0.587, 0.114))) * uFlash * 1.5 + uFlash * 0.15 * bl, vec3(1.0));
+  // (and what is already near white gets little more, so a white dragon keeps its detail through it)
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = min(col + col * smoothstep(0.25, 0.8, lum) * (1.0 - 0.8 * smoothstep(0.62, 0.9, lum)) * uFlash * 1.5 + uFlash * 0.15 * bl, vec3(1.0));
   gl_FragColor = vec4(col, a);
 }`;
 

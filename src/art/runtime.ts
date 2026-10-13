@@ -1023,16 +1023,20 @@ export class Director {
    * A camera that fits every box inside the safe area: from direction (yaw, pitch),
    * as close as it can get with the boxes filling `fill` of the safe area, centered in it.
    */
-  private fit(boxes: Box[], yaw: number, pitch: number, o: { fill?: number; minD?: number } = {}): Shot {
+  private fit(boxes: Box[], yaw: number, pitch: number, o: { fill?: number; minD?: number; at?: number } = {}): Shot {
     const cam = this.probe;
     cam.aspect = this.stage.camera.aspect;
     cam.fov = BASE_FOV;
     cam.updateProjectionMatrix();
     const safe = this.safe();
     const fill = o.fill ?? 1;
+    // `at`: where the boxes' center sits, as a fraction of the safe area's height from its top
+    // (off center, they get only twice the room to the nearer edge)
+    const at = Math.min(0.8, Math.max(0.2, o.at ?? 0.5));
     const maxW = 2 * 0.9 * fill;
-    const maxH = 2 * (1 - safe.top - safe.bottom) * fill;
-    const targetY = safe.bottom - safe.top;
+    const maxH = 2 * (1 - safe.top - safe.bottom) * fill * 2 * Math.min(at, 1 - at);
+    const yTop = 1 - 2 * safe.top;
+    const targetY = yTop - at * (yTop - (-1 + 2 * safe.bottom));
     const pts: Vector3[] = [];
     const look = new Vector3();
     for (const b of boxes) {
@@ -1092,18 +1096,21 @@ export class Director {
     const m = this.battleSide === 'near' ? 1 : -1;
     // (much more than ~20° off its front and a relief figure shows its extrusion as streaky slices)
     yaw = Math.min(yaw, 0.35);
-    const boxes: Box[] = [tgt ? this.boxOf(tgt) : { ...T, w: 0.5 * U, h: 0.5 * U }];
+    // (the figure's painted subject fills ~90% of its box: framed on that, not on the empty margin)
+    const boxes: Box[] = [tgt ? { ...this.boxOf(tgt), h: this.boxOf(tgt).h * 0.92 } : { ...T, w: 0.5 * U, h: 0.5 * U }];
     let ab: Box | null = null;
     if (att) {
-      // the attacker from the hips up: the top ~75% of it (its feet may run off the frame)
+      // the attacker from the hips up, with headroom over it (its feet may run off the frame;
+      // its head, hat or horns never run off the top)
       const b = this.boxOf(att);
-      ab = { ...b, y: b.y + b.h * 0.25, h: b.h * 0.75 };
+      ab = { ...b, y: b.y + b.h * 0.3, h: b.h * 0.8 };
       boxes.push(ab);
     }
     const shot = this.fit(boxes, -yaw * m, pitch, { fill });
     if (!att) return shot;
     // pull back until the attacker (in the foreground) takes at most ~55% of the frame's height
-    const full = this.boxOf(att);
+    // (measured on its painted subject, ~92% of its box)
+    const full = { ...this.boxOf(att), h: this.boxOf(att).h * 0.92 };
     const cam = this.probe;
     const v = new Vector3();
     const dir = shot.pos.clone().sub(shot.look);
@@ -1141,6 +1148,15 @@ export class Director {
       this.stage.camBase.lerp(shot.pos, w);
       this.stage.camLook.lerp(shot.look, w);
     });
+  }
+
+  /**
+   * What an effect strikes, framed: the boxes filling ~0.7 of the width (as far as the
+   * safe area's height allows), their center ~40% down the safe area so a burst above them
+   * (bolts, beams, shatter) still has room under the HUD.
+   */
+  private effectShot(boxes: Box[], yaw = 0, pitch = 0.05): Shot {
+    return this.fit(boxes, yaw, pitch, { fill: 0.8, at: 0.42 });
   }
 
   /** The world y at depth `z` above `x` that sits at the safe area's top edge, seen from `shot`. */
@@ -1729,8 +1745,19 @@ export class Director {
     const shot = this.fit(cardBox, prof.camYaw * 0.08, 0.02, { fill: preset || struck ? 0.92 : 0.72 });
     let s0: Shot | null = null;
     tl.span(0, 0.5, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
-    // a slow drift while the effect plays (flat figures read as 3D when the camera moves)
-    if (struck || preset) {
+    // once the card has opened, the camera leaves it for what it strikes: those framed big and a
+    // little above the middle of the safe area, so the bursts over them stay in frame
+    const struckBoxes: Box[] = [...figs.map((a) => this.boxOf(a)), ...[...tPanels.values()].map((p) => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: 0.2, w: 0.4 * U, h: 0.5 * U }))];
+    if (struckBoxes.length && (preset || aimed) && !preset?.ownCam) {
+      const yaw0 = prof.camYaw * 0.08;
+      const onto = this.effectShot(struckBoxes, yaw0, 0.05);
+      const drift = this.effectShot(struckBoxes, yaw0 + (side === 'near' ? -0.1 : 0.1), 0.08);
+      const a = Math.max(0.5, open + 0.12);
+      const b = Math.min(D - 0.45, a + 0.42);
+      tl.span(a, b, (k) => this.setShot(shot, onto, easeInOut(k)));
+      tl.span(b, D - 0.35, (k) => this.setShot(onto, drift, easeInOut(k)));
+    } else if (struck || preset) {
+      // a slow drift while the effect plays (flat figures read as 3D when the camera moves)
       const drift = this.fit(cardBox, prof.camYaw * 0.08 + (side === 'near' ? -0.12 : 0.12), 0.05, { fill: 0.94 });
       tl.span(0.5, D - 0.35, (k) => this.setShot(shot, drift, easeInOut(k)));
     }
@@ -2119,8 +2146,8 @@ export class Director {
     });
     const T = tgt ? this.center(tgt) : this.directPoint();
     // camera: down low over the attacker's shoulder, then a slow push-in through the wind-up
-    const low = this.battleShot(att, tgt, T, 0.32, -0.05, 0.84);
-    const push = this.battleShot(att, tgt, T, 0.35, -0.02, 0.92);
+    const low = this.battleShot(att, tgt, T, 0.32, -0.05, 0.9);
+    const push = this.battleShot(att, tgt, T, 0.35, -0.02, 0.97);
     let s0: Shot | null = null;
     tl.span(0, 0.42, (k) => this.setShot((s0 ??= this.shot()), low, easeInOut(k)));
     tl.span(0.42, D, (k) => this.setShot(low, push, easeOut(k)));
@@ -2200,6 +2227,10 @@ export class Director {
         this.place(att);
       });
     }
+    // (the blow's camera: see below)
+    const lunges = ['slash', 'claw', 'ram'].includes(sig?.style ?? prof.style);
+    // (a clash holds both fighters on screen for the whole exchange: framed tighter)
+    const whip = this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, clash ? 1 : tgt ? 0.95 : 0.95);
     // monster against monster: the numbers that decide it, up early (its text has faded in well
     // before the blow lands) and held a little past the impact
     if (a && t && t.faceUp && t.name) {
@@ -2209,9 +2240,12 @@ export class Director {
       const tv = t.def ? ti?.def : ti?.atk;
       if (typeof av === 'number' && typeof tv === 'number') {
         const fireAt = Math.max(0.02, W * 0.5);
-        tl.at(fireAt, () =>
-          this.ui.banner({ title: `${av}  vs  ${tv}`, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: hitAt - fireAt + (clash ? 0.75 : 0.6), pos: 'mid' }),
-        );
+        tl.at(fireAt, () => {
+          const title = `${av}  vs  ${tv}`;
+          this.ui.banner({ title, sub: t.def ? 'ATK · DEF' : 'ATK · ATK', color: av > tv ? col.main : tcol.main, dur: hitAt - fireAt + (clash ? 0.75 : 0.6), pos: 'mid' });
+          // the plate goes in the gap between the two fighters (never on the defender's chin)
+          if (att && tgt) this.placeBetween(title, att, tgt, whip);
+        });
       }
     }
     STYLES[sig?.style ?? prof.style](ctx, 1);
@@ -2221,9 +2255,7 @@ export class Director {
     // every shot is fitted to the safe area, so attacker and target both stay framed
     const base = this.shot();
     const m = this.battleSide === 'near' ? 1 : -1;
-    const lunges = ['slash', 'claw', 'ram'].includes(sig?.style ?? prof.style);
-    const whip = this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, tgt ? 0.93 : 0.95);
-    const settle = this.battleShot(att, tgt, T, 0.3, 0.09, 0.9);
+    const settle = this.battleShot(att, tgt, T, 0.3, 0.09, clash ? 0.98 : 0.92);
     tl.span(W * 0.5, hitAt, (k) => this.setShot(base, whip, easeInOut(k)));
     tl.span(hitAt + 0.08, D, (k) => this.setShot(whip, settle, easeInOut(k)));
     const rollTo = 0.085 * m * (tgt ? 1 : 1.3);
@@ -2342,12 +2374,65 @@ export class Director {
    * plate of the side that took it (toward that edge of the screen when there is none),
    * and the plate shakes as it arrives.
    */
+  /**
+   * Moves the banner just shown (by its title) into the gap between the defender (above) and
+   * the attacker (below) as `shot` frames them; with no room between them, above the defender
+   * or, failing that, over the attacker's chest: never on either fighter's face.
+   */
+  private placeBetween(title: string, att: Actor, tgt: Actor, shot: Shot) {
+    if (typeof document === 'undefined') return;
+    const all = document.querySelectorAll<HTMLElement>('.art-banner');
+    const el = all[all.length - 1];
+    if (!el || !el.textContent?.includes(title)) return;
+    const cv = this.stage.canvas.getBoundingClientRect();
+    const host = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+    if (!host || cv.height <= 0) return;
+    const cam = this.probe;
+    cam.aspect = this.stage.camera.aspect;
+    cam.fov = BASE_FOV;
+    cam.updateProjectionMatrix();
+    cam.position.copy(shot.pos);
+    cam.lookAt(shot.look);
+    cam.updateMatrixWorld();
+    const v = new Vector3();
+    // screen extent (fractions of the canvas height from its top) of a fighter's figure
+    const ext = (a: Actor) => {
+      const b = this.boxOf(a);
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const sy of [-0.92, 0.92]) {
+        v.set(b.x, b.y + sy * b.h, b.z).project(cam);
+        const f = (1 - v.y) / 2;
+        y0 = Math.min(y0, f);
+        y1 = Math.max(y1, f);
+      }
+      return { top: y0, bottom: y1 };
+    };
+    const d = ext(tgt);
+    const a = ext(att);
+    const safe = this.safe();
+    const h = (el.offsetHeight || 56) / cv.height;
+    const pad = 6 / cv.height;
+    let y: number;
+    if (a.top - d.bottom >= h + pad) y = (a.top + d.bottom) / 2;
+    else if (d.top - safe.top >= h + 2 * pad) y = d.top - h / 2 - pad;
+    else y = Math.max(d.bottom + h / 2 + pad, a.top + (a.bottom - a.top) * 0.45);
+    y = Math.min(1 - safe.bottom - h / 2, Math.max(safe.top + h / 2, y));
+    el.style.top = `${Math.round(cv.top - host.top + y * cv.height - (el.offsetHeight || 56) / 2)}px`;
+    el.style.bottom = 'auto';
+  }
+
   private damageNumber(side: 'top' | 'bottom', text: string, size: number) {
     this.ui.number({ text, color: 0xff4a4a, side, size });
     if (typeof document === 'undefined') return;
     const all = document.querySelectorAll<HTMLElement>('.art-number');
     const el = all[all.length - 1];
     if (!el) return;
+    // it pops in at 2.2x: kept narrow enough to stay on screen through the pop (narrower still
+    // when the Shadow Realm opens right after it, under the eye and the overkill count)
+    const shadow = this.queue.some((q) => q.cue.kind === 'win' && !!q.cue.shadow);
+    const maxW = (this.stage.canvas.clientWidth || window.innerWidth) * (shadow ? 0.4 : 0.62);
+    if (el.offsetWidth > maxW) el.style.setProperty('--s', (size * (maxW / el.offsetWidth)).toFixed(3));
     const a = el.getBoundingClientRect();
     const ax = a.left + a.width / 2;
     const ay = a.top + a.height / 2;
@@ -2498,6 +2583,19 @@ export class Director {
         });
       }
       first = false;
+    }
+    // monsters an effect struck break where the effect left them: framed big and a little above
+    // the middle of the safe area (at the resting camera they sit under the top HUD and their
+    // burst runs off the screen); the camera goes home as the pieces fall
+    const struck = done.filter((a) => a.field);
+    if (struck.length) {
+      const onto = this.effectShot(struck.map((a) => ({ ...this.boxOf(a), x: a.x + a.ox, y: a.y + a.oy })), 0, 0.05);
+      let s0: Shot | null = null;
+      tl.span(0, 0.3, (k) => this.setShot((s0 ??= this.shot()), onto, easeInOut(k)));
+      tl.span(0.3, D - 0.4, () => this.setShot(onto, onto, 1));
+      let s1: Shot | null = null;
+      tl.span(D - 0.4, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+      tl.at(D, () => this.resetCam(), false);
     }
     tl.at(0, () => {
       st.hitStop(0.15, 0.03);
@@ -2762,10 +2860,25 @@ export class Director {
     tl.at(
       0.85,
       () => {
-        const r = lpBeat(plateSide, 'art-lp-shatter', 1600);
-        const cv = st.canvas.getBoundingClientRect();
-        const w = r && cv.height > 0 ? st.toWorld(r.left + r.width / 2 - cv.left, r.top + r.height / 2 - cv.top) : { x: 0, y: plateSide === 'top' ? topY - 0.25 * U : botY + 0.25 * U };
-        plate.mesh.position.set(w.x, w.y, 0.6);
+        lpBeat(plateSide, 'art-lp-shatter', 1600);
+        // centered in the safe area, just inside its edge on the loser's side (clear of the
+        // Life Points bar and the hand), at most ~60% of the screen wide: placed through the
+        // camera as it is now, not the resting one
+        const cam = st.camera;
+        cam.updateMatrixWorld();
+        const sf = this.safe();
+        const at = (nx: number, ny: number) => {
+          const dir = new Vector3(nx, ny, 0.5).unproject(cam).sub(cam.position);
+          const k = Math.abs(dir.z) < 1e-6 ? 0 : (0.6 - cam.position.z) / dir.z;
+          return cam.position.clone().addScaledVector(dir, k);
+        };
+        const span = at(0.6, 0).distanceTo(at(-0.6, 0));
+        const w0 = 0.62 * U * 0.686 * 2.8;
+        const f = Math.min(1, span / w0);
+        plate.mesh.scale.set(2.8 * f, 0.82 * f, 1);
+        const hNdc = (2 * (0.62 * U * 0.82 * f)) / Math.max(1e-6, at(0, 1).distanceTo(at(0, -1)));
+        const yN = plateSide === 'top' ? 1 - 2 * sf.top - hNdc / 2 - 0.04 : -1 + 2 * sf.bottom + hNdc / 2 + 0.04;
+        plate.mesh.position.copy(at(0, yN));
         plate.u.uOpacity.value = 1;
       },
       false,
@@ -3477,6 +3590,8 @@ interface Preset {
   accent?: number;
   /** which face-up monsters it strikes when the duel does not say (board-wide cards) */
   scope?: 'opp' | 'all' | 'oppAtk';
+  /** it moves its figures off their cards and frames them itself (the activation keeps its own drift) */
+  ownCam?: boolean;
   play(c: PresetCtx): void;
 }
 
@@ -3619,7 +3734,7 @@ const MIRROR_FORCE: Preset = {
     for (const a of c.hits) strike(c, a, hitT + 0.2);
     // as the rays turn back, the camera follows them up onto the attackers
     if (c.hits.length) {
-      const shot = c.d['fit']([...c.hits.map((a) => c.d['boxOf'](a)), { x: 0, y: lerp(own * 0.6, opp, 0.45), z: 0.9, w: 0.4 * U, h: 0.3 * U }], 0, 0.05, { fill: 0.78 });
+      const shot = c.d['effectShot'](c.hits.map((a) => c.d['boxOf'](a)), 0, 0.05);
       c.d['lean'](tl, shot, hitT - 0.05, hitT + 0.25, c.t1 - 0.3, c.t1);
     }
     tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.14), boom(0.6), chime(0.95)));
@@ -3636,7 +3751,7 @@ const RAIGEKI: Preset = {
     // the camera leaves the card and frames what the bolts strike (~60% of the safe area),
     // so the monsters read and every bolt starts inside the frame
     const boxes: Box[] = c.hits.length ? c.hits.map((a) => d['boxOf'](a)) : rowPts(c, c.opp, 3).map((p) => ({ ...p, w: 0.5 * U, h: 0.5 * U }));
-    const shot = d['fit'](boxes, 0, 0.06, { fill: 0.72 });
+    const shot = d['effectShot'](boxes, 0, 0.06);
     d['lean'](tl, shot, t0 - 0.3, t0 + 0.02, t1 - 0.3, t1);
     const top = (x: number) => d['skyY'](shot, x, 0.6);
     if (c.hits.length) {
@@ -3723,6 +3838,7 @@ const POT_OF_GREED: Preset = {
 const MONSTER_REBORN: Preset = {
   dur: 0.9,
   accent: 0xffe9a0,
+  ownCam: true,
   play(c) {
     const { tl, U, t0, t1, st } = c;
     // the revived monster (its target), when the duel names it
@@ -3731,6 +3847,8 @@ const MONSTER_REBORN: Preset = {
     const rise = !!a?.fig;
     // the ankh rises to the middle of the stage; with no monster to raise it stands behind the card and lights it
     const ankh = tl.own(new Glow(2 * U, 2.6 * U, 'ankh', 0xffe9a0, 0xffffff));
+    // drawn before the figures (with the shafts): the rising monster passes in front of it, never its stem over the monster
+    ankh.mesh.renderOrder = -5;
     const peak = rise ? 0.5 : 0.38;
     tl.span(t0, t0 + 0.6, (k) => {
       const px = rise ? 0 : c.panel.mesh.position.x;
@@ -3765,6 +3883,8 @@ const MONSTER_REBORN: Preset = {
         c.d['place'](a);
       });
       // up from the graveyard through the shafts to the middle of the stage, coming into being as it climbs
+      // (lit gold, its painted detail kept: never a white silhouette)
+      tl.at(R0, () => (setRgb(fig.u.uTintCol.value, 0xffe9a0), (fig.u.uTintKeep.value = 1)));
       tl.span(R0, R1, (k) => {
         const e = easeInOut(k);
         a.ox = lerp(gx, 0, e) - a.x;
@@ -3773,13 +3893,13 @@ const MONSTER_REBORN: Preset = {
         fig.mesh.scale.setScalar(size * lerp(0.75, 1.3, e));
         fig.u.uOpacity.value = clamp01(k * 3);
         fig.u.uReveal.value = easeOut(clamp01(k * 1.3));
-        fig.u.uTint.value = 0.75;
+        fig.u.uTint.value = 0.6;
         c.d['place'](a);
       });
       // it lands: the golden glow drains out of it in a flash and it stands there revived
       tl.span(R1, L, (k) => {
         fig.u.uReveal.value = 1;
-        fig.u.uTint.value = 0.75 * (1 - easeOut(k));
+        fig.u.uTint.value = 0.6 * (1 - easeOut(k));
       });
       tl.span(R1, t1 + 0.4, (k) => {
         a.oy = cy - a.y + Math.sin(k * Math.PI * 2) * 0.03 * U;
