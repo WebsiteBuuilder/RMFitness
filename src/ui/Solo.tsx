@@ -5,9 +5,10 @@ import { card } from '../eds/db';
 import { loadProfiles, type Profile } from '../eds/save';
 import { STARTERS, activeDeck, deckFromStarter, loadSpeedSave, owned as ownedCopies, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { CHAPTERS, DEALER_CONDITIONS, type CampaignNode, type Chapter } from '../eds/speedCampaign/roster';
-import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, roadDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
+import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, repairRoadDeck, roadDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
 import { deckCode, fighterCode, readDeckCode, talkOf } from '../eds/speedCampaign/deckCode';
 import { readPepTalk, tacticsLabel } from '../eds/tactics';
+import { campaignDifficulty, labyrinthDifficulty, savedDifficulty } from '../eds/difficulty';
 import { CURSES, EVENTS, UPGRADES, afterDuel, choose, stake, dailySeed, dailyStarter, duelFor, duelistById, enter, eventById, reachable, readResultCode, resultCode, stopById, todayString, newRun, type Choice, type Run, type RunSummary, type Stop } from '../eds/speedCampaign/labyrinth';
 import { STAR_TEXT } from '../eds/speedCampaign/outcome';
 import { relic } from '../eds/speedCampaign/relics';
@@ -376,6 +377,7 @@ function Practice(p: Ctx) {
       cpu: { name: foe.name, main: foe.main, extra: foe.extra, skill: prefs.cpuSkill === 'none' ? null : foe.skill, setup: { ...(cond?.cpu ?? {}), lp: lp(prefs.cpuLp, cond?.cpu?.lp) } },
       first: cond?.cpuFirst && prefs.first === 'coin' ? 'cpu' : prefs.first,
       context: { kind: 'practice', oppId: foe.id, deckId: myDeck.id, first: prefs.first, conditions: prefs.conditions },
+      level: savedDifficulty(),
       vs: { label: 'PRACTICE DUEL', mePortrait: ace(myDeck.main), cpuPortrait: foe.portrait, cpuTitle: foe.title, line: 'Nothing rides on this one. Show me what that deck can do.', notes: cond ? [cond.text] : [], goals: [] },
     });
   };
@@ -739,6 +741,15 @@ function Road(p: Ctx) {
   const [stage, setStage] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const scrolled = useRef(false);
+  // A road deck that lost copies (an old bet or break): take them out and refill it from the collection.
+  const [repaired, setRepaired] = useState<string[]>([]);
+  useEffect(() => {
+    const r = c.deck ? repairRoadDeck(speed, c.deck) : null;
+    if (!r) return;
+    setSolo({ ...solo, campaign: { ...c, deck: r.deck } });
+    p.onSpeed({ ...speed, road: r.deck });
+    setRepaired(r.removed);
+  }, [c.deck, speed.collection]);
 
   if (!c.starter) return <RoadStart {...p} />;
   if (editing && c.deck)
@@ -746,7 +757,7 @@ function Road(p: Ctx) {
       <SpeedDeckEdit
         deck={c.deck}
         collection={speed.collection ?? {}}
-        onChange={(d) => setSolo({ ...solo, campaign: { ...c, deck: d } })}
+        onChange={(d) => (setSolo({ ...solo, campaign: { ...c, deck: d } }), p.onSpeed({ ...speed, road: d }))}
         onBack={() => setEditing(false)}
       />
     );
@@ -780,6 +791,7 @@ function Road(p: Ctx) {
       cpu: { name: n.duelist.name, main: d.main, extra: d.extra, skill: d.skill, setup: n.condition?.cpu },
       first: n.condition?.cpuFirst ? 'cpu' : 'coin',
       context: { kind: 'campaign', nodeId: n.id },
+      level: campaignDifficulty((findNode(n.id)?.chapter ?? ch).n, n.boss),
       vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: STAR_TEXT(n.goal) },
     });
   };
@@ -893,6 +905,7 @@ function Road(p: Ctx) {
             <div>
               <b>Road deck</b>
               <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
+              {repaired.length > 0 && <span class="so-dim">Took out {repaired.length === 1 ? repaired[0] : `${repaired.length} cards`} you no longer own and refilled the deck from your collection.</span>}
             </div>
             <Btn kind="blue" onClick={() => setEditing(true)}>
               Edit
@@ -1112,6 +1125,7 @@ function RivalSheet(p: Ctx & { deck: SpeedDeck | null; problems: string[]; onClo
       cpu: { name: r.name, main: r.deck.main, extra: r.deck.extra, skill: r.deck.skill },
       first: 'coin',
       context: { kind: 'practice', oppId: `rival:${r.name}`, deckId: p.deck.id, first: 'coin', conditions: false },
+      level: savedDifficulty(),
     });
   };
   return (
@@ -1388,6 +1402,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
       cpu: { name: d.foe.name, main: deck.main, extra: deck.extra, skill: deck.skill, setup: d.cpu },
       first: 'coin',
       context: { kind: 'labyrinth', runId: at.id, stopId: at.inDuel! },
+      level: labyrinthDifficulty(at.floor, kind === 'boss', at.curse),
       // The Daily deals every duel the same way for both brothers.
       seed: at.daily ? (at.seed + at.step * 7919) >>> 0 : undefined,
       vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : [])], goals: [] },

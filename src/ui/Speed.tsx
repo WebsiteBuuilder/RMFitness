@@ -37,6 +37,7 @@ import { showProfileLevels } from '../level/view';
 import { CardShop, ChipBar } from '../collection/Shop';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 import { preloadArt3d } from '../art/preload';
+import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
 
 /** Speed Duel products, oldest first (codes as in public/cards/speed.json `sets`). */
 const SPEED_SETS: [string, string][] = [
@@ -71,6 +72,8 @@ export interface SpeedOpponent {
   main: string[];
   extra: string[];
   skill: string | null;
+  /** how sharp the computer plays */
+  level?: Difficulty;
 }
 
 export function speedOpponents(): SpeedOpponent[] {
@@ -516,6 +519,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
 function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems: string[]; onPick: (o: SpeedOpponent) => void; onBack: () => void }) {
   const opps = useMemo(() => speedOpponents(), []);
   const [sel, setSel] = useState<SpeedOpponent | null>(null);
+  const [level, setLevel] = useState<Difficulty>(savedDifficulty);
+  const pickLevel = (d: Difficulty) => (setLevel(d), saveDifficulty(d));
   return (
     <div class="screen">
       <Win title="Duel the Computer" onClose={onBack}>
@@ -534,7 +539,9 @@ function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems
               {sel.title} · {sel.main.length}-card deck{sel.extra.length ? ` + ${sel.extra.length} Extra` : ''}
               {sel.skill ? ` · Skill: ${sel.skill}` : ''}
             </p>
-            <Menu items={[{ label: 'Duel!', onPick: () => onPick(sel) }, { label: 'Back', onPick: () => setSel(null) }]} />
+            <p class="hint">Computer level</p>
+            <Menu items={DIFFICULTIES.map((d) => ({ label: DIFFICULTY_LABEL[d], note: DIFFICULTY_NOTE[d], selected: level === d, onPick: () => pickLevel(d) }))} />
+            <Menu items={[{ label: 'Duel!', onPick: () => onPick({ ...sel, level }) }, { label: 'Back', onPick: () => setSel(null) }]} />
           </Win>
         </Overlay>
       )}

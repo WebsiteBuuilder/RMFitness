@@ -2,6 +2,8 @@
 // There is no server, so the talk is read here in the game, by keywords and phrases,
 // and the player sees back in plain lines how it was understood.
 
+import type { Difficulty } from './difficulty';
+
 export interface Tactics {
   /** -2 very careful … +2 all-out attack */
   attack: number;
@@ -17,6 +19,8 @@ export interface Tactics {
   guardLp: boolean;
   /** which monster to attack first */
   target: 'normal' | 'biggest' | 'weakest';
+  /** how sharp the computer plays (Normal when not set) */
+  level?: Difficulty;
 }
 
 export const DEFAULT_TACTICS: Tactics = { attack: 0, wall: false, tribute: 0, traps: 'normal', skill: 'normal', guardLp: false, target: 'normal' };
