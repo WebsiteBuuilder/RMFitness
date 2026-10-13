@@ -327,6 +327,11 @@ export interface EffectDef {
   battleAsEffect?: boolean;
   /** audit-06: while this monster is face-up, the effects of all Trap Cards on the field are negated (Jinzo - Lord). */
   negatesTraps?: boolean;
+  // audit-09 hooks
+  /** audit-09: this attacker, at the start of the Damage Step, before a face-down target is flipped (Sasuke Samurai). */
+  startDamageStep?(e: Engine, attacker: FieldCard, target: FieldCard, p: Pid): Step;
+  /** audit-09: "If this card is banished" (Resonance Insect); runs once the current action or chain has finished. */
+  onBanished?(e: Engine, card: Card, owner: Pid): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
