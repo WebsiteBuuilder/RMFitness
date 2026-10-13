@@ -543,7 +543,7 @@ export class BoardLayer {
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
-      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.OF ? 0.9 : p.finish >= FIN.GL ? 0.5 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
+      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
     }
   }

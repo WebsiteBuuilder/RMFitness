@@ -103,11 +103,15 @@ div.cimg.ctext.lvr {
   background: linear-gradient(115deg, transparent 36%, #ffe08a55 46%, #fff3c8cc 50%, #ffe08a55 54%, transparent 64%);
   animation-duration: 2.8s;
 }
+/* Royal: the card's frame turns to gold foil (the art window is cut out), with a gold sweep */
+.lvr-fx-RO,
+.lvr-fx-OF {
+  clip-path: polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, 11.5% 18.5%, 11.5% 73%, 88.5% 73%, 88.5% 18.5%, 11.5% 18.5%);
+}
 .lvr-fx-RO {
   background:
-    radial-gradient(circle at 20% 15%, #ffffff40 0 6%, transparent 7%),
-    radial-gradient(circle at 78% 70%, #ffffff35 0 5%, transparent 6%),
-    conic-gradient(from 0deg, #ffd56a33, #ff8cf033, #6ce3ff33, #9dff8c33, #ffd56a33);
+    repeating-linear-gradient(115deg, #fff3c255 0 2px, #c8961e44 2px 5px, #ffd56a66 5px 7px, #8a5a0a33 7px 10px),
+    linear-gradient(160deg, #ffcf4a66, #c8961e44 50%, #ffe9a866);
   mix-blend-mode: color-dodge;
 }
 .lvr-fx-RO::before {
@@ -372,17 +376,19 @@ button.lv-row:active {
    twinkle on the coat. Every animation is transform/opacity only (the GPU moves layers,
    nothing is repainted), so a field full of Glossy cards stays smooth on a phone. */
 .lvr-fx-GL {
+  /* the foil: fine diagonal rainbow lines, dodged into the card so the art keeps its contrast
+     and only its bright parts catch the color (no milky veil) */
   background:
-    radial-gradient(120% 70% at 18% 0%, #ffffff70, #ffffff1a 38%, transparent 55%),
-    repeating-linear-gradient(125deg, #ff6ad528 0 3px, #ffd56a20 3px 6px, #6cff9e20 6px 9px, #6ce3ff28 9px 12px, #b06cff24 12px 15px),
-    linear-gradient(160deg, #ff6ad530, #b06cff24 30%, #6ce3ff30 60%, #6cff9e24 85%, #ffd56a30);
-  mix-blend-mode: screen;
+    repeating-linear-gradient(125deg, #ff3fc83a 0 2px, #ffb83f2c 2px 4px, #3fff8a2c 4px 6px, #3fd8ff3a 6px 8px, #9a3fff34 8px 10px),
+    linear-gradient(160deg, #ff3fc833, transparent 35%, transparent 65%, #3fd8ff33);
+  mix-blend-mode: color-dodge;
 }
 .lvr-fx-GL::before {
-  /* the prism band: a soft rainbow stripe, wider than the card, rolling across it */
+  /* the prism band: a saturated spectrum, wider than the card, rolling across it */
   inset: -30% -120%;
-  background: linear-gradient(115deg, transparent 30%, #ff5ad855 38%, #ffd56a66 42%, #7cff9e66 46%, #ffffffcc 50%, #6ce3ff77 54%, #b06cff66 58%, #ff5ad844 62%, transparent 70%);
+  background: linear-gradient(115deg, transparent 32%, #ff2fb8aa 39%, #ffb02faa 43%, #4fff7aaa 47%, #ffffff99 50%, #2fd0ffaa 53%, #8a3fffaa 57%, #ff2fb888 61%, transparent 68%);
   animation: lvr-prism 2.6s cubic-bezier(0.45, 0, 0.3, 1) infinite;
+  mix-blend-mode: normal;
 }
 .lvr-fx-GL::after {
   background: linear-gradient(90deg, #ffd1f6, #ffffff 30%, #c9f6ff 60%, #e3d1ff) !important;
@@ -512,10 +518,12 @@ img.cimg.lvr-OF {
   z-index: 1;
 }
 .lvr-fx-OF {
+  /* the frame itself turns to rainbow foil (the art window is cut out: the art rises out of it) */
   background:
-    radial-gradient(120% 70% at 18% 0%, #ffffff55, transparent 50%),
-    conic-gradient(from 30deg at 50% 40%, #ff6ad533, #ffd56a33, #6cff9e33, #6ce3ff3a, #b06cff33, #ff6ad533);
-  mix-blend-mode: soft-light;
+    repeating-linear-gradient(125deg, #ffffff40 0 1px, transparent 1px 4px),
+    conic-gradient(from 30deg at 50% 45%, #ff3fc8cc, #ffb03fcc, #4fff7acc, #2fd0ffcc, #8a3fffcc, #ff3fc8cc);
+  mix-blend-mode: hard-light;
+  opacity: 0.85;
 }
 .lvr-fx-OF::before {
   content: '';
@@ -696,13 +704,72 @@ img.cimg.lvr-OF {
 /* on the field with the 3D figures on, the monster's figure is what leaps out of the card:
    the flat breakout art steps aside (the frame, rays and plate stay) */
 .art3d-on .tz-m .lvr-pop,
-.art3d-on .z-m .lvr-pop,
-.art3d-on .tz-m .lvr-spk,
-.art3d-on .z-m .lvr-spk {
+.art3d-on .z-m .lvr-pop {
   display: none;
 }
 /* the Touch detail sheet clips at its edges: the art rises a little less there */
 .tdetail-pic .lvr-pop {
   animation: none;
   transform: translateY(-9%) scale(1.14);
+}
+
+/* placing a Glossy, Royal or Overframe card on the field: a ring of its finish bursts out of
+   the card once (runs when the card appears in its zone; transform/opacity only) */
+.fcard:has(> .lvr-fx-GL, > .lvr-fx-RO, > .lvr-of)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 5;
+  border: 3px solid var(--lvr-land, #ffd56a);
+  box-shadow: 0 0 14px var(--lvr-land, #ffd56a), inset 0 0 10px var(--lvr-land, #ffd56a);
+  opacity: 0;
+  animation: lvr-land 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) 1;
+}
+.fcard:has(> .lvr-fx-GL) {
+  --lvr-land: #ff7ae6;
+}
+.fcard:has(> .lvr-of) {
+  isolation: isolate;
+  --lvr-land: #4fe0ff;
+}
+.fcard.fd::after {
+  display: none;
+}
+@keyframes lvr-land {
+  0% {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+/* an Overframe card on the field keeps a soft rainbow halo pulsing under its figure */
+.tz-m .fcard:has(> .lvr-of)::before,
+.z-m .fcard:has(> .lvr-of)::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: -1;
+  background: conic-gradient(#ff4fd0, #ffb84f, #7cff9e, #4fe0ff, #a24fff, #ff4fd0);
+  filter: blur(6px);
+  opacity: 0.55;
+  animation: lvr-halo 2.4s ease-in-out infinite;
+}
+@keyframes lvr-halo {
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fcard::after,
+  .fcard::before {
+    animation: none !important;
+  }
 }
