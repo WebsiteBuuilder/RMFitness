@@ -48,8 +48,7 @@ const isEffectLink = (link: ChainLink | undefined) => !!(link?.payload as { effe
 const respondedTo = (link: ChainLink) => (link.payload as { ctx?: ChainCtx } | undefined)?.ctx?.link;
 /** Is the card resolving right now this one (Release Restraint, Fossil Fusion)? */
 const resolvingIs = (e: Engine, name: string) => {
-  const u = e.resolvingCard();
-  return u !== null && e.find(u)?.card.name === name;
+  return e.resolvingCard()?.name === name;
 };
 const ssTagged = (m: FieldCard) => !!m.tags?.ss;
 /** The face-up card's battle partner in the current battle. */
@@ -276,9 +275,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // Unaffected by Trap effects: a resolving Trap cannot destroy or target it.
   const trapResolving = (e: Engine) => {
-    const u = e.resolvingCard();
-    const f = u !== null ? e.find(u) : null;
-    return !!f && isTrap(e, f.card);
+    const c = e.resolvingCard();
+    return !!c && isTrap(e, c);
   };
   E['Elemental HERO Wildheart'] = {
     effectProof: (e) => trapResolving(e),
