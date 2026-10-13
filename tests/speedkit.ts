@@ -14,6 +14,15 @@ export function isVanilla(r: { type: string; desc: string }): boolean {
   return r.desc.replace(/^("[^"]+")(\s*\+\s*"[^"]+")+/, '').trim() === '';
 }
 
+/** Tuners; Xyz Monsters have a Rank instead of a Level; Link Monsters have a Link Rating. */
+function extraStats(r: { type: string; level?: number; linkval?: number; desc: string }, sub: string) {
+  const out: { tuner?: boolean; rank?: number; level?: number; linkRating?: number } = {};
+  if (/Tuner/.test(r.type)) out.tuner = true;
+  if (sub === 'Xyz') (out.rank = r.level), (out.level = undefined);
+  if (sub === 'Link') out.linkRating = r.linkval ?? Number(r.desc.match(/^(\d+)/)?.[1] ?? 1);
+  return out;
+}
+
 function toInfo(r: any): CardInfo {
   const t: string = r.type;
   let kind: CardInfo['kind'] = 'monster';
@@ -26,7 +35,7 @@ function toInfo(r: any): CardInfo {
   else if (/Fusion/.test(t)) sub = 'Fusion';
   else if (/Ritual/.test(t)) sub = 'Ritual';
   else if (/Effect|Flip|Tuner|Spirit|Toon|Union|Gemini/.test(t)) sub = 'Effect';
-  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias, character: r.character, vanilla: isVanilla(r) };
+  return { id: r.id, name: r.name, kind, sub, atk: r.atk, def: r.def, level: r.level, attribute: r.attribute, race: kind === 'monster' ? r.race : undefined, desc: r.desc, n: r.n, password: r.password, alias: r.alias, character: r.character, vanilla: isVanilla(r), ...extraStats(r, sub) };
 }
 
 export const DB = new Map<string, CardInfo>();
@@ -58,8 +67,8 @@ const uniq = (list: CardInfo[]) => {
 /** Every Speed Duel card (no Skills). */
 export const SPEED: CardInfo[] = uniq([...DB.values()].filter((c) => c.speed && c.sub !== 'Skill'));
 export const SKILLS: CardInfo[] = uniq([...DB.values()].filter((c) => c.sub === 'Skill'));
-/** Cards the engine can summon/use at all in Speed Duel (no Xyz/Synchro/Link/Tokens). */
-export const PLAYABLE = SPEED.filter((c) => !['Xyz', 'Synchro', 'Link'].includes(c.sub) && !/Token/.test(c.name) && !(c.kind === 'monster' && c.desc.startsWith('This card cannot be used in a Duel')));
+/** Cards the engine can summon/use at all in Speed Duel (no Tokens). */
+export const PLAYABLE = SPEED.filter((c) => !(c.kind === 'monster' && / Token$/.test(c.name)) && !(c.kind === 'monster' && c.desc.startsWith('This card cannot be used in a Duel')));
 
 // ---------- randomness ----------
 let seed = 4242;
@@ -106,6 +115,7 @@ export function randomAction(e: Engine, me: Pid): Action | null {
       if (e.canActivateMain(me, c.uid)) acts.push({ type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(ps.sz) }, { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(ps.sz) });
       if (e.canSet(me, c)) acts.push({ type: 'SET_ST', player: me, uid: c.uid, zone: freeZone(ps.sz) });
     }
+    for (const c of ps.fusion) if (e.canSpecialProc(me, c)) acts.push({ type: 'SPECIAL', player: me, uid: c.uid }, { type: 'SPECIAL', player: me, uid: c.uid });
     for (const c of [...ps.hand, ...ps.gy, ...e.monsters(me), ...ps.sz.filter((z): z is FieldCard => !!z)]) if (e.canUseQuickNow(me, c.uid)) acts.push({ type: 'QUICK_EFFECT', player: me, uid: c.uid });
     for (const c of ps.gy) if (e.canUseGraveEffect(me, c.uid)) acts.push({ type: 'GRAVE_EFFECT', player: me, uid: c.uid }, { type: 'GRAVE_EFFECT', player: me, uid: c.uid });
     for (const m of e.monsters(me)) {
@@ -136,7 +146,8 @@ export function everyCard(e: Engine): Card[] {
   for (const p of [0, 1] as Pid[]) {
     const ps = e.player(p);
     out.push(...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.fusion);
-    for (const z of [...ps.mz, ...ps.sz, ps.field]) if (z) out.push(z);
+    // Xyz Materials sit under their Xyz Monster.
+    for (const z of [...ps.mz, ...ps.sz, ps.field]) if (z) out.push(z, ...(z.mats ?? []));
   }
   return out;
 }
@@ -164,6 +175,7 @@ export function playDuel(decks: [string[], string[]], extras: [string[], string[
       fail = `no action for player ${p} in ${e.state.phase} prompt=${e.state.prompt?.kind} ${e.state.prompt?.title ?? ''}`;
       break;
     }
+    const before = everyCard(e).filter((c) => !c.token);
     try {
       e.apply(act);
     } catch (err) {
@@ -174,7 +186,7 @@ export function playDuel(decks: [string[], string[]], extras: [string[], string[
     const cards = everyCard(e).filter((c) => !c.token);
     const uids = new Set(cards.map((c) => c.uid));
     if (uids.size !== cards.length) fail = `duplicated card ${cards.filter((c, i) => cards.findIndex((d) => d.uid === c.uid) !== i).map((c) => `${c.name}@${e.find(c.uid)?.loc.zone}`).join(', ')} after ${JSON.stringify(act)}; log: ${tail()}`;
-    else if (cards.length !== startCount) fail = `card count ${startCount} -> ${cards.length} after ${JSON.stringify(act)}; log: ${tail()}`;
+    else if (cards.length !== startCount) fail = `card count ${startCount} -> ${cards.length} after ${JSON.stringify(act)} (lost: ${before.filter((c) => !uids.has(c.uid)).map((c) => c.name).join(', ')}; ${e.state.log.filter((l) => / Summons /.test(l.text)).slice(-1).map((l) => l.text).join('')}); log: ${tail()}`;
     for (const q of [0, 1] as Pid[]) {
       if (!Number.isFinite(e.player(q).lp)) fail = `LP became ${e.player(q).lp}`;
       if (e.player(q).mz.length !== 3 || e.player(q).sz.length !== 3) fail = `zone count changed: ${e.player(q).mz.length}/${e.player(q).sz.length}`;

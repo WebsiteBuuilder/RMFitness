@@ -234,7 +234,7 @@ function union(atk: number, def: number, effectToo: boolean, pos: Pos = 'atk', e
           const zone = freeST(e, p);
           if (!host || mi < 0 || zone < 0) return;
           for (const u of m.equips.slice()) yield* e.sendToGrave(u, 'used');
-          ps.mz[mi] = null;
+          e.vacateMZ(ps, mi);
           Object.assign(m, { faceUp: true, pos: 'atk', active: true, equippedTo: host.uid, equips: [], placedTurn: e.state.turn, atkMod: 0, defMod: 0, tags: { union: 1 } });
           ps.sz[zone] = m;
           host.equips.push(m.uid);
@@ -551,7 +551,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const mi = op.mz.indexOf(t);
         if (mi < 0) return;
         for (const u of t.equips.slice()) yield* e.sendToGrave(u, 'used');
-        op.mz[mi] = null;
+        e.vacateMZ(op, mi);
         Object.assign(t, { faceUp: true, active: true, equippedTo: m.uid, equips: [], tags: {} });
         e.player(p).sz[zone] = t;
         m.equips.push(t.uid);

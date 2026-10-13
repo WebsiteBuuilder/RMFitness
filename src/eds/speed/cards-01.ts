@@ -142,7 +142,11 @@ function opponentInBattle(e: Engine, uid: number): FieldCard | null {
 /** Arcana Force: "When this card is Summoned, toss a coin" (tags.coin: 1 Heads, 2 Tails). */
 function arcanaCoin(after?: (e: Engine, m: FieldCard, p: Pid, heads: boolean) => Step): Partial<EffectDef> {
   const run = function* (e: Engine, m: FieldCard, p: Pid): Step {
-    const heads = coin(e, p, m.name);
+    // Light Barrier (batch 12): choose the result instead of tossing, unless its Tails turned it off.
+    const lb = e.player(p).field;
+    const barrier = !!lb && lb.faceUp && !!lb.active && lb.name === 'Light Barrier' && !lb.tags?.lbOff && !e.spellsNegated();
+    const heads = barrier ? (yield* chooseOption(e, p, `Light Barrier: apply which effect of ${m.name}?`, ['Heads', 'Tails'])) !== 1 : coin(e, p, m.name);
+    if (barrier) e.log(p, `${m.name}: ${heads ? 'Heads' : 'Tails'} (chosen with Light Barrier)`);
     tag(m).coin = heads ? 1 : 2;
     if (after) yield* after(e, m, p, heads);
   };

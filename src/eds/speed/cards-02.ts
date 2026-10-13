@@ -82,7 +82,7 @@ function* equipMonster(e: Engine, card: Card, host: FieldCard, p: Pid): Step {
   else if (f.loc.zone === 'mz') {
     for (const u of (f.card as FieldCard).equips.slice()) yield* e.sendToGrave(u, 'used');
     if (!inZone(e, card.uid, 'mz') || !e.fieldCard(host.uid)) return;
-    ps.mz[e.find(card.uid)!.loc.index] = null;
+    e.vacateMZ(ps, e.find(card.uid)!.loc.index);
   } else return;
   const fc: FieldCard = { uid: card.uid, name: card.name, owner: card.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0, active: true, equippedTo: host.uid };
   ps.sz[zone] = fc;

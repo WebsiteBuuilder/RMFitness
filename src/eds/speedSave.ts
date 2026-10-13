@@ -117,15 +117,15 @@ export function withChips(s: SpeedSave, n: number): SpeedSave {
 }
 
 // ---------- the card pool ----------
-const EXTRA_KINDS = ['Fusion'];
-const UNSUMMONABLE = ['Xyz', 'Synchro', 'Link'];
+const EXTRA_KINDS = ['Fusion', 'Xyz', 'Synchro', 'Link'];
+const UNSUMMONABLE: string[] = [];
 
 /** Why a Speed Duel card cannot go in a deck yet, or null when it can. */
 export function unplayableReason(name: string): string | null {
   const c = card(name);
   if (!c || !c.speed) return 'not a Speed Duel card';
   if (UNSUMMONABLE.includes(c.sub)) return `${c.sub} Monsters can't be summoned in this game`;
-  if (/Token/.test(c.name)) return 'a Token';
+  if (c.kind === 'monster' && / Token$/.test(c.name)) return 'a Token';
   if (c.vanilla) return null;
   if (!hasEffect(c.name)) return "its effect isn't in the game yet";
   return null;

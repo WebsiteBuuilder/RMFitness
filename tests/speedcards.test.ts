@@ -41,7 +41,7 @@ if (!focus.length) {
   console.log('no cards to test');
   process.exit(1);
 }
-const isExtra = (c: { sub: string }) => c.sub === 'Fusion';
+const isExtra = (c: { sub: string }) => ['Fusion', 'Xyz', 'Synchro', 'Link'].includes(c.sub);
 const focusMain = focus.filter((c) => !isExtra(c)).map((c) => c.name);
 const focusExtra = focus.filter(isExtra).map((c) => c.name);
 const fillMain = supported.filter((c) => !isExtra(c)).map((c) => c.name);
