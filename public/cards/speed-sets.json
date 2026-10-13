@@ -1,0 +1,228 @@
+[
+ {
+  "name": "Speed Duel Starter Decks: Destiny Masters",
+  "code": "SS01",
+  "date": "2019-01-24",
+  "cards": 63,
+  "addedBySet": [
+   "Dark Magician",
+   "Dark Magician Girl"
+  ]
+ },
+ {
+  "name": "Speed Duel Starter Decks: Duelists of Tomorrow",
+  "code": "SS02",
+  "date": "2019-01-24",
+  "cards": 69,
+  "addedBySet": [
+   "Blue-Eyes White Dragon",
+   "Kunai with Chain",
+   "Polymerization",
+   "Red-Eyes Black Dragon",
+   "Thousand Dragon"
+  ]
+ },
+ {
+  "name": "Speed Duel: Arena of Lost Souls",
+  "code": "SBLS",
+  "date": "2019-03-28",
+  "cards": 50,
+  "addedBySet": [
+   "Arcana Knight Joker",
+   "Blue-Eyes Ultimate Dragon",
+   "Buster Blader"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 1",
+  "code": "STP1",
+  "date": "2019-04-18",
+  "cards": 18,
+  "addedBySet": [
+   "Red-Eyes Black Dragon"
+  ]
+ },
+ {
+  "name": "Speed Duel: Attack from the Deep",
+  "code": "SBAD",
+  "date": "2019-05-30",
+  "cards": 50,
+  "addedBySet": [
+   "Gilford the Lightning"
+  ]
+ },
+ {
+  "name": "Speed Duel Demo Deck",
+  "code": "DEM5",
+  "date": "2019-06-08",
+  "cards": 11,
+  "addedBySet": []
+ },
+ {
+  "name": "Event Pack Speed Duel",
+  "code": "EVSD",
+  "date": "2019-08-01",
+  "cards": 6,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Ultimate Predators",
+  "code": "SS03",
+  "date": "2019-08-01",
+  "cards": 62,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Scars of Battle",
+  "code": "SBSC",
+  "date": "2019-08-01",
+  "cards": 50,
+  "addedBySet": [
+   "Barrel Dragon",
+   "Launcher Spider",
+   "Metalmorph"
+  ]
+ },
+ {
+  "name": "Speed Duel: Scars of Battle Launch Event participation card",
+  "code": "EVSD",
+  "date": "2019-08-17",
+  "cards": 1,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 2",
+  "code": "STP2",
+  "date": "2019-10-10",
+  "cards": 18,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Trials of the Kingdom Sneak Peek participation cards",
+  "code": "SBTK",
+  "date": "2019-11-30",
+  "cards": 10,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Trials of the Kingdom",
+  "code": "SBTK",
+  "date": "2019-12-05",
+  "cards": 51,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Demo Deck 2020",
+  "code": "DEM6",
+  "date": "2020-01-01",
+  "cards": 21,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Match of the Millennium",
+  "code": "SS04",
+  "date": "2020-05-15",
+  "cards": 66,
+  "addedBySet": [
+   "Celtic Guardian",
+   "Dark Magician",
+   "Senju of the Thousand Hands",
+   "Spellbinding Circle",
+   "Toon World"
+  ]
+ },
+ {
+  "name": "Speed Duel Starter Decks: Twisted Nightmares",
+  "code": "SS05",
+  "date": "2020-05-15",
+  "cards": 66,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Battle City Box",
+  "code": "SBCB",
+  "date": "2020-11-26",
+  "cards": 224,
+  "addedBySet": [
+   "Dark Magician",
+   "Falchion Beta"
+  ]
+ },
+ {
+  "name": "Trials of the Pharaoh - Speed Duel: Battle City Box promotional card",
+  "code": "OPTP",
+  "date": "2020-11-26",
+  "cards": 1,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Duel Academy Box",
+  "code": "SGX1",
+  "date": "2022-03-17",
+  "cards": 214,
+  "addedBySet": [
+   "Destiny HERO - Plasma"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 3",
+  "code": "STP3",
+  "date": "2022-03-24",
+  "cards": 34,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 4",
+  "code": "STP4",
+  "date": "2022-09-29",
+  "cards": 35,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Midterm Paradox",
+  "code": "SGX2",
+  "date": "2022-10-06",
+  "cards": 110,
+  "addedBySet": [
+   "Whirlwind Prodigy",
+   "White Magician Pikeru"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 5",
+  "code": "STP5",
+  "date": "2023-03-09",
+  "cards": 35,
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Duelists of Shadows",
+  "code": "SGX3",
+  "date": "2023-03-30",
+  "cards": 219,
+  "addedBySet": [
+   "Red-Eyes Black Dragon",
+   "Zure, Knight of Dark World"
+  ]
+ },
+ {
+  "name": "Speed Duel: Streets of Battle City",
+  "code": "SBC1",
+  "date": "2023-08-24",
+  "cards": 191,
+  "addedBySet": [
+   "Voltic Kong",
+   "Warrior of Atlantis",
+   "Worm Drake",
+   "Zera Ritual",
+   "Zera the Mant"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 6",
+  "code": "STP6",
+  "date": "2023-09-06",
+  "cards": 35,
+  "addedBySet": []
+ }
+]
