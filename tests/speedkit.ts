@@ -146,7 +146,8 @@ export function everyCard(e: Engine): Card[] {
   for (const p of [0, 1] as Pid[]) {
     const ps = e.player(p);
     out.push(...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.fusion);
-    for (const z of [...ps.mz, ...ps.sz, ps.field]) if (z) out.push(z);
+    // Xyz Materials sit under their Xyz Monster.
+    for (const z of [...ps.mz, ...ps.sz, ps.field]) if (z) out.push(z, ...(z.mats ?? []));
   }
   return out;
 }

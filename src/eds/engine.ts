@@ -137,6 +137,8 @@ export class Engine {
   // while the source stays face-up in a Monster Zone. Every free-zone search for monsters goes through these helpers.
   /** b20: is Monster Zone `i` of player `p` blocked by an effect right now? */
   mzBlocked(p: Pid, i: number): boolean {
+    const locks = this.state.fx.zoneLocks as { p: Pid; kind: string; i: number; src: number }[] | undefined;
+    if (locks?.some((x) => x.p === p && x.kind === 'mz' && x.i === i && !!this.fieldCard(x.src)?.faceUp)) return true; // b18: Tri-Head Dust Dragon
     const list = (this.state.fx.blockedMZ ?? []) as { src: number; zones: number[] }[];
     return list.some((b) => {
       const s = this.fieldCard(b.src);
@@ -184,7 +186,40 @@ export class Engine {
   /** A card's script, or nothing while its effects are negated (Speed Duel scripts can negate monsters). */
   effectOn(c: Card) {
     if ('faceUp' in c && this.isNegated(c as FieldCard)) return undefined;
-    return this.copiedEffect(c) ?? getEffect(c.name);
+    return this.scriptOf(c);
+  }
+
+  // b18: a face-up monster that copied another monster's effect (Number 8: Heraldic King Genom-Heritage, One-Eyed Skill Gainer,
+  // Number C69). tags.copyFx = 1 + index into fx.copyNames; tags.copyTurn limits it to that turn; tags.copyGain keeps its own effects too.
+  private copyCache = new Map<string, EffectDef>();
+  /** b18: a zone that cannot be used while the card that locked it stays face-up (Number 57: Tri-Head Dust Dragon; fx.zoneLocks). */
+  zoneLocked(ps: PlayerState, kind: 'mz' | 'sz', i: number): boolean {
+    const p = this.state.players.indexOf(ps) as Pid;
+    if (kind === 'mz' && this.mzBlocked(p, i)) return true; // b20: Ojama Knight
+    const list = this.state.fx.zoneLocks as { p: Pid; kind: string; i: number; src: number }[] | undefined;
+    if (!list?.length) return false;
+    return list.some((x) => x.p === p && x.kind === kind && x.i === i && !!this.fieldCard(x.src)?.faceUp);
+  }
+
+  /** b18: the first empty zone that is not locked, or -1. */
+  freeZone(ps: PlayerState, kind: 'mz' | 'sz'): number {
+    return ps[kind].findIndex((z, i) => z === null && !this.zoneLocked(ps, kind, i));
+  }
+
+  /** b18: the script a card runs with: its own, or the effect it copied while it is on the field (ignores negation). */
+  scriptOf(c: Card): EffectDef | undefined {
+    const asOther = this.copiedEffect(c); // b20: Arcana Call
+    if (asOther) return asOther;
+    const own = getEffect(c.name);
+    const t = (c as FieldCard).tags;
+    if (!t?.copyFx || !this.speed || (t.copyTurn !== undefined && t.copyTurn !== this.state.turn) || this.find(c.uid)?.loc.zone !== 'mz') return own;
+    const name = ((this.state.fx.copyNames ?? []) as string[])[t.copyFx - 1];
+    const copied = name ? getEffect(name) : undefined;
+    if (!copied) return t.copyGain ? own : undefined;
+    const key = `${c.name}|${name}|${t.copyGain ? 1 : 0}`;
+    let def = this.copyCache.get(key);
+    if (!def) this.copyCache.set(key, (def = t.copyGain ? { ...copied, ...(own ?? {}) } : { ...copied }));
+    return def;
   }
 
   /**
@@ -270,6 +305,14 @@ export class Engine {
     if (kind === 'trap' && (fx.noTrapTurn as number[] | undefined)?.[player] === this.state.turn) return true;
     const lock = fx.battleLock as { player: Pid; turn: number; kind: string } | undefined;
     if (lock && lock.player === player && lock.turn === this.state.turn && this.state.battle && this.controller(this.state.battle.attacker) === other(player) && lock.kind === kind) return true;
+    if (kind === 'monster' && this.monsterEffectsLocked(player, card)) return true;
+    return false;
+  }
+
+  /** b18: a face-up monster stops `player` from activating this monster's effects (Number C65: King Overfiend). */
+  monsterEffectsLocked(player: Pid, card: Card): boolean {
+    if (!this.speed) return false;
+    for (const q of [0, 1] as Pid[]) for (const m of this.monsters(q)) if (m.faceUp && m.uid !== card.uid && this.effectOn(m)?.locksMonsterEffects?.(this, m, q, player, card)) return true;
     return false;
   }
 
@@ -705,7 +748,7 @@ export class Engine {
       ps.field = fc;
     } else {
       const mid = Math.floor(ps.sz.length / 2);
-      const zone = ps.sz[mid] === null ? mid : ps.sz.findIndex((z) => z === null);
+      const zone = ps.sz[mid] === null && !this.zoneLocked(ps, 'sz', mid) ? mid : this.freeZone(ps, 'sz');
       if (zone < 0) return null;
       ps.sz[zone] = fc;
     }
@@ -858,6 +901,19 @@ export class Engine {
       if (m && m.faceUp && this.shielded(m, byBattle ? 'battle' : 'effect')) {
         this.log(null, `${m.name} is not destroyed ${byBattle ? 'by battle' : 'by the card effect'}`);
         continue;
+      }
+      // b18: "if this face-up card would be destroyed, you can ... instead" (Number 49: Fortune Tune).
+      const repl = m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz' ? this.effectOn(m)?.destroyReplace : undefined;
+      if (repl && m) {
+        const prev = this.actor;
+        this.actor = this.controller(uid) ?? m.owner;
+        let kept = false;
+        try {
+          kept = yield* repl(this, m, byBattle);
+        } finally {
+          this.actor = prev;
+        }
+        if (kept) continue;
       }
       this.battleKill = byBattle;
       yield* this.sendToGrave(uid, reason);
@@ -2043,6 +2099,7 @@ export class Engine {
     const f = this.find(m.uid);
     if (!f || f.loc.player !== player || this.prohibited(m.name, m.uid)) return false;
     const eff = this.effectOn(m);
+    if (this.info(m.name).kind === 'monster' && this.monsterEffectsLocked(player, m)) return false; // b18
     if (f.loc.zone === 'hand') return !!eff?.handIgnition && eff.handIgnition.can(this, m, player);
     const fc = m as FieldCard;
     if (!eff?.ignition || !fc.faceUp || fc.effectUsed) return false;
@@ -2057,7 +2114,7 @@ export class Engine {
   private *monsterEffect(player: Pid, uid: number): Step {
     const f = this.find(uid);
     if (!f || !this.canUseMonsterEffect(player, f.card)) return;
-    const eff = getEffect(f.card.name)!;
+    const eff = this.scriptOf(f.card)!; // b18: copied effects
     this.log(player, `${f.card.name}'s effect activates`);
     if (f.loc.zone === 'hand') return yield* this.as(player, eff.handIgnition!.run(this, f.card, player));
     const m = f.card as FieldCard;
@@ -2112,7 +2169,7 @@ export class Engine {
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card.name)) return false;
     if (this.chainEnergyBlocks(player)) return false;
     if (info.sub === 'Field') return !this.player(player).field;
-    return this.player(player).sz.some((z) => z === null);
+    return this.freeZone(this.player(player), 'sz') >= 0;
   }
 
   private setSpellTrap(player: Pid, uid: number, zone: number) {
@@ -2125,7 +2182,7 @@ export class Engine {
       const card = this.detach(uid)!;
       ps.field = this.toField(card, 'atk', false);
     } else {
-      if (zone < 0 || zone >= ps.sz.length || ps.sz[zone] !== null) zone = ps.sz.findIndex((z) => z === null);
+      if (zone < 0 || zone >= ps.sz.length || ps.sz[zone] !== null || this.zoneLocked(ps, 'sz', zone)) zone = this.freeZone(ps, 'sz');
       if (zone < 0) return;
       const card = this.detach(uid)!;
       ps.sz[zone] = this.toField(card, 'atk', false);
@@ -2151,7 +2208,7 @@ export class Engine {
         if (f.loc.zone === 'hand') return false;
         if ((f.card as FieldCard).placedTurn === this.state.turn) return false;
       }
-      if (f.loc.zone === 'hand' && !this.player(player).sz.some((z) => z === null) && info.sub !== 'Field') return false;
+      if (f.loc.zone === 'hand' && this.freeZone(this.player(player), 'sz') < 0 && info.sub !== 'Field') return false;
       if (f.loc.zone === 'hand' && info.sub === 'Field' && this.player(player).field) return false;
       if (f.loc.zone === 'sz' || f.loc.zone === 'field') {
         const fc = f.card as FieldCard;
@@ -2197,7 +2254,7 @@ export class Engine {
         ps.field = fc;
       } else {
         let z = zone ?? -1;
-        if (z < 0 || z >= ps.sz.length || ps.sz[z] !== null) z = ps.sz.findIndex((s) => s === null);
+        if (z < 0 || z >= ps.sz.length || ps.sz[z] !== null || this.zoneLocked(ps, 'sz', z)) z = this.freeZone(ps, 'sz');
         fc = this.toField(card, 'atk', true);
         ps.sz[z] = fc;
       }
@@ -2241,7 +2298,7 @@ export class Engine {
         this.levelSource = link.card.uid;
         if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
         const effectLink = (link.payload as { effect?: string } | undefined)?.effect;
-        const eff = (effectLink ? this.copiedEffect(link.card) : undefined) ?? getEffect(link.card.name); // b20: copied effects (Arcana Call)
+        const eff = effectLink ? this.scriptOf(link.card) : getEffect(link.card.name); // b18: copied effects
         // Speed Duel: face-up monsters that negate effects as they resolve (The End of Anubis).
         if (!link.negated && this.speed && ([0, 1] as Pid[]).some((q) => this.monsters(q).some((m) => m.faceUp && this.effectOn(m)?.negatesEffect?.(this, m, q, link) === true))) link.negated = true;
         if (effectLink) {
@@ -2431,7 +2488,7 @@ export class Engine {
   private *activateQuick(player: Pid, uid: number, trigger: Trigger, ctx: ChainCtx): Generator<Prompt, ChainLink | null, Choice> {
     const f = this.find(uid);
     if (!f) return null;
-    const q = (this.copiedEffect(f.card) ?? getEffect(f.card.name))?.quick; // b20: copied effects (Arcana Call)
+    const q = (f.loc.zone === 'mz' ? this.scriptOf(f.card) : getEffect(f.card.name))?.quick; // b18: copied effects
     if (!q) return null;
     const from = q.from ?? 'field';
     const link: ChainLink = { card: f.card, loc: f.loc, player, label: f.card.name, negated: false, payload: { effect: 'quick', trigger, ctx } };
