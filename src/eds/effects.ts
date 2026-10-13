@@ -230,6 +230,8 @@ export interface EffectDef {
     onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
     attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
     afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
+    /** audit-10: fewer Tributes for `owner`'s face-up Normal Summon of `monster` this turn (Vampire Sorcerer). */
+    tributeOffer?(e: Engine, owner: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
   };
   // ---------- more Speed Duel hooks (batch 14) ----------
   /** This card's own Summon conditions: true = `p` cannot Summon it this way (Amaterasu, Helpoemer). `from`: the zone it comes from. */
@@ -289,6 +291,13 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // ---------- audit-10 hooks ----------
+  /** audit-10: this attacker, at the start of the Damage Step (after a face-down target was flipped) (Vampire Hunter). */
+  attackerDamageStep?(e: Engine, attacker: FieldCard, target: FieldCard, p: Pid): Step;
+  /** audit-10: this attacked monster inflicted battle damage to the attacker's controller (Vampire Lady). */
+  onTargetBattleDamage?(e: Engine, target: FieldCard, attacker: FieldCard, controller: Pid): Step;
+  /** audit-10: during each Standby Phase (either player's) while this card is in its owner's GY (Vampire's Curse). */
+  onStandbyInGraveAny?(e: Engine, card: Card, owner: Pid): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
