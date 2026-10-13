@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check-decks": "node scripts/check-decks.mjs",
-    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts && tsx tests/cont-eds.test.ts && tsx tests/cont-a.test.ts && tsx tests/leave.test.ts && tsx tests/cont-d.test.ts && tsx tests/art.test.ts && tsx tests/flow.test.ts && tsx tests/leveling.test.ts"
+    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts && tsx tests/cont-eds.test.ts && tsx tests/cont-a.test.ts && tsx tests/leave.test.ts && tsx tests/cont-d.test.ts && tsx tests/art.test.ts && tsx tests/flow.test.ts && tsx tests/leveling.test.ts && tsx tests/batch-14.test.ts"
   },
   "dependencies": {
     "@types/three": "^0.180.0",
