@@ -74,7 +74,10 @@ function levelChanges(e: Engine, c: Card, lv: number): number {
   const base = t?.lvSet && t.lvSetTurn === undefined ? t.lvSet : lv;
   const delta = t && t.lvTurn === e.state.turn ? t.lvDelta ?? 0 : 0;
   const down = (e.state.fx.lvDown as Record<number, { turn: number; n: number }> | undefined)?.[c.uid];
-  const n = base + delta + (t?.lvMod ?? 0) - (down?.turn === e.state.turn ? down.n : 0);
+  // audit-00: an active Spell/Trap changing Levels in the hand and on the field (A Legendary Ocean).
+  const zone = e.find(c.uid)?.loc.zone;
+  const aura = zone === 'hand' || zone === 'mz' ? e.liveST().reduce((a, x) => a + (x.eff.levelMod?.(e, x.c, x.p, c) ?? 0), 0) : 0;
+  const n = base + delta + (t?.lvMod ?? 0) - (down?.turn === e.state.turn ? down.n : 0) + aura;
   return n === base ? base : Math.max(1, n);
 }
 export const levelOf = (e: Engine, c: Card): number => levelChanges(e, c, declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0);

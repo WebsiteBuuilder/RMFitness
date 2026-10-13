@@ -151,7 +151,8 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
 
   // A cost paid at activation (pay LP), then a target on the field.
   E['Cosmic Cyclone'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && e.player(p).lp > 1000 && allST(e).length > 1,
+    // audit-00: from the hand it is not on the field yet, so 1 other Spell/Trap is enough.
+    canActivate: (e, c, p, t) => anyTime(t) && e.player(p).lp > 1000 && allST(e).some((x) => x.uid !== c.uid),
     *activate(e, link, p) {
       const list = allST(e).filter((c) => c.uid !== link.card.uid);
       const c = yield* pickOne(e, p, 'Cosmic Cyclone: banish which Spell/Trap?', list, true);
@@ -185,7 +186,8 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     quick: {
       from: 'hand',
       label: 'discard it to take no battle damage',
-      can: (e, _c, p, t) => t === 'attack' && !!e.state.battle && e.controller(e.state.battle.attacker) === other(p),
+      // audit-00: in either player's turn (any battle; offered when the attack is declared, before damage calculation).
+      can: (e, _c, _p, t) => t === 'attack' && !!e.state.battle,
       *cost(e, card, p) {
         yield* e.discard(p, card.uid);
       },
@@ -193,7 +195,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
         noBattleDamage(e, p);
       },
     },
-    // "When this card is Summoned: toss a coin": Heads, you take no battle damage from its battles; Tails, your opponent takes none.
+    // "When this card is Summoned: toss a coin": Heads, halve all battle damage you take; Tails, halve all battle damage your opponent takes.
     *onSummon(e, m) {
       m.tags = { ...(m.tags ?? {}), coin: e.roll(2) };
       e.log(null, `Temperance: ${m.tags.coin === 1 ? 'Heads' : 'Tails'}`);
@@ -202,7 +204,11 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       m.tags = { ...(m.tags ?? {}), coin: e.roll(2) };
       e.log(null, `Temperance: ${m.tags.coin === 1 ? 'Heads' : 'Tails'}`);
     },
-    noBattleDamage: (_e, m) => m.tags?.coin === 1,
+    // audit-00: the coin halves battle damage (it used to stop all damage from its own battles).
+    damageMod: (_e, src, ctl, damaged, amount, byEffect) => {
+      if (byEffect || !src.tags?.coin) return undefined;
+      return (src.tags.coin === 1 ? damaged === ctl : damaged === other(ctl)) ? Math.floor(amount / 2) : undefined;
+    },
   };
 
   // An Equip Spell giving protection (shields) and a battle trigger (hostAfterBattle).

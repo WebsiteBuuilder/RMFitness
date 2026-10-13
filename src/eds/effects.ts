@@ -289,6 +289,11 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // ---------- audit-00 hooks ----------
+  /** audit-00: this face-up monster, at the start of the Damage Step of its battle (`foe` null for a direct attack). */
+  damageStepStart?(e: Engine, m: FieldCard, foe: FieldCard | null, controller: Pid): Step;
+  /** audit-00: an active Spell/Trap changes the Level of `card` (in a hand or a Monster Zone) by this much (A Legendary Ocean). */
+  levelMod?(e: Engine, src: FieldCard, srcController: Pid, card: Card): number;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';

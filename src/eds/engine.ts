@@ -559,6 +559,7 @@ export class Engine {
       for (const c of this.activeSpells(q)) if (c.name === name) return c;
       for (const m of this.monsters(q)) if (m.faceUp && m.name === name) return m;
       if (this.speed) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
+      if (this.speed) for (const c of this.activeSpells(q)) if (getEffect(c.name)?.countsAs?.(this, c) === name) return c; // audit-00: A Legendary Ocean is "Umi"
     }
     return null;
   }
@@ -1810,7 +1811,9 @@ export class Engine {
   tributePlan(player: Pid, card: Card, faceUp?: boolean): { need: number; only?: (m: FieldCard) => boolean } {
     const info = this.info(card.name);
     const down = this.speed ? ((this.state.fx.lvDown ?? {}) as Record<number, { turn: number; n: number }>)[card.uid] : undefined;
-    const level = Math.max(1, (info.level ?? 1) - (down?.turn === this.state.turn ? down.n : 0));
+    let lvMod = 0; // audit-00: Levels changed in the hand by an active card (A Legendary Ocean)
+    if (this.speed) for (const x of this.liveST()) lvMod += x.eff.levelMod?.(this, x.c, x.p, card) ?? 0;
+    const level = Math.max(1, (info.level ?? 1) - (down?.turn === this.state.turn ? down.n : 0) + lvMod);
     let less = 0;
     if (this.speed) for (const x of this.liveST()) less += x.eff.tributeDiscount?.(this, x.c, x.p, card, player) ?? 0;
     let plan: { need: number; only?: (m: FieldCard) => boolean } = { need: Math.max(0, this.tributesNeeded(level) - less) };
@@ -1830,6 +1833,7 @@ export class Engine {
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
     if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
     if (this.chainEnergyBlocks(player)) return false;
+    if (faceUp === false && this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: Absorbing Jar
     const plan = this.tributePlan(player, card, faceUp);
     const need = plan.need;
     const empty = this.openMonsterZones(player); // b20
@@ -1868,6 +1872,7 @@ export class Engine {
   /** Speed Duel: this monster cannot be Tributed (its own effect, or an equip on it: Blue Duston, Magicalized Duston Mop). */
   untributable(m: FieldCard): boolean {
     if (!this.speed) return false;
+    if (m.faceUp && m.tags?.cannotTribute) return true; // audit-00: "It cannot be Tributed" (Archfiend's Roar)
     if (m.faceUp && this.effectOn(m)?.cannotBeTributed?.(this, m)) return true;
     return m.equips.some((u) => {
       const eq = this.fieldCard(u);
@@ -1933,6 +1938,7 @@ export class Engine {
         })());
       }
       if (!this.monsterZoneOpen(player, zone)) zone = this.freeMonsterZone(player); // b20
+      if (this.speed) ((this.state.fx.tributedFor ??= {}) as Record<number, number>)[uid] = need; // audit-00: how many Tributes it took (Behemoth the King of All Animals)
     }
     // b20: a blocked zone (Ojama Knight) cannot take the monster: use another open one.
     if (zone >= 0 && zone < ps.mz.length && ps.mz[zone] === null && this.mzBlocked(player, zone)) zone = this.freeMonsterZone(player);
@@ -1953,6 +1959,13 @@ export class Engine {
     } else {
       this.log(player, `${ps.name} Set a monster`);
       for (const x of this.liveST()) if (x.eff.onAnySet && this.fieldCard(uid)) yield* this.as(x.p, x.eff.onAnySet(this, x.c, x.p, fc, player));
+      // audit-00: face-up monsters watch Sets too (Arcana Force III - The Empress).
+      if (this.speed)
+        for (const q of [0, 1] as Pid[])
+          for (const w of this.monsters(q)) {
+            const h = w.faceUp ? this.effectOn(w)?.onAnySet : undefined;
+            if (h && this.fieldCard(uid) && this.state.winner === null) yield* this.as(q, h(this, w, q, fc, player));
+          }
     }
   }
 
@@ -2218,6 +2231,7 @@ export class Engine {
     const info = this.info(card.name);
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card.name)) return false;
     if (this.chainEnergyBlocks(player)) return false;
+    if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
     if (info.sub === 'Field') return !this.player(player).field;
     return this.freeZone(this.player(player), 'sz') >= 0;
   }
@@ -2561,6 +2575,8 @@ export class Engine {
 
   /** Set spells/traps the player could activate right now against the trigger. */
   responsesFor(player: Pid, trigger: Trigger, ctx: ChainCtx): SelectOption[] {
+    // audit-00: "your opponent cannot activate cards or effects in response to this card's activation" (Abyss Script - Rise of the Abyss King).
+    if (this.speed && ctx.link && ctx.link.player !== player && this.state.fx.unchainable === ctx.link.card.uid && this.state.chain.includes(ctx.link)) return [];
     const out: SelectOption[] = this.speed ? this.quickOptions(player, trigger, ctx) : [];
     const sealed = this.attackSealed(player);
     for (const fc of this.spells(player)) {
@@ -2782,6 +2798,14 @@ export class Engine {
   private *damageStep(player: Pid, attacker: FieldCard, target: FieldCard | null): Step {
     const opp = other(player);
     const aEff = this.effectOn(attacker);
+    // audit-00: "at the start of the Damage Step" effects of the face-up battling monsters (Ally of Justice Core Destroyer, Armed Dragon LV10 White).
+    if (this.speed) {
+      for (const [m, foe, ctl] of [[attacker, target, player], [target, attacker, opp]] as [FieldCard | null, FieldCard | null, Pid][]) {
+        const h = m && m.faceUp && this.fieldCard(m.uid) ? this.effectOn(m)?.damageStepStart : undefined;
+        if (h && m && this.state.winner === null) yield* this.as(ctl, h(this, m, foe && this.fieldCard(foe.uid) ? foe : null, ctl));
+      }
+      if (this.state.winner !== null || !this.fieldCard(attacker.uid) || (target && !this.fieldCard(target.uid))) return;
+    }
     if (!target) {
       let dmg = this.atkOf(attacker) + this.attackBonus(attacker, null);
       dmg = yield* this.kuriboh(opp, dmg);
