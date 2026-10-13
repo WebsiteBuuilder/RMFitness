@@ -3,20 +3,21 @@
 // While a chain of cues (the cues of one engine update) plays, the duel screen
 // keeps showing the state from before it, and moves on to the new state at the
 // chain's impact or landing (a monster lands, a blow hits, damage, a shatter),
-// or at the latest when the chain ends, is skipped, is cleared, fails, or after
-// 4 s. So Life Points drop as the attack lands and a summoned monster appears in
+// or at the latest when the chain ends, is skipped, is cleared, fails, or when
+// its watchdog runs out (armed when the chain's cinematic actually starts, for
+// its own length + 1.5 s; paused while the tab is hidden). So Life Points drop as the attack lands and a summoned monster appears in
 // its zone as it lands, never before.
 //
 // The player never acts on a stale board: while the board lags, the art stage
 // covers the screen and a tap there skips the chain (the board catches up at
-// once). A choice for the player waits for the end of its chain and then shows
+// once). While the stage is on, a tap anywhere but on a prompt or button skips too. A choice for the player waits for the end of its chain and then shows
 // straight away, with whatever is left on stage skipped.
 //
 // The duel screens use it as `const state = useShownState(view.state, seat)`.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
-import { coalesce, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
+import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
 
@@ -31,7 +32,10 @@ export interface ArtSink {
   busy(): boolean;
 }
 
-const WATCHDOG_MS = 4000;
+/** A chain whose cinematic has not started this long after it was queued (3D still loading, say) lets the board go. */
+export const START_GRACE_MS = 4000;
+/** Once a chain's cinematic is playing, the board waits at most its length plus this. */
+export const WATCHDOG_SLACK_MS = 1500;
 const stageEl = () => (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'));
 const SIGNATURES = new Set(SIGNATURE_CARDS);
 
@@ -126,9 +130,31 @@ export class Flow {
   /** hold to skip all: no cinematics until this opponent turn is over */
   private skipTurn: number | null = null;
   private watchdog = 0;
+  /** when the watchdog fires (performance.now() ms), and what was left of it when the tab was hidden */
+  private dogAt = 0;
+  private dogLeft = -1;
   private promptSkipped: unknown = null;
   seat: Pid | null = null;
   rerender: () => void = () => {};
+
+  constructor() {
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility);
+  }
+
+  /** The watchdog sleeps while the tab is hidden (nothing draws, so no cinematic can finish). */
+  private onVisibility = () => {
+    if (document.hidden) {
+      if (this.dogAt) {
+        this.dogLeft = Math.max(0, this.dogAt - performance.now());
+        clearTimeout(this.watchdog);
+        this.dogAt = 0;
+      }
+    } else if (this.dogLeft >= 0) {
+      const left = this.dogLeft;
+      this.dogLeft = -1;
+      this.setDog(left);
+    }
+  };
 
   /** Called while the duel screen renders: the state it should show. */
   update(real: DuelState, seat: Pid | null): DuelState {
@@ -175,8 +201,9 @@ export class Flow {
       if (!this.pending.length) this.shown = before;
       this.pending.push({ id: batch, state: this.snap, cine: true, prompt: humanPrompt(real, seat) });
       this.outbox.push({ cues, batch, scales });
-      // the computer waits from this very moment
+      // the computer waits from this very moment; the field figures in it step aside
       setArtBusy(true);
+      focusArt(cues.flatMap(cueUids));
       if (this.pending.length === 1) this.armWatchdog();
     } else if (this.pending.length) {
       // Nothing to watch here, but it comes after what is still playing.
@@ -227,9 +254,31 @@ export class Flow {
     this.rerender();
   }
 
+  /** Watches the chain at the front: START_GRACE_MS until its cinematic starts (see started()). */
   private armWatchdog() {
+    this.setDog(this.pending.length ? START_GRACE_MS : -1);
+  }
+
+  private setDog(ms: number) {
     clearTimeout(this.watchdog);
-    if (this.pending.length) this.watchdog = setTimeout(() => this.pending.length && this.advance(0), WATCHDOG_MS) as unknown as number;
+    this.dogAt = 0;
+    this.dogLeft = -1;
+    if (ms < 0 || !this.pending.length) return;
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.dogLeft = ms;
+      return;
+    }
+    this.dogAt = performance.now() + ms;
+    this.watchdog = setTimeout(() => {
+      this.dogAt = 0;
+      if (this.pending.length) this.advance(0);
+    }, ms) as unknown as number;
+  }
+
+  /** A cinematic of chain `batch` started and lasts `seconds` (at its playback rate): the board waits that long + slack. */
+  started(batch: number, seconds: number) {
+    if (this.pending[0]?.id !== batch) return;
+    this.setDog(Math.max(0, seconds) * 1000 + WATCHDOG_SLACK_MS);
   }
 
   /** Shows the real state now (skip all, errors, leaving). */
@@ -251,6 +300,7 @@ export class Flow {
 
   dispose() {
     clearTimeout(this.watchdog);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
     this.pending = [];
     this.outbox = [];
   }
@@ -272,6 +322,14 @@ export function chainCommitted(batch: number) {
 }
 export function chainEnded(batch: number) {
   flow?.commit(batch, true);
+}
+/** A cinematic of chain `batch` is now playing, for `seconds` (its watchdog starts now). */
+export function chainStarted(batch: number, seconds: number) {
+  flow?.started(batch, seconds);
+}
+/** 3D just failed under the cinematic (WebGL context lost): the board shows the duel as it is, now. */
+export function releaseBoard() {
+  flow?.flushAll();
 }
 
 /** Long press / double tap on the art stage. */

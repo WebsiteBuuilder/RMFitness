@@ -1,12 +1,12 @@
 // The 3D art engine's only hook into the duel screens: drop <ArtStage> into a
 // duel (Classic and Touch share it) and it plays the cinematics the flow
 // (flow.tsx: engine events → cue chains, the board kept in step) hands it.
-// Speed Duel only. Tap: skip the chain · hold or double-tap: skip all.
-// The computer waits for it.
+// Speed Duel only. While the stage is on, a tap anywhere but on a prompt or a
+// button skips the chain; hold or double-tap: skip all. The computer waits for it.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { DuelState, Pid } from "../eds/types";
-import { setArtBusy, type Cue } from "./cues";
-import { attachArtSink, boardHeld, chainCommitted, chainEnded, skipAllChains } from "./flow";
+import { bannerOnce, clearArtFocus, setArtBusy, type Cue } from "./cues";
+import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, releaseBoard, skipAllChains } from "./flow";
 import { shadowRealmOf } from "./shadow";
 import { getAnimSpeed, useAnimSpeed, useCinematics } from "./settings";
 import type { Director, Ui } from "./runtime";
@@ -32,6 +32,9 @@ const DOUBLE_TAP_MS = 350;
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
+/** Taps on these never skip a cinematic: they belong to a prompt, a menu or a button. */
+const INTERACTIVE = "button, a, input, select, textarea, label, [role=button], .tsheet, .tbtn, .topt, .taction, .tphase-btn, .tphase-item, .menu, .msgwin, .tresult, .win, .art-skip";
+
 /** Text, numbers and flashes over the canvas. */
 function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
   const add = (
@@ -54,8 +57,10 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
       /[&<>"]/g,
       (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!,
     );
+  const once = bannerOnce();
   return {
     banner: (o) =>
+      once(o.title) &&
       add(
         `art-banner ${o.big ? "big" : ""} pos-${o.pos ?? "bottom"}`,
         `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ""}`,
@@ -117,9 +122,14 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         );
         d.timeScale = getAnimSpeed();
         d.onBusy = () => (setArtBusy(true), setActive(true));
-        d.onIdle = () => (setArtBusy(false), setActive(false));
+        // the computer goes on (the stage may still hold the fighters for the blow, or fade out)
+        d.onSettle = () => setArtBusy(false);
+        d.onIdle = () => (setArtBusy(false), setActive(false), clearArtFocus());
         d.onCommit = chainCommitted;
         d.onBatchEnd = chainEnded;
+        d.onCueStart = chainStarted;
+        // no WebGL mid-cinematic: the board shows the duel as it is at once
+        d.onLost = releaseBoard;
         d.viewer = viewerRef.current;
         void Promise.resolve(d.prewarm?.()).catch(() => {});
         dir.current = d;
@@ -139,6 +149,20 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       })
       .finally(() => (loading.current = null));
     return loading.current;
+  };
+
+  /** Builds the field figures layer (once): its WebGL context is made while the duel is quiet, not at the first summon. */
+  const ensureBoard = () => {
+    if (board.current || boardLoading.current || broken.current) return;
+    boardLoading.current = true;
+    import("./board")
+      .then(({ BoardLayer }) => {
+        if (!boardCanvas.current || board.current) return;
+        board.current = new BoardLayer(boardCanvas.current);
+        board.current.sync(latest.current);
+      })
+      .catch((err) => console.warn("3D field figures unavailable", err))
+      .finally(() => (boardLoading.current = false));
   };
 
   /** Chains that never reached the director: the board catches up with them now. */
@@ -187,15 +211,25 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     return () => attachArtSink(null);
   }, [on3d]);
 
-  // Preload: three.js, the director and the figures layer, while the duel is quiet,
-  // so the first cinematic starts at once.
+  // Preload: three.js, the director (its shaders compile and draw once, in small
+  // slices) and the figures layer as the duel opens, so the first cinematic starts
+  // at once; then, in idle time, the art of every card in both decks.
   useEffect(() => {
     if (!on3d) return;
     let gone = false;
+    void ensure();
+    import("./board").catch(() => {});
     idle(() => {
       if (gone) return;
-      void ensure();
-      import("./board").catch(() => {});
+      ensureBoard();
+      const names = new Set<string>();
+      for (const p of [0, 1] as Pid[]) {
+        const ps = state.players[p];
+        for (const c of [...ps.mz, ...ps.hand, ...ps.deck, ...ps.fusion, ...ps.gy]) if (c?.name) names.add(c.name);
+      }
+      import("./depth")
+        .then(({ preloadArt }) => (gone ? undefined : preloadArt([...names], () => gone)))
+        .catch(() => {});
     });
     return () => void (gone = true);
   }, [on3d]);
@@ -220,16 +254,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     .join(",");
   useEffect(() => {
     if (board.current) return board.current.sync(standing);
-    if (!standing.length || boardLoading.current || broken.current) return;
-    boardLoading.current = true;
-    import("./board")
-      .then(({ BoardLayer }) => {
-        if (!boardCanvas.current) return;
-        board.current = new BoardLayer(boardCanvas.current);
-        board.current.sync(latest.current);
-      })
-      .catch((err) => console.warn("3D field figures unavailable", err))
-      .finally(() => (boardLoading.current = false));
+    if (standing.length) ensureBoard();
   }, [standKey]);
   const latest = useRef(standing);
   latest.current = standing;
@@ -268,10 +293,16 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     return () => document.body.classList.remove("art-finishing");
   }, [finishing]);
 
-  /** Tap skips the chain; a second tap soon after, or holding, skips everything. */
-  const onDown = (ev: PointerEvent) => {
-    ev.preventDefault();
-    ev.stopPropagation();
+  /**
+   * Tap skips the chain; a second tap soon after, or holding, skips everything.
+   * `own`: the tap is the stage's (it covers a held board, or the skip pill) and
+   * goes no further; otherwise it also reaches the duel underneath.
+   */
+  const onDown = (ev: PointerEvent, own = true) => {
+    if (own) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
     const now = performance.now();
     if (now - lastTap.current < DOUBLE_TAP_MS) {
       lastTap.current = 0;
@@ -282,19 +313,87 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     skipChain();
     clearTimeout(holdTimer.current);
     holdTimer.current = window.setTimeout(skipAll, HOLD_MS);
-    const up = () => {
+    let down = true;
+    // a finger that moves is a drag, not a hold: it never skips everything
+    const move = (e: PointerEvent) => {
+      if (e.pointerId === ev.pointerId && Math.hypot(e.clientX - ev.clientX, e.clientY - ev.clientY) > 12) clearTimeout(holdTimer.current);
+    };
+    const up = (e: PointerEvent) => {
+      if (e.pointerId !== ev.pointerId) return;
+      down = false;
       clearTimeout(holdTimer.current);
+      window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
+    window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
+    // A touch on the stage while it held the board: the board has just caught up
+    // (the chain was skipped), so step aside and hand the same touch to whatever is
+    // under it, once the duel has redrawn: a drag of a hand card goes on as if the
+    // cinematic had never been there.
+    const el = host.current;
+    if (own && el && ev.currentTarget === el) {
+      el.style.pointerEvents = "none";
+      // a touch is implicitly captured by the element it went down on: let it go
+      const free = () => {
+        for (const t of [ev.target as Element | null, el])
+          try {
+            t?.releasePointerCapture?.(ev.pointerId);
+          } catch {
+            /* not captured, or the pointer is gone */
+          }
+      };
+      free();
+      requestAnimationFrame(() => {
+        free();
+        if (!down) return;
+        const under = document.elementFromPoint(ev.clientX, ev.clientY);
+        if (!under || el.contains(under)) return;
+        under.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId: ev.pointerId,
+            pointerType: ev.pointerType,
+            isPrimary: ev.isPrimary,
+            clientX: ev.clientX,
+            clientY: ev.clientY,
+            screenX: ev.screenX,
+            screenY: ev.screenY,
+            button: ev.button,
+            buttons: ev.buttons,
+          }),
+        );
+      });
+    }
   };
+
+  // While the stage is on but the board is up to date (after the impact, fading out,
+  // the Shadow Realm finish), a tap anywhere but on a prompt, menu or button skips too.
+  const heldRef = useRef(false);
+  useEffect(() => {
+    if (!active) return;
+    const tap = (ev: PointerEvent) => {
+      if (heldRef.current || ev.button > 0) return;
+      const t = ev.target as Element | null;
+      if (t?.closest?.(INTERACTIVE)) return;
+      onDown(ev, false);
+    };
+    document.addEventListener("pointerdown", tap, true);
+    return () => document.removeEventListener("pointerdown", tap, true);
+  }, [active]);
 
   if (!enabled) return null;
   // While the board lags behind a cinematic, the whole stage takes taps (so nobody
-  // acts on a board that is about to change); otherwise only the skip pill does.
+  // acts on a board that is about to change); otherwise taps reach the duel, and
+  // skip on the way unless they are meant for a prompt or a button.
   const held = active && boardHeld();
+  heldRef.current = held;
+  // (a touch handed through above made the stage step aside until this redraw)
+  if (host.current) host.current.style.pointerEvents = "";
   const sr = state.winner !== null ? shadowRealmOf(state) : null;
   return (
     <>

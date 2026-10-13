@@ -36,6 +36,7 @@ import { cardLevels } from '../level/leveling';
 import { showProfileLevels } from '../level/view';
 import { CardShop, ChipBar } from '../collection/Shop';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
+import { preloadArt3d } from '../art/preload';
 
 export type SpeedLinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -77,6 +78,8 @@ export function SpeedHub({
 }) {
   const [sub, setSub] = useState<Sub>('menu');
   const [editing, setEditing] = useState<string | null>(null);
+  // the duel's 3D engine downloads while the player is still here
+  useEffect(() => preloadArt3d(), []);
   const deck = activeDeck(save);
   const problems = deck ? [...speedDeckProblems(deck), ...collectionProblems(save, deck)] : ['Build a deck first'];
   // Card pictures on these screens show this profile's card rarities.

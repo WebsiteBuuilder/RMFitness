@@ -3,8 +3,8 @@
 import { Engine } from '../src/eds/engine';
 import { DB as APP_DB } from '../src/eds/db';
 import type { DuelState, Prompt } from '../src/eds/types';
-import { coalesce, toCues, type Cue, type CardRef } from '../src/art/cues';
-import { attachArtSink, Flow, pickCues } from '../src/art/flow';
+import { artBusy, artFocus, bannerOnce, clearArtFocus, coalesce, cueUids, focusArt, onArtChange, setArtBusy, toCues, type Cue, type CardRef } from '../src/art/cues';
+import { attachArtSink, Flow, pickCues, START_GRACE_MS, WATCHDOG_SLACK_MS } from '../src/art/flow';
 import { Timeline } from '../src/art/runtime';
 import { DB, SPEED } from './speedkit';
 
@@ -169,9 +169,73 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
   f.update(e.state, 0);
   f.drawn();
-  await new Promise((r) => setTimeout(r, 4100));
-  ok(f.update(e.state, 0) === e.state, 'after 4 s the board catches up even if the cinematic never reports');
+  await new Promise((r) => setTimeout(r, START_GRACE_MS + 100));
+  ok(f.update(e.state, 0) === e.state, 'a chain whose cinematic never starts lets the board catch up after the start grace');
   f.dispose();
+}
+{
+  // the watchdog runs from the moment the cinematic starts, for its own length + slack
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
+  f.update(e.state, 0);
+  f.drawn();
+  const p = played[played.length - 1];
+  await new Promise((r) => setTimeout(r, 300));
+  f.started(p.batch + 1000, 0.1); // another chain: ignored
+  f.started(p.batch, 0.4);
+  await new Promise((r) => setTimeout(r, 0.4 * 1000 + WATCHDOG_SLACK_MS - 300));
+  ok(f.holding, 'the board still waits while the started cinematic (plus slack) is not over');
+  await new Promise((r) => setTimeout(r, 450));
+  ok(!f.holding && f.update(e.state, 0) === e.state, `then it catches up (${0.4 * 1000 + WATCHDOG_SLACK_MS} ms after the start, not ${START_GRACE_MS} ms after the queueing)`);
+  f.dispose();
+}
+{
+  // a long cinematic is not cut short by the watchdog
+  const e = duel();
+  const f = new Flow();
+  f.update(e.state, 0);
+  e.apply({ type: 'ATTACK', player: 0, uid: e.monsters(0)[0].uid, target: null });
+  f.update(e.state, 0);
+  f.drawn();
+  const p = played[played.length - 1];
+  f.started(p.batch, (START_GRACE_MS + 1000) / 1000);
+  await new Promise((r) => setTimeout(r, START_GRACE_MS + 300));
+  ok(f.holding, 'a cinematic longer than the start grace keeps the board until it is over');
+  f.commit(p.batch, true);
+  ok(!f.holding, 'and lets it go when it ends');
+  f.dispose();
+}
+
+// ---------- the busy flag, the focus (field figures step aside) and its listeners ----------
+{
+  let calls = 0;
+  const off = onArtChange(() => calls++);
+  setArtBusy(false);
+  clearArtFocus();
+  const c0 = calls;
+  setArtBusy(true);
+  setArtBusy(true);
+  ok(artBusy() && calls === c0 + 1, 'listeners hear the busy flag change (once per change, no polling)');
+  const a = ref('A', 0, 11);
+  const t = ref('B', 1, 12);
+  ok(cueUids({ kind: 'attack', attacker: a, target: t, defender: 1 }).join() === '11,12', 'an attack is about its attacker and its target');
+  ok(cueUids({ kind: 'hit', attacker: null, target: null, defender: 1 }).length === 0 && cueUids({ kind: 'damage', player: 0, amount: 100 }).length === 0, 'damage and an unknown hit put no monster on stage');
+  focusArt([11, 12]);
+  ok(artFocus().has(11) && artFocus().has(12) && !artFocus().has(13) && calls === c0 + 2, 'only the monsters in the cinematic step aside; bystanders keep standing');
+  setArtBusy(false);
+  ok(artFocus().size === 2 && artFocus().has(11), 'the computer going on does not bring them back while the stage still shows them');
+  clearArtFocus();
+  ok(artFocus().size === 0 && calls === c0 + 4, 'they come back when the stage is done');
+  off();
+  setArtBusy(true);
+  ok(calls === c0 + 4, 'an unsubscribed listener hears nothing');
+  setArtBusy(false);
+}
+{
+  const once = bannerOnce();
+  ok(once('Burst Stream!') && !once('Burst Stream!') && once('Dark Magic!'), 'the same banner twice at once shows once');
 }
 
 if (fails) {

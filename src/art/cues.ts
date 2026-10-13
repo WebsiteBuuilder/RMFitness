@@ -210,11 +210,21 @@ export function weight(c: Cue): number {
 }
 
 // ---------- busy flag: the computer waits for cinematics to finish ----------
+// `busy`: the computer must wait (a chain is queued or playing). `focus`: the
+// monsters (uids) a cinematic has on stage right now; the field figures of those
+// step aside while the rest keep standing. Listeners hear every change.
 let busy = false;
+const focus = new Set<number>();
 const idleWaiters = new Set<() => void>();
+const listeners = new Set<() => void>();
+const notify = () => {
+  for (const f of [...listeners]) f();
+};
 export function setArtBusy(b: boolean) {
+  const changed = b !== busy;
   busy = b;
   if (!b) for (const f of [...idleWaiters]) (idleWaiters.delete(f), f());
+  if (changed) notify();
 }
 export function artBusy() {
   return busy;
@@ -227,4 +237,54 @@ export function whenArtIdle(f: () => void): () => void {
   }
   idleWaiters.add(f);
   return () => idleWaiters.delete(f);
+}
+/** Calls `f` whenever the busy flag or the focus changes; returns an unsubscribe function. */
+export function onArtChange(f: () => void): () => void {
+  listeners.add(f);
+  return () => listeners.delete(f);
+}
+/** The monsters a cinematic is about (their field figures step aside for it). */
+export function focusArt(uids: Iterable<number>) {
+  let changed = false;
+  for (const u of uids) if (!focus.has(u)) (focus.add(u), (changed = true));
+  if (changed) notify();
+}
+/** The stage is empty again: every field figure stands. */
+export function clearArtFocus() {
+  if (!focus.size) return;
+  focus.clear();
+  notify();
+}
+export function artFocus(): ReadonlySet<number> {
+  return focus;
+}
+/** The monsters a cue puts on stage. */
+export function cueUids(c: Cue): number[] {
+  switch (c.kind) {
+    case 'summon':
+    case 'set':
+    case 'flip':
+    case 'activate':
+    case 'destroy':
+      return [c.card.uid];
+    case 'attack':
+      return c.target ? [c.attacker.uid, c.target.uid] : [c.attacker.uid];
+    case 'hit':
+      return [c.attacker?.uid, c.target?.uid].filter((u): u is number => u !== undefined);
+    default:
+      return [];
+  }
+}
+
+/** A banner shown twice at once (the same title within 100 ms) is shown once: call per banner, false = drop it. */
+export function bannerOnce(): (title: string) => boolean {
+  let last = '';
+  let at = -1e9;
+  return (title) => {
+    const now = performance.now();
+    if (title === last && now - at < 100) return false;
+    last = title;
+    at = now;
+    return true;
+  };
 }

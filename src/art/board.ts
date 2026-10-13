@@ -1,21 +1,22 @@
 // Monsters standing on the field: every face-up monster gets its 3D figure (its
 // art pushed out by the relief map, background cut away, lit as a solid) standing
 // on its card for as long as it stays there, on a glowing base disc with a soft
-// contact shadow. One small canvas under the duel's controls, drawn at ~30 fps
-// and only while a figure is on the field. Positions come from the cards on
+// contact shadow. One small canvas under the duel's controls, drawn at 60 fps
+// (20 while a cinematic plays, 30 when the stage's governor is on its lowest
+// tier) and only while a figure is on the field. Positions come from the cards on
 // screen ([data-uid]), so Classic and Touch both work unchanged.
 //
 // Kept cheap for phones: card positions are measured only when the layout may
 // have moved (resize, scroll, a new field, a slow 500 ms refresh), not every
-// frame; nothing is allocated per frame; and nothing at all is drawn while a
-// cinematic plays (a 250 ms poll waits for it to end), while the tab is hidden,
-// or while the WebGL context is lost.
+// frame; nothing is allocated per frame; nothing is drawn while the tab is hidden
+// or the WebGL context is lost. While a cinematic plays, only the figures it is
+// about step aside (cross-fading back when it is over); the rest keep standing.
 import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } from "three";
 import { card } from "../eds/db";
 import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, type Footprint } from "./stage";
-import { artBusy } from "./cues";
+import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
+import { artBusy, artFocus, onArtChange } from "./cues";
 
 export interface BoardMonster {
   uid: number;
@@ -126,6 +127,8 @@ interface Piece {
   show: number;
   /** null until it first shows; then whether it fades in quickly (landed by a cinematic) */
   quick: boolean | null;
+  /** 0..1 stepped aside for a cinematic about this monster (0) or standing (1) */
+  vis: number;
   leaving: boolean;
   /** smoothed 0..1 Defense (kneel) amount */
   kneel: number;
@@ -157,8 +160,9 @@ const HIT_S = 0.6;
 const REMEASURE_MS = 500;
 /** After the field changes, cards may still be sliding into place: measure every frame for this long (ms). */
 const SETTLE_MS = 600;
-/** While a cinematic plays, check this often whether it is over (ms). */
-const HOLD_POLL_MS = 250;
+/** A figure steps aside for its cinematic this fast, and comes back this fast (per second). */
+const ASIDE_RATE = 7;
+const BACK_RATE = 4;
 
 export class BoardLayer {
   private renderer: WebGLRenderer;
@@ -166,8 +170,8 @@ export class BoardLayer {
   private camera = new PerspectiveCamera(30, 1, 1, 5000);
   private pieces = new Map<number, Piece>();
   private raf = 0;
-  private poll = 0;
   private last = 0;
+  private unsub: () => void;
   private frame = 0;
   private w = 0;
   private h = 0;
@@ -191,8 +195,15 @@ export class BoardLayer {
       this.ro = new ResizeObserver(this.markDirty);
       this.ro.observe(document.body);
     }
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"]);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"], () => !this.dead && !this.lost);
+    // a cinematic starting or ending: no polling, just a wake-up
+    this.unsub = onArtChange(this.onArt);
   }
+
+  private onArt = () => {
+    this.dirty = true;
+    this.start();
+  };
 
   resize() {
     this.w = window.innerWidth;
@@ -241,6 +252,7 @@ export class BoardLayer {
         glow: prof.colors[0],
         show: 0,
         quick: null,
+        vis: artFocus().has(m.uid) ? 0 : 1,
         leaving: false,
         kneel: m.def ? 1 : 0,
         cw: 0,
@@ -293,7 +305,7 @@ export class BoardLayer {
   }
 
   private start() {
-    if (this.raf || this.poll || this.dead || this.lost || document.hidden) return;
+    if (this.raf || this.dead || this.lost || document.hidden) return;
     if (!this.pieces.size) return;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.tick);
@@ -301,8 +313,7 @@ export class BoardLayer {
 
   private halt() {
     cancelAnimationFrame(this.raf);
-    clearTimeout(this.poll);
-    this.raf = this.poll = 0;
+    this.raf = 0;
   }
 
   private markDirty = () => {
@@ -328,7 +339,7 @@ export class BoardLayer {
   private onRestored = () => {
     // three.js rebuilds its GL state; textures and buffers re-upload on next draw.
     this.lost = false;
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"]);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"], () => !this.dead && !this.lost);
     this.dirty = true;
     this.start();
   };
@@ -339,30 +350,14 @@ export class BoardLayer {
     this.canvas.style.opacity = v;
   }
 
-  /** A cinematic is playing: the figures step aside (it has its own) and nothing is drawn. */
-  private hold = () => {
-    this.poll = 0;
-    if (this.dead || this.lost || document.hidden) return;
-    if (!artBusy()) {
-      this.dirty = true;
-      this.start();
-      return;
-    }
-    this.setOpacity("0");
-    for (const p of this.pieces.values()) if (p.leaving) this.drop(p);
-    this.poll = window.setTimeout(this.hold, HOLD_POLL_MS);
-  };
-
   private tick = (now: number) => {
     this.raf = 0;
     if (this.dead || this.lost) return;
-    if (artBusy()) {
-      this.hold();
-      return;
-    }
     const dt = Math.min(0.1, (now - this.last) / 1000);
-    // ~30 fps is plenty for idle figures and spares the battery.
-    if (++this.frame % 2 === 0 || dt > 0.05) {
+    // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
+    // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
+    const every = artBusy() ? 3 : stageTier() === 0 ? 2 : 1;
+    if (++this.frame % every === 0 || dt > 0.055) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);
       this.step(dt, now);
@@ -390,8 +385,11 @@ export class BoardLayer {
 
   private step(dt: number, now: number) {
     this.setOpacity("1");
+    const focus = artFocus();
     for (const p of this.pieces.values()) {
       const fig = p.fig;
+      // the monster a cinematic is about steps aside for it, and cross-fades back after
+      p.vis = focus.has(p.uid) ? Math.max(0, p.vis - dt * ASIDE_RATE) : Math.min(1, p.vis + dt * BACK_RATE);
       if (p.leaving) {
         p.show -= dt * 4;
         if (p.show <= 0 || !fig) {
@@ -414,8 +412,8 @@ export class BoardLayer {
         p.disc.mesh.visible = false;
         continue;
       }
-      p.pivot.visible = true;
-      p.disc.mesh.visible = true;
+      p.pivot.visible = p.vis > 0;
+      p.disc.mesh.visible = p.vis > 0;
       const pose = p.pose;
       const k = easeOut(p.show);
       const t = fig.time;
@@ -477,7 +475,7 @@ export class BoardLayer {
       fig.wall.renderOrder = order - 0.5;
       const u = fig.u;
       u.uReveal.value = p.quick ? 1 : k;
-      u.uOpacity.value = p.leaving ? Math.max(0, p.show) : p.quick ? k : 1;
+      u.uOpacity.value = (p.leaving ? Math.max(0, p.show) : p.quick ? k : 1) * p.vis;
       setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : p.glow);
       u.uDark.value = p.kneel * 0.2;
       u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
@@ -489,7 +487,7 @@ export class BoardLayer {
       const lift = 1 - hop * 0.35;
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
-      d.u.uOpacity.value = clamp01(p.leaving ? p.show : k);
+      d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
       d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
     }
@@ -498,6 +496,7 @@ export class BoardLayer {
   dispose() {
     this.dead = true;
     this.halt();
+    this.unsub();
     window.removeEventListener("resize", this.onResize);
     window.removeEventListener("scroll", this.markDirty, { capture: true });
     document.removeEventListener("visibilitychange", this.onVisibility);

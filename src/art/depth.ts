@@ -234,9 +234,34 @@ export function artFor(name: string): Promise<ArtData> {
   if (!p) {
     p = build(name);
     cache.set(name, p);
-    if (cache.size > 40) cache.delete(cache.keys().next().value!);
+    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  } else {
+    // most recently used last: what a duel keeps using stays cached
+    cache.delete(name);
+    cache.set(name, p);
   }
   return p;
+}
+
+const CACHE_MAX = 48;
+
+/**
+ * Gets the art of these cards ready ahead of time (both decks at the start of a
+ * duel), two at a time, a short pause between each, so a cinematic never waits
+ * for a picture. Stops when `stop()` turns true. At most CACHE_MAX - 8 names.
+ */
+export async function preloadArt(names: string[], stop: () => boolean = () => false): Promise<void> {
+  const list = names.filter((n) => !!card(n)).slice(0, CACHE_MAX - 8);
+  let i = 0;
+  const pause = () => new Promise<void>((ok) => setTimeout(ok, 60));
+  const worker = async () => {
+    while (i < list.length && !stop()) {
+      const n = list[i++];
+      await artFor(n).catch(() => null);
+      await pause();
+    }
+  };
+  await Promise.all([worker(), worker()]);
 }
 
 /** A plain card back, drawn once. */

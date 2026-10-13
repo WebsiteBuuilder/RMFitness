@@ -6,8 +6,9 @@
   pointer-events: none;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
-/* while the board lags behind a cinematic, every tap skips (nobody acts on a stale board);
-   otherwise taps go through to the duel, except on the skip pill */
+/* while the board lags behind a cinematic, every tap skips (nobody acts on a stale board; the
+   touch is then handed on to the duel underneath, so a drag goes on);
+   otherwise taps go through to the duel (and skip on the way, unless meant for a prompt or button) */
 .art-stage.hold {
   pointer-events: auto;
   touch-action: none;
@@ -24,10 +25,11 @@
   inset: 0;
   overflow: hidden;
 }
+/* top right, just under the opponent's bar: clear of the hand, the Life Points and the phase button */
 .art-skip {
   position: absolute;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: 12px;
+  top: calc(58px + env(safe-area-inset-top));
+  right: 10px;
   padding: 7px 12px;
   border-radius: 999px;
   font-size: 13px;
@@ -43,15 +45,14 @@
   user-select: none;
   animation: art-skip 2s ease-out forwards;
 }
-/* shown for 1.5 s, then it fades (the stage still takes a tap while the board lags) */
+/* bright for 1.5 s, then it settles back but stays tappable (a tap anywhere skips too) */
 @keyframes art-skip {
   0%,
   75% {
     opacity: 1;
   }
   100% {
-    opacity: 0;
-    visibility: hidden;
+    opacity: 0.4;
   }
 }
 

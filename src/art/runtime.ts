@@ -1,11 +1,14 @@
-// The 3D art engine's director and cinematics (loaded on demand: three.js only
-// downloads once the first animation is needed). The director plays cues one at
-// a time; battle figures stay on stage between the attack, the hit and the
-// destruction, then fade when nothing more is coming.
+// The 3D art engine's director and cinematics (loaded on demand, ahead of the
+// duel). The director plays cues one at a time; battle figures stay on stage
+// between the attack, the hit and the destruction (an attack declared on its own
+// holds its pose for the blow that follows a beat later, while the computer is
+// already free to go on; a shatter starts in the hit's recoil), then fade when
+// nothing more is coming. The duel is told it may go on as soon as the dim is
+// nearly gone; leftover particles finish without holding anything up.
 import { PerspectiveCamera, Vector2, Vector3 } from 'three';
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
-import type { CardRef, Cue } from './cues';
+import { cueUids, type CardRef, type Cue } from './cues';
 import { artFor, cardBack, type ArtData } from './depth';
 import { profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
@@ -49,6 +52,12 @@ export class Timeline implements Fx {
   rate = 1;
   /** called at the commit marker: the moment the board catches up with the cinematic */
   onCommit: (() => void) | null = null;
+  /**
+   * From this moment (cinematic seconds) the next cinematic of the same chain may
+   * start while this one plays out underneath (a blow still recoiling as the
+   * shatter begins). null: the next one waits for the end.
+   */
+  handoff: number | null = null;
   private items: { t0: number; t1: number; fn: SpanFn; done: boolean; cosmetic: boolean }[] = [];
   owned: Fx[] = [];
   constructor(
@@ -150,10 +159,27 @@ interface Queued {
 function flowRate(cue: Cue, next: Queued | undefined, batch: number): number {
   const same = next && next.batch === batch ? next.cue.kind : null;
   if (cue.kind === 'attack') return same === 'hit' ? 1.6 : 1.25;
-  if (cue.kind === 'hit') return 1.25;
-  if (cue.kind === 'destroy' || cue.kind === 'damage') return same ? 1.4 : 1.2;
+  if (cue.kind === 'hit') return same === 'destroy' ? 1.4 : 1.25;
+  if (cue.kind === 'destroy') return same === 'damage' ? 1.6 : same ? 1.4 : 1.2;
+  if (cue.kind === 'damage') return same ? 1.4 : 1.2;
   return 1;
 }
+
+/** Battle figures linger this long (s at 1x) after the last cinematic, then fade over FADE. */
+const LINGER = 0.3;
+const LINGER_AFTER_SHATTER = 0.1;
+const FADE = 0.25;
+const FAST_FADE = 0.15;
+/**
+ * After an attack declaration with nothing queued behind it, the fighters hold
+ * their pose this long (s at 1x, at least HOLD_MIN real seconds) waiting for the
+ * blow, which usually arrives a beat later in its own chain (after the response
+ * window). The computer is released at once, so the hold costs it nothing.
+ */
+const HOLD = 1.1;
+const HOLD_MIN = 0.6;
+/** Report the stage idle once the dim is under this (what is left is particles fading on their own). */
+const IDLE_DIM = 0.1;
 
 export class Director {
   stage: Stage;
@@ -175,9 +201,30 @@ export class Director {
   private bg = 0;
   private skipAll = false;
   private watchdog = 0;
+  /** the stage is done for the duel (the dim is nearly gone): the board may show everything again */
   onIdle: (() => void) | null = null;
   onBusy: (() => void) | null = null;
+  /** the computer may go on (the stage may still hold the fighters for a follow-up, or be fading out) */
+  onSettle: (() => void) | null = null;
+  /** a cinematic of chain `batch` started; it lasts `seconds` of real time */
+  onCueStart: ((batch: number, seconds: number) => void) | null = null;
+  /** the WebGL context was lost (everything was dropped and reported) */
+  onLost: (() => void) | null = null;
   viewer: Pid = 0;
+  /** cinematics still playing out under the current one (see Timeline.handoff) */
+  private trailing: Timeline[] = [];
+  /** the finished attack declaration, kept on stage while the fighters wait for the blow */
+  private held: Timeline | null = null;
+  /** seconds left of that hold */
+  private holdLeft = 0;
+  private curKind: Cue['kind'] | null = null;
+  /** the kind of the last cinematic that ended (sets the linger after it) */
+  private lastKind: Cue['kind'] | null = null;
+  /** battle figures fading away under a new, unrelated cinematic */
+  private outgoing: Actor[] = [];
+  /** onSettle / onIdle already sent since the last push */
+  private settledSent = true;
+  private idleSent = true;
   /** the full-screen dim behind every cinematic, and the layer over it (flashes, cracks, speed lines) */
   private veil = new Veil(false);
   private front = new Veil(true);
@@ -202,7 +249,10 @@ export class Director {
     this.stage.scene.add(this.veil.mesh, this.front.mesh);
     // WebGL context lost (backgrounded phone, GPU reset): drop everything and report
     // idle so the duel never waits on a cinematic that cannot draw; play again once restored.
-    this.stage.onLost = () => this.clear();
+    this.stage.onLost = () => {
+      this.clear();
+      this.onLost?.();
+    };
   }
 
   /** Compiles every shader ahead of the first cinematic (call right after construction). */
@@ -220,8 +270,18 @@ export class Director {
     this.stage.speed = q === 'fast' ? 1.8 : 1;
   }
 
+  /**
+   * The computer must wait: a cinematic is queued or playing, or the last one's
+   * dim has not cleared yet. A hold for a follow-up blow, and the last particles
+   * fading, do not count.
+   */
   get busy() {
-    return this.queue.length > 0 || this.current !== null || this.actors.size > 0;
+    return this.queue.length > 0 || this.current !== null || this.trailing.length > 0 || !this.settledSent;
+  }
+
+  /** Something is still drawn (busy, holding, or fading out). */
+  get onStage() {
+    return this.busy || this.actors.size > 0 || this.held !== null || this.outgoing.length > 0 || !this.idleSent;
   }
 
   /** Playback speed of what is on now (for the DOM banners' timing). */
@@ -246,9 +306,50 @@ export class Director {
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
     this.fastFade = false;
+    this.settledSent = false;
+    this.idleSent = false;
     this.onBusy?.();
     this.stage.start();
     if (!this.current) this.next();
+  }
+
+  private settle() {
+    if (this.settledSent) return;
+    this.settledSent = true;
+    this.onSettle?.();
+  }
+
+  private idle() {
+    this.settle();
+    if (this.idleSent) return;
+    this.idleSent = true;
+    this.onIdle?.();
+  }
+
+  /** Linger before the battle figures fade (shorter at a faster Animation speed; none after a skip; a short one after a shatter, which is its own beat). */
+  private get linger() {
+    return this.fastFade ? 0 : (this.lastKind === 'destroy' ? LINGER_AFTER_SHATTER : LINGER) / this.timeScale;
+  }
+
+  /** Drops the attack declaration kept for a follow-up. */
+  private dropHeld() {
+    this.holdLeft = 0;
+    if (!this.held) return;
+    this.held.dispose();
+    this.held = null;
+  }
+
+  /** The current cinematic plays out underneath while the next one of its chain starts. */
+  private handOff() {
+    const tl = this.current!;
+    this.trailing.push(tl);
+    this.current = null;
+    this.next();
+  }
+
+  private finishTrailing() {
+    for (const t of this.trailing) (t.finish(), t.dispose());
+    this.trailing = [];
   }
 
   /** Tap: skip the whole current chain (every cue of the same event batch). */
@@ -256,6 +357,8 @@ export class Director {
     this.fastFade = true;
     const b = this.curBatch;
     if (b >= 0) this.queue = this.queue.filter((q) => q.batch !== b);
+    this.finishTrailing();
+    this.dropHeld();
     this.endCurrent(true);
     if (!this.current && !this.queue.length) this.stage.particles.clear();
   }
@@ -266,6 +369,8 @@ export class Director {
     this.fastFade = true;
     const rest = [...new Set(this.queue.map((q) => q.batch))];
     this.queue = [];
+    this.finishTrailing();
+    this.dropHeld();
     this.endCurrent(true);
     for (const b of rest) this.onBatchEnd?.(b);
     this.stage.particles.clear();
@@ -276,8 +381,15 @@ export class Director {
     const tl = this.current;
     if (!tl) return;
     if (skipped) tl.finish();
-    tl.dispose();
+    // An attack declaration with nothing behind it: the fighters hold their pose for the blow.
+    if (!skipped && this.curKind === 'attack' && !this.queue.length && !this.fastFade && !this.skipAll && this.actors.size) {
+      this.dropHeld();
+      this.held = tl;
+      this.holdLeft = Math.max(HOLD / this.timeScale, HOLD_MIN);
+    } else tl.dispose();
     this.current = null;
+    this.lastKind = this.curKind;
+    this.curKind = null;
     const b = this.curBatch;
     if (b >= 0 && !this.queue.some((q) => q.batch === b)) {
       this.curBatch = -1;
@@ -293,16 +405,23 @@ export class Director {
     this.current?.finish();
     this.current?.dispose();
     this.current = null;
+    this.curKind = null;
     this.curBatch = -1;
     this.skipAll = false;
+    this.finishTrailing();
+    this.dropHeld();
     for (const b of rest) this.onBatchEnd?.(b);
     for (const a of this.actors.values()) this.dropActor(a);
     this.actors.clear();
+    for (const a of this.outgoing) this.dropActor(a);
+    this.outgoing = [];
     this.stage.clear();
     this.bg = this.bgTarget = 0;
     this.stage.backdrop.u.uOpacity.value = 0;
     this.stage.stop();
-    this.onIdle?.();
+    this.settledSent = false;
+    this.idleSent = false;
+    this.idle();
   }
 
   dispose() {
@@ -317,23 +436,54 @@ export class Director {
   }
 
   private frame(dt: number) {
+    const ts = this.timeScale;
+    const following = !this.current && this.held !== null && !this.fastFade;
+    const lingering = !this.fastFade && this.actors.size > 0 && this.idleFor < this.linger;
     // Backdrop eases toward what the current cinematic wants.
     // (the battle figures' backdrop fades with them, not after them)
-    const want = this.current ? this.bgTarget : this.actors.size && !this.fastFade && this.idleFor < 0.3 ? 0.6 : 0;
-    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * (this.fastFade ? 20 : 7)));
+    const want = this.current || following ? this.bgTarget : lingering ? 0.6 : 0;
+    this.bg = lerp(this.bg, want, 1 - Math.exp(-dt * (this.fastFade ? 20 : 7) * ts));
     if (this.fastFade && !this.current && this.bg < 0.03) this.bg = 0;
     this.stage.backdrop.u.uOpacity.value = this.bg * 0.7;
-    this.veils(dt);
+    this.veils(dt, following, lingering);
+    // figures of an earlier battle fading under a new cinematic
+    if (this.outgoing.length) {
+      for (const a of this.outgoing) this.setOpacity(a, Math.max(0, (a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0) - dt * 6 * ts));
+      this.outgoing = this.outgoing.filter((a) => {
+        if ((a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0) > 0) return true;
+        this.dropActor(a);
+        return false;
+      });
+    }
+    // a blow still playing out under the shatter
+    for (let i = this.trailing.length - 1; i >= 0; i--) {
+      const t = this.trailing[i];
+      if (!t.update(dt)) {
+        t.dispose();
+        this.trailing.splice(i, 1);
+      }
+    }
     if (this.current) {
+      const tl = this.current;
       this.watchdog += dt;
-      if (!this.current.update(dt) || this.watchdog > this.current.duration / this.current.rate + 3) this.endCurrent(false);
+      if (!tl.update(dt) || this.watchdog > tl.duration / tl.rate + 3) this.endCurrent(false);
+      else if (tl.handoff !== null && tl.t >= tl.handoff && this.queue[0]?.batch === this.curBatch) this.handOff();
       return;
+    }
+    if (this.trailing.length) return;
+    if (following) {
+      // the fighters hold their pose for the blow; the computer goes on meanwhile
+      this.settle();
+      this.holdLeft -= dt;
+      if (this.holdLeft > 0) return;
+      this.dropHeld();
+      this.idleFor = this.linger;
     }
     // Nothing playing: battle figures linger a moment, then fade away (at once after a skip).
     this.idleFor += dt;
-    const linger = this.fastFade ? 0 : 0.3;
+    const linger = this.linger;
     if (this.actors.size && this.idleFor > linger) {
-      const k = clamp01((this.idleFor - linger) / (this.fastFade ? 0.15 : 0.25));
+      const k = clamp01((this.idleFor - linger) / ((this.fastFade ? FAST_FADE : FADE) / ts));
       for (const a of this.actors.values()) {
         if (a.fig) a.fig.u.uOpacity.value = Math.min(a.fig.u.uOpacity.value, 1 - k);
         if (a.back) a.back.u.uOpacity.value = Math.min(a.back.u.uOpacity.value, 1 - k);
@@ -343,20 +493,23 @@ export class Director {
         this.actors.clear();
       }
     }
-    if (!this.actors.size && this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || this.idleFor > 0.7)) {
+    if (this.actors.size || this.outgoing.length) return;
+    // The dim is nearly gone: the duel goes on now; particles finish on their own.
+    if (this.dim < IDLE_DIM) this.idle();
+    if (this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || this.idleFor > 1.5)) {
       this.stage.particles.clear();
       this.stage.backdrop.u.uOpacity.value = 0;
       this.stage.stop();
       this.skipAll = false;
       this.fastFade = false;
-      this.onIdle?.();
+      this.idle();
     }
   }
 
   /** The dim eases toward what the cinematic wants; flashes and overlays decay; the camera drifts home when idle. */
-  private veils(dt: number) {
-    const want = this.current ? this.dimTarget : this.actors.size && !this.fastFade && this.idleFor < 0.3 ? 0.75 : 0;
-    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade ? 22 : 8)));
+  private veils(dt: number, following: boolean, lingering: boolean) {
+    const want = this.current || following ? this.dimTarget : lingering ? 0.75 : 0;
+    this.dim = lerp(this.dim, want, 1 - Math.exp(-dt * (this.fastFade ? 22 : 8) * (this.current ? 1 : this.timeScale)));
     if (want === 0 && this.dim < 0.01) this.dim = 0;
     const v = this.veil.u;
     v.uDim.value = this.dim;
@@ -370,8 +523,8 @@ export class Director {
     f.uRed.value *= fade;
     f.uSpeed.value *= fade;
     f.uCrackOp.value *= fade;
-    if (!this.current) {
-      const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6));
+    if (!this.current && !following) {
+      const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6) * this.timeScale);
       this.stage.camBase.lerp(REST.pos, c);
       this.stage.camLook.lerp(REST.look, c);
     }
@@ -386,13 +539,19 @@ export class Director {
       this.idleFor = 0;
       return;
     }
+    this.retire(item.cue);
     this.idleFor = 0;
     this.fastFade = false;
     this.curBatch = item.batch;
     const placeholder = new Timeline(99, this.stage);
+    placeholder.rate = this.timeScale;
     this.current = placeholder;
+    this.curKind = item.cue.kind;
     const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch);
-    this.build(item.cue)
+    // Never draw a cinematic before its shaders are ready (a first-use link stalls for a whole second on some phones).
+    const warm = Promise.race([this.stage.prewarm(), new Promise((ok) => setTimeout(ok, 2500))]);
+    warm
+      .then(() => (this.current === placeholder ? this.build(item.cue) : null))
       .then((tl) => {
         if (this.current !== placeholder) {
           tl?.dispose();
@@ -404,13 +563,35 @@ export class Director {
         }
         tl.rate = rate;
         tl.onCommit = () => this.onCommit?.(item.batch);
+        // the attack declaration held for this blow gives way to it
+        if (this.held) this.dropHeld();
         this.current = tl;
+        this.onCueStart?.(item.batch, tl.duration / rate);
         if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
         console.warn('art engine: cinematic failed', err);
         if (this.current === placeholder) this.endCurrent(false);
       });
+  }
+
+  /**
+   * Before a new cinematic: battle figures already fading (or skipped away) stay
+   * gone unless it is about them; fighters held for a blow give way to a new
+   * battle or summon that is not about them. They fade out under it.
+   */
+  private retire(cue: Cue) {
+    if (!this.actors.size || this.current) return;
+    const fading = !this.held && (this.fastFade || this.idleFor > this.linger);
+    const keep = new Set(cueUids(cue));
+    const about = [...this.actors.keys()].some((u) => keep.has(u));
+    const newScene = !!this.held && !about && (cue.kind === 'attack' || cue.kind === 'summon');
+    if (!fading && !newScene) return;
+    if (newScene) this.dropHeld();
+    for (const a of [...this.actors.values()]) {
+      if (keep.has(a.uid)) this.setOpacity(a, 1);
+      else (this.actors.delete(a.uid), this.outgoing.push(a));
+    }
   }
 
   // ------------------------------------------------------------ helpers
@@ -1573,7 +1754,11 @@ export class Director {
         },
         false,
       );
+      // the loser's shatter starts while it is still thrown back
+      if (loser && dies(loser.uid)) tl.handoff = knock + 0.15;
     }
+    // the defender's shatter starts in the recoil
+    if (tgt && !clash) tl.handoff = hitAt + 0.2;
     return tl;
   }
 

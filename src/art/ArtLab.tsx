@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { card, speedCards } from '../eds/db';
 import { Win } from '../ui/Window';
 import { unlockAudio } from '../ui/sound';
-import type { CardRef, Cue } from './cues';
+import { bannerOnce, type CardRef, type Cue } from './cues';
 import { profileFor } from './profile';
 import type { Director } from './runtime';
 import { getArtSetting } from './ArtStage';
@@ -40,8 +40,9 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
         };
         const hx = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+        const once = bannerOnce();
         const d = new Director(canvas.current, getArtSetting() === 'fast' ? 'fast' : 'full', {
-          banner: (o) => add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) }),
+          banner: (o) => void (once(o.title) && add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) })),
           number: (o) => add(`art-number side-${o.side}`, esc(o.text), 0.9, { '--c': hx(o.color), '--s': String(o.size) }),
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),

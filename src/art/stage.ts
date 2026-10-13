@@ -12,6 +12,11 @@
 //   an instance never releases (and later relinks) it.
 // - Shader error checking only in dev; no MSAA; DPR capped at 1.5 (1.25 on small
 //   devices); a frame-time governor steps quality down and back up (stage.tier).
+//   Mid-shot it only changes cheap things (particle count, post on/off, figure
+//   detail); a new drawing-buffer size waits until the stage is idle. The tier it
+//   settles on is remembered per device, and a small device starts a tier down.
+// - prewarm() compiles AND draws every material kind once (into a tiny target),
+//   one kind per idle slice, so no program links on first use mid-cinematic.
 // - On the top tiers a cheap post pass (half-res bloom + vignette, plus pulse()
 //   flashes) is composited over the transparent canvas without painting black.
 import {
@@ -776,13 +781,15 @@ attribute float aSize;
 attribute float aAlpha;
 attribute vec3 aColor;
 uniform float uPx;
+uniform float uMaxPx;
 varying float vAlpha;
 varying vec3 vColor;
 void main(){
   vAlpha = aAlpha;
   vColor = aColor;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = aSize * uPx / max(0.1, -mv.z);
+  // capped: a huge sprite near the camera fills the screen with overdraw on phones
+  gl_PointSize = min(aSize * uPx / max(0.1, -mv.z), uMaxPx);
   gl_Position = projectionMatrix * mv;
 }`;
 const P_FRAG = /* glsl */ `
@@ -1877,7 +1884,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       uniforms: uniforms({ uOpacity: 1, uDark: 1, uRing: new Vector3(1, 1, 1), uRingAmt: 0, uTime: 0 }),
     }),
   panel: () => new ShaderMaterial({ vertexShader: BASIC_VERT, fragmentShader: PANEL_FRAG, ...FX, side: DoubleSide, uniforms: uniforms({ uMap: null, uOpacity: 1, uTint: 0, uGlow: new Vector3(1, 1, 1), uSheen: -1 }) }),
-  particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300 }) }),
+  particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300, uMaxPx: 64 }) }),
   ribbon: () =>
     new ShaderMaterial({
       vertexShader: RIB_VERT,
@@ -1969,38 +1976,55 @@ export function material(kind: MaterialKind, values: Record<string, unknown>): S
   return m;
 }
 
+/** Waits for an idle moment (a new task: the frames in between are free). */
+function slice(): Promise<void> {
+  return new Promise((ok) => {
+    const w = (typeof window !== 'undefined' ? window : undefined) as (Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) | undefined;
+    if (w?.requestIdleCallback) w.requestIdleCallback(() => ok(), { timeout: 120 });
+    else setTimeout(ok, 16);
+  });
+}
+
 /**
- * Compiles the base material of every kind on `renderer` (one hidden warm-up scene),
- * off the main thread where KHR_parallel_shader_compile exists. The bases then keep
- * their programs for the renderer's lifetime.
+ * Gets every material kind ready to draw on `renderer` without a stall: for each
+ * kind, compile its program (off the main thread where KHR_parallel_shader_compile
+ * exists) and then draw it once into a tiny offscreen target with the variant
+ * it is really drawn with (points, instanced shards, the post passes' quads), so
+ * the link and the uniform lookup happen now and not on first use. One kind per
+ * idle slice, so no single task holds the main thread for long. The base materials
+ * keep their programs for the renderer's lifetime. `alive` false stops early (lost
+ * context, disposed).
  */
-export function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: readonly MaterialKind[] = MATERIAL_KINDS): Promise<void> {
-  const scene = new Scene();
+export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, kinds: readonly MaterialKind[] = MATERIAL_KINDS, alive: () => boolean = () => true): Promise<void> {
   const plane = new PlaneGeometry(1, 1);
   const dot = new BufferGeometry();
   dot.setAttribute('position', new BufferAttribute(new Float32Array(3), 3));
-  for (const k of kinds) {
-    // shards draw instanced: warm the instanced variant of their program
-    const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
-    o.frustumCulled = false;
-    scene.add(o);
-  }
-  const done = () => {
+  const target = new WebGLRenderTarget(4, 4, { depthBuffer: false });
+  const parallel = typeof renderer.compileAsync === 'function' && !!renderer.extensions?.has?.('KHR_parallel_shader_compile');
+  try {
+    for (const k of kinds) {
+      if (!alive()) break;
+      const scene = new Scene();
+      // shards draw instanced, particles as points: warm those variants of their programs
+      const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
+      o.frustumCulled = false;
+      scene.add(o);
+      // Never wait forever (a context lost mid-compile never reports ready).
+      if (parallel) await Promise.race([renderer.compileAsync(scene, camera), new Promise((ok) => setTimeout(ok, 3000))]);
+      if (!alive()) break;
+      const prev = renderer.getRenderTarget();
+      renderer.setRenderTarget(target);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(prev);
+      if (o instanceof InstancedMesh) o.dispose();
+      await slice();
+    }
+  } catch (err) {
+    console.warn('art engine: prewarm failed', err);
+  } finally {
     plane.dispose();
     dot.dispose();
-  };
-  try {
-    const compiled: Promise<unknown> = typeof renderer.compileAsync === 'function' ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera));
-    // Never wait forever (a context lost mid-compile never reports ready).
-    const timeout = new Promise((ok) => setTimeout(ok, 5000));
-    return Promise.race([compiled, timeout]).then(done, (err) => {
-      done();
-      console.warn('art engine: prewarm failed', err);
-    });
-  } catch (err) {
-    done();
-    console.warn('art engine: prewarm failed', err);
-    return Promise.resolve();
+    target.dispose();
   }
 }
 
@@ -2097,6 +2121,16 @@ function noise1(t: number, seed: number): number {
 const SLOW_MS = 22;
 const FAST_MS = 14;
 const WINDOW = 60;
+/** What every cinematic draws from its first frame (the dim, the backdrop, the post passes) warms first. */
+const WARM_ORDER: readonly MaterialKind[] = ['veil', 'backdrop', 'particles', 'bright', 'kawase', 'composite', 'figure', 'shadow', 'glow', 'ribbon', 'ring', 'panel', 'crack', 'shards', 'cutin'];
+/** where the governor remembers the tier it settled on, on this device */
+const AUTO_KEY = 'eds.artTierAuto';
+
+/** The tier the stage on screen is at now (-1: none yet), for the field figures. */
+let liveTier = -1;
+export function stageTier() {
+  return liveTier;
+}
 
 export class Stage {
   renderer: WebGLRenderer;
@@ -2149,6 +2183,10 @@ export class Stage {
   private goodFor = 0;
   private upWait = 3;
   private lastUp = -1e9;
+  /** a new drawing-buffer size (or a new post pass) waits for the stage to go idle */
+  private sizeDirty = false;
+  /** the tier last saved to AUTO_KEY */
+  private savedTier = -1;
 
   constructor(
     public canvas: HTMLCanvasElement,
@@ -2216,37 +2254,78 @@ export class Stage {
     top.push({ dpr: low, emit: 0.6, post });
     if (post) top.push({ dpr: low, emit: 0.6, post: false });
     this.levels = top.reverse();
-    this.level = this.levels.length - 1;
-    this.applyLevel();
+    this.level = this.startTier();
+    this.savedTier = this.level;
+    this.applyLevel(true);
   }
 
-  private applyLevel() {
+  /**
+   * Where the governor starts: the tier it settled on last time on this device;
+   * on a first run the top, or one below it on a small device (≤ 4 GB or ≤ 4 cores).
+   */
+  private startTier() {
+    const top = this.levels.length - 1;
+    try {
+      const v = JSON.parse(localStorage.getItem(AUTO_KEY) ?? 'null') as { t?: number; n?: number; q?: string } | null;
+      if (v && v.n === top && v.q === this.q && Number.isInteger(v.t)) return Math.max(0, Math.min(top, v.t!));
+    } catch {
+      /* storage blocked or garbled */
+    }
+    const nav = (typeof navigator !== 'undefined' ? navigator : {}) as Navigator & { deviceMemory?: number };
+    const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+    return small ? Math.max(0, top - 1) : top;
+  }
+
+  /** Remembers the tier the governor settled on (when it changed, and only while it governs). */
+  private saveTier() {
+    if (!this.governor || this.level === this.savedTier) return;
+    this.savedTier = this.level;
+    try {
+      localStorage.setItem(AUTO_KEY, JSON.stringify({ t: this.level, n: this.levels.length - 1, q: this.q }));
+    } catch {
+      /* storage blocked */
+    }
+  }
+
+  /**
+   * Applies the current tier. The cheap parts (particle count, figure detail, post
+   * on/off when the pass exists) apply at once; a new drawing-buffer size and a
+   * new post pass wait until the stage is idle (stop()), unless `now`.
+   */
+  private applyLevel(now = false) {
     const l = this.levels[this.level];
+    liveTier = this.level;
     setFigureDetail(this.level === 0 ? 0 : this.level === 1 ? 1 : 2);
     this.particles.emitScale = l.emit;
-    if (l.post && !this.post) this.post = new Post();
-    if (!l.post && this.post) {
-      this.post.dispose();
-      this.post = null;
-    }
     this.resetGovernor();
+    const sizeNow = this.renderer.getPixelRatio();
+    const needPost = l.post && !this.post;
+    if (!now && this.running && (needPost || Math.abs(sizeNow - l.dpr) > 1e-3)) {
+      this.sizeDirty = true;
+      return;
+    }
+    this.sizeDirty = false;
+    if (needPost) this.post = new Post();
     this.resize();
   }
 
   /** Compiles every material's program ahead of time (resolves when ready to draw without stalls). */
   prewarm(): Promise<void> {
     if (this.lost || this.disposed) return Promise.resolve();
-    return (this.warm ??= prewarmRenderer(this.renderer, this.camera));
+    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed));
   }
 
   resize() {
     if (!this.levels.length) return;
+    this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     const dpr = this.levels[this.level].dpr;
+    if (this.levels[this.level].post && !this.post) this.post = new Post();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.post?.setSize(this.renderer);
+    this.particles.mat.uniforms.uMaxPx.value = 64 * dpr;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     // measured at the resting camera (z = 10, base fov) so a cinematic's camera moves never change the unit
@@ -2326,14 +2405,16 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     const ms = now - this.last;
-    let dt = Math.min(0.05, ms / 1000) * this.speed;
+    // Cinematics keep real time down to 10 fps (a slow phone sees fewer frames, not
+    // slow motion); physics and particles step at most 50 ms at a time.
+    let dt = Math.min(0.1, ms / 1000) * this.speed;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;
     }
     this.last = now;
     const t0 = performance.now();
-    this.step(dt);
+    this.step(Math.min(dt, 0.05 * this.speed), dt);
     if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
     if (this.governor) this.govern(ms, performance.now() - t0);
@@ -2343,13 +2424,17 @@ export class Stage {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.saveTier();
     if (this.lost) return;
+    // idle now: the new buffer size the governor asked for mid-shot
+    if (this.sizeDirty) this.resize();
     this.renderer.setRenderTarget(null);
     this.renderer.clear();
   }
 
-  step(dt: number) {
-    this.onFrame?.(dt);
+  /** One frame: `dt` steps effects and particles, `cineDt` (default `dt`) the cinematic's own clock. */
+  step(dt: number, cineDt = dt) {
+    this.onFrame?.(cineDt);
     // the director may have stopped the stage this frame (idle): don't draw a last frame over the cleared canvas
     if (!this.running) return;
     // a reused list: no allocation per frame (and new effects start next frame)
@@ -2380,7 +2465,7 @@ export class Stage {
       this.camera.updateProjectionMatrix();
     }
     if (this.lost) return;
-    if (this.post) {
+    if (this.post && this.levels[this.level].post) {
       const u = this.post.comp.uniforms;
       u.uChroma.value = this.chroma * 0.035;
       u.uFlash.value = this.flash * 0.85;

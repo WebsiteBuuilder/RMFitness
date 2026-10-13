@@ -28,6 +28,7 @@ import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
 import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
 import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
+import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, withLevels } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
@@ -786,7 +787,8 @@ function Running({
       return;
     }
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    const pace = watch ? (quick ? 250 : 900) / watch.speed : quick ? 150 : 300;
+    // (the beat is shorter at a faster Animation speed)
+    const pace = watch ? (quick ? 250 : 900) / watch.speed : (quick ? 150 : 300) / getAnimSpeed();
     // ...and never in the middle of a 3D cinematic.
     let t = 0;
     const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action!), pace)));
