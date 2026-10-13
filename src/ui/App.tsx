@@ -48,6 +48,7 @@ import { TAG_LP, activeMember, sideName } from '../eds/tag';
 import { settleTagRoad } from '../eds/speedCampaign/tagRoad';
 import { deckOf } from '../eds/speedCampaign/campaign';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
+import { online } from '../online/controller';
 import { setUiGame } from './gameUi';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
@@ -232,6 +233,7 @@ export function App() {
     setProfile(p);
     setSaveState(s);
     setSpeedSaveState(speedSaveOf(p.id, true));
+    online.setProfile(p);
     setScreen(!s ? 'intro' : pendingJoin ? 'link' : 'menu');
   };
 
@@ -239,6 +241,7 @@ export function App() {
     session?.close();
     setSession(null);
     setProfile(null);
+    online.setProfile(null);
     setSaveState(null);
     setSpeedSaveState(null);
     setSoloMode(null);
@@ -327,7 +330,8 @@ export function App() {
   };
   const lastSoloSpec = useRef<CpuDuelSpec | null>(null);
 
-  const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds') => {
+  /** `hostCode`: a room code picked in advance (a friend invite names it) */
+  const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds', hostCode?: string) => {
     session?.close();
     setCpu(false);
     setP2Profile(null);
@@ -339,7 +343,7 @@ export function App() {
     } else {
       setHotseat(false);
       setMySeat(c.mode === 'host' ? 0 : 1);
-      roomCode.current = c.mode === 'join' ? c.code : newCode();
+      roomCode.current = c.mode === 'join' ? c.code : (hostCode ?? newCode());
       setSession(new DuelSession(makeOnline(roomCode.current, c.mode === 'host')));
     }
     setScreen('duel');
@@ -417,6 +421,21 @@ export function App() {
     setTagOpen(true);
     setScreen('speed');
   };
+  // Friends: invites open or join rooms through here; friends see what this player is doing.
+  online.bindApp({
+    host: (room, game) => ((tagHost.current = null), openSession({ mode: 'host' }, game, room)),
+    join: (room, game) => ((tagHost.current = null), openSession({ mode: 'join', code: room }, game)),
+    deckProblem: (game) => {
+      if (!save || !dbReady) return 'Your game is still loading';
+      if (game === 'eds') return deckProblems(save)[0] ?? null;
+      if (!speedReady) return 'Speed Duel cards are still loading';
+      const deck = speedSave ? activeDeck(speedSave) : null;
+      if (!deck || !speedSave) return 'Build a Speed Duel deck first';
+      return [...speedDeckProblems(deck), ...collectionProblems(speedSave, deck)][0] ?? null;
+    },
+  });
+  useEffect(() => online.watchSession(screen === 'duel' ? session : null, duelMode, screen === 'duel'), [session, screen, duelMode]);
+  useEffect(() => online.showButton(!!profile && !!save && screen !== 'duel' && screen !== 'title' && screen !== 'profiles' && screen !== 'intro'), [profile, save, screen]);
 
   /** The game the duel on screen belongs to (a guest follows the host's game). */
   const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
@@ -665,6 +684,7 @@ export function App() {
                   label: `Delete ${profile.alias}`,
                   onPick: () => {
                     deleteProfile(profile.id);
+                    online.forget(profile.id);
                     switchProfile();
                   },
                 },

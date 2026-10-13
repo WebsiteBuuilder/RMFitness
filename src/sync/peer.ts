@@ -1,6 +1,7 @@
 import Peer, { DataConnection, type PeerOptions } from 'peerjs';
 import type { GameEvent, LoggedEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
+import { localBroker } from '../online/peerTransport';
 
 type Msg = { t: 'sync'; events: LoggedEvent[] } | { t: 'ev'; ev: GameEvent } | { t: 'hello' };
 
@@ -96,7 +97,7 @@ export class PeerAdapter extends AdapterBase implements SyncAdapter {
     this.peer?.destroy();
     this.opened = false;
     const ice = ICE[this.ice];
-    const opts: PeerOptions = ice ? { config: { iceServers: ice } } : {};
+    const opts: PeerOptions = localBroker() ?? (ice ? { config: { iceServers: ice } } : {});
     const peer = this.isHost ? new Peer(PREFIX + this.roomCode, opts) : new Peer(opts);
     this.peer = peer;
     this.openTimer = setTimeout(() => {
