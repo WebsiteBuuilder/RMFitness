@@ -45,7 +45,8 @@ export interface SeatProfile {
   profile: Profile;
   save: SaveFile | null;
   /** their Speed Duel deck, when they have one */
-  speed?: { deck: SpeedDeck | null };
+  /** `play` is the deck as dealt: without cards sealed in the Shadow Realm */
+  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null };
 }
 
 /** What a player brings to the table for one of the two games. */
@@ -126,7 +127,7 @@ export function Lobby({
   const seatFor = (o: SeatProfile): SeatEntry | null => {
     if (roomMode === 'speed') {
       const d = o.speed?.deck;
-      return d ? { name: o.profile.alias, deck: d.main, fusion: d.extra, skill: d.skill, problems: speedDeckProblems(d) } : null;
+      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, problems: speedDeckProblems(d) } : null;
     }
     return o.save ? { name: o.profile.alias, deck: o.save.main, fusion: o.save.fusion, problems: deckProblems(o.save) } : null;
   };

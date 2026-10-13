@@ -8,12 +8,14 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check-decks": "node scripts/check-decks.mjs",
-    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts && tsx tests/cont-eds.test.ts && tsx tests/cont-a.test.ts && tsx tests/leave.test.ts && tsx tests/cont-d.test.ts"
+    "test": "tsx tests/engine.test.ts && tsx tests/swords.test.ts && tsx tests/expansion.test.ts && tsx tests/cards.test.ts && tsx tests/ai.test.ts && tsx tests/allcards.test.ts 400 && tsx tests/cont-b.test.ts && tsx tests/cont-c.test.ts && tsx tests/cont-eds.test.ts && tsx tests/cont-a.test.ts && tsx tests/leave.test.ts && tsx tests/cont-d.test.ts && tsx tests/art.test.ts && tsx tests/flow.test.ts"
   },
   "dependencies": {
+    "@types/three": "^0.180.0",
     "firebase": "^11.0.0",
     "peerjs": "^1.5.4",
-    "preact": "^10.24.0"
+    "preact": "^10.24.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",

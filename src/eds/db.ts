@@ -22,7 +22,8 @@ interface RawCard {
   character?: string;
 }
 
-const BASE = import.meta.env.BASE_URL;
+// (import.meta.env is missing when tests load this file under Node)
+const BASE = import.meta.env?.BASE_URL ?? '/';
 declare const __BUILD_ID__: string;
 export const DB = new Map<string, CardInfo>();
 const byId = new Map<number, CardInfo>();

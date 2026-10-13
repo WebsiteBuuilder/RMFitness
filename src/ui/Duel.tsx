@@ -9,6 +9,8 @@ import { Menu, Overlay, Win } from './Window';
 import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
+import { LpCount, useShownState } from '../art/flow';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -34,7 +36,7 @@ export interface Command {
 }
 
 export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished }: Props) {
-  const { state } = view;
+  const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
   const me = state.players[acting];
@@ -52,6 +54,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
+  const artItems = useCinematicsMenu();
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -234,7 +237,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const zone = (c: FieldCard | null, owner: Pid, kind: 'm' | 's', i: number) => {
     const visible = c ? c.faceUp || owner === acting : false;
     return (
-      <div key={`${owner}${kind}${i}`} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
+      <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
         {c ? (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'}`}>
             <CardImg name={c.name} back={!visible} />
@@ -376,6 +379,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // Card info, piles, log, menu and the hotseat hand-over screen look the same in both styles.
   const overlays = (
     <>
+      <ArtStage state={state} viewer={acting} />
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>
@@ -463,6 +467,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             <Menu
               items={[
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
+                ...(e.speed ? artItems : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => confirm('Surrender this duel?') && (send({ type: 'SURRENDER', player: acting }), setShowMenu(false)) },
                 { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
@@ -501,7 +506,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar top">
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
-          LP {opp.lp}
+          LP <LpCount value={opp.lp} />
           {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
@@ -551,14 +556,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar bottom">
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
-          LP {me.lp}
+          LP <LpCount value={me.lp} />
           {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
       </div>
       <div class="hand">
         {me.hand.map((c) => (
-          <div key={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
+          <div key={c.uid} data-uid={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
             <CardImg name={c.name} back={!canAct} />
           </div>
         ))}

@@ -1,18 +1,52 @@
 // Tiny synthesized sounds (no audio files). iPhones only allow audio after a
 // user gesture, so the context is created lazily on the first interaction.
 let ctx: AudioContext | null = null;
+let primed = false;
+
+/** iOS suspends (or "interrupts") the context on calls, lock and backgrounding: wake it. */
+function wake() {
+  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+}
+
+/** iOS Safari only really starts output once a sound plays inside a gesture: a 1-sample silence. */
+function prime() {
+  if (!ctx || primed) return;
+  primed = true;
+  try {
+    const src = ctx.createBufferSource();
+    src.buffer = ctx.createBuffer(1, 1, 22050);
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch {
+    primed = false;
+  }
+}
 
 export function unlockAudio() {
-  if (ctx) {
-    // Phones suspend sound when you switch apps; wake it on the next tap.
-    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
-    return;
+  if (!ctx) {
+    try {
+      ctx = new AudioContext();
+    } catch {
+      ctx = null;
+      return;
+    }
   }
-  try {
-    ctx = new AudioContext();
-  } catch {
-    ctx = null;
-  }
+  wake();
+  prime();
+}
+
+// Every tap is a chance to (re)start audio; so is coming back to the tab.
+if (typeof window !== 'undefined') {
+  const onGesture = () => {
+    if (!ctx) return;
+    wake();
+    prime();
+  };
+  window.addEventListener('pointerdown', onGesture, { capture: true, passive: true });
+  window.addEventListener('touchend', onGesture, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') wake();
+  });
 }
 
 function tone(freq: number, duration: number, type: OscillatorType, gain: number, when = 0) {
@@ -67,4 +101,9 @@ export function playDraw() {
 export function playWin() {
   if (!ctx) return;
   [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.12, i * 0.14));
+}
+
+/** The shared audio context (null until the first tap), for the 3D art engine's sounds. */
+export function audioContext(): AudioContext | null {
+  return ctx;
 }
