@@ -86,8 +86,8 @@ export class Engine {
   private graveQueue: GraveEvent[] = [];
   /** the card whose chain link is resolving (card leveling credits it) */
   private levelSource: number | null = null;
-  /** set while battle damage is dealt (Pikeru's Circle of Enchantment only stops effect damage) */
-  private dealingBattleDamage = false;
+  /** set while battle damage is dealt (Speed Duel damage modifiers tell battle damage from effect damage) */
+  private battleHit = false;
 
   /** The rule set of this duel (EDS for duels recorded before Speed Duel existed). */
   get rules(): Rules {
@@ -194,6 +194,7 @@ export class Engine {
       if (l.only && !l.only.some((n) => c.name.includes(n))) return true;
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
     }
+    if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
     for (const q of [0, 1] as Pid[]) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.forbidsSummon?.(this, m, q, c, p, how, from)) return true;
     return this.liveST().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
   }
@@ -212,6 +213,16 @@ export class Engine {
     const lock = fx.battleLock as { player: Pid; turn: number; kind: string } | undefined;
     if (lock && lock.player === player && lock.turn === this.state.turn && this.state.battle && this.controller(this.state.battle.attacker) === other(player) && lock.kind === kind) return true;
     return false;
+  }
+
+  /** Speed Duel: extra attacks a monster was granted (Evil HERO Infernal Gainer, Diffusion Wave-Motion). */
+  extraAttacks(m: FieldCard): number {
+    return (m.tags?.extraAttacks ?? 0) + (m.tags?.extraAttacksTurn === this.state.turn ? m.tags?.extraAttacksN ?? 0 : 0);
+  }
+
+  /** Speed Duel: this monster cannot attack directly (Berserk Scales, Massivemorph). */
+  noDirectAttack(m: FieldCard): boolean {
+    return !!m.tags?.noDirect || m.tags?.noDirectTurn === this.state.turn;
   }
 
   /** Talisman of Spell/Trap Sealing: active while its controller has a face-up "Sealmaster Meisei". */
@@ -853,10 +864,34 @@ export class Engine {
     if (pieces.every((p) => names.has(p))) this.endDuel(player, `${this.player(player).name} assembled Exodia!`);
   }
 
-  damage(player: Pid, amount: number) {
-    if (amount > 0 && !this.dealingBattleDamage && (this.state.fx.noEffectDamage as number[] | undefined)?.[player] === this.state.turn) {
+  damage(player: Pid, amount: number): void {
+    if (amount > 0 && !this.battleHit && (this.state.fx.noEffectDamage as number[] | undefined)?.[player] === this.state.turn) {
       this.log(player, `${this.player(player).name} takes no damage from card effects this turn`);
       return;
+    }
+    // Speed Duel: Barrel Behind the Door sends one effect's damage back, and face-up cards change damage (Des Wombat, Prime Material Dragon).
+    if (amount > 0 && this.speed) {
+      const byEffect = !this.battleHit;
+      const barrel = this.state.fx.reflectEffectDamage as { p: Pid; src: number; turn: number } | undefined;
+      if (byEffect && barrel && barrel.p === player && barrel.turn === this.state.turn && barrel.src === this.levelSource) {
+        this.log(player, `${this.player(player).name}'s damage goes to ${this.player(other(player)).name} instead`);
+        return this.damage(other(player), amount);
+      }
+      for (const q of [0, 1] as Pid[]) {
+        const srcs: [FieldCard, EffectDef | undefined][] = [
+          ...this.monsters(q).filter((m) => m.faceUp).map((m): [FieldCard, EffectDef | undefined] => [m, this.effectOn(m)]),
+          ...this.liveST().filter((x) => x.p === q).map((x): [FieldCard, EffectDef | undefined] => [x.c, x.eff]),
+        ];
+        for (const [src, eff] of srcs) {
+          const r = amount > 0 ? eff?.damageMod?.(this, src, q, player, amount, byEffect) : undefined;
+          if (r !== undefined && r !== amount) {
+            this.log(player, `${src.name} changes the damage to ${this.player(player).name}`);
+            amount = r;
+          }
+        }
+      }
+      if (amount < 0) return this.gainLp(player, -amount);
+      if (amount === 0) return;
     }
     if (amount > 0 && this.state.fx.noDamage?.[player] === this.state.turn) {
       this.log(player, `${this.player(player).name} takes no damage this turn`);
@@ -1386,6 +1421,11 @@ export class Engine {
           const eff = getEffect(c.name);
           if (eff?.onStandbyInGrave && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(tp, eff.onStandbyInGrave(this, c, tp));
         }
+        if (this.speed)
+          for (const c of this.player(tp).removed.slice()) {
+            const h = getEffect(c.name)?.onStandbyBanished;
+            if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'removed') yield* this.as(tp, h(this, c, tp));
+          }
         // Lightforce Sword: banished hand cards come back.
         const lf = (fx.lightforce ?? []) as { uid: number; back: number }[];
         for (const x of lf.filter((x) => x.back <= this.state.turn)) {
@@ -1444,6 +1484,13 @@ export class Engine {
         for (const c of this.player(p).gy.slice()) {
           const h = getEffect(c.name)?.onEndPhaseInGrave;
           if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+        }
+    // Speed Duel: "During the End Phase, if this card is banished" (D.D. Survivor).
+    if (this.speed)
+      for (const p of [tp, other(tp)])
+        for (const c of this.player(p).removed.slice()) {
+          const h = getEffect(c.name)?.onEndPhaseBanished;
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'removed') yield* this.as(p, h(this, c, p));
         }
     // Delayed destruction (Zone Eater, Steel Scorpion, Swordsman from a Distant Land).
     const doomed = [...this.monsters(0), ...this.monsters(1)].filter((m) => m.doomAt !== undefined && m.doomAt <= this.state.turn);
@@ -1676,7 +1723,7 @@ export class Engine {
     if (faceUp) {
       this.log(player, `${ps.name} ${need ? 'Tribute ' : ''}Summoned ${card.name}${pos === 'def' ? ' in Defense Position' : ''}`);
       yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
-      const eff = getEffect(card.name);
+      const eff = this.effectOn(fc);
       if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
     } else {
@@ -1715,6 +1762,13 @@ export class Engine {
   /** Speed Duel: active Spells/Traps that watch battle position changes (Attack the Moon!). */
   *positionWatch(m: FieldCard, controller: Pid): Step {
     for (const x of this.liveST()) if (x.eff.onAnyPositionChange && this.fieldCard(m.uid)) yield* this.as(x.p, x.eff.onAnyPositionChange(this, x.c, x.p, m, controller));
+    // Face-up monsters that watch position changes too (Morpho Butterspy).
+    if (this.speed)
+      for (const p of [0, 1] as Pid[])
+        for (const w of this.monsters(p)) {
+          const h = w.faceUp ? this.effectOn(w)?.onAnyPositionChange : undefined;
+          if (h && this.fieldCard(m.uid) && this.fieldCard(w.uid)) yield* this.as(p, h(this, w, p, m, controller));
+        }
   }
 
   /** Chain Energy: a player with 500 LP or less cannot play cards from the hand. */
@@ -1951,6 +2005,7 @@ export class Engine {
       while (this.state.chain.length > 0 && this.state.winner === null) {
         const link = this.state.chain.pop()!;
         this.levelSource = link.card.uid;
+        if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
         const eff = getEffect(link.card.name);
         const effectLink = (link.payload as { effect?: string } | undefined)?.effect;
         // Speed Duel: face-up monsters that negate effects as they resolve (The End of Anubis).
@@ -1982,6 +2037,17 @@ export class Engine {
     yield* this.flushLeaves();
     yield* this.damageWindow(false);
     yield* this.flushSummonWindows();
+  }
+
+  /** Speed Duel: face-up monsters see each chain link right before it resolves (Freed the Matchless General, Angel O7). */
+  private *chainLinkWatch(link: ChainLink): Step {
+    for (const p of [0, 1] as Pid[]) {
+      for (const m of this.monsters(p)) {
+        if (link.negated || this.state.winner !== null || !m.faceUp || !this.fieldCard(m.uid)) continue;
+        const h = this.effectOn(m)?.onChainLink;
+        if (h) yield* this.as(p, h(this, m, p, link));
+      }
+    }
   }
 
   /** After damage is dealt, Numinous Healer and Sebek's Blessing may respond. */
@@ -2185,7 +2251,8 @@ export class Engine {
     if (s.phase !== 'BP' || s.turnPlayer !== player || s.firstTurn) return false;
     const eff = this.effectOn(m);
     if (!m.faceUp || m.cannotAttack) return false;
-    if (m.attacked && (m.tags?.attacksMade ?? 1) >= (eff?.attacks?.(this, m) ?? 1)) return false;
+    if (m.attacked && (m.tags?.attacksMade ?? 1) >= (eff?.attacks?.(this, m) ?? 1) + this.extraAttacks(m)) return false;
+    if (this.speed && this.noDirectAttack(m) && this.monsters(other(player)).length === 0) return false;
     if (m.pos !== 'atk' && !eff?.attackInDefense) return false;
     if (eff?.cannotAttack?.(this, m, player)) return false;
     if ((m.tags?.noAttackTurn ?? -1) === s.turn) return false;
@@ -2250,6 +2317,8 @@ export class Engine {
       const lingering = this.lingering().filter((l) => l.eff.lingering?.attackGuard);
       if (guards.length || lingering.length) list = list.filter((t) => !guards.some((g) => g.eff.attackGuard!(this, g.src, g.p, m, t)) && !lingering.some((l) => l.eff.lingering!.attackGuard!(this, l.p, m, t)));
     }
+    // Speed Duel: a face-up monster guarding the others (Marauding Captain).
+    if (this.speed) list = list.filter((t) => !this.monsters(other(player)).some((g) => g.faceUp && this.effectOn(g)?.guardsAttack?.(this, g, t, m)));
     return list;
   }
 
@@ -2260,6 +2329,7 @@ export class Engine {
     const opp = other(player);
     const oppMonsters = this.monsters(opp);
     if (targetUid === null && oppMonsters.length > 0 && !this.canAttackDirectly(m)) return;
+    if (targetUid === null && this.speed && this.noDirectAttack(m)) return;
     if (targetUid !== null && !this.legalTargets(player, m).some((t) => t.uid === targetUid)) return;
     const eff0 = getEffect(m.name);
     const cost = eff0?.attackCost;
@@ -2273,7 +2343,7 @@ export class Engine {
       }
     }
     if (this.state.winner !== null || !this.fieldCard(uid)) return;
-    if (eff0?.attacks) {
+    if (eff0?.attacks || this.extraAttacks(m)) {
       const t = (m.tags ??= {});
       t.attacksMade = m.attacked ? (t.attacksMade ?? 1) + 1 : 1;
     }
@@ -2316,10 +2386,23 @@ export class Engine {
   }
 
   /** Battle damage, with Relinquished passing it back to the opponent. */
-  private battleDamage(p: Pid, amount: number, a: FieldCard, t: FieldCard | null) {
+  private battleDamage(p: Pid, amount: number, a: FieldCard, t: FieldCard | null): void {
     if (amount <= 0) return;
     for (const m of [a, t]) {
-      if (m && this.controller(m.uid) === p && this.effectOn(m)?.noBattleDamage?.(this, m)) {
+      if (!m || this.controller(m.uid) !== p) continue;
+      // Speed Duel: the damage goes to the opponent instead (Magical Reflect Slime).
+      if (this.speed && this.effectOn(m)?.reflectBattleDamage?.(this, m)) {
+        this.log(p, `${m.name} sends the battle damage to ${this.player(other(p)).name}`);
+        return this.battleDamage(other(p), amount, a, t);
+      }
+      // Speed Duel: an Equip Spell shielding its host's controller (Bashing Shield).
+      const shieldEquip =
+        this.speed &&
+        m.equips.some((u) => {
+          const eq = this.fieldCard(u);
+          return !!eq && eq.faceUp && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && !!getEffect(eq.name)?.hostNoBattleDamage?.(this, eq, m);
+        });
+      if (this.effectOn(m)?.noBattleDamage?.(this, m) || shieldEquip) {
         this.log(p, `${this.player(p).name} takes no battle damage thanks to ${m.name}`);
         return;
       }
@@ -2332,11 +2415,11 @@ export class Engine {
       this.log(p, `${this.player(p).name} takes no battle damage this turn`);
       return;
     }
-    this.dealingBattleDamage = true;
+    this.battleHit = true;
     try {
       this.damage(p, amount);
     } finally {
-      this.dealingBattleDamage = false;
+      this.battleHit = false;
     }
     const reflect = [a, t].some((m) => m && m.name === 'Relinquished' && this.controller(m.uid) === p && m.tags?.absorbed);
     if (reflect && this.state.winner === null) {
@@ -2445,7 +2528,7 @@ export class Engine {
     yield* this.destroy(destroyed, 'destroyed', true);
     this.state.fx.battleMuted = [];
     // FLIP effects resolve after damage calculation, even if the monster is destroyed.
-    if (wasFaceDown && tEff?.flip && targetDestroyed && aEff?.negatesVictimFlip && this.speed) {
+    if (wasFaceDown && tEff?.flip && this.speed && ((targetDestroyed && aEff?.negatesVictimFlip) || (!this.fieldCard(targetUid) && aEff?.negatesBattleFlip?.(this, attacker, target)))) {
       this.log(player, `${attacker.name} negates ${target.name}'s FLIP effect`);
     } else if (wasFaceDown && tEff?.flip && !muted.includes(targetUid)) {
       this.log(opp, `${target.name}'s FLIP effect activates`);
@@ -2502,6 +2585,12 @@ export class Engine {
 
   private *battleDamageDealt(player: Pid, attacker: FieldCard): Step {
     if (this.state.winner !== null) return;
+    // Speed Duel: cards in the GY or banished that react to their owner's monster dealing battle damage (Djinn Prognosticator of Rituals).
+    if (this.speed)
+      for (const c of [...this.player(player).gy, ...this.player(player).removed]) {
+        const h = getEffect(c.name)?.onAllyBattleDamageOffField;
+        if (h && this.state.winner === null) yield* this.as(player, h(this, c, player, attacker));
+      }
     for (const c of this.activeSpells(player)) {
       const eff = getEffect(c.name);
       const kind = this.info(c.name).kind;

@@ -18,6 +18,7 @@ import { install as b11 } from './cards-11';
 import { install as b12 } from './cards-12';
 import { install as b15 } from './cards-15';
 import { install as b16 } from './cards-16';
+import { install as b14 } from './cards-14';
 
 type Installer = (table: Record<string, EffectDef>, h: SpeedHelpers) => void;
 const BATCHES: [string, Installer][] = [
@@ -36,6 +37,7 @@ const BATCHES: [string, Installer][] = [
   ['12', b12],
   ['15', b15],
   ['16', b16],
+  ['14', b14],
 ];
 
 /** Which batch file scripted each Speed Duel card (tests focus on one batch with it). */

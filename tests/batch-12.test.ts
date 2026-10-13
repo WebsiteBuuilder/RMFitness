@@ -485,7 +485,7 @@ section('Vilepawn Archfiend');
   check(e.legalTargets(1, axe).every((m) => m.uid !== tk.uid) && e.legalTargets(1, axe).some((m) => m.uid === v.uid), 'the opponent can attack Vilepawn but not other Archfiends');
   endTurn(e);
   endTurn(e);
-  check(e.player(0).lp === 3500, 'pays 500 LP in each of your Standby Phases');
+  check(e.player(0).lp === 4000 - 500 - 800, 'pays 500 LP in each of your Standby Phases (Terrorking pays its own 800)');
   const link: ChainLink = { card: axe, loc: e.find(axe.uid)!.loc, player: 1, label: 'x', negated: false, targetUid: v.uid };
   let hit = false;
   for (let i = 0; i < 30 && !hit; i++) {
