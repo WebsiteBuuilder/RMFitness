@@ -1,0 +1,374 @@
+/* ---------- Speed Duel result screen (SpeedResult.tsx), Master Duel style ---------- */
+.mdres {
+  --res: #f7c948;
+  --res2: #fff2b8;
+  --resglow: #f7c94866;
+  --rays: #f7c9481f;
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(14px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 90% 45% at 50% 22%, #2b3fa0aa, transparent 70%),
+    linear-gradient(180deg, #0b1240 0%, #060818 65%, #03040c 100%);
+  color: #f4f6ff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  animation: mdres-fade 0.25s ease-out;
+}
+.mdres.res-lose {
+  --res: #9fb2ff;
+  --res2: #e3e9ff;
+  --resglow: #6f8cff55;
+  background:
+    radial-gradient(ellipse 90% 45% at 50% 22%, #3a1430aa, transparent 70%),
+    linear-gradient(180deg, #120a24 0%, #07060f 65%, #030308 100%);
+}
+.mdres.res-draw {
+  --res: #d6dcff;
+  --res2: #ffffff;
+  --resglow: #c0c8ff44;
+  --rays: #c0c8ff14;
+}
+.mdres-rays {
+  position: absolute;
+  left: 50%;
+  top: 19vh;
+  width: 160vmax;
+  height: 160vmax;
+  margin: -80vmax 0 0 -80vmax;
+  background: repeating-conic-gradient(from 0deg, var(--rays) 0deg 6deg, transparent 6deg 18deg);
+  mask-image: radial-gradient(circle, #000 0%, transparent 45%);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 45%);
+  opacity: 0;
+  animation:
+    mdres-rays-in 0.8s 0.35s ease-out forwards,
+    mdres-spin 40s linear infinite;
+  pointer-events: none;
+}
+.mdres.res-lose .mdres-rays {
+  display: none;
+}
+.mdres-head {
+  position: relative;
+  margin-top: 9vh;
+  text-align: center;
+}
+.mdres-title {
+  margin: 0;
+  font-size: clamp(44px, 15vw, 92px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--res);
+  background: linear-gradient(100deg, var(--res) 0%, var(--res) 40%, var(--res2) 50%, var(--res) 60%, var(--res) 100%);
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 18px var(--resglow)) drop-shadow(0 4px 0 #0008);
+  animation:
+    mdres-slam 0.7s cubic-bezier(0.2, 0.8, 0.25, 1.15) both,
+    mdres-shine 1.4s 0.7s ease-in-out both;
+}
+.mdres-reason {
+  margin: 10px 0 0;
+  color: #c9d3ff;
+  font-size: 14px;
+  opacity: 0;
+  animation: mdres-up 0.4s 0.6s ease-out forwards;
+}
+.mdres-lp {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  width: min(100%, 520px);
+  opacity: 0;
+  animation: mdres-up 0.4s 0.8s ease-out forwards;
+}
+.mdres-lpbox {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff14, #ffffff06);
+  border: 1px solid #ffffff22;
+}
+.mdres-lpbox.lp-me {
+  border-color: color-mix(in srgb, var(--res) 60%, transparent);
+}
+.mdres-name {
+  font-size: 13px;
+  color: #c9d3ff;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mdres-lpn {
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.mdres-lpn small {
+  font-size: 12px;
+  color: #9aa6d6;
+}
+.mdres-lpbox.lp-zero .mdres-lpn {
+  color: #ff6b6b;
+}
+.mdres-turns {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 12px;
+  color: #9aa6d6;
+}
+.mdres-rewards {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: min(100%, 520px);
+  margin-top: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mdres-rhead {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--res);
+  text-align: center;
+  margin-bottom: 8px;
+  opacity: 0;
+  animation: mdres-up 0.3s 1s ease-out forwards;
+}
+.mdres-rewards ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mdres-r {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #1b2766e6, #0d1440cc);
+  border: 1px solid #8fa6ff44;
+  box-shadow: 0 4px 14px #0006;
+  opacity: 0;
+  transform: translateX(-24px);
+  animation: mdres-pop 0.38s cubic-bezier(0.2, 0.8, 0.3, 1.2) forwards;
+}
+.mdres-r.r-rank {
+  border-color: #f7c94899;
+  background: linear-gradient(90deg, #3a2c0ae6, #1a1440cc);
+}
+.mdres-r.r-card.r-lost {
+  border-color: #ff6b6b88;
+  background: linear-gradient(90deg, #3a0e1ae6, #140c26cc);
+}
+.mdres-r.r-line {
+  min-height: 0;
+  background: #ffffff0d;
+  border-color: #ffffff1a;
+  box-shadow: none;
+}
+.mdres-rt {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.mdres-rt b {
+  font-size: 18px;
+  color: var(--res2);
+}
+.mdres-rt small {
+  font-size: 12px;
+  color: #b7c2f0;
+}
+.mdres-rt.r-text {
+  font-size: 13px;
+  color: #dfe5ff;
+}
+.r-chips .mdres-rt,
+.r-packs .mdres-rt,
+.r-xp .mdres-rt {
+  display: block;
+}
+.mdres-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 18px;
+  color: #1a1000;
+  background: radial-gradient(circle at 35% 30%, #fff6c9, #f7c948 55%, #a8740c);
+  box-shadow: 0 0 12px #f7c94866;
+}
+.mdres-icon.i-xp {
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #c6d2ff, #5873ff 55%, #2a3a9a);
+  box-shadow: 0 0 12px #5873ff66;
+}
+.mdres-icon.i-pack {
+  width: 28px;
+  height: 38px;
+  border-radius: 4px;
+  background: linear-gradient(160deg, #ff8a3d, #b0221f 55%, #4a0d22);
+  border: 1px solid #ffd9a8;
+}
+.mdres-card {
+  flex: none;
+  width: 34px;
+  aspect-ratio: 59 / 86;
+}
+.mdres-card .cimg {
+  width: 100%;
+  height: 100%;
+}
+.mdres-tier {
+  display: inline-block;
+  padding: 0 6px;
+  margin-right: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1a1000;
+  background: linear-gradient(#fff2b8, #f7c948);
+  vertical-align: 1px;
+}
+.mdres-tier.t-R {
+  background: linear-gradient(#e6edff, #9fb2ff);
+}
+.mdres-tier.t-UR {
+  background: linear-gradient(90deg, #ff9ad5, #ffe27a, #8affc1, #8ab4ff);
+}
+.mdres-foot {
+  position: relative;
+  width: min(100%, 520px);
+  padding-top: 10px;
+  text-align: center;
+}
+.mdres-go {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 26px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #1a1000;
+  background: linear-gradient(#f7c948, #c98f12);
+  border: 1px solid #fff2b8;
+  opacity: 0.35;
+  transition: opacity 0.25s;
+  touch-action: manipulation;
+}
+.mdres-go.go-ready {
+  opacity: 1;
+  box-shadow: 0 0 20px #f7c94855;
+}
+.mdres-go:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.mdres-skip {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #9aa6d6;
+}
+.mdres.res-skipped .mdres-title,
+.mdres.res-skipped .mdres-reason,
+.mdres.res-skipped .mdres-lp,
+.mdres.res-skipped .mdres-rhead,
+.mdres.res-skipped .mdres-rays {
+  animation-delay: 0s;
+  animation-duration: 0.01s;
+}
+.mdres.res-skipped .mdres-rays {
+  animation:
+    mdres-rays-in 0.01s forwards,
+    mdres-spin 40s linear infinite;
+}
+.mdres.res-skipped .mdres-r {
+  animation-duration: 0.01s;
+}
+@keyframes mdres-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mdres-slam {
+  0% {
+    opacity: 0;
+    transform: scale(2.4);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes mdres-shine {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+@keyframes mdres-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mdres-pop {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mdres-rays-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mdres-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mdres *,
+  .mdres {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+}

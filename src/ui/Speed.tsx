@@ -80,6 +80,12 @@ export function speedOpponents(): SpeedOpponent[] {
   });
 }
 
+/** Android back inside the Speed Duel menu: steps back to the hub before leaving it (see App). */
+let hubBack: (() => boolean) | null = null;
+export function speedHubBack(): boolean {
+  return hubBack ? hubBack() : false;
+}
+
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
 
 export function SpeedHub({
@@ -109,6 +115,16 @@ export function SpeedHub({
   // Card pictures on these screens show this profile's card rarities.
   showProfileLevels(cardLevels(save));
   useEffect(() => () => showProfileLevels(null), []);
+  useEffect(() => {
+    hubBack = () => {
+      if (sub === 'menu' || save.decks.length === 0) return false;
+      setSub(sub === 'edit' ? 'decks' : 'menu');
+      return true;
+    };
+    return () => {
+      hubBack = null;
+    };
+  });
 
   if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
@@ -170,7 +186,7 @@ export function SpeedHub({
             { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
             { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
             { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
-            { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => setSub('link') },
+            { label: 'Link Battle', note: 'Speed Duel rules: online or on one phone', onPick: () => setSub('link') },
             { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },

@@ -96,7 +96,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
           items={[
             ...(save.pendingPacks > 0 ? [{ label: 'Open Booster Pack', note: `${save.pendingPacks} waiting`, onPick: () => onPick('pack') }] : []),
             { label: 'Campaign', note: 'duel the computer', onPick: () => onPick('campaign') },
-            { label: 'Link Battle', note: 'duel your brother online or on one phone', onPick: () => onPick('link') },
+            { label: 'Link Battle', note: 'Eternal Duelist Soul rules: online or on one phone', onPick: () => onPick('link') },
             { label: 'Speed Duel', note: 'its own decks: Speed Duel cards only', onPick: () => onPick('speed') },
             { label: 'Deck Edit', note: `Main ${save.main.length}/40`, onPick: () => onPick('deck') },
             { label: 'Record', onPick: () => onPick('record') },

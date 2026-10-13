@@ -6,6 +6,7 @@ import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { Menu, Overlay, Win } from './Window';
+import { ConfirmSheet } from './ConfirmSheet';
 import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
@@ -54,6 +55,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [info, setInfo] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [askSurrender, setAskSurrender] = useState(false);
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
@@ -503,13 +505,18 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
-                { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => confirm('Surrender this duel?') && (send({ type: 'SURRENDER', player: acting }), setShowMenu(false)) },
+                { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />
           </Win>
         </Overlay>
+      )}
+      {askSurrender && state.winner === null && (
+        <ConfirmSheet look={e.speed ? 'md' : 'gba'} title="Surrender this duel?" confirmLabel="Surrender" cancelLabel="Keep dueling" danger onCancel={() => setAskSurrender(false)} onConfirm={() => (setAskSurrender(false), send({ type: 'SURRENDER', player: acting }))}>
+          {hotseat ? `${me.name} loses this duel.` : 'It counts as a loss.'}
+        </ConfirmSheet>
       )}
       {online && view.status !== 'connected' && state.winner === null && <div class="netwarn">{view.detail || 'Connection lost. Reconnecting…'}</div>}
       {pass && (

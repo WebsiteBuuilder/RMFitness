@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { loadDb, loadSpeedDb } from '../eds/db';
 import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpeedSave, type SpeedSave } from '../eds/speedSave';
 import type { GameMode } from '../eds/types';
-import { SpeedHub, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
+import { SpeedHub, speedHubBack, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
+import { ConfirmSheet } from './ConfirmSheet';
+import { SpeedResult, type ResultReward, type SpeedResultData } from './SpeedResult';
 import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
 import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
-import type { Pid } from '../eds/types';
+import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
@@ -30,9 +32,9 @@ import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
 import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
-import { rarityMap, withLevels } from '../level/leveling';
+import { rarityMap, TIERS, tierIndex, withLevels, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { collectionProblems, cpuWinPrize, crownHolder, migrate, rivalResult } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult } from '../collection/economy';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
 import { DuelPot } from '../collection/StakesPanel';
@@ -93,6 +95,10 @@ export function App() {
   const [speedNews, setSpeedNews] = useState<string[]>([]);
   /** cards each player won and lost, for the after-duel screen */
   const [newsCards, setNewsCards] = useState<NewsCards>([]);
+  /** the Speed Duel result screen (VICTORY / DEFEAT and rewards), shown after a duel against the computer or a Link Battle */
+  const [speedResult, setSpeedResult] = useState<SpeedResultData | null>(null);
+  /** the Android back button asked to leave a duel in progress: confirm first */
+  const [askLeave, setAskLeave] = useState(false);
   /** a duel on this phone that was never finished: the players say who gave up */
   const [unfinished, setUnfinished] = useState<{ id: string; t: DuelTicket } | null>(null);
   /** news from an older walk-out settled as a new duel started, shown after that duel */
@@ -380,7 +386,13 @@ export function App() {
       if (sr) recordShadow(sr);
       // Card leveling: each profile's cards rank up from what they did this duel.
       const st = session?.engine.state;
-      const lv = (s: SpeedSave, seat: Pid) => (st ? withLevels(s, st, seat).save : s);
+      let myLevels: LevelReport | null = null;
+      const lv = (s: SpeedSave, seat: Pid) => {
+        if (!st) return s;
+        const r = withLevels(s, st, seat);
+        if (seat === mySeat) myLevels = r.report;
+        return r.save;
+      };
       // The collection: packs and chips won, bets and rescues between two players.
       const seats = session?.seats;
       const news: string[] = [];
@@ -405,15 +417,18 @@ export function App() {
       };
       // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".
       const first = (s: SpeedSave, seat: Pid) => (!cpu && st && seats ? rescueFirst(s, seat, st, [seats[0], seats[1]], winner) : s);
-      if (speedSave) setSpeedSave(withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), null));
+      const mineAfter = speedSave ? withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), null) : null;
+      if (mineAfter) setSpeedSave(mineAfter);
       if (hotseat && p2Profile && p2Profile !== profile?.id) {
         const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
         const seat2 = other(mySeat);
         writeSpeedSave(p2Profile, withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2), null));
       }
-      setSpeedNews([...carryNews.current, ...news]);
+      const allNews = [...carryNews.current, ...news];
+      setSpeedNews(allNews);
       carryNews.current = [];
       setNewsCards(cards);
+      if (st) setSpeedResult(resultOf(st, mySeat, hotseat, speedSave, mineAfter, myLevels, allNews, cards));
       session?.close();
       setSession(null);
       setP2Profile(null);
@@ -435,6 +450,20 @@ export function App() {
     setScreen(next.pendingPacks > 0 ? 'pack' : 'menu');
   };
 
+  /** The leave-duel sheet (from the back button) was confirmed. */
+  const confirmLeave = () => {
+    setAskLeave(false);
+    const st = session?.engine.state;
+    // Leaving an online duel concedes it, so your opponent isn't left waiting.
+    if (session && st?.started && st.winner === null && session.adapter.roomCode && !hotseat) session.send({ type: 'SURRENDER', player: mySeat });
+    leaveDuel();
+  };
+  const closeResult = () => {
+    setSpeedResult(null);
+    setSpeedNews([]);
+    setNewsCards([]);
+  };
+
   // Android back button: back to the main menu from any menu screen; in a duel, ask first.
   useBackButton(() => {
     if (screen === 'duel' && session) {
@@ -444,12 +473,20 @@ export function App() {
         finishDuel(st.winner, opp === 'Téa Gardner' ? 'Tea Gardner' : opp);
         return true;
       }
-      if (st.started && !confirm(soloDuel.current?.ctx.kind === 'labyrinth' ? 'Leave this duel? It counts as a loss and costs a heart.' : 'Leave this duel?')) return true;
-      // Leaving an online duel concedes it, so your opponent isn't left waiting.
-      if (st.started && session.adapter.roomCode && !hotseat) session.send({ type: 'SURRENDER', player: mySeat });
+      // A duel in progress asks first (an in-game sheet); a second back press keeps dueling.
+      if (st.started) {
+        setAskLeave(!askLeave);
+        return true;
+      }
       leaveDuel();
       return true;
     }
+    if (screen === 'speed' && speedResult) {
+      closeResult();
+      return true;
+    }
+    // Speed Duel's own screens step back to the Speed Duel menu first.
+    if (screen === 'speed' && !soloMode && speedHubBack()) return true;
     // The solo modes step back through their own sheets and screens.
     if (screen === 'speed' && soloMode) return soloBack();
     if (screen !== 'title' && screen !== 'profiles' && screen !== 'intro' && screen !== 'menu' && screen !== 'duel') {
@@ -601,6 +638,7 @@ export function App() {
         ) : (
           <div class="loading">Loading Speed Duel cards…</div>
         );
+      if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
       if (soloMode)
         return (
           <Solo
@@ -701,12 +739,47 @@ export function App() {
           <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
+          {askLeave && session.engine.state.started && session.engine.state.winner === null && (
+            <ConfirmSheet look={gameOf() === 'speed' ? 'md' : 'gba'} title="Leave this duel?" confirmLabel="Leave" cancelLabel="Keep dueling" danger onCancel={() => setAskLeave(false)} onConfirm={confirmLeave}>
+              {soloDuel.current?.ctx.kind === 'labyrinth' ? 'It counts as a loss and costs a heart.' : session.adapter.roomCode && !hotseat ? 'Leaving concedes the duel: it counts as your loss.' : 'This duel will end here.'}
+            </ConfirmSheet>
+          )}
         </>
       );
     }
     default:
       return menu;
   }
+}
+
+/** What the Speed Duel result screen shows: read from the finished duel and the save before and after it was settled. */
+function resultOf(st: DuelState, mySeat: Pid, hotseat: boolean, before: SpeedSave | null, after: SpeedSave | null, levels: LevelReport | null, lines: string[], cards: NewsCards): SpeedResultData {
+  const w = st.winner;
+  const me = st.players[mySeat];
+  const opp = st.players[other(mySeat)];
+  const outcome = w === null || w === 'draw' ? 'draw' : hotseat || w === mySeat ? 'win' : 'lose';
+  const title = w === null || w === 'draw' ? 'DRAW' : hotseat ? `${st.players[w].name} WINS` : w === mySeat ? 'VICTORY' : 'DEFEAT';
+  const rewards: ResultReward[] = [];
+  if (before && after) {
+    const chips = chipsOf(after) - chipsOf(before);
+    const packs = packsOf(after) - packsOf(before);
+    if (chips > 0) rewards.push({ kind: 'chips', n: chips });
+    if (packs > 0) rewards.push({ kind: 'packs', n: packs });
+  }
+  const rows = levels?.rows ?? [];
+  for (const r of rows) {
+    const t = tierIndex(r.after);
+    if (t > tierIndex(r.before)) rewards.push({ kind: 'rank', card: r.name, tier: TIERS[t].short, tierName: TIERS[t].name });
+  }
+  const earned = rows.filter((r) => r.after > r.before).length;
+  if (earned > 0) rewards.push({ kind: 'xp', cards: earned });
+  for (const c of cards) {
+    const who = cards.length > 1 && c.who ? c.who : undefined;
+    for (const n of c.won) rewards.push({ kind: 'card', card: n, won: true, who });
+    for (const n of c.lost) rewards.push({ kind: 'card', card: n, won: false, who });
+  }
+  for (const l of lines) rewards.push({ kind: 'line', text: l });
+  return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards };
 }
 
 function newCode(): string {
