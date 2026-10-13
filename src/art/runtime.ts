@@ -1199,6 +1199,11 @@ export class Director {
         return this.destroy(cue.card);
       case 'win':
         return cue.shadow ? this.shadowRealm(cue.shadow) : this.victory(cue.winner);
+      // not drawn yet
+      case 'leave':
+      case 'heal':
+      case 'draw':
+        return null;
     }
   }
 

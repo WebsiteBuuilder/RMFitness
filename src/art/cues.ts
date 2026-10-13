@@ -26,7 +26,14 @@ export interface CardRef {
 }
 
 export type Cue =
-  | { kind: 'summon'; card: CardRef; special: boolean }
+  /** how: the summon method when known (Fusion, Ritual, Xyz, Synchro, Link, Tribute...) */
+  | { kind: 'summon'; card: CardRef; special: boolean; how?: SummonHow }
+  /** a card leaves the field (or the GY) without being destroyed: banished, bounced, shuffled away */
+  | { kind: 'leave'; card: CardRef; to: 'hand' | 'deck' | 'banish' | 'extra' }
+  /** Life Points gained from an effect */
+  | { kind: 'heal'; player: Pid; amount: number }
+  /** cards drawn by an effect (not the normal draw) */
+  | { kind: 'draw'; player: Pid; count: number }
   | { kind: 'set'; card: CardRef; monster: boolean }
   | { kind: 'flip'; card: CardRef }
   | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster'; targets?: Target[]; field?: CardRef[] }
@@ -132,6 +139,8 @@ export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | nul
 }
 
 /** Turns new engine events into cues. `memo` is the field before these events. */
+export type SummonHow = 'normal' | 'tribute' | 'special' | 'fusion' | 'ritual' | 'xyz' | 'synchro' | 'link';
+
 export interface CueTrack {
   /** the attack being animated (its hit can arrive in a later batch, after responses) */
   battle: { attacker: number; target: number | null } | null;
