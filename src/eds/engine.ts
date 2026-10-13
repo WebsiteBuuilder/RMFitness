@@ -1377,6 +1377,11 @@ export class Engine {
   /** Speed Duel: after every action, active Spells/Traps check their "destroy this card if..." conditions. */
   private *withStateChecks(gen: Step): Step {
     yield* gen;
+    // Xyz Materials only stay under a monster in a Monster Zone (a monster equipped as a card loses them).
+    for (const p of [0, 1] as Pid[]) {
+      const ps = this.player(p);
+      for (const c of [...ps.sz, ps.field]) if (c?.mats?.length) for (const m of c.mats.splice(0)) this.player(m.owner).gy.push(m);
+    }
     for (let i = 0; i < 4 && this.state.winner === null; i++) {
       let acted = false;
       for (const x of this.liveST().filter((y) => y.eff.stateCheck)) {
@@ -2022,6 +2027,13 @@ export class Engine {
     return ['Fusion', 'Xyz', 'Synchro', 'Link'].includes(this.info(name).sub);
   }
 
+  /** Empties a Monster Zone a script moves a monster out of by hand (equipping it as a card...): its Xyz Materials go to the GY. */
+  vacateMZ(ps: PlayerState, i: number) {
+    const fc = ps.mz[i];
+    ps.mz[i] = null;
+    if (fc?.mats?.length) for (const m of fc.mats.splice(0)) this.player(m.owner).gy.push(m);
+  }
+
   /** An Xyz Monster's Xyz Materials. */
   matsOf(m: Card): Card[] {
     return (m as FieldCard).mats ?? [];
@@ -2082,9 +2094,18 @@ export class Engine {
         if (!card.token) under.push(card);
         under.push(...carried);
       }
-      yield* this.flushLeaves();
       this.log(player, `${ps.name} Xyz Summons ${f.card.name} using ${under.map((c) => c.name).join(', ')}`);
-      yield* this.specialSummon(uid, player, 'atk', true, (fc) => ((fc.mats = under), ((fc.tags ??= {}).xyzS = 1)));
+      // The materials are placed under the monster before anything else can happen (their equips leaving, responses).
+      const placed = () => {
+        // The Summon did not happen (no open zone, a Summon lock): the materials still left the field, so they go to the GY.
+        if (this.find(uid)?.loc.zone === 'fusion') for (const c of under) if (!this.find(c.uid)) this.player(c.owner).gy.push(c);
+      };
+      const summon = this.specialSummon(uid, player, 'atk', true, (fc) => ((fc.mats = under), ((fc.tags ??= {}).xyzS = 1)));
+      let step = summon.next();
+      placed();
+      while (!step.done) step = summon.next(yield step.value);
+      // Then the materials' equips and "leaves the field" effects.
+      yield* this.flushLeaves();
       return;
     }
     const names = materials.map((m) => this.find(m)?.card.name ?? '?');

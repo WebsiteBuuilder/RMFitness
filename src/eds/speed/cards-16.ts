@@ -67,7 +67,7 @@ function* equipMonster(e: Engine, card: Card, host: FieldCard, p: Pid): Gen<Fiel
     for (const u of fc.equips.slice()) yield* e.sendToGrave(u, 'used');
     const g = e.find(card.uid);
     if (!g || g.loc.zone !== 'mz' || !e.fieldCard(host.uid)) return null;
-    e.player(g.loc.player).mz[g.loc.index] = null;
+    e.vacateMZ(e.player(g.loc.player), g.loc.index);
   } else if (f.loc.zone === 'hand') owner.hand.splice(f.loc.index, 1);
   else if (f.loc.zone === 'gy') owner.gy.splice(f.loc.index, 1);
   else return null;

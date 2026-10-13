@@ -175,6 +175,7 @@ export function playDuel(decks: [string[], string[]], extras: [string[], string[
       fail = `no action for player ${p} in ${e.state.phase} prompt=${e.state.prompt?.kind} ${e.state.prompt?.title ?? ''}`;
       break;
     }
+    const before = everyCard(e).filter((c) => !c.token);
     try {
       e.apply(act);
     } catch (err) {
@@ -185,7 +186,7 @@ export function playDuel(decks: [string[], string[]], extras: [string[], string[
     const cards = everyCard(e).filter((c) => !c.token);
     const uids = new Set(cards.map((c) => c.uid));
     if (uids.size !== cards.length) fail = `duplicated card ${cards.filter((c, i) => cards.findIndex((d) => d.uid === c.uid) !== i).map((c) => `${c.name}@${e.find(c.uid)?.loc.zone}`).join(', ')} after ${JSON.stringify(act)}; log: ${tail()}`;
-    else if (cards.length !== startCount) fail = `card count ${startCount} -> ${cards.length} after ${JSON.stringify(act)}; log: ${tail()}`;
+    else if (cards.length !== startCount) fail = `card count ${startCount} -> ${cards.length} after ${JSON.stringify(act)} (lost: ${before.filter((c) => !uids.has(c.uid)).map((c) => c.name).join(', ')}; ${e.state.log.filter((l) => / Summons /.test(l.text)).slice(-1).map((l) => l.text).join('')}); log: ${tail()}`;
     for (const q of [0, 1] as Pid[]) {
       if (!Number.isFinite(e.player(q).lp)) fail = `LP became ${e.player(q).lp}`;
       if (e.player(q).mz.length !== 3 || e.player(q).sz.length !== 3) fail = `zone count changed: ${e.player(q).mz.length}/${e.player(q).sz.length}`;

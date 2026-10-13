@@ -812,7 +812,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       yield* unhook(e, m.uid);
       const g = e.find(m.uid);
       if (!g || g.loc.zone !== 'mz') return;
-      e.player(p).mz[g.loc.index] = null;
+      e.vacateMZ(e.player(p), g.loc.index);
       e.player(p).sz[freeST(e, p)] = { uid: m.uid, name: m.name, owner: m.owner, pos: 'atk', faceUp: false, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
       e.event('set', { uid: m.uid, player: p });
       e.log(p, 'Cyber Shadow Gardna is Set again');

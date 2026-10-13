@@ -180,7 +180,7 @@ function machineUnion(atk: number, def: number): EffectDef {
           e.useOnce(`union:${m.uid}`, p);
           for (const u of m.equips.slice()) yield* e.sendToGrave(u, 'used');
           const at = e.find(m.uid)!.loc;
-          e.player(p).mz[at.index] = null;
+          e.vacateMZ(e.player(p), at.index);
           Object.assign(m, { pos: 'atk', faceUp: true, active: true, equips: [], equippedTo: host.uid, atkMod: 0, defMod: 0, tags: { union: 1 } });
           e.player(p).sz[z] = m;
           host.equips.push(m.uid);

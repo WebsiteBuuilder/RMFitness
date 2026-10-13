@@ -146,7 +146,7 @@ function* latchOn(e: Engine, t: FieldCard, attacker: FieldCard, p: Pid): Generat
   const ps = e.player(p);
   const mi = ps.mz.indexOf(t);
   if (mi < 0) return false;
-  ps.mz[mi] = null;
+  e.vacateMZ(ps, mi);
   t.faceUp = true;
   t.pos = 'atk';
   t.active = true;
@@ -552,7 +552,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         for (const u of t.equips.slice()) yield* e.sendToGrave(u, 'used');
         // An equip leaving can take the monster with it (Limit Reverse, Premature Burial).
         if (op.mz[mi] !== t || e.player(p).sz[zone] !== null) return;
-        op.mz[mi] = null;
+        e.vacateMZ(op, mi);
         t.faceUp = true;
         t.active = true;
         t.equippedTo = m.uid;
@@ -872,7 +872,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       const ps = e.player(ctrl(e, m));
       const i = ps.mz.indexOf(m);
       if (i < 0) return;
-      ps.mz[i] = null;
+      e.vacateMZ(ps, i);
       const card: Card = { uid: m.uid, name: m.name, owner: m.owner };
       e.player(opp).deck.push(card);
       e.player(opp).deck = e.shuffle(e.player(opp).deck);
