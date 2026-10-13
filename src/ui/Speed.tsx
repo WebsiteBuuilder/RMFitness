@@ -37,6 +37,7 @@ import { showProfileLevels } from '../level/view';
 import { CardShop, ChipBar } from '../collection/Shop';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 import { preloadArt3d } from '../art/preload';
+import { online } from '../online/controller';
 
 /** Speed Duel products, oldest first (codes as in public/cards/speed.json `sets`). */
 const SPEED_SETS: [string, string][] = [
@@ -566,6 +567,7 @@ function SpeedLink({ problems, onPick, onBack }: { problems: string[]; onPick: (
         {bad && <div class="warn">Your deck is not ready: {problems[0]}.</div>}
         <Menu
           items={[
+            { label: 'Friends', note: 'see who is online and invite them with one tap', onPick: () => online.openPanel() },
             { label: 'Create a room', note: 'you get a 4-letter code to send', disabled: bad, onPick: () => onPick({ mode: 'host' }) },
             { label: 'Play on this phone', note: 'take turns; Player 2 uses their own profile or a Starter Deck', disabled: bad, onPick: () => onPick({ mode: 'hotseat' }) },
           ]}

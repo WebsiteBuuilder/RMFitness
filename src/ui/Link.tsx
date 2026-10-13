@@ -13,6 +13,7 @@ import type { Stakes } from '../collection/stakes';
 import { StakesPanel, stakesReady } from '../collection/StakesPanel';
 import type { SpeedSave } from '../eds/speedSave';
 import { preloadArt3d } from '../art/preload';
+import { online } from '../online/controller';
 
 export type LinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -29,6 +30,7 @@ export function LinkMenu({ save, onPick, onBack }: { save: SaveFile; onPick: (c:
         )}
         <Menu
           items={[
+            { label: 'Friends', note: 'see who is online and invite them with one tap', onPick: () => online.openPanel() },
             { label: 'Create a room', note: 'you get a 4-letter code to send', disabled: problems.length > 0, onPick: () => onPick({ mode: 'host' }) },
             { label: 'Play on this phone', note: 'take turns; Player 2 uses their own profile or a Starter Deck', disabled: problems.length > 0, onPick: () => onPick({ mode: 'hotseat' }) },
           ]}
