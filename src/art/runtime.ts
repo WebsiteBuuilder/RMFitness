@@ -8,11 +8,12 @@
 import { DataTexture, PerspectiveCamera, RGBAFormat, Vector2, Vector3, type Mesh, type PlaneGeometry } from 'three';
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
-import { cueUids, type CardRef, type Cue, type Target } from './cues';
+import { cueUids, type CardRef, type Cue, type SummonHow, type Target } from './cues';
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
-import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Fx, type Quality } from './stage';
+import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
+import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
@@ -489,6 +490,7 @@ export class Director {
     this.veil.u.uDim.value = 0;
     this.front.u.uFlash.value = 0;
     this.stage.backdrop.u.uOpacity.value = 0;
+    this.stage.backdrop.u.uTerrainAmt.value = 0;
     this.resetCam();
     this.stage.camera.up.set(0, 1, 0);
     // stop() clears the canvas: blank on the next composite
@@ -552,6 +554,7 @@ export class Director {
     this.stage.camera.up.set(0, 1, 0);
     this.bg = this.bgTarget = 0;
     this.stage.backdrop.u.uOpacity.value = 0;
+    this.stage.backdrop.u.uTerrainAmt.value = 0;
     this.stage.stop();
     this.settledSent = false;
     this.idleSent = false;
@@ -639,6 +642,7 @@ export class Director {
     if (this.bg < 0.03 && this.dim < 0.03 && (!this.stage.particles.active || this.fastFade || tailDone || this.idleFor > 1.5)) {
       this.stage.particles.clear();
       this.stage.backdrop.u.uOpacity.value = 0;
+    this.stage.backdrop.u.uTerrainAmt.value = 0;
       this.stage.stop();
       this.skipAll = false;
       this.fastFade = false;
@@ -1178,13 +1182,13 @@ export class Director {
   private async build(cue: Cue): Promise<Timeline | null> {
     switch (cue.kind) {
       case 'summon':
-        return this.summon(cue.card);
+        return this.summon(cue.card, cue.how ?? (cue.special ? 'special' : undefined));
       case 'set':
         return this.set(cue.card);
       case 'flip':
         return this.flip(cue.card);
       case 'activate':
-        return cue.what === 'monster' ? this.monsterEffect(cue.card) : this.activate(cue.card, cue.what, cue.targets ?? [], cue.field ?? []);
+        return cue.what === 'monster' ? this.monsterEffect(cue.card, cue.targets ?? [], cue.field ?? []) : this.activate(cue.card, cue.what, cue.targets ?? [], cue.field ?? []);
       case 'target':
         return this.targetBeat(cue.card, cue.targets);
       case 'skill':
@@ -1199,11 +1203,12 @@ export class Director {
         return this.destroy(cue.card);
       case 'win':
         return cue.shadow ? this.shadowRealm(cue.shadow) : this.victory(cue.winner);
-      // not drawn yet
       case 'leave':
+        return this.leave(cue.card, cue.to);
       case 'heal':
+        return cue.amount > 0 ? this.heal(cue.player, cue.amount) : null;
       case 'draw':
-        return null;
+        return cue.count > 0 ? this.draw(cue.player, cue.count) : null;
     }
   }
 
@@ -1227,7 +1232,7 @@ export class Director {
   }
 
   /** A monster arrives: (a cut-in for the big ones,) its entrance, light, its name, then it lands on its card. */
-  private async summon(c: CardRef): Promise<Timeline> {
+  private async summon(c: CardRef, howIn?: SummonHow): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
     const info = card(c.name);
@@ -1236,10 +1241,13 @@ export class Director {
     const col = this.colors(prof, art);
     const tier = prof.tier;
     const side = this.side(c.controller);
-    const big = isBig(info, prof);
+    // the summon method: the engine's word, else what the card is (an Xyz is never Normal Summoned)
+    const method: SummonHow | undefined = howIn ?? (info?.sub === 'Xyz' ? 'xyz' : info?.sub === 'Synchro' ? 'synchro' : info?.sub === 'Link' ? 'link' : undefined);
+    const entr = method === 'fusion' ? 'fusion' : method === 'ritual' ? 'ritual' : method === 'xyz' ? 'portal' : method === 'synchro' || method === 'link' ? 'materialize' : method === 'special' && (prof.entrance === 'fusion' || prof.entrance === 'ritual') ? 'rise' : prof.entrance;
+    const extra = method === 'xyz' || method === 'synchro' || method === 'link';
+    const fusionish = entr === 'fusion' || entr === 'ritual' || extra;
+    const big = isBig(info, prof) || extra || method === 'fusion' || method === 'ritual';
     const C = big && art ? 0.62 : 0;
-    const entr = prof.entrance;
-    const fusionish = entr === 'fusion' || entr === 'ritual';
     const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0);
     const LAND = 0.42;
     // the summon starts under the cut-in's exit (no dead air between them)
@@ -1258,7 +1266,7 @@ export class Director {
     const at = (t: number, fn: () => void) => tl.at(S + t, fn);
     const span = (a: number, b: number, fn: (k: number, dt: number) => void) => tl.span(S + a, S + b, fn);
     const sub = !info ? '' : info.kind === 'monster' ? `${'★'.repeat(Math.min(12, info.level ?? 0))}  ATK ${info.atk ?? '?'} / DEF ${info.def ?? '?'}` : '';
-    const how = entr === 'fusion' ? 'Fusion Summon' : entr === 'ritual' ? 'Ritual Summon' : (info?.level ?? 0) >= 5 ? 'Tribute Summon' : '';
+    const how = method ? SUMMON_LABEL[method] : entr === 'fusion' ? 'Fusion Summon' : entr === 'ritual' ? 'Ritual Summon' : (info?.level ?? 0) >= 5 ? 'Tribute Summon' : '';
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
@@ -1321,6 +1329,9 @@ export class Director {
       for (let i = 0; i < n; i++) st.particles.emit({ x: p.x + (r() - 0.5) * 1.1 * U, y: p.y + (r() - 0.5) * 1.6 * U, z: p.z, vy: 1.2 * U, life: 0.5, size: 0.08 * U, color: i % 2 ? col.light : col.main, drag: 1.5 });
     });
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
+
+    // the summon method's own shot (Xyz galaxy, Synchro rings, Link arrows, Tribute souls...)
+    if (method && method !== 'normal') this.methodFx(tl, method, S, { x: 0, y: restY, z: 0 }, ground, size, col, info, r);
 
     // the circle on the ground
     const star = entr === 'fusion' ? 6 : entr === 'ritual' ? 5 : 0;
@@ -1550,6 +1561,353 @@ export class Director {
     return tl;
   }
 
+  /**
+   * The summon method's shot, around the monster's reveal (`S`: the summon's start; its
+   * reveal is ~0.42 s in): a Fusion swirl, Ritual flames, the Xyz galaxy and its
+   * material orbs, Synchro rings with stars rising through them, Link arrows lighting,
+   * Tribute souls rising and the light falling, or a Special Summon's gate.
+   */
+  private methodFx(tl: Timeline, method: SummonHow, S: number, c: P3, ground: number, size: number, col: Colors, info: ReturnType<typeof card>, r: () => number) {
+    const st = this.stage;
+    const U = this.U;
+    const P = st.particles;
+    const q = this.q;
+    const show = S + 0.42;
+    const own = <T extends Fx>(f: T) => tl.own(f);
+    const fade = (g: { u: Record<string, { value: number }> }, a: number, b: number, c0: number, d: number, peak = 1) =>
+      tl.span(a, d, (k) => {
+        const t = a + k * (d - a);
+        g.u.uOpacity.value = peak * clamp01((t - a) / Math.max(0.01, b - a)) * (1 - clamp01((t - c0) / Math.max(0.01, d - c0)));
+      });
+    switch (method) {
+      case 'xyz': {
+        // a galaxy turns behind it; the materials circle in as orbs and dive into its heart
+        const gal = own(new Glow(5.2 * U, 5.2 * U, 'galaxy', 0x3a2aff, 0xffd75a));
+        gal.mesh.position.set(c.x, c.y, -1.2);
+        gal.mesh.rotation.x = -0.5;
+        fade(gal, S + 0.05, S + 0.35, show + 0.6, show + 1.1, 0.95);
+        const n = (info?.rank ?? 4) >= 7 ? 3 : 2;
+        const orbs = Array.from({ length: n }, (_, i) => {
+          const g = own(new Glow(0.9 * U, 0.9 * U, 'flare', i % 2 ? 0x7affff : 0xffd75a, 0xffffff));
+          g.u.uOpacity.value = 0;
+          return g;
+        });
+        tl.span(S + 0.05, show, (k, dt) =>
+          orbs.forEach((g, i) => {
+            const a = (i / n) * Math.PI * 2 + k * 8;
+            const rr = (1 - easeIn(k)) * 2 * U;
+            const x = c.x + Math.cos(a) * rr;
+            const y = c.y + Math.sin(a) * rr * 0.45;
+            g.mesh.position.set(x, y, Math.sin(a) * 0.6);
+            g.u.uOpacity.value = Math.min(1, k * 5);
+            for (let j = 0; j < rate(70 * q, dt); j++) P.emit({ x, y, z: 0, burst: 0.3 * U, life: 0.4, size: 0.1 * U, color: i % 2 ? 0x7affff : 0xffd75a, drag: 3 });
+          }),
+        );
+        tl.at(show, () => {
+          for (const g of orbs) g.u.uOpacity.value = 0;
+          st.pulse('flash', 0.3);
+          this.flash(0xffd75a, 0.2);
+          boom(0.5);
+          P.emit({ x: c.x, y: c.y, burst: 5 * U, life: 0.7, size: 0.1 * U, color: 0xffe9a0 }, Math.round(90 * q));
+        });
+        // the overlay ring: its materials orbit it as small lights
+        const ring = own(new Ring(size * 1.25, 0xffd75a, 4242, { inner: 0.9, outer: 0.95 }));
+        ring.mesh.position.set(c.x, c.y - size * 0.05, 0);
+        ring.mesh.rotation.x = -1.25;
+        ring.spinSpeed = 1.5;
+        fade(ring, show, show + 0.2, show + 0.75, show + 1.05);
+        for (let i = 0; i < n; i++) {
+          const g = own(new Glow(0.45 * U, 0.45 * U, 'flare', 0xffd75a, 0xffffff));
+          g.u.uOpacity.value = 0;
+          tl.span(show, show + 1.05, (k) => {
+            const a = (i / n) * Math.PI * 2 + k * 7;
+            g.mesh.position.set(c.x + Math.cos(a) * size * 0.58, c.y - size * 0.05 + Math.sin(a) * size * 0.18, Math.sin(a) * size * 0.3);
+            g.u.uOpacity.value = Math.min(1, k * 6) * (1 - easeIn(clamp01((k - 0.7) / 0.3)));
+          });
+        }
+        tl.at(S + 0.05, () => (drone(0.9), swell(0.6)));
+        break;
+      }
+      case 'synchro': {
+        // the Tuner becomes rings of green light; the other materials, stars, rise through them
+        const lv = Math.max(3, Math.min(10, info?.level ?? 6));
+        const rings = Array.from({ length: 3 }, (_, i) => {
+          const g = own(new Ring(1.9 * U, 0x7aff7a, 900 + i, { inner: 0.86, outer: 0.95 }));
+          g.mesh.position.set(c.x, ground + (0.5 + i * 0.75) * U, 0);
+          g.mesh.rotation.x = -1.25;
+          g.spinSpeed = 3 * (i % 2 ? -1 : 1);
+          g.u.uOpacity.value = 0;
+          tl.span(S + 0.05 + i * 0.06, S + 0.25 + i * 0.06, (k) => ((g.u.uOpacity.value = k), g.mesh.scale.setScalar(easeOut(k))));
+          tl.span(show, show + 0.35, (k) => ((g.u.uOpacity.value = 1 - k), g.mesh.scale.setScalar(1 + k * 0.6)));
+          return g;
+        });
+        void rings;
+        for (let i = 0; i < Math.min(8, lv); i++) {
+          const g = own(new Glow(0.5 * U, 0.5 * U, 'star', 0xffffff, 0x7aff7a));
+          const x = c.x + (r() - 0.5) * 0.5 * U;
+          const t = S + 0.08 + i * 0.03;
+          g.u.uOpacity.value = 0;
+          tl.span(t, show, (k) => {
+            g.mesh.position.set(x, lerp(ground, ground + 3 * U, easeIn(k)), 0.1);
+            g.u.uOpacity.value = Math.sin(k * Math.PI) + 0.3;
+          });
+          tl.at(show, () => (g.u.uOpacity.value = 0));
+        }
+        // the gate: a pillar of light down through the rings
+        const pillar = own(new Glow(1.5 * U, 6.5 * U, 'shaft', 0x7aff7a, 0xffffff));
+        pillar.mesh.position.set(c.x, ground + 2.6 * U, -0.3);
+        fade(pillar, show - 0.08, show, show + 0.2, show + 0.6, 1.2);
+        tl.at(show - 0.05, () => (zap(0.4), boom(0.5), st.pulse('flash', 0.35), this.flash(0x9aff9a, 0.22), st.shake(0.4)));
+        tl.at(S + 0.05, () => (whoosh(0.4, 300, 2400, 0.2), chime(0.6)));
+        break;
+      }
+      case 'link': {
+        // eight Link Arrows round it; its own light up one after another, then the circuit closes
+        const rating = Math.max(1, Math.min(8, info?.linkRating ?? 2));
+        const all = [0, 1, 2, 3, 4, 5, 6, 7];
+        const lit: number[] = [];
+        while (lit.length < rating) {
+          const i = all[Math.floor(r() * all.length)];
+          if (!lit.includes(i)) lit.push(i);
+        }
+        const R = 1.45 * U;
+        const frame = own(new Ring(2 * R * 0.95, 0x4ad8ff, 5151, { inner: 0.9, outer: 0.95, star: 4 }));
+        frame.mesh.position.set(c.x, c.y, -0.4);
+        frame.mesh.rotation.z = Math.PI / 4;
+        fade(frame, S + 0.05, S + 0.25, show + 0.4, show + 0.7, 0.8);
+        all.forEach((i) => {
+          const ang = (i / 8) * Math.PI * 2 + Math.PI / 2;
+          const g = own(new Glow(0.55 * U, 0.55 * U, 'arrow', 0xff5a3a, 0xffd0a0));
+          g.mesh.position.set(c.x + Math.cos(ang) * R, c.y + Math.sin(ang) * R, 0.2);
+          g.mesh.rotation.z = ang - Math.PI / 2;
+          const on = lit.indexOf(i);
+          const tOn = S + 0.12 + Math.max(0, on) * 0.07;
+          tl.span(S + 0.05, show + 0.7, (k) => {
+            const t = S + 0.05 + k * (show + 0.65 - S);
+            const base = 0.2 * clamp01((t - S - 0.05) / 0.15);
+            const glow = on >= 0 && t >= tOn ? 1 : 0;
+            g.u.uOpacity.value = Math.max(base, glow) * (1 - clamp01((t - show - 0.4) / 0.3));
+          });
+          if (on >= 0) {
+            tl.at(tOn, () => (zap(0.12), P.emit({ x: g.mesh.position.x, y: g.mesh.position.y, z: 0.3, burst: 1.5 * U, life: 0.35, size: 0.08 * U, color: 0xffa070, drag: 3 }, Math.round(16 * q))));
+            this.ray(tl, { x: g.mesh.position.x, y: g.mesh.position.y, z: 0.3 }, { x: c.x, y: c.y, z: 0.3 }, show - 0.18, 0.16, 0x4ad8ff, 0xffffff, 0.6);
+          }
+        });
+        tl.at(show, () => (boom(0.45), st.pulse('flash', 0.3), this.flash(0x7adfff, 0.2)));
+        break;
+      }
+      case 'tribute': {
+        // the Tributes rise as souls; light falls where they went
+        const n = (info?.level ?? 5) >= 7 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const x = c.x + (n === 1 ? 0 : (i - 0.5) * 1.2 * U);
+          const g = own(new Glow(0.9 * U, 0.9 * U, 'flare', 0xfff0d0, 0xffffff));
+          g.u.uOpacity.value = 0;
+          tl.span(S + 0.02, S + 0.36, (k, dt) => {
+            const y = lerp(ground + 0.2 * U, ground + 3.6 * U, easeIn(k));
+            g.mesh.position.set(x + Math.sin(k * 8 + i) * 0.15 * U, y, 0.2);
+            g.u.uOpacity.value = Math.min(1, k * 4) * (1 - easeIn(clamp01((k - 0.8) / 0.2)));
+            for (let j = 0; j < rate(80 * q, dt); j++) P.emit({ x: g.mesh.position.x, y, z: 0.2, burst: 0.3 * U, vy: -0.6 * U, life: 0.45, size: 0.09 * U, color: 0xfff0d0, drag: 2 });
+          });
+        }
+        const fall = own(new Glow(1.8 * U, 6 * U, 'shaft', col.light, 0xffffff));
+        fall.mesh.position.set(c.x, ground + 2.8 * U, -0.4);
+        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, 1);
+        tl.at(S + 0.02, () => (whoosh(0.35, 300, 1800, 0.18), chime(0.3)));
+        tl.at(show - 0.05, () => (boom(0.4), this.flash(0xfff0d0, 0.18)));
+        break;
+      }
+      case 'special': {
+        // a gate opens upright behind it
+        const gate = own(new Ring(2.8 * U, col.main, 777, { inner: 0.66, outer: 0.93, star: 4 }));
+        gate.mesh.position.set(c.x, c.y, -0.8);
+        gate.spinSpeed = 2.5;
+        gate.u.uOpacity.value = 0;
+        tl.span(S + 0.05, S + 0.3, (k) => ((gate.u.uOpacity.value = k), gate.mesh.scale.set(easeOut(k), backOut(k), 1)));
+        tl.span(show + 0.2, show + 0.5, (k) => (gate.u.uOpacity.value = 1 - k));
+        tl.at(show, () => P.emit({ x: c.x, y: c.y, z: -0.6, burst: 4 * U, life: 0.6, size: 0.09 * U, color: col.light }, Math.round(60 * q)));
+        tl.at(S + 0.05, () => zap(0.3));
+        break;
+      }
+      case 'fusion': {
+        // the materials swirl together in a vortex behind it
+        const v = own(new Glow(5 * U, 5 * U, 'vortex', 0xb04aff, 0xff8a3a));
+        v.mesh.position.set(c.x, c.y, -1.2);
+        fade(v, S + 0.05, S + 0.3, show + 0.3, show + 0.7, 1);
+        tl.span(S, show + 0.7, (k) => (v.mesh.rotation.z = k * 4));
+        tl.at(S + 0.05, () => drone(0.6));
+        break;
+      }
+      case 'ritual': {
+        // flames rise round the circle as the offering burns
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          const g = own(new Glow(0.7 * U, 1.2 * U, 'flame', 0x3a9aff, 0xffd070));
+          g.mesh.position.set(c.x + Math.cos(a) * 1.25 * U, ground + Math.sin(a) * 0.45 * U + 0.4 * U, Math.sin(a) * 0.5);
+          fade(g, S + 0.08 + i * 0.04, S + 0.2 + i * 0.04, show + 0.4, show + 0.75, 1);
+        }
+        tl.at(S + 0.08, () => (whoosh(0.4, 200, 900, 0.2), drone(0.6)));
+        break;
+      }
+    }
+  }
+
+  /**
+   * A card leaves without being destroyed (short and light): banished into a
+   * dimensional rift, bounced back to its owner's hand, or shuffled into the Deck
+   * (the Extra Deck for Fusion, Synchro, Xyz and Link Monsters).
+   */
+  private async leave(c: CardRef, to: 'hand' | 'deck' | 'banish' | 'extra'): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    const P = st.particles;
+    const D = to === 'hand' ? 0.55 : 0.7;
+    const tl = new Timeline(D, st);
+    this.bgTarget = 0.12;
+    this.dimTarget = 0.32;
+    const side = this.side(c.controller);
+    const near = side === 'near';
+    const at = this.anchor(c, side);
+    this.focusAt(at);
+    const art = c.name && c.faceUp ? await this.art(c.name) : null;
+    // (a battle figure of it still on stage goes with it)
+    const act = this.actors.get(c.uid);
+    if (act) tl.span(0, 0.2, (k) => this.setOpacity(act, Math.min(act.fig?.u.uOpacity.value ?? act.back?.u.uOpacity.value ?? 0, 1 - k)));
+    const panel = tl.own(new CardPanel(art?.full ?? cardBack(), 0.85 * U, to === 'banish' ? 0xb07aff : 0x7adfff));
+    panel.mesh.position.set(at.x, at.y, 0.3);
+    if (c.def) panel.mesh.rotation.z = Math.PI / 2;
+    panel.u.uOpacity.value = 0;
+    tl.span(0, 0.08, (k) => (panel.u.uOpacity.value = k));
+    if (to === 'banish') {
+      const rift = tl.own(new Glow(1.3 * U, 2.3 * U, 'rift', 0xb07aff, 0xff7af0));
+      rift.mesh.position.set(at.x, at.y, 0.1);
+      tl.span(0, D, (k) => {
+        rift.u.uK.value = k < 0.3 ? easeOut(k / 0.3) : k > 0.8 ? 1 - easeIn((k - 0.8) / 0.2) : 1;
+        rift.u.uOpacity.value = 1;
+      });
+      tl.span(0.12, D - 0.1, (k) => {
+        const e = easeIn(k);
+        panel.mesh.scale.setScalar(1 - e * 0.9);
+        panel.mesh.rotation.z = (c.def ? Math.PI / 2 : 0) + e * 2.5;
+        panel.u.uOpacity.value = 1 - easeIn(clamp01((k - 0.5) / 0.5));
+        panel.u.uTint.value = 0.4 * e;
+      });
+      tl.span(0.05, D - 0.15, (_k, dt) => {
+        for (let i = 0; i < rate(120 * this.q, dt); i++) {
+          const a = Math.random() * Math.PI * 2;
+          P.emit({ x: at.x + Math.cos(a) * 1.1 * U, y: at.y + Math.sin(a) * 1.1 * U, z: 0.3, life: 0.4, size: 0.07 * U, color: i % 2 ? 0xb07aff : 0xffd8ff, drag: 0, pull: { x: at.x, y: at.y, strength: 16 * U, swirl: 7 * U } });
+        }
+      });
+      tl.at(0, () => (drone(0.4), zap(0.2)));
+      tl.at(D - 0.15, () => this.flash(0xb07aff, 0.08));
+    } else if (to === 'hand') {
+      const end = { x: at.x * 0.5, y: (near ? -1 : 1) * 3.5 * U, z: 1.2 };
+      const trail = tl.own(new Ribbon(16, 0x9affff, 1));
+      const hist: P3[] = [];
+      tl.span(0.06, D, (k) => {
+        const e = easeIn(k);
+        const p = bez({ x: at.x, y: at.y, z: 0.3 }, end, (near ? 1 : -1) * 0.5 * U, e);
+        panel.mesh.position.set(p.x, p.y + Math.sin(k * Math.PI) * 0.4 * U * (near ? 1 : -1), p.z);
+        panel.mesh.rotation.x = -0.4 * e;
+        panel.mesh.rotation.y = Math.PI * 2 * e;
+        panel.u.uSheen.value = lerp(-0.4, 1.8, k);
+        hist.push({ x: panel.mesh.position.x, y: panel.mesh.position.y, z: p.z - 0.05 });
+        if (hist.length > 10) hist.shift();
+        if (hist.length > 1) trail.set(hist, (q) => 0.1 * U * q);
+      });
+      tl.at(D, () => (trail.u.uOpacity.value = 0));
+      tl.at(0.06, () => whoosh(0.35, 700, 2800, 0.15));
+    } else {
+      // it turns face-down and slides into the Deck (the Extra Deck sits on the other side), which riffles
+      const deck = { x: (to === 'extra' ? -1 : 1) * (near ? 1 : -1) * 1.75 * U, y: (near ? -1 : 1) * 1.6 * U, z: 0.3 };
+      const back = tl.own(new CardPanel(cardBack(), 0.85 * U, 0x7a9aff));
+      back.u.uOpacity.value = 0;
+      tl.span(0.06, 0.22, (k) => {
+        panel.mesh.scale.set(1 - k, 1, 1);
+        back.mesh.position.copy(panel.mesh.position);
+        back.mesh.rotation.z = panel.mesh.rotation.z;
+        back.mesh.scale.set(k, 1, 1);
+        back.u.uOpacity.value = k > 0.5 ? 1 : 0;
+        panel.u.uOpacity.value = k > 0.5 ? 0 : 1;
+      });
+      tl.span(0.22, D - 0.12, (k) => {
+        const e = easeInOut(k);
+        const p = bez({ x: at.x, y: at.y, z: 0.3 }, deck, 0.4 * U, e);
+        back.mesh.position.set(p.x, p.y, p.z + 0.1);
+        back.mesh.rotation.z = lerp(c.def ? Math.PI / 2 : 0, 0, e);
+      });
+      tl.span(D - 0.12, D, (k) => ((back.mesh.position.x = deck.x + Math.sin(k * Math.PI * 4) * 0.1 * U), (back.u.uOpacity.value = 1 - k)));
+      tl.at(D - 0.12, () => (whoosh(0.15, 1800, 900, 0.12), P.emit({ x: deck.x, y: deck.y, z: 0.5, burst: 1.5 * U, life: 0.4, size: 0.06 * U, color: 0xbfd0ff, drag: 3 }, Math.round(20 * this.q))));
+    }
+    tl.commit(D * 0.7);
+    tl.handoff = D - 0.15;
+    return tl;
+  }
+
+  /** Life Points gained: green light rising on that duelist's side, the amount, their plate glowing. */
+  private async heal(p: Pid, amount: number): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    const D = 0.7;
+    const tl = new Timeline(D, st);
+    this.bgTarget = this.actors.size ? 0.4 : 0.05;
+    this.dimTarget = this.actors.size ? 0.75 : 0.15;
+    const near = this.side(p) === 'near';
+    const y0 = (near ? -1 : 1) * 2.2 * U;
+    const k = Math.min(1, amount / 3000);
+    tl.span(0, D - 0.15, (_k, dt) => {
+      for (let i = 0; i < rate((90 + 120 * k) * this.q, dt); i++) st.particles.emit({ x: (Math.random() - 0.5) * 3.6 * U, y: y0 - 0.4 * U, z: 0.6, vy: (1.6 + Math.random() * 1.5) * U, life: 0.6, size: 0.08 * U, color: Math.random() < 0.6 ? 0x5aff7a : 0xd8ffc8, drag: 0.6 });
+    });
+    for (let i = 0; i < 3; i++) {
+      const g = tl.own(new Glow(0.5 * U, 0.5 * U, 'plus', 0x5aff7a, 0xd8ffc8));
+      const x = (i - 1) * 1.1 * U;
+      g.u.uOpacity.value = 0;
+      tl.span(0.05 + i * 0.06, D, (q) => {
+        g.mesh.position.set(x, y0 + q * 1.1 * U, 0.8);
+        g.u.uOpacity.value = Math.sin(q * Math.PI);
+      });
+    }
+    tl.at(0.05, () => {
+      chime(0.95);
+      this.ui.number({ text: `+${amount}`, color: 0x5aff7a, side: near ? 'bottom' : 'top', size: 1 + k * 0.8 });
+      lpBeat(near ? 'bottom' : 'top', 'art-lp-heal', 600);
+    });
+    tl.commit(0.1);
+    tl.handoff = 0.35;
+    return tl;
+  }
+
+  /** Cards drawn by an effect: they slide off the Deck into the hand. */
+  private async draw(p: Pid, count: number): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    const n = Math.max(1, Math.min(5, count));
+    const D = 0.45 + n * 0.08;
+    const tl = new Timeline(D, st);
+    this.bgTarget = this.actors.size ? 0.4 : 0.05;
+    this.dimTarget = this.actors.size ? 0.75 : 0.15;
+    const near = this.side(p) === 'near';
+    const deck = { x: (near ? 1 : -1) * 1.75 * U, y: (near ? -1 : 1) * 1.6 * U, z: 0.3 };
+    for (let i = 0; i < n; i++) {
+      const pn = tl.own(new CardPanel(cardBack(), 0.8 * U, 0xffd75a));
+      pn.u.uOpacity.value = 0;
+      const t = i * 0.08;
+      const end = { x: (i - (n - 1) / 2) * 0.55 * U, y: (near ? -1 : 1) * 3.4 * U, z: 1.2 };
+      tl.span(t, t + 0.4, (k) => {
+        const e = easeInOut(k);
+        const q = bez(deck, end, -0.3 * U, e);
+        pn.mesh.position.set(q.x, q.y, q.z);
+        pn.mesh.rotation.z = (i - (n - 1) / 2) * 0.15 * e;
+        pn.u.uOpacity.value = Math.min(1, k * 6) * (1 - easeIn(clamp01((k - 0.8) / 0.2)));
+        pn.u.uSheen.value = lerp(-0.4, 1.8, k);
+      });
+      tl.at(t, () => whoosh(0.2, 900, 2600, 0.1));
+    }
+    tl.commit(D - 0.1);
+    tl.handoff = D - 0.15;
+    return tl;
+  }
+
   /** A face-down card slams onto the field (never shows what it is). */
   private async set(c: CardRef): Promise<Timeline> {
     const st = this.stage;
@@ -1680,13 +2038,15 @@ export class Director {
     const prof = profileFor(info, c.name);
     const art = await this.art(c.name);
     const base = what === 'spell' ? SPELL : TRAP;
-    const preset = presetFor(c.name);
+    // its own preset, else the cinematic of its effect family
+    const preset = presetFor(c.name) ?? familyPreset(c.name);
     const accent = preset?.accent ?? (art ? brighten(art.palette[0]) : 0xffffff);
     const side = this.side(c.controller);
     // who it strikes: the monsters it destroys in this update, else the preset's reach
     const foe = (f: CardRef) => f.controller !== c.controller;
     let victims = field.filter((f) => f.dies);
-    if (!victims.length && preset?.scope) victims = field.filter((f) => preset.scope === 'all' || (foe(f) && (preset.scope === 'opp' || !f.def)));
+    if (!victims.length && preset?.scope) victims = field.filter((f) => preset.scope === 'all' || (preset.scope === 'own' ? !foe(f) : foe(f) && (preset.scope === 'opp' || !f.def)));
+    if (preset?.family?.family === 'terrain') this.stage.backdrop.u.uTerrainAmt.value = 0;
     const monTargets = targets.filter((t) => t.card.faceUp && t.card.name && !victims.some((v) => v.uid === t.card.uid) && (field.some((f) => f.uid === t.card.uid) || card(t.card.name)?.kind === 'monster'));
     const figs: Actor[] = [];
     for (const v of [...victims, ...monTargets.map((t) => t.card)]) figs.push(await this.fieldActor(v));
@@ -1851,7 +2211,15 @@ export class Director {
     if (preset) {
       const t0 = open + 0.35;
       const tpts = targets.map((t) => pointOf(t.card.uid)).filter((p): p is P3 => !!p);
-      preset.play({ d: this, st, tl, U, t0, t1: t0 + X + 0.35, panel, cy: mid, side, color: base, accent, opp: (side === 'near' ? 1 : -1) * 1.5 * U, own: (side === 'near' ? -1 : 1) * 1.5 * U, hits, pts: hits.map((a) => this.center(a)), targets: tpts, figs, card: cardPt });
+      const spots: Spot[] = [];
+      for (const t of targets) {
+        const p = pointOf(t.card.uid);
+        if (p) spots.push({ p, uid: t.card.uid, a: figs.find((f) => f.uid === t.card.uid) ?? null, panel: tPanels.get(t.card.uid) ?? null, destroyed: t.destroyed });
+      }
+      // a family cinematic aimed at its targets marks them with a beam first
+      const fam = preset.family?.family;
+      if (fam && !['equip', 'control', 'burn', 'token', 'terrain', 'negate'].includes(fam)) spots.forEach((x, i) => this.ray(tl, cardPt, x.p, open + 0.18 + i * 0.05, 0.2, base, accent, 0.8));
+      preset.play({ d: this, st, tl, U, t0, t1: t0 + X + 0.35, panel, cy: mid, side, color: base, accent, opp: (side === 'near' ? 1 : -1) * 1.5 * U, own: (side === 'near' ? -1 : 1) * 1.5 * U, hits, pts: hits.map((a) => this.center(a)), targets: tpts, figs, card: cardPt, spots, art, seed: prof.seed });
     } else if (aimed) {
       // a beam from the card to each target; the effect resolves there
       const tB = open + 0.32;
@@ -2065,27 +2433,88 @@ export class Director {
     return sh;
   }
 
-  /** A monster uses its effect: it rises glowing. */
-  private async monsterEffect(c: CardRef): Promise<Timeline> {
+  /**
+   * A monster uses its effect: it rises glowing (off its own card when it is on the
+   * field), then its effect family plays from it (families.ts): what it destroys,
+   * banishes, revives, burns or powers up.
+   */
+  private async monsterEffect(c: CardRef, targets: Target[] = [], field: CardRef[] = []): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const prof = profileFor(card(c.name), c.name);
+    const info = card(c.name);
+    const prof = profileFor(info, c.name);
     const art = await this.art(c.name);
     const col = this.colors(prof, art);
-    const have = this.actors.get(c.uid);
-    const D = 1.1;
+    const cls: FxClass = info && info.kind === 'monster' && !info.vanilla ? classify(info) : { family: 'aura' };
+    const fx = FAMILY_FX[cls.family];
+    const side = this.side(c.controller);
+    // what it strikes: what dies in this update, else (board-wide families) the side it reaches
+    const foe = (f: CardRef) => f.controller !== c.controller;
+    let victims = field.filter((f) => f.dies && f.uid !== c.uid);
+    const scoped = ['destroyAll', 'powerDown', 'powerUp', 'position', 'bounce', 'banish', 'toDeck', 'lock'].includes(cls.family);
+    if (!victims.length && scoped && cls.scope) victims = field.filter((f) => f.uid !== c.uid && (cls.scope === 'all' || (cls.scope === 'own' ? !foe(f) : foe(f) && (cls.scope === 'opp' || !f.def))));
+    const monTargets = targets.filter((t) => t.card.uid !== c.uid && t.card.faceUp && t.card.name && !victims.some((v) => v.uid === t.card.uid) && (field.some((f) => f.uid === t.card.uid) || card(t.card.name)?.kind === 'monster'));
+    const figs: Actor[] = [];
+    for (const v of [...victims, ...monTargets.map((t) => t.card)]) figs.push(await this.fieldActor(v));
+    const hits = figs.slice(0, victims.length);
+    const T0 = 0.45;
+    const D = T0 + fx.dur + 0.5;
     const tl = new Timeline(D, st);
     this.bgTarget = 0.4;
-    this.dimTarget = 0.75;
-    let fig = have?.fig ?? null;
-    const at = have ? { x: have.x, y: have.y } : { x: 0, y: 0.1 * U };
-    if (!fig && art) {
-      fig = tl.own(this.figure(art, 1.5 * U, prof, col.main));
-      fig.mesh.position.set(at.x, at.y, 0);
-      fig.u.uOpacity.value = 0;
-      tl.span(0, 0.25, (k) => (fig!.u.uOpacity.value = k));
-      tl.span(D - 0.25, D, (k) => (fig!.u.uOpacity.value = 1 - k));
-      this.shafts(tl, { x: at.x, y: at.y - 0.7 * U, z: 0 }, 3.6 * U, col.main, 0, D, 2, 0.6);
+    this.dimTarget = 0.78;
+    this.stage.backdrop.u.uColor.value.set(((col.main >> 16) & 255) / 1100, ((col.main >> 8) & 255) / 1100, (col.main & 255) / 1100);
+    if (cls.family === 'terrain') this.stage.backdrop.u.uTerrainAmt.value = 0;
+    // the monster: where it fights; else up off its own card; else (the 3D Card Viewer) center stage
+    let self = this.actors.get(c.uid) ?? null;
+    const own: Actor[] = [];
+    let fig: Figure | null = self?.fig ?? null;
+    let at: P3;
+    if (self) at = this.center(self);
+    else if (c.rect && c.faceUp && c.name) {
+      self = await this.fieldActor(c);
+      own.push(self);
+      const me = self;
+      tl.span(0, 0.3, (k) => ((me.oy = -0.3 * me.size * (1 - easeOut(k))), this.setOpacity(me, clamp01(k * 2)), this.place(me)));
+      fig = me.fig;
+      at = this.center(me);
+    } else {
+      const crowd = figs.length > 0 || targets.length > 0;
+      at = { x: 0, y: (crowd ? (side === 'near' ? -0.9 : 0.9) : 0.1) * U, z: 0 };
+      if (art) {
+        const f = tl.own(this.figure(art, (crowd ? 1.15 : 1.5) * U, prof, col.main));
+        f.mesh.position.set(at.x, at.y, 0);
+        f.u.uOpacity.value = 0;
+        tl.span(0, 0.25, (k) => (f.u.uOpacity.value = k));
+        tl.span(D - 0.25, D, (k) => (f.u.uOpacity.value = 1 - k));
+        this.shafts(tl, { x: at.x, y: at.y - 0.7 * U, z: 0 }, 3.6 * U, col.main, 0, D, 2, 0.6);
+        fig = f;
+      }
+    }
+    // the monsters it reaches rise off their cards
+    tl.span(0.12, 0.45, (k) => {
+      for (const a of figs) {
+        a.oy = -0.3 * a.size * (1 - easeOut(k));
+        this.setOpacity(a, Math.max(clamp01(k * 2), a.fig?.u.uOpacity.value ?? 0));
+        this.place(a);
+      }
+    });
+    // Spell/Trap targets light up where they lie
+    const spots: Spot[] = [];
+    for (const t of targets) {
+      if (t.card.uid === c.uid) continue;
+      const a = figs.find((f) => f.uid === t.card.uid) ?? null;
+      let panel: CardPanel | null = null;
+      if (!a) {
+        const tart = t.card.faceUp && t.card.name ? await this.art(t.card.name) : null;
+        const pp = tl.own(new CardPanel(tart?.full ?? cardBack(), 0.78 * U, 0xffe08a));
+        const pa = this.anchor(t.card, this.side(t.card.controller));
+        pp.mesh.position.set(pa.x, pa.y, 0.2);
+        if (t.card.def) pp.mesh.rotation.z = Math.PI / 2;
+        pp.u.uOpacity.value = 0;
+        tl.span(0.15, 0.4, (k) => (pp.u.uOpacity.value = easeOut(k)));
+        panel = pp;
+      }
+      spots.push({ p: a ? this.center(a) : { x: panel!.mesh.position.x, y: panel!.mesh.position.y, z: 0.3 }, uid: t.card.uid, a, panel, destroyed: t.destroyed });
     }
     const ring = tl.own(new Ring(1.8 * U, col.main, prof.glyphs));
     ring.mesh.position.set(at.x, at.y - 0.7 * U, 0);
@@ -2095,38 +2524,118 @@ export class Director {
     tl.span(0, 0.3, (k) => (ring.u.uOpacity.value = k));
     tl.span(D - 0.3, D, (k) => (ring.u.uOpacity.value = 1 - k));
     tl.at(0.05, () => chime(0.5));
-    tl.span(0.05, D - 0.2, (k, dt) => {
-      if (fig) fig.u.uTint.value = 0.35 * Math.sin(k * Math.PI);
-      const n = Math.floor(90 * dt + Math.random());
-      for (let i = 0; i < n; i++) {
+    const f0 = fig;
+    tl.span(0.05, T0 + 0.2, (k, dt) => {
+      if (f0) f0.u.uTint.value = 0.35 * Math.sin(k * Math.PI);
+      for (let i = 0; i < rate(90 * this.q, dt); i++) {
         const a = Math.random() * Math.PI * 2;
         st.particles.emit({ x: at.x + Math.cos(a) * 0.7 * U, y: at.y - 0.6 * U, vy: 2.2 * U, life: 0.7, size: 0.09 * U, color: Math.random() < 0.5 ? col.main : col.accent, drag: 0.5 });
       }
     });
-    tl.at(0.2, () => this.ui.banner({ title: c.name, sub: 'Effect', color: col.main, dur: 0.7, pos: this.side(c.controller) === 'near' ? 'bottom' : 'top' }));
-    tl.handoff = D - 0.3;
+    const label = FX_FAMILIES.find((f) => f.id === cls.family)?.label ?? 'Effect';
+    tl.at(0.2, () => this.ui.banner({ title: c.name, sub: `Effect · ${label}`, color: col.main, dur: D - 0.5, pos: side === 'near' ? 'bottom' : 'top' }));
+    // its effect, from the monster
+    for (const s of spots) if (!['equip', 'control', 'burn', 'token', 'terrain', 'negate'].includes(cls.family)) this.ray(tl, { ...at, z: 0.5 }, s.p, T0 - 0.15, 0.2, col.main, col.light, 0.8);
+    const opp = (side === 'near' ? 1 : -1) * 1.5 * U;
+    playFamily({ d: this, st, tl, U, t0: T0, t1: T0 + fx.dur, side, cy: 0.15 * U, opp, own: -opp, src: { ...at, z: 0.6 }, hits, spots, cls, text: info ? effectText(info) : '', art, seed: prof.seed });
+    // the camera: the monster and what it reaches (its row when it names nothing)
+    const boxes: Box[] = [{ x: at.x, y: at.y, z: 0.3, w: 0.6 * U, h: 0.7 * U }];
+    for (const a of figs) boxes.push(this.boxOf(a));
+    for (const s of spots) if (s.panel) boxes.push({ ...s.p, w: 0.4 * U, h: 0.5 * U });
+    if (!figs.length && !spots.length && cls.family !== 'terrain') boxes.push({ x: 0, y: opp, z: 0, w: 1.4 * U, h: 0.5 * U }, { x: 0, y: -opp, z: 0, w: 1.4 * U, h: 0.4 * U });
+    const shot = this.fit(boxes, prof.camYaw * 0.08, 0.03, { fill: 0.9 });
+    const drift = this.fit(boxes, prof.camYaw * 0.08 + (side === 'near' ? -0.1 : 0.1), 0.06, { fill: 0.92 });
+    let s0: Shot | null = null;
+    tl.span(0, 0.4, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
+    tl.span(0.4, D - 0.35, (k) => this.setShot(shot, drift, easeInOut(k)));
+    let s1: Shot | null = null;
+    tl.span(D - 0.35, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+    // figures nothing destroys next sink back onto their cards
+    let keep: Set<number> | null = null;
+    const readKeep = () => (keep ??= new Set(this.queue.filter((q) => q.cue.kind === 'destroy').map((q) => (q.cue as { card: CardRef }).card.uid)));
+    tl.at(D - 0.4, readKeep, false);
+    const gone = [...figs, ...own];
+    tl.span(D - 0.3, D, (k) => {
+      keep = readKeep();
+      for (const a of gone) if (!keep.has(a.uid) && this.actors.get(a.uid) === a) this.setOpacity(a, Math.min(a.fig?.u.uOpacity.value ?? a.back?.u.uOpacity.value ?? 0, 1 - k));
+    });
+    tl.at(
+      D,
+      () => {
+        for (const a of gone) if (keep && !keep.has(a.uid) && this.actors.get(a.uid) === a) (this.dropActor(a), this.actors.delete(a.uid));
+        this.resetCam();
+      },
+      false,
+    );
+    tl.handoff = D - 0.35;
     return tl;
   }
 
+  /**
+   * A Skill: its sigil in its duelist's colors with their emblem over it, the banner
+   * naming the Skill and whose it is, then its effect family plays from the sigil.
+   */
   private async skill(p: Pid, name: string): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const tl = new Timeline(1.2, st);
+    const info = card(name);
+    const prof = profileFor(info, name);
+    const cls: FxClass = info ? classify(info) : { family: 'aura' };
+    const fx = FAMILY_FX[cls.family];
+    const who = characterName(info?.character);
+    const fl = flourishOf(who, prof.seed);
+    const T0 = 0.55;
+    const D = T0 + fx.dur + 0.45;
+    const tl = new Timeline(D, st);
+    const side = this.side(p);
     this.bgTarget = 0.5;
-    this.dimTarget = 0.75;
-    const ring = tl.own(new Ring(3 * U, 0x4ad8ff, 77, { inner: 0.5, outer: 0.95, star: 7 }));
-    ring.spinSpeed = 1.5;
+    this.dimTarget = 0.78;
+    this.stage.backdrop.u.uColor.value.set(((fl.color >> 16) & 255) / 1200, ((fl.color >> 8) & 255) / 1200, (fl.color & 255) / 1200);
+    if (cls.family === 'terrain') this.stage.backdrop.u.uTerrainAmt.value = 0;
+    const cy = 0.15 * U;
+    const ring = tl.own(new Ring(3 * U, fl.color, prof.glyphs, { inner: 0.5, outer: 0.95, star: fl.star }));
+    ring.mesh.position.set(0, cy, -0.5);
+    ring.spinSpeed = fl.spin;
     ring.u.uOpacity.value = 0;
     tl.span(0, 0.3, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
-    tl.span(0.9, 1.2, (k) => (ring.u.uOpacity.value = 1 - k));
-    this.shafts(tl, { x: 0, y: -1.2 * U, z: -0.5 }, 4 * U, 0x4ad8ff, 0, 1.2, 3, 0.6);
+    tl.span(T0 + 0.1, D, (k) => (ring.u.uOpacity.value = 1 - easeIn(k) * 0.9));
+    // the duelist's emblem flares over the sigil
+    const em = fl.mode === 'eye' ? null : tl.own(new Glow(1.6 * U, 1.6 * U, fl.mode, fl.color, fl.light));
+    const eye = fl.mode === 'eye' ? tl.own(new Ring(1.8 * U, fl.color, 7, { eye: true, inner: 0.9, outer: 0.95 })) : null;
+    const emb = (em ?? eye)!;
+    emb.mesh.position.set(0, cy + 0.15 * U, 0.4);
+    emb.u.uOpacity.value = 0;
+    tl.span(0.05, 0.4, (k) => {
+      emb.u.uOpacity.value = easeOut(k);
+      emb.mesh.scale.setScalar(lerp(1.8, 1, backOut(k)));
+      if (eye) eye.u.uEye.value = easeOut(k);
+      if (em && fl.mode === 'die') em.u.uK.value = 1 + Math.floor(k * 17) % 6;
+    });
+    tl.span(T0, T0 + 0.3, (k) => (emb.u.uOpacity.value = 1 - easeIn(k)));
+    // a slash of the duelist's color across the screen behind the banner
+    const slash = tl.own(new Ribbon(6, fl.color, 1));
+    slash.set([{ x: -3.5 * U, y: cy - 0.5 * U, z: 0.2 }, { x: 3.5 * U, y: cy + 0.3 * U, z: 0.2 }], 0.5 * U);
+    slash.u.uHead.value = 0;
+    tl.span(0.08, 0.3, (k) => (slash.u.uHead.value = easeOut(k) * 1.05));
+    tl.span(T0 - 0.1, T0 + 0.2, (k) => ((slash.u.uTail.value = easeIn(k)), (slash.u.uOpacity.value = 1 - k)));
+    this.shafts(tl, { x: 0, y: -1.2 * U, z: -0.5 }, 4 * U, fl.color, 0, D, 3, 0.55);
     tl.at(0.1, () => {
       chime(0.9);
+      whoosh(0.3, 600, 2600, 0.2);
       st.pulse('flash', 0.3);
-      st.particles.emit({ x: 0, y: 0, burst: 4 * U, life: 0.8, size: 0.1 * U, color: 0x9affff }, 60);
-      this.ui.banner({ title: name.replace(/ \(Skill Card\)$/, ''), sub: `Skill · ${this.side(p) === 'near' ? 'you' : 'opponent'}`, color: 0x4ad8ff, big: true, dur: 0.9, pos: 'mid' });
+      st.particles.emit({ x: 0, y: cy, burst: 4 * U, life: 0.8, size: 0.1 * U, color: fl.light }, Math.round(60 * this.q));
+      const label = FX_FAMILIES.find((f) => f.id === cls.family)?.label;
+      this.ui.banner({ title: name.replace(/ \(Skill Card\)$/, ''), sub: [who || 'Skill', `Skill · ${side === 'near' ? 'you' : 'opponent'}`, label].filter(Boolean).join(' · '), color: fl.color, big: true, dur: D - 0.4, pos: 'mid' });
     });
-    tl.handoff = 0.9;
+    const opp = (side === 'near' ? 1 : -1) * 1.5 * U;
+    playFamily({ d: this, st, tl, U, t0: T0, t1: T0 + fx.dur, side, cy, opp, own: -opp, src: { x: 0, y: cy, z: 0.6 }, hits: [], spots: [], cls, text: info ? effectText(info) : '', art: null, seed: prof.seed });
+    const shot = this.fit([{ x: 0, y: 0, z: 0, w: 1.6 * U, h: 2 * U }], 0, 0.02, { fill: 0.95 });
+    let s0: Shot | null = null;
+    tl.span(0, 0.4, (k) => this.setShot((s0 ??= this.shot()), shot, easeInOut(k)));
+    let s1: Shot | null = null;
+    tl.span(D - 0.35, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+    tl.at(D, () => this.resetCam(), false);
+    tl.handoff = D - 0.3;
     return tl;
   }
 
@@ -3073,6 +3582,7 @@ const REST: Shot = { pos: new Vector3(0, 0, 10), look: new Vector3(0, 0, 0) };
 const SAFE_TOP = 0.11;
 const SAFE_BOTTOM = 0.2;
 const GOLD = 0xffc94a;
+const SUMMON_LABEL: Record<SummonHow, string> = { normal: '', tribute: 'Tribute Summon', special: 'Special Summon', fusion: 'Fusion Summon', ritual: 'Ritual Summon', xyz: 'Xyz Summon', synchro: 'Synchro Summon', link: 'Link Summon' };
 
 /** Big monsters get the cut-in: level 7+, Fusion/Ritual, or an iconic signature at tier 2+. */
 function isBig(info: ReturnType<typeof card>, prof: ArtProfile): boolean {
@@ -3587,6 +4097,11 @@ interface PresetCtx {
   figs: Actor[];
   /** the activated card, in front of the camera */
   card: P3;
+  /** its targets as they stand on stage (family cinematics) */
+  spots?: Spot[];
+  /** its art and seed (family cinematics lean their colors on them) */
+  art?: ArtData | null;
+  seed?: number;
 }
 interface Preset {
   /** extra seconds the preset adds */
@@ -3594,9 +4109,11 @@ interface Preset {
   /** its own accent color */
   accent?: number;
   /** which face-up monsters it strikes when the duel does not say (board-wide cards) */
-  scope?: 'opp' | 'all' | 'oppAtk';
+  scope?: 'opp' | 'all' | 'oppAtk' | 'own';
   /** it moves its figures off their cards and frames them itself (the activation keeps its own drift) */
   ownCam?: boolean;
+  /** a family cinematic (the card has no preset of its own) */
+  family?: FxClass;
   play(c: PresetCtx): void;
 }
 
@@ -4374,6 +4891,1048 @@ const EXTRA_PRESETS: Record<string, Preset> = {
   'Floodgate Trap Hole': trapHole(0x2a8aff, 0xbfefff),
 };
 
+// ---------------------------------------------------------------- effect families
+// A card with no preset of its own plays its effect family's cinematic (families.ts
+// reads the family from its text): destroy, banish, revive, burn, ATK up... Each is
+// short and seeded per card (colors, counts, which variant), so two cards of a family
+// still look like themselves. Spells and Traps play it after the card opens; monster
+// effects from the monster; Skills from the Skill's sigil.
+
+/** A target of the effect as it stands on stage: a monster figure or a card lying in its zone. */
+interface Spot {
+  p: P3;
+  uid: number;
+  a: Actor | null;
+  panel: CardPanel | null;
+  destroyed: boolean;
+}
+
+interface FamCtx {
+  d: Director;
+  st: Stage;
+  tl: Timeline;
+  U: number;
+  t0: number;
+  t1: number;
+  side: 'near' | 'far';
+  /** the stage's middle height, and the two rows (resting camera) */
+  cy: number;
+  opp: number;
+  own: number;
+  /** where the effect comes from: the card, the monster, the Skill's sigil */
+  src: P3;
+  /** monsters it strikes (board-wide) and the targets it names */
+  hits: Actor[];
+  spots: Spot[];
+  col: Colors;
+  /** seeded by the card: the same card always plays the same way */
+  r: () => number;
+  cls: FxClass;
+  text: string;
+  q: number;
+}
+
+type FamFx = { dur: number; base: [number, number, number]; play: (c: FamCtx) => void };
+
+/** The points it acts on: its spots, else what it strikes, else a spot on `row` (two when `wide`). */
+function famAims(c: FamCtx, row: 'opp' | 'own', wide = false): { p: P3; s: Spot | null; a: Actor | null }[] {
+  if (c.spots.length) return c.spots.map((s) => ({ p: s.p, s, a: s.a }));
+  if (c.hits.length) return c.hits.map((a) => ({ p: c.d['center'](a), s: null, a }));
+  const y = row === 'opp' ? c.opp : c.own;
+  const xs = wide ? [-0.6, 0.6] : [0];
+  return xs.map((x) => ({ p: { x: x * c.U, y, z: 0.3 }, s: null, a: null }));
+}
+
+/** An additive shape at `p` that fades in over [t0, t0 + fin] and out by t1. */
+function glowAt(c: FamCtx, mode: GlowMode, p: P3, w: number, h: number, color: number, color2: number, t0: number, t1: number, peak = 1, fin = 0.15) {
+  const g = c.tl.own(new Glow(w, h, mode, color, color2));
+  g.mesh.position.set(p.x, p.y, p.z);
+  g.u.uOpacity.value = 0;
+  c.tl.span(t0, t1, (k) => {
+    const t = k * (t1 - t0);
+    g.u.uOpacity.value = peak * Math.min(1, t / fin) * (1 - easeIn(clamp01((t - (t1 - t0) * 0.7) / ((t1 - t0) * 0.3))));
+  });
+  return g;
+}
+
+/** A flat ring on the ground at `p` that spreads out and fades. */
+function shockAt(c: FamCtx, p: P3, size: number, t: number, color: number, light: number, dur = 0.45, flat = true) {
+  const g = c.tl.own(new Glow(size, size, 'shock', color, light));
+  g.mesh.position.set(p.x, p.y, p.z);
+  if (flat) g.mesh.rotation.x = -1.15;
+  c.tl.span(t, t + dur, (k) => ((g.u.uK.value = easeOut(k)), (g.u.uOpacity.value = 1 - k * 0.4)));
+  c.tl.at(t + dur, () => (g.u.uOpacity.value = 0));
+  return g;
+}
+
+function sparks(c: FamCtx, p: P3, t: number, color: number, n: number, o: Partial<Emit> = {}) {
+  c.tl.at(t, () => c.st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.2, burst: 3 * c.U, life: 0.6, size: 0.08 * c.U, color, drag: 2.5, ...o }, Math.round(n * c.q)));
+}
+
+function stream(c: FamCtx, t0: number, t1: number, per: number, f: (i: number) => Emit) {
+  let i = 0;
+  c.tl.span(t0, t1, (_k, dt) => {
+    for (let j = 0; j < rate(per * c.q, dt); j++) c.st.particles.emit(f(i++));
+  });
+}
+
+/** A card flying from `a` to `b` along a bend (a back unless `face`), turning as it goes. */
+function cardFly(c: FamCtx, a: P3, b: P3, t0: number, t1: number, o: { color?: number; size?: number; spin?: number; bend?: number; face?: HTMLCanvasElement | null; fade?: boolean } = {}) {
+  const p = c.tl.own(new CardPanel(o.face ?? cardBack(), (o.size ?? 0.7) * c.U, o.color ?? c.col.main));
+  p.u.uOpacity.value = 0;
+  c.tl.span(t0, t1, (k) => {
+    const e = easeInOut(k);
+    const q = bez(a, b, o.bend ?? 0.4 * c.U, e);
+    p.mesh.position.set(q.x, q.y, q.z);
+    p.mesh.rotation.set(0, (o.spin ?? 0) * e, (o.spin ? 0.2 : 0) * Math.sin(e * Math.PI));
+    p.u.uOpacity.value = Math.min(1, k * 6) * (o.fade === false ? 1 : 1 - easeIn(clamp01((k - 0.8) / 0.2)));
+    p.u.uSheen.value = lerp(-0.4, 1.8, k);
+  });
+  c.tl.at(t1, () => (p.u.uOpacity.value = 0));
+  return p;
+}
+
+/** Tints a figure toward `color` and back over [t0, t1] (its painted detail kept). */
+function tintPulse(c: FamCtx, a: Actor | null, panel: CardPanel | null, t0: number, t1: number, color: number, amt = 0.35, dark = 0) {
+  if (a?.fig) {
+    const f = a.fig;
+    c.tl.at(t0, () => (setRgb(f.u.uTintCol.value, color), (f.u.uTintKeep.value = 1)));
+    c.tl.span(t0, t1, (k) => {
+      f.u.uTint.value = amt * Math.sin(k * Math.PI);
+      if (dark) f.u.uDark.value = dark * Math.sin(k * Math.PI);
+    });
+  }
+  if (a?.back) {
+    const b = a.back;
+    c.tl.span(t0, t1, (k) => (b.u.uTint.value = amt * Math.sin(k * Math.PI)));
+  }
+  if (panel) c.tl.span(t0, t1, (k) => (panel.u.uTint.value = amt * Math.sin(k * Math.PI)));
+}
+
+/** The owner's hand: off the bottom edge (you) or the top (them). */
+const handY = (c: FamCtx, near: boolean) => (near ? -1 : 1) * 3.4 * c.U;
+/** The owner's Deck, beside their row. */
+const deckAt = (c: FamCtx, near: boolean): P3 => ({ x: (near ? 1 : -1) * 1.2 * c.U, y: (near ? -1 : 1) * 1.35 * c.U, z: 0.3 });
+const nearOf = (c: FamCtx, a: Actor | null, p: P3) => (a ? a.side === 'near' : c.side === 'near' ? p.y < c.cy + 0.3 * c.U : p.y < c.cy - 0.3 * c.U);
+/** The first number the text gives before `word` ("draw 2 cards" → 2), clamped. */
+function countIn(text: string, re: RegExp, lo: number, hi: number, dflt: number): number {
+  const m = re.exec(text);
+  const n = m ? Number(m[1]) : NaN;
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+}
+
+const FAMILY_FX: Record<FxFamily, FamFx> = {
+  destroy: {
+    dur: 0.6,
+    base: [0xff5a3a, 0xffb070, 0xfff0d0],
+    play(c) {
+      const { tl, U, t0, col } = c;
+      const kind = Math.floor(c.r() * 3);
+      famAims(c, 'opp').forEach((x, i) => {
+        const t = t0 + 0.12 + i * 0.08;
+        const p = x.p;
+        if (kind === 0) {
+          // a lance of light from the sky
+          const core = tl.own(new Ribbon(10, 0xffffff, 0));
+          const glow = tl.own(new Ribbon(10, col.main, 1));
+          const pts = [{ x: p.x + 0.4 * U, y: p.y + 3.4 * U, z: p.z + 0.4 }, { x: p.x, y: p.y, z: p.z + 0.4 }];
+          core.set(pts, 0.07 * U);
+          glow.set(pts, 0.36 * U);
+          core.u.uHead.value = glow.u.uHead.value = 0;
+          tl.span(t - 0.1, t, (k) => (core.u.uHead.value = glow.u.uHead.value = easeIn(k) * 1.05));
+          tl.span(t + 0.1, t + 0.4, (k) => ((core.u.uTail.value = glow.u.uTail.value = easeIn(k)), (glow.u.uOpacity.value = 1 - k)));
+        } else if (kind === 1) {
+          // a blade of light slashing across it
+          const arc = tl.own(new Ribbon(24, col.light, 1));
+          const pts = Array.from({ length: 14 }, (_, j) => {
+            const a = lerp(2.4, -0.6, j / 13);
+            return { x: p.x + Math.cos(a) * 0.6 * U, y: p.y + Math.sin(a) * 0.6 * U - 0.1 * U, z: p.z + 0.5 };
+          });
+          arc.set(pts, (q) => 0.1 * U * Math.sin(q * Math.PI));
+          arc.u.uHead.value = 0;
+          tl.span(t - 0.12, t, (k) => (arc.u.uHead.value = easeIn(k) * 1.05));
+          tl.span(t + 0.05, t + 0.3, (k) => ((arc.u.uTail.value = easeIn(k)), (arc.u.uOpacity.value = 1 - k)));
+          tl.at(t - 0.12, () => whoosh(0.15, 2400, 600, 0.2));
+        } else {
+          // a sigil slamming down onto it
+          const ring = tl.own(new Ring(1.9 * U, col.main, Math.floor(c.r() * 900), { inner: 0.55, outer: 0.92, star: 5 + Math.floor(c.r() * 3) }));
+          ring.mesh.position.set(p.x, p.y + 1.6 * U, p.z + 0.4);
+          ring.spinSpeed = 4;
+          ring.u.uOpacity.value = 0;
+          tl.span(t - 0.2, t, (k) => {
+            ring.mesh.position.y = lerp(p.y + 1.6 * U, p.y - 0.2 * U, easeIn(k));
+            ring.mesh.rotation.x = -1.15 * k;
+            ring.u.uOpacity.value = k;
+          });
+          tl.span(t, t + 0.3, (k) => (ring.u.uOpacity.value = 1 - k));
+        }
+        shockAt(c, { x: p.x, y: p.y - 0.35 * U, z: p.z }, 2.2 * U, t, col.main, col.light);
+        tl.at(t, () => {
+          zap(0.3);
+          boom(0.35);
+          c.st.shake(0.45);
+          c.st.pulse('chroma', 0.4);
+          c.d['flash'](col.light, 0.16);
+        });
+        sparks(c, p, t, col.light, 40, { vy: 1 * U, gravity: 5 * U });
+        if (x.a) c.d['strike'](tl, x.a, t);
+        if (x.s?.panel && x.s.destroyed) tl.at(t + 0.02, () => void c.d['panelShards'](tl, x.s!.panel!, col.main, 2.6 * U), false);
+      });
+    },
+  },
+  destroyAll: {
+    dur: 0.8,
+    base: [0xff3a5a, 0xff9a40, 0xffe6c0],
+    play(c) {
+      const { tl, U, t0, col } = c;
+      const aims = famAims(c, c.cls.scope === 'own' ? 'own' : 'opp', true).sort((a, b) => a.p.x - b.p.x);
+      const ltr = c.r() < 0.5;
+      const row = aims.reduce((s, x) => s + x.p.y, 0) / aims.length;
+      // a nova bursts from the card; a wall of force sweeps the row; each one erupts in turn
+      shockAt(c, c.src, 7 * U, t0, col.main, col.light, 0.6, false);
+      const sweep = tl.own(new Ribbon(12, col.light, 1));
+      let sx = 0;
+      tl.span(t0 + 0.05, t0 + 0.55, (k) => {
+        const x = (sx = lerp(ltr ? -2.4 : 2.4, ltr ? 2.4 : -2.4, easeInOut(k)) * U);
+        sweep.set([{ x, y: row - 1 * U, z: 0.9 }, { x: x + (ltr ? -0.3 : 0.3) * U, y: row + 1.1 * U, z: 0.9 }], (q) => 0.22 * U * Math.sin(q * Math.PI));
+        sweep.u.uOpacity.value = Math.sin(k * Math.PI);
+      });
+      stream(c, t0 + 0.05, t0 + 0.55, 200, () => ({ x: sx, y: row + (Math.random() - 0.5) * 2 * U, z: 0.6, vx: (ltr ? 3 : -3) * U, burst: 1 * U, life: 0.4, size: 0.08 * U, color: Math.random() < 0.5 ? col.main : col.light, drag: 1.5 }));
+      tl.at(t0, () => (drone(0.6), whoosh(0.55, 300, 2600, 0.3), c.d['flash'](col.light, 0.12)));
+      const order = ltr ? aims : [...aims].reverse();
+      order.forEach((x, i) => {
+        const t = t0 + 0.15 + (i / Math.max(1, order.length - 1)) * 0.35;
+        // a pillar of force erupting under it
+        const pil = glowAt(c, 'shaft', { x: x.p.x, y: x.p.y + 0.6 * U, z: x.p.z + 0.4 }, 1.3 * U, 3.4 * U, col.main, col.light, t - 0.04, t + 0.4, 1.3, 0.05);
+        void pil;
+        glowAt(c, 'flare', { ...x.p, z: x.p.z + 0.5 }, 2 * U, 2 * U, col.light, 0xffffff, t, t + 0.3, 0.8, 0.03);
+        shockAt(c, { x: x.p.x, y: x.p.y - 0.35 * U, z: x.p.z }, 2 * U, t, col.main, col.light);
+        sparks(c, x.p, t, col.light, 40, { vy: 2 * U, gravity: 6 * U });
+        tl.at(t, () => (boom(0.3), c.st.shake(0.4)));
+        if (x.a) c.d['strike'](tl, x.a, t);
+        if (x.s?.panel && x.s.destroyed) tl.at(t, () => void c.d['panelShards'](tl, x.s!.panel!, col.main, 2.6 * U), false);
+      });
+      tl.at(t0 + 0.5, () => (boom(0.7), c.st.shake(0.8), c.st.pulse('chroma', 0.6), c.d['flash'](col.main, 0.2)));
+    },
+  },
+  banish: {
+    dur: 0.7,
+    base: [0x9a5aff, 0xff7af0, 0xf0e0ff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      for (const x of famAims(c, 'opp')) {
+        const p = x.p;
+        const rift = glowAt(c, 'rift', { x: p.x, y: p.y, z: p.z - 0.2 }, 0.95 * U, 1.75 * U, col.main, col.accent, t0, t1, 1, 0.1);
+        rift.mesh.rotation.z = (c.r() - 0.5) * 0.6;
+        tl.span(t0, t1, (k) => (rift.u.uK.value = k < 0.3 ? easeOut(k / 0.3) : k > 0.8 ? 1 - easeIn((k - 0.8) / 0.2) : 1));
+        stream(c, t0 + 0.05, t1 - 0.15, 160, () => {
+          const a = Math.random() * Math.PI * 2;
+          const rr = (0.8 + Math.random() * 0.8) * U;
+          return { x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr, z: p.z, life: 0.45, size: 0.08 * U, color: Math.random() < 0.5 ? col.main : col.light, drag: 0, pull: { x: p.x, y: p.y, strength: 18 * U, swirl: 8 * U } };
+        });
+        const a = x.a;
+        if (a) {
+          tl.span(t0 + 0.15, t1 - 0.1, (k) => {
+            const e = easeIn(k);
+            const m = a.fig?.mesh ?? a.back?.mesh;
+            if (m) m.scale.setScalar((a.fig ? a.size : 1) * (1 - e * 0.85));
+            a.oz = -e * 0.8;
+            if (a.fig) a.fig.u.uDark.value = e * 0.8;
+            c.d['setOpacity'](a, 1 - easeIn(clamp01((k - 0.6) / 0.4)));
+            c.d['place'](a);
+          });
+        }
+        const pn = x.s?.panel;
+        if (pn) tl.span(t0 + 0.15, t1 - 0.1, (k) => (pn.mesh.scale.setScalar(1 - easeIn(k) * 0.9), (pn.mesh.rotation.z = k * 2), (pn.u.uOpacity.value = 1 - easeIn(k))));
+        tl.at(t0, () => (drone(0.5), zap(0.25)));
+        tl.at(t1 - 0.12, () => (c.d['flash'](col.light, 0.12), sparks(c, p, t1 - 0.12, col.light, 30)));
+      }
+    },
+  },
+  bounce: {
+    dur: 0.6,
+    base: [0x4ad8ff, 0x9affff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      for (const x of famAims(c, 'opp')) {
+        const near = nearOf(c, x.a, x.p);
+        const to = { x: x.p.x * 0.4, y: handY(c, near), z: 1.2 };
+        const t = t0 + 0.12;
+        // it turns back into its card, which hovers a moment, then is thrown back to its owner's hand
+        const a = x.a;
+        if (a) tl.span(t0, t + 0.15, (k) => (c.d['setOpacity'](a, 1 - k), (a.oy = k * 0.2 * U), c.d['place'](a)));
+        if (x.s?.panel) tl.span(t0, t + 0.1, (k) => (x.s!.panel!.u.uOpacity.value = 1 - k));
+        const hover = { x: x.p.x, y: x.p.y + 0.25 * U, z: x.p.z + 0.6 };
+        const ghost = cardFly(c, x.p, hover, t, t + 0.3, { color: col.light, size: 0.8, spin: Math.PI, bend: 0, fade: false });
+        tl.span(t, t + 0.3, (k) => (ghost.u.uTint.value = 0.5 * (1 - k)));
+        tl.at(t + 0.3, () => (ghost.u.uOpacity.value = 0));
+        const fly = cardFly(c, hover, to, t + 0.3, t1, { color: col.main, size: 0.8, spin: Math.PI * 2, bend: (c.r() - 0.5) * 1.2 * U });
+        const trail = tl.own(new Ribbon(20, col.light, 1));
+        const hist: P3[] = [];
+        tl.span(t, t1, () => {
+          const m = fly.mesh.position;
+          hist.push({ x: m.x, y: m.y, z: m.z - 0.05 });
+          if (hist.length > 12) hist.shift();
+          if (hist.length > 1) trail.set(hist, (q) => 0.12 * U * q);
+        });
+        tl.at(t1, () => (trail.u.uOpacity.value = 0));
+        shockAt(c, { x: x.p.x, y: x.p.y - 0.3 * U, z: x.p.z }, 1.8 * U, t0, col.main, col.light, 0.4);
+        tl.at(t, () => whoosh(0.4, 600, 2800, 0.2));
+      }
+    },
+  },
+  toDeck: {
+    dur: 0.75,
+    base: [0x5a8aff, 0xb0c8ff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const aims = famAims(c, 'opp');
+      const near = nearOf(c, aims[0].a, aims[0].p);
+      const deck = deckAt(c, near);
+      // the Deck, a short stack, waiting
+      const stack = [0, 1, 2].map((i) => {
+        const p = tl.own(new CardPanel(cardBack(), 0.75 * U, col.main));
+        p.mesh.position.set(deck.x, deck.y + i * 0.03 * U, deck.z + i * 0.02);
+        p.u.uOpacity.value = 0;
+        tl.span(t0, t0 + 0.15, (k) => (p.u.uOpacity.value = k));
+        tl.span(t1 - 0.12, t1, (k) => (p.u.uOpacity.value = 1 - k));
+        return p;
+      });
+      aims.forEach((x, i) => {
+        const t = t0 + 0.1 + i * 0.06;
+        const a = x.a;
+        if (a) tl.span(t0, t + 0.15, (k) => c.d['setOpacity'](a, 1 - k));
+        if (x.s?.panel) tl.span(t0, t + 0.1, (k) => (x.s!.panel!.u.uOpacity.value = 1 - k));
+        cardFly(c, x.p, { ...deck, z: deck.z + 0.1 }, t, t + 0.4, { color: col.main, size: 0.75, spin: Math.PI * 3, bend: 0.5 * U });
+      });
+      // the shuffle: the stack riffles
+      tl.span(t0 + 0.5, t1 - 0.1, (k) => stack.forEach((p, i) => (p.mesh.position.x = deck.x + Math.sin(k * Math.PI * 4 + i * 2) * 0.18 * U * (1 - k))));
+      tl.at(t0 + 0.5, () => (whoosh(0.2, 1800, 900, 0.15), sparks(c, deck, t0 + 0.5, col.light, 20, { burst: 1.5 * U })));
+    },
+  },
+  revive: {
+    dur: 0.8,
+    base: [0x3aff9a, 0xc0ffd8, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const p: P3 = c.spots[0]?.p ?? { x: 0, y: c.own * 0.85, z: 0.3 };
+      const foot = { x: p.x, y: p.y - 0.4 * U, z: p.z };
+      // the grave opens: a pit of light on the ground, spirits rising out of it
+      const pit = glowAt(c, 'vortex', foot, 2.6 * U, 2.6 * U, col.main, col.accent, t0, t1, 1, 0.2);
+      pit.mesh.rotation.x = -1.2;
+      const ring = tl.own(new Ring(2.4 * U, col.light, Math.floor(c.r() * 999), { inner: 0.8, outer: 0.92, star: 6 }));
+      ring.mesh.position.set(foot.x, foot.y, foot.z + 0.02);
+      ring.mesh.rotation.x = -1.2;
+      ring.spinSpeed = 2;
+      ring.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.25, (k) => ((ring.u.uOpacity.value = k), ring.mesh.scale.setScalar(easeOut(k))));
+      tl.span(t1 - 0.2, t1, (k) => (ring.u.uOpacity.value = 1 - k));
+      c.d['shafts'](tl, foot, 3.6 * U, col.main, t0 + 0.15, t1, 3, 0.7);
+      stream(c, t0 + 0.1, t1 - 0.1, 120, () => ({ x: foot.x + (Math.random() - 0.5) * 1.2 * U, y: foot.y, z: foot.z + 0.2, vy: (2 + Math.random() * 2) * U, life: 0.7, size: 0.09 * U, color: Math.random() < 0.6 ? col.main : col.light, drag: 0.4 }));
+      // a card rises out of the grave and turns to the light
+      const card = cardFly(c, { x: foot.x, y: foot.y - 0.6 * U, z: 0.1 }, { x: p.x, y: p.y + 0.5 * U, z: 0.9 }, t0 + 0.2, t1, { color: col.light, size: 0.9, spin: Math.PI * 2, bend: 0 });
+      tl.span(t0 + 0.2, t1, (k) => (card.u.uTint.value = 0.4 * k));
+      const ankh = glowAt(c, 'star', { x: p.x, y: p.y + 0.5 * U, z: 1.1 }, 1.6 * U, 1.6 * U, col.light, 0xffffff, t1 - 0.3, t1, 1, 0.08);
+      ankh.mesh.rotation.z = 0.4;
+      tl.at(t0, () => (drone(0.6), chime(0.6)));
+      tl.at(t1 - 0.3, () => (chime(0.95), c.d['flash'](col.light, 0.15)));
+    },
+  },
+  special: {
+    dur: 0.65,
+    base: [0xffc94a, 0xffe9a0, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const p: P3 = c.spots.find((s) => !s.destroyed)?.p ?? { x: (c.r() - 0.5) * 0.8 * U, y: c.own, z: 0.3 };
+      // a gate of light opens upright on its row and a card drops through it
+      const gate = tl.own(new Ring(2.2 * U, col.main, Math.floor(c.r() * 999), { inner: 0.62, outer: 0.92, star: 4 + Math.floor(c.r() * 4) }));
+      gate.mesh.position.set(p.x, p.y + 0.4 * U, p.z - 0.2);
+      gate.spinSpeed = c.r() < 0.5 ? 2 : -2;
+      gate.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.25, (k) => ((gate.u.uOpacity.value = k), gate.mesh.scale.set(easeOut(k), backOut(k), 1)));
+      tl.span(t1 - 0.2, t1, (k) => (gate.u.uOpacity.value = 1 - k));
+      const core = glowAt(c, 'flare', { x: p.x, y: p.y + 0.4 * U, z: p.z }, 2.2 * U, 2.2 * U, col.main, col.light, t0 + 0.15, t1, 0.8);
+      core.u.uK.value = 0.4;
+      cardFly(c, { x: p.x, y: p.y + 2.4 * U, z: 0.8 }, { x: p.x, y: p.y + 0.3 * U, z: 0.2 }, t0 + 0.1, t0 + 0.45, { color: col.light, size: 0.85, bend: 0 });
+      shockAt(c, { x: p.x, y: p.y - 0.4 * U, z: p.z }, 3 * U, t0 + 0.45, col.main, col.light);
+      sparks(c, { ...p, y: p.y + 0.3 * U }, t0 + 0.45, col.light, 50);
+      tl.at(t0 + 0.45, () => (boom(0.4), chime(0.8), c.st.shake(0.3)));
+    },
+  },
+  fusion: {
+    dur: 0.8,
+    base: [0xb04aff, 0xff8a3a, 0xffe0ff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const p: P3 = { x: 0, y: c.cy + 0.2 * U, z: 0.6 };
+      const v = glowAt(c, 'vortex', { ...p, z: -0.6 }, 4.4 * U, 4.4 * U, col.main, col.accent, t0, t1, 1, 0.2);
+      v.mesh.rotation.z = c.r() * 6;
+      // two (or three) materials spiral into one
+      const n = 2 + (c.r() < 0.3 ? 1 : 0);
+      const orbs = Array.from({ length: n }, (_, i) => {
+        const g = tl.own(new Glow(1.1 * U, 1.1 * U, 'flare', i % 2 ? col.accent : col.main, 0xffffff));
+        g.u.uOpacity.value = 0;
+        return g;
+      });
+      tl.span(t0, t0 + 0.5, (k, dt) =>
+        orbs.forEach((g, i) => {
+          const a = (i / n) * Math.PI * 2 + k * 10;
+          const rr = (1 - easeIn(k)) * 1.6 * U;
+          g.mesh.position.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr * 0.7, p.z);
+          g.u.uOpacity.value = Math.min(1, k * 5);
+          for (let j = 0; j < rate(60 * c.q, dt); j++) c.st.particles.emit({ x: g.mesh.position.x, y: g.mesh.position.y, z: p.z, burst: 0.3 * U, life: 0.35, size: 0.12 * U, color: i % 2 ? col.accent : col.main, drag: 3 });
+        }),
+      );
+      tl.at(t0 + 0.5, () => {
+        for (const g of orbs) g.u.uOpacity.value = 0;
+        c.st.pulse('flash', 0.3);
+        c.d['flash'](col.light, 0.25);
+        boom(0.55);
+        chime(c.r());
+      });
+      const merged = glowAt(c, 'star', p, 2.6 * U, 2.6 * U, col.light, 0xffffff, t0 + 0.5, t1, 1, 0.05);
+      tl.span(t0 + 0.5, t1, (k) => merged.mesh.scale.setScalar(lerp(0.4, 1.3, easeOut(k))));
+      sparks(c, p, t0 + 0.5, col.light, 90, { burst: 5 * U });
+      tl.at(t0, () => swell(0.5));
+    },
+  },
+  ritual: {
+    dur: 0.85,
+    base: [0x3a9aff, 0xff5a2a, 0xe0f0ff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const foot: P3 = { x: 0, y: c.own * 0.55, z: 0.2 };
+      const circle = tl.own(new Ring(3.2 * U, col.main, Math.floor(c.r() * 999), { inner: 0.7, outer: 0.92, star: 5 }));
+      circle.mesh.position.set(foot.x, foot.y, foot.z);
+      circle.mesh.rotation.x = -1.2;
+      circle.spinSpeed = 0.8;
+      circle.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => ((circle.u.uOpacity.value = k), circle.mesh.scale.setScalar(easeOut(k))));
+      tl.span(t1 - 0.2, t1, (k) => (circle.u.uOpacity.value = 1 - k));
+      // flames at the points of the star, lit one after another
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + Math.PI / 2;
+        const fp = { x: foot.x + Math.cos(a) * 1.3 * U, y: foot.y + Math.sin(a) * 1.3 * U * 0.36 + 0.45 * U, z: foot.z + Math.sin(a) * 0.4 };
+        glowAt(c, 'flame', fp, 0.8 * U, 1.3 * U, col.accent, 0xffd070, t0 + 0.15 + i * 0.06, t1, 1, 0.1);
+        tl.at(t0 + 0.15 + i * 0.06, () => whoosh(0.15, 300, 900, 0.08));
+      }
+      c.d['shafts'](tl, foot, 4 * U, col.main, t0 + 0.45, t1, 3, 0.75);
+      glowAt(c, 'flare', { x: foot.x, y: foot.y + 1 * U, z: 0.6 }, 2.4 * U, 2.4 * U, col.main, col.light, t0 + 0.45, t1, 0.8);
+      tl.at(t0 + 0.45, () => (boom(0.5), chime(0.4), c.st.shake(0.4), c.d['flash'](col.light, 0.2)));
+      tl.at(t0, () => drone(0.8));
+    },
+  },
+  token: {
+    dur: 0.6,
+    base: [0x7affc8, 0xfff07a, 0xffffff],
+    play(c) {
+      const { U, t0, t1, col } = c;
+      const n = countIn(c.text, /(\d)\s+["A-Za-z -]*Tokens?/, 1, 4, 2 + Math.floor(c.r() * 2));
+      for (let i = 0; i < n; i++) {
+        const to: P3 = { x: (i - (n - 1) / 2) * 0.9 * U, y: c.own * 0.75, z: 0.4 };
+        const t = t0 + i * 0.08;
+        cardFly(c, c.src, to, t, t + 0.35, { color: i % 2 ? col.accent : col.main, size: 0.6, spin: Math.PI * 2, bend: (i - (n - 1) / 2) * 0.5 * U, fade: false });
+        glowAt(c, 'star', to, 1.2 * U, 1.2 * U, col.light, 0xffffff, t + 0.3, t1, 1, 0.05);
+        sparks(c, to, t + 0.33, i % 2 ? col.accent : col.main, 24, { burst: 2 * U });
+        c.tl.at(t + 0.33, () => chime(0.6 + i * 0.1));
+      }
+    },
+  },
+  search: {
+    dur: 0.7,
+    base: [0x4affd0, 0xa0fff0, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const near = c.side === 'near';
+      const deck = deckAt(c, near);
+      [0, 1, 2, 3].forEach((i) => {
+        const p = tl.own(new CardPanel(cardBack(), 0.75 * U, col.main));
+        p.mesh.position.set(deck.x, deck.y + i * 0.03 * U, deck.z + i * 0.02);
+        p.u.uOpacity.value = 0;
+        tl.span(t0, t0 + 0.12, (k) => (p.u.uOpacity.value = k));
+        // the cards fan out as it looks through them
+        tl.span(t0 + 0.1, t0 + 0.35, (k) => (p.mesh.rotation.z = (i - 1.5) * 0.18 * easeOut(k)));
+        tl.span(t1 - 0.15, t1, (k) => (p.u.uOpacity.value = 1 - k));
+      });
+      const scan = glowAt(c, 'shaft', { x: deck.x, y: deck.y + 0.6 * U, z: deck.z + 0.2 }, 0.5 * U, 2 * U, col.light, col.light, t0 + 0.1, t0 + 0.45, 0.9);
+      tl.span(t0 + 0.1, t0 + 0.45, (k) => (scan.mesh.position.x = deck.x + Math.sin(k * Math.PI * 2) * 0.4 * U));
+      const got = cardFly(c, { ...deck, y: deck.y + 0.5 * U, z: deck.z + 0.3 }, { x: 0, y: handY(c, near), z: 1 }, t0 + 0.4, t1, { color: col.light, size: 0.85, bend: -0.6 * U });
+      tl.span(t0 + 0.4, t1, (k) => (got.u.uTint.value = 0.3 * Math.sin(k * Math.PI)));
+      tl.at(t0 + 0.4, () => (chime(0.85), whoosh(0.3, 800, 2600, 0.15)));
+    },
+  },
+  draw: {
+    dur: 0.6,
+    base: [0xffd75a, 0xfff2b0, 0xffffff],
+    play(c) {
+      const { U, t0, t1, col } = c;
+      const near = c.side === 'near';
+      const n = countIn(c.text, /draw (\d)/i, 1, 3, 1 + Math.floor(c.r() * 2));
+      const deck = deckAt(c, near);
+      for (let i = 0; i < n; i++) {
+        const t = t0 + 0.05 + i * 0.12;
+        cardFly(c, deck, { x: (i - (n - 1) / 2) * 0.7 * U, y: handY(c, near), z: 1.2 }, t, Math.min(t1, t + 0.42), { color: col.main, size: 0.85, bend: -0.3 * U });
+        c.tl.at(t, () => whoosh(0.2, 900, 2600, 0.12));
+      }
+      glowAt(c, 'star', deck, 1.4 * U, 1.4 * U, col.light, 0xffffff, t0, t0 + 0.4, 1, 0.05);
+    },
+  },
+  heal: {
+    dur: 0.6,
+    base: [0x5aff7a, 0xc8ffb0, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const near = c.side === 'near';
+      const y0 = c.own;
+      // green light rising on its own side; crosses drifting up
+      const n = 3 + Math.floor(c.r() * 3);
+      for (let i = 0; i < n; i++) {
+        const g = tl.own(new Glow(0.55 * U, 0.55 * U, 'plus', col.main, col.light));
+        const x = (c.r() - 0.5) * 2.4 * U;
+        const t = t0 + c.r() * 0.2;
+        g.u.uOpacity.value = 0;
+        tl.span(t, t1, (k) => {
+          g.mesh.position.set(x, y0 - 0.3 * U + k * 1.6 * U, 0.8);
+          g.u.uOpacity.value = Math.sin(k * Math.PI);
+        });
+      }
+      stream(c, t0, t1 - 0.1, 140, () => ({ x: (Math.random() - 0.5) * 3 * U, y: y0 - 0.5 * U, z: 0.5, vy: (1.5 + Math.random() * 1.5) * U, life: 0.7, size: 0.08 * U, color: Math.random() < 0.6 ? col.main : col.light, drag: 0.5 }));
+      const floor = glowAt(c, 'shaft', { x: 0, y: y0 + 0.6 * U, z: -0.4 }, 4 * U, 2.6 * U, col.main, col.light, t0, t1, 0.7);
+      void floor;
+      tl.at(t0 + 0.1, () => {
+        chime(0.95);
+        lpBeat(near ? 'bottom' : 'top', 'art-lp-heal', 600);
+      });
+    },
+  },
+  burn: {
+    dur: 0.7,
+    base: [0xff5a1a, 0xffb040, 0xfff0c0],
+    play(c) {
+      const { tl, U, t0, col } = c;
+      const near = c.side === 'near';
+      const n = 1 + Math.floor(c.r() * 3);
+      // (it lands on the opponent's side, in frame; their Life Points plate takes it)
+      const to: P3 = { x: 0, y: c.opp * 1.1, z: 0.5 };
+      for (let i = 0; i < n; i++) {
+        const t = t0 + i * 0.1;
+        const a = { ...c.src, z: c.src.z + 0.3 };
+        const end = { x: to.x + (i - (n - 1) / 2) * 0.5 * U, y: to.y, z: to.z };
+        const g = tl.own(new Glow(0.9 * U, 0.9 * U, 'flare', col.main, col.light));
+        g.u.uOpacity.value = 0;
+        const bend = (i - (n - 1) / 2 + (c.r() - 0.5)) * 1.2 * U;
+        tl.span(t, t + 0.35, (k, dt) => {
+          const q = bez(a, end, bend, easeIn(k));
+          g.mesh.position.set(q.x, q.y, q.z);
+          g.u.uOpacity.value = 1;
+          for (let j = 0; j < rate(150 * c.q, dt); j++) c.st.particles.emit({ x: q.x, y: q.y, z: q.z, burst: 0.5 * U, vy: 0.5 * U, life: 0.35, size: 0.13 * U, color: j % 2 ? col.main : col.accent, drag: 3 });
+        });
+        tl.at(t + 0.35, () => (g.u.uOpacity.value = 0));
+        shockAt(c, end, 2 * U, t + 0.35, col.main, col.light, 0.4, false);
+        sparks(c, end, t + 0.35, col.accent, 40, { burst: 4 * U });
+        tl.at(t + 0.35, () => (boom(0.35), c.st.shake(0.4)));
+      }
+      tl.at(t0 + 0.05, () => whoosh(0.35, 400, 1800, 0.25));
+      tl.at(t0 + 0.35, () => {
+        lpBeat(near ? 'top' : 'bottom', 'art-lp-shake', 420);
+        c.d['flash'](col.main, 0.15);
+      });
+      tl.span(t0 + 0.35, t0 + 0.7, (k) => (c.d['front'].u.uRed.value = Math.max(c.d['front'].u.uRed.value, 0.18 * (1 - k))));
+    },
+  },
+  powerUp: {
+    dur: 0.6,
+    base: [0xffb020, 0xffe070, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const aims = famAims(c, c.cls.scope === 'opp' ? 'opp' : 'own', true);
+      for (const x of aims) {
+        const p = x.p;
+        const ring = tl.own(new Ring(1.7 * U, col.main, Math.floor(c.r() * 999), { inner: 0.78, outer: 0.92 }));
+        ring.mesh.position.set(p.x, p.y - 0.45 * U, p.z);
+        ring.mesh.rotation.x = -1.15;
+        ring.spinSpeed = 3;
+        ring.u.uOpacity.value = 0;
+        tl.span(t0, t0 + 0.2, (k) => ((ring.u.uOpacity.value = k), ring.mesh.scale.setScalar(easeOut(k))));
+        tl.span(t1 - 0.2, t1, (k) => (ring.u.uOpacity.value = 1 - k));
+        for (let i = 0; i < 3; i++) {
+          const g = tl.own(new Glow(0.45 * U, 0.6 * U, 'arrow', col.main, col.light));
+          const dx = (i - 1) * 0.45 * U;
+          const t = t0 + 0.05 + i * 0.07;
+          g.u.uOpacity.value = 0;
+          tl.span(t, t1, (k) => {
+            g.mesh.position.set(p.x + dx, p.y - 0.4 * U + easeOut(k) * 1.3 * U, p.z + 0.4);
+            g.u.uOpacity.value = Math.sin(k * Math.PI);
+          });
+        }
+        tintPulse(c, x.a, x.s?.panel ?? null, t0 + 0.1, t1, col.main, 0.32);
+        stream(c, t0, t1 - 0.1, 70, () => ({ x: p.x + (Math.random() - 0.5) * 0.9 * U, y: p.y - 0.5 * U, z: p.z + 0.3, vy: 3 * U, life: 0.4, size: 0.07 * U, color: col.light, drag: 0.5 }));
+      }
+      tl.at(t0 + 0.1, () => (chime(0.7), swell(0.3)));
+    },
+  },
+  powerDown: {
+    dur: 0.6,
+    base: [0x7a4aff, 0x4a2a9a, 0xd0c0ff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      for (const x of famAims(c, c.cls.scope === 'own' ? 'own' : 'opp', true)) {
+        const p = x.p;
+        for (let i = 0; i < 3; i++) {
+          const g = tl.own(new Glow(0.45 * U, 0.6 * U, 'arrow', col.main, col.light));
+          g.mesh.rotation.z = Math.PI;
+          const dx = (i - 1) * 0.45 * U;
+          const t = t0 + i * 0.06;
+          g.u.uOpacity.value = 0;
+          tl.span(t, t1, (k) => {
+            g.mesh.position.set(p.x + dx, p.y + 1.1 * U - easeIn(k) * 1.3 * U, p.z + 0.4);
+            g.u.uOpacity.value = Math.sin(k * Math.PI);
+          });
+        }
+        // a weight pressing it down
+        shockAt(c, { x: p.x, y: p.y - 0.45 * U, z: p.z }, 2 * U, t0 + 0.3, col.main, col.light);
+        const a = x.a;
+        if (a) tl.span(t0 + 0.25, t1, (k) => ((a.oy = -Math.sin(k * Math.PI) * 0.08 * U), c.d['place'](a)));
+        tintPulse(c, a, x.s?.panel ?? null, t0 + 0.2, t1, col.main, 0.25, 0.5);
+        stream(c, t0, t1 - 0.1, 60, () => ({ x: p.x + (Math.random() - 0.5) * 0.9 * U, y: p.y + 0.6 * U, z: p.z + 0.3, vy: -2.5 * U, life: 0.4, size: 0.07 * U, color: col.main, drag: 0.5 }));
+      }
+      tl.at(t0 + 0.3, () => (boom(0.3), drone(0.4), c.st.shake(0.3)));
+    },
+  },
+  negate: {
+    dur: 0.6,
+    base: [0xff2a4a, 0xff9aa0, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const p: P3 = c.spots[0]?.p ?? { x: 0, y: c.cy + 0.2 * U, z: 0.9 };
+      // the forbidden sign stamps down; an X of light cuts through it
+      const ban = glowAt(c, 'ban', { ...p, z: p.z + 0.5 }, 1.3 * U, 1.3 * U, col.main, col.light, t0, t1, 0.9, 0.05);
+      tl.span(t0, t0 + 0.15, (k) => ban.mesh.scale.setScalar(lerp(2, 1, easeIn(k))));
+      for (const s of [-1, 1]) {
+        const rib = tl.own(new Ribbon(8, col.light, 0));
+        rib.set([{ x: p.x - 0.6 * U, y: p.y + s * 0.6 * U, z: p.z + 0.7 }, { x: p.x + 0.6 * U, y: p.y - s * 0.6 * U, z: p.z + 0.7 }], 0.06 * U);
+        rib.u.uHead.value = 0;
+        const t = t0 + 0.15 + (s + 1) * 0.04;
+        tl.span(t, t + 0.1, (k) => (rib.u.uHead.value = k * 1.05));
+        tl.span(t1 - 0.25, t1, (k) => ((rib.u.uTail.value = k), (rib.u.uOpacity.value = 1 - k)));
+      }
+      tl.at(t0 + 0.15, () => {
+        c.st.hitStop(0.05);
+        c.st.shake(0.5);
+        c.st.pulse('chroma', 0.5);
+        zap(0.4);
+        boom(0.3);
+        c.d['flash'](col.main, 0.2);
+      });
+      sparks(c, p, t0 + 0.2, col.light, 50, { burst: 4 * U });
+      for (const s of c.spots) tintPulse(c, s.a, s.panel, t0 + 0.15, t1, 0x404050, 0.4, 0.4);
+    },
+  },
+  equip: {
+    dur: 0.6,
+    base: [0x7affff, 0xffd75a, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const x = famAims(c, 'own')[0];
+      const p = x.p;
+      // a sigil leaves the card, flies to its bearer and closes round it
+      const sig = tl.own(new Ring(0.8 * U, col.accent, Math.floor(c.r() * 999), { inner: 0.5, outer: 0.9, star: 4 }));
+      sig.spinSpeed = 6;
+      sig.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => {
+        const q = bez(c.src, p, 0.5 * U, easeInOut(k));
+        sig.mesh.position.set(q.x, q.y, q.z + 0.4);
+        sig.u.uOpacity.value = 1;
+      });
+      tl.at(t0 + 0.3, () => (sig.u.uOpacity.value = 0));
+      const band = tl.own(new Ring(2 * U, col.main, Math.floor(c.r() * 999), { inner: 0.82, outer: 0.92 }));
+      band.mesh.position.set(p.x, p.y, p.z + 0.2);
+      band.spinSpeed = 4;
+      band.u.uOpacity.value = 0;
+      tl.span(t0 + 0.3, t1, (k) => {
+        band.mesh.rotation.x = 1.25;
+        band.mesh.position.y = p.y + lerp(0.5, -0.2, k) * U;
+        band.mesh.scale.setScalar(lerp(1.3, 0.75, easeOut(clamp01(k * 2))));
+        band.u.uOpacity.value = Math.sin(k * Math.PI);
+      });
+      tintPulse(c, x.a, x.s?.panel ?? null, t0 + 0.3, t1, col.main, 0.3);
+      sparks(c, p, t0 + 0.3, col.light, 40, { burst: 2.5 * U });
+      tl.at(t0 + 0.3, () => (chime(0.75), zap(0.15)));
+    },
+  },
+  terrain: {
+    dur: 1.0,
+    base: [0x4aff9a, 0xffffff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1 } = c;
+      const ter = c.cls.terrain ?? 'cosmos';
+      const [a, b] = TERRAIN_COLORS[ter];
+      const bd = c.st.backdrop.u;
+      // the whole world behind the field becomes the place this card makes
+      tl.at(t0 - 0.1, () => {
+        bd.uTerrain.value = TERRAINS.indexOf(ter) + 1;
+        setRgb(bd.uColor.value, a);
+        setRgb(bd.uColor2.value, b);
+        bd.uVortex.value = 0;
+        c.d['bgTarget'] = 1;
+      });
+      tl.span(t0 - 0.1, t0 + 0.4, (k) => (bd.uTerrainAmt.value = easeOut(k)));
+      tl.span(t1 - 0.1, t1 + 0.2, (k) => (bd.uTerrainAmt.value = 1 - easeIn(k)));
+      // the ground: a wide disc of its color spreading from the card
+      shockAt(c, { x: 0, y: c.own * 0.6, z: 0 }, 7 * U, t0, a, b, 0.8);
+      const P: Record<Terrain, () => Emit> = {
+        volcano: () => ({ x: (Math.random() - 0.5) * 5 * U, y: -2.4 * U, z: 0.5, vy: (2 + Math.random() * 2) * U, vx: (Math.random() - 0.5) * U, life: 1, size: 0.08 * U, color: Math.random() < 0.5 ? a : 0xffd060, drag: 0.3 }),
+        ocean: () => ({ x: (Math.random() - 0.5) * 5 * U, y: -2.2 * U, z: 0.5, vy: (1 + Math.random()) * U, life: 1.1, size: 0.1 * U, size1: 0.14 * U, color: b, drag: 0.2 }),
+        forest: () => ({ x: (Math.random() - 0.5) * 5 * U, y: 2.6 * U, z: 0.5, vy: -1.2 * U, vx: (Math.random() - 0.3) * 1.2 * U, life: 1.2, size: 0.11 * U, size1: 0.08 * U, color: Math.random() < 0.6 ? a : 0xb0e070, drag: 0.4 }),
+        sky: () => ({ x: -3 * U, y: (Math.random() - 0.5) * 4 * U, z: 0.3, vx: (6 + Math.random() * 3) * U, life: 0.8, size: 0.06 * U, color: b, drag: 0 }),
+        holy: () => ({ x: (Math.random() - 0.5) * 4 * U, y: 2.4 * U, z: 0.5, vy: -1 * U, life: 1.2, size: 0.09 * U, color: Math.random() < 0.5 ? a : 0xffffff, drag: 0.3 }),
+        shadow: () => ({ x: (Math.random() - 0.5) * 5 * U, y: (Math.random() - 0.7) * 3 * U, z: 0.4, vx: (Math.random() - 0.5) * 0.6 * U, vy: 0.4 * U, life: 1.1, size: 0.2 * U, size1: 0.3 * U, color: a, drag: 0.2 }),
+        arcane: () => {
+          const ang = Math.random() * Math.PI * 2;
+          return { x: Math.cos(ang) * 2.2 * U, y: c.cy + Math.sin(ang) * 2.2 * U, z: 0.5, life: 0.9, size: 0.08 * U, color: Math.random() < 0.5 ? a : b, drag: 0, pull: { x: 0, y: c.cy, strength: 4 * U, swirl: 10 * U } };
+        },
+        tech: () => ({ x: Math.round((Math.random() - 0.5) * 8) * 0.6 * U, y: -2.4 * U, z: 0.4, vy: 4 * U, life: 0.8, size: 0.06 * U, color: b, drag: 0 }),
+        wasteland: () => ({ x: 3 * U, y: (Math.random() - 0.8) * 2.4 * U, z: 0.4, vx: -(3 + Math.random() * 2) * U, vy: 0.3 * U, life: 1, size: 0.12 * U, size1: 0.2 * U, color: a, drag: 0.4 }),
+        cosmos: () => ({ x: (Math.random() - 0.5) * 6 * U, y: (Math.random() - 0.5) * 5 * U, z: 0.2, life: 0.9, size: 0.05 * U, size1: 0.09 * U, color: Math.random() < 0.7 ? 0xffffff : b, drag: 0 }),
+      };
+      stream(c, t0, t1, 130, P[ter]);
+      tl.at(t0, () => (swell(0.6), drone(1), c.st.shake(0.2)));
+      tl.at(t0 + 0.2, () => c.d['flash'](a, 0.12));
+    },
+  },
+  aura: {
+    dur: 0.6,
+    base: [0x4ad8ff, 0xff7ad8, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const p: P3 = { x: c.src.x, y: c.src.y, z: c.src.z - 0.3 };
+      // it hums: rings of its color pulsing out over the field, a sigil turning slowly
+      for (let i = 0; i < 3; i++) shockAt(c, { x: p.x, y: c.cy - 0.2 * U, z: 0 }, (4.5 + i) * U, t0 + i * 0.15, i % 2 ? col.accent : col.main, col.light, 0.55);
+      const sig = tl.own(new Ring(2.6 * U, col.main, Math.floor(c.r() * 999), { inner: 0.45 + c.r() * 0.2, outer: 0.92, star: Math.floor(c.r() * 5) + 3 }));
+      sig.mesh.position.set(p.x, p.y, p.z);
+      sig.spinSpeed = (c.r() - 0.5) * 2;
+      sig.u.uOpacity.value = 0;
+      tl.span(t0, t1, (k) => ((sig.u.uOpacity.value = 0.8 * Math.sin(k * Math.PI)), sig.mesh.scale.setScalar(lerp(0.8, 1.1, k))));
+      stream(c, t0, t1, 90, () => {
+        const a = Math.random() * Math.PI * 2;
+        return { x: p.x + Math.cos(a) * 1.4 * U, y: p.y + Math.sin(a) * 1.4 * U, z: p.z + 0.3, vx: Math.cos(a) * 0.6 * U, vy: Math.sin(a) * 0.6 * U, life: 0.6, size: 0.07 * U, color: Math.random() < 0.5 ? col.main : col.light, drag: 0.5 };
+      });
+      tl.at(t0, () => (chime(0.5), swell(0.3)));
+    },
+  },
+  protect: {
+    dur: 0.6,
+    base: [0x4ad8ff, 0xa0f0ff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const aims = c.spots.length || c.hits.length ? famAims(c, 'own') : [{ p: { x: 0, y: c.own * 0.75, z: 0.8 }, s: null, a: null }];
+      const big = !c.spots.length && !c.hits.length;
+      for (const x of aims) {
+        const w = (big ? 3.8 : 2) * U;
+        const shield = glowAt(c, 'hex', { x: x.p.x, y: x.p.y, z: x.p.z + 0.6 }, w, w, col.main, col.light, t0, t1, 1, 0.12);
+        tl.span(t0, t0 + 0.25, (k) => shield.mesh.scale.setScalar(lerp(0.3, 1, backOut(k))));
+        tl.span(t0 + 0.2, t1, (k) => (shield.u.uK.value = (k * 2) % 1.1));
+        // something strikes it and glances off
+        const hitP = { x: x.p.x + (c.r() - 0.5) * 0.6 * U, y: x.p.y + w * 0.3, z: x.p.z + 0.7 };
+        sparks(c, hitP, t0 + 0.3, col.light, 40, { vy: 2 * U, burst: 3 * U, gravity: 6 * U });
+        tintPulse(c, x.a, x.s?.panel ?? null, t0, t1, col.main, 0.2);
+      }
+      tl.at(t0 + 0.05, () => chime(0.9));
+      tl.at(t0 + 0.3, () => (zap(0.2), c.st.shake(0.3), c.st.pulse('chroma', 0.3)));
+    },
+  },
+  position: {
+    dur: 0.6,
+    base: [0xffd75a, 0x7affff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      for (const x of famAims(c, c.cls.scope === 'own' ? 'own' : 'opp')) {
+        const p = x.p;
+        const ring = tl.own(new Ring(1.9 * U, col.main, Math.floor(c.r() * 999), { inner: 0.84, outer: 0.92 }));
+        ring.mesh.position.set(p.x, p.y, p.z + 0.4);
+        ring.spinSpeed = -7;
+        ring.u.uOpacity.value = 0;
+        tl.span(t0, t1, (k) => (ring.u.uOpacity.value = Math.sin(k * Math.PI)));
+        // two arrows chasing round it
+        for (let i = 0; i < 2; i++) {
+          const g = tl.own(new Glow(0.5 * U, 0.6 * U, 'arrow', col.light, 0xffffff));
+          g.u.uOpacity.value = 0;
+          tl.span(t0, t1, (k) => {
+            const a = i * Math.PI + k * Math.PI * 2.5;
+            g.mesh.position.set(p.x + Math.cos(a) * 0.85 * U, p.y + Math.sin(a) * 0.85 * U, p.z + 0.5);
+            g.mesh.rotation.z = a;
+            g.u.uOpacity.value = Math.sin(k * Math.PI);
+          });
+        }
+        // it turns on its card
+        const a = x.a;
+        const m = a?.fig?.mesh ?? a?.back?.mesh ?? x.s?.panel?.mesh;
+        if (m) {
+          const z0 = m.rotation.z;
+          tl.span(t0 + 0.1, t0 + 0.4, (k) => (m.rotation.z = z0 + (Math.PI / 2) * easeInOut(k)));
+          tl.span(t1 - 0.15, t1, (k) => (m.rotation.z = z0 + (Math.PI / 2) * (1 - k)));
+        }
+      }
+      tl.at(t0 + 0.1, () => whoosh(0.3, 700, 1500, 0.15));
+    },
+  },
+  control: {
+    dur: 0.8,
+    base: [0xc04aff, 0xffd75a, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const x = famAims(c, 'opp')[0];
+      const p = x.p;
+      // an eye opens over its mind; a tether of light pulls it across
+      const eye = tl.own(new Ring(1.6 * U, col.main, 31, { eye: true, inner: 0.9, outer: 0.95 }));
+      eye.mesh.position.set(p.x, p.y + 1 * U, p.z + 0.5);
+      eye.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => ((eye.u.uOpacity.value = k), (eye.u.uEye.value = easeOut(k))));
+      tl.span(t1 - 0.2, t1, (k) => (eye.u.uOpacity.value = 1 - k));
+      c.d['ray'](tl, c.src, p, t0 + 0.15, 0.25, col.main, col.light, 0.8);
+      const a = x.a;
+      const pull = c.own - p.y;
+      if (a) {
+        const home = a.oy;
+        tl.span(t0 + 0.4, t1, (k) => ((a.oy = home + pull * 0.35 * easeInOut(k)), c.d['place'](a)));
+      }
+      tintPulse(c, a, x.s?.panel ?? null, t0 + 0.35, t1, col.main, 0.4);
+      tl.at(t0 + 0.4, () => (drone(0.5), chime(0.3), c.d['flash'](col.main, 0.12)));
+    },
+  },
+  chance: {
+    dur: 0.8,
+    base: [0xffd75a, 0xff7a3a, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const coin = /coin/i.test(c.text) || (!/di(c)?e/i.test(c.text) && c.r() < 0.5);
+      const p: P3 = { x: 0, y: c.cy + 0.1 * U, z: 1.2 };
+      const g = tl.own(new Glow(1.1 * U, 1.1 * U, coin ? 'coin' : 'die', coin ? 0xffc94a : 0xffffff, col.accent));
+      g.u.uOpacity.value = 0;
+      const face = 1 + Math.floor(c.r() * 6);
+      // tossed up, spinning, and down again
+      tl.span(t0, t1 - 0.2, (k) => {
+        const h = Math.sin(k * Math.PI) * 1.3 * U;
+        g.mesh.position.set(p.x, p.y - 0.4 * U + h, p.z);
+        g.u.uOpacity.value = 1;
+        if (coin) g.mesh.scale.set(Math.max(0.08, Math.abs(Math.cos(k * Math.PI * 7 * (1 - k * 0.3)))), 1, 1);
+        else {
+          g.mesh.rotation.z = (1 - easeOut(k)) * 9;
+          g.u.uK.value = k < 0.85 ? 1 + Math.floor(k * 23) % 6 : face;
+        }
+      });
+      tl.span(t1 - 0.2, t1, (k) => {
+        g.mesh.scale.set(1, 1, 1);
+        g.mesh.rotation.z = 0;
+        g.u.uK.value = face;
+        g.u.uOpacity.value = 1 - easeIn(k) * 0.6;
+      });
+      glowAt(c, 'flare', p, 2.4 * U, 2.4 * U, col.main, col.light, t1 - 0.2, t1, 0.7, 0.04);
+      sparks(c, p, t1 - 0.2, col.light, 50, { burst: 3.5 * U });
+      tl.at(t0, () => whoosh(0.4, 900, 2600, 0.15));
+      tl.at(t1 - 0.2, () => (chime(0.9), c.st.shake(0.2)));
+    },
+  },
+  discard: {
+    dur: 0.6,
+    base: [0x8a5aff, 0x5a3a9a, 0xd8c8ff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const near = c.side === 'near';
+      const grave: P3 = { x: (near ? -1 : 1) * 1.75 * U, y: (near ? -1 : 1) * 1.45 * U, z: 0.3 };
+      const pit = glowAt(c, 'vortex', grave, 1.8 * U, 1.8 * U, col.main, col.accent, t0, t1, 1, 0.1);
+      pit.mesh.rotation.x = -0.9;
+      const n = 1 + Math.floor(c.r() * 3);
+      for (let i = 0; i < n; i++) {
+        const t = t0 + i * 0.08;
+        cardFly(c, { x: (i - (n - 1) / 2) * 0.6 * U, y: handY(c, near) * 0.85, z: 1 }, grave, t, t + 0.4, { color: col.main, size: 0.7, spin: Math.PI, bend: 0.4 * U });
+      }
+      stream(c, t0 + 0.2, t1, 80, () => ({ x: grave.x + (Math.random() - 0.5) * 0.6 * U, y: grave.y, z: grave.z, vy: 1.2 * U, life: 0.6, size: 0.12 * U, size1: 0.2 * U, color: col.accent, drag: 0.5 }));
+      tl.at(t0 + 0.35, () => (drone(0.4), whoosh(0.2, 1200, 300, 0.12)));
+    },
+  },
+  lock: {
+    dur: 0.7,
+    base: [0xc0c8d8, 0x4ad8ff, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const y = c.cls.scope === 'own' ? c.own : c.opp;
+      // chains cross the field; a lock snaps shut on them
+      const pts = (s: number) => Array.from({ length: 10 }, (_, j) => ({ x: lerp(-2.3, 2.3, j / 9) * U, y: y + s * lerp(-0.8, 0.8, j / 9) * U + Math.sin(j * 1.7) * 0.05 * U, z: 0.8 }));
+      for (const s of [1, -1]) {
+        const rib = tl.own(new Ribbon(20, col.main, 1));
+        rib.set(pts(s), 0.13 * U);
+        rib.u.uHead.value = 0;
+        const t = t0 + (s > 0 ? 0 : 0.08);
+        tl.span(t, t + 0.25, (k) => (rib.u.uHead.value = easeOut(k) * 1.05));
+        tl.span(t1 - 0.2, t1, (k) => (rib.u.uOpacity.value = 1 - k));
+        tl.at(t, () => whoosh(0.25, 2000, 800, 0.12));
+      }
+      const lk = glowAt(c, 'lock', { x: 0, y, z: 1.1 }, 1.2 * U, 1.2 * U, col.light, col.main, t0 + 0.3, t1, 1, 0.05);
+      tl.span(t0 + 0.3, t0 + 0.42, (k) => lk.mesh.scale.setScalar(lerp(1.8, 1, easeIn(k))));
+      tl.at(t0 + 0.42, () => (boom(0.35), zap(0.2), c.st.shake(0.45), c.d['flash'](col.light, 0.12)));
+      sparks(c, { x: 0, y, z: 1.1 }, t0 + 0.42, col.light, 40);
+      for (const h of c.hits) tintPulse(c, h, null, t0 + 0.3, t1, 0x606880, 0.3, 0.3);
+    },
+  },
+  insight: {
+    dur: 0.7,
+    base: [0x4affd8, 0xffd75a, 0xffffff],
+    play(c) {
+      const { tl, U, t0, t1, col } = c;
+      const y = c.opp;
+      const eye = tl.own(new Ring(2.2 * U, col.main, 77, { eye: true, inner: 0.9, outer: 0.95 }));
+      eye.mesh.position.set(0, y + 0.3 * U, 0.6);
+      eye.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => ((eye.u.uOpacity.value = k), (eye.u.uEye.value = easeOut(k))));
+      tl.span(t1 - 0.2, t1, (k) => ((eye.u.uOpacity.value = 1 - k), (eye.u.uEye.value = 1 - k)));
+      // its gaze sweeps the field; the cards it sees glow back
+      const beam = glowAt(c, 'shaft', { x: 0, y: y - 0.9 * U, z: 0.5 }, 1 * U, 2.4 * U, col.light, col.light, t0 + 0.2, t1, 0.8);
+      tl.span(t0 + 0.2, t1, (k) => {
+        beam.mesh.rotation.z = Math.sin(k * Math.PI * 2) * 0.6;
+        beam.mesh.position.x = -Math.sin(k * Math.PI * 2) * 0.6 * U;
+      });
+      for (let i = 0; i < 3; i++) {
+        const t = t0 + 0.3 + i * 0.1;
+        glowAt(c, 'star', { x: (i - 1) * 1.1 * U, y: y + 1.6 * U * (c.side === 'near' ? 1 : -1) * 0.5, z: 0.8 }, 0.8 * U, 0.8 * U, col.accent, 0xffffff, t, t + 0.3, 1, 0.05);
+      }
+      tl.at(t0, () => (chime(0.4), drone(0.4)));
+    },
+  },
+};
+
+/** A Skill's duelist: their color, the emblem over the sigil, the sigil's star and turn. */
+interface Flourish {
+  color: number;
+  light: number;
+  mode: GlowMode | 'eye';
+  star: number;
+  spin: number;
+}
+const FLOURISHES: Record<string, Partial<Flourish>> = {
+  'Yami Yugi': { color: 0xb04aff, light: 0xffd75a, mode: 'star', star: 3 },
+  Yugi: { color: 0x9a6aff, light: 0xffe9a0, mode: 'star', star: 3 },
+  Kaiba: { color: 0x4ad8ff, light: 0xffffff, mode: 'sword', star: 8 },
+  'Seto Kaiba': { color: 0x4ad8ff, light: 0xffffff, mode: 'sword', star: 8 },
+  Joey: { color: 0xff9a3a, light: 0xfff0c0, mode: 'die', star: 5 },
+  'Joey Wheeler': { color: 0xff9a3a, light: 0xfff0c0, mode: 'die', star: 5 },
+  Mai: { color: 0xff6ad8, light: 0xffe0f8, mode: 'star', star: 5 },
+  'Mai Valentine': { color: 0xff6ad8, light: 0xffe0f8, mode: 'star', star: 5 },
+  Pegasus: { color: 0xff3a5a, light: 0xffd75a, mode: 'eye', star: 4 },
+  Ishizu: { color: 0xffd75a, light: 0xffffff, mode: 'eye', star: 6 },
+  'Ishizu Ishtar': { color: 0xffd75a, light: 0xffffff, mode: 'eye', star: 6 },
+  'Yami Marik': { color: 0xffb030, light: 0xff4ad8, mode: 'eye', star: 7 },
+  Odion: { color: 0xd8a040, light: 0xfff0c0, mode: 'ankh', star: 6 },
+  'Yami Bakura': { color: 0x8a3aff, light: 0xffd75a, mode: 'vortex', star: 5 },
+  Bonz: { color: 0x7aff7a, light: 0xd8ffd8, mode: 'vortex', star: 6 },
+  Keith: { color: 0x3a6aff, light: 0xff4a4a, mode: 'star', star: 5 },
+  Weevil: { color: 0x9aff3a, light: 0xffffff, mode: 'hex', star: 6 },
+  Rex: { color: 0x3aff9a, light: 0xffd060, mode: 'flame', star: 3 },
+  Mako: { color: 0x1a9aff, light: 0xbfefff, mode: 'shock', star: 7 },
+  'Jaden Yuki': { color: 0xff4a3a, light: 0xffe0a0, mode: 'flare', star: 5 },
+  'Syrus Truesdale': { color: 0x3ad8ff, light: 0xffffff, mode: 'hex', star: 6 },
+  'Zane Truesdale': { color: 0x9ad8ff, light: 0xffffff, mode: 'sword', star: 8 },
+  'Chazz Princeton': { color: 0x404870, light: 0xd8d8ff, mode: 'vortex', star: 5 },
+  'Alexis Rhodes': { color: 0x4a9aff, light: 0xffffff, mode: 'star', star: 6 },
+  'Bastion Misawa': { color: 0xffd75a, light: 0xffffff, mode: 'hex', star: 6 },
+  'Paradox Brothers': { color: 0xff7a3a, light: 0x7affff, mode: 'shock', star: 4 },
+  Yubel: { color: 0xc04aff, light: 0xff4a8a, mode: 'eye', star: 5 },
+  'The Supreme King': { color: 0xffb020, light: 0xff3a3a, mode: 'flare', star: 7 },
+  Titan: { color: 0x8a2a3a, light: 0xff6a3a, mode: 'flame', star: 5 },
+  Nightshroud: { color: 0x2a1a6a, light: 0xb0a0ff, mode: 'vortex', star: 7 },
+  Camula: { color: 0xc01a4a, light: 0xffa0c0, mode: 'vortex', star: 5 },
+  'Dr. Vellian Crowler': { color: 0xc0a040, light: 0xffffff, mode: 'hex', star: 8 },
+  'Aster Phoenix': { color: 0xd8d8ff, light: 0xffd75a, mode: 'sword', star: 6 },
+  'Tea Gardner': { color: 0xff8ad8, light: 0xffffff, mode: 'plus', star: 5 },
+  'Espa Roba': { color: 0x7a4aff, light: 0xd8c8ff, mode: 'eye', star: 6 },
+};
+
+function flourishOf(who: string, seed: number): Flourish {
+  const r = rand(seed ^ 0xf10);
+  const PAL = [0x4ad8ff, 0xff6ad8, 0xffc94a, 0x7aff7a, 0xb04aff, 0xff7a3a, 0x3a9aff];
+  const MODES: GlowMode[] = ['star', 'flare', 'hex', 'sword', 'shock'];
+  const known = FLOURISHES[who] ?? {};
+  const color = known.color ?? PAL[Math.floor(r() * PAL.length)];
+  return { color, light: known.light ?? 0xffffff, mode: known.mode ?? MODES[Math.floor(r() * MODES.length)], star: known.star ?? 4 + Math.floor(r() * 4), spin: (r() < 0.5 ? -1 : 1) * (1 + r()) };
+}
+
+/** The colors each terrain paints (sky color, light color). */
+const TERRAIN_COLORS: Record<Terrain, [number, number]> = {
+  volcano: [0xff4a1a, 0xffc040],
+  ocean: [0x1a6aff, 0x9ae8ff],
+  forest: [0x2a9a3a, 0xd8ff8a],
+  sky: [0x4a8aff, 0xf0f8ff],
+  holy: [0xffe08a, 0xffffff],
+  shadow: [0x6a2aaa, 0xff4ad8],
+  arcane: [0x8a4aff, 0x7affff],
+  tech: [0x1ad8ff, 0x7aff9a],
+  wasteland: [0xc08a4a, 0xffe0a0],
+  cosmos: [0x5a3aff, 0xffffff],
+};
+
+/** A family cinematic's colors for one card: the family's own, leaning toward the card's art and seeded. */
+function famColors(fam: FxFamily, r: () => number, art: ArtData | null): Colors {
+  const [m, a, l] = FAMILY_FX[fam].base;
+  const p = art?.palette;
+  const k = 0.18 + r() * 0.22;
+  const hue = (x: number) => {
+    // a small seeded hue turn (±20°): two cards of a family never match exactly
+    const rr = (x >> 16) & 255;
+    const gg = (x >> 8) & 255;
+    const bb = x & 255;
+    const t = (r() - 0.5) * 0.7;
+    const cs = Math.cos(t);
+    const sn = Math.sin(t);
+    const w = 1 / 3;
+    const sq = Math.sqrt(w);
+    const m00 = cs + (1 - cs) * w;
+    const m01 = w * (1 - cs) - sq * sn;
+    const m02 = w * (1 - cs) + sq * sn;
+    const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+    return (ch(m00 * rr + m01 * gg + m02 * bb) << 16) | (ch(m02 * rr + m00 * gg + m01 * bb) << 8) | ch(m01 * rr + m02 * gg + m00 * bb);
+  };
+  return {
+    main: brighten(p ? mix(hue(m), p[0], k) : hue(m)),
+    accent: brighten(p ? mix(hue(a), p[1] ?? a, k) : hue(a)),
+    light: brighten(mix(l, 0xffffff, 0.3), 220),
+  };
+}
+
+/** Plays a card's effect family (no preset of its own) into `tl`. */
+function playFamily(c: Omit<FamCtx, 'col' | 'r' | 'q'> & { art: ArtData | null; seed: number }) {
+  const r = rand(c.seed ^ 0x5eed);
+  const fam = c.cls.family;
+  const ctx: FamCtx = { ...c, r, col: famColors(fam, r, c.art), q: c.d['q'] };
+  FAMILY_FX[fam].play(ctx);
+  // targets the effect destroys break where they lie even when its family is about something else
+  if (fam !== 'destroy' && fam !== 'destroyAll')
+    for (const s of c.spots) {
+      if (!s.destroyed) continue;
+      const t = c.t0 + Math.min(0.45, FAMILY_FX[fam].dur * 0.6);
+      if (s.a) c.d['strike'](c.tl, s.a, t);
+      if (s.panel) c.tl.at(t, () => void c.d['panelShards'](c.tl, s.panel!, ctx.col.main, 2.6 * c.U), false);
+    }
+  return ctx;
+}
+
+/** The preset a Spell/Trap without its own plays: its family's. */
+function familyPreset(name: string): Preset | undefined {
+  const info = card(name);
+  if (!info) return undefined;
+  const cls = classify(info);
+  const fx = FAMILY_FX[cls.family];
+  return {
+    dur: fx.dur,
+    accent: fx.base[1],
+    // board-wide families reach the side their text names; boosts and shields default to its own monsters, curses to the opponent's
+    scope: cls.family === 'destroyAll' || cls.family === 'position' || cls.family === 'bounce' || cls.family === 'banish' || cls.family === 'toDeck' ? cls.scope : cls.family === 'powerUp' || cls.family === 'protect' ? (cls.scope ?? 'own') : cls.family === 'powerDown' || cls.family === 'lock' ? (cls.scope ?? 'opp') : undefined,
+    family: cls,
+    play(c) {
+      playFamily({ d: c.d, st: c.st, tl: c.tl, U: c.U, t0: c.t0, t1: c.t1, side: c.side, cy: c.cy, opp: c.opp, own: c.own, src: c.card, hits: c.hits, spots: c.spots ?? [], cls, text: effectText(info), art: c.art ?? null, seed: c.seed ?? 0 });
+    },
+  };
+}
+
 function presetFor(name: string): Preset | undefined {
   return SPELL_PRESETS[name] ?? EXTRA_PRESETS[name] ?? SPELL_PRESETS[PRESET_ALIASES[name] ?? ''];
 }
@@ -4383,4 +5942,15 @@ export const ATTACK_STYLES = Object.keys(STYLES) as AttackStyle[];
 /** Spells and traps with their own preset, and monsters with a signature attack. */
 export const SPELL_PRESET_CARDS = [...Object.keys(SPELL_PRESETS), ...Object.keys(EXTRA_PRESETS), ...Object.keys(PRESET_ALIASES)];
 export const SIGNATURE_ATTACK_CARDS = Object.keys(SIG_ATTACKS);
+/** Whether a card plays its own preset (else its family's). */
+export function hasOwnPreset(name: string): boolean {
+  return !!presetFor(name);
+}
+export { FX_FAMILIES };
+/** The effect families with a cinematic of their own (every family classify() can return). */
+export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
+/** The summon methods with their own shot ('normal' keeps the plain summon). */
+export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
+/** The cue kinds the director draws. */
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw'];
 export { css };
