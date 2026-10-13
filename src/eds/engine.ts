@@ -934,6 +934,18 @@ export class Engine {
         }
         if (kept) continue;
       }
+      // audit-07: a card in a GY can be banished instead of this monster being destroyed (Machine Angel Ritual).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        const ctl = this.controller(uid) ?? m.owner;
+        const sub = this.player(ctl).gy.find((c) => getEffect(c.name)?.graveReplace?.(this, c, ctl, m, byBattle));
+        if (sub) {
+          this.banish(sub.uid);
+          if (this.find(sub.uid)?.loc.zone === 'removed') {
+            this.log(ctl, `${sub.name} is banished instead of ${m.name} being destroyed`);
+            continue;
+          }
+        }
+      }
       this.battleKill = byBattle;
       yield* this.sendToGrave(uid, reason);
       this.battleKill = false;
@@ -1054,6 +1066,7 @@ export class Engine {
     if (amount > 0 && (this.state.fx.halfDamage as number[] | undefined)?.[player] === this.state.turn) amount = Math.floor(amount / 2);
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
+    if (amount > 0 && (this.battleHit || (this.actor !== null && this.actor !== player))) (this.state.fx.dmgByOpp ??= [-1, -1])[player] = this.state.turn; // audit-07: took battle/opponent's effect damage this turn (Magikuriboh)
     if (amount <= 0) return;
     const ps = this.player(player);
     const from = ps.lp;
@@ -1220,7 +1233,11 @@ export class Engine {
   /** Removes a card from play (D.D. Warrior, Gravedigger Ghoul). */
   banish(uid: number) {
     const f = this.find(uid);
-    if (!f || this.graveLocked(uid)) return;
+    if (!f) return;
+    this.state.fx.banishing = uid; // audit-07: locksGrave can tell a banish from other moves (Kycoo the Ghost Destroyer)
+    const locked = this.graveLocked(uid);
+    this.state.fx.banishing = undefined;
+    if (locked) return;
     if (this.speed) ((this.state.fx.banishedAt ??= {}) as Record<number, number>)[uid] = this.state.turn;
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
@@ -1836,7 +1853,7 @@ export class Engine {
     const plan = this.tributePlan(player, card, faceUp);
     const need = plan.need;
     const empty = this.openMonsterZones(player); // b20
-    const owned = this.monsters(player).filter((m) => !this.untributable(m) && (!plan.only || plan.only(m))).length;
+    const owned = this.monsters(player).filter((m) => !this.untributable(m) && !this.tribLocked(m, card) && (!plan.only || plan.only(m))).length;
     if (need === 0) return empty > 0;
     if (owned < need && empty > 0 && faceUp !== false && this.tributeStandIns(player, card, need).length) return true;
     if (owned < need && faceUp !== false && this.doubleTributes(player, card).length) return true;
@@ -1876,6 +1893,12 @@ export class Engine {
       const eq = this.fieldCard(u);
       return !!eq && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && !!getEffect(eq.name)?.cannotBeTributed?.(this, m);
     });
+  }
+
+  /** audit-07: a monster that can only be Tributed for the Tribute Summon of a monster whose name includes fx.tribFor[uid] (Jurrac Tokens). */
+  tribLocked(m: FieldCard, card: Card): boolean {
+    const t = (this.state.fx.tribFor as Record<number, string> | undefined)?.[m.uid];
+    return this.speed && typeof t === 'string' && !card.name.includes(t);
   }
 
   /** Speed Duel: active Spells/Traps that can be Tributed instead of all the monsters (Ancient Gear Castle). */
@@ -1921,7 +1944,7 @@ export class Engine {
         yield* this.sendToGrave(double.uid, 'tribute');
         this.log(player, `${ps.name} Tributed ${double.name} as 2 Tributes`);
       } else {
-        const pool = fodder.filter((m) => !this.untributable(m));
+        const pool = fodder.filter((m) => !this.untributable(m) && !this.tribLocked(m, f.card));
         if (pool.length < need) return;
         const picks = yield* this.select(player, `Choose ${need} monster${need > 1 ? 's' : ''} to Tribute`, this.optionsFor(pool, true), need, need, true);
         if (!picks) return;
@@ -2018,7 +2041,10 @@ export class Engine {
     if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
     const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
-    if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
+    this.state.fx.procCheck = card.uid; // audit-07: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways")
+    const blocked = !!proc && this.summonBlocked(player, card, 'special', f.loc.zone);
+    this.state.fx.procCheck = undefined;
+    if (blocked) return false;
     return !!proc && proc.can(this, card, player);
   }
 

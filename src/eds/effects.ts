@@ -291,6 +291,9 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // audit-07
+  /** A card in `owner`'s GY: true = it is banished instead of `m` (a face-up monster `owner` controls) being destroyed (Machine Angel Ritual). */
+  graveReplace?(e: Engine, card: Card, owner: Pid, m: FieldCard, byBattle: boolean): boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';

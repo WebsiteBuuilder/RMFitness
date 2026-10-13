@@ -178,7 +178,7 @@ export function* discardCost(e: Engine, p: Pid, n = 1, test: (c: Card) => boolea
 }
 /** Tribute `n` monsters you control (matching `test`) as a cost. */
 export function* tributeCost(e: Engine, p: Pid, n = 1, test: (m: FieldCard) => boolean = () => true, except?: number): Gen<boolean> {
-  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m) && !e.untributable(m));
+  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m) && !e.untributable(m) && !m.tags?.summonTribOnly); // audit-07: Soul Tokens (Limit Impulse)
   if (cands.length < n) return false;
   const chosen = yield* pick(e, p, `Tribute ${n} monster${n > 1 ? 's' : ''}`, cands, n, n, true, false);
   if (!chosen) return false;
