@@ -232,7 +232,6 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve() {},
     shields(e, _src, target, how, srcCtl) {
       if (!abyssActor(target) || ctrl(e, target) !== srcCtl) return false;
-      if (how === 'target') return (target.tags?.wagonUntil ?? -1) >= e.state.turn;
       if (how !== 'battle' || tag(target).wagonSaved === e.state.turn) return false;
       tag(target).wagonSaved = e.state.turn;
       return true;
@@ -244,7 +243,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const m = yield* pickOne(e, p, 'Wild Wagon: protect which Abyss Actor?', targetable(e, e.monsters(p).filter(abyssActor)), true);
         if (!m) return;
         e.useOnce(`wagon${c.uid}`, p);
-        tag(m).wagonUntil = e.state.turn + 1;
+        // The engine keeps the opponent's effects off it until the end of their next turn, even if Wild Wagon leaves.
+        tag(m).oppNoTargetUntil = Math.max(m.tags?.oppNoTargetUntil ?? -1, e.state.turn + 1);
       },
     },
   };
@@ -487,6 +487,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const m = yield* summonOneOf(e, p, 'Amazoness Onslaught: Special Summon which Amazoness?', e.player(p).hand.filter((c) => amzMon(e, c) && canSS(e, c)));
         if (m) m.atkMod += 500;
       },
+    },
+    // After damage calculation: banish the opponent's monster an Amazoness battled (wherever the battle left it).
+    *afterAnyBattle(e, _c, p, a, t) {
+      const pair = ctrl(e, a) === p && amz(a) ? t : ctrl(e, t) === p && amz(t) ? a : null;
+      if (!pair || pair.token) return;
+      const f = e.find(pair.uid);
+      if (!f || f.card.owner !== other(p) || !(f.loc.zone === 'mz' || f.loc.zone === 'gy')) return;
+      if (f.loc.zone === 'mz' && f.loc.player !== other(p)) return;
+      if (!(yield* e.yesno(p, `Amazoness Onslaught: banish ${pair.name}?`))) return;
+      e.banish(pair.uid);
     },
     *onDestroyed(e, _c, p) {
       const list = e.player(p).gy.filter((c) => amzMon(e, c) && canSS(e, c));
@@ -1290,7 +1300,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Only when it attacks: monsters it destroys go back to the hand instead of staying in the GY.
+  // Monsters it destroys by battle (attacking or attacked) go back to the hand instead of staying in the GY.
   const rageTargets = (e: Engine, p: Pid) => targetable(e, faceUpOf(e, p).filter((m) => raceOf(e, m) === 'Warrior'));
   E['Battleguard Rage'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && rageTargets(e, p).length > 0,
@@ -1305,8 +1315,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (m?.faceUp && fc) h.attachTo(e, fc, m.uid);
     },
     equipBonus: (_e, eq, host) => (eq.equippedTo === host.uid ? { atk: 1000, def: 0 } : { atk: 0, def: 0 }),
-    *hostAfterBattle(e, _eq, _host, t) {
-      if (t && where(e, t.uid) === 'gy' && !t.token) yield* returnToHand(e, t.uid);
+    *afterAnyBattle(e, eq, _p, a, t) {
+      const host = eq.equippedTo;
+      const foe = a.uid === host ? t : t.uid === host ? a : null;
+      if (foe && !foe.token && where(e, foe.uid) === 'gy' && e.fieldCard(eq.uid)) yield* returnToHand(e, foe.uid);
     },
   };
 

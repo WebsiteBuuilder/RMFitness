@@ -45,7 +45,8 @@ export interface SeatProfile {
   profile: Profile;
   save: SaveFile | null;
   /** their Speed Duel deck, when they have one */
-  speed?: { deck: SpeedDeck | null };
+  /** `play` is the deck as dealt: without cards sealed in the Shadow Realm */
+  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null; rarity?: Record<string, number> };
 }
 
 /** What a player brings to the table for one of the two games. */
@@ -54,6 +55,8 @@ export interface SeatEntry {
   deck: string[];
   fusion: string[];
   skill?: string | null;
+  /** Speed Duel card rarities (card leveling) */
+  rarity?: Record<string, number>;
   problems: string[];
 }
 
@@ -85,6 +88,24 @@ export function Lobby({
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
   const [guestName, setGuestName] = useState('');
+  const [copied, setCopied] = useState(false);
+  /** Phones open the share sheet (Messages, WhatsApp...); elsewhere the link is copied. */
+  const invite = async (room: string) => {
+    const url = `${location.origin}${location.pathname}?join=${room}`;
+    try {
+      if (navigator.share) return await navigator.share({ title: 'Duel me!', text: `Join my duel room ${room}`, url });
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt('Copy this link:', url);
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   // The host decides the game; a guest follows whatever the host readied for.
   const roomMode: GameMode = mySeat === 0 || !seats[0].ready ? mode : (seats[0].mode ?? 'eds');
   const mine = entries[roomMode];
@@ -92,7 +113,7 @@ export function Lobby({
   const sameGame = (seats[0].mode ?? 'eds') === (seats[1].mode ?? 'eds');
   const iAmReady = seats[mySeat].ready && (seats[mySeat].mode ?? 'eds') === roomMode;
 
-  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null });
+  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null, ...(roomMode === 'speed' && e.rarity ? { rarity: e.rarity } : {}) });
   const ready = () => mine && mine.problems.length === 0 && join(mySeat, mine);
   const readyGuest = () => {
     onSeatProfile?.(null);
@@ -108,7 +129,7 @@ export function Lobby({
   const seatFor = (o: SeatProfile): SeatEntry | null => {
     if (roomMode === 'speed') {
       const d = o.speed?.deck;
-      return d ? { name: o.profile.alias, deck: d.main, fusion: d.extra, skill: d.skill, problems: speedDeckProblems(d) } : null;
+      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, rarity: o.speed?.rarity, problems: speedDeckProblems(d) } : null;
     }
     return o.save ? { name: o.profile.alias, deck: o.save.main, fusion: o.save.fusion, problems: deckProblems(o.save) } : null;
   };
@@ -142,8 +163,8 @@ export function Lobby({
         {code && session.adapter.isHost && status === 'waiting' && (
           <p>
             Tell your brother the code <b>{code}</b> or send him this link:{' '}
-            <button class="chip" onClick={() => void navigator.clipboard?.writeText(`${location.origin}${location.pathname}?join=${code}`)}>
-              Copy invite link
+            <button class={`chip ${copied ? 'copied' : ''}`} onClick={() => void invite(code)}>
+              {copied ? 'Link copied!' : 'Send invite link'}
             </button>
           </p>
         )}

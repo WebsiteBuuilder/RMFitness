@@ -161,8 +161,8 @@ export function aiAction(e: Engine, me: Pid): Action | null {
         const atk = info.atk ?? 0;
         const def = info.def ?? 0;
         const flip = !!getEffect(c.name)?.flip;
-        // Set weak or flip monsters; summon anything that can fight.
-        if (flip || (atk < theirBest && def >= atk)) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: false };
+        // Set weak or flip monsters; summon anything that can fight (Set it when it cannot be Summoned face-up right now).
+        if (flip || (atk < theirBest && def >= atk) || !e.canNormalSummon(me, c, true)) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: false };
         if (atk >= theirBest || theirMonsters.length === 0) return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'atk', faceUp: true };
         return { type: 'SUMMON', player: me, uid: c.uid, zone, pos: 'def', faceUp: def > atk };
       }
@@ -171,7 +171,7 @@ export function aiAction(e: Engine, me: Pid): Action | null {
     for (const m of myMonsters) {
       const fresh = m.placedTurn !== s.turn && !m.posChanged && !m.attacked;
       if (!fresh) continue;
-      if (!m.faceUp && (e.atkOf(m) >= theirBest || getEffect(m.name)?.flip)) return { type: 'FLIP_SUMMON', player: me, uid: m.uid };
+      if (!m.faceUp && !e.summonBlocked(me, m, 'flip', 'mz') && (e.atkOf(m) >= theirBest || getEffect(m.name)?.flip)) return { type: 'FLIP_SUMMON', player: me, uid: m.uid };
       if (m.cannotChangePos || (m.faceUp && !e.canChangePosition(me, m))) continue;
       if (m.faceUp && m.name === 'Dream Clown' && m.pos === 'atk' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };
       if (m.faceUp && m.name === 'Crass Clown' && m.pos === 'def' && theirMonsters.length > 0) return { type: 'CHANGE_POS', player: me, uid: m.uid };

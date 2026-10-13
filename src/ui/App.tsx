@@ -15,15 +15,20 @@ import { PeerAdapter } from '../sync/peer';
 import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
+import { useBackButton } from './backButton';
 import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
-import { DuelBackGuard, SoloHud, Solo, type SoloMode } from './Solo';
+import { SoloHud, Solo, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
 import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
+import { whenArtIdle } from '../art/cues';
+import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
+import { rarityMap, withLevels } from '../level/leveling';
+import { showDuelRarity } from '../level/view';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -133,11 +138,14 @@ export function App() {
   };
 
   const startSpeedCpu = (o: SpeedOpponent) => {
-    const deck = speedSave ? activeDeck(speedSave) : null;
-    if (!save || !deck || speedDeckProblems(deck).length > 0) return;
+    const full = speedSave ? activeDeck(speedSave) : null;
+    if (!save || !full || !speedSave || speedDeckProblems(full).length > 0) return;
+    // Cards sealed in the Shadow Realm sit this duel out, on both sides.
+    const deck = unsealedDeck(speedSave, full);
+    o = { ...o, main: unsealedCpuMain(speedSave, o.name, o.main) };
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]) });
     ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill });
     ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] });
     setHotseat(false);
@@ -225,26 +233,61 @@ export function App() {
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
     if (gameOf() === 'speed') {
       // Speed Duel keeps its own record; no booster packs or calendar days.
-      if (speedSave) setSpeedSave(withSpeedResult(speedSave, mine, oppName));
-      if (hotseat && p2Profile && p2Profile !== profile?.id) writeSpeedSave(p2Profile, withSpeedResult(loadSpeedSave(p2Profile), mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', save.name));
+      // Overkill finish: the loser is sent to the Shadow Realm and their best monster is sealed.
+      const sr = session ? shadowRealmOf(session.engine.state) : null;
+      if (sr) recordShadow(sr);
+      // Card leveling: each profile's cards rank up from what they did this duel.
+      const st = session?.engine.state;
+      const lv = (s: SpeedSave, seat: Pid) => (st ? withLevels(s, st, seat).save : s);
+      if (speedSave) setSpeedSave(lv(withShadow(withSpeedResult(speedSave, mine, oppName), mine, sr, mySeat, oppName, cpu).save, mySeat));
+      if (hotseat && p2Profile && p2Profile !== profile?.id) {
+        const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
+        writeSpeedSave(p2Profile, lv(withShadow(withSpeedResult(loadSpeedSave(p2Profile), theirs, save.name), theirs, sr, mySeat === 0 ? 1 : 0, save.name, false).save, mySeat === 0 ? 1 : 0));
+      }
       session?.close();
       setSession(null);
       setP2Profile(null);
       setScreen('speed');
       return;
     }
-    const next = withResult(save, mine, oppName);
+    // Link Battle results get their own rows, so a brother called "Yugi Muto" can't open Campaign stages.
+    const recordName = cpu ? oppName : `Link: ${oppName}`;
+    const next = withResult(save, mine, recordName);
     setSave(next);
     // Hotseat with a second profile: Player 2's own save gets the result too.
     if (hotseat && p2Profile && p2Profile !== profile?.id) {
       const theirs = loadSave(p2Profile);
-      if (theirs) writeSave(p2Profile, withResult(theirs, mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', save.name));
+      if (theirs) writeSave(p2Profile, withResult(theirs, mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', `Link: ${save.name}`));
     }
     session?.close();
     setSession(null);
     setP2Profile(null);
     setScreen(next.pendingPacks > 0 ? 'pack' : 'menu');
   };
+
+  // Android back button: back to the main menu from any menu screen; in a duel, ask first.
+  useBackButton(() => {
+    if (screen === 'duel' && session) {
+      const st = session.engine.state;
+      if (st.winner !== null) {
+        const opp = st.players[mySeat === 0 ? 1 : 0].name;
+        finishDuel(st.winner, opp === 'Téa Gardner' ? 'Tea Gardner' : opp);
+        return true;
+      }
+      if (st.started && !confirm(soloDuel.current?.ctx.kind === 'labyrinth' ? 'Leave this duel? It counts as a loss and costs a heart.' : 'Leave this duel?')) return true;
+      // Leaving an online duel concedes it, so your opponent isn't left waiting.
+      if (st.started && session.adapter.roomCode && !hotseat) session.send({ type: 'SURRENDER', player: mySeat });
+      leaveDuel();
+      return true;
+    }
+    // The solo modes step back through their own sheets and screens.
+    if (screen === 'speed' && soloMode) return soloBack();
+    if (screen !== 'title' && screen !== 'profiles' && screen !== 'intro' && screen !== 'menu' && screen !== 'duel') {
+      setScreen('menu');
+      return true;
+    }
+    return false;
+  });
 
   if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} onStart={() => setScreen('profiles')} />;
   if (!profile) return <ProfilePicker onPick={pickProfile} joining={pendingJoin} />;
@@ -327,8 +370,10 @@ export function App() {
 
   /** Each seat's control style: in a hotseat duel Player 2's own profile decides theirs. */
   const controlsFor = (p: Pid): ControlStyle => {
-    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? 'classic';
-    return save.controls ?? 'classic';
+    // Speed Duel plays on the Master Duel-style Touch screen unless the player picked Classic.
+    const fallback: ControlStyle = duelMode === 'speed' ? 'touch' : 'classic';
+    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? fallback;
+    return save.controls ?? fallback;
   };
   const setControls = (p: Pid, c: ControlStyle) => {
     if (hotseat && p === 1) {
@@ -343,12 +388,17 @@ export function App() {
   const others = (): SeatProfile[] =>
     loadProfiles()
       .filter((p) => p.id !== profile.id)
-      .map((p) => ({ profile: p, save: loadSave(p.id), speed: { deck: activeDeck(loadSpeedSave(p.id)) } }));
+      .map((p) => {
+        const ss = loadSpeedSave(p.id);
+        const d = activeDeck(ss);
+        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined } };
+      });
 
-  const myDeck = speedSave ? activeDeck(speedSave) : null;
+  const myFullDeck = speedSave ? activeDeck(speedSave) : null;
+  const myDeck = speedSave && myFullDeck ? unsealedDeck(speedSave, myFullDeck) : null;
   const entries: Partial<Record<GameMode, SeatEntry>> = {
     eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
-    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, problems: speedDeckProblems(myDeck) } } : {}),
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), problems: speedDeckProblems(myFullDeck!) } } : {}),
   };
 
   switch (screen) {
@@ -404,7 +454,6 @@ export function App() {
         <>
           <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={leaveDuel} onFinished={finishDuel} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
-          {soloDuel.current && <DuelBackGuard key={soloDuel.current.spec.context.kind} labyrinth={soloDuel.current.ctx.kind === 'labyrinth'} onLeave={leaveDuel} />}
         </>
       );
     default:
@@ -466,9 +515,14 @@ function Running({
       return;
     }
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    const t = setTimeout(() => session.send(action), quick ? 350 : 800);
-    return () => clearTimeout(t);
+    // ...and never in the middle of a 3D cinematic.
+    let t = 0;
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action), quick ? 150 : 300)));
+    return () => (stopWaiting(), clearTimeout(t));
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
+  // Card leveling: each card in the duel shows its owner's rarity.
+  showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [view.seats[0].rarity, view.seats[1].rarity] : null);
+  useEffect(() => () => showDuelRarity(null), []);
   if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} />;
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />;

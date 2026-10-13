@@ -44,7 +44,6 @@ export function Solo(p: Props) {
     writeSolo(p.profile.id, s);
   };
   const [vs, setVs] = useState<{ spec: CpuDuelSpec; cancel?: () => void } | null>(null);
-  useBackGesture();
   /** The duel really starts (after the VS splash). */
   const go = (spec: CpuDuelSpec) => {
     setVs(null);
@@ -78,21 +77,13 @@ function useBack(fn: () => void) {
   }, []);
 }
 
-/** Android's back gesture closes the open sheet or goes back one screen instead of leaving the app. */
-function useBackGesture() {
-  useEffect(() => {
-    history.pushState({ solo: 1 }, '');
-    const onPop = () => {
-      history.pushState({ solo: 1 }, '');
-      backStack[backStack.length - 1]?.();
-    };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      // Neutralise our entry rather than going back: a duel screen may be pushing its own now.
-      if ((history.state as { solo?: number } | null)?.solo) history.replaceState(null, '');
-    };
-  }, []);
+/** The phone's Back inside the solo modes: closes the open sheet or goes back one screen.
+ * App's back-button hook calls this while a solo mode is on screen. */
+export function soloBack(): boolean {
+  const h = backStack[backStack.length - 1];
+  if (!h) return false;
+  h();
+  return true;
 }
 
 /** The strongest monster in a deck, for its portrait. */
@@ -143,42 +134,6 @@ function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => voi
       <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), onGo())}>
         Duel!
       </button>
-    </div>
-  );
-}
-
-/** On a solo duel, the phone's Back asks before leaving instead of closing the app. */
-export function DuelBackGuard({ labyrinth, onLeave }: { labyrinth: boolean; onLeave: () => void }) {
-  const [ask, setAsk] = useState(false);
-  useEffect(() => {
-    history.pushState({ duel: 1 }, '');
-    const onPop = () => {
-      history.pushState({ duel: 1 }, '');
-      setAsk(true);
-    };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if ((history.state as { duel?: number } | null)?.duel) history.replaceState(null, '');
-    };
-  }, []);
-  if (!ask) return null;
-  return (
-    <div class="so">
-      <div class="so-shade" onClick={() => setAsk(false)}>
-        <div class="so-sheet" onClick={(e) => e.stopPropagation()}>
-          <div class="so-sheet-b">
-            <h3 class="so-center">Leave this duel?</h3>
-            <p class="so-center so-dim">{labyrinth ? 'It counts as a loss and costs a heart.' : "It won't count for anything."}</p>
-            <button class="so-btn red" onClick={() => (setAsk(false), onLeave())}>
-              Leave the duel
-            </button>
-            <button class="so-btn gold" onClick={() => setAsk(false)}>
-              Keep dueling
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
