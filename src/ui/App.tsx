@@ -15,6 +15,7 @@ import { PeerAdapter } from '../sync/peer';
 import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
+import { useBackButton } from './backButton';
 import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
@@ -191,18 +192,42 @@ export function App() {
       setScreen('speed');
       return;
     }
-    const next = withResult(save, mine, oppName);
+    // Link Battle results get their own rows, so a brother called "Yugi Muto" can't open Campaign stages.
+    const recordName = cpu ? oppName : `Link: ${oppName}`;
+    const next = withResult(save, mine, recordName);
     setSave(next);
     // Hotseat with a second profile: Player 2's own save gets the result too.
     if (hotseat && p2Profile && p2Profile !== profile?.id) {
       const theirs = loadSave(p2Profile);
-      if (theirs) writeSave(p2Profile, withResult(theirs, mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', save.name));
+      if (theirs) writeSave(p2Profile, withResult(theirs, mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', `Link: ${save.name}`));
     }
     session?.close();
     setSession(null);
     setP2Profile(null);
     setScreen(next.pendingPacks > 0 ? 'pack' : 'menu');
   };
+
+  // Android back button: back to the main menu from any menu screen; in a duel, ask first.
+  useBackButton(() => {
+    if (screen === 'duel' && session) {
+      const st = session.engine.state;
+      if (st.winner !== null) {
+        const opp = st.players[mySeat === 0 ? 1 : 0].name;
+        finishDuel(st.winner, opp === 'Téa Gardner' ? 'Tea Gardner' : opp);
+        return true;
+      }
+      if (st.started && !confirm('Leave this duel?')) return true;
+      // Leaving an online duel concedes it, so your opponent isn't left waiting.
+      if (st.started && session.adapter.roomCode && !hotseat) session.send({ type: 'SURRENDER', player: mySeat });
+      leaveDuel();
+      return true;
+    }
+    if (screen !== 'title' && screen !== 'profiles' && screen !== 'intro' && screen !== 'menu' && screen !== 'duel') {
+      setScreen('menu');
+      return true;
+    }
+    return false;
+  });
 
   if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} onStart={() => setScreen('profiles')} />;
   if (!profile) return <ProfilePicker onPick={pickProfile} joining={pendingJoin} />;
@@ -285,8 +310,10 @@ export function App() {
 
   /** Each seat's control style: in a hotseat duel Player 2's own profile decides theirs. */
   const controlsFor = (p: Pid): ControlStyle => {
-    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? 'classic';
-    return save.controls ?? 'classic';
+    // Speed Duel plays on the Master Duel-style Touch screen unless the player picked Classic.
+    const fallback: ControlStyle = duelMode === 'speed' ? 'touch' : 'classic';
+    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? fallback;
+    return save.controls ?? fallback;
   };
   const setControls = (p: Pid, c: ControlStyle) => {
     if (hotseat && p === 1) {

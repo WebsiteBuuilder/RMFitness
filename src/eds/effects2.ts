@@ -1166,7 +1166,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       link.payload = pick[0];
     },
     *resolve(e, link) {
-      (e.state.fx.prohibit ??= []).push({ name: link.payload as string, src: link.card.uid });
+      // Cards already on the field (face-down ones too) are not affected.
+      const exempt = [...allMonsters(e), ...allST(e)].filter((c) => c.name === link.payload).map((c) => c.uid);
+      (e.state.fx.prohibit ??= []).push({ name: link.payload as string, src: link.card.uid, exempt });
       e.log(link.player, `Prohibition: ${link.payload} can no longer be used`);
     },
   };
@@ -1520,19 +1522,24 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       if (e.state.turnPlayer === opp && e.player(opp).hand.some((c) => e.info(c.name).kind === 'spell')) e.gainLp(opp, 1000);
     },
   });
-  E['Appropriate'] = ctrap({
-    onDraw(e, _c, p, drawer) {
-      if (drawer === other(p)) {
-        e.log(p, 'Appropriate: 2 cards for you too');
-        e.draw(p, 2);
-      }
+  // "Activate only when your opponent draws outside the Draw Phase": usable once they have done so this turn.
+  E['Appropriate'] = ctrap(
+    {
+      onDraw(e, _c, p, drawer) {
+        if (drawer === other(p)) {
+          e.log(p, 'Appropriate: 2 cards for you too');
+          e.draw(p, 2);
+        }
+      },
     },
-  });
+    (e, p, t) => (anyTime(t) || t === 'spell' || t === 'trap') && (e.state.fx.offDrawTurn as number[] | undefined)?.[other(p)] === e.state.turn,
+  );
   E['Magical Thorn'] = ctrap({
     *onAnyDiscard(e, _c, p, discarder) {
       if (discarder === other(p)) e.damage(discarder, 500);
     },
   });
+  // "You can activate this card when you discard from your hand": usable once you have discarded this turn.
   E['Forced Requisition'] = ctrap({
     *onAnyDiscard(e, _c, p, discarder) {
       if (discarder !== p || e.state.fx.requisition) return;
@@ -1547,7 +1554,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         e.state.fx.requisition = false;
       }
     },
-  });
+  }, (e, p, t) => (anyTime(t) || t === 'spell' || t === 'trap') && (e.state.fx.discardedTurn as number[] | undefined)?.[p] === e.state.turn);
   E['Imperial Order'] = ctrap({
     *onStandby(e, c, p) {
       if (e.state.fx.imperialPaid === `${c.uid}:${e.state.turn}`) return;
@@ -1613,37 +1620,73 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
     *resolve(e) {
       for (const m of faceUp(e)) if (e.raceOf(m) === 'Dragon') m.pos = 'def';
     },
+    // Dragons that arrive face-up later are changed to Defense Position too.
+    *onAnySummon(e, _w, _wp, m) {
+      if (m.faceUp && m.pos === 'atk' && e.raceOf(m) === 'Dragon') {
+        m.pos = 'def';
+        e.log(null, `Dragon Capture Jar changes ${m.name} to Defense Position`);
+      }
+    },
     blocksAttack: (e, _c, m) => e.raceOf(m) === 'Dragon',
   });
   E['Call of Darkness'] = ctrap({
-    *resolve(e) {
+    *resolve(e, link) {
       const revived = allMonsters(e).filter((m) => m.tags?.reborn);
-      if (revived.length) yield* e.destroy(revived.map((m) => m.uid));
+      if (revived.length) e.log(link.player, 'Call of Darkness sends the monsters revived by Monster Reborn to the Graveyard');
+      for (const m of revived) yield* e.sendToGrave(m.uid, 'used');
     },
   });
   {
     const mr = E['Monster Reborn'];
     E['Monster Reborn'] = {
       ...mr,
-      canActivate: (e, c, p, t, ctx) => !e.anyActive('Call of Darkness') && !!mr.canActivate?.(e, c, p, t, ctx),
+      canActivate: (e, c, p, t, ctx) => !e.trapActive('Call of Darkness') && !!mr.canActivate?.(e, c, p, t, ctx),
       *resolve(e, link, p) {
         yield* mr.resolve!(e, link, p);
         const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
         if (m) tag(m).reborn = 1;
+        // Speed Duel, Millennium Revelation: a Ra revived with Monster Reborn this turn goes to the GY in the End Phase.
+        if (m && m.name === 'The Winged Dragon of Ra' && e.state.fx.revelation?.[p] === e.state.turn) tag(m).sendAtEnd = e.state.turn;
       },
     };
   }
-  E['Ultimate Offering'] = ctrap({
-    ignition: {
-      can: (e, _c, p) => e.player(p).normalSummoned && e.player(p).lp > 500 && e.player(p).hand.some((c) => isMonster(e, c)),
-      *run(e, _c, p) {
-        e.payLp(p, 500);
-        e.player(p).normalSummoned = false;
-        e.log(p, 'Ultimate Offering: one more Normal Summon');
+  // "During your Main Phase or your opponent's Battle Phase: pay 500 LP; immediately Normal Summon/Set 1 monster."
+  {
+    const summonable = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && e.canNormalSummon(p, c, undefined, true));
+    const can = (e: Engine, p: Pid) => e.player(p).lp > 500 && summonable(e, p).length > 0;
+    const offer = function* (e: Engine, p: Pid): Step {
+      const list = summonable(e, p);
+      if (!list.length) return;
+      const picks = yield* e.select(p, 'Ultimate Offering: Normal Summon or Set which monster?', e.optionsFor(list), 1, 1);
+      const card = picks ? list[picks[0]] : undefined;
+      if (!card) return;
+      const how = yield* choose(e, p, `Ultimate Offering: Summon ${card.name} how?`, ['Attack Position', 'Set']);
+      const set = how?.[0] === 'Set';
+      yield* e.extraNormalSummon(p, card.uid, set ? 'def' : 'atk', !set);
+    };
+    E['Ultimate Offering'] = ctrap({
+      ignition: {
+        can: (e, _c, p) => can(e, p),
+        *run(e, _c, p) {
+          e.payLp(p, 500);
+          e.log(p, 'Ultimate Offering: an extra Normal Summon');
+          yield* offer(e, p);
+        },
+        repeat: true,
       },
-      repeat: true,
-    },
-  });
+      quick: {
+        label: 'pay 500 LP to Normal Summon/Set a monster',
+        can: (e, _c, p) => e.state.phase === 'BP' && e.state.turnPlayer === other(p) && can(e, p),
+        *cost(e, _c, p) {
+          e.payLp(p, 500);
+        },
+        *run(e, _c, p) {
+          e.log(p, 'Ultimate Offering: an extra Normal Summon');
+          yield* offer(e, p);
+        },
+      },
+    });
+  }
   void attachTo;
   void isNormalMonsterCard;
   void name;

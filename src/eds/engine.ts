@@ -4,7 +4,7 @@
 
 import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SelectOption } from './types';
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
-import { getEffect, setNameResolver, type Trigger } from './effects';
+import { getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
 import { getSkill } from './skills';
 
 export type Choice = { picks: number[] } | 'cancel' | 'pass' | true | false;
@@ -66,6 +66,9 @@ export class Engine {
   private resolving = 0;
   /** set while battle destruction is applied, so "destroyed by battle" effects can tell */
   private battleKill = false;
+  /** Speed Duel: cards sent to the GY together (one destroy() call) are reported to watchers as one event */
+  private graveHold = 0;
+  private graveQueue: GraveEvent[] = [];
 
   /** The rule set of this duel (EDS for duels recorded before Speed Duel existed). */
   get rules(): Rules {
@@ -110,6 +113,46 @@ export class Engine {
 
   isNegated(m: FieldCard): boolean {
     return !!m.faceUp && (m.tags?.negated === 1 || m.tags?.negatedTurn === this.state.turn);
+  }
+
+  /** Speed Duel: face-up, active Spells/Traps whose effects apply right now (not negated), with their controller and script. */
+  liveST(): { c: FieldCard; p: Pid; eff: EffectDef }[] {
+    const out: { c: FieldCard; p: Pid; eff: EffectDef }[] = [];
+    if (!this.speed) return out;
+    for (const p of [0, 1] as Pid[]) {
+      for (const c of this.activeSpells(p)) {
+        const kind = this.info(c.name).kind;
+        if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
+        const eff = getEffect(c.name);
+        if (eff) out.push({ c, p, eff });
+      }
+    }
+    return out;
+  }
+
+  /** Speed Duel: a continuous effect stops `p` from Summoning this card this way (Jam Breeding Machine, Hidden Temples...). */
+  summonBlocked(p: Pid, card: Card | string, how: SummonHow, from: string | null = null): boolean {
+    if (!this.speed) return false;
+    const c: Card = typeof card === 'string' ? { uid: -1, name: card, owner: p } : card;
+    const fx = this.state.fx;
+    if (how !== 'set' && fx.summonLock?.[p] === this.state.turn && fx.summonLockExcept !== c.uid) return true;
+    if (how === 'special' && from === 'fusion' && this.liveST().some((x) => x.c.name === 'Summon Gate') && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
+    return this.liveST().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
+  }
+
+  /** Talisman of Spell/Trap Sealing: active while its controller has a face-up "Sealmaster Meisei". */
+  private talisman(name: string, cancelledBy: string): boolean {
+    if (!this.speed) return false;
+    for (const p of [0, 1] as Pid[]) {
+      const t = this.activeSpells(p).find((c) => c.name === name);
+      if (t && !this.anyActive(cancelledBy) && this.monsters(p).some((m) => m.faceUp && m.name === 'Sealmaster Meisei')) return true;
+    }
+    return false;
+  }
+
+  /** Talisman of Spell Sealing: Spell Cards cannot be activated. */
+  spellsSealed(): boolean {
+    return this.talisman('Talisman of Spell Sealing', 'Talisman of Trap Sealing');
   }
 
   /** "Once per turn" by card name: true if `key` was not used yet this turn by `p`. */
@@ -249,7 +292,7 @@ export class Engine {
     if (this.state.fx.reverseTurn === this.state.turn) delta = -delta;
     let v = this.baseStats(m).atk + delta;
     const wall = m.tags?.mirrorWall;
-    if (wall && this.fieldCard(wall)?.active) v = Math.floor(v / 2);
+    if (wall && this.fieldCard(wall)?.active && !this.trapsNegated('Mirror Wall')) v = Math.floor(v / 2);
     return Math.max(0, v);
   }
 
@@ -263,9 +306,13 @@ export class Engine {
   raceOf(m: FieldCard | Card): string {
     if ('faceUp' in m) {
       const fx = this.state.fx;
-      if (fx.dnaRace && fx.dnaSource && this.fieldCard(fx.dnaSource)?.active && m.faceUp) return fx.dnaRace;
+      if (fx.dnaRace && fx.dnaSource && this.fieldCard(fx.dnaSource)?.active && m.faceUp && !this.trapsNegated('DNA Surgery')) return fx.dnaRace;
+      if (fx.declRace?.[m.uid] && this.find(m.uid)?.loc.zone === 'mz') return fx.declRace[m.uid];
       const ctl = this.controller(m.uid);
       if (ctl !== null && this.monsters(ctl).some((x) => x.faceUp && x.name === 'Parasite Paracide' && x.owner !== ctl)) return 'Insect';
+      // A Trap Card Special Summoned as a monster (Quantum Cat, Zoma the Spirit) has the Type its script gave it.
+      const trap = (this.state.fx.trapMonster as Record<number, { race?: string }> | undefined)?.[m.uid];
+      if (trap?.race && this.find(m.uid)?.loc.zone === 'mz') return trap.race;
     }
     return this.info(m.name).race ?? '';
   }
@@ -279,26 +326,43 @@ export class Engine {
     return null;
   }
 
-  /** Imperial Order: Spell effects on the field are negated. */
+  /** Imperial Order: Spell effects on the field are negated (unless Royal Decree negates Imperial Order). */
   spellsNegated(): boolean {
-    return !!this.anyActive('Imperial Order');
+    return (!!this.anyActive('Imperial Order') && !this.trapsNegated('Imperial Order')) || this.spellsSealed();
+  }
+
+  /** A face-up Continuous Trap of this name whose effect is not negated by Royal Decree. */
+  trapActive(name: string, p?: Pid): FieldCard | null {
+    const c = this.anyActive(name, p);
+    return c && !this.trapsNegated(name) ? c : null;
+  }
+
+  /** A face-up Continuous Spell of this name whose effect is not negated by Imperial Order. */
+  spellActive(name: string, p?: Pid): FieldCard | null {
+    const c = this.anyActive(name, p);
+    return c && !this.spellsNegated() ? c : null;
   }
 
   /** Royal Decree: other Trap effects are negated. */
   trapsNegated(except?: string): boolean {
-    return !!this.anyActive('Royal Decree') && except !== 'Royal Decree';
+    return (!!this.anyActive('Royal Decree') && except !== 'Royal Decree') || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing');
   }
 
-  /** Is this card name forbidden by Prohibition? */
-  prohibited(name: string): boolean {
-    const list = (this.state.fx.prohibit ?? []) as { name: string; src: number }[];
-    return list.some((x) => x.name === name && this.fieldCard(x.src)?.active);
+  /**
+   * Is this card name forbidden by Prohibition? Pass the card's uid when it is on the field:
+   * cards that were already on the field when Prohibition resolved are not affected.
+   */
+  prohibited(name: string, uid?: number): boolean {
+    const list = (this.state.fx.prohibit ?? []) as { name: string; src: number; exempt?: number[] }[];
+    return list.some((x) => x.name === name && this.fieldCard(x.src)?.active && !(uid !== undefined && x.exempt?.includes(uid) && this.fieldCard(uid)));
   }
 
   /** Lord of D.: Dragons cannot be targeted by card effects. */
   untargetable(m: FieldCard): boolean {
     if (m.faceUp && this.effectOn(m)?.cannotBeTargeted?.(this, m, this.actor)) return true;
     if (m.faceUp && this.speed && this.shielded(m, 'target')) return true;
+    // Speed Duel: "your opponent cannot target it until the end of their turn" that outlasts its source (Abyss Prop - Wild Wagon).
+    if (m.faceUp && this.speed && (m.tags?.oppNoTargetUntil ?? -1) >= this.state.turn && this.actor !== this.controller(m.uid)) return true;
     return m.faceUp && this.raceOf(m) === 'Dragon' && [...this.monsters(0), ...this.monsters(1)].some((x) => x.faceUp && x.name === 'Lord of D.');
   }
 
@@ -336,7 +400,9 @@ export class Engine {
       const sources = [...this.monsters(p), ...this.spells(p).filter((c) => c.active), ...(this.player(p).field ? [this.player(p).field!] : [])];
       for (const src of sources) {
         if (!src.faceUp) continue;
-        if (this.info(src.name).kind === 'spell' && this.spellsNegated()) continue;
+        const srcKind = this.info(src.name).kind;
+        if (srcKind === 'spell' && this.spellsNegated()) continue;
+        if (srcKind === 'trap' && this.trapsNegated(src.name)) continue;
         if (this.state.fx.fieldOff === this.state.turn && src === this.player(p).field) continue;
         const aura = this.effectOn(src)?.aura;
         if (!aura) continue;
@@ -415,6 +481,7 @@ export class Engine {
   /** Puts a Token onto the field. */
   createToken(name: string, controller: Pid, pos: Pos, faceUp = true, stats?: { atk: number; def: number; level: number; attribute?: string; race?: string }): FieldCard | null {
     if (stats) ((this.state.fx.tokens ??= {}) as Record<string, unknown>)[name] = stats;
+    if (this.summonBlocked(controller, name, 'special', null)) return null;
     const ps = this.player(controller);
     const zone = ps.mz.findIndex((z) => z === null);
     if (zone < 0) return null;
@@ -449,6 +516,17 @@ export class Engine {
     return fc;
   }
 
+  /** Runs a check on behalf of a player (so "cannot be targeted by your opponent's effects" knows who is targeting). */
+  private withActor<T>(p: Pid, fn: () => T): T {
+    const prev = this.actor;
+    this.actor = p;
+    try {
+      return fn();
+    } finally {
+      this.actor = prev;
+    }
+  }
+
   /** Runs a card effect on behalf of a player (so "your opponent's effect" checks work). */
   *as(p: Pid, step: Step): Step {
     const prev = this.actor;
@@ -470,6 +548,7 @@ export class Engine {
     const fc = wasField ? (f.card as FieldCard) : null;
     if (f.loc.zone === 'mz') (this.state.fx.lostMonster ??= [-1, -1])[f.loc.player] = this.state.turn;
     const controller = f.loc.player;
+    const ev: GraveEvent | null = this.speed ? { card: { uid, name: f.card.name, owner: f.card.owner }, from: f.loc.zone, controller, reason, byBattle, faceUp: !!fc?.faceUp, pos: fc?.pos, race: fc ? this.raceOf(fc) : this.info(f.card.name).race ?? '', toGy: false, token: !!f.card.token, by: this.actor } : null;
     const card = this.detach(uid)!;
     if (card.token || card.name.startsWith('__token')) {
       if (fc) {
@@ -477,14 +556,17 @@ export class Engine {
         const eff = getEffect(card.name);
         if (eff?.onLeaveField) yield* eff.onLeaveField(this, fc, controller, reason);
       }
+      if (ev) yield* this.graveWatch(ev);
       return;
     }
-    const banisher = [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && m.name === 'Banisher of the Light');
+    const banisher = [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && m.name === 'Banisher of the Light') || this.liveST().some((x) => x.eff.banishInstead?.(this, x.c, x.p, card) === true);
+    if (ev) ev.toGy = !banisher;
     if (banisher) {
       this.player(card.owner).removed.push(card);
       this.log(card.owner, `${card.name} is removed from play by Banisher of the Light`);
     } else this.player(card.owner).gy.push(card);
     this.event('to-gy', { uid, player: card.owner });
+    if (reason === 'discard' && f.loc.zone === 'hand') yield* this.discardWatchers(controller);
     if (reason === 'mill' && f.loc.zone === 'deck' && this.actor !== null && this.actor !== card.owner) {
       const eff = getEffect(card.name);
       if (eff?.onMilledByOpponent) yield* eff.onMilledByOpponent(this, card, card.owner);
@@ -506,10 +588,38 @@ export class Engine {
       if (eff.onDestroyed && wasField && reason === 'destroyed') yield* this.as(controller, eff.onDestroyed(this, card, controller, byBattle));
       if (eff.onSentToGrave && this.find(uid)?.loc.zone === 'gy') yield* this.as(card.owner, eff.onSentToGrave(this, card, card.owner, f.loc.zone, reason));
     }
+    if (ev) yield* this.graveWatch(ev);
+  }
+
+  /** Speed Duel: reports cards sent to the GY (or destroyed) to active Spells/Traps that watch it, one event per destroy() call. */
+  private *graveWatch(ev: GraveEvent): Step {
+    this.graveQueue.push(ev);
+    if (this.graveHold === 0) yield* this.flushGrave();
+  }
+
+  private *flushGrave(): Step {
+    const events = this.graveQueue;
+    this.graveQueue = [];
+    if (!events.length || this.state.winner !== null) return;
+    for (const x of this.liveST()) {
+      if (x.eff.onAnyToGrave && this.fieldCard(x.c.uid)?.active && this.state.winner === null) yield* this.as(x.p, x.eff.onAnyToGrave(this, x.c, x.p, events));
+    }
+  }
+
+  /** Runs a step whose cards sent to the GY count as one event for watchers (Coffin Seller, Supply Squad...). */
+  *together(step: Step): Step {
+    this.graveHold++;
+    try {
+      yield* step;
+    } finally {
+      this.graveHold--;
+    }
+    if (this.graveHold === 0) yield* this.flushGrave();
   }
 
   /** Cards that cannot be destroyed right now (by battle, or by card effects) are skipped. */
   *destroy(uids: number[], reason: 'destroyed' = 'destroyed', byBattle = false): Step {
+    if (this.speed && uids.length > 1 && this.graveHold === 0) return yield* this.together(this.destroy(uids, reason, byBattle));
     for (const uid of uids) {
       const m = this.fieldCard(uid);
       if (m && m.faceUp && this.shielded(m, byBattle ? 'battle' : 'effect')) {
@@ -530,10 +640,21 @@ export class Engine {
     const c = this.find(uid);
     const eff = getEffect(name);
     if (c && eff?.onDiscarded) yield* eff.onDiscarded(this, c.card, player, byOpp);
+  }
+
+  /**
+   * A card was discarded from `player`'s hand (by any effect, or for the hand limit):
+   * Magical Thorn and Forced Requisition react to it.
+   */
+  private *discardWatchers(player: Pid): Step {
+    ((this.state.fx.discardedTurn ??= [-1, -1]) as number[])[player] = this.state.turn;
     for (const q of [0, 1] as Pid[]) {
       for (const s of this.activeSpells(q)) {
         const h = getEffect(s.name)?.onAnyDiscard;
-        if (h && !(this.info(s.name).kind === 'trap' && this.trapsNegated(s.name))) yield* h(this, s, q, player);
+        if (!h || this.state.winner !== null || !this.fieldCard(s.uid)) continue;
+        const kind = this.info(s.name).kind;
+        if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(s.name))) continue;
+        yield* h(this, s, q, player);
       }
     }
   }
@@ -562,6 +683,7 @@ export class Engine {
     }
     this.log(player, `${ps.name} drew ${n === 1 ? 'a card' : `${n} cards`}`);
     this.checkExodia(player);
+    if (!normal) ((this.state.fx.offDrawTurn ??= [-1, -1]) as number[])[player] = this.state.turn;
     if (!normal && this.state.winner === null && !this.state.fx.drawing) {
       this.state.fx.drawing = true;
       for (const q of [0, 1] as Pid[]) {
@@ -582,6 +704,12 @@ export class Engine {
   }
 
   damage(player: Pid, amount: number) {
+    if (amount > 0 && this.state.fx.noDamage?.[player] === this.state.turn) {
+      this.log(player, `${this.player(player).name} takes no damage this turn`);
+      return;
+    }
+    // Speed Duel: "any damage you take this turn is halved" (Crystal Brilliance).
+    if (amount > 0 && (this.state.fx.halfDamage as number[] | undefined)?.[player] === this.state.turn) amount = Math.floor(amount / 2);
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
     if (amount <= 0) return;
@@ -626,6 +754,15 @@ export class Engine {
     const ps = this.player(controller);
     const zone = ps.mz.findIndex((z) => z === null);
     if (zone < 0) return;
+    const from = this.find(uid);
+    if (from && this.summonBlocked(controller, from.card, 'special', from.loc.zone)) {
+      this.log(controller, `${from.card.name} cannot be Special Summoned right now`);
+      return;
+    }
+    if (this.speed && from?.loc.zone === 'fusion') {
+      const x = (this.state.fx.extraSummons ??= [null, null]) as ({ turn: number; n: number } | null)[];
+      x[controller] = { turn: this.state.turn, n: x[controller]?.turn === this.state.turn ? x[controller]!.n + 1 : 1 };
+    }
     const card = this.detach(uid);
     if (!card) return;
     const fc = this.toField(card, pos, faceUp);
@@ -671,8 +808,7 @@ export class Engine {
         const h = this.effectOn(w)?.onAnySummon;
         if (h) yield* h(this, w, p, m, controller, kind);
       }
-      // Speed Duel: active Spells/Traps that watch Summons too.
-      if (!this.speed) continue;
+      // Active Spells/Traps that watch Summons too (Dragon Capture Jar; Speed Duel scripts).
       for (const w of this.activeSpells(p)) {
         if (!this.fieldCard(m.uid) || !this.fieldCard(w.uid)) continue;
         const kindOf = this.info(w.name).kind;
@@ -718,6 +854,7 @@ export class Engine {
     if (f && f.loc.zone === 'mz' && this.actor !== null && this.actor !== f.loc.player) (this.state.fx.bounced ??= [-1, -1])[f.loc.player] = this.state.turn;
     const card = this.detach(uid);
     if (!card) return;
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'bounced');
     this.player(card.owner).hand.push(card);
     this.event('to-hand', { uid, player: card.owner });
   }
@@ -728,37 +865,48 @@ export class Engine {
     if (!f) return;
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
-    if (fc) {
-      for (const eqUid of fc.equips.slice()) this.detachEquip(eqUid);
-      if (fc.equippedTo !== undefined) {
-        const host = this.fieldCard(fc.equippedTo);
-        if (host) host.equips = host.equips.filter((u) => u !== uid);
-      }
-    }
+    if (fc) this.leftField(fc, f.loc.player, 'banished');
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
     this.log(card.owner, `${card.name} was removed from play`);
   }
 
-  private detachEquip(uid: number) {
-    const card = this.detach(uid);
-    if (card) {
-      this.player(card.owner).gy.push(card);
-      this.event('to-gy', { uid, player: card.owner });
+  /**
+   * A card left the field without going to the GY (returned to the hand or Deck, banished).
+   * Its equips and attached cards go to the GY, and its "when this card leaves the field"
+   * effect runs, as soon as the current effect or action has finished (see flushLeaves).
+   */
+  private leftField(fc: FieldCard, controller: Pid, reason: string) {
+    if (fc.equippedTo !== undefined) {
+      const host = this.fieldCard(fc.equippedTo);
+      if (host) host.equips = host.equips.filter((u) => u !== fc.uid);
+    }
+    ((this.state.fx.pendingLeave ??= []) as { fc: FieldCard; controller: Pid; reason: string }[]).push({ fc: { ...fc, equips: fc.equips.slice() }, controller, reason });
+  }
+
+  *flushLeaves(): Step {
+    const list = (this.state.fx.pendingLeave ?? []) as { fc: FieldCard; controller: Pid; reason: string }[];
+    while (list.length && this.state.winner === null) {
+      const { fc, controller, reason } = list.shift()!;
+      for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
+      const eff = fc.token ? undefined : getEffect(fc.name);
+      if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
     }
   }
 
   /** Puts a card on top of its owner's Deck (Cockroach Knight). */
   toDeckTop(uid: number) {
+    const f = this.find(uid);
     const card = this.detach(uid);
     if (!card) return;
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'to-deck');
     this.player(card.owner).deck.unshift(card);
     this.event('to-hand', { uid, player: card.owner });
   }
 
   /** Jinzo: traps cannot be activated while it is face-up. */
   trapsSealed(): boolean {
-    return [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.sealsTraps);
+    return [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.sealsTraps) || this.talisman('Talisman of Trap Sealing', 'Talisman of Spell Sealing');
   }
 
   /** Face-up Spells/Traps/Field cards of a player that are in effect. */
@@ -840,13 +988,35 @@ export class Engine {
         return this.run(this.useSkill(action.player));
       case 'GRAVE_EFFECT':
         return this.run(this.graveEffect(action.player, action.uid));
+      case 'QUICK_EFFECT':
+        return this.run(this.quickNow(action.player, action.uid));
     }
   }
 
   private run(gen: Step) {
     if (this.gen) return;
-    this.gen = gen;
+    const self = this;
+    const inner = (function* (): Step {
+      yield* gen;
+      yield* self.flushLeaves();
+    })();
+    this.gen = this.speed ? this.withStateChecks(inner) : inner;
     this.resume(undefined as unknown as Choice);
+  }
+
+  /** Speed Duel: after every action, active Spells/Traps check their "destroy this card if..." conditions. */
+  private *withStateChecks(gen: Step): Step {
+    yield* gen;
+    for (let i = 0; i < 4 && this.state.winner === null; i++) {
+      let acted = false;
+      for (const x of this.liveST().filter((y) => y.eff.stateCheck)) {
+        if (!this.fieldCard(x.c.uid)?.active || this.state.winner !== null) continue;
+        const before = this.state.log.length;
+        yield* this.as(x.p, x.eff.stateCheck!(this, x.c, x.p));
+        if (this.state.log.length !== before) acted = true;
+      }
+      if (!acted) break;
+    }
   }
 
   private resume(input: Choice) {
@@ -955,6 +1125,23 @@ export class Engine {
     yield* this.as(player, getEffect(card.name)!.graveIgnition!.run(this, card, player));
   }
 
+  // ---------- Quick Effects used on your own turn (Speed Duel) ----------
+  /** Can this card's Quick Effect be used right now, with nothing else happening in your Main Phase? */
+  canUseQuickNow(player: Pid, uid: number): boolean {
+    const s = this.state;
+    if (!this.speed || s.turnPlayer !== player || s.prompt || s.winner !== null || s.chain.length) return false;
+    if (!this.inMainPhase()) return false;
+    return this.quickOptions(player, 'main', {}).some((o) => o.uid === uid);
+  }
+
+  private *quickNow(player: Pid, uid: number): Step {
+    if (!this.canUseQuickNow(player, uid)) return;
+    const link = yield* this.activateQuick(player, uid, 'main', {});
+    if (!link) return;
+    yield* this.responseWindow('effect', { uid, link });
+    yield* this.resolveChain();
+  }
+
   // ---------- phases ----------
   private *leaveBattle(): Step {
     const fx = this.state.fx;
@@ -1048,11 +1235,23 @@ export class Engine {
         if (m.faceUp && eff?.onEndPhase && this.fieldCard(m.uid)) yield* eff.onEndPhase(this, m, p);
       }
     }
+    // Speed Duel: "During the End Phase, if this card is in the GY" (Hysteric Sign).
+    if (this.speed)
+      for (const p of [tp, other(tp)])
+        for (const c of this.player(p).gy.slice()) {
+          const h = getEffect(c.name)?.onEndPhaseInGrave;
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+        }
     // Delayed destruction (Zone Eater, Steel Scorpion, Swordsman from a Distant Land).
     const doomed = [...this.monsters(0), ...this.monsters(1)].filter((m) => m.doomAt !== undefined && m.doomAt <= this.state.turn);
     if (doomed.length) {
       for (const m of doomed) this.log(null, `${m.name} crumbles away`);
       yield* this.destroy(doomed.map((m) => m.uid));
+    }
+    // Speed Duel: monsters that must be sent to the GY during this End Phase (Millennium Revelation's Ra).
+    for (const m of [...this.monsters(0), ...this.monsters(1)].filter((x) => x.tags?.sendAtEnd === this.state.turn)) {
+      this.log(null, `${m.name} is sent to the Graveyard`);
+      yield* this.sendToGrave(m.uid, 'used');
     }
     // Graverobber: borrowed Spells go back to their owner's Graveyard.
     const borrowed = (this.state.fx.borrowed ?? []) as number[];
@@ -1078,11 +1277,7 @@ export class Engine {
       const picks = yield* this.select(tp, `Hand limit: discard ${n} card${n > 1 ? 's' : ''}`, this.optionsFor(ps.hand), n, n);
       if (!picks) continue;
       const uids = picks.map((i) => ps.hand[i].uid);
-      for (const uid of uids) {
-        const name = this.find(uid)?.card.name;
-        yield* this.sendToGrave(uid, 'discard');
-        this.log(tp, `${ps.name} discarded ${name}`);
-      }
+      for (const uid of uids) yield* this.discard(tp, uid);
     }
     yield* this.endTurn();
   }
@@ -1126,6 +1321,9 @@ export class Engine {
         }
       }
       if (!replaced && !this.draw(s.turnPlayer, 1, true)) return;
+      const drawn = this.player(s.turnPlayer).hand[this.player(s.turnPlayer).hand.length - 1];
+      if (!replaced && drawn) for (const x of this.liveST()) if (x.eff.onDrawPhase && x.p === s.turnPlayer && this.state.winner === null) yield* this.as(x.p, x.eff.onDrawPhase(this, x.c, x.p, [drawn]));
+      if (this.state.winner !== null) return;
     }
     s.fx.hurt = [0, 0];
     yield* this.enterPhase('SP');
@@ -1140,42 +1338,76 @@ export class Engine {
     return level >= 7 ? 2 : level >= 5 ? 1 : 0;
   }
 
-  canNormalSummon(player: Pid, card: Card): boolean {
-    if (!this.inMainPhase() || this.state.turnPlayer !== player || this.player(player).normalSummoned) return false;
+  /** `faceUp`: true = a face-up Normal Summon, false = a Set, undefined = either. `extra`: an additional Normal Summon granted by a card (Ultimate Offering), outside the usual timing and limit. */
+  canNormalSummon(player: Pid, card: Card, faceUp?: boolean, extra = false): boolean {
+    if (!extra && (!this.inMainPhase() || this.state.turnPlayer !== player || this.player(player).normalSummoned)) return false;
+    if (extra && this.find(card.uid)?.loc.zone !== 'hand') return false;
+    if (faceUp === true && this.summonBlocked(player, card, 'normal', 'hand')) return false;
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
     if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
-    if (this.anyActive('Chain Energy') && this.player(player).lp <= 500) return false;
+    if (this.chainEnergyBlocks(player)) return false;
     const need = this.tributesNeeded(info.level ?? 1);
     const ps = this.player(player);
     const empty = ps.mz.filter((z) => z === null).length;
     const owned = this.monsters(player).length;
     if (need === 0) return empty > 0;
+    if (owned < need && empty > 0 && faceUp !== false && this.tributeStandIns(player, card, need).length) return true;
     return owned >= need; // tributing frees a zone
   }
 
-  private *summon(player: Pid, uid: number, zone: number, pos: Pos, faceUp: boolean): Step {
+  /** Ultimate Offering: Normal Summon/Set a monster right now, in addition to the usual Normal Summon. */
+  *extraNormalSummon(player: Pid, uid: number, pos: Pos, faceUp: boolean): Step {
+    const ps = this.player(player);
+    const used = ps.normalSummoned;
+    const zone = ps.mz.findIndex((z) => z === null);
+    yield* this.summon(player, uid, zone < 0 ? 0 : zone, pos, faceUp, true);
+    ps.normalSummoned = used;
+  }
+
+  /** Speed Duel: active Spells/Traps that can be Tributed instead of all the monsters (Ancient Gear Castle). */
+  tributeStandIns(player: Pid, card: Card, need: number): FieldCard[] {
+    return this.liveST().filter((x) => x.p === player && x.eff.tributeFor?.(this, x.c, player, card, need)).map((x) => x.c);
+  }
+
+  private *summon(player: Pid, uid: number, zone: number, pos: Pos, faceUp: boolean, extra = false): Step {
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'hand' || f.loc.player !== player) return;
-    if (!this.canNormalSummon(player, f.card)) return;
+    if (!this.canNormalSummon(player, f.card, faceUp, extra)) return;
     const ps = this.player(player);
     const info = this.info(f.card.name);
     const need = this.tributesNeeded(info.level ?? 1);
-    if (!faceUp && this.anyActive('Light of Intervention')) {
+    if (!faceUp && this.trapActive('Light of Intervention')) {
       faceUp = true;
       pos = 'def';
       this.log(player, 'Light of Intervention: the monster must be Summoned face-up');
     }
+    if (faceUp && this.summonBlocked(player, f.card, 'normal', 'hand')) {
+      this.log(player, `${f.card.name} cannot be Normal Summoned right now`);
+      return;
+    }
     if (need > 0) {
-      const picks = yield* this.select(player, `Choose ${need} monster${need > 1 ? 's' : ''} to Tribute`, this.optionsFor(this.monsters(player), true), need, need, true);
-      if (!picks) return;
-      const tributes = picks.map((i) => this.monsters(player)[i].uid);
-      for (const t of tributes) {
-        const name = this.find(t)?.card.name;
-        yield* this.sendToGrave(t, 'tribute');
-        this.log(player, `${ps.name} Tributed ${name}`);
+      const standIns = faceUp ? this.tributeStandIns(player, f.card, need) : [];
+      let standIn: FieldCard | null = null;
+      if (standIns.length && (this.monsters(player).length < need || (yield* this.yesno(player, `Tribute ${standIns[0].name} instead of ${need} monster${need > 1 ? 's' : ''}?`)))) standIn = standIns[0];
+      if (standIn) {
+        yield* this.sendToGrave(standIn.uid, 'tribute');
+        this.log(player, `${ps.name} Tributed ${standIn.name}`);
+      } else {
+        if (this.monsters(player).length < need) return;
+        const picks = yield* this.select(player, `Choose ${need} monster${need > 1 ? 's' : ''} to Tribute`, this.optionsFor(this.monsters(player), true), need, need, true);
+        if (!picks) return;
+        const tributes = picks.map((i) => this.monsters(player)[i].uid);
+        const self = this;
+        yield* this.together((function* (): Step {
+          for (const t of tributes) {
+            const name = self.find(t)?.card.name;
+            yield* self.sendToGrave(t, 'tribute');
+            self.log(player, `${ps.name} Tributed ${name}`);
+          }
+        })());
       }
-      if (ps.mz[zone] !== null) zone = ps.mz.findIndex((z) => z === null);
+      if (zone < 0 || zone >= ps.mz.length || ps.mz[zone] !== null) zone = ps.mz.findIndex((z) => z === null);
     }
     if (zone < 0 || zone >= ps.mz.length || ps.mz[zone] !== null) return;
     const card = this.detach(uid)!;
@@ -1192,6 +1424,7 @@ export class Engine {
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
     } else {
       this.log(player, `${ps.name} Set a monster`);
+      for (const x of this.liveST()) if (x.eff.onAnySet && this.fieldCard(uid)) yield* this.as(x.p, x.eff.onAnySet(this, x.c, x.p, fc, player));
     }
   }
 
@@ -1200,13 +1433,17 @@ export class Engine {
     const f = this.find(uid);
     if (!m || !f || f.loc.zone !== 'mz' || f.loc.player !== player) return;
     if (!this.inMainPhase() || m.faceUp || m.placedTurn === this.state.turn || m.posChanged || m.attacked) return;
+    if (this.summonBlocked(player, m, 'flip', 'mz')) {
+      this.log(player, `${m.name} cannot be Flip Summoned right now`);
+      return;
+    }
     m.faceUp = true;
     m.pos = 'atk';
     m.posChanged = true;
     this.event('flip', { uid, player });
     this.log(player, `${this.player(player).name} Flip Summoned ${m.name}`);
     yield* this.responseWindow('summon', { uid, summonKind: 'flip' });
-    if (this.fieldCard(uid) && (this.info(m.name).level ?? 1) <= 2 && this.anyActive('Goblin Fan') && !this.trapsNegated()) {
+    if (this.fieldCard(uid) && (this.info(m.name).level ?? 1) <= 2 && this.trapActive('Goblin Fan')) {
       this.log(null, `Goblin Fan destroys ${m.name} before its effect can activate`);
       yield* this.destroy([uid]);
       return;
@@ -1215,11 +1452,22 @@ export class Engine {
     const eff = this.effectOn(m);
     if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, m, player, 'flip'));
     if (this.fieldCard(uid)) yield* this.anySummon(m, player, 'flip');
+    if (this.fieldCard(uid)) yield* this.positionWatch(m, player);
+  }
+
+  /** Speed Duel: active Spells/Traps that watch battle position changes (Attack the Moon!). */
+  *positionWatch(m: FieldCard, controller: Pid): Step {
+    for (const x of this.liveST()) if (x.eff.onAnyPositionChange && this.fieldCard(m.uid)) yield* this.as(x.p, x.eff.onAnyPositionChange(this, x.c, x.p, m, controller));
+  }
+
+  /** Chain Energy: a player with 500 LP or less cannot play cards from the hand. */
+  chainEnergyBlocks(player: Pid): boolean {
+    return !!this.spellActive('Chain Energy') && this.player(player).lp <= 500;
   }
 
   /** Chain Energy: 500 LP for each card played from the hand. */
   *chainEnergy(player: Pid): Step {
-    if (this.anyActive('Chain Energy') && !this.spellsNegated()) {
+    if (this.spellActive('Chain Energy')) {
       this.log(player, 'Chain Energy: 500 LP');
       this.payLp(player, 500);
     }
@@ -1231,6 +1479,8 @@ export class Engine {
     const f = this.find(card.uid);
     if (!f || f.loc.player !== player || f.loc.zone !== 'hand' || this.prohibited(card.name)) return false;
     const proc = getEffect(card.name)?.summonProc;
+    if (this.chainEnergyBlocks(player)) return false;
+    if (proc && this.summonBlocked(player, card, 'special', 'hand')) return false;
     return !!proc && proc.can(this, card, player);
   }
 
@@ -1238,13 +1488,15 @@ export class Engine {
     const f = this.find(uid);
     if (!f || !this.canSpecialProc(player, f.card)) return;
     yield* this.as(player, getEffect(f.card.name)!.summonProc!.run(this, f.card, player));
+    // Chain Energy charges for a card Special Summoned from the hand.
+    if (this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
   }
 
   /** Ignition effects of face-up monsters (Cannon Soldier, Time Wizard...). */
   canUseMonsterEffect(player: Pid, m: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(m.uid);
-    if (!f || f.loc.player !== player || this.prohibited(m.name)) return false;
+    if (!f || f.loc.player !== player || this.prohibited(m.name, m.uid)) return false;
     const eff = this.effectOn(m);
     if (f.loc.zone === 'hand') return !!eff?.handIgnition && eff.handIgnition.can(this, m, player);
     const fc = m as FieldCard;
@@ -1291,7 +1543,7 @@ export class Engine {
     if (!this.inMainPhase() || !m.faceUp || m.placedTurn === this.state.turn || m.posChanged || m.attacked || m.cannotChangePos) return false;
     if (this.state.fx.mesmeric === player + 10 * this.state.turn) return false;
     if ((m.tags?.lockPosTurn ?? -1) === this.state.turn) return false;
-    if (this.raceOf(m) === 'Dragon' && this.anyActive('Dragon Capture Jar')) return false;
+    if (this.raceOf(m) === 'Dragon' && this.trapActive('Dragon Capture Jar')) return false;
     return true;
   }
 
@@ -1306,13 +1558,14 @@ export class Engine {
     this.log(player, `${m.name} changed to ${m.pos === 'atk' ? 'Attack' : 'Defense'} Position`);
     const eff = this.effectOn(m);
     if (eff?.onPositionChange) yield* this.as(player, eff.onPositionChange(this, m, player));
+    if (this.fieldCard(uid)) yield* this.positionWatch(m, player);
   }
 
   canSet(player: Pid, card: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player) return false;
     const info = this.info(card.name);
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card.name)) return false;
-    if (this.anyActive('Chain Energy') && this.player(player).lp <= 500) return false;
+    if (this.chainEnergyBlocks(player)) return false;
     if (info.sub === 'Field') return !this.player(player).field;
     return this.player(player).sz.some((z) => z === null);
   }
@@ -1344,11 +1597,12 @@ export class Engine {
     if (!f || f.loc.player !== player) return false;
     const info = this.info(f.card.name);
     const eff = getEffect(f.card.name);
-    if (!eff?.resolve || this.prohibited(f.card.name)) return false;
+    if (!eff?.resolve || this.prohibited(f.card.name, f.card.uid)) return false;
     if (eff.activateCost && !eff.activateCost.can(this, f.card, player)) return false;
-    if (this.anyActive('Chain Energy') && f.loc.zone === 'hand' && this.player(player).lp <= 500) return false;
+    if (f.loc.zone === 'hand' && this.chainEnergyBlocks(player)) return false;
     if (info.kind === 'spell') {
-      if (this.anyActive('Anti-Spell Fragrance')) {
+      if (this.spellsSealed()) return false;
+      if (this.trapActive('Anti-Spell Fragrance')) {
         if (f.loc.zone === 'hand') return false;
         if ((f.card as FieldCard).placedTurn === this.state.turn) return false;
       }
@@ -1358,14 +1612,14 @@ export class Engine {
         const fc = f.card as FieldCard;
         if (fc.faceUp) return false;
       } else if (f.loc.zone !== 'hand') return false;
-      return eff.canActivate ? eff.canActivate(this, f.card, player, 'main', {}) : true;
+      return eff.canActivate ? this.withActor(player, () => eff.canActivate!(this, f.card, player, 'main', {})) : true;
     }
     if (info.kind === 'trap') {
       if (f.loc.zone !== 'sz' || this.trapsSealed()) return false;
       const fc = f.card as FieldCard;
       if (fc.faceUp || fc.placedTurn === this.state.turn) return false;
       if (info.sub === 'Counter') return false;
-      return eff.canActivate ? eff.canActivate(this, f.card, player, 'main', {}) : true;
+      return eff.canActivate ? this.withActor(player, () => eff.canActivate!(this, f.card, player, 'main', {})) : true;
     }
     return false;
   }
@@ -1418,7 +1672,10 @@ export class Engine {
     this.event('activate', { uid: fc.uid, player });
     this.log(player, `${this.player(player).name} activates ${fc.name}`);
     if (eff.activate) {
+      const prev = this.actor;
+      this.actor = player;
       const ok = yield* eff.activate(this, link, player, ctx);
+      this.actor = prev;
       if (ok === false) {
         // No legal target after all: the card fizzles and goes to the GY.
         yield* this.afterResolve(link);
@@ -1439,6 +1696,7 @@ export class Engine {
         const effectLink = (link.payload as { effect?: string } | undefined)?.effect;
         if (effectLink) {
           // A monster's (or card's) activated effect, not the activation of a Spell/Trap card.
+          if (!link.negated && this.liveST().some((x) => x.eff.negatesEffect?.(this, x.c, x.p, link) === true)) link.negated = true;
           if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
           else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
           else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
@@ -1459,6 +1717,7 @@ export class Engine {
       this.resolving--;
     }
     this.state.chain = [];
+    yield* this.flushLeaves();
     yield* this.damageWindow(false);
     yield* this.flushSummonWindows();
   }
@@ -1490,6 +1749,9 @@ export class Engine {
       if (info.sub === 'Equip' && fc.equippedTo === undefined) yield* this.sendToGrave(fc.uid, 'used');
       return;
     }
+    // A Normal Spell/Trap whose effect keeps it on the field: a countdown (Swords of
+    // Revealing Light) or a card that attached itself to a monster.
+    if (!link.negated && fc.active && (fc.turns !== undefined || fc.equippedTo !== undefined)) return;
     yield* this.sendToGrave(fc.uid, 'used');
   }
 
@@ -1531,7 +1793,10 @@ export class Engine {
           const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player: responder, label: fc.name, negated: false };
           this.event('activate', { uid: fc.uid, player: responder });
           this.log(responder, `${this.player(responder).name} activates ${fc.name}`);
+          const prev = this.actor;
+          this.actor = responder;
           const ok = eff.activate ? yield* eff.activate(this, link, responder, ctx) : true;
+          this.actor = prev;
           if (ok === false) {
             yield* this.afterResolve(link);
           } else {
@@ -1573,12 +1838,12 @@ export class Engine {
   }
 
   /** Cards with a Quick Effect this player could use right now (Speed Duel scripts). */
-  private quickOptions(player: Pid, trigger: Trigger, ctx: ChainCtx): SelectOption[] {
+  private quickOptions(player: Pid, trigger: Trigger, ctx: ChainCtx, activeSpellsOnly = false): SelectOption[] {
     const out: SelectOption[] = [];
     const ps = this.player(player);
     const consider = (c: Card, from: 'field' | 'hand' | 'gy') => {
       const q = (from === 'field' ? this.effectOn(c) : getEffect(c.name))?.quick;
-      if (!q || (q.from ?? 'field') !== from || this.prohibited(c.name)) return;
+      if (!q || (q.from ?? 'field') !== from || this.prohibited(c.name, from === 'field' ? c.uid : undefined)) return;
       if (from === 'field') {
         const fc = c as FieldCard;
         if (!fc.faceUp) return;
@@ -1590,8 +1855,9 @@ export class Engine {
       if (!q.can(this, c, player, trigger, ctx)) return;
       out.push({ label: q.label ? `${c.name}: ${q.label}` : `${c.name}'s effect`, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'quick' });
     };
-    for (const m of this.monsters(player)) consider(m, 'field');
+    if (!activeSpellsOnly) for (const m of this.monsters(player)) consider(m, 'field');
     for (const c of this.activeSpells(player)) consider(c, 'field');
+    if (activeSpellsOnly) return out;
     for (const c of ps.hand) consider(c, 'hand');
     for (const c of ps.gy) consider(c, 'gy');
     return out;
@@ -1626,12 +1892,14 @@ export class Engine {
       if (fc.faceUp) continue;
       const info = this.info(fc.name);
       const eff = getEffect(fc.name);
-      if (!eff?.resolve || !eff.canActivate || this.prohibited(fc.name)) continue;
+      if (!eff?.resolve || !eff.canActivate || this.prohibited(fc.name, fc.uid)) continue;
       if (info.kind === 'trap' && (fc.placedTurn === this.state.turn || this.trapsSealed())) continue;
-      if (info.kind === 'spell' && info.sub !== 'Quick-Play') continue;
+      if (info.kind === 'spell' && (info.sub !== 'Quick-Play' || this.spellsSealed())) continue;
       if (info.kind === 'spell' && fc.placedTurn === this.state.turn) continue;
-      if (eff.canActivate(this, fc, player, trigger, ctx)) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
+      if (this.withActor(player, () => eff.canActivate!(this, fc, player, trigger, ctx))) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
     }
+    // EDS: effects of face-up Continuous Spells/Traps used in response (Ultimate Offering), after the set cards.
+    if (!this.speed) out.push(...this.quickOptions(player, trigger, ctx, true));
     return out;
   }
 
@@ -1703,6 +1971,8 @@ export class Engine {
     for (const p of [0, 1] as Pid[]) {
       for (const c of this.activeSpells(p)) {
         const tax = getEffect(c.name)?.attackTax;
+        const kind = this.info(c.name).kind;
+        if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
         if (tax) yield* this.as(p, tax.pay(this, c, m, player));
       }
     }
@@ -1810,6 +2080,7 @@ export class Engine {
       atk = 0;
       this.state.fx.zeroAttack = undefined;
     }
+    const tAtkCalc = this.atkOf(target);
     const destroyed: number[] = [];
     if (target.pos === 'atk') {
       const tAtk = this.atkOf(target);
@@ -1839,10 +2110,13 @@ export class Engine {
         destroyed.push(target.uid);
         this.log(player, `${attacker.name} destroys ${target.name}`);
         const pierce = aEff?.piercing;
-        if (pierce && (typeof pierce !== 'function' || pierce(this, attacker))) {
+        const granted = this.liveST().some((x) => x.eff.grantsPiercing?.(this, x.c, x.p, attacker) === true);
+        if ((pierce && (typeof pierce !== 'function' || pierce(this, attacker))) || granted) {
           this.log(player, `${attacker.name} pierces the defense`);
+          const lp = this.player(opp).lp;
           this.battleDamage(opp, atk - tDef, attacker, target);
           if (this.state.winner === null && aEff?.onBattleDamage) yield* this.as(player, aEff.onBattleDamage(this, attacker, player));
+          if (this.player(opp).lp < lp) yield* this.battleDamageDealt(player, attacker);
         }
       } else if (atk < tDef) {
         this.battleDamage(player, tDef - atk, attacker, target);
@@ -1871,6 +2145,7 @@ export class Engine {
       yield* this.as(opp, tEff.flip(this, target, opp, !this.fieldCard(targetUid)));
     }
     if (this.state.winner !== null) return;
+    for (const x of this.liveST()) if (x.eff.onBattleEnd && this.state.winner === null) yield* this.as(x.p, x.eff.onBattleEnd(this, x.c, x.p, attacker, target, atk, tAtkCalc));
     if (tEff?.onAttacked) yield* this.as(opp, tEff.onAttacked(this, target, attacker, opp, targetDestroyed));
     if (targetDestroyed && tEff?.onDestroyedByBattle) yield* this.as(opp, tEff.onDestroyedByBattle(this, target, opp));
     if (attackerDestroyed && aEff?.onDestroyedByBattle) yield* this.as(player, aEff.onDestroyedByBattle(this, attacker, player));
@@ -1879,6 +2154,15 @@ export class Engine {
       const eq = this.fieldCard(uid);
       const h = eq ? getEffect(eq.name)?.hostAfterBattle : undefined;
       if (eq && h) yield* this.as(player, h(this, eq, attacker, target));
+    }
+    // Speed Duel: face-up Spells/Traps that react after every battle (Amazoness Onslaught, Battleguard Rage).
+    for (const p of [player, opp]) {
+      for (const c of this.activeSpells(p)) {
+        const h = getEffect(c.name)?.afterAnyBattle;
+        const kind = this.info(c.name).kind;
+        if (!h || this.state.winner !== null || !this.fieldCard(c.uid) || (kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
+        yield* this.as(p, h(this, c, p, attacker, target));
+      }
     }
     // Time Machine and other "destroyed by battle" responses.
     for (const b of before) {
@@ -1901,6 +2185,8 @@ export class Engine {
     if (this.state.winner !== null) return;
     for (const c of this.activeSpells(player)) {
       const eff = getEffect(c.name);
+      const kind = this.info(c.name).kind;
+      if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
       if (eff?.onBattleDamageDealt) yield* eff.onBattleDamageDealt(this, c, attacker, player);
     }
   }
