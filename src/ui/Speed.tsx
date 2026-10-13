@@ -37,6 +37,30 @@ import { showProfileLevels } from '../level/view';
 import { CardShop, ChipBar } from '../collection/Shop';
 import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
 
+/** Speed Duel products, oldest first (codes as in public/cards/speed.json `sets`). */
+const SPEED_SETS: [string, string][] = [
+  ['SS01', 'Destiny Masters'],
+  ['SS02', 'Duelists of Tomorrow'],
+  ['SBLS', 'Arena of Lost Souls'],
+  ['STP1', 'Tournament Pack 1'],
+  ['SBAD', 'Attack from the Deep'],
+  ['SS03', 'Ultimate Predators'],
+  ['SBSC', 'Scars of Battle'],
+  ['STP2', 'Tournament Pack 2'],
+  ['SBTK', 'Trials of the Kingdom'],
+  ['SS04', 'Match of the Millennium'],
+  ['SS05', 'Twisted Nightmares'],
+  ['SBCB', 'Battle City Box'],
+  ['SGX1', 'GX: Duel Academy Box'],
+  ['STP3', 'Tournament Pack 3'],
+  ['STP4', 'Tournament Pack 4'],
+  ['SGX2', 'GX: Midterm Paradox'],
+  ['STP5', 'Tournament Pack 5'],
+  ['SGX3', 'GX: Duelists of Shadows'],
+  ['SBC1', 'Streets of Battle City'],
+  ['STP6', 'Tournament Pack 6'],
+];
+
 export type SpeedLinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
 /** A computer opponent: a character with their Speed Duel deck and Skill. */
@@ -268,6 +292,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
   const [kind, setKind] = useState<Kind>('all');
   const [q, setQ] = useState('');
   const [inText, setInText] = useState(false);
+  const [setF, setSetF] = useState('all');
   const [showAll, setShowAll] = useState(false);
   const [limit, setLimit] = useState(PAGE);
   const [sel, setSel] = useState<string | null>(null);
@@ -283,6 +308,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
     const c = card(name);
     if (!c) return false;
     if (kind === 'extra' ? !isExtraCard(name) : kind !== 'all' && (c.kind !== kind || (kind === 'monster' && isExtraCard(name)))) return false;
+    if (setF !== 'all' && !(c.speedSets ?? []).some((s) => (setF === 'GX' ? s.startsWith('SGX') : s === setF))) return false;
     if (!q) return true;
     const needle = q.toLowerCase();
     return name.toLowerCase().includes(needle) || (inText && c.desc.toLowerCase().includes(needle));
@@ -355,6 +381,15 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
           <button class={`chip ${inText ? 'on' : ''}`} onClick={() => setInText(!inText)} title="Search card text too">
             Txt
           </button>
+          <select class="setpick" value={setF} onChange={(ev) => (setSetF((ev.target as HTMLSelectElement).value), setLimit(PAGE))} aria-label="Speed Duel set">
+            <option value="all">All sets</option>
+            <option value="GX">Speed Duel GX (all 3)</option>
+            {SPEED_SETS.map(([code, label]) => (
+              <option key={code} value={code}>
+                {label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
       {tab === 'skill' ? (

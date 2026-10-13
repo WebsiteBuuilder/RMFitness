@@ -49,8 +49,10 @@ export const faceUpMonsters = (e: Engine, p?: Pid) => (p === undefined ? allMons
 /** Spells/Traps on a player's field, including the Field Zone. */
 export const stOf = (e: Engine, p: Pid) => [...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])];
 export const allST = (e: Engine) => [...stOf(e, 0), ...stOf(e, 1)];
-export const freeMZ = (e: Engine, p: Pid) => e.player(p).mz.some((z) => z === null);
-export const freeST = (e: Engine, p: Pid) => e.player(p).sz.findIndex((z) => z === null);
+/** A Monster Zone `p` can place a monster in (empty and not blocked: Ojama Knight, Tri-Head Dust Dragon). */
+export const freeMZ = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0;
+// b18: Spell & Trap Zones locked by Number 57: Tri-Head Dust Dragon do not count.
+export const freeST = (e: Engine, p: Pid) => e.freeZone(e.player(p), 'sz');
 export const info = (e: Engine, c: Card | string) => e.info(typeof c === 'string' ? c : c.name);
 export const isMonster = (e: Engine, c: Card) => info(e, c).kind === 'monster';
 export const isSpell = (e: Engine, c: Card) => info(e, c).kind === 'spell';
@@ -59,8 +61,26 @@ export const isTrap = (e: Engine, c: Card) => info(e, c).kind === 'trap';
 const trapMonster = (e: Engine, c: Card) => (e.find(c.uid)?.loc.zone === 'mz' ? ((e.state.fx.trapMonster ?? {}) as Record<number, { level?: number; attribute?: string }>)[c.uid] : undefined);
 /** Level/Attribute, including what a Trap Monster took on while it is on the field (Copy Knight, Swamp Mirrorer). */
 const declared = (e: Engine, c: Card, key: 'declLevel' | 'declAttr') => ('faceUp' in c && e.state.fx[key]?.[c.uid] && e.find(c.uid)?.loc.zone === 'mz' ? e.state.fx[key][c.uid] : undefined);
-export const levelOf = (e: Engine, c: Card): number => declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0;
-export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? info(e, c).attribute ?? '';
+/**
+ * Level as it is now. On the field, effects can set it for good (tags.lvSet: Gagaga Caesar) or until the End Phase of turn
+ * tags.lvSetTurn (Star Light, Star Bright), change it until the end of the turn (tags.lvTurn/lvDelta: Flelf, Mischief of the
+ * Yokai) or while face-up (tags.lvMod: Risebell the Star Psycher); fx.lvDown[uid] lowers it this turn (Cost Down).
+ * A Level never drops below 1.
+ */
+function levelChanges(e: Engine, c: Card, lv: number): number {
+  if (lv <= 0) return lv;
+  const t = 'faceUp' in c && e.find(c.uid)?.loc.zone === 'mz' ? (c as FieldCard).tags : undefined;
+  if (t?.lvSet && t.lvSetTurn === e.state.turn) return t.lvSet;
+  const base = t?.lvSet && t.lvSetTurn === undefined ? t.lvSet : lv;
+  const delta = t && t.lvTurn === e.state.turn ? t.lvDelta ?? 0 : 0;
+  const down = (e.state.fx.lvDown as Record<number, { turn: number; n: number }> | undefined)?.[c.uid];
+  const n = base + delta + (t?.lvMod ?? 0) - (down?.turn === e.state.turn ? down.n : 0);
+  return n === base ? base : Math.max(1, n);
+}
+export const levelOf = (e: Engine, c: Card): number => levelChanges(e, c, declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0);
+/** Advanced Dark: "Crystal Beast" monsters on the field and in the GY are DARK. */
+const advancedDark = (e: Engine, c: Card) => named(c, 'Crystal Beast') && info(e, c).kind === 'monster' && ['mz', 'gy'].includes(e.find(c.uid)?.loc.zone ?? '') && e.liveST().some((x) => x.c.name === 'Advanced Dark');
+export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? (advancedDark(e, c) ? 'DARK' : info(e, c).attribute ?? '');
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
 export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);
@@ -158,7 +178,7 @@ export function* discardCost(e: Engine, p: Pid, n = 1, test: (c: Card) => boolea
 }
 /** Tribute `n` monsters you control (matching `test`) as a cost. */
 export function* tributeCost(e: Engine, p: Pid, n = 1, test: (m: FieldCard) => boolean = () => true, except?: number): Gen<boolean> {
-  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m));
+  const cands = e.monsters(p).filter((m) => m.uid !== except && test(m) && !e.untributable(m));
   if (cands.length < n) return false;
   const chosen = yield* pick(e, p, `Tribute ${n} monster${n > 1 ? 's' : ''}`, cands, n, n, true, false);
   if (!chosen) return false;

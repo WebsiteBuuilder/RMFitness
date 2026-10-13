@@ -166,7 +166,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const info = cardInfo(f.card.name);
       if (info?.kind === 'monster') {
         // A tribute frees a zone, so any of your zones takes a monster that needs tributes.
-        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (z === null || (info.level ?? 0) >= 5) && out.add(`mz${i}`));
+        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
       } else {
         const ok = (info?.kind === 'spell' && e.canActivateMain(acting, uid)) || e.canSet(acting, f.card);
         if (ok) {
@@ -293,6 +293,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </div>
         )}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
+        {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
     );
   };
@@ -335,7 +336,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {extra && (
           <div class="textra">
             {ps.fusion.length > 0 && (
-              <button onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
+              <button class={p === acting && ctl.canAct && !ctl.prompt && ps.fusion.some((c) => e.canSpecialProc(acting, c)) ? 'xready' : ''} onClick={(ev) => (ev.stopPropagation(), p === acting && ctl.setPile({ title: e.speed ? 'Extra Deck' : 'Fusion Deck', cards: ps.fusion }))}>
                 {e.speed ? 'Extra' : 'F'} {ps.fusion.length}
               </button>
             )}

@@ -21,7 +21,7 @@ const isNormalMonster = (e: Engine, c: Card) => isMonster(e, c) && info(e, c).su
 const isExtraOrRitual = (e: Engine, c: Card) => info(e, c).sub === 'Fusion' || info(e, c).sub === 'Ritual';
 const faceUpMonsters = (e: Engine) => [...e.monsters(0), ...e.monsters(1)].filter((m) => m.faceUp);
 const stOf = (e: Engine, p: Pid) => [...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])];
-const freeMZ = (e: Engine, p: Pid) => e.player(p).mz.some((z) => z === null);
+const freeMZ = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0; // b20: skips blocked zones
 const freeST = (e: Engine, p: Pid) => e.player(p).sz.findIndex((z) => z === null);
 const tag = (m: FieldCard) => (m.tags ??= {});
 function boostTurn(m: FieldCard, atk: number, def = 0) {
