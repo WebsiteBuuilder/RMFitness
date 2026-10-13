@@ -113,7 +113,7 @@ export interface EffectDef {
    * Once per turn per card unless `repeat`.
    */
   quick?: {
-    from?: 'field' | 'hand' | 'gy';
+    from?: 'field' | 'hand' | 'gy' | 'extra';
     label?: string;
     repeat?: boolean;
     can(e: Engine, card: Card, p: Pid, trigger: Trigger, ctx: ChainCtx): boolean;
@@ -172,6 +172,16 @@ export interface EffectDef {
   onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
   /** Its controller drew these cards for their normal draw in the Draw Phase. */
   onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+
+  // ---------- more Speed Duel hooks (batch 12) ----------
+  /** While this monster is face-up, `p` cannot activate Spell (or Trap) Cards (Mechanical Hound, Pitch-Black Warwolf). */
+  locksActivation?(e: Engine, m: FieldCard, controller: Pid, p: Pid, kind: 'spell' | 'trap'): boolean;
+  /** This card cannot be Special Summoned from `from` right now (Dark Ruler Ha Des, Contact Fusions, "must be Special Summoned with X"). */
+  cannotSpecial?(e: Engine, card: Card, p: Pid, from: string | null): boolean;
+  /** A face-up monster: the effects of monsters its controller's `killer` destroys by battle are negated (Dark Ruler Ha Des). */
+  negatesBattleVictims?(e: Engine, src: FieldCard, killer: FieldCard, srcController: Pid): boolean;
+  /** A face-up monster: the opponent's monsters cannot attack `target` (Vilepawn Archfiend). */
+  guardsFromAttack?(e: Engine, src: FieldCard, target: FieldCard, attacker: FieldCard): boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1591,6 +1601,8 @@ E['Polymerization'] = {
     if (!e.find(fusion) || mats.some((u) => !e.find(u))) return;
     for (const u of mats) yield* e.sendToGrave(u, 'used');
     if (!hasFreeZone(e, p)) return;
+    // Speed Duel scripts read which cards were the materials (UFOroid Fighter, Fusion Recovery).
+    if (e.speed) (e.state.fx.fusionMatList ??= {})[fusion] = mats.slice();
     yield* e.specialSummon(fusion, p, 'atk');
     e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
   },
