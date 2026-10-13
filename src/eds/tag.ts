@@ -30,8 +30,15 @@ export interface TagTeam {
   bench: TagHand;
 }
 
+/** Who plays a duelist: the phone in session seat 0 or 1, or the computer (run by seat 0's phone). */
+export type TagCtl = 0 | 1 | 'cpu';
+
 export interface TagState {
   teams: [TagTeam, TagTeam];
+  /** who plays each duelist: ctl[side][member] (missing: side 0 is phone 0, side 1 the computer) */
+  ctl?: [[TagCtl, TagCtl], [TagCtl, TagCtl]];
+  /** what the duel is for ("free", "road:<id>"), so both phones file the result the same way */
+  ctx?: string;
 }
 
 /** The second duelist of each team, as START carries them (the first duelist is the usual seat). */
@@ -42,6 +49,8 @@ export interface TagStart {
   skills?: [string | null, string | null];
   /** the team's shared Life Points (default TAG_LP) */
   lp?: number;
+  ctl?: [[TagCtl, TagCtl], [TagCtl, TagCtl]];
+  ctx?: string;
 }
 
 /** Two decks feed one field: the shared Life Points are doubled from Speed Duel's 4000. */

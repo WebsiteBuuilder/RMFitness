@@ -1672,7 +1672,7 @@ export class Engine {
         bench: { name: t.names[p], deck: this.shuffle(t.decks[p].map((n) => this.newCard(n, p))), hand: [], fusion: t.fusions[p].map((n) => this.newCard(n, p)), skill: ok ? skill : null, ...(ok ? { skillRevealed: false, skillUses: 0 } : {}) },
       };
     });
-    this.state.tag = { teams: [teams[0], teams[1]] };
+    this.state.tag = { teams: [teams[0], teams[1]], ...(t.ctl ? { ctl: t.ctl } : {}), ...(t.ctx ? { ctx: t.ctx } : {}) };
   }
 
   /** A Duel Condition: different LP, cards already in play, extra cards in hand. */

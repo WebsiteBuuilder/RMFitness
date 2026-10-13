@@ -8,6 +8,11 @@ import type { Action, Card, Pid } from '../src/eds/types';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
 import { TAG_LP, activeMember, benchHand, sideName } from '../src/eds/tag';
+import { phoneMoves, sideOfPhone, memberOfPhone, tagStart, whoMoves, type TagDuelist } from '../src/eds/tagDuel';
+import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, settleTagRoad, tagChapterOpen, tagNodeOpen, tagProgress } from '../src/eds/speedCampaign/tagRoad';
+import { newSoloSave } from '../src/eds/speedCampaign/save';
+import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
+import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
 for (const [k, v] of KIT) DB.set(k, v);
 
@@ -80,6 +85,81 @@ function step(e: Engine): boolean {
 {
   const e = startTag([8, 9, 10, 11], 1, 5);
   ok(e.state.turnPlayer === 1 && e.player(1).hand.length === 4, 'the team going first does not draw on turn 1');
+}
+
+// ---------- team setups and who moves ----------
+{
+  const st = deckFromStarter(STARTERS[0]);
+  const me = (name: string, ctl: TagDuelist['ctl']): TagDuelist => ({ name, main: st.main, extra: st.extra, skill: st.skill, ctl });
+  // Same team: both phones on side 0, two computers on side 1.
+  const e = new Engine(KIT);
+  e.apply(tagStart([[me('Jammy', 0), me('Brother', 1)], [me('CPU 1', 'cpu'), me('CPU 2', 'cpu')]], 0, 21));
+  ok(sideOfPhone(e.state, 0) === 0 && sideOfPhone(e.state, 1) === 0, 'same team: both phones play side 0');
+  ok(memberOfPhone(e.state, 0) === 0 && memberOfPhone(e.state, 1) === 1, 'same team: phone 0 is first, phone 1 second');
+  ok(e.state.tag?.ctx === 'free', 'the duel carries what it is for');
+  const order: string[] = [];
+  let turn = 0;
+  for (let i = 0; i < 3000 && e.state.winner === null && order.length < 5; i++) {
+    if (e.state.turn !== turn && !e.state.prompt) {
+      turn = e.state.turn;
+      order.push(String(whoMoves(e.state).ctl));
+    }
+    const w = whoMoves(e.state);
+    ok(phoneMoves(e.state, 0) === (w.ctl === 0), 'phoneMoves agrees with whoMoves');
+    if (!step(e)) break;
+  }
+  ok(order.slice(0, 4).join(',') === '0,cpu,1,cpu', `same team turns: Jammy, CPU, Brother, CPU (${order.join(',')})`);
+  // Split: one phone and one computer on each side.
+  const s2 = new Engine(KIT);
+  s2.apply(tagStart([[me('Jammy', 0), me('Joey', 'cpu')], [me('Brother', 1), me('Kaiba', 'cpu')]], 1, 22));
+  ok(sideOfPhone(s2.state, 0) === 0 && sideOfPhone(s2.state, 1) === 1, 'split: each phone plays its own side');
+  ok(s2.player(1).name === 'Brother' && s2.state.turnPlayer === 1, 'split: the brother opens for side 1');
+}
+
+// ---------- the Tag Road ----------
+{
+  const kitHas = (n: string) => KIT.has(n);
+  let nodes = 0;
+  for (const ch of TAG_CHAPTERS) {
+    ok(ch.nodes[ch.nodes.length - 1].boss === true, `Tag Road ${ch.title} ends on a boss pair`);
+    for (const n of ch.nodes) {
+      nodes++;
+      ok(!!findTagNode(n.id), `${n.id} is findable`);
+      for (const f of n.pair) {
+        const d = foeOf(f);
+        ok(!!d, `${n.id}: ${f.node} exists`);
+        const dk = deckOf(d);
+        ok(speedDeckProblems({ id: n.id, name: d.name, ...dk }).length === 0, `${n.id}: ${d.name}'s deck is legal`);
+        ok(d.signature.every(kitHas), `${n.id}: ${d.name}'s signature cards exist`);
+      }
+      ok(pairName(n).includes(' & '), `${n.id} reads as a pair: ${pairName(n)}`);
+    }
+  }
+  ok(nodes >= 16, `the Tag Road has ${nodes} tag duels`);
+  ok(pairName(findTagNode('t1-paradox')!.node) === 'Para & Dox', 'Para and Dox split their shared deck');
+
+  let solo = newSoloSave();
+  let speed = newSpeedSave();
+  const [c1, c2] = TAG_CHAPTERS;
+  ok(tagChapterOpen(solo, c1) && !tagChapterOpen(solo, c2), 'only the first chapter is open at the start');
+  ok(tagNodeOpen(solo, c1, 0) && !tagNodeOpen(solo, c1, 1), 'pairs open one at a time');
+  ok(nextTagNode(solo).id === c1.nodes[0].id, 'the next pair is the first one');
+  ok(partnersFor(solo).length === 1 && partnersFor(solo)[0].name === 'Joey Wheeler', 'Joey is the partner everyone starts with');
+  const win: DuelOutcome = { result: 'w', myLp: 5000, myStartLp: 8000, oppLp: 0, turns: 12, usedSkill: false, myMonsters: 2 };
+  const loss: DuelOutcome = { ...win, result: 'l', myLp: 0, oppLp: 3000 };
+  let r = settleTagRoad(speed, solo, c1.nodes[0].id, loss, 1);
+  ok(r.cards.length === 0 && tagProgress(r.solo).losses === 1 && !tagNodeOpen(r.solo, c1, 1), 'a loss records a loss and gives nothing');
+  r = settleTagRoad(speed, r.solo, c1.nodes[0].id, win, 2);
+  ok(r.firstWin && r.cards.length >= 5, `a first win gives signature cards and a pack (${r.cards.length} cards)`);
+  ok(tagNodeOpen(r.solo, c1, 1), 'beating a pair opens the next');
+  const again = settleTagRoad(r.speed, r.solo, c1.nodes[0].id, win, 3);
+  ok(!again.firstWin && again.cards.length === 0, 'a replay win gives nothing');
+  solo = r.solo;
+  speed = r.speed;
+  for (const n of c1.nodes.slice(1)) ({ solo, speed } = settleTagRoad(speed, solo, n.id, win, 4));
+  ok(tagChapterOpen(solo, c2), 'beating the boss pair opens the next chapter');
+  solo = { ...solo, campaign: { ...solo.campaign, wins: { 'c1-weevil': 1, 'c2-marik': 2 } } };
+  ok(partnersFor(solo).map((d) => d.name).join(',') === 'Joey Wheeler,Weevil Underwood,Yami Marik', 'beaten Millennium Road duelists can be partners');
 }
 
 // ---------- CPU tag duels ----------
