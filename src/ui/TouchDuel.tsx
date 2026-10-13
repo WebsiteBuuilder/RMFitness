@@ -27,6 +27,8 @@ export interface TouchCtl {
   canAct: boolean;
   /** watching the computer duel itself: every card is shown */
   spectator?: boolean;
+  /** a Tag Duel where your teammate is in (their hand shows, nothing takes input) */
+  locked?: boolean;
   myTurn: boolean;
   prompt: Prompt | null;
   sel: number | null;
@@ -660,7 +662,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
             {...dragProps(c, 'hand')}
           >
-            <CardImg name={c.name} back={!canAct && !ctl.spectator} owner={c.owner} />
+            <CardImg name={c.name} back={!canAct && !ctl.spectator && !ctl.locked} owner={c.owner} />
           </div>
         ))}
         {handCount === 0 && <div class="thint">No cards in hand</div>}

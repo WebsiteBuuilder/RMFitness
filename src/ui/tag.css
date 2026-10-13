@@ -179,12 +179,12 @@
 /* the strip over a tag duel's board */
 .tagbar {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 2px);
+  top: calc(env(safe-area-inset-top) + 62px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   align-items: center;
   gap: 3px;
@@ -199,7 +199,7 @@
   backdrop-filter: blur(4px);
 }
 .tb-d {
-  max-width: 76px;
+  max-width: 68px;
   padding: 2px 6px;
   border-radius: 8px;
   overflow: hidden;
@@ -266,4 +266,12 @@
   border: 1px solid #2c3f73;
   background: #141f3d;
   color: inherit;
+}
+.tag-room {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(62, 197, 255, 0.15);
+  border: 1px solid rgba(62, 197, 255, 0.5);
+  font-weight: 700;
 }

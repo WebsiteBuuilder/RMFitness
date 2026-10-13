@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { loadDb, loadSpeedDb } from '../eds/db';
 import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpeedSave, type SpeedSave } from '../eds/speedSave';
-import type { GameMode } from '../eds/types';
+import type { Action, GameMode } from '../eds/types';
 import { SpeedHub, type SpeedLinkChoice, type SpeedOpponent } from './Speed';
 import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
 import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
@@ -38,6 +38,12 @@ import { registerPackOpener } from '../eds/speedCampaign/rewards';
 import { DuelPot } from '../collection/StakesPanel';
 import { rescueFirst, settleStakes, settleTicket, staked, stakesFor, ticketOf, withTicket, type DuelTicket, type StakeSeat } from '../collection/stakes';
 import { other } from '../eds/engine';
+import { TagBar, TagHub, type TagPlan, type TagReport } from './Tag';
+import { ctlOf, runsComputers, sideOfPhone, tagStart, whoMoves, type TagDuelist, type TagTeams } from '../eds/tagDuel';
+import { TAG_LP, activeMember, sideName } from '../eds/tag';
+import { settleTagRoad } from '../eds/speedCampaign/tagRoad';
+import { deckOf } from '../eds/speedCampaign/campaign';
+import type { CpuDuelist } from '../eds/speedCampaign/types';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -86,6 +92,10 @@ export function App() {
   const [soloMode, setSoloMode] = useState<SoloMode | null>(null);
   const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
   const [soloReport, setSoloReport] = useState<SoloReport | null>(null);
+  /** 2v2 Tag Duels: the menu is open, the last tag duel's result, and the room this phone hosts */
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagReport, setTagReport] = useState<TagReport | null>(null);
+  const tagHost = useRef<TagPlan | null>(null);
   /** watching the computer duel itself: speed and pause */
   const [watchSpeed, setWatchSpeed] = useState(1);
   const [watchPaused, setWatchPaused] = useState(false);
@@ -319,6 +329,78 @@ export function App() {
     setScreen('duel');
   };
 
+  /** A tag duelist played by the computer. */
+  const cpuTag = (d: CpuDuelist): TagDuelist => ({ name: d.name, ...deckOf(d), ctl: 'cpu' });
+  /** The four duelists of a tag duel, from the plan and the two seats (this phone is seat 0). */
+  const tagTeams = (plan: TagPlan, seats: { name: string; deck: string[]; fusion: string[]; skill?: string | null }[]): TagTeams => {
+    const human = (i: Pid): TagDuelist => ({ name: seats[i].name, main: seats[i].deck, extra: seats[i].fusion, skill: seats[i].skill ?? null, ctl: i });
+    const foes: [TagDuelist, TagDuelist] = [cpuTag(plan.foes[0]), cpuTag(plan.foes[1])];
+    if (plan.layout === 'together') return [[human(0), human(1)], foes];
+    if (plan.layout === 'split') return [[human(0), cpuTag(plan.partners[0]!)], [human(1), cpuTag(plan.partners[1]!)]];
+    return [[human(0), cpuTag(plan.partners[0]!)], foes];
+  };
+  /** Starts a tag duel on this phone (with a computer partner) or opens a room for the brother. */
+  const playTag = (plan: TagPlan, how: 'here' | 'host') => {
+    if (!save || !myDeckNow()) return;
+    const d = myDeckNow()!;
+    setTagReport(null);
+    if (how === 'host') {
+      tagHost.current = plan;
+      openSession({ mode: 'host' }, 'speed');
+      return;
+    }
+    session?.close();
+    tagHost.current = null;
+    const ses = new DuelSession(new MemoryAdapter());
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill });
+    ses.send({ type: 'JOIN', player: 1, name: plan.foes[0].name, deck: deckOf(plan.foes[0]).main, fusion: deckOf(plan.foes[0]).extra, mode: 'speed', skill: plan.foes[0].skill });
+    ses.send(tagStart(tagTeams(plan, [{ name: save.name, deck: d.main, fusion: d.extra, skill: d.skill }]), Math.random() < 0.5 ? 0 : 1, randomSeed(), plan.ctx));
+    setHotseat(false);
+    setCpu(false);
+    setMySeat(0);
+    setP2Profile(null);
+    setDuelMode('speed');
+    setSession(ses);
+    setScreen('duel');
+  };
+  const joinTag = (code: string) => {
+    tagHost.current = null;
+    setTagReport(null);
+    openSession({ mode: 'join', code }, 'speed');
+  };
+  /** This profile's Speed Duel deck as it plays (Shadow Realm cards sit out). */
+  const myDeckNow = () => {
+    const full = speedSave ? activeDeck(speedSave) : null;
+    return speedSave && full ? unsealedDeck(speedSave, full) : null;
+  };
+  /** Files a tag duel on this phone (Tag Road progress and first-win rewards) and goes back to the 2v2 menu. */
+  const endTagDuel = (winner: Pid | 'draw' | null) => {
+    const st = session?.engine.state;
+    if (!st?.tag || !profile) return;
+    settled.current = session;
+    const side = sideOfPhone(st, mySeat);
+    const result = winner === null ? 'l' : winner === 'draw' ? 'd' : winner === side ? 'w' : 'l';
+    const ctx = st.tag.ctx ?? 'free';
+    let report: TagReport = { ctx, result, settled: null };
+    if (ctx.startsWith('road:')) {
+      const speedNow = speedSave ?? loadSpeedSave(profile.id);
+      const solo = loadSolo(profile.id);
+      const r = settleTagRoad(speedNow, solo, ctx.slice(5), winner === null ? forfeit(TAG_LP) : outcomeOf(st, side, TAG_LP));
+      // An Anything goes deck moves you along the road but earns nothing.
+      const noEarn = !!activeDeck(speedNow)?.open;
+      writeSolo(profile.id, noEarn ? { ...solo, tagRoad: r.solo.tagRoad } : r.solo);
+      if (!noEarn && r.speed !== speedNow) setSpeedSave(r.speed);
+      report = { ctx, result, settled: noEarn ? { ...r, lines: [], cards: [] } : r, noEarn };
+    }
+    tagHost.current = null;
+    setTagReport(report);
+    session?.close();
+    setSession(null);
+    setP2Profile(null);
+    setTagOpen(true);
+    setScreen('speed');
+  };
+
   /** The game the duel on screen belongs to (a guest follows the host's game). */
   const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
 
@@ -332,6 +414,13 @@ export function App() {
 
   const leaveDuel = (quitter?: Pid, sure = false): void => {
     if (endSoloDuel(true)) return;
+    // A tag duel: leaving gives up for your team (both phones see the surrender); nothing is bet.
+    const tst = session?.engine.state;
+    if (session && tst?.tag && tst.started) {
+      if (tst.winner === null && session.adapter.roomCode) session.send({ type: 'SURRENDER', player: sideOfPhone(tst, mySeat) });
+      return endTagDuel(tst.winner);
+    }
+    tagHost.current = null;
     const mode = gameOf();
     // Leaving a Speed Duel against another player counts as a loss: surrender first, so
     // bets and prizes settle on both phones.
@@ -372,6 +461,7 @@ export function App() {
     settled.current = session;
     if (!save) return leaveDuel();
     if (endSoloDuel(false)) return;
+    if (session?.engine.state.tag) return endTagDuel(winner);
     const mine = winner === 'draw' ? 'd' : winner === mySeat ? 'w' : 'l';
     if (gameOf() === 'speed') {
       // Speed Duel keeps its own record; no booster packs or calendar days.
@@ -446,12 +536,12 @@ export function App() {
       }
       if (st.started && !confirm(soloDuel.current?.ctx.kind === 'labyrinth' ? 'Leave this duel? It counts as a loss and costs a heart.' : 'Leave this duel?')) return true;
       // Leaving an online duel concedes it, so your opponent isn't left waiting.
-      if (st.started && session.adapter.roomCode && !hotseat) session.send({ type: 'SURRENDER', player: mySeat });
+      if (st.started && session.adapter.roomCode && !hotseat && !st.tag) session.send({ type: 'SURRENDER', player: mySeat });
       leaveDuel();
       return true;
     }
     // The solo modes step back through their own sheets and screens.
-    if (screen === 'speed' && soloMode) return soloBack();
+    if (screen === 'speed' && (soloMode || tagOpen)) return soloBack();
     if (screen !== 'title' && screen !== 'profiles' && screen !== 'intro' && screen !== 'menu' && screen !== 'duel') {
       setScreen('menu');
       return true;
@@ -601,6 +691,18 @@ export function App() {
         ) : (
           <div class="loading">Loading Speed Duel cards…</div>
         );
+      if (tagOpen)
+        return (
+          <TagHub
+            speed={speedSave ?? speedSaveOf(profile.id)}
+            solo={loadSolo(profile.id)}
+            report={tagReport}
+            onReportSeen={() => setTagReport(null)}
+            onPlay={playTag}
+            onJoin={joinTag}
+            onBack={() => (setTagReport(null), setTagOpen(false))}
+          />
+        );
       if (soloMode)
         return (
           <Solo
@@ -619,7 +721,7 @@ export function App() {
         );
       return (
         <>
-          <SpeedHub onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub onSolo={setSoloMode} onTag={() => setTagOpen(true)} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">
@@ -698,7 +800,7 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={tagHost.current ? noStakes(entries) : entries} tag={tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
         </>
@@ -707,6 +809,19 @@ export function App() {
     default:
       return menu;
   }
+}
+
+/** A tag room's seats carry no bets. */
+function noStakes(entries: Partial<Record<GameMode, SeatEntry>>): Partial<Record<GameMode, SeatEntry>> {
+  const out: Partial<Record<GameMode, SeatEntry>> = {};
+  for (const [k, v] of Object.entries(entries) as [GameMode, SeatEntry][]) out[k] = { ...v, stakes: undefined };
+  return out;
+}
+
+function tagNote(p: TagPlan): string {
+  const vs = `${p.foes[0].name} & ${p.foes[1].name}`;
+  if (p.layout === 'split') return `you and ${p.partners[0]?.name} vs your brother and ${p.partners[1]?.name}`;
+  return `you and your brother vs ${vs}${p.ctx.startsWith('road:') ? ' (Tag Road)' : ''}`;
 }
 
 function newCode(): string {
@@ -732,6 +847,7 @@ function Running({
   onFinished,
   onStarted,
   watch,
+  tag,
 }: {
   session: DuelSession;
   hotseat: boolean;
@@ -750,20 +866,29 @@ function Running({
   onStarted?: (seats: SessionView['seats'], key: string) => void;
   /** the computer plays both seats (Practice: watch a duel), at the viewer's speed */
   watch?: { tactics: [Tactics, Tactics]; speed: number; paused: boolean };
+  /** this phone hosts a 2v2 Tag Duel room */
+  tag?: { note: string; start: (seats: SessionView['seats']) => Action };
 }) {
   const view = useDuelSession(session);
   useEffect(() => {
-    if (view.state.started && view.state.winner === null && !cpu && view.state.rules?.mode === 'speed') onStarted?.(view.seats, String(view.state.seed));
+    if (view.state.started && view.state.winner === null && !cpu && !view.state.tag && view.state.rules?.mode === 'speed') onStarted?.(view.seats, String(view.state.seed));
   }, [view.state.started]);
   const cpuStreak = useRef(0);
   // Dev builds only: lets UI tests reach the end of a duel.
   if (import.meta.env.DEV) (window as unknown as { __session?: DuelSession }).__session = session;
   // The computer takes its turn a beat after each change, so the player can follow along.
   useEffect(() => {
-    if (!cpu || !view.state.started || view.state.winner !== null || watch?.paused) return;
+    // A tag duel: the computer duelists move from phone 0 only, whenever one of them is in and on the spot.
+    const tagCpu = !!view.state.tag && runsComputers(mySeat);
+    if (!(cpu || tagCpu) || !view.state.started || view.state.winner !== null || watch?.paused) return;
     // Watching: whichever seat has something to do moves, each with its own pep talk.
     let seat: Pid = mySeat === 0 ? 1 : 0;
     let action = watch ? null : aiAction(session.engine, seat);
+    if (tagCpu) {
+      const w = whoMoves(session.engine.state);
+      seat = w.side;
+      action = w.ctl === 'cpu' ? aiAction(session.engine, seat) : null;
+    }
     if (watch) {
       const st = session.engine.state;
       const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
@@ -795,9 +920,28 @@ function Running({
     return () => (stopWaiting(), clearTimeout(t));
   }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
-  showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [view.seats[0].rarity, view.seats[1].rarity] : null);
+  // (a tag duel: each side shows the rarities of the phones playing on it; computers have none)
+  const sideRarity = (side: Pid) => {
+    const c = view.state.tag?.ctl?.[side];
+    if (!c) return view.seats[side].rarity;
+    return Object.assign({}, ...c.filter((x): x is Pid => x !== 'cpu').map((x) => view.seats[x].rarity ?? {}));
+  };
+  showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
   useEffect(() => () => showDuelRarity(null), []);
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} />;
+  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} />;
+  if (view.state.tag) {
+    // A tag duel: this phone sees the board from its team's side and moves only when its duelist is in.
+    const st = view.state;
+    const side = sideOfPhone(st, mySeat);
+    const locked = ctlOf(st, side, activeMember(st, side)) !== mySeat;
+    const label = (s: Pid, m: 0 | 1) => (ctlOf(st, s, m) === mySeat ? 'You' : st.tag!.teams[s].names[m]);
+    return (
+      <>
+        <Duel session={session} view={view} mySeat={side} hotseat={false} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, sideName(st, other(side)))} locked={locked} />
+        <TagBar state={st} phone={mySeat} labels={label} />
+      </>
+    );
+  }
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return (
     <>

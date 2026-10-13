@@ -6,7 +6,7 @@ import { collectionProblems } from '../collection/economy';
 import type { SoloSave } from '../eds/speedCampaign/save';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
 import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, tagChapterOpen, tagLevel, tagNodeOpen, tagNodeWon, type TagNode, type TagSettled } from '../eds/speedCampaign/tagRoad';
-import { LAYOUTS, ctlOf, sideOfPhone, type TagLayout } from '../eds/tagDuel';
+import { LAYOUTS, sideOfPhone, type TagLayout } from '../eds/tagDuel';
 import { activeMember, benchHand } from '../eds/tag';
 import type { DuelState, Pid } from '../eds/types';
 import { Btn, Portrait, ResultBanner, Sheet, Top } from './Solo';
@@ -362,15 +362,12 @@ export function TagBar({ state, phone, labels }: { state: DuelState; phone: Pid;
   const mySide = sideOfPhone(state, phone);
   const myMember = t.ctl ? (t.ctl[mySide].indexOf(phone) as -1 | 0 | 1) : 0;
   const mine = myMember === 0 || myMember === 1 ? benchHand(state, mySide, myMember) : null;
-  const movingSide = (state.prompt?.player ?? state.turnPlayer) as Pid;
   const order: [Pid, 0 | 1][] = [
     [mySide, 0],
     [mySide === 0 ? 1 : 0, 0],
     [mySide, 1],
     [mySide === 0 ? 1 : 0, 1],
   ];
-  const mover = labels(movingSide, activeMember(state, movingSide));
-  const myMove = ctlOf(state, movingSide, activeMember(state, movingSide)) === phone;
   return (
     <>
       <div class="tagbar" role="status">
@@ -383,10 +380,9 @@ export function TagBar({ state, phone, labels }: { state: DuelState; phone: Pid;
             </span>
           );
         })}
-        <span class={`tb-now ${myMove ? 'me' : ''}`}>{myMove ? 'Your move' : `${mover} is moving`}</span>
         {mine && (
           <button class="tb-peek" onClick={() => setPeek(true)}>
-            Your hand ({mine.length})
+            Hand {mine.length}
           </button>
         )}
       </div>
