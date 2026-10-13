@@ -1,0 +1,320 @@
+/* Speed Duel screens: a modern, Master Duel-style look. App puts `ui-speed` on <html> while a
+   Speed Duel screen (hub, shop, decks, levels, lobby, duel) is up; Eternal Duelist Soul keeps
+   its GBA pixel font and windows. Body text never goes below 13px on a phone. */
+html.ui-speed {
+  --sd-ink: #eef2ff;
+  --sd-dim: #a9b5da;
+  --sd-gold: #f2c14e;
+  --sd-line: #2f4580;
+  --sd-card: #141f3d;
+  --sd-card2: #1b2a52;
+  --dim: #a9b5da;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+}
+.ui-speed body {
+  background: radial-gradient(ellipse at top, #1a2a5e 0%, #0b1226 60%);
+}
+.ui-speed img {
+  image-rendering: auto;
+}
+
+/* ---------- windows and menus ---------- */
+.ui-speed .win {
+  background: linear-gradient(180deg, #17244a 0%, #0f1834 100%);
+  border: 1px solid var(--sd-line);
+  box-shadow: 0 8px 24px #0008;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.ui-speed .win-title {
+  background: linear-gradient(90deg, #0b1226, #13204a);
+  border-bottom: 1px solid var(--sd-line);
+  padding: 10px 14px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--sd-gold);
+}
+.ui-speed .win-body {
+  padding: 10px 14px 12px;
+}
+.ui-speed .menu-item {
+  min-height: 46px;
+  padding: 9px 6px;
+  align-items: center;
+  border-radius: 10px;
+}
+.ui-speed .menu li + li .menu-item {
+  border-top: 1px solid #ffffff0d;
+}
+.ui-speed .menu-item .cursor {
+  width: 10px;
+  font-size: 11px;
+}
+.ui-speed .menu-label {
+  font-size: 16px;
+  font-weight: 600;
+}
+.ui-speed .menu-note {
+  font-size: 13px;
+  line-height: 1.3;
+  max-width: 55%;
+}
+.ui-speed .menu-item:not(.off):active {
+  background: #ffffff10;
+}
+.ui-speed .hint,
+.ui-speed .win-body p {
+  font-size: 14px;
+}
+.ui-speed .hint {
+  color: var(--sd-dim);
+}
+.ui-speed .warn {
+  font-size: 14px;
+  border-width: 1px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #ff5d6c1f;
+  border-color: #ff5d6c88;
+  color: #ffd0d4;
+}
+.ui-speed .chip {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-width: 1px;
+  border-radius: 16px;
+  min-height: 32px;
+}
+.ui-speed .chip.on,
+.ui-speed .chip.sel {
+  border-color: var(--sd-gold);
+  color: var(--sd-gold);
+  background: #f2c14e1a;
+}
+.ui-speed .gbtn {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 12px;
+  border: 1px solid #9fb2ff88;
+  box-shadow: 0 3px 8px #0008;
+}
+.ui-speed input,
+.ui-speed select {
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--sd-line);
+}
+.ui-speed .menu-head {
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 12px 16px 2px;
+}
+.ui-speed .menu-head b {
+  font-size: 16px;
+}
+.ui-speed .erase {
+  font-size: 13px;
+}
+.ui-speed .rec th,
+.ui-speed .rec td {
+  font-size: 14px;
+  padding: 7px 6px;
+}
+.ui-speed .log {
+  font-size: 13px;
+}
+
+/* the close button: a real × (the pixel font draws it as an "I") */
+.ui-speed .win-x {
+  font-size: 24px;
+  line-height: 1;
+  width: 36px;
+  height: 36px;
+  margin: -6px -8px -6px 0;
+  border-radius: 50%;
+}
+
+/* ---------- card info, piles, grids ---------- */
+.ui-speed .cinfo-name {
+  font-size: 17px;
+}
+.ui-speed .cinfo-type,
+.ui-speed .cinfo-stats,
+.ui-speed .cinfo-num {
+  font-size: 13px;
+}
+.ui-speed .cinfo-desc {
+  font-size: 14px;
+  line-height: 1.45;
+}
+.ui-speed .gcard {
+  font-size: 12px;
+}
+.ui-speed .gcard .geff {
+  font-size: 13px;
+}
+.ui-speed .seat {
+  font-size: 14px;
+}
+
+/* ---------- deck editor ---------- */
+.ui-speed .tab {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ui-speed .search {
+  font-size: 15px;
+}
+.ui-speed .crow {
+  font-size: 15px;
+}
+.ui-speed .crow-stat {
+  font-size: 13px;
+}
+.ui-speed .sd-deckhead {
+  font-size: 13px;
+  border-top-width: 1px;
+}
+.ui-speed .deckedit .filters .setpick {
+  font-size: 14px;
+}
+
+/* ---------- Card Levels ---------- */
+.ui-speed .lv-name {
+  font-size: 15px;
+}
+.ui-speed .lv-why,
+.ui-speed .lv-delta,
+.ui-speed .lv-rankup,
+.ui-speed .lv-legend,
+.ui-speed .cinfo-lv {
+  font-size: 13px;
+}
+.ui-speed .lv-banner {
+  font-size: 14px;
+}
+.ui-speed .lv-row {
+  grid-template-columns: 40px 1fr auto;
+  padding: 8px 2px;
+}
+.ui-speed .lv-row .cimg {
+  width: 40px;
+  height: 58px;
+}
+
+/* ---------- Card Shop, bets, after-duel ---------- */
+.ui-speed .shop-bar {
+  font-size: 14px;
+  border-bottom-width: 1px;
+}
+.ui-speed .pack-logo,
+.ui-speed .pack-note,
+.ui-speed .rv-new,
+.ui-speed .rv-fin,
+.ui-speed .bnew,
+.ui-speed .shop-q,
+.ui-speed .news-cards .nc,
+.ui-speed .bcard.nocard,
+.ui-speed .drop-odds th,
+.ui-speed .drop-odds .drop-foot {
+  font-size: 12px;
+}
+.ui-speed .pack-name {
+  font-size: 14px;
+}
+.ui-speed .pack-odds {
+  font-size: 11px;
+}
+.ui-speed .next-set,
+.ui-speed .loss-line,
+.ui-speed .seat-bet,
+.ui-speed .stakes-vs,
+.ui-speed .pity,
+.ui-speed .drop-odds,
+.ui-speed .p2-text span,
+.ui-speed .pfield span {
+  font-size: 13px;
+}
+.ui-speed .netwarn {
+  font-size: 13px;
+}
+
+/* ---------- the Classic duel screen in a Speed Duel ---------- */
+.ui-speed .duel:not(.touch) .lp {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.ui-speed .duel:not(.touch) .pbar {
+  font-size: 14px;
+}
+.ui-speed .duel:not(.touch) .pbar .pname {
+  font-size: 14px;
+}
+.ui-speed .duel:not(.touch) .hcount {
+  font-size: 13px;
+}
+.ui-speed .duel:not(.touch) .ph {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 4px;
+}
+.ui-speed .duel:not(.touch) .phasebtns .gbtn,
+.ui-speed .duel:not(.touch) .menu-btn {
+  font-size: 13px;
+  padding: 6px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.ui-speed .duel:not(.touch) .pile,
+.ui-speed .duel:not(.touch) .pile.small {
+  font-size: 11px;
+}
+.ui-speed .duel:not(.touch) .fstat {
+  font-size: 12px;
+  font-weight: 700;
+}
+.ui-speed .duel:not(.touch) .selstat {
+  font-size: 13px;
+}
+.ui-speed .duel:not(.touch) > .msgwin .win-title {
+  font-size: 15px;
+  padding: 7px 12px;
+}
+.ui-speed .duel:not(.touch) > .msgwin .menu-label {
+  font-size: 15px;
+}
+
+/* ---------- the Touch duel screen in a Speed Duel: a little larger text ---------- */
+.ui-speed .duel.touch .tname span,
+.ui-speed .duel.touch .thint,
+.ui-speed .duel.touch .tskill {
+  font-size: 12px;
+}
+.ui-speed .duel.touch .tdetail-type {
+  font-size: 12px;
+}
+.ui-speed .duel.touch .tdetail-text p {
+  font-size: 12px;
+  -webkit-line-clamp: 4;
+}
+.ui-speed .duel.touch .tdetail-more {
+  font-size: 11px;
+}
+.ui-speed .duel.touch .topt-label {
+  font-size: 12px;
+}
+.ui-speed .duel.touch .tsheet-title {
+  font-size: 15px;
+}
+@media (max-height: 700px) {
+  .ui-speed .duel.touch .tdetail-text p {
+    -webkit-line-clamp: 3;
+  }
+}

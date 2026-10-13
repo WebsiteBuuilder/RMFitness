@@ -2,7 +2,7 @@
 // Everything that needs a decision from a player is written as a generator that
 // yields a Prompt; the engine parks the generator until the answer arrives.
 
-import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCard, Loc, Phase, Pid, PlayerState, Pos, Prompt, Rules, SeatSetup, SelectOption } from './types';
+import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCard, Loc, LogLine, Phase, Pid, PlayerState, Pos, Prompt, Rules, SeatSetup, SelectOption } from './types';
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
 import { extraProcFor, getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
 import { getSkill } from './skills';
@@ -95,6 +95,10 @@ export class Engine {
   private levelSource: number | null = null;
   /** set while battle damage is dealt (Speed Duel damage modifiers tell battle damage from effect damage) */
   private battleHit = false;
+  /** cards whose effects are running (innermost last), so the log can say what moved a card */
+  private causes: string[] = [];
+  /** the last line logLeave wrote (a script's own line right after it replaces it) */
+  private autoLine: { line: LogLine; name: string; verb: RegExp; by: string | null } | null = null;
 
   /** The rule set of this duel (EDS for duels recorded before Speed Duel existed). */
   get rules(): Rules {
@@ -468,7 +472,9 @@ export class Engine {
     ((this.state.fx.opd ??= {}) as Record<string, boolean>)[`${p}|${key}`] = true;
   }
 
-  constructor(public readonly db: Map<string, CardInfo>) {
+  /** `sandbox`: a throwaway copy (the computer's lookahead) that must not reset the shared effect cache. */
+  constructor(public readonly db: Map<string, CardInfo>, sandbox = false) {
+    if (sandbox) return;
     setNameResolver((n) => {
       const i = this.db.get(n) ?? this.db.get(n.toLowerCase());
       return i ? [i.name, ...(i.alias ? [i.alias] : [])] : [];
@@ -512,7 +518,15 @@ export class Engine {
 
   // ---------- logging ----------
   log(player: Pid | null, text: string) {
-    this.state.log.push({ turn: this.state.turn, player, text });
+    // A card script describing the same move right after the engine's own line replaces that line.
+    const auto = this.autoLine;
+    this.autoLine = null;
+    const log = this.state.log;
+    if (auto && log[log.length - 1] === auto.line && text.includes(auto.name) && auto.verb.test(text)) {
+      log.pop();
+      if (auto.by && !text.includes(auto.by)) text = `${text} (${auto.by})`;
+    }
+    log.push({ turn: this.state.turn, player, text });
   }
 
   event(kind: string, extra: Omit<EngineEvent, 'kind' | 'seq'> = {}) {
@@ -871,15 +885,32 @@ export class Engine {
     }
   }
 
-  /** Runs a card effect on behalf of a player (so "your opponent's effect" checks work). */
-  *as(p: Pid, step: Step): Step {
+  /** Runs a card effect on behalf of a player (so "your opponent's effect" checks work). `source`: the card whose effect it is (named in the log). */
+  *as(p: Pid, step: Step, source?: Card): Step {
     const prev = this.actor;
     this.actor = p;
+    if (source) this.causes.push(source.name);
     try {
       yield* step;
     } finally {
       this.actor = prev;
+      if (source) this.causes.pop();
     }
+  }
+
+  /** The card whose effect is moving cards right now (for the log), if known. */
+  private cause(): string | null {
+    return this.causes[this.causes.length - 1] ?? this.resolvingCard()?.name ?? null;
+  }
+
+  /** b22: a log line for a card leaving the field by a card effect, unless the effect already said it. */
+  private logLeave(controller: Pid, name: string, what: string, verb: RegExp) {
+    const turn = this.state.turn;
+    const recent = this.state.log.slice(-3).filter((l) => l.turn === turn);
+    if (recent.some((l) => l.text.includes(name) && verb.test(l.text))) return;
+    const by = this.cause();
+    this.log(controller, `${name} ${what}${by ? (by === name ? ' by its own effect' : ` by ${by}`) : ''}`);
+    this.autoLine = { line: this.state.log[this.state.log.length - 1], name, verb, by: by && by !== name ? by : null };
   }
 
   /** Sends a card to its owner's Graveyard, handling equips and "sent to GY" effects. */
@@ -911,6 +942,7 @@ export class Engine {
     const card = this.detach(uid)!;
     if (byBattle && fc?.tags) fc.tags.leftBy = -1; // b17: destroyed by battle, not by a card effect
     if (card.token || card.name.startsWith('__token')) {
+      if (fc && reason === 'destroyed' && !byBattle && !card.name.startsWith('__token')) this.logLeave(controller, card.name, 'was destroyed', /destroy/i);
       if (fc) {
         for (const eqUid of fc.equips.slice()) yield* this.sendToGrave(eqUid, 'used');
         const eff = muted ? undefined : getEffect(card.name);
@@ -934,6 +966,7 @@ export class Engine {
       else (ps.deck.push(card), (ps.deck = this.shuffle(ps.deck)));
       this.log(card.owner, `${card.name} is shuffled into the Deck instead`);
     } else this.player(card.owner).gy.push(card);
+    if (wasField && reason === 'destroyed' && !byBattle) this.logLeave(controller, card.name, 'was destroyed', /destroy/i);
     this.event('to-gy', { uid, player: card.owner });
     if (reason === 'discard' && f.loc.zone === 'hand') yield* this.discardWatchers(controller);
     if (reason === 'mill' && f.loc.zone === 'deck' && this.actor !== null && this.actor !== card.owner) {
@@ -954,8 +987,8 @@ export class Engine {
     // Speed Duel card scripts: "if this card is sent to the GY" and "if this card is destroyed".
     const eff = muted ? undefined : getEffect(card.name);
     if (this.state.winner === null && (eff?.onSentToGrave || eff?.onDestroyed) && this.find(uid)?.loc.zone === 'gy') {
-      if (eff.onDestroyed && wasField && reason === 'destroyed') yield* this.as(controller, eff.onDestroyed(this, card, controller, byBattle));
-      if (eff.onSentToGrave && this.find(uid)?.loc.zone === 'gy') yield* this.as(card.owner, eff.onSentToGrave(this, card, card.owner, f.loc.zone, reason));
+      if (eff.onDestroyed && wasField && reason === 'destroyed') yield* this.as(controller, eff.onDestroyed(this, card, controller, byBattle), card);
+      if (eff.onSentToGrave && this.find(uid)?.loc.zone === 'gy') yield* this.as(card.owner, eff.onSentToGrave(this, card, card.owner, f.loc.zone, reason), card);
     }
     if (ev) yield* this.graveWatch(ev);
   }
@@ -1010,6 +1043,11 @@ export class Engine {
     for (const uid of uids) {
       const m = this.fieldCard(uid);
       if (m && m.faceUp && this.shielded(m, byBattle ? 'battle' : 'effect')) {
+        // The battle line was written before protection was known: "X destroys Y" becomes "X wins the battle against Y".
+        if (byBattle) {
+          const e = this.state.log.slice().reverse().find((l) => l.turn === this.state.turn && l.text.endsWith(` destroys ${m.name}`));
+          if (e) e.text = e.text.replace(/ destroys ([^]*)$/, ' wins the battle against $1');
+        }
         this.log(null, `${m.name} is not destroyed ${byBattle ? 'by battle' : 'by the card effect'}`);
         continue;
       }
@@ -1258,7 +1296,7 @@ export class Engine {
     if (faceUp) yield* this.anySummon(fc, controller, 'special');
     if (faceUp && this.fieldCard(uid)) {
       const h = getEffect(card.name)?.onSpecialSummon;
-      if (h) yield* this.as(controller, h(this, fc, controller));
+      if (h) yield* this.as(controller, h(this, fc, controller), fc);
     }
     if (faceUp && this.speed && this.fieldCard(uid)) yield* this.specialSummonWindow(uid);
   }
@@ -1330,8 +1368,10 @@ export class Engine {
   toHandOf(uid: number, p: Pid) {
     if (this.graveLocked(uid)) return;
     if (this.find(uid)?.loc.zone === 'gy') (this.state.fx.gyToHand ??= {})[uid] = this.state.turn;
+    const from = this.find(uid);
     const card = this.detach(uid);
     if (!card) return;
+    if (from && (from.loc.zone === 'mz' || from.loc.zone === 'sz' || from.loc.zone === 'field') && !card.token) this.logLeave(from.loc.player, card.name, 'was returned to the hand', /return|hand/i);
     if (this.isExtraCard(card.name)) this.player(card.owner).fusion.push(card);
     else this.player(p).hand.push(card);
     this.event('to-hand', { uid, player: p });
@@ -1350,7 +1390,10 @@ export class Engine {
     if (f?.loc.zone === 'gy') (this.state.fx.gyToHand ??= {})[uid] = this.state.turn;
     const card = this.detach(uid);
     if (!card) return;
-    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'bounced');
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) {
+      this.leftField(f.card as FieldCard, f.loc.player, 'bounced');
+      if (!card.token) this.logLeave(f.loc.player, card.name, this.isExtraCard(card.name) ? 'was returned to the Extra Deck' : 'was returned to the hand', /return|hand|bounce/i);
+    }
     (this.isExtraCard(card.name) ? this.player(card.owner).fusion : this.player(card.owner).hand).push(card);
     this.event('to-hand', { uid, player: card.owner });
   }
@@ -1375,7 +1418,8 @@ export class Engine {
     }
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
-    this.log(card.owner, `${card.name} was removed from play`);
+    if (fc) this.logLeave(f.loc.player, card.name, 'was removed from play', /remov|banish/i);
+    else this.log(card.owner, `${card.name} was removed from play`);
     this.queueBanished(card); // audit-09
   }
 
@@ -1403,7 +1447,7 @@ export class Engine {
       const { fc, controller, reason } = list.shift()!;
       for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
       const eff = fc.token ? undefined : getEffect(fc.name);
-      if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
+      if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason), fc);
       // audit-02: cards in a GY that watch cards leaving the field (Contact Gate).
       if (this.speed)
         for (const q of [0, 1] as Pid[])
@@ -1428,7 +1472,10 @@ export class Engine {
     const f = this.find(uid);
     const card = this.detach(uid);
     if (!card) return;
-    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) this.leftField(f.card as FieldCard, f.loc.player, 'to-deck');
+    if (f && (f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field')) {
+      this.leftField(f.card as FieldCard, f.loc.player, 'to-deck');
+      if (!card.token) this.logLeave(f.loc.player, card.name, this.isExtraCard(card.name) ? 'was returned to the Extra Deck' : 'was returned to the Deck', /deck|shuffle|return/i);
+    }
     if (this.isExtraCard(card.name)) this.player(card.owner).fusion.push(card);
     else this.player(card.owner).deck.unshift(card);
     this.event('to-hand', { uid, player: card.owner });
@@ -1842,16 +1889,16 @@ export class Engine {
             if (!c.faceUp || !c.active || !eff?.onStandby || !this.fieldCard(c.uid)) continue;
             const kind = this.info(c.name).kind;
             if ((kind === 'spell' && this.spellsNegated() && c.name !== 'Imperial Order') || (kind === 'trap' && this.trapsNegated(c.name))) continue;
-            yield* this.as(p, eff.onStandby(this, c, p));
+            yield* this.as(p, eff.onStandby(this, c, p), c);
           }
           for (const m of this.monsters(p)) {
             const eff = this.effectOn(m);
-            if (m.faceUp && eff?.onStandby && this.fieldCard(m.uid)) yield* this.as(p, eff.onStandby(this, m, p));
+            if (m.faceUp && eff?.onStandby && this.fieldCard(m.uid)) yield* this.as(p, eff.onStandby(this, m, p), m);
           }
         }
         for (const c of this.player(tp).gy.slice()) {
           const eff = getEffect(c.name);
-          if (eff?.onStandbyInGrave && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(tp, eff.onStandbyInGrave(this, c, tp));
+          if (eff?.onStandbyInGrave && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(tp, eff.onStandbyInGrave(this, c, tp), c);
         }
         // audit-10: "during the Standby Phase of the next turn" from the GY, on either player's turn (Vampire's Curse).
         if (this.speed)
@@ -2218,7 +2265,7 @@ export class Engine {
       this.log(player, `${ps.name} ${need ? 'Tribute ' : ''}Summoned ${card.name}${pos === 'def' ? ' in Defense Position' : ''}`);
       if (!(this.speed && getEffect(card.name)?.noSummonResponse)) yield* this.responseWindow('summon', { uid, summonKind: 'normal' }); // audit-eds
       const eff = this.effectOn(fc);
-      if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
+      if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'), fc);
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
     } else {
       this.log(player, `${ps.name} Set a monster`);
@@ -2288,7 +2335,7 @@ export class Engine {
     }
     if (this.fieldCard(uid)) yield* this.flipEffect(uid, player);
     const eff = this.effectOn(m);
-    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, m, player, 'flip'));
+    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, m, player, 'flip'), m);
     if (this.fieldCard(uid)) yield* this.anySummon(m, player, 'flip');
     if (this.fieldCard(uid)) yield* this.positionWatch(m, player);
   }
@@ -2507,7 +2554,7 @@ export class Engine {
       yield* this.resolveChain();
       return;
     }
-    yield* this.as(player, eff.ignition!.run(this, m, player));
+    yield* this.as(player, eff.ignition!.run(this, m, player), m);
   }
 
   *flipEffect(uid: number, controller: Pid): Step {
@@ -2516,7 +2563,7 @@ export class Engine {
     const eff = getEffect(m.name);
     if (eff?.flip) {
       this.log(controller, `${m.name}'s FLIP effect activates`);
-      yield* this.as(controller, eff.flip(this, m, controller));
+      yield* this.as(controller, eff.flip(this, m, controller), m);
     }
   }
 
@@ -2538,7 +2585,7 @@ export class Engine {
     this.event('position', { uid, player });
     this.log(player, `${m.name} changed to ${m.pos === 'atk' ? 'Attack' : 'Defense'} Position`);
     const eff = this.effectOn(m);
-    if (eff?.onPositionChange) yield* this.as(player, eff.onPositionChange(this, m, player));
+    if (eff?.onPositionChange) yield* this.as(player, eff.onPositionChange(this, m, player), m);
     if (this.fieldCard(uid)) yield* this.positionWatch(m, player);
   }
 
@@ -3282,7 +3329,7 @@ export class Engine {
       this.log(player, `${attacker.name} negates ${target.name}'s FLIP effect`);
     } else if (wasFaceDown && tEff?.flip && !muted.includes(targetUid)) {
       this.log(opp, `${target.name}'s FLIP effect activates`);
-      yield* this.as(opp, tEff.flip(this, target, opp, !this.fieldCard(targetUid)));
+      yield* this.as(opp, tEff.flip(this, target, opp, !this.fieldCard(targetUid)), target);
     }
     if (this.state.winner !== null) return;
     for (const x of this.liveST()) if (x.eff.onBattleEnd && this.state.winner === null) yield* this.as(x.p, x.eff.onBattleEnd(this, x.c, x.p, attacker, target, atk, tAtkCalc));

@@ -13,6 +13,7 @@ import type { Stakes } from '../collection/stakes';
 import { StakesPanel, stakesReady } from '../collection/StakesPanel';
 import type { SpeedSave } from '../eds/speedSave';
 import { preloadArt3d } from '../art/preload';
+import { ConfirmSheet } from './ConfirmSheet';
 
 export type LinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -21,7 +22,10 @@ export function LinkMenu({ save, onPick, onBack }: { save: SaveFile; onPick: (c:
   const problems = deckProblems(save);
   return (
     <div class="screen">
-      <Win title="Link Battle" onClose={onBack}>
+      <Win title="Link Battle · Eternal Duelist Soul" onClose={onBack}>
+        <p class="hint">
+          This hosts an <b>Eternal Duelist Soul</b> duel with your EDS deck. For a Speed Duel, go back and open Speed Duel → Link Battle.
+        </p>
         {problems.length > 0 && (
           <div class="warn">
             Your deck is not ready: {problems[0]}. Fix it in Deck Edit first.
@@ -105,6 +109,8 @@ export function Lobby({
   }, [mode]);
   const [guestName, setGuestName] = useState('');
   const [copied, setCopied] = useState(false);
+  /** no clipboard here: the link is shown to copy by hand */
+  const [linkToCopy, setLinkToCopy] = useState<string | null>(null);
   /** Phones open the share sheet (Messages, WhatsApp...); elsewhere the link is copied. */
   const invite = async (room: string) => {
     const url = `${location.origin}${location.pathname}?join=${room}`;
@@ -116,7 +122,7 @@ export function Lobby({
     try {
       await navigator.clipboard.writeText(url);
     } catch {
-      window.prompt('Copy this link:', url);
+      setLinkToCopy(url);
       return;
     }
     setCopied(true);
@@ -171,6 +177,42 @@ export function Lobby({
       fusions: [seats[0].fusion, seats[1].fusion],
       ...(roomMode === 'speed' ? { mode: 'speed' as const, skills: [seats[0].skill ?? null, seats[1].skill ?? null] as [string | null, string | null] } : {}),
     });
+
+  // The room couldn't open (no connection, or no room with that code): say so, with Retry and Back.
+  if (code && status === 'error')
+    return (
+      <div class="screen">
+        <Win title={`Room ${code} · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
+          <div class="net-fail" role="alert">
+            {/* the first sentence is the headline: "No room with that code." / "Can't reach the online server." */}
+            <b>{(detail || "Can't reach the online server.").split('. ')[0].replace(/\.$/, '')}</b>
+            {(detail || '').split('. ').slice(1).join('. ')}
+            <div class="csheet-btns">
+              <button class="gbtn" onClick={onLeave}>
+                Back
+              </button>
+              {session.adapter.retry && (
+                <button class="gbtn" onClick={() => session.adapter.retry?.()}>
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
+        </Win>
+      </div>
+    );
+
+  // Still opening the room (or finding the host's): no seats to ready yet.
+  if (code && status === 'connecting' && !seats[0].ready && !seats[1].ready)
+    return (
+      <div class="screen">
+        <Win title={`Room ${code} · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
+          <p class={`status s-${status}`}>{detail || 'Connecting…'}</p>
+          <p class="hint">{session.adapter.isHost ? 'Opening your room on the online server…' : 'Checking the code with the online server…'}</p>
+          <Menu items={[{ label: 'Back', onPick: onLeave }]} />
+        </Win>
+      </div>
+    );
 
   return (
     <div class="screen">
@@ -238,6 +280,12 @@ export function Lobby({
         )}
         {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : undefined, onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
+      {linkToCopy && (
+        <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>
+          <p>Press and hold the link to copy it, then send it to your brother.</p>
+          <input class="csheet-link" readOnly value={linkToCopy} aria-label="Invite link" onFocus={(ev) => (ev.target as HTMLInputElement).select()} />
+        </ConfirmSheet>
+      )}
     </div>
   );
 }

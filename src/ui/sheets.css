@@ -1,0 +1,184 @@
+/* ---------- confirmation sheets (ConfirmSheet.tsx) ---------- */
+.csheet-back {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  color: var(--ink, #f4f4ff);
+  -webkit-tap-highlight-color: transparent;
+}
+.csheet-back.gba {
+  background: rgba(0, 0, 0, 0.7);
+  place-items: center;
+}
+.csheet-back.md {
+  background: radial-gradient(ellipse at 50% 100%, #1b2a7a66, #000a 70%);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  align-items: end;
+  justify-items: center;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.csheet-text {
+  margin: 4px 0 12px;
+  line-height: 1.45;
+}
+.csheet-text p {
+  margin: 0 0 8px;
+}
+.csheet-btns {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.csheet-btns > button {
+  flex: 1;
+  min-height: 46px;
+  touch-action: manipulation;
+}
+
+/* GBA dialogue window */
+.csheet-win {
+  width: min(100%, 420px);
+  animation: csheet-pop 0.14s steps(3, end);
+}
+.csheet-win .gbtn {
+  font-size: 13px;
+}
+.csheet-win .csheet-ok.danger {
+  background: linear-gradient(180deg, #b03a3a, #6b1f1f);
+}
+.csheet-win .gbtn:focus-visible {
+  outline: 2px solid var(--gold, #f7c948);
+  outline-offset: 2px;
+}
+@keyframes csheet-pop {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Master Duel bottom sheet */
+.csheet-md {
+  width: min(100%, 520px);
+  margin-bottom: 4dvh;
+  padding: 20px 18px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #16205aee, #070a1cf7 70%);
+  border: 1px solid #8fa6ff55;
+  box-shadow:
+    0 -2px 0 #f7c94888 inset,
+    0 18px 50px #000c,
+    0 0 40px #3a5cff33;
+  text-align: center;
+  animation: csheet-rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.csheet-title {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.csheet-md .csheet-text {
+  color: #c9d3ff;
+  font-size: 14px;
+}
+.csheet-b {
+  border-radius: 24px;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  border: 1px solid #9fb2ff;
+  background: linear-gradient(#2e3f8f, #141c48);
+}
+.csheet-b.ok {
+  background: linear-gradient(#f7c948, #c98f12);
+  color: #1a1000;
+  border-color: #fff2b8;
+}
+.csheet-b.ok.danger {
+  background: linear-gradient(#ff6b6b, #a51f2b);
+  color: #fff;
+  border-color: #ffc2c2;
+}
+.csheet-b:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.csheet-btns .arming {
+  opacity: 0.55;
+}
+@keyframes csheet-rise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+.csheet-link {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  font: inherit;
+  font-size: 13px;
+  user-select: all;
+  -webkit-user-select: all;
+  border: 2px solid var(--border, #e8e8ff);
+  background: #06091c;
+  color: var(--ink, #f4f4ff);
+}
+
+/* ---------- "a new version is ready" bar (pwa.ts) ---------- */
+.update-bar {
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px 8px 14px;
+  border-radius: 22px;
+  background: #070b22f2;
+  border: 1px solid #8fa6ff88;
+  box-shadow: 0 8px 24px #000a;
+  color: #f4f4ff;
+  font: 600 13px system-ui, -apple-system, sans-serif;
+}
+.update-bar button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  border: 1px solid #9fb2ff;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.update-bar .go {
+  background: linear-gradient(#f7c948, #c98f12);
+  border-color: #fff2b8;
+  color: #1a1000;
+}
+
+/* ---------- online lobby: can't connect ---------- */
+.net-fail {
+  border: 2px solid var(--red, #ff5a5a);
+  background: #2a0b14;
+  padding: 10px;
+  margin: 6px 0 10px;
+}
+.net-fail b {
+  display: block;
+  color: var(--red, #ff5a5a);
+  margin-bottom: 4px;
+}
+.net-fail .csheet-btns {
+  margin-top: 10px;
+}

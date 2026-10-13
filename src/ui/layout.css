@@ -1,0 +1,180 @@
+/* Duel boards that always fit the phone: the zones size themselves from the room left
+   between the two player bars (container query units), so on short phones (iPhone SE,
+   iPhone 13 with the browser bars up) the bottom bar never covers your Spell/Trap row.
+   Browsers without container units keep the older estimate in styles.css / polish.css. */
+
+/* ---------- Touch screen ---------- */
+.duel.touch .tboard {
+  container-type: size;
+  overflow: visible;
+}
+@supports (width: 1cqh) {
+  /* 4 rows of zones (86/59 tall) + the turn line and gaps; the field's tilt makes the near
+     rows a little bigger on screen, hence the 0.9 and the width margin */
+  .duel.touch .tmat {
+    width: min(100%, 480px, calc(100cqw / 1.08), calc((100cqh * 0.9 - 66px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 5px));
+  }
+  .duel.touch.speed .tmat {
+    max-width: 380px;
+  }
+}
+
+/* your hand: bigger cards with the name on a strip, fanned when the hand is big; the card
+   you touch rises and grows so you can read it */
+.duel.touch .thand {
+  min-height: calc(var(--th-h) + 20px);
+  padding-top: 12px;
+  --th-w: 70px;
+  --th-h: 102px;
+}
+.duel.touch .thcard {
+  width: var(--th-w);
+  height: var(--th-h);
+}
+.duel.touch .thcard + .thcard {
+  margin-left: calc(var(--th-w) * -1 * var(--overlap, 0));
+}
+@media (max-width: 380px) {
+  .duel.touch .thand {
+    --th-w: 64px;
+    --th-h: 93px;
+  }
+}
+@media (min-height: 760px) and (min-width: 381px) {
+  .duel.touch .thand {
+    --th-w: 78px;
+    --th-h: 114px;
+  }
+}
+.duel.touch .thcard:active:not(.sel) {
+  transform: translateY(-6px) scale(1.05);
+  transform-origin: 50% 100%;
+  z-index: 3;
+}
+/* the picked card rises clear of the fan (its full text shows in the card panel up top) */
+.duel.touch .thcard.sel {
+  transform: translateY(-8px) scale(1.06);
+  transform-origin: 50% 100%;
+  z-index: 2;
+}
+
+/* the card-name strip on a hand card (the printed name is too small to read at this size) */
+.hname {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Bottom spacing is a border, not padding: overflow clips at the padding edge, so a third line can't peek into it. */
+  padding: 2px 3px 0;
+  border-bottom: 3px solid transparent;
+  box-sizing: border-box;
+  font: 700 10px/1.15 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+  background: linear-gradient(180deg, #05081cb0, #05081ef0);
+  border-radius: 0 0 4px 4px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: calc(2.3em + 5px);
+  pointer-events: none;
+  z-index: 1;
+}
+@media (min-width: 381px) {
+  .hname {
+    font-size: 10.5px;
+  }
+}
+
+/* ---------- Classic screen ---------- */
+@supports (width: 1cqh) {
+  .duel:not(.touch) .field {
+    container-type: size;
+    flex: 1 1 0;
+    min-height: 0;
+    /* the centre strip (phases, buttons, MENU) at its tallest, when it wraps to two lines */
+    --mid: 76px;
+  }
+  .duel:not(.touch) .rows {
+    max-width: calc((100cqh - var(--mid) - 20px) / 4 * 59 / 86 * 5 + 12px);
+  }
+  /* Speed Duel: three zones a row, the row 72% of the strip */
+  .duel.speed:not(.touch) .rows {
+    max-width: calc(((100cqh - var(--mid) - 20px) / 4 * 59 / 86 * 3 + 6px) / 0.72);
+  }
+  .duel:not(.touch) .sidebox {
+    max-height: 100cqh;
+    overflow: hidden;
+  }
+}
+.duel:not(.touch) .menu-btn {
+  white-space: nowrap;
+}
+
+/* Speed Duel, Classic: bigger hand cards with a name strip */
+.duel.speed:not(.touch) .hand {
+  --card-w: 60px;
+  --card-h: 88px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+@media (max-height: 720px) {
+  .duel.speed:not(.touch) .hand {
+    --card-w: 56px;
+    --card-h: 82px;
+  }
+}
+.duel.speed:not(.touch) .hand .hcard.sel {
+  transform: translateY(-10px) scale(1.12);
+}
+
+/* ---------- your own Set (face-down) cards: you can see them, but they're plainly Set ---------- */
+.fcard.myset .cimg {
+  filter: brightness(0.62) saturate(0.55) sepia(0.25) hue-rotate(185deg);
+}
+.setmark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font: 800 9px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.5px;
+  color: #10131a;
+  background: #cfd8ff;
+  box-shadow: 0 0 0 1px #3b4ea8, 0 1px 3px #000c;
+  pointer-events: none;
+  z-index: 1;
+}
+/* a Set monster lies sideways: the label stays upright */
+.fcard.def .setmark {
+  transform: translate(-50%, -50%) rotate(-90deg) scale(1.3);
+}
+/* EDS Classic keeps the pixel look */
+.duel:not(.touch):not(.speed) .setmark {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 8px;
+  border-radius: 1px;
+}
+.zone.myset > .cimg,
+.tz.myset > .cimg {
+  filter: brightness(0.62) saturate(0.55) sepia(0.25) hue-rotate(185deg);
+}
+/* Speed Duel, Classic: MENU is a ☰ button in the top bar; the phase buttons stay on one line */
+.duel.speed:not(.touch) .pbar-menu {
+  font-size: 17px;
+  line-height: 1;
+  padding: 5px 10px;
+  margin-left: 4px;
+}
+.ui-speed .duel.speed:not(.touch) .phasebtns {
+  gap: 3px;
+}
+.ui-speed .duel.speed:not(.touch) .phasebtns .gbtn {
+  font-size: 12px;
+  padding: 5px 7px;
+}

@@ -12,6 +12,7 @@ import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
+import { spellWord } from './gameUi';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -166,7 +167,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const x = Math.min(Math.max(r.left + r.width / 2, 80), w - 80);
       // Cards near the top get their buttons underneath instead.
       const below = r.top < 150;
-      setBubble({ x, y: below ? r.bottom + 6 : r.top - 6, below });
+      // A hand card's buttons sit above your Life Points bar, never over it (or your portrait).
+      const bar = el.closest('.thand') ? root.current?.querySelector('.tbar.bottom')?.getBoundingClientRect() : null;
+      const top = bar ? Math.min(r.top, bar.top) : r.top;
+      setBubble({ x, y: below ? r.bottom + 6 : top - 6, below });
     };
     place();
     window.addEventListener('resize', place);
@@ -300,8 +304,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {...(draggable ? dragProps(c, 'mz') : {})}
       >
         {c && (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
+            {!c.faceUp && visible && <span class="setmark">SET</span>}
           </div>
         )}
         {c && c.faceUp && kind === 'm' && (
@@ -320,7 +325,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const mine = p === acting;
     return (
       <div
-        class={`tz tz-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}${mine ? spotCls('field') : ''}`}
+        class={`tz tz-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}${mine ? spotCls('field') : ''}${ps.field && !ps.field.faceUp && (mine || ctl.spectator) ? ' myset' : ''}`}
         data-uid={ps.field?.uid}
         data-drop={mine ? 'field' : undefined}
         onClick={(ev) => {
@@ -329,6 +334,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         }}
       >
         {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} /> : <span class="tz-label">FIELD</span>}
+        {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
       </div>
     );
   };
@@ -544,7 +550,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   const handCount = me.hand.length;
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
-  const cardW = window.innerWidth <= 380 ? 58 : window.innerHeight >= 760 ? 74 : 66;
+  // (the same sizes as layout.css: --th-w)
+  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 760 ? 78 : 70;
   const room = Math.min(window.innerWidth, 560) - 20;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
@@ -663,6 +670,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             {...dragProps(c, 'hand')}
           >
             <CardImg name={c.name} back={!canAct && !ctl.spectator && !ctl.locked} owner={c.owner} />
+            {(canAct || ctl.spectator || ctl.locked) && <span class="hname">{c.name}</span>}
           </div>
         ))}
         {handCount === 0 && <div class="thint">No cards in hand</div>}
@@ -730,5 +738,5 @@ function DetailLine({ name }: { name: string }) {
         ATK {info.atk} · DEF {info.def}
       </span>
     );
-  return <span class="tdetail-type">{`${info.sub} ${info.kind === 'spell' ? 'Magic' : 'Trap'}`}</span>;
+  return <span class="tdetail-type">{`${info.sub} ${info.kind === 'spell' ? spellWord() : 'Trap'}`}</span>;
 }
