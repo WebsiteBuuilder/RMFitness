@@ -169,7 +169,7 @@ export function SoloHud({ vs }: { vs?: VsInfo }) {
 type Ctx = Props & { solo: SoloSave; setSolo: (s: SoloSave) => void };
 
 // ---------- small pieces ----------
-function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBack: () => void; right?: preact.ComponentChildren }) {
+export function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBack: () => void; right?: preact.ComponentChildren }) {
   useBack(onBack);
   return (
     <div class="so-top">
@@ -185,7 +185,7 @@ function Top({ title, sub, onBack, right }: { title: string; sub?: string; onBac
   );
 }
 
-function Sheet({ title, onClose, children, wide }: { title?: string; onClose?: () => void; children: preact.ComponentChildren; wide?: boolean }) {
+export function Sheet({ title, onClose, children, wide }: { title?: string; onClose?: () => void; children: preact.ComponentChildren; wide?: boolean }) {
   // Back closes the sheet; a sheet you must answer just ignores it.
   useBack(() => onClose?.());
   return (
@@ -207,7 +207,7 @@ function Sheet({ title, onClose, children, wide }: { title?: string; onClose?: (
   );
 }
 
-function Btn({ children, onClick, kind = 'plain', disabled }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean }) {
+export function Btn({ children, onClick, kind = 'plain', disabled }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean }) {
   return (
     <button class={`so-btn ${kind}`} disabled={disabled} onClick={() => (playBlip(), onClick?.())}>
       {children}
@@ -240,7 +240,7 @@ const Stars = ({ s }: { s?: boolean[] }) => (
   </span>
 );
 
-function Portrait({ d, size = 'm' }: { d: Pick<CpuDuelist, 'portrait' | 'name'>; size?: 's' | 'm' | 'l' }) {
+export function Portrait({ d, size = 'm' }: { d: Pick<CpuDuelist, 'portrait' | 'name'>; size?: 's' | 'm' | 'l' }) {
   return (
     <div class={`so-portrait ${size}`}>
       <CardImg name={d.portrait} />
@@ -303,7 +303,7 @@ function DeckListView({ main, extra }: { main: string[]; extra: string[] }) {
   );
 }
 
-function ResultBanner({ result }: { result: 'w' | 'l' | 'd' }) {
+export function ResultBanner({ result }: { result: 'w' | 'l' | 'd' }) {
   useEffect(() => {
     if (result === 'w') (playFanfare(), buzz([30, 50, 30, 50, 120]));
     else (playLose(), buzz(250));

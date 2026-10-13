@@ -30,6 +30,8 @@ interface Props {
   onFinished: (winner: Pid | 'draw') => void;
   /** watching the computer duel itself: nothing on the board takes input */
   spectator?: boolean;
+  /** a Tag Duel where your teammate is in: you watch your side's moves (their hand shows) but can't touch */
+  locked?: boolean;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -40,13 +42,13 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
   const me = state.players[acting];
   const opp = state.players[other(acting)];
-  const canAct = !spectator && (hotseat || acting === mySeat);
+  const canAct = !spectator && !locked && (hotseat || acting === mySeat);
   const myTurn = state.turnPlayer === acting;
   const prompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
 
@@ -387,7 +389,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       );
     }
     return (
-      <Win title={myTurn ? 'Your turn' : `${opp.name}'s turn`} class="msgwin">
+      <Win title={myTurn && !locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} class="msgwin">
         <p class="hint">
           {!myTurn
             ? 'Waiting for your opponent.'
@@ -538,7 +540,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
         overlays={overlays}
       />
     );
@@ -616,8 +618,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="hand">
         {me.hand.map((c) => (
           <div key={c.uid} data-uid={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
-            <CardImg name={c.name} back={!canAct && !spectator} owner={c.owner} />
-            {e.speed && (canAct || spectator) && <span class="hname">{c.name}</span>}
+            <CardImg name={c.name} back={!canAct && !spectator && !locked} owner={c.owner} />
+            {e.speed && (canAct || spectator || locked) && <span class="hname">{c.name}</span>}
           </div>
         ))}
         {me.hand.length === 0 && <div class="hint">No cards in hand</div>}

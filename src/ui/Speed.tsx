@@ -99,6 +99,7 @@ export function SpeedHub({
   controls,
   onControls,
   onSolo,
+  onTag,
   profile,
   save,
   onSave,
@@ -111,6 +112,8 @@ export function SpeedHub({
   onControls: () => void;
   /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice') => void;
+  /** 2v2 Tag Duels and the Tag Road */
+  onTag?: () => void;
   profile: Profile;
   save: SpeedSave;
   onSave: (s: SpeedSave) => void;
@@ -198,6 +201,7 @@ export function SpeedHub({
           items={[
             { label: 'The Millennium Road', note: 'story campaign: earn cards, beat the bosses', onPick: () => onSolo('campaign') },
             { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
+            ...(onTag ? [{ label: '2v2 Tag Duels', note: 'team up with your brother or a computer partner; Tag Road campaign', onPick: onTag }] : []),
             { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
             { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
             { label: 'Link Battle', note: 'Speed Duel rules: online or on one phone', onPick: () => setSub('link') },

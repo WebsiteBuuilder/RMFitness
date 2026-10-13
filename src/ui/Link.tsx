@@ -1,7 +1,7 @@
 // Link Battle: create or join an online room, or play on one phone.
 import { useEffect, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
-import type { GameMode, Pid } from '../eds/types';
+import type { Action, GameMode, Pid } from '../eds/types';
 import { speedDeckProblems, type SpeedDeck } from '../eds/speedSave';
 import { guestSpeedDeck } from './Speed';
 import { deckProblems, type Profile, type SaveFile } from '../eds/save';
@@ -85,6 +85,7 @@ export function Lobby({
   onSeatProfile,
   onLeave,
   betSave = () => null,
+  tag,
 }: {
   session: DuelSession;
   view: SessionView;
@@ -99,6 +100,8 @@ export function Lobby({
   onLeave: () => void;
   /** Speed Duel: the save behind a seat this phone controls, for placing bets */
   betSave?: (seat: Pid) => SpeedSave | null;
+  /** a 2v2 Tag Duel room (host): what it is, and the START that seats all four duelists */
+  tag?: { note: string; start: (seats: SessionView['seats']) => Action };
 }) {
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
@@ -167,7 +170,7 @@ export function Lobby({
     return roomMode === 'speed' ? `${e.deck.length} cards${e.skill ? ` · ${e.skill}` : ''}` : `${e.deck.length} cards · W ${o.save?.wins ?? 0} L ${o.save?.losses ?? 0}`;
   };
   const start = () =>
-    session.send({
+    tag ? session.send(tag.start(seats)) : session.send({
       type: 'START',
       first: Math.random() < 0.5 ? 0 : 1,
       seed: randomSeed(),
@@ -217,6 +220,7 @@ export function Lobby({
     <div class="screen">
       <Win title={code ? `Room ${code} · ${GAME_NAME[roomMode]}` : `Play on this phone · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
         {code && <p class={`status s-${status}`}>{detail || status}</p>}
+        {tag && <p class="tag-room">2v2 Tag Duel · {tag.note}</p>}
         {code && session.adapter.isHost && status === 'waiting' && (
           <p>
             Tell your brother the code <b>{code}</b> or send him this link:{' '}
@@ -244,7 +248,7 @@ export function Lobby({
           ) : (
             <div class="warn">This room is a {GAME_NAME[roomMode]}. Build a {GAME_NAME[roomMode]} deck first.</div>
           ))}
-        {bothReady && sameGame && roomMode === 'speed' && <StakesPanel session={session} view={view} mySeat={mySeat} hotseat={hotseat} betSave={betSave} />}
+        {bothReady && sameGame && roomMode === 'speed' && !tag && <StakesPanel session={session} view={view} mySeat={mySeat} hotseat={hotseat} betSave={betSave} />}
         {bothReady && !sameGame && <div class="warn">The two players readied for different games. Player 2, tap Ready again.</div>}
         {hotseat && seats[0].ready && !seats[1].ready && (
           <div>
