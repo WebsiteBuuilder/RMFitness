@@ -1,4 +1,4 @@
-// Friends and presence: requests, online status, invites, rooms, dropped links.
+// Friends and presence: adding by code, online status, invites, rooms, dropped links.
 // Runs the real Presence code over an in-memory transport with a hand-driven clock.
 // Run: npx tsx tests/friends.test.ts
 import { Presence, PING_MS, SILENT_MS, INVITE_MS, POLL_MS, type OnlineData } from '../src/online/presence';
@@ -152,14 +152,9 @@ check(A.p.state === 'ready' && B.p.state === 'ready', 'both phones go online');
 
 check(A.p.add('BBBBBB') === 'added', 'Jammy adds Bro by code');
 flush();
-check(statusOf(A.p, 'BBBBBB') === 'sent', "Jammy's side: request sent");
-check(statusOf(B.p, 'AAAAAA') === 'request', "Bro's side: a friend request from Jammy");
-check(B.p.data.friends[0]?.name === 'Jammy', 'the request carries the name');
+check(statusOf(A.p, 'BBBBBB') === 'friend' && statusOf(B.p, 'AAAAAA') === 'friend', 'adding by code makes them friends on both phones at once, no accept step');
+check(B.p.data.friends[0]?.name === 'Jammy', "Bro's list gets Jammy's name");
 check(A.p.add('AAAAAA') === 'self', "can't add yourself");
-
-B.p.accept('AAAAAA');
-flush();
-check(statusOf(A.p, 'BBBBBB') === 'friend' && statusOf(B.p, 'AAAAAA') === 'friend', 'Bro accepts: friends on both phones');
 check(A.p.isOnline('BBBBBB') && B.p.isOnline('AAAAAA'), 'each sees the other online');
 check(A.p.friends()[0].name === 'Bro', "Jammy's list learns Bro's name");
 check(A.p.onlineCount() === 1, 'online count');
@@ -230,18 +225,29 @@ B.p.setActivity({ kind: 'menu' });
 A.p.setActivity({ kind: 'menu' });
 flush();
 
-// strangers can't invite
-const C = player('CCCCCC', 'Stranger');
+// adding a code whose game is closed, then they open it
+const C = player('CCCCCC', 'Cousin');
 flush();
+C.p.add('DDDDDD');
+flush();
+check(statusOf(C.p, 'DDDDDD') === 'sent' && C.p.reach.get('DDDDDD') === 'away', 'adding a code whose game is closed: kept, and marked as not open');
+const D = player('DDDDDD', 'Pal');
+flush();
+wait(POLL_MS, C.p, D.p);
+check(statusOf(C.p, 'DDDDDD') === 'friend' && statusOf(D.p, 'CCCCCC') === 'friend' && C.p.isOnline('DDDDDD'), 'they open the game: friends and online within one retry');
+check(!C.p.reach.has('DDDDDD'), 'and the "not open" mark clears');
+D.p.stop();
+
+// removing someone keeps them away
 C.p.add('BBBBBB');
 flush();
-check(statusOf(B.p, 'CCCCCC') === 'request', 'a stranger shows up as a request');
-check(C.p.invite('BBBBBB', 'ROOM', 'speed') === null, "a stranger who isn't a friend yet can't send invites");
+check(statusOf(B.p, 'CCCCCC') === 'friend', 'anyone with your code can add you');
 B.p.remove('CCCCCC');
 flush();
-check(statusOf(B.p, 'CCCCCC') === undefined && statusOf(C.p, 'BBBBBB') === undefined, 'declining clears the request on both phones');
+check(statusOf(B.p, 'CCCCCC') === undefined && statusOf(C.p, 'BBBBBB') === undefined, 'removing clears it on both phones');
+check(C.p.invite('BBBBBB', 'ROOM', 'speed') === null, "someone removed can't send invites");
 wait(POLL_MS * 2, A.p, B.p, C.p);
-check(statusOf(B.p, 'CCCCCC') === undefined, 'a declined player does not keep coming back');
+check(statusOf(B.p, 'CCCCCC') === undefined, 'a removed player does not keep coming back');
 C.p.stop();
 flush();
 
@@ -298,10 +304,7 @@ flush();
 check(statusOf(A3.p, 'BBBBBB') === undefined && statusOf(B4.p, 'AAAAAA') === undefined, 'removing a friend removes on both phones');
 check(A3.p.add('BBBBBB') === 'added', 'they can be added again');
 flush();
-check(statusOf(B4.p, 'AAAAAA') === 'request', 'and the request comes through again');
-check(B4.p.add('AAAAAA') === 'accepted', 'adding someone who already asked accepts them');
-flush();
-check(statusOf(A3.p, 'BBBBBB') === 'friend', 'friends again');
+check(statusOf(B4.p, 'AAAAAA') === 'friend' && statusOf(A3.p, 'BBBBBB') === 'friend', 'and they are friends again on both phones');
 
 // a phone that lost its data
 B4.p.stop();
@@ -310,7 +313,7 @@ const fresh: OnlineData = { code: 'BBBBBB', friends: [], ignored: [] };
 const B5 = player('BBBBBB', 'Bro', fresh);
 flush();
 wait(POLL_MS, A3.p, B5.p);
-check(statusOf(B5.p, 'AAAAAA') === 'request' && statusOf(A3.p, 'BBBBBB') === 'sent', 'a friend whose phone lost its data gets a fresh request');
+check(statusOf(B5.p, 'AAAAAA') === 'friend' && statusOf(A3.p, 'BBBBBB') === 'friend', 'a friend whose phone lost its data is back on both lists by themselves');
 
 console.log(failures ? `\n${failures} FAILED` : '\nall friends tests passed');
 if (failures) process.exit(1);
