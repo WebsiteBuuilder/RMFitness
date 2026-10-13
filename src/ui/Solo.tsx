@@ -6,11 +6,12 @@ import { loadProfiles, type Profile } from '../eds/save';
 import { STARTERS, activeDeck, deckFromStarter, loadSpeedSave, owned as ownedCopies, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { CHAPTERS, DEALER_CONDITIONS, type CampaignNode, type Chapter } from '../eds/speedCampaign/roster';
 import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, roadDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
-import { deckCode, readDeckCode } from '../eds/speedCampaign/deckCode';
+import { deckCode, fighterCode, readDeckCode, talkOf } from '../eds/speedCampaign/deckCode';
+import { readPepTalk, tacticsLabel } from '../eds/tactics';
 import { CURSES, EVENTS, UPGRADES, afterDuel, choose, stake, dailySeed, dailyStarter, duelFor, duelistById, enter, eventById, reachable, readResultCode, resultCode, stopById, todayString, newRun, type Choice, type Run, type RunSummary, type Stop } from '../eds/speedCampaign/labyrinth';
 import { STAR_TEXT } from '../eds/speedCampaign/outcome';
 import { relic } from '../eds/speedCampaign/relics';
-import { loadSolo, writeSolo, type SoloSave } from '../eds/speedCampaign/save';
+import { loadSolo, writeSolo, type SoloSave, type WatchPrefs } from '../eds/speedCampaign/save';
 import { endRun, type SoloReport } from '../eds/speedCampaign/settle';
 import type { CpuDuelSpec, CpuDuelist, VsInfo } from '../eds/speedCampaign/types';
 import { randomSeed } from '../eds/rng';
@@ -322,7 +323,12 @@ interface PracticeFoe {
   skill: string | null;
   group: string;
   condition?: CampaignNode['condition'];
+  /** a pep talk that came with a fighter code */
+  talk?: string;
 }
+
+// The Practice tab last open, so leaving a duel comes back to it.
+let practiceTab: 'play' | 'watch' = 'play';
 
 function Practice(p: Ctx) {
   const { solo, setSolo, speed } = p;
@@ -333,6 +339,8 @@ function Practice(p: Ctx) {
   const [share, setShare] = useState(false);
   const [paste, setPaste] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [tab, setTabState] = useState<'play' | 'watch'>(p.report?.kind === 'practice' && p.report.ctx.watch ? 'watch' : practiceTab);
+  const setTab = (t: 'play' | 'watch') => setTabState((practiceTab = t));
   const myDeck = speed.decks.find((d) => d.id === deckId) ?? activeDeck(speed);
 
   const foes = useMemo<PracticeFoe[]>(() => {
@@ -351,7 +359,7 @@ function Practice(p: Ctx) {
     }
     for (const c of prefs.codes) {
       const d = readDeckCode(c.code);
-      if (d) out.push({ id: `code:${c.code}`, name: c.name, title: `${d.name} (deck code)`, portrait: d.main.find((n) => card(n)?.kind === 'monster') ?? d.main[0], main: d.main, extra: d.extra, skill: d.skill, group: 'Brothers and friends' });
+      if (d) out.push({ id: `code:${c.code}`, talk: talkOf(c.code), name: c.name, title: `${d.name} (${talkOf(c.code) ? 'fighter' : 'deck'} code)`, portrait: d.main.find((n) => card(n)?.kind === 'monster') ?? d.main[0], main: d.main, extra: d.extra, skill: d.skill, group: 'Brothers and friends' });
     }
     if (myDeck) out.push({ id: 'mirror', name: 'Mirror Match', title: `a copy of ${myDeck.name}`, portrait: myDeck.main.find((n) => card(n)?.kind === 'monster') ?? myDeck.main[0], main: myDeck.main, extra: myDeck.extra, skill: myDeck.skill, group: 'Brothers and friends' });
     return out;
@@ -380,6 +388,17 @@ function Practice(p: Ctx) {
   return (
     <div class="screen so">
       <Top title="Practice Duel" sub="test any deck · nothing here counts" onBack={p.onExit} />
+      <div class="so-tabs">
+        <button class={tab === 'play' ? 'on' : ''} onClick={() => setTab('play')}>
+          You duel
+        </button>
+        <button class={tab === 'watch' ? 'on' : ''} onClick={() => setTab('watch')}>
+          Computer vs computer
+        </button>
+      </div>
+      {tab === 'watch' ? (
+        <WatchSetup {...p} foes={foes.filter((f) => f.id !== 'mirror')} onPaste={() => setPaste(true)} />
+      ) : (
       <div class="so-body">
         <div class="so-vs">
           <div class="so-vs-side">
@@ -471,6 +490,7 @@ function Practice(p: Ctx) {
           <Btn onClick={() => setPaste(true)}>Add a deck code</Btn>
         </div>
       </div>
+      )}
 
       {pickFoe && (
         <Sheet title="Pick an opponent" onClose={() => setPickFoe(false)} wide>
@@ -504,7 +524,7 @@ function Practice(p: Ctx) {
       )}
       {paste && (
         <Sheet title="Add a deck code" onClose={() => setPaste(false)}>
-          <p class="so-dim">Paste a deck code your brother sent you.</p>
+          <p class="so-dim">Paste a deck code or fighter code your brother sent you.</p>
           <textarea class="so-code" value={pasteText} placeholder="SD1...." onInput={(e) => setPasteText((e.target as HTMLTextAreaElement).value)} />
           {pasteText && !readDeckCode(pasteText) && <div class="so-warn">That doesn't look like a deck code.</div>}
           <Btn
@@ -514,7 +534,8 @@ function Practice(p: Ctx) {
               const d = readDeckCode(pasteText)!;
               const code = pasteText.trim().replace(/\s+/g, '');
               const codes = [{ name: d.name, code }, ...prefs.codes.filter((c) => c.code !== code)].slice(0, 8);
-              setPrefs({ codes, oppId: `code:${code}` });
+              // In Computer vs computer, a pasted fighter lands on the second side.
+              setPrefs(tab === 'watch' ? { codes, watch: { ...WATCH_DEFAULT, ...prefs.watch, b: `code:${code}`, talkB: talkOf(code) } } : { codes, oppId: `code:${code}` });
               setPasteText('');
               setPaste(false);
             }}
@@ -523,7 +544,21 @@ function Practice(p: Ctx) {
           </Btn>
         </Sheet>
       )}
-      {rep && (
+      {rep?.ctx.watch && (
+        <Sheet onClose={p.onReportSeen}>
+          <div class="so-result w">{rep.outcome.result === 'd' ? 'DRAW' : `${(rep.outcome.result === 'w' ? p.lastSpec?.me.name : p.lastSpec?.cpu.name) ?? ''} WINS`}</div>
+          <p class="so-center so-dim">
+            {rep.outcome.result === 'w' ? `${rep.outcome.myLp} LP left` : rep.outcome.result === 'l' ? `${rep.outcome.oppLp} LP left` : 'Nobody won'} · turn {rep.outcome.turns}
+          </p>
+          <div class="so-row">
+            <Btn kind="gold" onClick={() => (p.onReportSeen(), p.lastSpec && p.onDuel(p.lastSpec))}>
+              Rematch
+            </Btn>
+            <Btn onClick={p.onReportSeen}>Change the talks</Btn>
+          </div>
+        </Sheet>
+      )}
+      {rep && !rep.ctx.watch && (
         <Sheet onClose={p.onReportSeen}>
           <ResultBanner result={rep.outcome.result} />
           <p class="so-center so-dim">
@@ -537,6 +572,154 @@ function Practice(p: Ctx) {
           </div>
         </Sheet>
       )}
+    </div>
+  );
+}
+
+const WATCH_DEFAULT: WatchPrefs = { a: null, b: null, talkA: '', talkB: '' };
+
+/** Ready-made talks to start from. */
+const TALKS: { label: string; talk: string }[] = [
+  { label: 'All-out', talk: 'Go all-out! Attack every turn and go for their life points.' },
+  { label: 'Careful', talk: 'Be careful. Only attack when it clearly wins, and protect your life points.' },
+  { label: 'Trap master', talk: 'Save your traps for their biggest monster and play defense until then.' },
+  { label: 'Go big', talk: 'Tribute for your big monsters and hunt their strongest monster.' },
+];
+
+/** Computer vs computer: pick two fighters, coach each one, then watch. */
+function WatchSetup(p: Ctx & { foes: PracticeFoe[]; onPaste: () => void }) {
+  const { solo, setSolo, speed } = p;
+  const w = { ...WATCH_DEFAULT, ...solo.practice.watch };
+  const setW = (x: Partial<WatchPrefs>) => setSolo({ ...solo, practice: { ...solo.practice, watch: { ...w, ...x } } });
+  const [picking, setPicking] = useState<'a' | 'b' | null>(null);
+  const [share, setShare] = useState(false);
+  const mine: PracticeFoe[] = speed.decks
+    .filter((d) => speedDeckProblems(d).length === 0)
+    .map((d) => ({ id: `deck:${d.id}`, name: d.name, title: 'your deck', portrait: ace(d.main), main: d.main, extra: d.extra, skill: d.skill, group: 'Your decks' }));
+  const all = [...mine, ...p.foes];
+  const A = all.find((f) => f.id === w.a) ?? all[0];
+  const B = all.find((f) => f.id === w.b) ?? all.find((f) => f.id !== A?.id) ?? all[0];
+  const readA = readPepTalk(w.talkA);
+  const readB = readPepTalk(w.talkB);
+  const groups = [...new Set(all.map((f) => f.group))];
+  const myDeckA = A?.id.startsWith('deck:') ? speed.decks.find((d) => `deck:${d.id}` === A.id) : undefined;
+  const code = myDeckA ? fighterCode(myDeckA, w.talkA) : '';
+
+  const go = () => {
+    if (!A || !B) return;
+    const nameB = B.name === A.name ? `${B.name} (2)` : B.name;
+    p.onDuel({
+      me: { name: A.name, main: A.main, extra: A.extra, skill: A.skill },
+      cpu: { name: nameB, main: B.main, extra: B.extra, skill: B.skill },
+      first: 'coin',
+      context: { kind: 'practice', oppId: B.id, deckId: null, first: 'coin', conditions: false, watch: true },
+      watch: { tactics: [readA.tactics, readB.tactics] },
+      vs: { label: 'COMPUTER VS COMPUTER', mePortrait: A.portrait, cpuPortrait: B.portrait, cpuTitle: B.title, line: w.talkB.trim() || B.title, notes: [`${A.name}: ${tacticsLabel(readA.tactics)}`, `${nameB}: ${tacticsLabel(readB.tactics)}`], goals: [] },
+    });
+  };
+
+  const side = (key: 'a' | 'b', f: PracticeFoe | undefined, talk: string, read: ReturnType<typeof readPepTalk>) => (
+    <div class="so-fighter">
+      <div class="so-fighter-h">
+        {f ? <Portrait d={f} size="s" /> : <div class="so-portrait s" />}
+        <div>
+          <span class="so-label">{key === 'a' ? 'Fighter 1' : 'Fighter 2'}</span>
+          <b>{f?.name ?? 'Pick a deck'}</b>
+          <span class="so-dim">{f?.title}</span>
+        </div>
+        <Btn onClick={() => setPicking(key)}>Change</Btn>
+      </div>
+      <textarea
+        class="so-talk"
+        maxLength={400}
+        value={talk}
+        placeholder="Give it a pep talk: how should it fight?"
+        onInput={(e) => setW(key === 'a' ? { talkA: (e.target as HTMLTextAreaElement).value } : { talkB: (e.target as HTMLTextAreaElement).value })}
+      />
+      <div class="so-chips">
+        {TALKS.map((x) => (
+          <button key={x.label} class="so-chip" onClick={() => setW(key === 'a' ? { talkA: x.talk } : { talkB: x.talk })}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+      <ul class="so-understood">
+        {read.lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  return (
+    <div class="so-body">
+      <p class="so-dim">Pick two decks, coach each computer duelist, then sit back and watch them fight. Nothing here counts.</p>
+      {side('a', A, w.talkA, readA)}
+      <div class="so-vs-mid so-center">VS</div>
+      {side('b', B, w.talkB, readB)}
+      <Btn kind="gold" disabled={!A || !B} onClick={go}>
+        Send them out!
+      </Btn>
+      <div class="so-row">
+        <Btn onClick={() => setShare(true)} disabled={!myDeckA}>
+          Share fighter 1
+        </Btn>
+        <Btn onClick={p.onPaste}>Add a fighter code</Btn>
+      </div>
+      <p class="so-dim">A fighter code is your deck plus your pep talk. Text it to your brother; he adds it here and it fights the way you coached it.</p>
+      {picking && (
+        <Sheet title={`Pick fighter ${picking === 'a' ? 1 : 2}`} onClose={() => setPicking(null)} wide>
+          {groups.map((g) => (
+            <div key={g}>
+              <div class="so-group">{g}</div>
+              <div class="so-foes">
+                {all
+                  .filter((f) => f.group === g)
+                  .map((f) => (
+                    <button
+                      key={f.id}
+                      class={`so-foe ${(picking === 'a' ? A : B)?.id === f.id ? 'on' : ''}`}
+                      onClick={() => {
+                        // A fighter code brings its own pep talk along.
+                        const talk = f.talk ? (picking === 'a' ? { talkA: f.talk } : { talkB: f.talk }) : {};
+                        setW(picking === 'a' ? { a: f.id, ...talk } : { b: f.id, ...talk });
+                        setPicking(null);
+                      }}
+                    >
+                      <Portrait d={f} size="s" />
+                      <b>{f.name}</b>
+                      <span>{f.title}</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </Sheet>
+      )}
+      {share && myDeckA && (
+        <Sheet title={`${myDeckA.name}: fighter code`} onClose={() => setShare(false)}>
+          <p class="so-dim">Your deck and your pep talk in one code. Your brother taps "Add a fighter code" in Computer vs computer.</p>
+          <textarea class="so-code" readOnly value={code} onFocus={(e) => (e.target as HTMLTextAreaElement).select()} />
+          <Btn kind="blue" onClick={() => void navigator.clipboard?.writeText(code).catch(() => {})}>
+            Copy
+          </Btn>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/** Watching the computer duel itself: pause and speed, over the duel screen. */
+export function WatchBar({ speed, paused, onSpeed, onPause, onLeave }: { speed: number; paused: boolean; onSpeed: (n: number) => void; onPause: (b: boolean) => void; onLeave: () => void }) {
+  return (
+    <div class="so-watchbar">
+      <button onClick={() => onPause(!paused)}>{paused ? '▶ Play' : '❚❚ Pause'}</button>
+      {[1, 2, 4].map((n) => (
+        <button key={n} class={speed === n ? 'on' : ''} onClick={() => onSpeed(n)}>
+          {n}x
+        </button>
+      ))}
+      <button onClick={onLeave}>Stop</button>
     </div>
   );
 }

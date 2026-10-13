@@ -41,7 +41,8 @@ export function deckCode(d: SpeedDeck): string {
 
 /** The deck in a code, or null when the text isn't a deck code. */
 export function readDeckCode(text: string): SpeedDeck | null {
-  const t = text.trim().replace(/\s+/g, '');
+  // A fighter code carries a pep talk after a "~"; the deck is everything before it.
+  const t = text.trim().replace(/\s+/g, '').split('~')[0];
   const parts = t.split('.');
   if (parts.length !== 5 || parts[0] !== PREFIX) return null;
   try {
@@ -50,5 +51,19 @@ export function readDeckCode(text: string): SpeedDeck | null {
     return { id: `code-${parts[3].length}-${main.length}`, name: decodeURIComponent(parts[1]) || 'Pasted deck', skill: parts[2] ? decodeURIComponent(parts[2]) : null, main, extra: unpackList(parts[4]) };
   } catch {
     return null;
+  }
+}
+
+/** A deck code with a pep talk riding along, so a brother can send his fighter as he coached it. */
+export const fighterCode = (d: SpeedDeck, talk: string) => (talk.trim() ? `${deckCode(d)}~${encodeURIComponent(talk.trim().slice(0, 400))}` : deckCode(d));
+
+/** The pep talk inside a fighter code ('' for a plain deck code). */
+export function talkOf(code: string): string {
+  const i = code.indexOf('~');
+  if (i < 0) return '';
+  try {
+    return decodeURIComponent(code.slice(i + 1).replace(/\s+/g, ''));
+  } catch {
+    return '';
   }
 }

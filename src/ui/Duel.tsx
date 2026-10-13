@@ -25,6 +25,8 @@ interface Props {
   onControls?: (p: Pid, c: ControlStyle) => void;
   onLeave: () => void;
   onFinished: (winner: Pid | 'draw') => void;
+  /** watching the computer duel itself: nothing on the board takes input */
+  spectator?: boolean;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -35,13 +37,13 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
   const me = state.players[acting];
   const opp = state.players[other(acting)];
-  const canAct = hotseat || acting === mySeat;
+  const canAct = !spectator && (hotseat || acting === mySeat);
   const myTurn = state.turnPlayer === acting;
   const prompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
 
@@ -159,8 +161,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setPicks((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : cur.length < p.max ? [...cur, i] : cur));
   };
 
-  /** The Eye of Truth, Respect Play and Ceremonial Bell show the opponent's hand. */
-  const oppHandShown = e.handRevealed(other(acting));
+  /** The Eye of Truth, Respect Play and Ceremonial Bell show the opponent's hand; a spectator sees both hands and set cards. */
+  const oppHandShown = !!spectator || e.handRevealed(other(acting));
   const selected = sel !== null ? e.find(sel) : null;
   const selCard = selected?.card ?? null;
   const selField = selected && (selected.loc.zone === 'mz' || selected.loc.zone === 'sz' || selected.loc.zone === 'field') ? (selected.card as FieldCard) : null;
@@ -235,7 +237,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   };
 
   const zone = (c: FieldCard | null, owner: Pid, kind: 'm' | 's', i: number) => {
-    const visible = c ? c.faceUp || owner === acting : false;
+    const visible = c ? c.faceUp || owner === acting || !!spectator : false;
     return (
       <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
         {c ? (
@@ -269,7 +271,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <span>Deck {ps.deck.length}</span>
         </div>
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
-          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting} /> : <span class="zlabel">F</span>}
+          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} /> : <span class="zlabel">F</span>}
         </div>
         {ps.removed.length > 0 && (
           <button class="pile small" onClick={() => setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed })}>
@@ -297,7 +299,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (state.winner !== null) {
       const won = state.winner === 'draw' ? null : state.winner === mySeat;
       return (
-        <Win title={state.winner === 'draw' ? 'DRAW' : hotseat ? `${state.players[state.winner].name} WINS` : won ? 'YOU WIN!' : 'YOU LOSE'} class="msgwin">
+        <Win title={state.winner === 'draw' ? 'DRAW' : hotseat || spectator ? `${state.players[state.winner].name} WINS` : won ? 'YOU WIN!' : 'YOU LOSE'} class="msgwin">
           <p>{state.winReason}</p>
           <Menu items={[{ label: 'Continue', onPick: () => finish(state.winner!) }, { label: 'View log', onPick: () => setShowLog(true) }]} />
         </Win>
@@ -494,7 +496,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
         overlays={overlays}
       />
     );
@@ -564,7 +566,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="hand">
         {me.hand.map((c) => (
           <div key={c.uid} data-uid={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
-            <CardImg name={c.name} back={!canAct} owner={c.owner} />
+            <CardImg name={c.name} back={!canAct && !spectator} owner={c.owner} />
           </div>
         ))}
         {me.hand.length === 0 && <div class="hint">No cards in hand</div>}

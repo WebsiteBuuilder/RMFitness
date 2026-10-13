@@ -9,6 +9,7 @@ import type { Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
+import type { Tactics } from '../eds/tactics';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
@@ -20,7 +21,7 @@ import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } fr
 import { Avatar, ProfilePicker } from './Profiles';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
-import { SoloHud, Solo, soloBack, type SoloMode } from './Solo';
+import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
@@ -84,6 +85,9 @@ export function App() {
   const [soloMode, setSoloMode] = useState<SoloMode | null>(null);
   const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
   const [soloReport, setSoloReport] = useState<SoloReport | null>(null);
+  /** watching the computer duel itself: speed and pause */
+  const [watchSpeed, setWatchSpeed] = useState(1);
+  const [watchPaused, setWatchPaused] = useState(false);
   /** what the last Speed Duel won or lost (packs, chips, bets), shown over the Speed menu */
   const [speedNews, setSpeedNews] = useState<string[]>([]);
   /** cards each player won and lost, for the after-duel screen */
@@ -265,6 +269,7 @@ export function App() {
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
     ses.send({ type: 'START', first, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     soloDuel.current = { ctx: spec.context, startLp: spec.me.setup?.lp ?? 4000, spec };
+    setWatchPaused(false);
     setSoloReport(null);
     setHotseat(false);
     setCpu(true);
@@ -657,7 +662,8 @@ export function App() {
           )}
         </>
       );
-    case 'duel':
+    case 'duel': {
+      const watching = soloDuel.current?.spec.watch;
       if (!session) return menu;
       if (offlineLeave)
         return (
@@ -691,10 +697,12 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} />
+          <Running session={session} hotseat={hotseat} cpu={cpu} mySeat={mySeat} mode={duelMode} entries={entries} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
+          {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
         </>
       );
+    }
     default:
       return menu;
   }
@@ -722,6 +730,7 @@ function Running({
   onLeave,
   onFinished,
   onStarted,
+  watch,
 }: {
   session: DuelSession;
   hotseat: boolean;
@@ -738,6 +747,8 @@ function Running({
   onFinished: (winner: Pid | 'draw', opp: string) => void;
   /** a Link Battle with stakes just started (keep a ticket in case the app is closed) */
   onStarted?: (seats: SessionView['seats'], key: string) => void;
+  /** the computer plays both seats (Practice: watch a duel), at the viewer's speed */
+  watch?: { tactics: [Tactics, Tactics]; speed: number; paused: boolean };
 }) {
   const view = useDuelSession(session);
   useEffect(() => {
@@ -748,8 +759,21 @@ function Running({
   if (import.meta.env.DEV) (window as unknown as { __session?: DuelSession }).__session = session;
   // The computer takes its turn a beat after each change, so the player can follow along.
   useEffect(() => {
-    if (!cpu || !view.state.started || view.state.winner !== null) return;
-    const action = aiAction(session.engine, mySeat === 0 ? 1 : 0);
+    if (!cpu || !view.state.started || view.state.winner !== null || watch?.paused) return;
+    // Watching: whichever seat has something to do moves, each with its own pep talk.
+    let seat: Pid = mySeat === 0 ? 1 : 0;
+    let action = watch ? null : aiAction(session.engine, seat);
+    if (watch) {
+      const st = session.engine.state;
+      const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
+      for (const p of [first, (first === 0 ? 1 : 0) as Pid]) {
+        action = aiAction(session.engine, p, watch.tactics[p]);
+        if (action) {
+          seat = p;
+          break;
+        }
+      }
+    }
     if (!action) {
       cpuStreak.current = 0;
       return;
@@ -758,15 +782,16 @@ function Running({
     cpuStreak.current++;
     if (cpuStreak.current > 80) {
       cpuStreak.current = 0;
-      session.send({ type: 'END_TURN', player: mySeat === 0 ? 1 : 0 });
+      session.send({ type: 'END_TURN', player: seat });
       return;
     }
     const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
+    const pace = watch ? (quick ? 250 : 900) / watch.speed : quick ? 150 : 300;
     // ...and never in the middle of a 3D cinematic.
     let t = 0;
-    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action), quick ? 150 : 300)));
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(() => session.send(action!), pace)));
     return () => (stopWaiting(), clearTimeout(t));
-  }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat]);
+  }, [cpu, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [view.seats[0].rarity, view.seats[1].rarity] : null);
   useEffect(() => () => showDuelRarity(null), []);
@@ -774,7 +799,7 @@ function Running({
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return (
     <>
-      <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} />
+      <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} spectator={!!watch} />
       {!cpu && view.state.winner === null && <DuelPot view={view} />}
     </>
   );
