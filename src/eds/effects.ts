@@ -113,7 +113,7 @@ export interface EffectDef {
    * Once per turn per card unless `repeat`.
    */
   quick?: {
-    from?: 'field' | 'hand' | 'gy';
+    from?: 'field' | 'hand' | 'gy' | 'extra';
     label?: string;
     repeat?: boolean;
     can(e: Engine, card: Card, p: Pid, trigger: Trigger, ctx: ChainCtx): boolean;
@@ -154,11 +154,11 @@ export interface EffectDef {
   onAnyToGrave?(e: Engine, card: FieldCard, controller: Pid, events: GraveEvent[]): Step;
   /** A card about to go to the GY is banished instead (Macro Cosmos). */
   banishInstead?(e: Engine, card: FieldCard, controller: Pid, moving: Card): boolean;
-  /** `summoner` cannot Summon `monster` this way (`from`: the zone it comes from, null for Tokens). */
+  /** `summoner` cannot Summon `monster` this way (`from`: the zone it comes from, null for Tokens). Face-up monsters may use it too. */
   forbidsSummon?(e: Engine, card: FieldCard, controller: Pid, monster: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
   /** This attacker inflicts piercing battle damage (Dragon's Rage). */
   grantsPiercing?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard): boolean;
-  /** Checked after every action: "destroy this card if..." (the script destroys it itself). */
+  /** Checked after every action: "destroy this card if..." (the script destroys it itself). Face-up monsters may use it too. */
   stateCheck?(e: Engine, card: FieldCard, controller: Pid): Step;
   /** A monster's battle position was changed (by its controller, or a Flip Summon). */
   onAnyPositionChange?(e: Engine, card: FieldCard, controller: Pid, m: FieldCard, mController: Pid): Step;
@@ -172,6 +172,102 @@ export interface EffectDef {
   onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
   /** Its controller drew these cards for their normal draw in the Draw Phase. */
   onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+
+  // ---------- more Speed Duel hooks (batch 12) ----------
+  /** While this monster is face-up, `p` cannot activate Spell (or Trap) Cards (Mechanical Hound, Pitch-Black Warwolf). */
+  locksActivation?(e: Engine, m: FieldCard, controller: Pid, p: Pid, kind: 'spell' | 'trap'): boolean;
+  /** This card cannot be Special Summoned from `from` right now (Dark Ruler Ha Des, Contact Fusions, "must be Special Summoned with X"). */
+  cannotSpecial?(e: Engine, card: Card, p: Pid, from: string | null): boolean;
+  /** A face-up monster: the effects of monsters its controller's `killer` destroys by battle are negated (Dark Ruler Ha Des). */
+  negatesBattleVictims?(e: Engine, src: FieldCard, killer: FieldCard, srcController: Pid): boolean;
+  /** A face-up monster: the opponent's monsters cannot attack `target` (Vilepawn Archfiend). */
+  guardsFromAttack?(e: Engine, src: FieldCard, target: FieldCard, attacker: FieldCard): boolean;
+  // ---------- Speed Duel hooks for face-up monsters (onAnyToGrave, banishInstead, tributeFor and negatesEffect above work on face-up monsters too) ----------
+  /** This face-up monster cannot be Tributed; on an Equip Card: the monster it is equipped to cannot be (Blue Duston, Magicalized Duston Mop). */
+  cannotBeTributed?(e: Engine, m: FieldCard): boolean;
+  /** A monster destroyed by battle is shuffled into the Deck instead of going to the GY (Grave Protector). */
+  deckInstead?(e: Engine, m: FieldCard, moving: Card): boolean;
+  /** Bonus this card gives to a face-up monster while it is in its owner's GY (Phantom Beast Cross-Wing). */
+  graveAura?(e: Engine, card: Card, target: FieldCard, owner: Pid): { atk: number; def: number } | undefined;
+  /** The name this monster has while on the field, when an effect changes it (Proto-Cyber Dragon); used for Fusion Materials. */
+  fieldName?(e: Engine, m: FieldCard): string | undefined;
+  // ---------- Speed Duel hooks added for batch 16 ----------
+  /** "If this card attacks, your opponent cannot activate Spell/Trap Cards until the end of the Damage Step." */
+  attackSealsST?: boolean | ((e: Engine, m: FieldCard) => boolean);
+  /** A face-up monster or active Spell/Trap: `attacker` cannot choose `target` as its attack target (Amazoness Tiger, Parasite Paranoid). */
+  attackGuard?(e: Engine, src: FieldCard, srcController: Pid, attacker: FieldCard, target: FieldCard): boolean;
+  /** "Cannot be Special Summoned." */
+  cannotSpecialSummon?: boolean;
+  /** This face-up monster can be treated as 2 Tributes for the Tribute Summon of `monster` (Unshaven Angler). */
+  doubleTribute?(e: Engine, m: FieldCard, monster: Card): boolean;
+  /** An active Spell/Trap (Field Spell): `summoner` needs this many fewer Tributes to Normal Summon `monster` (Geartown). */
+  tributeDiscount?(e: Engine, src: FieldCard, srcController: Pid, monster: Card, summoner: Pid): number;
+  /** A face-up monster, at the end of the Battle Phase (Battle Survivor, Flyfang). */
+  onBattlePhaseEnd?(e: Engine, m: FieldCard, controller: Pid): Step;
+  /** A face-up monster watching cards sent to the GY, like onAnyToGrave (Buster Blader, the Destruction Swordmaster). */
+  onGraveEvents?(e: Engine, m: FieldCard, controller: Pid, events: GraveEvent[]): Step;
+  /** The FLIP effects of monsters this attacker destroys by battle are negated (Harpie Lady 2). */
+  negatesVictimFlip?: boolean;
+  /** This face-up monster makes the field count as having an active card of this name (Maiden of the Aqua: "Umi"). */
+  countsAs?(e: Engine, m: FieldCard): string | undefined;
+  /** While this monster is face-up, Spell Cards cannot be activated and Spell effects on the field are negated (Spell Canceller). */
+  sealsSpells?: boolean;
+  /** Checked after every action for this card while it is in a hand (Pharaoh's Treasure). */
+  inHand?(e: Engine, card: Card, owner: Pid): Step;
+  /** "This turn, ..." effects that outlast the card. Registered with e.linger(name, p); `owner` is the player who applied it. */
+  lingering?: {
+    shields?(e: Engine, owner: Pid, target: FieldCard, how: 'battle' | 'effect' | 'target'): boolean;
+    onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
+    attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
+    afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
+  };
+  // ---------- more Speed Duel hooks (batch 14) ----------
+  /** This card's own Summon conditions: true = `p` cannot Summon it this way (Amaterasu, Helpoemer). `from`: the zone it comes from. */
+  selfSummonBlock?(e: Engine, card: Card, p: Pid, how: SummonHow, from: string | null): boolean;
+  /** A face-up monster sees every chain link right before it resolves and may negate it (set link.negated) or act on it (Freed the Matchless General, Angel O7). */
+  onChainLink?(e: Engine, m: FieldCard, controller: Pid, link: ChainLink): Step;
+  /** During each End Phase while this card is banished (D.D. Survivor). */
+  onEndPhaseBanished?(e: Engine, card: Card, owner: Pid): Step;
+  /** During its owner's Standby Phase while this card is banished (Evil HERO Infernal Gainer). */
+  onStandbyBanished?(e: Engine, card: Card, owner: Pid): Step;
+  /** While this card is in the GY or banished: a monster its owner controls inflicted battle damage (Djinn Prognosticator of Rituals). */
+  onAllyBattleDamageOffField?(e: Engine, card: Card, owner: Pid, attacker: FieldCard): Step;
+  /** A face-up monster or active Spell/Trap changes damage `damaged` is about to take: the new amount (negative: they gain that much LP instead). */
+  damageMod?(e: Engine, src: FieldCard, srcController: Pid, damaged: Pid, amount: number, byEffect: boolean): number | undefined;
+  /** Battle damage its controller would take from a battle involving this monster goes to the opponent instead (Magical Reflect Slime). */
+  reflectBattleDamage?(e: Engine, m: FieldCard): boolean;
+  /** An Equip: the host's controller takes no battle damage from battles involving the host (Bashing Shield). */
+  hostNoBattleDamage?(e: Engine, equip: FieldCard, host: FieldCard): boolean;
+  /** A face-up monster: the opponent's `attacker` cannot choose `target` (a monster on this monster's side) as an attack target (Marauding Captain). */
+  guardsAttack?(e: Engine, src: FieldCard, target: FieldCard, attacker: FieldCard): boolean;
+  /** This attacker negates the FLIP effect of a face-down monster it destroys by battle (Twin-Headed Wolf). */
+  negatesBattleFlip?(e: Engine, attacker: FieldCard, target: FieldCard): boolean;
+  /** The Level this monster counts as when Tributed for the Ritual Summon of `ritual` (Ritual Raven). */
+  ritualLevel?(e: Engine, card: Card, ritual: Card): number | undefined;
+  /** Can be banished from the GY as one of the monsters for a Ritual Summon (Djinn Prognosticator of Rituals). */
+  ritualFromGrave?: boolean;
+  // ---------- more Speed Duel hooks ----------
+  /** This card's own Summoning condition: false = `summoner` cannot Summon it this way ("Cannot be Special Summoned", "Must be Fusion Summoned"). */
+  summonRule?(e: Engine, card: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `player` from activating the Spell/Trap Card `card` right now. */
+  locksCardActivation?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  /** An Equip Spell: the equipped Jinzo no longer stops its controller's Traps (Amplifier). */
+  freesOwnTraps?: boolean;
+  /** This face-up card (monster or active Spell/Trap) stops `attacker` from choosing `target` as an attack target (Prickle Fairy, Hero Ring). */
+  guardsTarget?(e: Engine, src: FieldCard, srcController: Pid, target: FieldCard, attacker: FieldCard): boolean;
+  /** This face-up card keeps `card` in its Graveyard: card effects cannot move it out (Necrovalley). */
+  locksGrave?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** This card, in its owner's hand or GY, sees cards sent to the GY (one call per event, like onAnyToGrave). */
+  watchGrave?(e: Engine, card: Card, owner: Pid, zone: 'hand' | 'gy', events: GraveEvent[]): Step;
+  /** During each Standby Phase while this card is banished. */
+  onStandbyBanishedAny?(e: Engine, card: Card, owner: Pid): Step;
+  /**
+   * Fewer Tributes for a face-up Normal Summon of `monster`: on the monster itself (`src` null) or on an active Spell/Trap
+   * (Super-Ancient Dinobeast, Big Evolution Pill). `only`: which monsters may be Tributed then.
+   */
+  tributeOffer?(e: Engine, src: FieldCard | null, controller: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
+  /** Can be banished from the GY as a Ritual Summon material (Djinn Disserere of Rituals). */
+  ritualFromGy?: boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
@@ -1535,6 +1631,12 @@ E['Messenger of Peace'] = {
 
 // ---------- Polymerization ----------
 type FusionPlan = { fusion: Card; mats: Card[][] };
+/** The card id a material counts as: a monster on the field whose name an effect changed (Proto-Cyber Dragon) counts as that card. */
+function matId(e: Engine, c: Card): number {
+  const fc = e.fieldCard(c.uid);
+  const n = fc && fc.faceUp && e.find(c.uid)?.loc.zone === 'mz' ? e.effectOn(fc)?.fieldName?.(e, fc) : undefined;
+  return e.info(n ?? c.name).id;
+}
 /** Every Fusion Monster in the Fusion Deck the player could fuse right now, with the candidate cards for each material. */
 function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
   const ps = e.player(p);
@@ -1546,7 +1648,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
     if (!ids) continue;
     // Beastking of the Swamps & co. can stand in for any one material.
     const subs = pool.filter((c) => getEffect(c.name)?.fusionSub);
-    const mats = ids.map((id) => [...pool.filter((c) => e.info(c.name).id === id), ...subs.filter((c) => e.info(c.name).id !== id)]);
+    const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
   }
@@ -1557,7 +1659,7 @@ function assignable(e: Engine, mats: Card[][], ids: number[], used: number[] = [
   if (mats.length === 0) return true;
   return mats[0].some((c) => {
     if (used.includes(c.uid)) return false;
-    const asSub = e.info(c.name).id !== ids[0];
+    const asSub = matId(e, c) !== ids[0];
     if (asSub && subbed) return false;
     return assignable(e, mats.slice(1), ids.slice(1), [...used, c.uid], subbed || asSub);
   });
@@ -1573,8 +1675,8 @@ E['Polymerization'] = {
     for (let i = 0; i < plan.mats.length; i++) {
       const cands = plan.mats[i];
       const ids = e.fusionMaterials(plan.fusion.name)!;
-      const subTaken = chosen.some((u, j) => e.info(e.find(u)?.card.name ?? '').id !== ids[j]);
-      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && e.info(c.name).id !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || e.info(c.name).id !== ids[i]));
+      const subTaken = chosen.some((u, j) => { const f = e.find(u); return !f || matId(e, f.card) !== ids[j]; });
+      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && matId(e, c) !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || matId(e, c) !== ids[i]));
       if (free.length === 0) return false;
       if (free.length === 1) {
         chosen.push(free[0].uid);
@@ -1591,6 +1693,8 @@ E['Polymerization'] = {
     if (!e.find(fusion) || mats.some((u) => !e.find(u))) return;
     for (const u of mats) yield* e.sendToGrave(u, 'used');
     if (!hasFreeZone(e, p)) return;
+    // Speed Duel scripts read which cards were the materials (UFOroid Fighter, Fusion Recovery).
+    if (e.speed) (e.state.fx.fusionMatList ??= {})[fusion] = mats.slice();
     yield* e.specialSummon(fusion, p, 'atk');
     e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
   },
@@ -1598,8 +1702,13 @@ E['Polymerization'] = {
 
 // ---------- Ritual Spells ----------
 function ritualSpell(): EffectDef {
-  const levelOf = (e: Engine, c: Card) => e.info(c.name).level ?? 1;
-  const pool = (e: Engine, p: Pid, ritualUid: number) => [...e.player(p).hand.filter((c) => isMonster(e, c) && c.uid !== ritualUid), ...e.monsters(p)];
+  // A monster may count as another Level for this Ritual Summon (Ritual Raven), and some can be banished from the GY as material (Djinn).
+  const levelOf = (e: Engine, c: Card, ritual: Card) => getEffect(c.name)?.ritualLevel?.(e, c, ritual) ?? e.info(c.name).level ?? 1;
+  const pool = (e: Engine, p: Pid, ritualUid: number) => [
+    ...e.player(p).hand.filter((c) => isMonster(e, c) && c.uid !== ritualUid),
+    ...e.monsters(p),
+    ...(e.speed ? e.player(p).gy.filter((c) => getEffect(c.name)?.ritualFromGrave || getEffect(c.name)?.ritualFromGy) : []),
+  ];
   return {
     canActivate: (e, c, p, t) => {
       if (!isMain(t)) return false;
@@ -1608,7 +1717,7 @@ function ritualSpell(): EffectDef {
       const mon = e.player(p).hand.find((h) => h.name === r.monster);
       if (!mon) return false;
       const cands = pool(e, p, mon.uid);
-      const total = cands.reduce((a, x) => a + levelOf(e, x), 0);
+      const total = cands.reduce((a, x) => a + levelOf(e, x, mon), 0);
       return total >= r.level && (hasFreeZone(e, p) || cands.some((x) => 'pos' in x));
     },
     *activate(e, link, p) {
@@ -1619,7 +1728,7 @@ function ritualSpell(): EffectDef {
       for (let tries = 0; tries < 3; tries++) {
         const picks = yield* e.select(p, `Ritual: Tribute monsters with total Level ${r.level} or more`, e.optionsFor(cands), 1, cands.length, true);
         if (!picks) return false;
-        const total = picks.reduce((a, i) => a + levelOf(e, cands[i]), 0);
+        const total = picks.reduce((a, i) => a + levelOf(e, cands[i], mon), 0);
         if (total >= r.level) {
           link.payload = { monster: mon.uid, tributes: picks.map((i) => cands[i].uid) };
           return;
@@ -1631,9 +1740,17 @@ function ritualSpell(): EffectDef {
     *resolve(e, link, p) {
       const { monster, tributes } = link.payload as { monster: number; tributes: number[] };
       if (!e.find(monster)) return;
-      for (const u of tributes) if (e.find(u)) yield* e.sendToGrave(u, 'tribute');
+      const fromGy = tributes.filter((u) => e.find(u)?.loc.zone === 'gy');
+      for (const u of tributes) {
+        if (e.find(u)?.loc.zone === 'gy') e.banish(u);
+        else if (e.find(u)) yield* e.sendToGrave(u, 'tribute');
+      }
       if (!hasFreeZone(e, p)) return;
+      // Speed Duel: what it was Ritual Summoned with (Djinn Prognosticator of Rituals, Oracle of Zefra read it).
+      if (e.speed) ((e.state.fx.ritualMats ??= {}) as Record<number, { mats: number[]; turn: number }>)[monster] = { mats: tributes.slice(), turn: e.state.turn };
       yield* e.specialSummon(monster, p, 'atk');
+      const rm = e.fieldCard(monster);
+      if (rm && fromGy.some((u) => getEffect(e.find(u)?.card.name ?? '')?.ritualFromGy)) (rm.tags ??= {}).trapImmune = 1;
       e.log(p, `${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
     },
   };

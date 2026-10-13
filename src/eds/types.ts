@@ -36,6 +36,8 @@ export interface CardInfo {
   alias?: string;
   /** part of the Speed Duel card pool */
   speed?: boolean;
+  /** Speed Duel products this card was printed in (set codes: SGX1, SBC1...) */
+  speedSets?: string[];
   /** Skill Cards: the character the Skill belongs to */
   character?: string;
   /** a monster with no effect (needs no script) */

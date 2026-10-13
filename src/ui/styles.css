@@ -2128,6 +2128,18 @@ p {
 .deckedit .filters .search + .chip {
   order: 10;
 }
+.deckedit .filters .setpick {
+  order: 11;
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+}
 .sd-deckhead > span {
   min-width: 0;
   overflow: hidden;
