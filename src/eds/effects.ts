@@ -270,6 +270,11 @@ export interface EffectDef {
   tributeOffer?(e: Engine, src: FieldCard | null, controller: Pid, monster: Card, need: number): { need: number; only?: (m: FieldCard) => boolean } | undefined;
   /** Can be banished from the GY as a Ritual Summon material (Djinn Disserere of Rituals). */
   ritualFromGy?: boolean;
+  // ---------- b18 hooks ----------
+  /** This face-up monster would be destroyed (by battle or effect): return true when its controller replaced the destruction (Number 49: Fortune Tune). */
+  destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
+  /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
+  locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
