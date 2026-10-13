@@ -1,5 +1,5 @@
 // Speed Duel batch 13 (run: npx tsx tests/batch-13.test.ts): one targeted check per card that its main effect happens.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { getEffect } from '../src/eds/effects';
 import { attrOf, levelOf } from '../src/eds/speed/helpers';
 import { Engine } from '../src/eds/engine';
@@ -151,7 +151,9 @@ const gy = (e: Engine, p: Pid, name: string) => {
   return c;
 };
 
-for (const c of JSON.parse(readFileSync('/tmp/claude-0/sd/agents/chunk13.json', 'utf8')) as { name: string }[]) {
+// The card list this batch was written from lived in a scratch folder; check it only where it exists.
+const CHUNK = '/tmp/claude-0/sd/agents/chunk13.json';
+for (const c of (existsSync(CHUNK) ? JSON.parse(readFileSync(CHUNK, 'utf8')) : []) as { name: string }[]) {
   if (!getEffect(c.name)) check(false, `${c.name} has a script`);
 }
 
