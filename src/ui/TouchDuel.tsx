@@ -108,7 +108,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setBanner({ text, sub, kind, key });
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
-  const turnWho = state.turnPlayer === acting ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.toUpperCase()}'S TURN`;
+  // (a tag duel: while your teammate is in, it's their turn, by name)
+  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) showBanner('DUEL!', 'duel', 1300, turnWho);
@@ -558,7 +559,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const midText = (
     <>
       <span class={`tturn ${myTurn ? 'mine' : ''}`}>
-        {myTurn ? 'Your turn' : `${opp.name}'s turn`} · {PHASE_NAMES[state.phase]}
+        {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} · {PHASE_NAMES[state.phase]}
       </span>
       {hint() && <span class="thint">{hint()}</span>}
     </>

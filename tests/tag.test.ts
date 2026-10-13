@@ -8,7 +8,7 @@ import type { Action, Card, Pid } from '../src/eds/types';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
 import { TAG_LP, activeMember, benchHand, sideName } from '../src/eds/tag';
-import { phoneMoves, sideOfPhone, memberOfPhone, tagStart, whoMoves, type TagDuelist } from '../src/eds/tagDuel';
+import { phoneMoves, sideOfPhone, memberOfPhone, tagStart, whoMoves, type TagDuelist, type TagTeams } from '../src/eds/tagDuel';
 import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, settleTagRoad, tagChapterOpen, tagNodeOpen, tagProgress } from '../src/eds/speedCampaign/tagRoad';
 import { newSoloSave } from '../src/eds/speedCampaign/save';
 import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
@@ -114,6 +114,51 @@ function step(e: Engine): boolean {
   s2.apply(tagStart([[me('Jammy', 0), me('Joey', 'cpu')], [me('Brother', 1), me('Kaiba', 'cpu')]], 1, 22));
   ok(sideOfPhone(s2.state, 0) === 0 && sideOfPhone(s2.state, 1) === 1, 'split: each phone plays its own side');
   ok(s2.player(1).name === 'Brother' && s2.state.turnPlayer === 1, 'split: the brother opens for side 1');
+}
+
+// ---------- two phones, one shared action log ----------
+{
+  // Each phone replays the same log; a phone sends only for its own duelist, and only phone 0
+  // sends computer moves. Both phones must end on the same board, for every team setup.
+  const st = deckOf(foeOf({ node: 'c1-weevil' }));
+  const human = (name: string, ctl: 0 | 1): TagDuelist => ({ name, ...st, ctl });
+  const cpu = (node: string): TagDuelist => ({ name: foeOf({ node }).name, ...deckOf(foeOf({ node })), ctl: 'cpu' });
+  const setups: [string, TagTeams][] = [
+    ['same team', [[human('Jammy', 0), human('Brother', 1)], [cpu('c1-rex'), cpu('c1-mako')]]],
+    ['split', [[human('Jammy', 0), cpu('c7-joey')], [human('Brother', 1), cpu('c7-kaiba')]]],
+  ];
+  for (const [label, teams] of setups) {
+    for (let g = 0; g < 4; g++) {
+      const start = tagStart(teams, (g % 2) as Pid, 500 + g, 'road:t1-bugs');
+      const phones = [new Engine(KIT), new Engine(KIT)];
+      const log: Action[] = [start];
+      phones.forEach((e) => e.apply(start));
+      let n = 0;
+      let doubled = false;
+      while (phones[0].state.winner === null && n < 6000) {
+        const sends: Action[] = [];
+        for (const phone of [0, 1] as Pid[]) {
+          const e = phones[phone];
+          const w = whoMoves(e.state);
+          if (w.ctl === phone || (w.ctl === 'cpu' && phone === 0)) {
+            const a = aiAction(e, w.side);
+            if (a) sends.push(a);
+          }
+        }
+        if (sends.length !== 1) {
+          doubled = sends.length > 1;
+          break;
+        }
+        log.push(sends[0]);
+        phones.forEach((e) => e.apply(sends[0]));
+        n++;
+      }
+      const same = JSON.stringify(phones[0].state.players) === JSON.stringify(phones[1].state.players) && phones[0].state.winner === phones[1].state.winner;
+      ok(!doubled, `${label} ${g}: never two phones moving at once`);
+      ok(phones[0].state.winner !== null, `${label} ${g}: the duel finishes (turn ${phones[0].state.turn})`);
+      ok(same, `${label} ${g}: both phones end on the same board`);
+    }
+  }
 }
 
 // ---------- the Tag Road ----------
