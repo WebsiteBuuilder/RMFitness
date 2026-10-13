@@ -313,6 +313,13 @@ export interface EffectDef {
   damageStepStart?(e: Engine, m: FieldCard, foe: FieldCard | null, controller: Pid): Step;
   /** audit-00: an active Spell/Trap changes the Level of `card` (in a hand or a Monster Zone) by this much (A Legendary Ocean). */
   levelMod?(e: Engine, src: FieldCard, srcController: Pid, card: Card): number;
+  // audit-08 hooks
+  /** audit-08: a face-up monster or active Spell/Trap, right after an attack is declared (mandatory "when ... attacks" effects: Neo-Spacian Glow Moss, Ordeal of a Traveler). */
+  onAttackDeclared?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: this card in its owner's GY, right after an attack is declared (Performapal Inflater Tapir). */
+  onAttackDeclaredInGrave?(e: Engine, card: Card, owner: Pid, attacker: FieldCard, target: FieldCard | null): Step;
+  /** audit-08: an active Spell/Trap: the face-up monster `m` does not apply its End Phase effects (Neo Space). */
+  skipsEndPhase?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard): boolean;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';

@@ -301,6 +301,8 @@ export class Engine {
       for (const l of (fx.extraLocks ?? []) as { p: Pid; turn: number; race?: string; attrs?: string[]; subs?: string[] }[])
         if (l.p === p && l.turn === this.state.turn && ((l.race && ci.race !== l.race) || (l.attrs && !l.attrs.includes(ci.attribute ?? '')) || (l.subs && !l.subs.includes(ci.sub)))) return true;
     }
+    // audit-08: "while you control any of those monsters face-up, you cannot Special Summon from the Extra Deck, except Fusion Monsters" (NEXT).
+    if (how === 'special' && from === 'fusion' && this.info(c.name).sub !== 'Fusion' && ((fx.extraLockBy ?? []) as { p: Pid; uids: number[] }[]).some((l) => l.p === p && l.uids.some((u) => this.controller(u) === p && !!this.fieldCard(u)?.faceUp))) return true;
     return this.liveCards().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
   }
 
@@ -1722,6 +1724,7 @@ export class Engine {
       }
       for (const m of this.monsters(p)) {
         const eff = this.effectOn(m);
+        if (this.speed && m.faceUp && this.liveST().some((x) => x.eff.skipsEndPhase?.(this, x.c, x.p, m))) continue; // audit-08: Neo Space
         if (m.faceUp && eff?.onEndPhase && this.fieldCard(m.uid)) yield* eff.onEndPhase(this, m, p);
       }
     }
@@ -2781,6 +2784,13 @@ export class Engine {
     this.event('attack', { uid, player, target: targetUid });
     const targetName = targetUid !== null ? (this.fieldCard(targetUid)!.faceUp ? this.fieldCard(targetUid)!.name : 'a face-down monster') : 'directly';
     this.log(player, `${m.name} attacks ${targetName}`);
+    // audit-08: mandatory "when an attack is declared" effects of face-up cards and of cards in the GY.
+    if (this.speed) {
+      const tgt = targetUid !== null ? this.fieldCard(targetUid) : null;
+      for (const x of this.liveCards()) if (x.eff.onAttackDeclared && this.state.battle && this.state.winner === null && this.fieldCard(x.c.uid) && this.fieldCard(uid)) yield* this.as(x.p, x.eff.onAttackDeclared(this, x.c, x.p, m, tgt));
+      for (const q of [0, 1] as Pid[]) for (const c of this.player(q).gy.slice()) { const h = getEffect(c.name)?.onAttackDeclaredInGrave; if (h && this.state.battle && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && this.fieldCard(uid)) yield* this.as(q, h(this, c, q, m, tgt)); }
+      if (this.state.winner !== null || !this.state.battle) return;
+    }
     yield* this.responseWindow('attack', { uid, targetUid: targetUid ?? undefined });
     if (this.state.winner !== null) return;
     if (!this.state.battle) return; // Waboku and friends end the battle
@@ -2981,6 +2991,8 @@ export class Engine {
     const muted = this.speed ? destroyed.filter((u) => this.battleMutes(u, u === attacker.uid ? target : attacker)) : [];
     this.state.fx.battleMuted = muted;
     yield* this.destroy(destroyed, 'destroyed', true);
+    // audit-08: remember which monsters destroyed a monster by battle this turn (Nordic Relic Laevateinn).
+    if (this.speed) for (const [k, w] of [[target, attacker], [attacker, target]] as const) if (destroyed.includes(k.uid) && !this.fieldCard(k.uid) && this.fieldCard(w.uid)) (w.tags ??= {}).killTurn = this.state.turn;
     this.state.fx.battleMuted = [];
     // FLIP effects resolve after damage calculation, even if the monster is destroyed.
     if (wasFaceDown && tEff?.flip && this.speed && ((targetDestroyed && aEff?.negatesVictimFlip) || (!this.fieldCard(targetUid) && aEff?.negatesBattleFlip?.(this, attacker, target)))) {
