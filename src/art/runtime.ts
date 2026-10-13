@@ -941,7 +941,7 @@ export class Director {
     flare.mesh.position.set(p.x, p.y, p.z + 0.5);
     flare.u.uK.value = 1;
     tl.span(at, at + 0.4, (k) => {
-      flare.u.uOpacity.value = 0.6 * (k < 0.12 ? 1 : 1 - easeOut((k - 0.12) / 0.88));
+      flare.u.uOpacity.value = 0.5 * (k < 0.12 ? 1 : 1 - easeOut((k - 0.12) / 0.88));
       flare.mesh.scale.setScalar(lerp(0.6, 1.15, easeOut(k)));
     });
     const ring = tl.own(new Glow(3.6 * U, 3.6 * U, 'shock', o.color, o.light));
@@ -964,8 +964,8 @@ export class Director {
         st.punch(3 + 4 * pw);
       }
       st.pulse('chroma', 0.35 + 0.6 * pw);
-      st.pulse('flash', 0.06 + 0.12 * pw);
-      this.flash(o.light, 0.08 + 0.12 * pw);
+      st.pulse('flash', 0.03 + 0.05 * pw);
+      this.flash(o.light, 0.05 + 0.08 * pw);
       st.shake(0.45 + 0.6 * pw);
       const P = st.particles;
       const q = this.q;
@@ -1095,9 +1095,9 @@ export class Director {
     const boxes: Box[] = [tgt ? this.boxOf(tgt) : { ...T, w: 0.5 * U, h: 0.5 * U }];
     let ab: Box | null = null;
     if (att) {
-      // the attacker's head and shoulders: the top ~60% of it (its feet may run off the frame)
+      // the attacker from the hips up: the top ~75% of it (its feet may run off the frame)
       const b = this.boxOf(att);
-      ab = { ...b, y: b.y + b.h * 0.4, h: b.h * 0.6 };
+      ab = { ...b, y: b.y + b.h * 0.25, h: b.h * 0.75 };
       boxes.push(ab);
     }
     const shot = this.fit(boxes, -yaw * m, pitch, { fill });
@@ -1127,6 +1127,35 @@ export class Director {
     let d = d0;
     for (let i = 0; i < 24 && tall(d) > 0.55; i++) d *= 1.06;
     return { pos: shot.look.clone().addScaledVector(dir, d), look: shot.look };
+  }
+
+  /**
+   * Leans the camera toward `shot` on top of whatever the cinematic sets: the weight
+   * eases in over [a, b] and back out over [c, d] (a preset framing its own subject
+   * while the activation's push-in, drift and return keep running underneath).
+   */
+  private lean(tl: Timeline, shot: Shot, a: number, b: number, c: number, d: number) {
+    tl.span(a, d, (k) => {
+      const t = a + k * (d - a);
+      const w = easeInOut(clamp01((t - a) / (b - a))) * (1 - easeInOut(clamp01((t - c) / (d - c))));
+      this.stage.camBase.lerp(shot.pos, w);
+      this.stage.camLook.lerp(shot.look, w);
+    });
+  }
+
+  /** The world y at depth `z` above `x` that sits at the safe area's top edge, seen from `shot`. */
+  private skyY(shot: Shot, x: number, z: number): number {
+    const cam = this.probe;
+    cam.aspect = this.stage.camera.aspect;
+    cam.fov = BASE_FOV;
+    cam.updateProjectionMatrix();
+    cam.position.copy(shot.pos);
+    cam.lookAt(shot.look);
+    cam.updateMatrixWorld();
+    const ndcX = new Vector3(x, shot.look.y, z).project(cam).x;
+    const dir = new Vector3(ndcX, 1 - 2 * this.safe().top - 0.02, 0.5).unproject(cam).sub(cam.position).normalize();
+    if (Math.abs(dir.z) < 1e-4) return shot.look.y + 4 * this.U;
+    return cam.position.y + dir.y * ((z - cam.position.z) / dir.z);
   }
 
   // ------------------------------------------------------------ cinematics
@@ -1253,8 +1282,22 @@ export class Director {
       flyer.mesh.position.set(lerp(from.x, 0, e), lerp(from.y, ground + 0.4 * U, e), lerp(0, 1.2, e));
       flyer.mesh.rotation.set(-0.5 * e, Math.PI * 2 * e, 0);
       flyer.mesh.scale.setScalar(lerp(0.55, 1.35, e));
-      flyer.u.uOpacity.value = 1 - easeIn(k);
-      flyer.u.uTint.value = k;
+      // solid, in its own colors, while it flies (a pale fading card reads as a grey slab)
+      flyer.u.uOpacity.value = 1;
+      flyer.u.uTint.value = 0.35 * clamp01((k - 0.6) / 0.4);
+      // a light sweep across its face as it turns toward the camera
+      flyer.u.uSheen.value = lerp(-0.4, 1.8, clamp01((k - 0.35) / 0.65));
+    });
+    // it dissolves into light as the monster's reveal starts (showAt, below)
+    span(0.32, 0.5, (k) => {
+      flyer.u.uOpacity.value = 1 - easeOut(k);
+      flyer.u.uTint.value = lerp(0.35, 0.5, k);
+      flyer.mesh.scale.setScalar(1.35 * (1 + 0.08 * easeOut(k)));
+    });
+    span(0.34, 0.5, (_k, dt) => {
+      const n = Math.floor(160 * this.q * dt + 0.5);
+      const p = flyer.mesh.position;
+      for (let i = 0; i < n; i++) st.particles.emit({ x: p.x + (r() - 0.5) * 1.1 * U, y: p.y + (r() - 0.5) * 1.6 * U, z: p.z, vy: 1.2 * U, life: 0.5, size: 0.08 * U, color: i % 2 ? col.light : col.main, drag: 1.5 });
     });
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
 
@@ -2217,7 +2260,9 @@ export class Director {
     tl.commit(hitAt);
     if (dmg) {
       const k = Math.min(1, dmg.amount / 3000);
-      tl.span(hitAt, hitAt + 0.45, (x) => (this.front.u.uRed.value = (tgt ? 0.2 + k * 0.25 : 0.22) * (1 - easeOut(x))));
+      // a direct hit keeps its red wash; monster against monster only tints the edges a
+      // little, so both fighters stay readable through the blow
+      tl.span(hitAt, hitAt + 0.45, (x) => (this.front.u.uRed.value = (tgt ? Math.min(0.12, 0.06 + k * 0.06) : 0.22) * (1 - easeOut(x))));
     }
     if (tgt && !clash) {
       // the defender takes it: knocked back, flaring in its attribute's color
@@ -2661,7 +2706,10 @@ export class Director {
     const all: Box[] = [{ x: 0, y: (topY + botY) / 2, z: 0, w: st.halfW * 0.8, h: (topY - botY) * 0.48 }];
     const wide = this.fit(all, 0, 0, { fill: 1 });
     const drift = this.fit(all, 0.12, 0.04, { fill: 1 });
-    const into = this.fit([{ ...eyeAt, w: eyeSize * 0.4, h: eyeSize * 0.32 }], -0.05, 0.02, { fill: 0.95 });
+    // the vortex's heart, where the soul goes in and its card stays sealed through the end
+    const center = { x: 0, y: lerp(botY, topY, 0.42) };
+    const cardH = Math.min(1.9 * U, (topY - botY) * 0.4);
+    const into = this.fit([{ ...eyeAt, w: eyeSize * 0.4, h: eyeSize * 0.3 }, { x: center.x, y: center.y, z: 0.4, w: cardH * 0.4, h: cardH * 0.55 }], -0.05, 0.02, { fill: 0.92 });
     let s0: Shot | null = null;
     tl.span(0, 0.5, (k) => this.setShot((s0 ??= this.shot()), wide, easeInOut(k)));
     tl.span(0.5, 2.6, (k) => this.setShot(wide, drift, easeInOut(k)));
@@ -2676,6 +2724,8 @@ export class Director {
     eye.mesh.position.set(eyeAt.x, eyeAt.y, eyeAt.z);
     eye.spinSpeed = 0.3;
     eye.u.uOpacity.value = 0;
+    setRgb(eye.u.uColor.value, 0xffa82e);
+    eye.u.uColor.value.multiplyScalar(0.68);
     tl.span(0.25, 1.15, (k) => {
       eye.u.uEye.value = Math.max(0.001, easeOut(k));
       eye.u.uOpacity.value = clamp01(k * 2);
@@ -2683,7 +2733,6 @@ export class Director {
     tl.at(0.7, () => (st.pulse('flash', 0.3), this.flash(magenta, 0.3), st.shake(0.8), boom(0.9)));
     tl.span(D - 0.7, D - 0.15, (k) => (eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k))));
     // the vortex
-    const center = { x: 0, y: lerp(botY, topY, 0.42) };
     const vortex = tl.own(new Glow(4.2 * U, 4.2 * U, 'vortex', purple, magenta));
     vortex.mesh.position.set(center.x, center.y, -0.9);
     tl.span(0.5, 1.3, (k) => (vortex.u.uOpacity.value = k * 0.55));
@@ -2780,6 +2829,44 @@ export class Director {
         for (const l of links) l.u.uOpacity.value *= 1 - clamp01((k - 0.6) * 2.5);
         const n = Math.floor(Math.min(45, 45 * this.q) * dt + Math.random());
         for (let i = 0; i < n; i++) st.particles.emit({ x: fig.mesh.position.x, y: fig.mesh.position.y, burst: 0.6 * U, life: 0.6, size: 0.065 * U, color: i % 2 ? purple : magenta, pull: { x: center.x, y: center.y, strength: 8 * U, swirl: 10 * U } });
+      });
+      // sealed: out of the flash its card comes back from the vortex, bound in the same chains
+      // and lit magenta, and it stays there under the eye until the end
+      const sealT = 3.6;
+      tl.at(sealT, () => (fig.u.uOpacity.value = 0), false);
+      const aura = tl.own(new Glow(cardH * 1.5, cardH * 1.5, 'flare', magenta, 0xffd0f4));
+      aura.mesh.position.set(center.x, center.y, 0.2);
+      const sealed = tl.own(new CardPanel(art.full, cardH, magenta));
+      sealed.mesh.position.set(center.x, center.y, 0.4);
+      sealed.u.uOpacity.value = 0;
+      tl.span(sealT, sealT + 0.4, (k) => {
+        sealed.mesh.scale.setScalar(lerp(0.15, 1, backOut(k)));
+        sealed.mesh.rotation.y = (1 - easeOut(k)) * Math.PI;
+        sealed.u.uOpacity.value = clamp01(k * 3);
+        sealed.u.uTint.value = 0.7 * (1 - easeOut(k)) + 0.08;
+      });
+      tl.span(sealT + 0.3, D - 0.2, (k) => {
+        sealed.u.uSheen.value = lerp(-0.4, 1.8, clamp01(k * 2.2));
+        sealed.mesh.rotation.z = Math.sin(k * 7) * 0.025;
+        aura.u.uOpacity.value = 0.7 * clamp01(k * 4) * (0.85 + 0.15 * Math.sin(k * 18));
+      });
+      const ls = cardH / soulSize;
+      tl.span(sealT + 0.1, D - 0.2, (k) => {
+        links.forEach((l, i) => {
+          const q = i / links.length;
+          const ang = q * Math.PI * 4 + k * 1.2;
+          const rr = cardH * 0.42;
+          l.mesh.position.set(center.x + Math.cos(ang) * rr, center.y + (q - 0.5) * cardH * 0.85, 0.4 + Math.sin(ang) * rr * 0.5 + 0.12);
+          l.mesh.rotation.set(0, i % 2 ? Math.PI / 2.4 : 0, ang);
+          l.mesh.scale.setScalar(ls * 0.8);
+          l.u.uOpacity.value = clamp01(k * 6 * links.length - i * 1.5) * (Math.sin(ang) > -0.3 ? 1 : 0.35);
+        });
+      });
+      tl.at(sealT + 0.15, () => (zap(0.35), chime(0.25)));
+      tl.span(D - 0.2, D, (k) => {
+        sealed.u.uOpacity.value = 1 - k;
+        aura.u.uOpacity.value = 0.7 * (1 - k);
+        for (const l of links) l.u.uOpacity.value *= 1 - k;
       });
     }
     // the winner's fighters step out of the way
@@ -3406,8 +3493,10 @@ const FLASHED = new WeakSet<Timeline>();
  * branches, a tight ground ring and a scorch mark that stays a moment. Only the first
  * bolt of a cinematic flashes the screen (several in a row would wash it grey).
  */
-function bolt(c: PresetCtx, x: number, y: number, t: number, color: number, foot = y) {
+function bolt(c: PresetCtx, x: number, y: number, t: number, color: number, foot = y, top = Infinity) {
   const { tl, U, st } = c;
+  // it strikes from the top of the frame (the safe area's), not from off screen
+  const y0 = Math.max(y + 1.2 * U, Math.min(y + 4.5 * U, top));
   const N = 12;
   const core = tl.own(new Ribbon(18, 0xffffff, 0));
   const glow = tl.own(new Ribbon(18, color, 1));
@@ -3416,7 +3505,7 @@ function bolt(c: PresetCtx, x: number, y: number, t: number, color: number, foot
   let seed = (x / U) * 13.7 + (y / U) * 5.3 + t * 31;
   const reroll = () => {
     seed += 2.3;
-    const pts = Array.from({ length: N }, (_, j) => ({ x: x + (j === 0 || j === N - 1 ? 0 : noise(seed + j * 2.7) * 0.4 * U), y: lerp(y + 4.5 * U, y, j / (N - 1)), z: 0.6 }));
+    const pts = Array.from({ length: N }, (_, j) => ({ x: x + (j === 0 || j === N - 1 ? 0 : noise(seed + j * 2.7) * 0.4 * U), y: lerp(y0, y, j / (N - 1)), z: 0.6 }));
     core.set(pts, (q) => 0.16 * U * (0.55 + 0.45 * q));
     glow.set(pts, (q) => 0.6 * U * (0.6 + 0.4 * q));
     forks.forEach((f, i) => {
@@ -3527,6 +3616,11 @@ const MIRROR_FORCE: Preset = {
       tl.span(hitT + 0.25, c.t1, (k) => (r.u.uTail.value = easeIn(k)));
     });
     for (const a of c.hits) strike(c, a, hitT + 0.2);
+    // as the rays turn back, the camera follows them up onto the attackers
+    if (c.hits.length) {
+      const shot = c.d['fit']([...c.hits.map((a) => c.d['boxOf'](a)), { x: 0, y: lerp(own * 0.6, opp, 0.45), z: 0.9, w: 0.4 * U, h: 0.3 * U }], 0, 0.05, { fill: 0.78 });
+      c.d['lean'](tl, shot, hitT - 0.05, hitT + 0.25, c.t1 - 0.3, c.t1);
+    }
     tl.at(hitT, () => (c.st.shake(0.7), c.st.hitStop(0.07), c.st.pulse('flash', 0.14), boom(0.6), chime(0.95)));
     tl.span(c.t1 - 0.3, c.t1, (k) => (dome.u.uOpacity.value = 0.7 * (1 - k)));
   },
@@ -3537,15 +3631,26 @@ const RAIGEKI: Preset = {
   accent: 0xfff27a,
   scope: 'opp',
   play(c) {
+    const { U, tl, t0, t1, d } = c;
+    // the camera leaves the card and frames what the bolts strike (~60% of the safe area),
+    // so the monsters read and every bolt starts inside the frame
+    const boxes: Box[] = c.hits.length ? c.hits.map((a) => d['boxOf'](a)) : rowPts(c, c.opp, 3).map((p) => ({ ...p, w: 0.5 * U, h: 0.5 * U }));
+    const shot = d['fit'](boxes, 0, 0.06, { fill: 0.72 });
+    d['lean'](tl, shot, t0 - 0.3, t0 + 0.02, t1 - 0.3, t1);
+    const top = (x: number) => d['skyY'](shot, x, 0.6);
     if (c.hits.length) {
       c.hits.forEach((a, i) => {
         const p = c.pts[i];
-        bolt(c, p.x, p.y + a.size * 0.1, c.t0 + i * 0.1, 0xfff27a, p.y - a.size * 0.48);
-        strike(c, a, c.t0 + i * 0.1);
+        bolt(c, p.x, p.y + a.size * 0.1, t0 + i * 0.1, 0xfff27a, p.y - a.size * 0.48, top(p.x));
+        strike(c, a, t0 + i * 0.1);
       });
-      // and a few strays across their side
-      for (let i = 0; i < 2; i++) bolt(c, (i - 0.5) * 1.6 * c.U, c.opp, c.t0 + 0.05 + i * 0.12, 0xfff27a);
-    } else for (let i = 0; i < 5; i++) bolt(c, (i - 2) * 0.55 * c.U + (Math.random() - 0.5) * 0.2 * c.U, c.opp, c.t0 + i * 0.1, 0xfff27a);
+      // and a couple of strays between and beside them
+      const xs = c.pts.map((p) => p.x);
+      const x0 = Math.min(...xs);
+      const x1 = Math.max(...xs);
+      const gy = Math.min(...c.hits.map((a) => a.y - a.size * 0.35));
+      [lerp(x0, x1, 0.5) - 0.25 * U, x1 + 0.7 * U].forEach((x, i) => bolt(c, x, gy, t0 + 0.05 + i * 0.12, 0xfff27a, gy, top(x)));
+    } else for (let i = 0; i < 5; i++) bolt(c, (i - 2) * 0.55 * U + noise(i * 3.1 + 0.7) * 0.1 * U, c.opp, t0 + i * 0.1, 0xfff27a, c.opp, top((i - 2) * 0.55 * U));
   },
 };
 
@@ -3615,21 +3720,91 @@ const POT_OF_GREED: Preset = {
 };
 
 const MONSTER_REBORN: Preset = {
-  dur: 0.7,
+  dur: 0.9,
   accent: 0xffe9a0,
   play(c) {
-    const { tl, U, t0, t1 } = c;
+    const { tl, U, t0, t1, st } = c;
+    // the revived monster (its target), when the duel names it
+    const tp = c.targets[0];
+    const a = tp ? figAt(c, tp) : null;
+    const rise = !!a?.fig;
+    // the ankh rises to the middle of the stage; with no monster to raise it stands behind the card and lights it
     const ankh = tl.own(new Glow(2 * U, 2.6 * U, 'ankh', 0xffe9a0, 0xffffff));
+    const peak = rise ? 0.5 : 0.38;
     tl.span(t0, t0 + 0.6, (k) => {
-      ankh.mesh.position.set(0, lerp(c.own * 1.2, c.cy + 0.2 * U, easeOut(k)), 1.4);
-      ankh.u.uOpacity.value = 0.6 * easeOut(k);
+      const px = rise ? 0 : c.panel.mesh.position.x;
+      const py = rise ? c.cy + 0.8 * U : c.panel.mesh.position.y + 0.3 * U;
+      ankh.mesh.position.set(px, lerp(c.own * 1.2, py, easeOut(k)), rise ? -0.5 : -0.9);
+      ankh.mesh.scale.setScalar(rise ? 1 : 1.75);
+      ankh.u.uOpacity.value = peak * easeOut(k);
     });
-    tl.span(t1 - 0.3, t1, (k) => (ankh.u.uOpacity.value = 0.6 * (1 - k)));
-    c.d['shafts'](tl, { x: 0, y: c.own * 1.2, z: 1 }, 5 * U, 0xffe9a0, t0, t1, 1, 0.9);
-    tl.span(t0, t1, (_k, dt) => {
-      for (let i = 0; i < rate(80 * c.d['q'], dt); i++) c.st.particles.emit({ x: (Math.random() - 0.5) * 1.6 * U, y: c.own, z: 1, vy: 3 * U, life: 0.9, size: 0.08 * U, color: 0xffe9a0, drag: 0.4 });
+    tl.span(t1 - 0.3, t1, (k) => (ankh.u.uOpacity.value = peak * (1 - k)));
+    // the shafts climb from the graveyard's side of the field
+    const gx = (c.side === 'near' ? 1 : -1) * 1.2 * U;
+    const gy = c.own * 1.15;
+    const sx = rise ? gx * 0.5 : 0;
+    c.d['shafts'](tl, { x: sx, y: gy, z: 0.4 }, 5 * U, 0xffe9a0, t0, t1, rise ? 3 : 1, 0.75);
+    let seed = 0;
+    tl.span(t0, t1 - 0.25, (_k, dt) => {
+      for (let i = 0; i < rate(70 * c.d['q'], dt); i++) c.st.particles.emit({ x: sx + noise(++seed * 1.7) * 0.8 * U, y: gy, z: 0.6, vy: 3 * U, life: 0.9, size: 0.08 * U, color: 0xffe9a0, drag: 0.4 });
     });
-    tl.at(t0 + 0.6, () => (chime(0.9), c.st.pulse('flash', 0.3)));
+    if (a && a.fig) {
+      const fig = a.fig;
+      const size = a.size;
+      const R0 = t0 + 0.12;
+      const R1 = t0 + 0.72;
+      const L = R1 + 0.25;
+      const cy = c.cy - 0.05 * U;
+      // hidden until the ankh calls it (the activation would raise it off its card)
+      tl.span(0.1, R0, () => {
+        a.ox = gx - a.x;
+        a.oy = gy - a.y;
+        a.oz = 0.6;
+        fig.u.uOpacity.value = 0;
+        c.d['place'](a);
+      });
+      // up from the graveyard through the shafts to the middle of the stage, coming into being as it climbs
+      tl.span(R0, R1, (k) => {
+        const e = easeInOut(k);
+        a.ox = lerp(gx, 0, e) - a.x;
+        a.oy = lerp(gy, cy, e) - a.y + Math.sin(k * Math.PI) * 0.25 * U;
+        a.oz = lerp(0.6, 1.2, e);
+        fig.mesh.scale.setScalar(size * lerp(0.75, 1.3, e));
+        fig.u.uOpacity.value = clamp01(k * 3);
+        fig.u.uReveal.value = easeOut(clamp01(k * 1.3));
+        fig.u.uTint.value = 0.75;
+        c.d['place'](a);
+      });
+      // it lands: the golden glow drains out of it in a flash and it stands there revived
+      tl.span(R1, L, (k) => {
+        fig.u.uReveal.value = 1;
+        fig.u.uTint.value = 0.75 * (1 - easeOut(k));
+      });
+      tl.span(R1, t1 + 0.4, (k) => {
+        a.oy = cy - a.y + Math.sin(k * Math.PI * 2) * 0.03 * U;
+        fig.mesh.scale.setScalar(size * 1.3);
+        c.d['place'](a);
+      });
+      const shock = tl.own(new Glow(3.2 * U, 3.2 * U, 'shock', 0xffe9a0, 0xffffff));
+      shock.mesh.position.set(0, cy - size * 0.6, 1.2);
+      shock.mesh.rotation.x = -1.2;
+      tl.span(R1, R1 + 0.5, (k) => ((shock.u.uK.value = easeOut(k)), (shock.u.uOpacity.value = 0.8 * (1 - k))));
+      tl.at(R1, () => {
+        chime(0.9);
+        st.pulse('flash', 0.22);
+        c.d['flash'](0xffe9a0, 0.12);
+        st.particles.emit({ x: 0, y: cy, z: 1.4, burst: 3.5 * U, life: 0.7, size: 0.09 * U, color: 0xffe9a0, drag: 2 }, Math.round(60 * c.d['q']));
+      });
+      // the camera rises with it and frames it in the middle
+      const shot = c.d['fit']([{ x: 0, y: cy, z: 1.2 + size * 0.3, w: size * 0.62, h: size * 0.7 }], 0, 0.04, { fill: 0.62 });
+      c.d['lean'](tl, shot, R0, R1, t1 - 0.3, t1);
+    } else {
+      // no monster to show: the card itself takes the ankh's light
+      const panel = c.panel;
+      tl.span(t0 + 0.35, t0 + 0.95, (k) => (panel.u.uSheen.value = lerp(-0.4, 1.8, k)));
+      tl.span(t0 + 0.3, t1, (k) => (panel.u.uTint.value = 0.22 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5) * (1 - easeIn(clamp01((k - 0.7) / 0.3)))));
+      tl.at(t0 + 0.6, () => (chime(0.9), st.pulse('flash', 0.2)));
+    }
   },
 };
 
