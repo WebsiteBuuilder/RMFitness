@@ -282,6 +282,7 @@ export class Engine {
     // The card's own Summoning condition ("Cannot be Special Summoned", "Must be Fusion Summoned"), unless an effect ignores it.
     const rule = getEffect(c.name)?.summonRule;
     if (rule && fx.ignoreCond !== c.uid && !rule(this, c, p, how, from)) return true;
+    if (how === 'flip' && (c as FieldCard).tags?.noFlip) return true; // audit-05: "cannot change its battle position" also stops a Flip Summon (Floodgate Trap Hole)
     if (how !== 'set' && fx.summonLock?.[p] === this.state.turn && fx.summonLockExcept !== c.uid) return true;
     if (how === 'special' && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true;
     if (how === 'special' && from === 'fusion' && this.liveST().some((x) => x.c.name === 'Summon Gate') && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
@@ -1965,6 +1966,7 @@ export class Engine {
         const k = doubles.length === 1 ? [0] : yield* this.select(player, 'Tribute which monster as 2 Tributes?', this.optionsFor(doubles), 1, 1);
         double = doubles[k?.[0] ?? 0] ?? null;
       }
+      this.state.fx.tributingFor = f.card.name; // audit-05: the monster these Tributes are for (Evil HERO Infernal Prodigy)
       if (standIn) {
         yield* this.sendToGrave(standIn.uid, 'tribute');
         this.log(player, `${ps.name} Tributed ${standIn.name}`);
@@ -1986,6 +1988,7 @@ export class Engine {
           }
         })());
       }
+      this.state.fx.tributingFor = undefined; // audit-05
       if (!this.monsterZoneOpen(player, zone)) zone = this.freeMonsterZone(player); // b20
       if (this.speed) ((this.state.fx.tributedFor ??= {}) as Record<number, number>)[uid] = need; // audit-00: how many Tributes it took (Behemoth the King of All Animals)
     }
@@ -2077,16 +2080,19 @@ export class Engine {
     if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
     const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
-    // audit-07 + audit-10: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways"); batch 07 reads fx.procCheck, batch 10 fx.procSS.
+    // audit-05/07/10: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways"); batches read fx.procSummon, fx.procCheck or fx.procSS.
     const prevProc = this.state.fx.procSS;
+    const procPrev = this.state.fx.procSummon;
     this.state.fx.procSS = card.uid;
     this.state.fx.procCheck = card.uid;
+    this.state.fx.procSummon = card.uid;
     try {
       if (proc && this.summonBlocked(player, card, 'special', f.loc.zone)) return false;
       return !!proc && proc.can(this, card, player);
     } finally {
       this.state.fx.procSS = prevProc;
       this.state.fx.procCheck = undefined;
+      this.state.fx.procSummon = procPrev;
     }
   }
 
@@ -2197,10 +2203,12 @@ export class Engine {
     if (!f || !this.canSpecialProc(player, f.card)) return;
     const fromHand = f.loc.zone === 'hand';
     this.state.fx.procSS = uid; // audit-10
+    this.state.fx.procSummon = uid; // audit-05
     try {
       yield* this.as(player, this.procFor(f.card, f.loc.zone)!.run(this, f.card, player));
     } finally {
       this.state.fx.procSS = undefined; // audit-10
+      this.state.fx.procSummon = undefined; // audit-05
     }
     // Chain Energy charges for a card Special Summoned from the hand.
     if (fromHand && this.find(uid)?.loc.zone === 'mz') yield* this.chainEnergy(player);
