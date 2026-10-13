@@ -60,6 +60,15 @@ const fieldFaceUp = (e: Engine) => [0, 1].some((q) => !!e.player(q as Pid).field
 /** "Necrovalley" on the field: the real card, or Gravekeeper's Priestess while there is no face-up Field Spell. */
 const necro = (e: Engine) => !!e.anyActive('Necrovalley') || (!fieldFaceUp(e) && faceUpMonsters(e).some((m) => m.name === "Gravekeeper's Priestess" && !e.isNegated(m)));
 const fx = <T>(e: Engine, key: string, init: T): T => (e.state.fx[key] ??= init) as T;
+/** Moves cards out of a GY with an effect that is unaffected by Necrovalley (engine.graveLocked reads fx.graveFree). */
+function necroFree(e: Engine, move: () => void) {
+  e.state.fx.graveFree = true;
+  try {
+    move();
+  } finally {
+    e.state.fx.graveFree = undefined;
+  }
+}
 
 /** Returns a monster on the field to the hand (Tokens vanish, Fusion Monsters go back to the Extra Deck). */
 function* bounce(e: Engine, uid: number): Step {
@@ -92,11 +101,36 @@ function* returnST(e: Engine, uid: number): Step {
     const host = e.fieldCard(fc.equippedTo);
     if (host) host.equips = host.equips.filter((u) => u !== uid);
   }
+  // e.toHand runs its "leaves the field" effect itself (engine.flushLeaves).
   e.toHand(uid);
   e.log(p, `${fc.name} returns to the hand`);
-  const h = e.effectOn({ uid, name: fc.name, owner: fc.owner })?.onLeaveField;
-  if (h) yield* h(e, fc, p, 'bounce');
 }
+/** "Must be Special Summoned (from your hand) by ... and cannot be Special Summoned by other ways": until it was properly Summoned once (then it can be revived). */
+const nomi = (): Partial<EffectDef> => ({
+  cannotNormalSummon: true,
+  // Approximation: only Summons by a resolving card effect are refused (engine-level placements are not checked).
+  cannotSpecial: (e, c, _p, from) => from !== null && !!e.resolvingCard() && !fx<Record<number, number>>(e, 'properSummon', {})[c.uid],
+});
+/** Its own Summon procedure from the hand (remembers the monster was properly Summoned). */
+function* procSummon(e: Engine, c: Card, p: Pid, pos: 'atk' | 'def' = 'atk'): Step {
+  yield* e.specialSummon(c.uid, p, pos);
+  if (e.fieldCard(c.uid)) fx<Record<number, number>>(e, 'properSummon', {})[c.uid] = 1;
+}
+/** "If this card destroys a monster by battle" (it does not have to be sent to the GY; this card must still be on the field). */
+function battleKill(fn: (e: Engine, me: FieldCard, victim: Card, p: Pid) => Step): Partial<EffectDef> {
+  return {
+    *afterBattle(e, a, t, p, destroyed) {
+      const f = t && destroyed ? e.find(t.uid) : null;
+      if (f && f.loc.zone !== 'mz' && e.fieldCard(a.uid)) yield* fn(e, a, f.card, p);
+    },
+    *onAttacked(e, me, attacker, p) {
+      const f = e.find(attacker.uid);
+      if (f && f.loc.zone !== 'mz' && e.fieldCard(me.uid)) yield* fn(e, me, f.card, p);
+    },
+  };
+}
+/** Card names a player can declare (every card both players brought to the Duel). */
+const declarable = (e: Engine) => [...new Set([0, 1].flatMap((q) => { const ps = e.player(q as Pid); return [...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.fusion, ...e.monsters(q as Pid), ...stOf(e, q as Pid)]; }).filter((c) => !c.token).map((c) => c.name))].sort();
 /** Places a card on the bottom of its owner's Deck (Extra Deck monsters go back there). */
 function toDeckBottom(e: Engine, uid: number) {
   const f = e.find(uid);
@@ -151,18 +185,19 @@ const flipDown: EffectDef['ignition'] = {
     if (m.faceUp) yield* setFaceDown(e, m);
   },
 };
-/** Giant Orc, Goblin Attack Force: Defense Position after attacking (Speed Duel has no Main Phase 2, so the End Phase follows the Battle Phase), locked until the end of the next own turn. */
+/** Giant Orc, Goblin Attack Force: Defense Position at the end of the Battle Phase it attacked in, locked until the End Phase of the next own turn. */
 const tiresAfterAttack: EffectDef = {
-  *onEndPhase(e, m, p) {
+  *onBattlePhaseEnd(e, m, p) {
+    if (e.state.turnPlayer !== p || !e.state.attackedThisTurn.includes(m.uid) || !m.faceUp) return;
+    if (m.pos === 'atk') changePos(e, m);
+    m.cannotChangePos = true;
+    tag(m).posLockUntil = e.state.turn + 2;
+  },
+  *onEndPhase(e, m) {
     const t = tag(m);
     if (t.posLockUntil !== undefined && e.state.turn >= t.posLockUntil) {
       m.cannotChangePos = false;
       delete t.posLockUntil;
-    }
-    if (e.state.turnPlayer === p && e.state.attackedThisTurn.includes(m.uid) && m.faceUp) {
-      if (m.pos === 'atk') changePos(e, m);
-      m.cannotChangePos = true;
-      t.posLockUntil = e.state.turn + 2;
     }
   },
 };
@@ -194,16 +229,29 @@ const destroyedByOpp = (e: Engine, uid: number) => fx<Record<number, number>>(e,
 
 export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // ===================== monsters =====================
-  // The Xyz-attach effect does nothing in Speed Duel (no Xyz Monsters).
+  // Its Tribute is a cost, so the effect resolves at once (chain: false: the engine skips chained ignitions whose card left the field).
+  const geXyz = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p)).filter((m) => named(m, 'Galaxy-Eyes') && info(e, m).sub === 'Xyz');
   E['Galaxy-Eyes Cloudragon'] = {
     ignition: {
-      can: (e, m, p) => e.oncePerTurn(m.name, p) && [...e.player(p).hand, ...e.player(p).gy].some((c) => named(c, 'Galaxy-Eyes') && c.name !== m.name && mainMonster(e, c)),
-      *run(e, m, p) {
-        if (!e.fieldCard(m.uid)) return;
+      chain: false,
+      can: (e, m, p) => e.oncePerTurn(m.name, p) && !e.untributable(m) && [...e.player(p).hand, ...e.player(p).gy].some((c) => named(c, 'Galaxy-Eyes') && c.name !== m.name && mainMonster(e, c)),
+      *cost(e, m, p) {
         e.useOnce(m.name, p);
+        e.log(p, `${e.player(p).name} Tributes ${m.name}`);
         yield* e.sendToGrave(m.uid, 'tribute');
+      },
+      *run(e, _m, p) {
         const ps = e.player(p);
         yield* summonOneOf(e, p, 'Galaxy-Eyes Cloudragon: Special Summon which "Galaxy-Eyes" monster?', [...ps.hand, ...ps.gy].filter((c) => named(c, 'Galaxy-Eyes') && c.name !== 'Galaxy-Eyes Cloudragon' && mainMonster(e, c)));
+      },
+    },
+    graveIgnition: {
+      can: (e, c, p) => e.oncePerDuel(c.name, p) && geXyz(e, p).length > 0,
+      *run(e, card, p) {
+        const x = yield* pickOne(e, p, 'Galaxy-Eyes Cloudragon: attach it to which "Galaxy-Eyes" Xyz Monster?', geXyz(e, p), true);
+        if (!x) return;
+        e.useOncePerDuel(card.name, p);
+        if (e.find(card.uid)?.loc.zone === 'gy' && e.attachMat(x, card.uid)) e.log(p, `Galaxy-Eyes Cloudragon is attached to ${x.name} as an Xyz Material`);
       },
     },
   };
@@ -218,14 +266,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E["Gravekeeper's Guard"] = bounceFlip("Gravekeeper's Guard: return which monster to the hand?");
 
   E['Garuda the Wind Spirit'] = {
-    cannotNormalSummon: true,
+    ...nomi(),
     summonProc: {
       can: (e, _c, p) => freeMZ(e, p) && e.player(p).gy.some((c) => isMonster(e, c) && attrOf(e, c) === 'WIND'),
       *run(e, c, p) {
         const b = yield* pickOne(e, p, 'Garuda: banish which WIND monster from your GY?', e.player(p).gy.filter((g) => isMonster(e, g) && attrOf(e, g) === 'WIND'), true);
         if (!b) return;
         e.banish(b.uid);
-        yield* e.specialSummon(c.uid, p, 'atk');
+        if (e.find(b.uid)?.loc.zone !== 'removed') return;
+        yield* procSummon(e, c, p);
       },
     },
     *onEndPhase(e, _m, p) {
@@ -237,47 +286,81 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // "During your Main Phase 1": Speed Duel has only one Main Phase. The LP are paid as the effect is activated.
   E['Gear Golem the Moving Fortress'] = {
     ignition: {
       can: (e, m, p) => e.player(p).lp > 800 && m.tags?.directTurn !== e.state.turn,
-      *run(e, m, p) {
-        if (payLp(e, p, 800)) tag(m).directTurn = e.state.turn;
+      *cost(e, _m, p) {
+        return payLp(e, p, 800);
+      },
+      *run(e, m) {
+        if (e.fieldCard(m.uid)?.faceUp) tag(m).directTurn = e.state.turn;
       },
     },
     directAttack: (e, m) => m.tags?.directTurn === e.state.turn,
   };
 
-  // Only the second effect: the engine has no hook for "a card is equipped to this card".
+  // "If either player equips an Equip Card(s) to this card" is seen right after the action that equipped it (stateCheck).
   const redEyesTargets = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => mainMonster(e, c) && named(c, 'Red-Eyes') && levelOf(e, c) <= 7);
   E['Gearfried the Red-Eyes Iron Knight'] = {
+    *stateCheck(e, m, p) {
+      const seen = fx<Record<number, number[]>>(e, 'gearfriedSeen', {});
+      const before = seen[m.uid] ?? [];
+      const fresh = m.equips.filter((u) => !before.includes(u) && e.fieldCard(u));
+      seen[m.uid] = m.equips.slice();
+      if (!fresh.length || !e.oncePerTurn(`Gearfried RE:${m.uid}`, p)) return;
+      if (!(yield* e.yesno(p, 'Gearfried the Red-Eyes Iron Knight: destroy the Equip Card(s) equipped to it?'))) return;
+      e.useOnce(`Gearfried RE:${m.uid}`, p);
+      yield* e.destroy(fresh.filter((u) => e.fieldCard(u)));
+      const st = stOf(e, other(p));
+      if (!st.length || !(yield* e.yesno(p, 'Gearfried: then destroy 1 Spell/Trap your opponent controls?'))) return;
+      const t = yield* pickOne(e, p, 'Gearfried: destroy which Spell/Trap?', st);
+      if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
+    },
     ignition: {
       can: (e, m, p) => m.equips.some((u) => e.controller(u) === p) && redEyesTargets(e, p).length > 0,
-      *run(e, m, p) {
+      *cost(e, m, p) {
         const eqs = m.equips.map((u) => e.fieldCard(u)).filter((c): c is FieldCard => !!c && e.controller(c.uid) === p);
-        const eq = yield* pickOne(e, p, 'Gearfried: send which Equip Card to the GY?', eqs);
-        if (!eq) return;
+        const eq = yield* pickOne(e, p, 'Gearfried: send which Equip Card to the GY?', eqs, true);
+        if (!eq) return false;
         yield* e.sendToGrave(eq.uid, 'cost');
-        yield* summonOneOf(e, p, 'Gearfried: Special Summon which "Red-Eyes" monster?', redEyesTargets(e, p));
+        const t = yield* pickOne(e, p, 'Gearfried: target which "Red-Eyes" monster in your GY?', redEyesTargets(e, p));
+        if (!t) return false;
+        tag(m).gearfriedTarget = t.uid;
+      },
+      *run(e, m, p) {
+        const u = m.tags?.gearfriedTarget;
+        if (u !== undefined && e.find(u)?.loc.zone === 'gy' && freeMZ(e, p)) yield* e.specialSummon(u, p, 'atk');
       },
     },
   };
 
+  // Banishing both monsters is the cost, so the effect resolves at once (chain: false).
+  const gemFusions = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => named(c, 'Gem-Knight') && info(e, c).sub === 'Fusion');
   E['Gem-Knight Emerald'] = {
     ignition: {
-      can: (e, m, p) => faceUpMonsters(e, p).some((x) => x.uid !== m.uid && isNormalMonster(e, x)) && e.player(p).gy.some((c) => named(c, 'Gem-Knight') && info(e, c).sub === 'Fusion'),
-      *run(e, m, p) {
-        const normals = faceUpMonsters(e, p).filter((x) => x.uid !== m.uid && isNormalMonster(e, x));
-        const n = yield* pickOne(e, p, 'Gem-Knight Emerald: banish which Normal Monster?', normals);
-        if (!n || !e.fieldCard(m.uid)) return;
+      chain: false,
+      repeat: true,
+      can: (e, m, p) => faceUpMonsters(e, p).some((x) => x.uid !== m.uid && isNormalMonster(e, x)) && gemFusions(e, p).length > 0,
+      *cost(e, m, p) {
+        const n = yield* pickOne(e, p, 'Gem-Knight Emerald: banish which Normal Monster?', faceUpMonsters(e, p).filter((x) => x.uid !== m.uid && isNormalMonster(e, x)), true);
+        if (!n) return false;
+        const t = yield* pickOne(e, p, 'Gem-Knight Emerald: target which "Gem-Knight" Fusion Monster?', gemFusions(e, p), true);
+        if (!t) return false;
+        fx<Record<number, number>>(e, 'emeraldTarget', {})[p] = t.uid;
         e.banish(m.uid);
         e.banish(n.uid);
-        yield* summonOneOf(e, p, 'Gem-Knight Emerald: Special Summon which "Gem-Knight" Fusion Monster?', e.player(p).gy.filter((c) => named(c, 'Gem-Knight') && info(e, c).sub === 'Fusion'));
+      },
+      *run(e, _m, p) {
+        const u = fx<Record<number, number>>(e, 'emeraldTarget', {})[p];
+        if (u !== undefined && e.find(u)?.loc.zone === 'gy' && freeMZ(e, p)) yield* e.specialSummon(u, p, 'atk');
       },
     },
   };
 
-  // The current attack is moved onto it; the lasting "attack only this card" lock has no engine hook.
+  // The attack it responded to is moved onto it (the replay is approximated: the attack goes on against Gentlemander).
   E['Gentlemander'] = {
+    attackGuard: (e, src, srcController, attacker, target) => e.controller(attacker.uid) === other(srcController) && target.uid !== src.uid && e.controller(target.uid) === srcController,
     quick: {
       from: 'hand',
       label: 'Special Summon it',
@@ -316,28 +399,35 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The 3-Tribute Summon is a summon procedure that uses your Normal Summon for the turn.
+  // The 3-Tribute Summon is a summon procedure: a real Tribute Summon (engine.tributeSummonWith) that uses your Normal Summon.
   E['Gilford the Lightning'] = {
     summonProc: {
-      can: (e, c, p) => e.canNormalSummon(p, c) && e.monsters(p).length >= 3,
+      can: (e, c, p) => e.canNormalSummon(p, c, true) && e.monsters(p).filter((m) => !e.untributable(m)).length >= 3,
       *run(e, c, p) {
-        if (!(yield* tributeCost(e, p, 3))) return;
-        e.player(p).normalSummoned = true;
-        yield* e.specialSummon(c.uid, p, 'atk');
-        if (!e.fieldCard(c.uid)) return;
-        e.log(p, 'Gilford the Lightning destroys all monsters the opponent controls');
-        yield* e.destroy(e.monsters(other(p)).map((m) => m.uid));
+        const chosen = yield* pick(e, p, 'Gilford the Lightning: Tribute which 3 monsters?', e.monsters(p).filter((m) => !e.untributable(m)), 3, 3, true, false);
+        if (!chosen) return;
+        yield* e.tributeSummonWith(p, c.uid, chosen.map((m) => m.uid));
       },
+    },
+    *onSummon(e, m, p, kind) {
+      if (kind !== 'normal' || m.tags?.tribS !== 3) return;
+      e.log(p, 'Gilford the Lightning destroys all monsters the opponent controls');
+      yield* e.destroy(e.monsters(other(p)).map((x) => x.uid));
     },
   };
 
   E['Gimmick Puppet Des Troy'] = {
     ignition: {
       can: (e, m) => !m.tags?.desTroyUsed && targetable(e, faceUpMonsters(e)).some((x) => named(x, 'Gimmick Puppet')),
-      *run(e, m, p) {
+      *cost(e, m, p) {
+        const t = yield* pickOne(e, p, 'Des Troy: target which "Gimmick Puppet" monster?', targetable(e, faceUpMonsters(e)).filter((x) => named(x, 'Gimmick Puppet')), true);
+        if (!t) return false;
         tag(m).desTroyUsed = 1;
-        const t = yield* pickOne(e, p, 'Des Troy: destroy which "Gimmick Puppet" monster?', targetable(e, faceUpMonsters(e)).filter((x) => named(x, 'Gimmick Puppet')));
-        if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
+        tag(m).desTroyTarget = t.uid;
+      },
+      *run(e, m) {
+        const u = m.tags?.desTroyTarget;
+        if (u !== undefined && e.fieldCard(u)) yield* e.destroy([u]);
       },
     },
     *onSentToGrave(e, _card, p, from) {
@@ -350,8 +440,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Banished instead when it is detached as an Xyz Material (Xyz Materials left behind by a monster leaving the field still go to the GY).
   E['Gimmick Puppet Shadow Feeler'] = {
     battleProof: () => true,
+    *watchGrave(e, card, _owner, zone, events) {
+      if (zone === 'gy' && events.some((ev) => ev.card.uid === card.uid && ev.reason === 'detached')) {
+        e.banish(card.uid);
+        e.log(card.owner, 'Gimmick Puppet Shadow Feeler is banished instead');
+      }
+    },
     quick: {
       from: 'gy',
       label: 'Special Summon it (take 1000 damage)',
@@ -389,7 +486,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   });
   E['Gokipon'] = searchOnBattleDeath('Gokipon: add an Insect monster with 1500 or less ATK', (e, c) => isMonster(e, c) && info(e, c).race === 'Insect' && atkInfo(e, c) <= 1500);
-  E['Jade Knight'] = searchOnBattleDeath('Jade Knight: add a Level 4 LIGHT Machine monster', (e, c) => isMonster(e, c) && info(e, c).race === 'Machine' && attrOf(e, c) === 'LIGHT' && levelOf(e, c) === 4);
+  E['Jade Knight'] = {
+    ...searchOnBattleDeath('Jade Knight: add a Level 4 LIGHT Machine monster', (e, c) => isMonster(e, c) && info(e, c).race === 'Machine' && attrOf(e, c) === 'LIGHT' && levelOf(e, c) === 4),
+    shields: (e, src, target, how, srcController) =>
+      how === 'effect' && src.pos === 'atk' && e.resolvingKind() === 'trap' && e.controller(target.uid) === srcController && target.faceUp && e.find(target.uid)?.loc.zone === 'mz' && raceOf(e, target) === 'Machine' && e.atkOf(target) <= 1200,
+  };
 
   E['Golden Homunculus'] = {
     selfBonus: (e, m) => {
@@ -422,8 +523,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // "You can only control 1" is checked for its own Special Summon only.
   E['Grandmaster of the Six Samurai'] = {
+    // "You can only control 1": no other Summon while you control one (a Set one counts too).
+    selfSummonBlock: (e, c, p) => e.monsters(p).some((m) => m.name === c.name && m.uid !== c.uid),
     summonProc: {
       can: (e, c, p) => freeMZ(e, p) && faceUpMonsters(e, p).some((m) => named(m, 'Six Samurai')) && !e.monsters(p).some((m) => m.name === c.name),
       *run(e, c, p) {
@@ -438,8 +540,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Granmarg the Rock Monarch'] = {
-    *onSummon(e, _m, p, kind) {
-      if (kind !== 'normal') return;
+    *onSummon(e, m, p, kind) {
+      if (kind !== 'normal' || !m.tags?.tribS) return;
       const sets = [...allMonsters(e), ...allST(e)].filter((c) => !c.faceUp);
       const t = yield* pickOne(e, p, 'Granmarg: destroy which Set card?', sets);
       if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
@@ -453,7 +555,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const gy = e.player(other(p)).gy;
       if (!gy.length) return;
       const t = yield* pickOne(e, p, "Gravekeeper's Ambusher: place which card from the opponent's GY on the bottom of their Deck? (cancel = none)", gy, true);
-      if (t && e.find(t.uid)?.loc.zone === 'gy') toDeckBottom(e, t.uid);
+      if (t && e.find(t.uid)?.loc.zone === 'gy') necroFree(e, () => toDeckBottom(e, t.uid));
     },
     *onSummon(e, m, _p, kind) {
       if (kind === 'normal') delete fx<Record<number, number>>(e, 'ambusherFlipped', {})[m.uid];
@@ -463,7 +565,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const was = flipped[card.uid];
       delete flipped[card.uid];
       if (from !== 'mz' || !was || !e.player(p).gy.some((c) => named(c, 'Necrovalley'))) return;
-      if (yield* e.yesno(p, 'Gravekeeper\'s Ambusher: add a "Necrovalley" card from your GY to your hand?')) yield* fromGraveToHand(e, p, 'Add which "Necrovalley" card?', (c) => named(c, 'Necrovalley'));
+      if (!(yield* e.yesno(p, 'Gravekeeper\'s Ambusher: add a "Necrovalley" card from your GY to your hand?'))) return;
+      const c = yield* pickOne(e, p, 'Add which "Necrovalley" card?', e.player(p).gy.filter((x) => named(x, 'Necrovalley')));
+      if (c) necroFree(e, () => e.toHandOf(c.uid, p));
     },
   };
 
@@ -471,27 +575,39 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     quick: {
       label: "change a monster's battle position",
       can: (e, card, p, t) => t === 'attack' && e.state.battle?.attacker === card.uid && necro(e) && targetable(e, faceUpMonsters(e, other(p))).length > 0,
-      *run(e, _c, p) {
-        const t = yield* pickOne(e, p, "Gravekeeper's Assailant: change which monster's battle position?", targetable(e, faceUpMonsters(e, other(p))));
-        if (t && e.fieldCard(t.uid)) changePos(e, t);
+      *cost(e, _c, p, link) {
+        const t = yield* pickOne(e, p, "Gravekeeper's Assailant: change which monster's battle position?", targetable(e, faceUpMonsters(e, other(p))), true);
+        if (!t) return false;
+        link.targetUid = t.uid;
+      },
+      *run(e, _c, _p, link) {
+        const t = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
+        if (t?.faceUp) changePos(e, t);
       },
     },
   };
 
+  // The Tribute is a cost paid as the effect is activated.
   E["Gravekeeper's Cannonholder"] = {
     ignition: {
       repeat: true,
-      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && x.faceUp && isGK(x) && x.name !== m.name),
-      *run(e, m, p) {
-        if (yield* tributeCost(e, p, 1, (x) => x.faceUp && isGK(x) && x.name !== m.name)) e.damage(other(p), 700);
+      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && isGK(x) && x.name !== m.name && !e.untributable(x)),
+      *cost(e, m, p) {
+        return yield* tributeCost(e, p, 1, (x) => isGK(x) && x.name !== m.name);
+      },
+      *run(e, _m, p) {
+        e.damage(other(p), 700);
       },
     },
   };
 
-  // "You can only control 1 face-up" is not enforced; its GY protection only matters against Necrovalley.
   E["Gravekeeper's Chief"] = {
-    *onSummon(e, _m, p, kind) {
-      if (kind !== 'normal' || !freeMZ(e, p)) return;
+    // "You can only control 1 face-up": no face-up Summon while you control a face-up one.
+    selfSummonBlock: (e, c, p, how) => how !== 'set' && faceUpMonsters(e, p).some((m) => m.name === c.name && m.uid !== c.uid),
+    // "Your GY is unaffected by Necrovalley."
+    freesGrave: (e, _src, srcController, card) => card.owner === srcController && e.find(card.uid)?.loc.player === srcController,
+    *onSummon(e, m, p, kind) {
+      if (kind !== 'normal' || !m.tags?.tribS || !freeMZ(e, p)) return;
       const list = e.player(p).gy.filter((c) => mainMonster(e, c) && isGK(c));
       if (!list.length || !(yield* e.yesno(p, "Gravekeeper's Chief: Special Summon a \"Gravekeeper's\" monster from your GY?"))) return;
       yield* summonOneOf(e, p, "Special Summon which \"Gravekeeper's\" monster?", list);
@@ -520,43 +636,51 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E["Gravekeeper's Descendant"] = {
     ignition: {
       repeat: true,
-      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && x.faceUp && isGK(x)) && [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))].length > 0,
-      *run(e, m, p) {
-        if (!(yield* tributeCost(e, p, 1, (x) => x.faceUp && isGK(x), m.uid))) return;
+      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && x.faceUp && isGK(x) && !e.untributable(x)) && [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))].length > 0,
+      // The Tribute and the target are chosen as the effect is activated.
+      *cost(e, m, p) {
+        if (!(yield* tributeCost(e, p, 1, (x) => x.faceUp && isGK(x), m.uid))) return false;
         const t = yield* pickOne(e, p, "Gravekeeper's Descendant: destroy which card?", [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))]);
-        if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
+        if (!t) return false;
+        tag(m).descTarget = t.uid;
+      },
+      *run(e, m) {
+        const u = m.tags?.descTarget;
+        if (u !== undefined && e.fieldCard(u)) yield* e.destroy([u]);
       },
     },
   };
 
-  // Its Tribute Summons (2 or 3 monsters, or 1 "Gravekeeper's") run as a summon procedure that uses your Normal Summon.
+  // Every Tribute Summon of it (2 monsters, 3 monsters, or 1 "Gravekeeper's") runs as a summon procedure doing a real Tribute Summon
+  // (engine.tributeSummonWith). Approximation: it cannot be Set with 2 Tributes.
   E["Gravekeeper's Oracle"] = {
     cannotNormalSummon: true,
     summonProc: {
-      can: (e, _c, p) => e.inMainPhase() && !e.player(p).normalSummoned && (e.monsters(p).length >= 2 || e.monsters(p).some((m) => m.faceUp && isGK(m))),
+      can: (e, c, p) => e.inMainPhase() && !e.player(p).normalSummoned && !e.summonBlocked(p, c, 'normal', 'hand') && (e.monsters(p).filter((m) => !e.untributable(m)).length >= 2 || e.monsters(p).some((m) => isGK(m) && !e.untributable(m))),
       *run(e, c, p) {
-        const mine = e.monsters(p);
+        const mine = e.monsters(p).filter((m) => !e.untributable(m));
         const opts: [string, number, boolean][] = [];
-        if (mine.some((m) => m.faceUp && isGK(m))) opts.push(['Tribute 1 "Gravekeeper\'s" monster', 1, true]);
+        if (mine.some((m) => isGK(m))) opts.push(['Tribute 1 "Gravekeeper\'s" monster', 1, true]);
         if (mine.length >= 2) opts.push(['Tribute 2 monsters', 2, false]);
         if (mine.length >= 3) opts.push(['Tribute 3 monsters', 3, false]);
         const i = yield* chooseOption(e, p, "Gravekeeper's Oracle: how do you Tribute Summon it?", opts.map((o) => o[0]), true);
         if (i === null) return;
         const [, n, gkOnly] = opts[i];
-        const cands = mine.filter((m) => !gkOnly || (m.faceUp && isGK(m)));
+        const cands = mine.filter((m) => !gkOnly || isGK(m));
         const chosen = yield* pick(e, p, `Tribute ${n} monster${n > 1 ? 's' : ''}`, cands, n, n, true, false);
         if (!chosen) return;
-        let levels = 0;
-        let gks = 0;
-        for (const m of chosen) {
-          levels += levelOf(e, m);
-          if (m.faceUp && isGK(m)) gks++;
-          yield* e.sendToGrave(m.uid, 'tribute');
-        }
-        e.player(p).normalSummoned = true;
-        yield* e.specialSummon(c.uid, p, 'atk');
-        const me = e.fieldCard(c.uid);
-        if (!me) return;
+        const levels = chosen.reduce((s, m) => s + levelOf(e, m), 0);
+        const gks = chosen.filter((m) => isGK(m)).length;
+        fx<Record<number, number[]>>(e, 'oracleTributes', {})[c.uid] = [levels, gks];
+        yield* e.tributeSummonWith(p, c.uid, chosen.map((m) => m.uid));
+      },
+    },
+    *onSummon(e, me, p, kind) {
+      const rec = fx<Record<number, number[]>>(e, 'oracleTributes', {});
+      const [levels, gks] = rec[me.uid] ?? [0, 0];
+      delete rec[me.uid];
+      if (kind !== 'normal' || !me.tags?.tribS) return;
+      {
         let left = gks;
         if (left > 0 && (yield* e.yesno(p, `Oracle: gain ${levels * 100} ATK?`))) {
           boostPerm(me, levels * 100);
@@ -569,7 +693,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (left > 0 && faceUpMonsters(e, other(p)).length && (yield* e.yesno(p, "Oracle: your opponent's monsters lose 2000 ATK/DEF?"))) {
           for (const m of faceUpMonsters(e, other(p))) boostPerm(m, -2000, -2000);
         }
-      },
+      }
     },
   };
 
@@ -581,6 +705,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const valley = !fieldFaceUp(e) && first?.uid === src.uid ? 500 : 0;
       return { atk: 200 + valley, def: 200 + valley };
     },
+    // ...and Necrovalley's Graveyard lock while there is no face-up Field Spell.
+    // Approximation: the lock applies to card effects that are resolving (engine-level moves are not checked).
+    locksGrave: (e) => !fieldFaceUp(e) && !!e.resolvingCard(),
   };
 
   E["Gravekeeper's Recruiter"] = {
@@ -590,9 +717,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Only the DEF gain: no engine hook negates Graveyard effects or protects Field Spells.
+  // Approximation: of the monster effects that activate in the GY, the ones put on a chain are negated (GY ignition effects are not).
   E["Gravekeeper's Shaman"] = {
     selfBonus: (e, m) => ({ atk: 0, def: e.player(ctrl(e, m)).gy.filter((c) => isMonster(e, c) && isGK(c)).length * 200 }),
+    negatesEffect: (e, _m, _p, link) => !!(link.payload as { effect?: string } | undefined)?.effect && link.loc.zone === 'gy' && isMonster(e, link.card) && !isGK(link.card),
+    locksCardActivation: (e, _src, srcController, player, card) => player === other(srcController) && necro(e) && isSpell(e, card) && info(e, card).sub === 'Field',
+    shields: (e, _src, target, how, srcController) => how === 'effect' && e.actor === other(srcController) && necro(e) && isSpell(e, target) && info(e, target).sub === 'Field',
   };
 
   E["Gravekeeper's Spear Soldier"] = { piercing: true };
@@ -603,8 +733,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Battle damage it inflicts counts as effect damage: no card here tells the two apart, so nothing to do.
-  E["Gravekeeper's Vassal"] = {};
+  // Battle damage it inflicts is dealt as effect damage (engine battleAsEffect): "no battle damage" effects do not stop it.
+  E["Gravekeeper's Vassal"] = { battleAsEffect: true };
 
   E['Gravitic Orb'] = {
     *flip(e, _m, p) {
@@ -615,7 +745,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Great Phantom Thief'] = {
     *onBattleDamage(e, _a, p) {
       const opp = e.player(other(p));
-      const names = [...new Set([0, 1].flatMap((q) => [...e.player(q as Pid).deck, ...e.player(q as Pid).hand, ...e.player(q as Pid).gy]).map((c) => c.name))].sort();
+      const names = declarable(e);
       const i = yield* chooseOption(e, p, 'Great Phantom Thief: declare a card name', names);
       if (i === null) return;
       const name = names[i];
@@ -625,22 +755,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Only from the hand (one Quick Effect location per card), and only for battle destruction.
+  // From the hand or GY, when a face-up Beast you control is destroyed (by a card effect: battle destruction happens in the Damage Step).
   E['Green Baboon, Defender of the Forest'] = {
-    quick: {
-      from: 'hand',
-      label: 'pay 1000 LP to Special Summon it',
-      can: (e, _c, p, t, ctx) => {
-        if (t !== 'destroyed' || ctx.prevController !== p || ctx.uid === undefined || e.player(p).lp <= 1000 || !freeMZ(e, p)) return false;
-        const f = e.find(ctx.uid);
-        return !!f && f.loc.zone === 'gy' && info(e, f.card).race === 'Beast';
-      },
-      *cost(e, _c, p) {
-        return payLp(e, p, 1000);
-      },
-      *run(e, card, p) {
-        if (e.find(card.uid)?.loc.zone === 'hand' && freeMZ(e, p)) yield* e.specialSummon(card.uid, p, 'atk');
-      },
+    *watchGrave(e, card, owner, _zone, events) {
+      const hit = events.some((ev) => ev.card.uid !== card.uid && ev.from === 'mz' && ev.controller === owner && ev.faceUp && ev.reason === 'destroyed' && !ev.byBattle && ev.toGy && ev.race === 'Beast');
+      if (!hit || events.some((ev) => ev.card.uid === card.uid) || e.player(owner).lp <= 1000 || !freeMZ(e, owner)) return;
+      if (!(yield* e.yesno(owner, 'Green Baboon, Defender of the Forest: pay 1000 LP to Special Summon it?'))) return;
+      if (!payLp(e, owner, 1000)) return;
+      const z = e.find(card.uid)?.loc.zone;
+      if ((z === 'hand' || z === 'gy') && freeMZ(e, owner)) yield* e.specialSummon(card.uid, owner, 'atk');
     },
   };
 
@@ -686,7 +809,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     return e.spells(p).filter((s) => isSpell(e, s) && ((s.faceUp && info(e, s).sub === 'Continuous') || (skyfire && !s.faceUp)));
   };
   E['Hamon, Lord of Striking Thunder'] = {
-    cannotNormalSummon: true,
+    ...nomi(),
     summonProc: {
       can: (e, _c, p) => freeMZ(e, p) && hamonCost(e, p).length >= 3,
       *run(e, c, p) {
@@ -694,9 +817,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const chosen = yield* pick(e, p, 'Hamon: send which 3 Continuous Spells to the GY?', list, 3, 3, true);
         if (!chosen) return;
         for (const s of chosen) yield* e.sendToGrave(s.uid, 'cost');
-        yield* e.specialSummon(c.uid, p, 'atk');
+        yield* procSummon(e, c, p);
       },
     },
+    // In face-up Defense Position, the opponent's monsters can attack only it.
+    guardsAttack: (_e, src, target) => src.faceUp && src.pos === 'def' && target.uid !== src.uid,
     ...battleWin(function* (e, _me, _v, p) {
       e.damage(other(p), 1000);
     }),
@@ -709,54 +834,87 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     ignition: {
       repeat: true,
       can: (e, m) => m.counters > 0 && allST(e).some((c) => c.faceUp && isTrap(e, c)),
-      *run(e, m, p) {
-        if (m.counters <= 0) return;
+      // Removing the Spell Counter is a cost, and the Trap is targeted, as the effect is activated.
+      *cost(e, m, p) {
+        const t = yield* pickOne(e, p, 'Hannibal Necromancer: destroy which face-up Trap?', allST(e).filter((c) => c.faceUp && isTrap(e, c)), true);
+        if (!t || m.counters <= 0) return false;
         m.counters--;
-        const t = yield* pickOne(e, p, 'Hannibal Necromancer: destroy which face-up Trap?', allST(e).filter((c) => c.faceUp && isTrap(e, c)));
-        if (t && e.fieldCard(t.uid)) yield* e.destroy([t.uid]);
+        tag(m).hannibalTarget = t.uid;
+      },
+      *run(e, m) {
+        const u = m.tags?.hannibalTarget;
+        if (u !== undefined && e.fieldCard(u)?.faceUp) yield* e.destroy([u]);
       },
     },
   };
 
   // ---------- Harpies ----------
+  // "This card's name becomes 'Harpie Lady'" (fieldName: Fusion Materials; isHarpieLady: the Harpie Lady cards here).
+  const harpieName = { fieldName: () => 'Harpie Lady' };
+  const channelerTargets = (e: Engine, p: Pid) => e.player(p).deck.filter((c) => mainMonster(e, c) && named(c, 'Harpie') && c.name !== 'Harpie Channeler');
   E['Harpie Channeler'] = {
+    ...harpieName,
     ignition: {
-      can: (e, _m, p) => e.oncePerTurn('Harpie Channeler', p) && freeMZ(e, p) && e.player(p).hand.some((c) => named(c, 'Harpie')) && e.player(p).deck.some((c) => mainMonster(e, c) && named(c, 'Harpie') && c.name !== 'Harpie Channeler'),
-      *run(e, _m, p) {
-        if (!(yield* discardCost(e, p, 1, (c) => named(c, 'Harpie')))) return;
+      can: (e, _m, p) => e.oncePerTurn('Harpie Channeler', p) && freeMZ(e, p) && e.player(p).hand.some((c) => named(c, 'Harpie')) && channelerTargets(e, p).length > 0,
+      // The discard is a cost paid as the effect is activated.
+      *cost(e, _m, p) {
+        if (!(yield* discardCost(e, p, 1, (c) => named(c, 'Harpie')))) return false;
         e.useOnce('Harpie Channeler', p);
-        yield* summonOneOf(e, p, 'Harpie Channeler: Special Summon which "Harpie" monster?', e.player(p).deck.filter((c) => mainMonster(e, c) && named(c, 'Harpie') && c.name !== 'Harpie Channeler'), 'def');
       },
+      *run(e, _m, p) {
+        yield* summonOneOf(e, p, 'Harpie Channeler: Special Summon which "Harpie" monster?', channelerTargets(e, p), 'def');
+      },
+    },
+    // "While you control a Dragon-Type monster, this card's Level becomes 7."
+    *stateCheck(e, m, p) {
+      const t = tag(m);
+      if (faceUpMonsters(e, p).some((x) => raceOf(e, x) === 'Dragon')) {
+        if (t.lvSet !== 7) (t.lvSet = 7), (t.channeler = 1);
+      } else if (t.channeler) delete t.lvSet, delete t.channeler;
     },
   };
 
-  // "Then you can Normal Summon 1 WIND monster" is done as a Special Summon of a Level 4 or lower WIND monster from the hand.
+  // The WIND monster is targeted as the effect is activated; the Normal Summon is an additional one (engine.extraNormalSummon).
+  const dancerTargets = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p)).filter((m) => attrOf(e, m) === 'WIND');
   E['Harpie Dancer'] = {
+    ...harpieName,
     ignition: {
-      can: (e, _m, p) => e.oncePerTurn('Harpie Dancer', p) && targetable(e, faceUpMonsters(e, p)).some((m) => attrOf(e, m) === 'WIND'),
-      *run(e, _m, p) {
-        const t = yield* pickOne(e, p, 'Harpie Dancer: return which WIND monster to the hand?', targetable(e, faceUpMonsters(e, p)).filter((m) => attrOf(e, m) === 'WIND'));
-        if (!t) return;
+      can: (e, _m, p) => e.oncePerTurn('Harpie Dancer', p) && dancerTargets(e, p).length > 0,
+      *cost(e, m, p) {
+        const t = yield* pickOne(e, p, 'Harpie Dancer: return which WIND monster to the hand?', dancerTargets(e, p), true);
+        if (!t) return false;
         e.useOnce('Harpie Dancer', p);
+        tag(m).dancerTarget = t.uid;
+      },
+      *run(e, m, p) {
+        const u = m.tags?.dancerTarget;
+        const t = u !== undefined ? e.fieldCard(u) : null;
+        if (!t || e.controller(t.uid) !== p) return;
         yield* bounce(e, t.uid);
-        const list = e.player(p).hand.filter((c) => mainMonster(e, c) && attrOf(e, c) === 'WIND' && levelOf(e, c) <= 4 && !e.effectOn(c)?.cannotNormalSummon);
-        if (!list.length || !freeMZ(e, p) || !(yield* e.yesno(p, 'Harpie Dancer: Summon a WIND monster from your hand?'))) return;
-        yield* summonOneOf(e, p, 'Summon which WIND monster?', list);
+        yield* e.flushLeaves();
+        const list = e.player(p).hand.filter((c) => isMonster(e, c) && attrOf(e, c) === 'WIND' && e.canNormalSummon(p, c, true, true));
+        if (!list.length || !(yield* e.yesno(p, 'Harpie Dancer: Normal Summon a WIND monster?'))) return;
+        const c = yield* pickOne(e, p, 'Normal Summon which WIND monster?', list);
+        if (c) yield* e.extraNormalSummon(p, c.uid, 'atk', true);
       },
     },
   };
 
   E['Harpie Lady 1'] = {
+    ...harpieName,
     aura: (e, _src, target) => (target.faceUp && attrOf(e, target) === 'WIND' ? { atk: 300, def: 0 } : undefined),
   };
 
-  // Only the first of the opponent's next 2 turns is blocked (the engine keeps one "cannot attack" turn per monster).
+  // "Cannot declare an attack during your opponent's next 2 turns": tags.noAttackTurn and tags.noAttackTurn2 (engine).
   const harpie3 = (e: Engine, foe: FieldCard, p: Pid) => {
     if (!e.fieldCard(foe.uid) || e.controller(foe.uid) !== other(p)) return;
-    tag(foe).noAttackTurn = e.state.turnPlayer === p ? e.state.turn + 1 : e.state.turn + 2;
-    e.log(p, `${foe.name} cannot attack during its controller's next turn`);
+    const first = e.state.turnPlayer === p ? e.state.turn + 1 : e.state.turn + 2;
+    tag(foe).noAttackTurn = first;
+    tag(foe).noAttackTurn2 = first + 2;
+    e.log(p, `${foe.name} cannot declare an attack during its controller's next 2 turns`);
   };
   E['Harpie Lady 3'] = {
+    ...harpieName,
     *afterBattle(e, _a, t, p) {
       if (t) harpie3(e, t, p);
     },
@@ -766,6 +924,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Harpie Queen'] = {
+    ...harpieName,
     handIgnition: {
       can: (e, _c, p) => e.player(p).deck.some((c) => c.name === "Harpies' Hunting Ground"),
       *run(e, c, p) {
@@ -775,8 +934,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The "cannot be targeted for attacks" lock has no engine hook.
   E["Harpie's Pet Dragon - Fearsome Fire Blast"] = {
+    // "Monsters cannot target Level 6 or lower 'Harpie' monsters for attacks."
+    attackGuard: (e, _src, _p, _attacker, target) => target.faceUp && named(target, 'Harpie') && levelOf(e, target) <= 6,
     summonProc: {
       can: (e, _c, p) => e.oncePerTurn('FFB:summon', p) && freeMZ(e, p) && faceUpMonsters(e, p).some((m) => attrOf(e, m) === 'WIND' && levelOf(e, m) <= 6),
       *run(e, c, p) {
@@ -881,12 +1041,26 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       : {}),
     ...extra,
   });
+  /** "If this card is destroyed by battle and sent to the GY, Special Summon it during the End Phase, and it gains N ATK and DEF." */
+  const heliosRise = (gain: number): Partial<EffectDef> => ({
+    *onDestroyed(e, card, _p, byBattle) {
+      if (byBattle) fx<Record<number, number>>(e, 'heliosRise', {})[card.uid] = e.state.turn;
+    },
+    *onEndPhaseInGrave(e, card, owner) {
+      const marks = fx<Record<number, number>>(e, 'heliosRise', {});
+      if (marks[card.uid] !== e.state.turn) return;
+      delete marks[card.uid];
+      if (!freeMZ(e, owner)) return;
+      yield* e.specialSummon(card.uid, owner, 'atk');
+      const m = e.fieldCard(card.uid);
+      if (m) boostPerm(m, gain, gain);
+    },
+  });
   E['Helios - The Primordial Sun'] = helios(100);
-  // The End Phase revival is missing (no Graveyard hook in the End Phase).
-  E['Helios Duo Megistus'] = helios(200, 'Helios - The Primordial Sun');
-  E['Helios Trice Megistus'] = helios(300, 'Helios Duo Megistus', { attacks: (e, m) => (e.monsters(other(ctrl(e, m))).length > 0 ? 2 : 1) });
+  E['Helios Duo Megistus'] = helios(200, 'Helios - The Primordial Sun', heliosRise(300));
+  E['Helios Trice Megistus'] = helios(300, 'Helios Duo Megistus', { ...heliosRise(500), attacks: (e, m) => (e.monsters(other(ctrl(e, m))).length > 0 ? 2 : 1) });
 
-  E['Helping Robo for Combat'] = battleWin(function* (e, _me, _v, p) {
+  E['Helping Robo for Combat'] = battleKill(function* (e, _me, _v, p) {
     if (!e.draw(p, 1)) return;
     const ps = e.player(p);
     const c = yield* pickOne(e, p, 'Helping Robo for Combat: return which card to the bottom of the Deck?', ps.hand.slice());
@@ -933,13 +1107,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     ignition: {
       can: (e, m, p) => hieraticFodder(e, p, m.uid).length > 0 && stOf(e, other(p)).length > 0,
-      *run(e, m, p) {
+      // The Tribute and the target are chosen as the effect is activated.
+      *cost(e, m, p) {
         const t = yield* pickOne(e, p, 'Hieratic Dragon of Su: Tribute which "Hieratic" monster?', hieraticFodder(e, p, m.uid), true);
-        if (!t) return;
+        if (!t) return false;
         e.log(p, `${e.player(p).name} Tributes ${t.name}`);
         yield* e.sendToGrave(t.uid, 'tribute');
         const s = yield* pickOne(e, p, 'Hieratic Dragon of Su: destroy which Spell/Trap?', stOf(e, other(p)));
-        if (s && e.fieldCard(s.uid)) yield* e.destroy([s.uid]);
+        if (!s) return false;
+        tag(m).suTarget = s.uid;
+      },
+      *run(e, m) {
+        const u = m.tags?.suTarget;
+        if (u !== undefined && e.fieldCard(u)) yield* e.destroy([u]);
       },
     },
     *onSentToGrave(e, _c, p, _from, reason) {
@@ -948,6 +1128,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Hino-Kagu-Tsuchi'] = {
+    cannotSpecialSummon: true,
     *onSummon(e, m) {
       tag(m).spiritTurn = e.state.turn;
     },
@@ -1035,20 +1216,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Its first effect only works from the hand and for battle destruction ('destroyed' window).
   const restrictLike = (e: Engine, c: Card) => c.name === 'Relinquished' || (named(c, 'Eyes Restrict') && info(e, c).sub === 'Fusion');
   E['Illusionist Faceless Magician'] = {
-    quick: {
-      from: 'hand',
-      label: 'Special Summon it',
-      can: (e, _c, p, t, ctx) => {
-        if (t !== 'destroyed' || ctx.prevController !== p || ctx.uid === undefined || !freeMZ(e, p)) return false;
-        const f = e.find(ctx.uid);
-        return !!f && restrictLike(e, f.card);
-      },
-      *run(e, card, p) {
-        if (e.find(card.uid)?.loc.zone === 'hand' && freeMZ(e, p)) yield* e.specialSummon(card.uid, p, 'atk');
-      },
+    // From the hand, or from the GY if it was already there (not destroyed in the same event).
+    *watchGrave(e, card, owner, _zone, events) {
+      const hit = events.some((ev) => ev.from === 'mz' && ev.controller === owner && ev.faceUp && ev.reason === 'destroyed' && restrictLike(e, ev.card));
+      if (!hit || events.some((ev) => ev.card.uid === card.uid) || !freeMZ(e, owner) || !e.oncePerTurn('IFM:ss', owner)) return;
+      if (!(yield* e.yesno(owner, 'Illusionist Faceless Magician: Special Summon it?'))) return;
+      e.useOnce('IFM:ss', owner);
+      yield* e.specialSummon(card.uid, owner, 'atk');
     },
     *onSentToGrave(e, _c, p, from) {
       const list = e.player(p).gy.filter((c) => restrictLike(e, c));
@@ -1071,13 +1247,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   const KNIGHTS = ["Queen's Knight", "King's Knight", "Jack's Knight"];
+  // Tributing itself is a cost, so the effect resolves at once (chain: false).
   E['Imperial Bower'] = {
     ignition: {
-      can: (e, m, p) => e.oncePerTurn(m.name, p) && e.monsters(p).length === 1 && new Set(e.player(p).deck.filter((c) => KNIGHTS.includes(c.name)).map((c) => c.name)).size >= 2,
-      *run(e, m, p) {
-        if (!e.fieldCard(m.uid) || e.monsters(p).length !== 1) return;
+      chain: false,
+      can: (e, m, p) => e.oncePerTurn(m.name, p) && e.monsters(p).length === 1 && !e.untributable(m) && new Set(e.player(p).deck.filter((c) => KNIGHTS.includes(c.name)).map((c) => c.name)).size >= 2,
+      *cost(e, m, p) {
         e.useOnce(m.name, p);
+        e.log(p, `${e.player(p).name} Tributes ${m.name}`);
         yield* e.sendToGrave(m.uid, 'tribute');
+      },
+      *run(e, _m, p) {
         const ps = e.player(p);
         const names = KNIGHTS.filter((n) => ps.deck.some((c) => c.name === n));
         if (names.length < 2) return;
@@ -1109,8 +1289,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The dice roll against the opponent's targeting effects is not scripted.
+  // The die is rolled as an opponent's effect that targets it resolves (only effects that record their target can be seen).
   E['Infernalqueen Archfiend'] = {
+    *onChainLink(e, m, p, link) {
+      if (link.player !== other(p) || link.targetUid !== m.uid || link.negated) return;
+      const r = e.roll(6);
+      e.log(p, `Infernalqueen Archfiend rolls a ${r}`);
+      if (r !== 2 && r !== 5) return;
+      link.negated = true;
+      if (e.fieldCard(link.card.uid)) yield* e.destroy([link.card.uid]);
+    },
     *onStandby(e, _m, p) {
       if (e.state.turnPlayer === p && !pandemonium(e)) payLp(e, p, 500);
       const list = faceUpMonsters(e).filter((m) => named(m, 'Archfiend'));
@@ -1119,6 +1307,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Approximation: used when the attack is declared (no damage calculation window); the 3000 ATK is removed after that battle.
   E['Injection Fairy Lily'] = {
     quick: {
       repeat: true,
@@ -1146,31 +1335,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // Checked after every action (stateCheck): the opponent's face-up Insects are put in Attack Position and cannot be changed.
   E['Insect Princess'] = {
-    *onSummon(e, _m, p) {
-      insectsToAttack(e, other(p));
+    *stateCheck(e, _m, p) {
+      for (const m of faceUpMonsters(e, other(p))) {
+        if (raceOf(e, m) !== 'Insect') continue;
+        if (m.pos === 'def') changePos(e, m);
+        tag(m).lockPosTurn = e.state.turn;
+      }
     },
-    *onSpecialSummon(e, _m, p) {
-      insectsToAttack(e, other(p));
-    },
-    *onStandby(e, _m, p) {
-      insectsToAttack(e, other(p));
-    },
-    *onAnySummon(e, _w, wp, _m, controller) {
-      if (controller === other(wp)) insectsToAttack(e, controller);
-    },
-    ...battleWin(function* (e, me, victim) {
+    ...battleKill(function* (e, me, victim) {
       if (info(e, victim).race === 'Insect') boostPerm(me, 500);
     }),
   };
-  /** Insect Princess: the opponent's face-up Insects go to Attack Position and stay there this turn. */
-  function insectsToAttack(e: Engine, q: Pid) {
-    for (const m of faceUpMonsters(e, q)) {
-      if (raceOf(e, m) !== 'Insect') continue;
-      if (m.pos === 'def') changePos(e, m);
-      tag(m).lockPosTurn = e.state.turn;
-    }
-  }
 
   E['Iron Blacksmith Kotetsu'] = {
     *flip(e, _m, p) {
@@ -1179,15 +1356,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Jinzo - Lord'] = {
-    cannotNormalSummon: true,
+    ...nomi(),
     sealsTraps: true,
+    negatesTraps: true,
     summonProc: {
       can: (e, _c, p) => e.monsters(p).some((m) => m.faceUp && m.name === 'Jinzo'),
       *run(e, c, p) {
         const j = yield* pickOne(e, p, 'Jinzo - Lord: send which "Jinzo" to the GY?', e.monsters(p).filter((m) => m.faceUp && m.name === 'Jinzo'), true);
         if (!j) return;
         yield* e.sendToGrave(j.uid, 'cost');
-        yield* e.specialSummon(c.uid, p, 'atk');
+        yield* procSummon(e, c, p);
       },
     },
     ignition: {
@@ -1217,6 +1395,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const c = yield* pickOne(e, p, 'Generation Next: take which monster?', [...ps.deck, ...ps.gy].filter((x) => test(e, x, d)));
         if (!c) return;
         const fromDeck = e.find(c.uid)?.loc.zone === 'deck';
+        // "For the rest of this turn, you cannot activate cards, or the effects of cards, with the same name" (engine fx.turnNameLocks;
+        // approximation: it covers card activations and Quick Effects, not a face-up monster's ignition effects).
+        const locks = ((e.state.fx.turnNameLocks ?? []) as { p: Pid; name: string; turn: number }[]).filter((x) => x.turn === e.state.turn);
+        e.state.fx.turnNameLocks = [...locks, { p, name: c.name, turn: e.state.turn }];
         if (freeMZ(e, p) && (yield* e.yesno(p, `Special Summon ${c.name}? (No = add it to your hand)`))) yield* e.specialSummon(c.uid, p, 'atk');
         else e.toHandOf(c.uid, p);
         if (fromDeck) ps.deck = e.shuffle(ps.deck);
@@ -1280,36 +1462,29 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       link.payload = chosen.map((c) => c.uid);
     },
     *resolve(e, link, p) {
-      for (const u of link.payload as number[]) if (e.find(u)?.loc.zone === 'gy') e.toHandOf(u, p);
+      // "This effect cannot be negated by the effect of Necrovalley."
+      for (const u of link.payload as number[]) if (e.find(u)?.loc.zone === 'gy') necroFree(e, () => e.toHandOf(u, p));
     },
   };
 
-  E['Gravity Axe - Grarl'] = (() => {
-    const base = h.equip(() => ({ atk: 500, def: 0 }));
-    const lock = (e: Engine, p: Pid) => {
+  E['Gravity Axe - Grarl'] = {
+    ...h.equip(() => ({ atk: 500, def: 0 })),
+    // Checked after every action while it is equipped: the opponent's monsters cannot change their battle positions.
+    *stateCheck(e: Engine, fc: FieldCard, p: Pid) {
+      if (fc.equippedTo === undefined) return;
       for (const m of e.monsters(other(p))) tag(m).lockPosTurn = e.state.turn;
-    };
-    return {
-      ...base,
-      *resolve(e: Engine, link: ChainLink, p: Pid) {
-        yield* base.resolve!(e, link, p);
-        if (e.fieldCard(link.card.uid)?.equippedTo !== undefined) lock(e, p);
-      },
-      *onStandby(e: Engine, _fc: FieldCard, p: Pid) {
-        lock(e, p);
-      },
-    } as EffectDef;
-  })();
+    },
+  };
 
-  // Only the battle damage is prevented (the engine cannot cancel effect damage).
+  // Approximation: damage you deal yourself this turn is also 0.
   E['Hallowed Life Barrier'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && e.player(p).hand.length > 0,
     *activate(e, _l, p) {
       if (!(yield* discardCost(e, p, 1))) return false;
     },
     *resolve(e, _l, p) {
-      noBattleDamage(e, p, true);
-      e.log(p, `${e.player(p).name} takes no battle damage this turn`);
+      ((e.state.fx.noDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
+      e.log(p, `${e.player(p).name} takes no damage this turn`);
     },
   };
 
@@ -1324,7 +1499,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The piercing part has no engine hook (piercing belongs to the attacker's own script).
+  // Piercing until the end of the turn: tags.pierceTurn (engine).
   E['H - Heated Heart'] = {
     canActivate: (e, _c, p, t) => isMain(t) && targetable(e, faceUpMonsters(e, p)).length > 0,
     *activate(e, link, p) {
@@ -1334,7 +1509,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *resolve(e, link) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
-      if (m?.faceUp) boostTurn(m, 500);
+      if (!m?.faceUp) return;
+      boostTurn(m, 500);
+      tag(m).pierceTurn = e.state.turn;
     },
   };
 
@@ -1385,8 +1562,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The "you can only Special Summon once" restriction is not enforced.
+  // "For the rest of this turn you can only Special Summon once": after your first Special Summon, a summon lock blocks the rest.
   E['Iron Draw'] = {
+    lingering: {
+      *onAnySummon(e, owner, _m, controller, kind) {
+        if (kind !== 'special' || controller !== owner) return;
+        const locks = ((e.state.fx.summonLocks ??= []) as { p: Pid; turn: number; normal: boolean; special: boolean; only?: string[] }[]).filter((l) => l.turn === e.state.turn);
+        if (!locks.some((l) => l.p === owner && l.special && l.only?.length === 0)) locks.push({ p: owner, turn: e.state.turn, normal: false, special: true, only: [] });
+        e.state.fx.summonLocks = locks;
+      },
+    },
     canActivate: (e, c, p, t) => {
       const mine = e.monsters(p);
       return isMain(t) && e.oncePerTurn(c.name, p) && e.player(p).deck.length >= 2 && mine.length === 2 && mine.every((m) => m.faceUp && raceOf(e, m) === 'Machine' && info(e, m).sub !== 'Normal');
@@ -1396,6 +1581,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *resolve(e, _l, p) {
       e.draw(p, 2);
+      e.linger('Iron Draw', p);
     },
   };
 
@@ -1439,9 +1625,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ===================== Traps =====================
   E['Gem-Enhancement'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && e.monsters(p).some((m) => m.faceUp && named(m, 'Gem-Knight')) && e.player(p).gy.some((c) => isMonster(e, c) && named(c, 'Gem-Knight')),
+    canActivate: (e, _c, p, t) => anyTime(t) && e.monsters(p).some((m) => named(m, 'Gem-Knight') && !e.untributable(m)),
     *activate(e, link, p) {
-      if (!(yield* tributeCost(e, p, 1, (m) => m.faceUp && named(m, 'Gem-Knight')))) return false;
+      if (!(yield* tributeCost(e, p, 1, (m) => named(m, 'Gem-Knight')))) return false;
       const t = yield* pickOne(e, p, 'Gem-Enhancement: Special Summon which "Gem-Knight" monster?', e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Gem-Knight')));
       if (!t) return false;
       link.targetUid = t.uid;
@@ -1451,11 +1637,35 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Gravekeeper's Trap: only the Main Phase search (no hook for the opponent's Draw Phase or for the GY lock).
+  // Approximations: the search is used in your own Main Phase; the Draw Phase effect happens in the opponent's Standby Phase, right
+  // after the normal draw; of the GY lock, Special Summons from the GY and GY effects put on a chain are covered.
   const gkTrapTest = (e: Engine, c: Card) => isMonster(e, c) && (isGK(c) || (attrOf(e, c) === 'EARTH' && info(e, c).race === 'Fairy'));
+  const exchangeInGy = (e: Engine, p: Pid) => e.player(p).gy.some((c) => c.name === 'Exchange of the Spirit');
   E["Gravekeeper's Trap"] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
-    *resolve() {},
+    *resolve(e, link) {
+      tag(link.card as FieldCard).upTurn = e.state.turn;
+    },
+    forbidsSummon: (e, _card, controller, _monster, summoner, how, from) => how === 'special' && from === 'gy' && summoner === other(controller) && exchangeInGy(e, controller),
+    negatesEffect: (e, _card, controller, link) => link.player === other(controller) && link.loc.zone === 'gy' && !!(link.payload as { effect?: string } | undefined)?.effect && exchangeInGy(e, controller),
+    *onStandby(e, fc, p) {
+      const q = other(p);
+      const d = e.state.fx.normalDraw as { player: Pid; uid: number; turn: number } | undefined;
+      if (e.state.turnPlayer !== q || !d || d.player !== q || d.turn !== e.state.turn || (fc.tags?.upTurn ?? -1) >= e.state.turn) return;
+      if (!e.oncePerTurn("Gravekeeper's Trap:draw", p)) return;
+      const names = declarable(e);
+      const i = yield* chooseOption(e, p, "Gravekeeper's Trap: declare a card name (cancel = do not use it)", names, true);
+      if (i === null) return;
+      e.useOnce("Gravekeeper's Trap:draw", p);
+      e.log(p, `${e.player(p).name} declares ${names[i]}`);
+      const drawn = e.find(d.uid);
+      if (!drawn || drawn.loc.zone !== 'hand') return;
+      yield* e.reveal(p, 'The card drawn', [drawn.card]);
+      if (drawn.card.name === names[i]) {
+        yield* e.as(p, e.sendToGrave(drawn.card.uid, 'used'));
+        e.log(p, `Gravekeeper's Trap sends ${drawn.card.name} to the GY`);
+      }
+    },
     ignition: {
       can: (e, m, p) => e.oncePerTurn(m.name, p) && e.player(p).hand.length > 0 && e.player(p).deck.some((c) => gkTrapTest(e, c)),
       *run(e, m, p) {
@@ -1480,21 +1690,30 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Only "Negate the activation, and if you do, destroy that card".
+  // "The activated effect becomes 'Destroy that monster'": the effect is negated and the "Graydle" monster is destroyed right away
+  // (approximation: as Graydle Combat resolves, not when that chain link resolves).
   E['Graydle Combat'] = {
     canActivate: (e, _c, p, t, ctx) => {
       if (!(t === 'spell' || t === 'trap' || t === 'effect') || !ctx.link || ctx.link.targetUid === undefined) return false;
       const m = e.fieldCard(ctx.link.targetUid);
       return !!m && m.faceUp && named(m, 'Graydle') && e.controller(m.uid) === p && isMonster(e, m);
     },
-    *activate(_e, link, _p, ctx) {
-      link.payload = ctx.link;
+    *activate(e, link, p, ctx) {
+      const i = yield* chooseOption(e, p, 'Graydle Combat: activate which effect?', ['The activated effect becomes "Destroy that monster"', 'Negate the activation, and if you do, destroy that card']);
+      link.payload = { target: ctx.link, mode: i ?? 1 };
     },
     *resolve(e, link, p) {
-      const target = link.payload as ChainLink | undefined;
+      const { target, mode } = (link.payload ?? {}) as { target?: ChainLink; mode?: number };
       if (!target) return;
+      if (mode === 0) {
+        const mon = target.targetUid !== undefined ? e.fieldCard(target.targetUid) : null;
+        target.negated = true;
+        e.log(p, `${target.card.name}'s effect becomes "Destroy that monster"`);
+        if (mon) yield* e.as(target.player, e.destroy([mon.uid]));
+        return;
+      }
       negateLink(e, target, p);
-      if (e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]);
+      if (target.negated && e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]);
     },
   };
 
@@ -1630,25 +1849,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // A mandatory effect, applied after every battle in which your monster destroyed an opponent's monster and sent it to the GY.
   E['Howl of the Wild'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve() {},
-    quick: {
-      repeat: true,
-      label: 'inflict 300 damage for each Beast',
-      can: (e, _c, p, t, ctx) => {
-        const b = e.state.battle;
-        if (t !== 'destroyed' || ctx.prevController !== other(p) || ctx.uid === undefined || !b) return false;
-        const mine = b.attacker === ctx.uid ? b.target : b.attacker;
-        if (mine === null) return false;
-        const f = e.find(mine);
-        const isMine = f ? (f.loc.zone === 'mz' ? f.loc.player === p : f.card.owner === p) : false;
-        return isMine && faceUpMonsters(e, p).some((m) => raceOf(e, m) === 'Beast');
-      },
-      *run(e, _c, p) {
-        const n = faceUpMonsters(e, p).filter((m) => raceOf(e, m) === 'Beast').length;
-        if (n) e.damage(other(p), n * 300);
-      },
+    *afterAnyBattle(e, _card, p, attacker, target) {
+      const mine = e.controller(attacker.uid) === p ? attacker : e.controller(target.uid) === p ? target : null;
+      const foe = mine === attacker ? target : attacker;
+      if (!mine || !e.fieldCard(mine.uid) || foe.owner !== other(p) || e.find(foe.uid)?.loc.zone !== 'gy') return;
+      const n = faceUpMonsters(e, p).filter((m) => raceOf(e, m) === 'Beast').length;
+      if (n) e.damage(other(p), n * 300);
     },
   };
 
@@ -1659,20 +1869,38 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // "Option 1" (a monster cannot be destroyed during this Battle Phase) has no engine hook.
+  // "During this Battle Phase" lasts until the end of the turn (Speed Duel has no Main Phase 2: the End Phase follows).
   E['Impenetrable Attack'] = {
     canActivate: (e, _c, _p, t) => e.state.phase === 'BP' && anyTime(t),
-    *resolve(e, _l, p) {
-      noBattleDamage(e, p, true);
-      e.log(p, `${e.player(p).name} takes no battle damage during this Battle Phase`);
+    *activate(e, link, p) {
+      const mons = targetable(e, allMonsters(e).filter((m) => m.faceUp));
+      const opts = [...(mons.length ? ['A monster cannot be destroyed by battle or card effects'] : []), 'You take no battle damage'];
+      const i = yield* chooseOption(e, p, 'Impenetrable Attack: activate which effect?', opts);
+      if (i === null) return false;
+      if (opts[i].startsWith('A monster')) {
+        const m = yield* pickOne(e, p, 'Impenetrable Attack: target which monster?', mons, true);
+        if (!m) return false;
+        link.targetUid = m.uid;
+      }
+    },
+    *resolve(e, link, p) {
+      if (link.targetUid === undefined) {
+        noBattleDamage(e, p, true);
+        e.log(p, `${e.player(p).name} takes no battle damage during this Battle Phase`);
+        return;
+      }
+      const m = e.fieldCard(link.targetUid);
+      if (!m?.faceUp) return;
+      tag(m).battleSafeTurn = e.state.turn;
+      tag(m).effProofTurn = e.state.turn;
+      e.log(p, `${m.name} cannot be destroyed by battle or card effects during this Battle Phase`);
     },
   };
 
-  // "Tribute Summoned" is read as Level 5 or higher (the engine does not record how a monster was Summoned).
   E['Infestation Wave'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && e.monsters(p).some((m) => m.faceUp && named(m, 'Steelswarm') && levelOf(e, m) >= 5) && [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))].length > 0,
+    canActivate: (e, _c, p, t) => anyTime(t) && e.monsters(p).some((m) => m.faceUp && named(m, 'Steelswarm') && !!m.tags?.tribS) && [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))].length > 0,
     *activate(e, link, p) {
-      const s = yield* pickOne(e, p, 'Infestation Wave: return which "Steelswarm" monster?', e.monsters(p).filter((m) => m.faceUp && named(m, 'Steelswarm') && levelOf(e, m) >= 5), true);
+      const s = yield* pickOne(e, p, 'Infestation Wave: return which "Steelswarm" monster?', e.monsters(p).filter((m) => m.faceUp && named(m, 'Steelswarm') && !!m.tags?.tribS), true);
       if (!s) return false;
       yield* bounce(e, s.uid);
       const t = yield* pickOne(e, p, 'Infestation Wave: destroy which card?', [...targetable(e, e.monsters(other(p))), ...stOf(e, other(p))]);
