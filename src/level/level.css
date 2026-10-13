@@ -389,3 +389,105 @@ img.cimg.lvr-OF {
 .hcard:has(> .lvr-of) {
   z-index: 4;
 }
+
+/* ---------- Card Levels: tappable rows, the card sheet and the rank preview ---------- */
+button.lv-row {
+  width: 100%;
+  text-align: left;
+  border-radius: 8px;
+}
+button.lv-row:active {
+  background: #ffffff12;
+}
+.lv-go {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--dim);
+  padding: 0 4px;
+}
+.lv-preview-btn {
+  display: block;
+  margin: 2px 0 8px;
+  color: var(--lvr-gold);
+  border-color: var(--lvr-gold-deep);
+}
+/* a card picture with its rarity foil showing (as it does on the field) */
+.lv-slot {
+  position: relative;
+  width: 84px;
+  height: 122px;
+  flex: none;
+}
+.lv-slot.big {
+  width: 104px;
+  height: 151px;
+}
+.lv-slot > .cimg,
+.lv-slot > .lvr-of {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+.lv-slot > .lvr-fx {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.lv-now {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 18px 2px 10px;
+}
+.lv-now-text {
+  flex: 1;
+  min-width: 0;
+}
+.lv-now-tier b {
+  font-size: 16px;
+}
+.lv-now .lv-meter {
+  height: 9px;
+  margin: 8px 0 4px;
+}
+.lv-ladder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 22px 8px;
+  padding: 22px 0 8px;
+  border-top: 1px solid #ffffff14;
+}
+.lv-rank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.lv-rank b {
+  font-size: 13px;
+}
+.lv-rank small {
+  font-size: 12px;
+  color: var(--dim);
+}
+.lv-rank.cur small {
+  color: var(--lvr-gold);
+  font-weight: 700;
+}
+.lv-rank.cur .lv-slot {
+  outline: 2px solid var(--lvr-gold);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.lv-rank.locked .lv-slot {
+  opacity: 0.8;
+}
+.lv-sheet .win-body {
+  overflow: visible;
+}

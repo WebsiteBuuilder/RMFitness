@@ -10,6 +10,7 @@ import { ConfirmSheet } from './ConfirmSheet';
 import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
 import { artBusy, onArtChange } from '../art/cues';
@@ -264,8 +265,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     return (
       <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
         {c ? (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
+            {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && kind === 'm' && (
               <div class="fstat">
                 {c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)}
@@ -294,8 +296,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
           <span>Deck {ps.deck.length}</span>
         </div>
-        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
+        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
           {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} /> : <span class="zlabel">F</span>}
+          {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
         </div>
         {ps.removed.length > 0 && (
           <button class="pile small" onClick={() => setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed })}>
@@ -376,7 +379,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         <Win title={canSeeSel ? selCard.name : 'Face-down card'} class="msgwin">
           {canSeeSel && info && (
             <div class="selstat">
-              {info.kind === 'monster' ? `Lv${info.level} ${info.attribute}/${info.race} ATK ${info.atk} DEF ${info.def}` : `${info.sub} ${info.kind === 'spell' ? 'Magic' : 'Trap'}`}
+              {info.kind === 'monster' ? `Lv${info.level} ${info.attribute}/${info.race} ATK ${info.atk} DEF ${info.def}` : `${info.sub} ${info.kind === 'spell' ? spellWord(e.speed) : 'Trap'}`}
             </div>
           )}
           <Menu items={commands} />
@@ -551,6 +554,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
+        {/* Speed Duel: the menu sits up here, so the centre strip keeps to two lines on a phone */}
+        {e.speed && (
+          <button class="gbtn menu-btn pbar-menu" aria-label="Menu" onClick={() => setShowMenu(true)}>
+            ☰
+          </button>
+        )}
       </div>
       <div class="opp-hand">
         {opp.hand.map((c) => (
@@ -585,9 +594,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 </button>
               </div>
             )}
-            <button class="gbtn menu-btn" onClick={() => setShowMenu(true)}>
-              MENU
-            </button>
+            {!e.speed && (
+              <button class="gbtn menu-btn" onClick={() => setShowMenu(true)}>
+                MENU
+              </button>
+            )}
           </div>
           <div class="row">{me.mz.map((c, i) => zone(c, acting, 'm', i))}</div>
           <div class="row">{me.sz.map((c, i) => zone(c, acting, 's', i))}</div>
@@ -606,6 +617,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         {me.hand.map((c) => (
           <div key={c.uid} data-uid={c.uid} class={`hcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''}`} onClick={() => tap(c.uid)}>
             <CardImg name={c.name} back={!canAct && !spectator} owner={c.owner} />
+            {e.speed && (canAct || spectator) && <span class="hname">{c.name}</span>}
           </div>
         ))}
         {me.hand.length === 0 && <div class="hint">No cards in hand</div>}

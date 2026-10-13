@@ -6,7 +6,7 @@ import { SpeedHub, speedHubBack, type SpeedLinkChoice, type SpeedOpponent } from
 import { ConfirmSheet } from './ConfirmSheet';
 import { SpeedResult, type ResultReward, type SpeedResultData } from './SpeedResult';
 import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
-import { addToTrunk, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
+import { addToTrunk, controlsOf, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, withControls, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
@@ -40,6 +40,7 @@ import { registerPackOpener } from '../eds/speedCampaign/rewards';
 import { DuelPot } from '../collection/StakesPanel';
 import { rescueFirst, settleStakes, settleTicket, staked, stakesFor, ticketOf, withTicket, type DuelTicket, type StakeSeat } from '../collection/stakes';
 import { other } from '../eds/engine';
+import { setUiGame } from './gameUi';
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -128,6 +129,8 @@ export function App() {
     });
   };
   useEffect(tryLoadDb, []);
+  // Speed Duel screens get the modern look; EDS keeps its GBA pixel font.
+  setUiGame(screen === 'speed' || (screen === 'duel' && (session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode) === 'speed') ? 'speed' : 'eds');
 
   const setSave = (s: SaveFile) => {
     setSaveState(s);
@@ -539,7 +542,7 @@ export function App() {
   const onMenu = (c: MenuChoice) => {
     if (c === 'delete') return setConfirmDelete(true);
     if (c === 'switch') return switchProfile();
-    if (c === 'controls') return setSave({ ...save, controls: save.controls === 'touch' ? 'classic' : 'touch' });
+    if (c === 'controls') return setSave(withControls(save, 'eds', controlsOf(save, 'eds') === 'touch' ? 'classic' : 'touch'));
     if (c === 'speed' && profile) setSpeedSaveState(speedSaveOf(profile.id, true));
     setScreen(c);
   };
@@ -575,21 +578,21 @@ export function App() {
     </>
   );
 
-  /** Each seat's control style: in a hotseat duel Player 2's own profile decides theirs. */
+  /** Each seat's control style for the game on screen (each game keeps its own): in a hotseat duel Player 2's own profile decides theirs. */
   const controlsFor = (p: Pid): ControlStyle => {
-    // Speed Duel plays on the Master Duel-style Touch screen unless the player picked Classic.
-    const fallback: ControlStyle = duelMode === 'speed' ? 'touch' : 'classic';
-    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? fallback;
-    return save.controls ?? fallback;
+    const game = gameOf();
+    if (hotseat && p === 1) return controlsOf(p2Profile ? loadSave(p2Profile) : null, game);
+    return controlsOf(save, game);
   };
   const setControls = (p: Pid, c: ControlStyle) => {
+    const game = gameOf();
     if (hotseat && p === 1) {
       const theirs = p2Profile && p2Profile !== profile.id ? loadSave(p2Profile) : null;
-      if (theirs) writeSave(p2Profile!, { ...theirs, controls: c });
+      if (theirs) writeSave(p2Profile!, withControls(theirs, game, c));
       // A guest's choice lasts for this duel only.
       return;
     }
-    setSave({ ...save, controls: c });
+    setSave(withControls(save, game, c));
   };
 
   const others = (): SeatProfile[] =>
@@ -657,7 +660,7 @@ export function App() {
         );
       return (
         <>
-          <SpeedHub onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">
@@ -825,6 +828,8 @@ function Running({
   watch?: { tactics: [Tactics, Tactics]; speed: number; paused: boolean };
 }) {
   const view = useDuelSession(session);
+  // a guest follows the host's game
+  setUiGame(view.state.rules?.mode ?? view.seats[0].mode ?? mode);
   useEffect(() => {
     if (view.state.started && view.state.winner === null && !cpu && view.state.rules?.mode === 'speed') onStarted?.(view.seats, String(view.state.seed));
   }, [view.state.started]);

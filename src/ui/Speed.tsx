@@ -2,7 +2,7 @@
 // computer opponents and record, sharing profiles and the duel screen with EDS.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
-import type { Profile } from '../eds/save';
+import { CONTROL_NAMES, type ControlStyle, type Profile } from '../eds/save';
 import { getSkill } from '../eds/skills';
 import {
   COPIES,
@@ -89,6 +89,8 @@ export function speedHubBack(): boolean {
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop';
 
 export function SpeedHub({
+  controls,
+  onControls,
   onSolo,
   profile,
   save,
@@ -97,6 +99,9 @@ export function SpeedHub({
   onCpu,
   onLink,
 }: {
+  /** this profile's Speed Duel control style (EDS keeps its own) */
+  controls: ControlStyle;
+  onControls: () => void;
   /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice') => void;
   profile: Profile;
@@ -193,6 +198,7 @@ export function SpeedHub({
             { label: 'Record', onPick: () => setSub('record') },
             { label: '3D Card Viewer', note: "watch any card's summon and attack", onPick: () => setSub('art') },
             { label: 'Shadow Realm', note: sealed.length ? `${sealed.length} card${sealed.length === 1 ? '' : 's'} sealed` : 'who got sent there', onPick: () => setSub('shadow') },
+            { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
             { label: 'Back to Eternal Duelist Soul', onPick: onExit },
           ]}
         />

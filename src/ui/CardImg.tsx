@@ -3,14 +3,15 @@ import { card, imageUrl } from '../eds/db';
 import type { Pid } from '../eds/types';
 import { TIERS, meterOf, tierIndex } from '../level/leveling';
 import { profileXpOf, rarityFor } from '../level/view';
+import { spellWord } from './gameUi';
 
 /** Card picture with a drawn fallback when the image is missing. `owner` picks whose rarity a duel card shows. */
-export function CardImg({ name, back = false, class: cls = '', owner }: { name: string; back?: boolean; class?: string; owner?: Pid }) {
+export function CardImg({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
   const [broken, setBroken] = useState<string | null>(null);
   if (back) return <div class={`cimg cback ${cls}`} />;
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
-  const tier = TIERS[rarityFor(name, owner)];
+  const tier = TIERS[forceTier ?? rarityFor(name, owner)];
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
   const fx = tier.id !== 'N' && <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={tier.short} />;
   const url = broken === name ? null : imageUrl(name);
@@ -58,7 +59,7 @@ export function CardInfoPanel({ name }: { name: string }) {
         {info ? (
           <>
             <div class="cinfo-type">
-              {info.sub === 'Skill' ? `Skill Card · ${info.character ?? ''}` : info.kind === 'monster' ? `${info.attribute ?? ''} · ${info.race ?? ''} · ${info.sub} · Level ${info.level ?? '?'}` : `${info.sub} ${info.kind === 'spell' ? 'Magic' : 'Trap'} Card`}
+              {info.sub === 'Skill' ? `Skill Card · ${info.character ?? ''}` : info.kind === 'monster' ? `${info.attribute ?? ''} · ${info.race ?? ''} · ${info.sub} · Level ${info.level ?? '?'}` : `${info.sub} ${info.kind === 'spell' ? spellWord() : 'Trap'} Card`}
             </div>
             {info.kind === 'monster' && (
               <div class="cinfo-stats">
