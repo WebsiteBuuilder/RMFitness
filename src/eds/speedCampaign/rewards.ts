@@ -63,8 +63,9 @@ export function grant(speed: SpeedSave, solo: SoloSave, rewards: Reward[], pool:
         lines.push(`Title: ${r.name}`);
         break;
       case 'chips':
+        if (chips >= CHIP_CAP) break;
         chips = Math.min(CHIP_CAP, chips + r.n);
-        lines.push(`${r.n} Duel Chip${r.n === 1 ? '' : 's'}`);
+        lines.push(`${r.n} Duel Chip${r.n === 1 ? '' : 's'} (${chips}/${CHIP_CAP})`);
         break;
       case 'shards':
         labyrinth = { ...labyrinth, fragments: labyrinth.fragments + r.n };

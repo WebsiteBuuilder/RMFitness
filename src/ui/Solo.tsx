@@ -31,7 +31,8 @@ interface Props {
   report: SoloReport | null;
   lastSpec: CpuDuelSpec | null;
   onReportSeen: () => void;
-  onDuel: (spec: CpuDuelSpec) => void;
+  /** onCancel undoes whatever led here if the player backs out of the VS screen */
+  onDuel: (spec: CpuDuelSpec, onCancel?: () => void) => void;
   onMode: (m: SoloMode) => void;
   onExit: () => void;
 }
@@ -42,7 +43,7 @@ export function Solo(p: Props) {
     setSoloState(s);
     writeSolo(p.profile.id, s);
   };
-  const [vs, setVs] = useState<CpuDuelSpec | null>(null);
+  const [vs, setVs] = useState<{ spec: CpuDuelSpec; cancel?: () => void } | null>(null);
   useBackGesture();
   /** The duel really starts (after the VS splash). */
   const go = (spec: CpuDuelSpec) => {
@@ -52,11 +53,11 @@ export function Solo(p: Props) {
     if (spec.context.kind === 'labyrinth' && run) setSolo({ ...solo, labyrinth: { ...solo.labyrinth, run: stake(run) } });
     p.onDuel(spec);
   };
-  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec) => (spec.vs ? setVs(spec) : go(spec)) };
+  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs ? setVs({ spec, cancel }) : go(spec)) };
   return (
     <>
       {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : <Road {...ctx} />}
-      {vs && <VsSplash spec={vs} onGo={() => go(vs)} onCancel={() => setVs(null)} />}
+      {vs && <VsSplash spec={vs.spec} onGo={() => go(vs.spec)} onCancel={() => (setVs(null), vs.cancel?.())} />}
     </>
   );
 }
@@ -632,14 +633,16 @@ function Road(p: Ctx) {
     // The Masked Dealer deals a different Duel Condition every duel.
     const n = node.condition === DEALER_CONDITIONS[0] ? { ...node, condition: DEALER_CONDITIONS[Math.floor(Math.random() * DEALER_CONDITIONS.length)] } : node;
     const d = deckOf(n.duelist);
+    // Two losses in a row on a duel: the next try starts with 1000 extra LP.
+    const help = (c.tries?.[n.id] ?? 0) >= 2;
     const mine = n.story ? { main: n.story.main.flatMap((e) => (/\*\d$/.test(e) ? Array<string>(Number(e.slice(-1))).fill(e.slice(0, -2)) : [e])), extra: n.story.extra, skill: n.story.skill, name: n.story.as } : deck ? { main: deck.main, extra: deck.extra, skill: deck.skill, name: p.name } : null;
     if (!mine) return;
     p.onDuel({
-      me: { name: mine.name, main: mine.main, extra: mine.extra, skill: mine.skill, setup: n.condition?.player },
+      me: { name: mine.name, main: mine.main, extra: mine.extra, skill: mine.skill, setup: help ? { ...n.condition?.player, lp: (n.condition?.player?.lp ?? 4000) + 1000 } : n.condition?.player },
       cpu: { name: n.duelist.name, main: d.main, extra: d.extra, skill: d.skill, setup: n.condition?.cpu },
       first: n.condition?.cpuFirst ? 'cpu' : 'coin',
       context: { kind: 'campaign', nodeId: n.id },
-      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: n.condition ? [n.condition.text] : [], goals: STAR_TEXT(n.goal) },
+      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: STAR_TEXT(n.goal) },
     });
   };
 
@@ -661,10 +664,10 @@ function Road(p: Ctx) {
     <div class="screen so road">
       <Top
         title="The Millennium Road"
-        sub={`${starCount(solo, allIds)}/${allIds.length * 3} stars · ${c.items.length}/7 Millennium Items`}
+        sub={`${starCount(solo, allIds)}/${allIds.length * 3} stars · ${c.items.filter((x) => relic(x)?.millennium).length}/7 Millennium Items`}
         onBack={p.onExit}
         right={
-          <button class="so-chip" onClick={() => setView(view === 'map' ? 'trophies' : 'map')}>
+          <button class="so-chip" onClick={() => (setView(view === 'map' ? 'trophies' : 'map'), window.scrollTo(0, 0))}>
             {view === 'map' ? 'Trophies' : 'Map'}
           </button>
         }
@@ -683,6 +686,10 @@ function Road(p: Ctx) {
               </div>
             ))}
           </div>
+          <div class="so-group">Duel Chips</div>
+          <p>
+            {speed.chips ?? 0}/30. You earn one the first time you three-star a duel, one a day from a Labyrinth boss, and one a day for beating your brother. They're for betting in duels with your brother.
+          </p>
           <div class="so-group">Titles</div>
           <p>{c.titles.length ? c.titles.join(' · ') : 'None yet. Bosses give you titles.'}</p>
           <div class="so-group">Collection</div>
@@ -794,6 +801,16 @@ function Road(p: Ctx) {
         </Sheet>
       )}
 
+      {p.report?.kind === 'practice' && (
+        <Sheet>
+          <ResultBanner result={p.report.outcome.result} />
+          <p class="so-center so-dim">Rival duel against {p.lastSpec?.cpu.name ?? 'your rival'}. It doesn't change your road.</p>
+          <Btn kind="gold" onClick={() => (p.onReportSeen(), p.lastSpec && p.onDuel(p.lastSpec))}>
+            Rematch
+          </Btn>
+          <Btn onClick={p.onReportSeen}>Back to the road</Btn>
+        </Sheet>
+      )}
       {rival && <RivalSheet {...p} deck={deck} problems={problems} onClose={() => setRival(false)} />}
 
       {rep && repNode && stage === 0 && (
@@ -877,9 +894,9 @@ function ChapterClear({ ch, onDone }: { ch: Chapter; onDone: () => void }) {
         <div class="so-eye huge">
           <MilEye size={84} />
         </div>
-        <h3>{ch.item}</h3>
-        <p>{relic(ch.item)?.text ?? ch.itemText}</p>
-        <p class="so-dim">You can now bring it into the Duel Labyrinth as a starting relic.</p>
+        <h3>{ch.postgame ? 'King of Games' : ch.item}</h3>
+        {ch.postgame ? <p>You beat the King himself. The title is yours.</p> : <p>{relic(ch.item)?.text ?? ch.itemText}</p>}
+        {!ch.postgame && <p class="so-dim">You can now bring it into the Duel Labyrinth as a starting relic.</p>}
         {next && <p>Next: {next.postgame ? 'a challenger waits beyond the road...' : `Chapter ${next.n}, ${next.title}`}</p>}
       </div>
       <Btn kind="gold" onClick={onDone}>
@@ -1029,7 +1046,7 @@ function LabyrinthStart(p: Ctx) {
   const [starter, setStarter] = useState(STARTERS[0].character);
   const [curse, setCurse] = useState(0);
   const [bring, setBring] = useState<string | null>(null);
-  const items = solo.campaign.items;
+  const items = solo.campaign.items.filter((x) => relic(x)?.millennium);
   const [code, setCode] = useState('');
   const today = todayString();
   const doneToday = lab.history.find((h) => h.daily === today);
@@ -1222,6 +1239,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
 
   /** Steps onto a duel stop (or the one you're on) and opens the VS screen. */
   const startDuel = (at: Run = run) => {
+    const before = run;
     if (at !== run) setRun(at);
     const d = duelFor(at, up);
     if (!d) return;
@@ -1232,8 +1250,10 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
       cpu: { name: d.foe.name, main: deck.main, extra: deck.extra, skill: deck.skill, setup: d.cpu },
       first: 'coin',
       context: { kind: 'labyrinth', runId: at.id, stopId: at.inDuel! },
+      // The Daily deals every duel the same way for both brothers.
+      seed: at.daily ? (at.seed + at.step * 7919) >>> 0 : undefined,
       vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : [])], goals: [] },
-    });
+    }, at !== before ? () => setRun(before) : undefined);
   };
 
   const inDuel = run.inDuel ? stopById(run, run.inDuel) : null;
@@ -1246,7 +1266,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
     <div class="screen so lab">
       <Top
         title={`Floor ${run.floor + 1} of 3${run.daily ? ' · Daily' : ''}`}
-        sub={`${run.starter}${run.curse ? ` · Curse ${run.curse}` : ''}`}
+        sub={`Starter: ${run.starter}${run.curse ? ` · Curse ${run.curse}` : ''}`}
         onBack={p.onExit}
         right={
           <div class="so-runstat">
@@ -1376,7 +1396,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
                 <b>{it.kind === 'card' ? it.name : it.kind === 'relic' ? `◆ ${it.name}` : it.kind === 'heal' ? 'A heart back' : 'Remove a card'}</b>
                 <span>{it.kind === 'relic' ? relic(it.name!)?.text : it.kind === 'card' ? (card(it.name!)?.kind === 'monster' ? `ATK ${card(it.name!)?.atk} / DEF ${card(it.name!)?.def}` : card(it.name!)?.sub) : ''}</span>
               </div>
-              <Btn kind="blue" disabled={it.sold || run.dp < it.price || (it.kind === 'heal' && run.hearts >= run.maxHearts) || (it.kind === 'remove' && run.main.length <= 20)} onClick={() => act({ kind: 'buy', index: i })}>
+              <Btn kind="blue" disabled={it.sold || run.dp < it.price || (it.kind === 'heal' && run.hearts >= run.maxHearts) || (it.kind === 'remove' && run.main.length <= 20 && !run.extra.length)} onClick={() => act({ kind: 'buy', index: i })}>
                 {it.sold ? 'Sold' : `${it.price}`}
               </Btn>
             </div>
@@ -1399,7 +1419,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
                 </div>
               </div>
               {ev.choices.map((c, i) => (
-                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={i === 0 && ((ev.id === 'ring' && run.hearts <= 1) || (ev.id === 'graveyard' && run.main.length <= 20) || (ev.id === 'shadi' && run.hearts <= 1) || (ev.id === 'rebecca' && run.main.length <= 21))} onClick={() => act({ kind: 'event', option: i })}>
+                <Btn key={c.label} kind={i === 0 ? 'gold' : 'plain'} disabled={i === 0 && ((ev.id === 'ring' && run.hearts <= 1) || (ev.id === 'graveyard' && run.main.length <= 20) || (ev.id === 'shadi' && run.hearts <= 1) || (ev.id === 'rebecca' && run.main.length <= 20 && !run.extra.length))} onClick={() => act({ kind: 'event', option: i })}>
                   {c.label} · {c.note}
                 </Btn>
               ))}
@@ -1412,10 +1432,10 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
           <Btn kind="gold" disabled={run.hearts >= run.maxHearts || run.curse >= 8} onClick={() => act({ kind: 'rest', option: 'heal' })}>
             Rest: a heart back
           </Btn>
-          <Btn disabled={run.main.length <= 20} onClick={() => act({ kind: 'rest', option: 'cut' })}>
+          <Btn disabled={run.main.length <= 20 && !run.extra.length} onClick={() => act({ kind: 'rest', option: 'cut' })}>
             Train: cut a card from your deck
           </Btn>
-          {(run.hearts >= run.maxHearts || run.curse >= 8) && run.main.length <= 20 && <Btn onClick={() => act({ kind: 'leave' })}>Move on</Btn>}
+          {(run.hearts >= run.maxHearts || run.curse >= 8) && run.main.length <= 20 && !run.extra.length && <Btn onClick={() => act({ kind: 'leave' })}>Move on</Btn>}
         </Sheet>
       )}
       {pend?.kind === 'remove' && <PickFromDeck title="Cut a card" note={run.main.length <= 20 ? 'Your Main Deck is at 20, the minimum.' : 'Tap a card to remove one copy.'} run={run} onPick={(n) => act({ kind: 'remove', card: n })} />}
@@ -1497,8 +1517,7 @@ function DraftSheet({ run, act }: { run: Run; act: (c: Choice) => void }) {
         <div class="so-dim so-center">
           {card(sel)?.kind === 'monster' ? `Level ${card(sel)?.level} · ATK ${card(sel)?.atk} / DEF ${card(sel)?.def}` : `${card(sel)?.sub} ${card(sel)?.kind}`}
           <br />
-          {card(sel)?.desc.slice(0, 160)}
-          {(card(sel)?.desc.length ?? 0) > 160 ? '…' : ''}
+          {card(sel)?.desc}
         </div>
       )}
       <div class="so-row">

@@ -101,7 +101,7 @@ export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string,
   if (!found) return none;
   const { node, chapter } = found;
   const c = solo.campaign;
-  if (o.result !== 'w') return { ...none, solo: { ...solo, campaign: { ...c, losses: c.losses + 1 } } };
+  if (o.result !== 'w') return { ...none, solo: { ...solo, campaign: { ...c, losses: c.losses + 1, tries: { ...c.tries, [nodeId]: (c.tries?.[nodeId] ?? 0) + 1 } } } };
 
   const old = c.stars[nodeId] ?? [false, false, false];
   const got = starsFor(node.goal, o);
@@ -121,9 +121,9 @@ export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string,
     rewards.push({ kind: 'pack' });
     if (node.boss) {
       if (node.duelist.skill) rewards.push({ kind: 'skill', name: node.duelist.skill });
-      rewards.push({ kind: 'item', name: chapter.item });
+      // The post-game crowns you King of Games; the seven Items come from the chapters.
       if (chapter.postgame) rewards.push({ kind: 'title', name: 'King of Games' });
-      else rewards.push({ kind: 'title', name: `Keeper of the ${chapter.item}` });
+      else rewards.push({ kind: 'item', name: chapter.item }, { kind: 'title', name: `Keeper of the ${chapter.item}` });
     }
   }
   // The first time all three stars are lit: one Duel Chip.
@@ -146,7 +146,7 @@ export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string,
     three.forEach((n) => offered.add(n));
     if (three.length) picks.push(three);
   }
-  const campaign = { ...g.solo.campaign, pendingPicks: [...(g.solo.campaign.pendingPicks ?? []), ...picks], stars: { ...g.solo.campaign.stars, [nodeId]: stars }, wins: { ...g.solo.campaign.wins, [nodeId]: (g.solo.campaign.wins[nodeId] ?? 0) + 1 } };
+  const campaign = { ...g.solo.campaign, pendingPicks: [...(g.solo.campaign.pendingPicks ?? []), ...picks], stars: { ...g.solo.campaign.stars, [nodeId]: stars }, wins: { ...g.solo.campaign.wins, [nodeId]: (g.solo.campaign.wins[nodeId] ?? 0) + 1 }, tries: { ...g.solo.campaign.tries, [nodeId]: 0 } };
   const cleared = firstWin && node.boss ? chapter : null;
   if (cleared) campaign.cleared = chapter.id;
   return { speed: g.speed, solo: { ...g.solo, campaign }, stars, newStars, lines: g.lines, cards: g.cards, picks, firstWin, cleared };

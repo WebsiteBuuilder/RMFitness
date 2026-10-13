@@ -8,7 +8,7 @@ import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems } from '../s
 import { getSkill } from '../src/eds/skills';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { chapterOpen, deckOf, nodeOpen, roadDeckProblems, settleCampaign, startRoad } from '../src/eds/speedCampaign/campaign';
-import { CURSES, afterDuel, choose, stake, duelFor, enter, newRun, reachable, readResultCode, resultCode, stopById, summaryOf, type Run } from '../src/eds/speedCampaign/labyrinth';
+import { CURSES, afterDuel, choose, stake, unplayableInRun, duelFor, enter, newRun, reachable, readResultCode, resultCode, stopById, summaryOf, type Run } from '../src/eds/speedCampaign/labyrinth';
 import { deckCode, readDeckCode } from '../src/eds/speedCampaign/deckCode';
 import { newSoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
@@ -85,7 +85,7 @@ for (const r of RELICS) ok(kitHas(r.art) || true, `relic ${r.name}`);
       speed = st.speed;
       solo = st.solo;
       ok(st.stars[0] && st.stars[1], `${n.id}: win stars`);
-      if (n.boss) ok(st.cleared === ch && solo.campaign.items.includes(ch.item), `${n.id}: boss clears ${ch.title} and gives ${ch.item}`);
+      if (n.boss) ok(st.cleared === ch && (ch.postgame ? solo.campaign.titles.includes("King of Games") : solo.campaign.items.includes(ch.item)), `${n.id}: boss clears ${ch.title}`);
     }
     const next = CHAPTERS[CHAPTERS.indexOf(ch) + 1];
     if (next) ok(chapterOpen(solo, next), `${next.title} opens after ${ch.title}`);
@@ -243,6 +243,44 @@ for (let s = 1; s <= 40; s++) {
   const node = CHAPTERS[0].nodes[0];
   const w = settleCampaign(speed, solo, node.id, { result: 'w', myLp: 4000, myStartLp: 4000, oppLp: 0, turns: 1, usedSkill: false, myMonsters: 3 }, 5);
   ok((w.solo.campaign.pendingPicks ?? []).length === w.picks.length, 'star picks are saved until chosen');
+}
+
+// ---------- review round 4 ----------
+{
+  for (let f = 0; f < 3; f++) {
+    for (let seed = 1; seed < 30; seed++) {
+      let r = newRun({ starter: STARTERS[seed % STARTERS.length].character, seed, curse: 0, upgrades: [] });
+      r = { ...r, floor: f, step: seed };
+      const offered = choose({ ...r, pending: { kind: 'event', event: 'grandpa' } }, { kind: 'event', option: 0 }, []);
+      const added = offered.main.filter((n, i) => i >= r.main.length);
+      ok(added.every((n) => !unplayableInRun(n)), `floor ${f} seed ${seed}: no unplayable gifts`);
+      ok(r.floors[f].rows.flat().filter((s) => s.kind === 'shop').length <= 2, `floor ${f} seed ${seed}: at most two shops`);
+    }
+  }
+  ok(unplayableInRun('Toon Summoned Skull') && unplayableInRun('Relinquished') && unplayableInRun('Armed Dragon LV7') && !unplayableInRun('Kuriboh'), 'unplayable cards recognised');
+}
+
+// ---------- review round 4b ----------
+{
+  const r0 = newRun({ starter: STARTERS[0].character, seed: 5, curse: 0, upgrades: [] });
+  const full: Run = { ...r0, dp: 200, main: [...r0.main, ...r0.main].slice(0, 30), pending: { kind: 'shop', items: [{ kind: 'card', name: 'Kuriboh', price: 40 }, { kind: 'remove', price: 30 }] } };
+  const bought = choose(full, { kind: 'buy', index: 0 }, []);
+  ok(bought.pending?.kind === 'swap', 'buying into a full deck asks for a swap');
+  const back = choose(bought, { kind: 'swap', out: null }, []);
+  ok(back.dp === 200 && back.pending?.kind === 'shop' && !back.pending.items[0].sold, 'declining the swap refunds the card');
+  const rm = choose(full, { kind: 'buy', index: 1 }, []);
+  const rmBack = choose(rm, { kind: 'remove', card: null }, []);
+  ok(rmBack.dp === 200 && rmBack.pending?.kind === 'shop', 'cutting nothing refunds the removal');
+}
+{
+  let speed = newSpeedSave();
+  let solo = newSoloSave();
+  ({ speed, solo } = startRoad(speed, solo, STARTERS[0].character));
+  const post = CHAPTERS.find((c) => c.postgame)!;
+  const w = settleCampaign(speed, solo, post.nodes[post.nodes.length - 1].id, { result: 'w', myLp: 4000, myStartLp: 4000, oppLp: 0, turns: 5, usedSkill: false, myMonsters: 1 }, 3);
+  ok(!w.solo.campaign.items.includes(post.item) && w.solo.campaign.titles.includes('King of Games'), 'post-game gives the title, not an eighth Item');
+  const l = settleCampaign(speed, solo, CHAPTERS[0].nodes[0].id, { result: 'l', myLp: 0, myStartLp: 4000, oppLp: 100, turns: 5, usedSkill: false, myMonsters: 0 }, 3);
+  ok(l.solo.campaign.tries?.[CHAPTERS[0].nodes[0].id] === 1, 'losses are counted per duel');
 }
 
 // ---------- real duels: every computer deck under its Duel Condition ----------

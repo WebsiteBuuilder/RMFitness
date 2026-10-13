@@ -154,10 +154,11 @@ export function App() {
     if (!save) return;
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
-    const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : Math.random() < 0.5 ? 0 : 1;
+    const seed = spec.seed ?? randomSeed();
+    const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
     ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill });
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
-    ses.send({ type: 'START', first, seed: randomSeed(), names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
+    ses.send({ type: 'START', first, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     soloDuel.current = { ctx: spec.context, startLp: spec.me.setup?.lp ?? 4000, spec };
     setSoloReport(null);
     setHotseat(false);

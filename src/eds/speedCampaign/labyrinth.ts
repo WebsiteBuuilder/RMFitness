@@ -73,9 +73,15 @@ export type Pending =
   | { kind: 'shop'; items: ShopItem[] }
   | { kind: 'event'; event: string }
   | { kind: 'rest' }
-  | { kind: 'remove'; then?: Pending; pay?: number }
-  | { kind: 'swap'; card: string; then?: Pending }
+  | { kind: 'remove'; then?: Pending; pay?: number; refund?: Refund }
+  | { kind: 'swap'; card: string; then?: Pending; refund?: Refund }
   | { kind: 'treasure'; relic: string };
+
+/** A shop purchase you can still back out of: its DP and the shop as it was. */
+export interface Refund {
+  dp: number;
+  shop: Pending;
+}
 
 export interface RunSummary {
   date: number;
@@ -98,7 +104,7 @@ const FLOOR_CHAPTERS: [number, number][] = [
   [6, 7],
 ];
 /** Who guards each floor, and who the tougher elite duels come from. */
-const floorBosses = (f: number) => (f === 0 ? bossesOf(1, 2) : f === 1 ? bossesOf(4, 5) : [...bossesOf(7, 7), ...CHAPTERS.filter((c) => c.postgame).flatMap((c) => c.nodes)]);
+const floorBosses = (f: number) => (f === 0 ? bossesOf(1, 2) : f === 1 ? bossesOf(4, 5) : bossesOf(6, 7));
 const floorElites = (f: number) => (f === 0 ? regularsOf(3, 3) : f === 1 ? bossesOf(2, 3).map((n) => n.duelist) : bossesOf(4, 6).map((n) => n.duelist));
 
 export function duelistById(id: string): CpuDuelist | undefined {
@@ -201,6 +207,8 @@ function makeFloor(next: () => number, floor: number, curse: number): Floor {
     usedFoes.add(d.id);
     return d.id;
   };
+  // At most two Card Shops a floor.
+  let shops = 0;
   for (let r = 0; r < ROWS; r++) {
     const width = r === ROWS - 1 ? 1 : r === 0 ? 2 : 2 + Math.floor(next() * 2);
     const row: Stop[] = [];
@@ -211,8 +219,9 @@ function makeFloor(next: () => number, floor: number, curse: number): Floor {
       else if (r === ROWS - 2) kind = c === 0 ? 'rest' : next() < 0.5 ? 'shop' : 'duel';
       else {
         const x = next();
-        kind = x < eliteOdds ? 'elite' : x < 0.5 ? 'duel' : x < 0.64 ? 'shop' : x < 0.8 ? 'event' : x < 0.9 ? 'treasure' : 'rest';
+        kind = x < eliteOdds ? 'elite' : x < 0.5 ? 'duel' : x < 0.62 ? 'shop' : x < 0.8 ? 'event' : x < 0.9 ? 'treasure' : 'rest';
       }
+      if (kind === 'shop' && ++shops > 2) kind = 'duel';
       const stop: Stop = { id: `f${floor}r${r}c${c}`, kind, row: r, col: c, next: [] };
       if (kind === 'duel') stop.foe = foe(regulars);
       if (kind === 'elite') stop.foe = foe(elitePool);
@@ -322,12 +331,20 @@ function draftSize(r: Run, upgrades: string[]): number {
   return Math.max(2, n);
 }
 
-/** Cards that can't do anything in a run deck (no way to summon them), never offered. */
-const DEAD = new Set(['Gate Guardian', 'Polymerization']);
+/** Cards that can't do anything in a run deck (no way to summon them), never offered:
+ * Ritual monsters, Toons (they need Toon World), and anything that can't be Normal Summoned. */
+const DEAD_NAMES = new Set(['Gate Guardian', 'Polymerization']);
+export function unplayableInRun(n: string): boolean {
+  if (DEAD_NAMES.has(n)) return true;
+  const c = card(n);
+  if (c?.kind === 'spell' && c.sub === 'Ritual') return true;
+  if (!c || c.kind !== 'monster') return false;
+  return c.sub === 'Ritual' || /Toon World/.test(c.desc) || /cannot be Normal Summoned/i.test(c.desc);
+}
 
 function draftOptions(r: Run, upgrades: string[], floor: number, better = false): string[] {
   const next = stepRng(r, 7);
-  const pool = floorPool(Math.min(2, floor + (better ? 1 : 0))).filter((n) => !DEAD.has(n) && !floorExtra.has(n) && [...r.main, ...r.extra].filter((x) => x === n).length < COPIES);
+  const pool = floorPool(Math.min(2, floor + (better ? 1 : 0))).filter((n) => !unplayableInRun(n) && !floorExtra.has(n) && [...r.main, ...r.extra].filter((x) => x === n).length < COPIES);
   const out: string[] = [];
   const size = draftSize(r, upgrades);
   for (let guard = 0; out.length < size && guard < 200; guard++) {
@@ -506,10 +523,15 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
       const items = p.items.map((x, i) => (i === c.index ? { ...x, sold: true } : x));
       const shop: Pending = { kind: 'shop', items };
       const paid: Run = { ...r, dp: r.dp - it.price, pending: shop };
-      if (it.kind === 'card') return addCard(paid, it.name!, shop);
+      // Backing out of the swap or the removal gives the DP back and puts the item back on the shelf.
+      const refund: Refund = { dp: it.price, shop: p };
+      if (it.kind === 'card') {
+        const y = addCard(paid, it.name!, shop);
+        return y.pending?.kind === 'swap' ? { ...y, pending: { ...y.pending, refund } } : y;
+      }
       if (it.kind === 'relic') return withRelic(paid, it.name!);
       if (it.kind === 'heal') return { ...paid, hearts: paid.hearts + 1 };
-      return { ...paid, pending: { kind: 'remove', then: shop } };
+      return { ...paid, pending: { kind: 'remove', then: shop, refund } };
     }
     case 'event': {
       if (c.kind !== 'event') return r;
@@ -578,6 +600,7 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
     }
     case 'remove': {
       if (c.kind !== 'remove') return r;
+      if (!c.card && p.refund) return { ...r, dp: r.dp + p.refund.dp, pending: p.refund.shop };
       let x: Run = { ...r, pending: p.then };
       if (c.card) {
         // The Graveyard's payment comes only when a card is really buried.
@@ -596,6 +619,7 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
       if (c.kind !== 'swap') return r;
       // Only a Main Deck card can make room; anything else is ignored.
       if (c.out && !r.main.includes(c.out)) return r;
+      if (!c.out && p.refund) return { ...r, dp: r.dp + p.refund.dp, pending: p.refund.shop };
       let x: Run = { ...r, pending: p.then };
       if (c.out) {
         const i = x.main.indexOf(c.out);

@@ -75,6 +75,8 @@ export interface CpuDuelSpec {
   cpu: { name: string; main: string[]; extra: string[]; skill: string | null; setup?: SeatSetup };
   first: 'me' | 'cpu' | 'coin';
   context: DuelContext;
+  /** a fixed duel shuffle (the Daily deals the same duels to everyone) */
+  seed?: number;
   /** what the VS splash and the in-duel goal chip show */
   vs?: VsInfo;
 }

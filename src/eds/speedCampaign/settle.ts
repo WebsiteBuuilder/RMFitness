@@ -49,9 +49,10 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   const today = todayString();
   if (o.result === 'w' && stop?.kind === 'boss' && solo.labyrinth.chipDay !== today) {
     const g = grant(speed, solo, [{ kind: 'chips', n: 1 }]);
+    const paid = g.speed.chips !== speed.chips;
     speed = g.speed;
     solo = { ...solo, labyrinth: { ...solo.labyrinth, chipDay: today } };
-    if (next.pending?.kind === 'draft') next.pending = { ...next.pending, chip: true };
+    if (paid && next.pending?.kind === 'draft') next.pending = { ...next.pending, chip: true };
   }
   if (next.over) {
     const done = endRun(solo, next);

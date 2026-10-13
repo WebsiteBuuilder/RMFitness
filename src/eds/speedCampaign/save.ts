@@ -17,6 +17,8 @@ export interface CampaignProgress {
   /** Millennium Items won */
   items: string[];
   titles: string[];
+  /** losses in a row per duel (a helping hand after two) */
+  tries?: Record<string, number>;
   /** star picks won but not yet chosen (kept so closing the app doesn't lose them) */
   pendingPicks?: string[][];
   /** a chapter-clear screen still to show */
