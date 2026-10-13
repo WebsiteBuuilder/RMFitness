@@ -1366,6 +1366,12 @@ export class Engine {
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
     if (fc) this.leftField(fc, f.loc.player, 'banished');
+    if (card.token || card.name.startsWith('__token')) {
+      // A banished Token ceases to exist (it can never come back to the field).
+      this.event('to-gy', { uid, player: card.owner });
+      this.log(card.owner, `${card.name} was removed from play`);
+      return;
+    }
     this.player(card.owner).removed.push(card);
     this.event('to-gy', { uid, player: card.owner });
     this.log(card.owner, `${card.name} was removed from play`);
