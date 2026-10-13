@@ -616,3 +616,63 @@
   font-size: 12px;
   color: #ffe08a;
 }
+
+/* ---- round 4: win pips, locked sets, per-player results, pot ---- */
+.win-pips {
+  display: flex;
+  gap: 6px;
+}
+.win-pips i {
+  width: 22px;
+  height: 10px;
+  border: 2px solid var(--gold, #f5c542);
+  border-radius: 3px;
+}
+.win-pips i.on {
+  background: var(--gold, #f5c542);
+  box-shadow: 0 0 6px var(--gold, #f5c542);
+}
+.later-sets {
+  font-size: 0.75em;
+  opacity: 0.75;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.nc-who {
+  width: 100%;
+  text-align: left;
+}
+.duel-pot {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  left: 8px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 2px solid var(--gold, #f5c542);
+  border-radius: 14px;
+  background: rgba(10, 14, 40, 0.85);
+  font-size: 11px;
+  color: var(--gold, #f5c542);
+  pointer-events: none;
+  max-width: 34vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.duel-pot .cimg {
+  width: 18px;
+  height: auto;
+}
+.bet-for {
+  margin: 0 0 6px;
+  color: var(--gold, #f5c542);
+}
+.lopsided {
+  color: #ffb36b;
+}
+.news-cards {
+  flex-wrap: wrap;
+}

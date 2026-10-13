@@ -41,6 +41,8 @@ interface Daily {
   rivalPacks: number;
   /** the day's chip from beating another player was paid */
   rivalChip: boolean;
+  /** the phone's clock reads earlier than a day already played: nothing pays until it passes */
+  spent?: boolean;
 }
 
 export type EconSave = SpeedSave & {
@@ -70,11 +72,12 @@ export const dayKey = (now = Date.now()) => {
 
 function daily(s: SpeedSave, now: number): Daily {
   const d = E(s).daily;
-  // Setting the phone's clock back doesn't start a fresh day.
-  // (A saved day far in the future means the clock was wrong then, so it starts over.)
+  // Only a day later than every day already played is a fresh day. Setting the clock
+  // back (or forward and back again) pays nothing until the real date passes the saved one.
   const today = dayKey(now);
-  const keep = d && (d.day === today || (d.day > today && d.day <= dayKey(now + 86_400_000)));
-  return keep ? d! : { day: today, cpu: [], rivalPacks: 0, rivalChip: false };
+  if (d && d.day === today) return d;
+  if (d && d.day > today) return { ...d, spent: true };
+  return { day: today, cpu: [], rivalPacks: 0, rivalChip: false };
 }
 
 const countsOf = (list: string[]) => {
@@ -187,6 +190,7 @@ export function breakAllSpares(s: SpeedSave): { save: SpeedSave; copies: number;
 /** What a profile can still win today: computer duelists not yet beaten, rival packs, the rival chip. */
 export function todaysPrizes(s: SpeedSave, cpus: string[], now = Date.now()): { cpu: string[]; rivalPacks: number; rivalChip: boolean } {
   const d = daily(s, now);
+  if (d.spent) return { cpu: [], rivalPacks: 0, rivalChip: false };
   return { cpu: cpus.filter((c) => !d.cpu.includes(c)), rivalPacks: RIVAL_PACKS_PER_DAY - d.rivalPacks, rivalChip: !d.rivalChip };
 }
 
@@ -261,7 +265,7 @@ export const withPacks = (s: SpeedSave, n: number): SpeedSave => ({ ...s, packs:
 export function cpuWinPrize(s: SpeedSave, opp: string, deck: SpeedDeck | null, now = Date.now()): { save: SpeedSave; lines: string[] } {
   if (deck?.open) return { save: s, lines: [] };
   const d = daily(s, now);
-  if (d.cpu.includes(opp)) return { save: s, lines: [] };
+  if (d.spent || d.cpu.includes(opp)) return { save: s, lines: [] };
   return { save: { ...withPacks(s, 1), daily: { ...d, cpu: [...d.cpu, opp] } } as EconSave, lines: [`A booster pack for beating ${opp} today`] };
 }
 
@@ -283,8 +287,8 @@ export function rivalResult(s: SpeedSave, r: RivalDuel, now = Date.now()): { sav
   let next = { ...s, rivals } as EconSave as SpeedSave;
   const lines: string[] = [];
   // A quick surrender doesn't pay: prizes need a real duel of a few turns.
-  if (r.result === 'w' && r.counts && r.turns >= RIVAL_MIN_TURNS) {
-    const d = { ...daily(s, now) };
+  const d = { ...daily(s, now) };
+  if (r.result === 'w' && r.counts && r.turns >= RIVAL_MIN_TURNS && !d.spent) {
     if (d.rivalPacks < RIVAL_PACKS_PER_DAY) {
       d.rivalPacks++;
       next = withPacks(next, 1);

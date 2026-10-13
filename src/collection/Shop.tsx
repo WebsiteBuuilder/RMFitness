@@ -66,13 +66,13 @@ export function ChipBar({ save, cpus = [] }: { save: SpeedSave; cpus?: string[] 
         <Overlay onClose={() => setHelp(false)}>
           <Win title="Chips, shards and packs" onClose={() => setHelp(false)}>
             <p>
-              <i class="dchip" /> <b>Duel Chips</b> craft cards and lift a card's look. You can hold {CHIP_CAP}. They come slowly: your first 3-star win on each campaign duel, each Labyrinth boss, one win a day over your brother, and shards.
+              <i class="dchip" /> <b>Duel Chips</b> craft cards and lift a card's look. You can hold {CHIP_CAP}. They come slowly: one win a day over your brother, and shards.
             </p>
             <p>
               ◆ <b>Shards</b> come from breaking spare copies. {SHARDS_PER_CHIP} make a chip.
             </p>
             <p>
-              🂠 <b>Packs</b> come from your first win against each computer duelist each day, up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns), and the campaign.
+              🂠 <b>Packs</b> come from your first win against each computer duelist each day and up to 3 wins a day over your brother (duels of {RIVAL_MIN_TURNS}+ turns).
             </p>
             <p class="today">
               <b>Still to win today:</b> {left.cpu.length ? `a pack from ${left.cpu.length} computer duelist${left.cpu.length === 1 ? '' : 's'}` : 'every computer duelist is beaten'}, {left.rivalPacks} rival pack{left.rivalPacks === 1 ? '' : 's'}
@@ -166,13 +166,15 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
           <span>
             Next set: <b>{shortSetName(all[open.length].name)}</b> in {toNext} win{toNext === 1 ? '' : 's'}
           </span>
-          <span class="bar">
-            <i style={{ width: `${((WINS_PER_SET - toNext) / WINS_PER_SET) * 100}%` }} />
+          <span class="win-pips" aria-label={`${WINS_PER_SET - toNext} of ${WINS_PER_SET} wins`}>
+            {Array.from({ length: WINS_PER_SET }, (_, i) => (
+              <i key={i} class={i < WINS_PER_SET - toNext ? 'on' : ''} />
+            ))}
           </span>
         </div>
       )}
       <div class="pack-grid">
-        {all.map((s, i) => {
+        {all.slice(0, open.length + 1).map((s, i) => {
           const unlocked = i < open.length;
           const c = completion(save, s.cards);
           return (
@@ -194,10 +196,15 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
           );
         })}
       </div>
+      {all.length > open.length + 1 && (
+        <p class="later-sets">
+          🔒 Still to unlock: {all.slice(open.length + 1).map((s) => shortSetName(s.name)).join(' · ')}
+        </p>
+      )}
       <p class="pity">
         ✦ Ultra Rare or better guaranteed within <b>{plural(pityLeft(save), 'pack')}</b>
       </p>
-      <p class="hint">A pack has 5 cards: 4 Commons and one hit hiding among them: Super Rare 85%, Ultra Rare 10%, Secret Rare 5% (when the set has one). Copies past 3 break into shards by themselves.</p>
+      <p class="hint">A pack has 5 cards: 4 Commons and one hit hiding among them: Rare 55%, Super Rare 30%, Ultra Rare 10%, Secret Rare 5% (the nearest rarity when the set has none). Copies past 3 break into shards by themselves.</p>
       {pick && (
         <Overlay onClose={() => setPick(null)}>
           <Win title={shortSetName(pick)} onClose={() => setPick(null)}>
@@ -438,7 +445,7 @@ function CraftList({ save, onPick }: { save: SpeedSave; onPick: (n: string) => v
         </button>
       </div>
       <div class="filters">
-        {RARITIES.filter((r) => r !== 'Rare').map((r) => (
+        {RARITIES.map((r) => (
           <button key={r} class={`chip ${rar === r ? 'on' : ''}`} onClick={() => setRar(rar === r ? null : r)}>
             {RARITY_SHORT[r]}
           </button>

@@ -91,11 +91,18 @@ export function rescueTarget(seats: [StakeSeat, StakeSeat], seat: Pid): string |
  * crafting cost in chips is paid instead, so losing never breaks a deck.
  */
 function take(s: SpeedSave, name: string): SpeedSave {
-  if (spareCopies(s, name) < 1) return withChips(s, -craftCost(name));
+  if (spareCopies(s, name) < 1) return pay(s, craftCost(name));
   const collection = { ...(s.collection ?? {}) };
   collection[name]--;
   if (!collection[name]) delete collection[name];
   return { ...s, collection };
+}
+
+/** Pays chips; whatever the loser is short comes out of their shards, so a payout never makes value. */
+function pay(s: SpeedSave, chips: number): SpeedSave {
+  const short = Math.max(0, chips - chipsOf(s));
+  const next = withChips(s, -chips);
+  return short ? ({ ...next, shards: Math.max(0, shardsOf(next) - short * SHARDS_PER_CHIP) } as SpeedSave) : next;
 }
 
 /**
@@ -137,7 +144,7 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
     if (lostBet!.chips) {
       const n = lostBet!.chips;
       const over = iWon ? Math.max(0, chipsOf(next) + n - CHIP_CAP) : 0;
-      next = withChips(next, iWon ? n : -n);
+      next = iWon ? withChips(next, n) : pay(next, n);
       // Chips past the cap aren't lost: they come back as shards.
       if (over) next = { ...next, shards: shardsOf(next) + over * SHARDS_PER_CHIP } as SpeedSave;
       lines.push(iWon ? `You won ${n} Duel Chip${n > 1 ? 's' : ''}${over ? ` (${over} over the ${CHIP_CAP} limit became shards)` : ''}` : `You lost ${n} Duel Chip${n > 1 ? 's' : ''}`);
@@ -175,6 +182,10 @@ export interface DuelTicket {
   seat: Pid;
   seats: [StakeSeat, StakeSeat];
   at: number;
+  /** which duel (its seed): rejoining the same duel isn't a walk-out */
+  key?: string;
+  /** a duel on one phone: the other player's profile, whose save holds the twin ticket */
+  partner?: string;
 }
 
 type TicketSave = SpeedSave & { ticket?: DuelTicket | null };
@@ -183,12 +194,18 @@ export const ticketOf = (s: SpeedSave): DuelTicket | null => (s as TicketSave).t
 
 export const withTicket = (s: SpeedSave, t: DuelTicket | null): SpeedSave => ({ ...s, ticket: t }) as TicketSave;
 
-/** Settles an abandoned duel as a loss for this profile. */
-export function settleTicket(s: SpeedSave): { save: SpeedSave; lines: string[]; opp: string } | null {
+/**
+ * Settles an unfinished duel. Online, the profile that walked out loses. On one phone the
+ * players say who gave up, and `winner` settles each of the two saves.
+ */
+export function settleTicket(s: SpeedSave, winner?: Pid): { save: SpeedSave; lines: string[]; opp: string; result: 'w' | 'l'; won: string[]; lost: string[] } | null {
   const t = ticketOf(s);
   if (!t) return null;
   const opp = t.seats[other(t.seat)].name;
-  const fake = { winner: other(t.seat) } as DuelState;
+  const w = winner ?? other(t.seat);
+  const fake = { winner: w } as DuelState;
   const r = settleStakes(withTicket(s, null), t.seat, fake, t.seats);
-  return { save: r.save, lines: [`You left the duel against ${opp}, so it counted as a loss.`, ...r.lines], opp };
+  const result = w === t.seat ? 'w' : 'l';
+  const head = result === 'w' ? `${opp} gave up your unfinished duel, so you won it.` : t.partner ? `You gave up your unfinished duel against ${opp}, so it counted as a loss.` : `You left the duel against ${opp}, so it counted as a loss.`;
+  return { save: r.save, lines: [head, ...r.lines], opp, result, won: r.won, lost: r.lost };
 }

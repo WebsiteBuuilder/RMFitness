@@ -31,6 +31,8 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
   const crown = me ? crownHolder(me, rival) : null;
   const rec = me ? rivalsOf(me)[rival] : undefined;
   const otherOf = (p: Pid): Pid => (p === 0 ? 1 : 0);
+  /** chips this seat can put up to match the other seat's chip bet */
+  const matchable = (p: Pid) => Math.min(chipsOf(betSave(p) ?? ({} as SpeedSave)), seats[otherOf(p)].stakes?.ante?.chips ?? 0);
 
   /** Both bets together. */
   const pot = () => {
@@ -91,6 +93,16 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
                 </span>
               )}
               {lose.length > 0 && <span class="loss-line">If {seats[p].name} loses: {lose.join(', ')}</span>}
+              {mine(p) && noAnte(a) && !noAnte(seats[otherOf(p)].stakes?.ante) && (
+                <span class="lopsided">
+                  {seats[otherOf(p)].name} is betting and {seats[p].name} isn't.
+                  {matchable(p) > 0 && (
+                    <button class="chip" onClick={() => (playBlip(), session.send({ type: 'STAKE', player: p, ante: { card: null, chips: matchable(p) } }))}>
+                      Match {matchable(p)} chip{matchable(p) > 1 ? 's' : ''}
+                    </button>
+                  )}
+                </span>
+              )}
               {!bothNoBet && seats[p].accepted && <span class="ok">✓ locked in</span>}
               {!bothNoBet && !seats[p].accepted && !mine(p) && <span class="hint">deciding…</span>}
               {!bothNoBet && !seats[p].accepted && mine(p) && (
@@ -109,6 +121,7 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
       </div>
       {editing !== null && betSave(editing) && (
         <BetPicker
+          who={seats[editing].name}
           save={betSave(editing)!}
           ante={seats[editing].stakes?.ante ?? null}
           theirs={seats[otherOf(editing)].stakes?.ante ?? null}
@@ -121,7 +134,29 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
   );
 }
 
-function BetPicker({ save, ante, theirs, onBet }: { save: SpeedSave; ante: Ante | null; theirs: Ante | null; onBet: (a: Ante | null) => void }) {
+/** The pot, kept in sight on the duel board while a duel with bets is on. */
+export function DuelPot({ view }: { view: SessionView }) {
+  const seats = view.seats;
+  if (!staked(seats[0].stakes, seats[1].stakes)) return null;
+  const cards = ([0, 1] as Pid[]).map((p) => seats[p].stakes?.ante?.card).filter((n): n is string => !!n);
+  const chips = ([0, 1] as Pid[]).reduce<number>((t, p) => t + (seats[p].stakes?.ante?.chips ?? 0), 0);
+  if (!cards.length && !chips) return null;
+  return (
+    <div class="duel-pot" aria-label="The pot">
+      <span>POT</span>
+      {cards.map((n) => (
+        <CardImg key={n} name={n} />
+      ))}
+      {chips > 0 && (
+        <span>
+          <i class="dchip" /> {chips}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BetPicker({ who, save, ante, theirs, onBet }: { who: string; save: SpeedSave; ante: Ante | null; theirs: Ante | null; onBet: (a: Ante | null) => void }) {
   const cards = betCards(save);
   const chips = ante?.chips ?? 0;
   const cur = ante?.card ?? null;
@@ -130,6 +165,7 @@ function BetPicker({ save, ante, theirs, onBet }: { save: SpeedSave; ante: Ante 
   const match = Math.min(most, theirs?.chips ?? 0);
   return (
     <div class="stake-pick">
+      <h4 class="bet-for">{who}'s bet</h4>
       <div class="stakes-row">
         <span>Chips:</span>
         <button class="chip" disabled={chips <= 0} onClick={() => set({ card: cur, chips: chips - 1 })}>

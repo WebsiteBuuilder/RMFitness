@@ -195,6 +195,41 @@ ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlo
   const t = settleTicket(withTicket(bro, { seat: 1, seats, at: 1 }))!;
   ok(!!t && owned(t.save, C) === 0 && chipsOf(t.save) === 1, 'a duel walked out of costs the bet');
   ok(settleTicket(t.save) === null, 'and settles only once');
+  // On one phone the players say who gave up: Jammy gave up, so Bro's ticket pays Bro.
+  const jam = withChips({ ...newSpeedSave(), collection: { [C]: 2 } } as SpeedSave, 3);
+  const both: [StakeSeat, StakeSeat] = [
+    { name: 'Jammy', stakes: stakesFor(jam, false, { card: C, chips: 1 }) },
+    { name: 'Bro', stakes: stakesFor(bro, false, { card: null, chips: 2 }) },
+  ];
+  const bw = settleTicket(withTicket(bro, { seat: 1, seats: both, at: 1, partner: 'jam' }), 1)!;
+  const jl = settleTicket(withTicket(jam, { seat: 0, seats: both, at: 1, partner: 'bro' }), 1)!;
+  ok(bw.result === 'w' && owned(bw.save, C) === 2 && chipsOf(bw.save) === 4, 'on one phone the player who stayed takes the pot');
+  ok(jl.result === 'l' && owned(jl.save, C) === 1 && chipsOf(jl.save) === 2, 'and the one who gave up pays it');
+}
+{
+  // A loser who can't cover a bet pays the rest in shards, so no value appears from nothing.
+  const e = new Engine(DB);
+  e.apply({ type: 'START', first: 0, seed: 3, names: ['Jammy', 'Bro'], decks: [Array(20).fill(B), Array(20).fill(A)], fusions: [[], []], mode: 'speed', skills: [null, null] });
+  e.apply({ type: 'SURRENDER', player: 1 });
+  const bro = { ...newSpeedSave(), chips: 1, shards: 25, collection: {} } as SpeedSave;
+  const seats: [StakeSeat, StakeSeat] = [
+    { name: 'Jammy', stakes: stakesFor(newSpeedSave(), false) },
+    { name: 'Bro', stakes: { ...stakesFor(bro, false), ante: { card: null, chips: 3 } } },
+  ];
+  const l = settleStakes(bro, 1, e.state, seats).save;
+  ok(chipsOf(l) === 0 && shardsOf(l) === 5, 'two chips short: 20 shards cover them');
+}
+{
+  // The phone's clock: forward then back never makes a second fresh day.
+  const day = 86_400_000;
+  const now = Date.UTC(2026, 9, 13, 12);
+  const win = { result: 'w' as const, opp: 'Bro', turns: 5, counts: true };
+  const ahead = rivalResult(newSpeedSave(), win, now + 3 * day).save;
+  const back = rivalResult(ahead, win, now);
+  ok(back.lines.length === 0, 'a clock set back pays nothing');
+  ok(chipsOf(back.save) === 1, 'only the first (forward) day paid its chip');
+  ok(cpuWinPrize(ahead, 'Kaiba', null, now).lines.length === 0, 'computer prizes wait too');
+  ok(rivalResult(back.save, win, now + 4 * day).lines.length > 0, 'a real new day pays again');
 }
 
 setSets(null);
