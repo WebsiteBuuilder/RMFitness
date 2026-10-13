@@ -1232,12 +1232,76 @@ export class Ring implements Fx {
 // ---------------------------------------------------------------- Backdrop
 const BG_FRAG = /* glsl */ `
 uniform vec3 uColor;
+uniform vec3 uColor2;
 uniform float uOpacity;
 uniform float uTime;
 uniform float uVortex;
+uniform float uTerrain;
+uniform float uTerrainAmt;
 varying vec2 vUv;
 ${NOISE_GLSL}
 ${PNOISE_GLSL}
+// A Field Spell's landscape (uTerrain 1..10, TERRAINS in families.ts order), uColor/uColor2 its colors.
+vec3 terrain(vec2 p, float t){
+  vec2 q = p * 6.0;
+  float y = q.y;
+  if (uTerrain < 1.5) {
+    // volcano: a glowing horizon of lava, embers rising, dark ash above
+    float lava = smoothstep(-1.0, -4.5, y + vnoise(vec2(q.x * 0.7, t * 0.3)) * 1.5);
+    float cracks = 1.0 - smoothstep(0.0, 0.08, vedge(q * 0.8 + vec2(0.0, -t * 0.2)));
+    float emb = step(0.93, hash12(floor(vec2(q.x * 3.0, q.y * 3.0 - t * 4.0)))) * smoothstep(3.0, -3.0, y);
+    return uColor * (lava * 1.2 + cracks * lava * 0.8 + emb * 0.9) + uColor2 * 0.15;
+  } else if (uTerrain < 2.5) {
+    // ocean: rolling bands of waves, caustic light
+    float w = sin(y * 3.0 + vnoise(vec2(q.x * 0.8 + t * 0.6, y)) * 4.0 - t * 1.5);
+    float caus = 1.0 - smoothstep(0.0, 0.07, vedge(q * 2.2 + vec2(t * 0.5, t * 0.3)));
+    return uColor * (0.35 + 0.35 * w) * smoothstep(5.0, -2.0, y) + uColor2 * caus * 0.16 * (0.5 + 0.5 * w);
+  } else if (uTerrain < 3.5) {
+    // forest: trunks and a dappled canopy, light through the leaves
+    float trunk = smoothstep(0.75, 0.95, vnoise(vec2(q.x * 1.6, 0.0)));
+    float canopy = vnoise(q * 1.3 + vec2(0.0, t * 0.1)) * smoothstep(-1.0, 4.0, y);
+    float rays = pow(max(0.0, sin(q.x * 0.6 + q.y * 0.35 + t * 0.2)), 12.0) * 0.6;
+    return uColor * (canopy * 0.9 + trunk * 0.25) + uColor2 * rays;
+  } else if (uTerrain < 4.5) {
+    // sky: clouds streaming past, a bright upper sky
+    float cl = vnoise(vec2(q.x * 0.5 - t * 1.2, q.y * 1.4)) * 0.6 + vnoise(vec2(q.x * 1.3 - t * 2.0, q.y * 3.0)) * 0.4;
+    return mix(uColor * 0.4, uColor2, smoothstep(0.45, 0.85, cl)) * (0.6 + 0.4 * smoothstep(-6.0, 6.0, y));
+  } else if (uTerrain < 5.5) {
+    // holy: rays fanning from above, a soft glow
+    float a = atan(p.x, 1.2 - p.y);
+    float rays = pow(0.5 + 0.5 * sin(a * 18.0 + t * 0.4), 6.0) * smoothstep(-1.0, 1.2, p.y);
+    return uColor * rays * 0.9 + uColor2 * exp(-pow(p.y - 1.0, 2.0) * 2.0) * 0.6;
+  } else if (uTerrain < 6.5) {
+    // shadow: creeping fog and ghost lights
+    float fog = vnoise(q * 0.7 + vec2(t * 0.25, -t * 0.1)) * vnoise(q * 1.7 - vec2(t * 0.4, 0.0));
+    float lights = step(0.985, hash12(floor(q * 2.0))) * (0.5 + 0.5 * sin(t * 3.0 + q.x));
+    return uColor * fog * 1.4 + uColor2 * lights;
+  } else if (uTerrain < 7.5) {
+    // arcane: circles of runes turning slowly
+    float rr = length(p) * 6.0;
+    float ring = exp(-pow((fract(rr) - 0.5) * 10.0, 2.0));
+    float a = atan(p.y, p.x) / 6.2831853 + 0.5;
+    float runes = step(0.55, pnoise(vec2(a * 40.0 + floor(rr) * 3.0 + t * 0.5 * (mod(floor(rr), 2.0) * 2.0 - 1.0), floor(rr)), 40.0));
+    return uColor * ring * (0.4 + runes * 0.8) + uColor2 * 0.12;
+  } else if (uTerrain < 8.5) {
+    // tech: a grid in perspective scrolling toward you, a scan line
+    float gy = 1.0 / max(0.05, 1.2 - p.y);
+    vec2 g = vec2(p.x * gy * 4.0, gy * 2.0 + t * 1.5);
+    float lines = max(1.0 - smoothstep(0.0, 0.06, abs(fract(g.x) - 0.5) * 2.0 - 0.9), 1.0 - smoothstep(0.0, 0.06, abs(fract(g.y) - 0.5) * 2.0 - 0.9));
+    float scan = exp(-pow((p.y - (fract(t * 0.35) * 2.4 - 1.2)) * 9.0, 2.0));
+    return uColor * lines * 0.8 * smoothstep(1.0, -0.4, p.y) + uColor2 * scan * 0.5;
+  } else if (uTerrain < 9.5) {
+    // wasteland: dunes and blowing dust
+    float dunes = sin(q.x * 0.5 + sin(y * 0.4) * 2.0) * 0.5 + 0.5;
+    float layer = smoothstep(-0.2, 0.2, sin(y * 1.6 + dunes * 2.0));
+    float dust = vnoise(vec2(q.x * 2.0 - t * 3.0, y * 2.0));
+    return uColor * (0.35 + 0.45 * layer) * smoothstep(4.0, -4.0, y) + uColor2 * dust * 0.25;
+  }
+  // cosmos: stars and a nebula
+  float neb = vnoise(q * 0.5 + t * 0.05) * vnoise(q * 1.1 - t * 0.07);
+  float st = step(0.992, hash12(floor(q * 10.0))) * (0.6 + 0.4 * sin(t * 5.0 + q.x * 9.0));
+  return uColor * neb * 1.5 + uColor2 * st * 1.5;
+}
 void main(){
   vec2 p = vUv * 2.0 - 1.0;
   float r = length(p);
@@ -1246,6 +1310,12 @@ void main(){
   float v = pnoise(vec2(a * 12.0 + r * 4.0 * uVortex - uTime * 1.5 * uVortex, r * 3.0 - uTime * 0.5), 12.0);
   vec3 c = uColor * (0.25 + 0.75 * v * uVortex) * (1.0 - r * 0.6);
   float al = uOpacity * mix(0.72, 0.95, uVortex);
+  if (uTerrainAmt > 0.001) {
+    // (the quad is 60 units wide: the landscape fills the middle of it, where the camera looks)
+    vec3 tc = terrain(p * 5.0, uTime);
+    c = mix(c, tc, uTerrainAmt);
+    al = mix(al, min(1.0, uOpacity * 1.3), uTerrainAmt);
+  }
   gl_FragColor = vec4(c * al, al);
 }`;
 
@@ -1438,16 +1508,107 @@ void main(){
     d = min(d, length(p - vec2(0.0, 0.95)) - 0.06);
     float fill = 1.0 - smoothstep(0.0, 0.02, d);
     c = mix(uColor, vec3(1.0), 0.7) * fill + uColor * exp(-max(d, 0.0) * 10.0) * 0.8;
-  } else {
+  } else if (uMode < 7.5) {
     // four-point star (sparkles, greed)
     float star = exp(-abs(p.x * p.y) * 90.0) * exp(-r * 2.2) + exp(-r * r * 28.0);
     c = mix(uColor, vec3(1.0), 0.5) * star;
+  } else if (uMode < 8.5) {
+    // hex shield: a honeycomb inside a bright rim, a ripple running out at uK
+    vec2 h = p * 5.0;
+    vec2 hr = vec2(1.0, 1.7320508);
+    vec2 ha = mod(h, hr) - hr * 0.5;
+    vec2 hb = mod(h - hr * 0.5, hr) - hr * 0.5;
+    vec2 hg = dot(ha, ha) < dot(hb, hb) ? ha : hb;
+    vec2 ag = abs(hg);
+    float hd = 0.5 - max(dot(ag, normalize(vec2(1.0, 1.7320508))), ag.x);
+    float cell = 1.0 - smoothstep(0.0, 0.06, hd);
+    float inside = 1.0 - smoothstep(0.94, 1.0, r);
+    float ripple = exp(-pow((r - uK) * 8.0, 2.0));
+    c = (uColor * (cell * (0.35 + 0.6 * pow(r, 2.0)) + 0.05) + mix(uColor, vec3(1.0), 0.6) * ripple * 0.8) * inside;
+    c += mix(uColor, vec3(1.0), 0.5) * exp(-pow((r - 0.96) * 30.0, 2.0)) * 0.9;
+  } else if (uMode < 9.5) {
+    // arrow pointing up (+y): a chevron head on a shaft, glowing
+    float head = max(abs(p.x) * 1.15 + (p.y - 0.75), -(p.y + 0.05));
+    float hollow = max(abs(p.x) * 1.15 + (p.y - 0.35), -(p.y + 0.45));
+    float chev = max(head, -hollow);
+    float shaft = box(p - vec2(0.0, -0.45), vec2(0.13, 0.42));
+    float d = min(chev, shaft);
+    float fill = 1.0 - smoothstep(0.0, 0.03, d);
+    c = mix(uColor, vec3(1.0), 0.55) * fill + uColor * exp(-max(d, 0.0) * 9.0) * 0.7;
+  } else if (uMode < 10.5) {
+    // galaxy (Xyz): two spiral arms of stars around a bright core, turning
+    float a = atan(p.y, p.x);
+    float lr = log(r + 0.03);
+    float arms = pow(0.5 + 0.5 * cos(2.0 * (a - lr * 2.4 - uTime * 0.8)), 6.0);
+    float stars = step(0.985, hash12(floor(p * 60.0) + floor(uSeed))) * (1.0 - r);
+    float edge = 1.0 - smoothstep(0.55, 1.0, r);
+    c = (mix(uColor, uColor2, r) * arms * 1.1 + vec3(1.0) * stars * 1.5) * edge + mix(uColor2, vec3(1.0), 0.6) * exp(-r * r * 30.0) * 1.2;
+  } else if (uMode < 11.5) {
+    // plus (healing): a soft rounded cross
+    float d = min(box(p, vec2(0.16, 0.62)), box(p, vec2(0.62, 0.16))) - 0.08;
+    float fill = 1.0 - smoothstep(0.0, 0.03, d);
+    c = mix(uColor, vec3(1.0), 0.6) * fill + uColor * exp(-max(d, 0.0) * 8.0) * 0.6;
+  } else if (uMode < 12.5) {
+    // rift (banish): a jagged vertical tear, opening with uK; bright lips, a void inside
+    float w = uK * (0.42 * (1.0 - p.y * p.y)) * (0.75 + 0.5 * vnoise(vec2(p.y * 7.0 + uSeed, uTime * 3.0)));
+    float d = abs(p.x + 0.08 * sin(p.y * 9.0 + uSeed)) - w;
+    float lips = exp(-pow(d * 26.0, 2.0)) * step(abs(p.y), 0.98);
+    float inner = (1.0 - smoothstep(-0.02, 0.0, d));
+    float swirl = vnoise(vec2(p.x * 9.0, p.y * 4.0 - uTime * 2.0));
+    c = mix(uColor, vec3(1.0), 0.5) * lips * 1.4 + uColor2 * inner * swirl * 0.5 + uColor * exp(-max(d, 0.0) * 6.0) * 0.35 * uK;
+  } else if (uMode < 13.5) {
+    // coin: a disk with a rim and a star on its face
+    float disk = 1.0 - smoothstep(0.86, 0.9, r);
+    float rim = exp(-pow((r - 0.8) * 24.0, 2.0));
+    float a = atan(p.y, p.x);
+    float sr = 0.32 + 0.16 * cos(5.0 * a);
+    float star = 1.0 - smoothstep(sr - 0.03, sr, r);
+    c = (uColor * (0.45 + 0.35 * p.y) * disk + mix(uColor, vec3(1.0), 0.7) * (rim + star * 0.8) * disk) + uColor * exp(-max(r - 0.9, 0.0) * 10.0) * 0.4;
+  } else if (uMode < 14.5) {
+    // die: a rounded square showing face uK (1..6) in pips
+    float sq = box(p, vec2(0.7)) - 0.15;
+    float body = 1.0 - smoothstep(0.0, 0.03, sq);
+    float n = floor(uK + 0.5);
+    float pip = 0.0;
+    for (int i = 0; i < 9; i++) {
+      vec2 g = vec2(mod(float(i), 3.0) - 1.0, floor(float(i) / 3.0) - 1.0);
+      float on = 0.0;
+      if (i == 4) on = (mod(n, 2.0) > 0.5) ? 1.0 : 0.0;
+      if (i == 0 || i == 8) on = n > 1.5 ? 1.0 : 0.0;
+      if (i == 2 || i == 6) on = n > 3.5 ? 1.0 : 0.0;
+      if (i == 3 || i == 5) on = n > 5.5 ? 1.0 : 0.0;
+      pip = max(pip, on * (1.0 - smoothstep(0.1, 0.13, length(p - g * 0.45))));
+    }
+    c = (mix(vec3(1.0), uColor, 0.25) * 0.85 * (1.0 - pip) + uColor2 * pip * 0.2) * body + uColor * exp(-max(sq, 0.0) * 9.0) * 0.5;
+  } else if (uMode < 15.5) {
+    // flame: a tongue of fire licking upward
+    vec2 q = vec2(p.x, p.y + 0.35);
+    float n = vnoise(vec2(q.x * 3.0 + uSeed, q.y * 2.5 - uTime * 4.0)) * 0.6 + vnoise(vec2(q.x * 7.0, q.y * 6.0 - uTime * 7.0)) * 0.4;
+    float shape = 1.0 - smoothstep(0.0, 0.9, length(vec2(q.x * (1.6 + q.y * 1.4), max(q.y, 0.0) * 0.55 + min(q.y, 0.0) * 2.2)));
+    float f = clamp(shape * (0.5 + n) - 0.25, 0.0, 1.0);
+    c = mix(uColor, mix(uColor2, vec3(1.0), 0.5), f) * f * 1.6;
+  } else if (uMode < 16.5) {
+    // forbidden: a circle with a slash
+    float ringd = abs(r - 0.78) - 0.1;
+    float slash = abs(dot(p, normalize(vec2(1.0, 1.0)))) - 0.1;
+    float d = min(ringd, max(slash, r - 0.78));
+    float fill = 1.0 - smoothstep(0.0, 0.03, d);
+    c = mix(uColor, vec3(1.0), 0.45) * fill + uColor * exp(-max(d, 0.0) * 8.0) * 0.6;
+  } else {
+    // padlock
+    float bodyd = box(p - vec2(0.0, -0.28), vec2(0.5, 0.38)) - 0.06;
+    float shack = max(abs(length(p - vec2(0.0, 0.18)) - 0.32) - 0.08, -(p.y - 0.18));
+    shack = min(shack, max(abs(abs(p.x) - 0.32) - 0.08, max(p.y - 0.2, -p.y - 0.1)));
+    float hole = length(p - vec2(0.0, -0.25)) - 0.08;
+    float d = min(max(bodyd, -hole), shack);
+    float fill = 1.0 - smoothstep(0.0, 0.03, d);
+    c = mix(uColor, vec3(1.0), 0.5) * fill + uColor * exp(-max(d, 0.0) * 9.0) * 0.6;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;
 
-export type GlowMode = 'shaft' | 'flare' | 'dome' | 'shock' | 'vortex' | 'ankh' | 'sword' | 'star';
-const GLOW_MODES: Record<GlowMode, number> = { shaft: 0, flare: 1, dome: 2, shock: 3, vortex: 4, ankh: 5, sword: 6, star: 7 };
+export type GlowMode = 'shaft' | 'flare' | 'dome' | 'shock' | 'vortex' | 'ankh' | 'sword' | 'star' | 'hex' | 'arrow' | 'galaxy' | 'plus' | 'rift' | 'coin' | 'die' | 'flame' | 'ban' | 'lock';
+const GLOW_MODES: Record<GlowMode, number> = { shaft: 0, flare: 1, dome: 2, shock: 3, vortex: 4, ankh: 5, sword: 6, star: 7, hex: 8, arrow: 9, galaxy: 10, plus: 11, rift: 12, coin: 13, die: 14, flame: 15, ban: 16, lock: 17 };
 
 /** An additive quad drawn by a procedural shape (see GlowMode). */
 export class Glow implements Fx {
@@ -1457,7 +1618,7 @@ export class Glow implements Fx {
   constructor(w: number, h: number, mode: GlowMode, color: number, color2 = color) {
     this.mat = material('glow', { uColor: rgb(color), uColor2: rgb(color2), uMode: GLOW_MODES[mode], uSeed: Math.random() * 10, uOpacity: 0 });
     this.mesh = new Mesh(new PlaneGeometry(w, h), this.mat);
-    this.mesh.renderOrder = mode === 'shaft' || mode === 'vortex' ? -5 : 7;
+    this.mesh.renderOrder = mode === 'shaft' || mode === 'vortex' || mode === 'galaxy' ? -5 : 7;
   }
   get u() {
     return this.mat.uniforms as Record<string, { value: any }>;
@@ -2014,7 +2175,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       ...FX,
       depthTest: false,
       blending: NormalBlending,
-      uniforms: uniforms({ uColor: rgb(0x0a1030), uOpacity: 0, uTime: 0, uVortex: 0 }),
+      uniforms: uniforms({ uColor: rgb(0x0a1030), uColor2: rgb(0xffffff), uOpacity: 0, uTime: 0, uVortex: 0, uTerrain: 0, uTerrainAmt: 0 }),
     }),
   veil: () =>
     new ShaderMaterial({
