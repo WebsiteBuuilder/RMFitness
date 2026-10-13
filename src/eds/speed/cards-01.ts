@@ -112,24 +112,17 @@ function coin(e: Engine, p: Pid | null, label: string): boolean {
   e.log(p, `${label}: ${heads ? 'Heads' : 'Tails'}`);
   return heads;
 }
-/** Spell Counters live in FieldCard.counters, on face-up cards whose text mentions them. */
+/** Spell Counters live in FieldCard.counters, on face-up cards whose text puts them on itself ("Spell Counter on this card / on it"). */
 const maxCounters = (e: Engine, c: Card) => Number(info(e, c).desc.match(/max\.?\s*(\d+)/)?.[1] ?? 99);
+// audit-00: only cards that can hold Spell Counters (Alchemist of Black Spells and Apprentice Magician themselves cannot).
+const holdsCounters = (e: Engine, c: Card) => /Spell Counters? on (?:this card|it)\b/.test(info(e, c).desc);
 const counterHolders = (e: Engine, p?: Pid) =>
-  [...allMonsters(e), ...allST(e)].filter((c) => c.faceUp && info(e, c).desc.includes('Spell Counter') && c.counters < maxCounters(e, c) && (p === undefined || ctrl(e, c) === p));
+  [...allMonsters(e), ...allST(e)].filter((c) => c.faceUp && holdsCounters(e, c) && c.counters < maxCounters(e, c) && (p === undefined || ctrl(e, c) === p));
 function* addCounter(e: Engine, p: Pid, title: string, list: FieldCard[]): Step {
   const c = yield* pickOne(e, p, title, list);
   if (!c || !e.fieldCard(c.uid)) return;
   c.counters = Math.min(maxCounters(e, c), c.counters + 1);
   e.log(p, `A Spell Counter is placed on ${c.name} (${c.counters})`);
-}
-/** ATK added while attacking, as the engine computes it (attackBonus + equips' hostAttackBonus). */
-function attackExtra(e: Engine, a: FieldCard, t: FieldCard | null): number {
-  let n = e.effectOn(a)?.attackBonus?.(e, a, t) ?? 0;
-  for (const u of a.equips) {
-    const eq = e.fieldCard(u);
-    if (eq) n += e.effectOn(eq)?.hostAttackBonus?.(e, eq, a, t) ?? 0;
-  }
-  return n;
 }
 /** The other monster in the current battle, if `m` is part of it. */
 function opponentInBattle(e: Engine, uid: number): FieldCard | null {
@@ -183,7 +176,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const c = hand[Math.floor(e.rand() * hand.length)];
       e.log(p, `A Hero Emerges: ${c.name} was chosen`);
       if (canSS(e, c) && freeMZ(e, p)) yield* e.specialSummon(c.uid, p, 'atk');
-      else yield* e.sendToGrave(c.uid, 'used');
+      // audit-00: a monster that could not be Special Summoned after all goes to the GY too.
+      if (where(e, c.uid) === 'hand') yield* e.sendToGrave(c.uid, 'used');
     },
   };
 
@@ -198,8 +192,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Only the ATK/DEF part: Levels and the "Umi" name cannot change in this engine.
-  E['A Legendary Ocean'] = h.fieldSpell((e, m) => (attrOf(e, m) === 'WATER' ? { atk: 200, def: 200 } : undefined));
+  // audit-00: its name counts as "Umi" (countsAs), and WATER monsters in the hands and on the field are 1 Level lower (levelMod).
+  E['A Legendary Ocean'] = {
+    ...h.fieldSpell((e, m) => (attrOf(e, m) === 'WATER' ? { atk: 200, def: 200 } : undefined)),
+    countsAs: () => 'Umi',
+    levelMod: (e, _src, _p, c) => {
+      const z = where(e, c.uid);
+      if (!isMonster(e, c) || attrOf(e, c) !== 'WATER' || (z !== 'hand' && z !== 'mz')) return 0;
+      return z === 'mz' && !(c as FieldCard).faceUp ? 0 : -1;
+    },
+  };
 
   E['Absolute Crusader'] = {
     quick: {
@@ -219,7 +221,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Absorbing Jar'] = {
-    *flip(e) {
+    *flip(e, _m, me) {
+      ((e.state.fx.noSetTurn ??= [-1, -1]) as number[])[me] = e.state.turn; // audit-00: you cannot Set any cards this turn
       const set = allST(e).filter((c) => !c.faceUp);
       const before = set.map((c) => ({ uid: c.uid, p: ctrl(e, c) }));
       yield* e.destroy(set.map((c) => c.uid));
@@ -261,8 +264,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const chosen = yield* pick(e, p, 'Rise of the Abyss King: destroy which cards?', faceUpCards(e, link.card.uid), 1, abyssKingCount(e, p), true);
       if (!chosen) return false;
       link.payload = chosen.map((c) => c.uid);
+      // audit-00: with a Level 7 or higher "Abyss Actor", the opponent cannot respond to its activation.
+      if (e.monsters(p).some((m) => abyssActor(m) && levelOf(e, m) >= 7)) e.state.fx.unchainable = link.card.uid;
     },
     *resolve(e, link) {
+      if (e.state.fx.unchainable === link.card.uid) e.state.fx.unchainable = undefined;
       yield* e.destroy((link.payload as number[]).filter((u) => e.fieldCard(u)?.faceUp));
     },
   };
@@ -333,9 +339,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link, p) {
       const { monster, mats } = link.payload as { monster: number; mats: number[] };
       if (where(e, monster) !== 'hand' || mats.some((u) => where(e, u) !== 'deck')) return;
-      for (const u of mats) yield* e.sendToGrave(u, 'tribute');
+      for (const u of mats) yield* e.sendToGrave(u, 'material');
       e.player(p).deck = e.shuffle(e.player(p).deck);
       if (!freeMZ(e, p)) return;
+      ((e.state.fx.ritualMats ??= {}) as Record<number, { mats: number[]; turn: number }>)[monster] = { mats: mats.slice(), turn: e.state.turn }; // audit-00: like other Ritual Spells
       yield* e.specialSummon(monster, p, 'atk');
       e.log(p, `${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
     },
@@ -399,23 +406,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Mandatory in the card text; offered as a yes/no response when the battle starts.
+  // audit-00: mandatory, at the start of the Damage Step (a face-down monster is still face-down then).
   E['Ally of Justice Core Destroyer'] = {
-    quick: {
-      repeat: true,
-      label: 'destroy the LIGHT monster it battles',
-      can: (e, c, _p, t) => {
-        const o = t === 'attack' && notChained(e, c) ? opponentInBattle(e, c.uid) : null;
-        return !!o && o.faceUp && attrOf(e, o) === 'LIGHT';
-      },
-      *run(e, c) {
-        const o = opponentInBattle(e, c.uid);
-        if (o && o.faceUp && attrOf(e, o) === 'LIGHT') yield* e.destroy([o.uid]);
-      },
+    *damageStepStart(e, _m, foe) {
+      if (foe && foe.faceUp && attrOf(e, foe) === 'LIGHT') yield* e.destroy([foe.uid]);
     },
   };
 
   // ---------- Amazoness ----------
+  // audit-00 approximation: "they must attack this turn, if able" is not enforced (the engine cannot force a player to attack).
   E['Amazoness Archers'] = {
     canActivate: (e, _c, p, t, ctx) => opponentAttack(e, p, t, ctx) !== null && faceUpOf(e, p).some((m) => amz(m)),
     *resolve(e, _l, p) {
@@ -443,7 +442,48 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       else e.toHandOf(c.uid, p);
       ps.deck = e.shuffle(ps.deck);
     },
+    // audit-00: the GY effect. The chosen monster gets an extra attack for each other opponent's monster it has not battled yet
+    // (attackGuard keeps it off monsters it already battled); your other monsters, including ones Summoned later this turn, cannot attack.
+    graveIgnition: {
+      can: (e, _c, p) => e.state.turnPlayer === p && faceUpOf(e, p).some((m) => amz(m)),
+      *run(e, card, p) {
+        const m = yield* pickOne(e, p, 'Amazoness Call: which Amazoness monster can attack all monsters?', targetable(e, faceUpOf(e, p).filter((x) => amz(x))), true);
+        if (!m) return;
+        e.banish(card.uid);
+        const fx = e.state.fx as { amzCall?: { uid: number; turn: number; hit: number[] } };
+        fx.amzCall = { uid: m.uid, turn: e.state.turn, hit: [] };
+        e.linger('Amazoness Call', p);
+        callRefresh(e, m);
+        for (const x of e.monsters(p)) if (x.uid !== m.uid) tag(x).noAttackTurn = e.state.turn;
+        e.log(p, `${m.name} can attack each of the opponent's monsters this turn`);
+      },
+    },
+    lingering: {
+      onAnySummon: function* (e, owner, m, controller) {
+        const call = (e.state.fx as { amzCall?: { uid: number } }).amzCall;
+        if (controller === owner && call && m.uid !== call.uid) tag(m).noAttackTurn = e.state.turn;
+      },
+      attackGuard: (e, _owner, attacker, target) => {
+        const call = (e.state.fx as { amzCall?: { uid: number; turn: number; hit: number[] } }).amzCall;
+        return !!call && call.turn === e.state.turn && call.uid === attacker.uid && call.hit.includes(target.uid);
+      },
+      afterAnyBattle: function* (e, _owner, attacker, target) {
+        const call = (e.state.fx as { amzCall?: { uid: number; turn: number; hit: number[] } }).amzCall;
+        if (!call || call.turn !== e.state.turn || call.uid !== attacker.uid) return;
+        call.hit.push(target.uid);
+        const m = e.fieldCard(attacker.uid);
+        if (m) callRefresh(e, m);
+      },
+    },
   };
+  /** Amazoness Call: extra attacks = the opponent's monsters this one has not battled yet this turn, beyond its first attack. */
+  function callRefresh(e: Engine, m: FieldCard) {
+    const call = (e.state.fx as { amzCall?: { hit: number[] } }).amzCall!;
+    const left = e.monsters(other(ctrl(e, m))).filter((t) => !call.hit.includes(t.uid)).length;
+    const made = m.attacked ? m.tags?.attacksMade ?? 1 : 0;
+    tag(m).extraAttacksTurn = e.state.turn;
+    tag(m).extraAttacksN = Math.max(0, made + left - 1);
+  }
 
   E['Amazoness Chain Master'] = {
     *onDestroyed(e, _c, p, byBattle) {
@@ -521,7 +561,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     yield* searchDeck(e, p, 'Add which Amazoness Spell/Trap?', ok);
   };
   const princessDeck = (e: Engine, p: Pid) => e.player(p).deck.filter((c) => amzMon(e, c) && canSS(e, c) && c.name !== 'Amazoness Princess');
+  // audit-00 approximation: it is named "Amazoness Queen" on the field (fieldName); in the GY it keeps its own name.
   E['Amazoness Princess'] = {
+    fieldName: () => 'Amazoness Queen',
     *onSummon(e, m, p, kind) {
       if (kind === 'normal') yield* princessSearch(e, m, p);
     },
@@ -612,62 +654,52 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The damage its controller would take is dealt to the opponent instead (computed the way the engine does).
+  // audit-00: the engine's reflectBattleDamage sends the battle damage its controller would take to the opponent, as battle damage.
   E['Amazoness Swords Woman'] = {
-    noBattleDamage(e, m) {
-      const o = opponentInBattle(e, m.uid);
-      const b = e.state.battle;
-      if (!o || !b) return false;
-      const me = ctrl(e, m);
-      let amount = 0;
-      if (b.attacker === m.uid) {
-        const mine = e.atkOf(m) + attackExtra(e, m, o);
-        const theirs = o.pos === 'atk' ? e.atkOf(o) : Math.floor(e.defOf(o) * (e.effectOn(o)?.defenseMult?.(e, o, m) ?? 1));
-        amount = theirs - mine;
-      } else amount = e.atkOf(o) + attackExtra(e, o, m) - e.atkOf(m);
-      if (amount <= 0) return false;
-      e.log(me, `Amazoness Swords Woman: the opponent takes the ${amount} damage instead`);
-      e.damage(other(me), amount);
-      return true;
-    },
+    reflectBattleDamage: () => true,
   };
 
-  // Monsters destroyed in battle with it go to the GY first, then to the bottom of the Deck.
-  const trainee = function* (e: Engine, me: FieldCard, victim: FieldCard): Step {
-    if (where(e, victim.uid) !== 'gy' || victim.token) return;
-    yield* returnToDeck(e, victim.uid, true);
-    e.log(null, `${victim.name} goes to the bottom of the Deck`);
-    if (e.fieldCard(me.uid)) tag(me).permAtk = (me.tags?.permAtk ?? 0) + 200;
+  // audit-00: monsters it destroys by battle go to the Deck instead of the GY (deckInstead: the engine shuffles them in),
+  // then they are moved to the bottom; it gains 200 ATK when the destroyed monster was the opponent's.
+  const trainee = function* (e: Engine, me: FieldCard, victim: FieldCard, p: Pid): Step {
+    if (victim.token || victim.uid === me.uid) return;
+    const f = e.find(victim.uid);
+    if (f?.loc.zone === 'deck') {
+      const deck = e.player(f.loc.player).deck;
+      deck.push(...deck.splice(f.loc.index, 1));
+      e.log(null, `${victim.name} goes to the bottom of the Deck`);
+    }
+    if (f && f.loc.zone !== 'mz' && e.fieldCard(me.uid)) tag(me).permAtk = (me.tags?.permAtk ?? 0) + 200;
   };
   E['Amazoness Trainee'] = {
-    *afterBattle(e, a, t, _p, destroyed) {
-      if (destroyed && t) yield* trainee(e, a, t);
+    deckInstead: (e, m, moving) => {
+      const b = e.state.battle;
+      return !!b && moving.uid !== m.uid && ((b.attacker === m.uid && b.target === moving.uid) || (b.target === m.uid && b.attacker === moving.uid));
     },
-    *onAttacked(e, self, attacker) {
-      yield* trainee(e, self, attacker);
+    *afterBattle(e, a, t, p, destroyed) {
+      if (destroyed && t) yield* trainee(e, a, t, p);
+    },
+    *onAttacked(e, self, attacker, p) {
+      if (e.fieldCard(self.uid) && !e.fieldCard(attacker.uid)) yield* trainee(e, self, attacker, p);
     },
   };
 
-  // Village's revival only sees battle destruction (there is no hook for destruction by card effects).
+  // audit-00: watches every destruction (battle or card effect) of an "Amazoness" monster that lands in the GY (onAnyToGrave), once per turn.
   E['Amazoness Village'] = {
     ...h.fieldSpell((_e, m) => (amz(m) ? { atk: 200, def: 0 } : undefined)),
-    quick: {
-      label: 'Special Summon an Amazoness from your Deck',
-      can: (e, _c, p, t, ctx) => {
-        if (t !== 'destroyed' || ctx.uid === undefined || ctx.prevController !== p || !freeMZ(e, p)) return false;
-        const dead = e.find(ctx.uid);
-        if (!dead || dead.loc.zone !== 'gy' || !amzMon(e, dead.card)) return false;
-        const lv = levelOf(e, dead.card);
-        return e.player(p).deck.some((c) => amzMon(e, c) && canSS(e, c) && levelOf(e, c) <= lv);
-      },
-      *run(e, _c, p, link) {
-        const ctx = (link.payload as { ctx: { uid: number } }).ctx;
-        const lv = levelOf(e, e.find(ctx.uid)?.card ?? { uid: 0, name: '', owner: p });
-        yield* summonOneOf(e, p, 'Amazoness Village: Special Summon which Amazoness?', e.player(p).deck.filter((c) => amzMon(e, c) && canSS(e, c) && levelOf(e, c) <= lv));
-      },
+    *onAnyToGrave(e, card, p, events) {
+      if (!e.oncePerTurn(`village${card.uid}`, p) || !freeMZ(e, p)) return;
+      const dead = events.filter((x) => x.reason === 'destroyed' && x.from === 'mz' && x.toGy && !x.token && amzMon(e, x.card) && where(e, x.card.uid) === 'gy');
+      if (!dead.length) return;
+      const lv = Math.max(...dead.map((x) => levelOf(e, x.card)));
+      const list = e.player(p).deck.filter((c) => amzMon(e, c) && canSS(e, c) && levelOf(e, c) <= lv);
+      if (!list.length || !(yield* e.yesno(p, 'Amazoness Village: Special Summon an Amazoness from your Deck?'))) return;
+      e.useOnce(`village${card.uid}`, p);
+      yield* summonOneOf(e, p, 'Amazoness Village: Special Summon which Amazoness?', list);
     },
   };
 
+  // audit-00 approximation: "must attack if able" is not enforced; it is attached like an Equip so they leave the field together.
   const willpowerList = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => amzMon(e, c) && canSS(e, c));
   E['Amazoness Willpower'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && willpowerList(e, p).length > 0,
@@ -691,6 +723,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Ambulance Rescueroid'] = {
+    summonRule: (_e, _c, _p, how, from) => how !== 'special' || from === 'fusion', // audit-00: only by Fusion Summon
     quick: {
       label: 'Special Summon the destroyed monster',
       can: (e, _c, p, t, ctx) => {
@@ -705,8 +738,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // audit-00: "if it battles" covers being attacked too; the bonus applies while that battle is going on.
   E['Amulet of Ambition'] = h.equipFor((e, m) => isNormalMonster(e, m), undefined, {
-    hostAttackBonus: (e, _eq, host, t) => (t && levelOf(e, t) > levelOf(e, host) ? 500 * (levelOf(e, t) - levelOf(e, host)) : 0),
+    equipBonus: (e, eq, host) => {
+      const t = eq.equippedTo === host.uid ? opponentInBattle(e, host.uid) : null;
+      return { atk: t && levelOf(e, t) > levelOf(e, host) ? 500 * (levelOf(e, t) - levelOf(e, host)) : 0, def: 0 };
+    },
     *onSentToGrave(e, card, owner) {
       if (!(yield* e.yesno(owner, 'Amulet of Ambition: place it on top of your Deck?'))) return;
       e.toDeckTop(card.uid);
@@ -733,8 +770,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Ancient Dragon'] = {
     *onBattleDamage(e, a, p) {
-      if (e.state.battle?.target !== null || !(yield* e.yesno(p, 'Ancient Dragon: gain 500 ATK?'))) return;
+      if (e.state.battle?.target !== null || !(yield* e.yesno(p, 'Ancient Dragon: increase its Level by 1 and ATK by 500?'))) return;
       tag(a).permAtk = (a.tags?.permAtk ?? 0) + 500;
+      tag(a).lvMod = (a.tags?.lvMod ?? 0) + 1; // audit-00: the Level goes up too
     },
   };
 
@@ -756,6 +794,39 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* summonOneOf(e, p, 'Ancient Lamp: Special Summon La Jinn?', e.player(p).hand.filter((c) => c.name === 'La Jinn the Mystical Genie of the Lamp'));
       },
     },
+    // audit-00: attacked while face-down: it can send the attack to another of the attacker's controller's monsters.
+    // Approximation: that battle is worked out here (both monsters belong to the same player, so any damage goes to that player).
+    *interceptAttack(e, lamp, attacker, p) {
+      const others = targetable(e, e.monsters(other(p)).filter((m) => m.uid !== attacker.uid));
+      lamp.faceUp = true;
+      e.event('flip', { uid: lamp.uid, player: p });
+      e.log(p, `${lamp.name} was flipped face-up`);
+      if (!others.length || !(yield* e.yesno(p, 'Ancient Lamp: make the attacker attack another of its controller\'s monsters?'))) return false;
+      const t = yield* pickOne(e, p, 'Ancient Lamp: the attacker attacks which monster instead?', others);
+      if (!t || !e.fieldCard(t.uid) || !e.fieldCard(attacker.uid)) return false;
+      const owner = other(p);
+      if (!t.faceUp) {
+        t.faceUp = true;
+        e.event('flip', { uid: t.uid, player: owner });
+      }
+      e.log(p, `${attacker.name} attacks ${t.name} instead`);
+      const atk = e.atkOf(attacker);
+      const dead: number[] = [];
+      if (t.pos === 'atk') {
+        const ta = e.atkOf(t);
+        if (atk !== ta || atk > 0) {
+          if (atk >= ta) dead.push(t.uid);
+          if (atk <= ta) dead.push(attacker.uid);
+        }
+        if (atk !== ta) e.damage(owner, Math.abs(atk - ta));
+      } else {
+        const td = e.defOf(t);
+        if (atk > td) dead.push(t.uid);
+        else if (atk < td) e.damage(owner, td - atk);
+      }
+      if (dead.length && e.state.winner === null) yield* e.destroy(dead, 'destroyed', true);
+      return true;
+    },
   };
 
   E['Angel O1'] = {
@@ -769,6 +840,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* e.specialSummon(c.uid, p, 'atk');
       },
     },
+    // audit-00: while you control this Special Summoned card you may Tribute Summon once more this turn (the engine's extra Tribute Summon).
+    // Approximation: any monster needing Tributes qualifies (not only Level 7 or higher), in either position, and it stays this turn if Angel O1 leaves.
+    *stateCheck(e, m, p) {
+      const got = (e.state.fx.angelO1 ??= [-1, -1]) as number[];
+      if (!m.tags?.ss || got[p] === e.state.turn || e.state.turnPlayer !== p) return;
+      got[p] = e.state.turn;
+      ((e.state.fx.extraTribute ??= [-1, -1]) as number[])[p] = e.state.turn;
+    },
   };
 
   const archosaurDinos = (e: Engine, p: Pid) =>
@@ -779,11 +858,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     const d = yield* pickOne(e, p, 'Destroy which Dinosaur?', archosaurDinos(e, p));
     if (!d) return;
     e.useOnce('Animadorned Archosaur', p);
-    const lv = levelOf(e, d);
+    const lv = info(e, d).level ?? 0; // audit-00: the destroyed monster's original Level
     if (where(e, d.uid) === 'hand') yield* e.sendToGrave(d.uid, 'destroyed');
     else yield* e.destroy([d.uid]);
     if (where(e, d.uid) !== 'gy') return;
-    const ok = (c: Card) => (isMonster(e, c) && ['Reptile', 'Sea Serpent', 'Winged Beast'].includes(info(e, c).race ?? '') && levelOf(e, c) === lv) || (isSpell(e, c) && named(c, 'Evolution Pill'));
+    const ok = (c: Card) => (isMonster(e, c) && ['Reptile', 'Sea Serpent', 'Winged Beast'].includes(info(e, c).race ?? '') && (info(e, c).level ?? 0) === lv) || (isSpell(e, c) && named(c, 'Evolution Pill'));
     yield* searchDeck(e, p, 'Add which card?', ok);
   };
   E['Animadorned Archosaur'] = {
@@ -852,10 +931,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   const lockAtk = function* (_e: Engine, m: FieldCard): Step {
     if (m.pos === 'atk') m.cannotChangePos = true;
   };
+  // audit-00: the coin toss was missing. Heads: your card effects that target it are negated and destroyed; Tails: your opponent's
+  // (applied as the effect resolves, through onChainLink).
+  const foolCoin = arcanaCoin(function* (e, m) {
+    yield* lockAtk(e, m);
+  });
   E['Arcana Force 0 - The Fool'] = {
     battleProof: () => true,
-    onSummon: (e, m) => lockAtk(e, m),
-    onSpecialSummon: lockAtk,
+    ...foolCoin,
+    *onChainLink(e, m, p, link) {
+      if (!m.tags?.coin || link.targetUid !== m.uid || link.player !== (heads(m) ? p : other(p))) return;
+      link.negated = true;
+      e.log(p, `The Fool negates ${link.card.name}`);
+      if (e.fieldCard(link.card.uid)) yield* e.destroy([link.card.uid]);
+    },
   };
 
   const exHeads = function* (e: Engine, me: FieldCard, p: Pid, victim: FieldCard): Step {
@@ -866,6 +955,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
   E['Arcana Force EX - The Light Ruler'] = {
     cannotNormalSummon: true,
+    // audit-00: only Special Summoned from the hand (its procedure); approximation: another effect Summoning it from the hand is not stopped.
+    summonRule: (_e, _c, _p, how, from) => how !== 'special' || from === 'hand',
+    // audit-00: Tails was missing: an effect targeting it costs it exactly 1000 ATK, and is negated and destroyed (applied as it resolves).
+    *onChainLink(e, m, p, link) {
+      if (!tails(m) || link.targetUid !== m.uid || e.atkOf(m) < 1000) return;
+      tag(m).permAtk = (m.tags?.permAtk ?? 0) - 1000;
+      negateLink(e, link, p);
+      if (link.negated && e.fieldCard(link.card.uid)) yield* e.destroy([link.card.uid]);
+    },
     summonProc: {
       can: (e, _c, p) => e.monsters(p).length >= 3,
       *run(e, c, p) {
@@ -884,18 +982,24 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // audit-00: Sets count too (the engine now lets face-up monsters watch Sets: onAnySet).
+  const empress = function* (e: Engine, w: FieldCard, wp: Pid): Step {
+    if (heads(w)) {
+      const list = e.player(wp).hand.filter((c) => canSS(e, c) && named(c, 'Arcana Force'));
+      if (!list.length || !freeMZ(e, wp) || !(yield* e.yesno(wp, 'The Empress: Special Summon an Arcana Force from your hand?'))) return;
+      yield* summonOneOf(e, wp, 'Special Summon which Arcana Force?', list);
+    } else if (tails(w)) {
+      const c = yield* pickOne(e, wp, 'The Empress: send which card from your hand to the GY?', e.player(wp).hand);
+      if (c) yield* e.sendToGrave(c.uid, 'used');
+    }
+  };
   E['Arcana Force III - The Empress'] = {
     ...arcanaCoin(),
     *onAnySummon(e, w, wp, _m, controller, kind) {
-      if (controller !== other(wp) || kind !== 'normal') return;
-      if (heads(w)) {
-        const list = e.player(wp).hand.filter((c) => canSS(e, c) && named(c, 'Arcana Force'));
-        if (!list.length || !freeMZ(e, wp) || !(yield* e.yesno(wp, 'The Empress: Special Summon an Arcana Force from your hand?'))) return;
-        yield* summonOneOf(e, wp, 'Special Summon which Arcana Force?', list);
-      } else if (tails(w)) {
-        const c = yield* pickOne(e, wp, 'The Empress: send which card from your hand to the GY?', e.player(wp).hand);
-        if (c) yield* e.sendToGrave(c.uid, 'used');
-      }
+      if (controller === other(wp) && kind === 'normal') yield* empress(e, w, wp);
+    },
+    *onAnySet(e, w, wp, _m, controller) {
+      if (controller === other(wp)) yield* empress(e, w, wp);
     },
   };
 
@@ -966,7 +1070,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (isHeads) yield* searchDeck(e, p, 'Arcana Reading: add which coin-tossing card?', (c) => coinCard(e, c));
       else yield* searchDeck(e, other(p), 'Arcana Reading: add which card from your Deck?', () => true);
     },
+    // audit-00: the GY effect was missing: banish it, then Normal Summon 1 "Arcana Force" monster (in addition to the usual Normal Summon).
+    graveIgnition: {
+      can: (e, _c, p) => e.oncePerTurn('Arcana Reading GY', p) && readingSummons(e, p).length > 0,
+      *run(e, card, p) {
+        const m = yield* pickOne(e, p, 'Arcana Reading: Normal Summon which "Arcana Force" monster?', readingSummons(e, p), true);
+        if (!m) return;
+        e.useOnce('Arcana Reading GY', p);
+        e.banish(card.uid);
+        yield* e.extraNormalSummon(p, m.uid, 'atk', true);
+      },
+    },
   };
+  const readingSummons = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && named(c, 'Arcana Force') && e.canNormalSummon(p, c, true, true));
 
   const knights = ["Queen's Knight", "King's Knight", "Jack's Knight"];
   const knightPool = (e: Engine, p: Pid) => [...e.player(p).hand, ...faceUpOf(e, p)];
@@ -1018,10 +1134,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* searchDeck(e, p, 'Add Pandemonium?', (x) => x.name === 'Pandemonium');
       },
     },
-    onSummon: (e, m) => generalCheck(e, m),
-    onSpecialSummon: (e, m) => generalCheck(e, m),
-    onStandby: (e, m) => generalCheck(e, m),
-    onEndPhase: (e, m) => generalCheck(e, m),
+    // audit-00: checked after every action (it used to be checked only when Summoned and in the Standby/End Phase).
+    stateCheck: (e, m) => generalCheck(e, m),
   };
 
   E['Archfiend of Gilfer'] = {
@@ -1080,6 +1194,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       yield* e.specialSummon(link.targetUid, p, 'atk');
       const m = e.fieldCard(link.targetUid);
       if (m) m.doomAt = e.state.turn;
+      if (m) tag(m).cannotTribute = 1; // audit-00: it cannot be Tributed
     },
   };
 
@@ -1120,17 +1235,25 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         e.useOnce(c.name, p);
         for (const m of mats) e.banish(m.uid);
         if (!freeMZ(e, p) || where(e, c.uid) !== 'hand') return;
-        yield* e.specialSummon(c.uid, p, 'atk');
+        e.state.fx.whiteOwn = c.uid;
+        try {
+          yield* e.specialSummon(c.uid, p, 'atk');
+        } finally {
+          e.state.fx.whiteOwn = undefined;
+        }
         if (e.player(p).deck.some((x) => x.name === 'White Veil') && (yield* e.yesno(p, 'Add White Veil from your Deck?'))) yield* searchDeck(e, p, 'Add White Veil', (x) => x.name === 'White Veil');
       },
     },
-    quick: {
-      label: 'destroy 1 card on the field',
-      can: (e, c, _p, t) => t === 'attack' && e.state.battle?.attacker === c.uid && allMonsters(e).length + allST(e).length > 1,
-      *run(e, c, p) {
-        const t = yield* pickOne(e, p, 'Armed Dragon LV10 White: destroy which card?', [...allMonsters(e), ...allST(e)].filter((x) => x.uid !== c.uid));
-        if (t) yield* e.destroy([t.uid]);
-      },
+    // audit-00: "Must be Special Summoned by its own effect" and "You take no effect damage" were missing.
+    summonRule: (e, c, _p, how) => how !== 'special' || e.state.fx.whiteOwn === c.uid,
+    damageMod: (_e, _src, ctl, damaged, _amount, byEffect) => (byEffect && damaged === ctl ? 0 : undefined),
+    // audit-00: at the start of the Damage Step (it used to be offered when the attack was declared).
+    *damageStepStart(e, m, _foe, p) {
+      if (e.state.battle?.attacker !== m.uid) return;
+      const list = [...allMonsters(e), ...allST(e)].filter((x) => x.uid !== m.uid);
+      if (!list.length || !(yield* e.yesno(p, 'Armed Dragon LV10 White: destroy 1 card on the field?'))) return;
+      const t = yield* pickOne(e, p, 'Armed Dragon LV10 White: destroy which card?', list);
+      if (t) yield* e.destroy([t.uid]);
     },
   };
 
@@ -1205,6 +1328,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Asura Priest'] = {
+    cannotSpecialSummon: true, // audit-00: "Cannot be Special Summoned"
+    // audit-00: flipped face-up by an attack also counts as "flipped face-up" for its return to the hand.
+    *interceptAttack(e, m) {
+      tag(m).spiritTurn = e.state.turn;
+      return false;
+    },
     attacks(e, m) {
       const done = m.attacked ? m.tags?.attacksMade ?? 1 : 0;
       return done + e.monsters(other(ctrl(e, m))).filter((t) => m.tags?.[`hit${t.uid}`] !== e.state.turn).length;
@@ -1228,6 +1357,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const list = e.player(p).deck.filter((c) => canSS(e, c) && named(c, 'Atlantean') && c.name !== 'Atlantean Marksman' && info(e, c).race === 'Sea Serpent' && levelOf(e, c) <= 4);
       if (!list.length || !freeMZ(e, p) || !(yield* e.yesno(p, 'Atlantean Marksman: Special Summon an Atlantean from your Deck?'))) return;
       yield* summonOneOf(e, p, 'Special Summon which Atlantean?', list);
+    },
+    // audit-00: the second effect was missing. Approximation: "sent to the GY to activate a WATER monster's effect" is read as
+    // discarded, sent or Tributed from the hand or field while a WATER monster's effect is being activated or resolved.
+    *onSentToGrave(e, card, owner, from, reason) {
+      if (!['discard', 'cost', 'tribute'].includes(reason) || from === 'deck' || from === 'gy') return;
+      const src = e.resolvingCard() ?? e.state.chain[e.state.chain.length - 1]?.card;
+      if (!src || src.uid === card.uid || !isMonster(e, src) || attrOf(e, src) !== 'WATER') return;
+      const sets = [...e.monsters(other(owner)), ...stOf(e, other(owner))].filter((c) => !c.faceUp);
+      const t = yield* pickOne(e, owner, 'Atlantean Marksman: destroy which Set card?', sets);
+      if (t) yield* e.destroy([t.uid]);
     },
   };
 
@@ -1371,12 +1510,18 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Tribute Summoned with 2 Tributes (the 1-Tribute Summon needs engine support).
+  // audit-00: the 1-Tribute Summon (original ATK 2000) was missing. Approximation: the engine cannot ask how many to Tribute, so it
+  // takes 1 Tribute when you control fewer than 2 monsters you could Tribute, and 2 otherwise (and a Set always needs 2).
   E['Behemoth the King of All Animals'] = {
-    *onSummon(e, _m, p, kind) {
+    tributeOffer: (e, src, p, _m, need) => (src === null && need === 2 && e.monsters(p).filter((m) => !e.untributable(m)).length < 2 ? { need: 1 } : undefined),
+    baseStats: (e, m) => (m.tags?.behemoth1 ? { atk: 2000, def: info(e, m).def ?? 0 } : undefined),
+    *onSummon(e, m, p, kind) {
+      if (kind !== 'normal') return;
+      const n = ((e.state.fx.tributedFor ?? {}) as Record<number, number>)[m.uid] ?? 2;
+      if (n === 1) tag(m).behemoth1 = 1;
       const beasts = e.player(p).gy.filter((c) => isMonster(e, c) && info(e, c).race === 'Beast');
-      if (kind !== 'normal' || !beasts.length || !(yield* e.yesno(p, 'Behemoth: return Beasts from your GY to your hand?'))) return;
-      const chosen = yield* pick(e, p, 'Return which 2 Beast monsters?', beasts, Math.min(2, beasts.length), 2);
+      if (!beasts.length || !(yield* e.yesno(p, 'Behemoth: return Beasts from your GY to your hand?'))) return;
+      const chosen = yield* pick(e, p, `Return which ${n} Beast monster${n > 1 ? 's' : ''}?`, beasts, Math.min(n, beasts.length), n);
       for (const c of chosen ?? []) e.toHandOf(c.uid, p);
     },
   };
