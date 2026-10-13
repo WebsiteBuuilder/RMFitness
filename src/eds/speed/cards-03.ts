@@ -207,6 +207,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!(yield* e.yesno(p, 'Crystal Brilliance: send it to the GY to Special Summon a Crystal Beast from your hand or GY?'))) continue;
       yield* e.sendToGrave(b.uid, 'cost');
       yield* summonOneOf(e, p, 'Crystal Brilliance: Special Summon which Crystal Beast?', list());
+      ((e.state.fx.halfDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
+      e.log(p, 'Crystal Brilliance: damage you take this turn is halved');
     }
     for (const c of e.player(p).gy.slice()) {
       const t = placedTriggers[c.name];
@@ -215,10 +217,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     }
   }
   /** Places up to `max` chosen Crystal Beasts face-up in the Spell & Trap Zone, then fires the "placed" triggers. */
-  function* placeCB(e: Engine, p: Pid, title: string, list: Card[], max: number, optional = false): Step {
+  function* placeCB(e: Engine, p: Pid, title: string, list: Card[], max: number, optional = false, exact = false): Step {
     const n = Math.min(max, freeSTCount(e, p), list.length);
     if (n <= 0) return;
-    const chosen = yield* pick(e, p, title, list, optional ? 0 : 1, n, optional);
+    const chosen = yield* pick(e, p, title, list, exact ? n : optional ? 0 : 1, n, optional);
     if (!chosen?.length) return;
     let placed = 0;
     for (const c of chosen) if (placeST(e, c.uid, p)) (placed++, e.log(p, `${c.name} is placed in the Spell & Trap Zone as a Continuous Spell`));
@@ -455,7 +457,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       function* (e, card, p) {
         const n = card.counters;
         yield* e.sendToGrave(card.uid, 'cost');
-        yield* placeCB(e, p, `Crystal Tree: place up to ${n} Crystal Beasts`, e.player(p).deck.filter((x) => cbMon(e, x)), n);
+        yield* placeCB(e, p, `Crystal Tree: place ${n} Crystal Beast${n > 1 ? 's' : ''}`, e.player(p).deck.filter((x) => cbMon(e, x)), n, false, true);
       },
       false,
     ),

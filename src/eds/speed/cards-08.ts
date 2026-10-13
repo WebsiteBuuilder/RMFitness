@@ -594,7 +594,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     hostCannotAttack: () => true,
     *onStandby(e, card, p) {
       const host = card.equippedTo !== undefined ? e.fieldCard(card.equippedTo) : null;
-      if (!host) return;
+      // "When it leaves the field, destroy this card" (also when it left without taking this card along, e.g. bounced).
+      if (!host || e.controller(host.uid) !== other(p)) return yield* e.destroy([card.uid]);
       tag(host).lockPosTurn = e.state.turn;
       if (e.state.turnPlayer === p) e.damage(other(p), 500);
     },
@@ -1437,6 +1438,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
     aura: (e, _src, t, sc) => (t.faceUp && ctrl(e, t) === sc && raceOf(e, t) === 'Zombie' ? { atk: 200 * e.monsters(other(sc)).length, def: 0 } : undefined),
+    // "If exactly 1 Zombie monster you control would be destroyed, you can send this card to the GY instead" (always used).
+    shields(e, src, target, how, sc) {
+      if (how === 'target' || !src.active || ctrl(e, target) !== sc || raceOf(e, target) !== 'Zombie' || !e.fieldCard(src.uid)) return false;
+      e.log(sc, `${src.name} is sent to the GY instead of ${target.name}`);
+      const g = e.sendToGrave(src.uid, 'cost');
+      for (let r = g.next(undefined as never); !r.done; r = g.next(false)) {
+        /* drained */
+      }
+      return true;
+    },
   };
 
   const gemPool = (e: Engine, p: Pid) => [...e.player(p).hand.filter((c) => isMonster(e, c)), ...e.monsters(p)];
@@ -1481,9 +1492,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const a = yield* chooseOption(e, p, 'Quantum Cat: declare an Attribute', attrs, true);
       if (a === null) return false;
       e.log(p, `Quantum Cat: ${races[r]} / ${attrs[a]}`);
+      link.payload = { race: races[r], attribute: attrs[a] };
     },
     *resolve(e, link, p) {
-      if (e.fieldCard(link.card.uid) && freeMZ(e, p)) yield* e.specialSummon(link.card.uid, p, 'def');
+      if (!e.fieldCard(link.card.uid) || !freeMZ(e, p)) return;
+      // A Level 4 Normal Monster with the declared Type and Attribute (read by e.raceOf / attrOf / levelOf).
+      const d = (link.payload ?? {}) as { race?: string; attribute?: string };
+      ((fx(e).trapMonster ??= {}) as Record<number, unknown>)[link.card.uid] = { race: d.race, attribute: d.attribute, level: 4 };
+      yield* e.specialSummon(link.card.uid, p, 'def');
     },
     baseStats: (e, m) => (e.find(m.uid)?.loc.zone === 'mz' ? { atk: 0, def: 2200 } : undefined),
   };

@@ -122,6 +122,8 @@ export interface EffectDef {
     /** The effect, at resolution. link.payload.ctx holds what it responded to. */
     run(e: Engine, card: Card, p: Pid, link: ChainLink): Step;
   };
+  /** During each End Phase while this card is in its owner's Graveyard (Speed Duel only). */
+  onEndPhaseInGrave?(e: Engine, card: Card, owner: Pid): Step;
   /** An ignition effect used from the Graveyard during your Main Phase. */
   graveIgnition?: { can(e: Engine, card: Card, p: Pid): boolean; run(e: Engine, card: Card, p: Pid): Step };
   /** Inflicts piercing battle damage when attacking a Defense Position monster. */
@@ -144,6 +146,51 @@ export interface EffectDef {
   cannotBeAttacked?(e: Engine, m: FieldCard, attacker: FieldCard): boolean;
   /** How many attacks this monster may make each Battle Phase (default 1). */
   attacks?(e: Engine, m: FieldCard): number;
+  /** An active Spell/Trap, after damage calculation of every battle (the monsters may already be gone). `controller` controls this card. */
+  afterAnyBattle?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard): Step;
+
+  // ---------- Speed Duel hooks for active, face-up Continuous Spells/Traps (skipped while negated) ----------
+  /** Cards were sent to the GY (or destroyed and banished instead); one call per event, cards destroyed together share it. */
+  onAnyToGrave?(e: Engine, card: FieldCard, controller: Pid, events: GraveEvent[]): Step;
+  /** A card about to go to the GY is banished instead (Macro Cosmos). */
+  banishInstead?(e: Engine, card: FieldCard, controller: Pid, moving: Card): boolean;
+  /** `summoner` cannot Summon `monster` this way (`from`: the zone it comes from, null for Tokens). */
+  forbidsSummon?(e: Engine, card: FieldCard, controller: Pid, monster: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
+  /** This attacker inflicts piercing battle damage (Dragon's Rage). */
+  grantsPiercing?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard): boolean;
+  /** Checked after every action: "destroy this card if..." (the script destroys it itself). */
+  stateCheck?(e: Engine, card: FieldCard, controller: Pid): Step;
+  /** A monster's battle position was changed (by its controller, or a Flip Summon). */
+  onAnyPositionChange?(e: Engine, card: FieldCard, controller: Pid, m: FieldCard, mController: Pid): Step;
+  /** A monster was Normal Set. */
+  onAnySet?(e: Engine, card: FieldCard, controller: Pid, m: FieldCard, mController: Pid): Step;
+  /** This card can be Tributed instead of the `need` monsters to Tribute Summon `monster` face-up. */
+  tributeFor?(e: Engine, card: FieldCard, controller: Pid, monster: Card, need: number): boolean;
+  /** Negate this activated effect (of a monster or card) as it resolves. */
+  negatesEffect?(e: Engine, card: FieldCard, controller: Pid, link: ChainLink): boolean;
+  /** End of the Damage Step: these two monsters battled with this ATK. */
+  onBattleEnd?(e: Engine, card: FieldCard, controller: Pid, attacker: FieldCard, target: FieldCard, attackerAtk: number, targetAtk: number): Step;
+  /** Its controller drew these cards for their normal draw in the Draw Phase. */
+  onDrawPhase?(e: Engine, card: FieldCard, controller: Pid, drawn: Card[]): Step;
+}
+
+export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
+/** A card sent to the GY, reported to onAnyToGrave watchers. */
+export interface GraveEvent {
+  card: Card;
+  from: ZoneName;
+  /** who controlled it (or held it) before */
+  controller: Pid;
+  reason: string;
+  byBattle: boolean;
+  faceUp: boolean;
+  pos?: 'atk' | 'def';
+  race: string;
+  /** false when it was banished instead */
+  toGy: boolean;
+  token: boolean;
+  /** whose card effect sent it (null: a game action, like battle or a Tribute Summon) */
+  by: Pid | null;
 }
 
 const E: Record<string, EffectDef> = {};
@@ -1494,6 +1541,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
   const pool: Card[] = [...ps.hand.filter((c) => isMonster(e, c)), ...e.monsters(p)];
   const out: FusionPlan[] = [];
   for (const fusion of ps.fusion) {
+    if (e.summonBlocked(p, fusion, 'special', 'fusion')) continue;
     const ids = e.fusionMaterials(fusion.name);
     if (!ids) continue;
     // Beastking of the Swamps & co. can stand in for any one material.
@@ -1630,9 +1678,9 @@ E['Horn of Heaven'] = {
   },
 };
 E['Spellbinding Circle'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp),
+  canActivate: (e, _c, p, t) => (isMain(t) || t === 'summon' || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp && !e.untargetable(m)),
   *activate(e, link, p) {
-    const targets = e.monsters(other(p)).filter((m) => m.faceUp);
+    const targets = e.monsters(other(p)).filter((m) => m.faceUp && !e.untargetable(m));
     const picks = yield* e.select(p, 'Spellbinding Circle: bind which monster?', e.optionsFor(targets), 1, 1, true);
     if (!picks) return false;
     link.targetUid = targets[picks[0]].uid;

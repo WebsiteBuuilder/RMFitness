@@ -274,8 +274,10 @@ export function App() {
 
   /** Each seat's control style: in a hotseat duel Player 2's own profile decides theirs. */
   const controlsFor = (p: Pid): ControlStyle => {
-    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? 'classic';
-    return save.controls ?? 'classic';
+    // Speed Duel plays on the Master Duel-style Touch screen unless the player picked Classic.
+    const fallback: ControlStyle = duelMode === 'speed' ? 'touch' : 'classic';
+    if (hotseat && p === 1) return (p2Profile ? loadSave(p2Profile)?.controls : null) ?? save.controls ?? fallback;
+    return save.controls ?? fallback;
   };
   const setControls = (p: Pid, c: ControlStyle) => {
     if (hotseat && p === 1) {

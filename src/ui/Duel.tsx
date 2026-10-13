@@ -60,6 +60,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setStyles((cur) => (acting === 0 ? [next, cur[1]] : [cur[0], next]));
     onControls?.(acting, next);
   };
+  // Test hook: ?debug exposes the engine so automated checks can see what a button did.
+  if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as Record<string, unknown>).__duel = { e, state, acting };
   const lastActing = useRef(acting);
   const lastSeq = useRef(0);
   const finished = useRef(false);
@@ -143,7 +145,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (info?.kind === 'monster') {
         const ok = e.canNormalSummon(acting, selCard);
         const zone = me.mz.findIndex((z) => z === null);
-        commands.push({ label: 'Summon', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
+        commands.push({ label: 'Summon', disabled: !ok || !e.canNormalSummon(acting, selCard, true), onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'atk', faceUp: true }) });
         commands.push({ label: 'Set', disabled: !ok, onPick: () => send({ type: 'SUMMON', player: acting, uid: selCard.uid, zone, pos: 'def', faceUp: false }) });
         const eff = getEffect(selCard.name);
         if (eff?.summonProc) commands.push({ label: 'Special Summon', disabled: !e.canSpecialProc(acting, selCard), onPick: () => send({ type: 'SPECIAL', player: acting, uid: selCard.uid }) });
@@ -172,7 +174,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
         if (m.faceUp) commands.push({ label: m.pos === 'atk' ? 'To Defense' : 'To Attack', disabled: !fresh || !!m.cannotChangePos || !e.canChangePosition(acting, m), onPick: () => send({ type: 'CHANGE_POS', player: acting, uid: m.uid }) });
-        else commands.push({ label: 'Flip Summon', disabled: !fresh, onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
+        else commands.push({ label: 'Flip Summon', disabled: !fresh || e.summonBlocked(acting, m, 'flip', 'mz'), onPick: () => send({ type: 'FLIP_SUMMON', player: acting, uid: m.uid }) });
       }
     }
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && !selField.faceUp && myTurn) {
@@ -182,6 +184,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (mine && selField && (selected.loc.zone === 'sz' || selected.loc.zone === 'field') && selField.faceUp && myTurn && e.inMainPhase() && getEffect(selField.name)?.ignition) {
       commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, selField), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: selField.uid }) });
     }
+  }
+  // Speed Duel Quick Effects you can use in your own Main Phase (from the hand or the field).
+  if (selCard && selected && canAct && !prompt && state.winner === null && selected.loc.player === acting && e.canUseQuickNow(acting, selCard.uid)) {
+    commands.push({ label: 'Quick Effect', onPick: () => send({ type: 'QUICK_EFFECT', player: acting, uid: selCard.uid }) });
   }
   const canSeeSel = !!selCard && (!selField || selField.faceUp || selected?.loc.player === acting);
   if (selCard && canSeeSel) commands.push({ label: 'Card Info', onPick: () => setInfo(selCard.name) });
@@ -362,13 +368,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                   .slice()
                   .reverse()
                   .map((c) =>
-                    canAct && !prompt && e.canUseGraveEffect(acting, c.uid) ? (
+                    canAct && !prompt && (e.canUseGraveEffect(acting, c.uid) || e.canUseQuickNow(acting, c.uid)) ? (
                       <div key={c.uid} class="gcard">
                         <button onClick={() => setInfo(c.name)}>
                           <CardImg name={c.name} />
                           <span>{c.name}</span>
                         </button>
-                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'GRAVE_EFFECT', player: acting, uid: c.uid }))}>
+                        <button class="gbtn geff" onClick={() => (setPile(null), send({ type: e.canUseGraveEffect(acting, c.uid) ? 'GRAVE_EFFECT' : 'QUICK_EFFECT', player: acting, uid: c.uid }))}>
                           Effect
                         </button>
                       </div>

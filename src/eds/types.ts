@@ -199,6 +199,7 @@ export type Action =
   | { type: 'NO'; player: Pid }
   | { type: 'SKILL'; player: Pid }
   | { type: 'GRAVE_EFFECT'; player: Pid; uid: number }
+  | { type: 'QUICK_EFFECT'; player: Pid; uid: number }
   | { type: 'SURRENDER'; player: Pid };
 
 export type LoggedAction = Action & { seq: number; ts: number };
