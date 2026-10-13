@@ -507,7 +507,8 @@ export class BoardLayer {
       const breath = 1 + Math.sin(t * 1.9 + p.seed) * 0.006;
       const grow = p.quick ? 1 : lerp(0.75, 1, k);
       // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
-      const s = pose.size * grow * breath;
+      // an Overframe monster stands a little taller than the rest
+      const s = pose.size * grow * breath * (p.finish >= FIN.OF ? 1.1 : 1);
       const sy = lerp(1, 0.85, p.kneel) * (1 - squash * 0.08);
       const sx = 1 + squash * 0.05;
       // pivot at the feet on the card; the figure hangs from it

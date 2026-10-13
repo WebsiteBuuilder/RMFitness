@@ -773,3 +773,63 @@ img.cimg.lvr-OF {
     animation: none !important;
   }
 }
+
+/* ---------- the light that follows the phone's tilt (or your finger): tilt.ts ---------- */
+.lvr-spec {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, #ffffffaa 0, #ffffff40 9%, transparent 24%);
+  mix-blend-mode: overlay;
+  translate: calc(var(--lvr-tx, -0.3) * 28%) calc(var(--lvr-ty, -0.4) * 28%);
+  transition: translate 0.12s linear;
+}
+.lvr-fx-GL .lvr-spec {
+  background: radial-gradient(circle at 50% 50%, #ffffffcc 0, #ff9df455 8%, #6ce3ff33 15%, transparent 25%);
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+.lvr-fx-RO .lvr-spec {
+  background: radial-gradient(circle at 50% 50%, #fff6d8dd 0, #ffd56a66 10%, transparent 24%);
+  mix-blend-mode: screen;
+  opacity: 0.8;
+}
+.lvr-of > .lvr-spec {
+  z-index: 3;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #ffffffb0 0, #ff9df440 10%, transparent 22%);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  clip-path: inset(25% 25% round 4px);
+}
+/* Overframe's rising art follows the light too (parallax over the frame) */
+.lvr-pop {
+  translate: calc(var(--lvr-tx, 0) * -4%) calc(var(--lvr-ty, 0) * -3%);
+  transition: translate 0.12s linear;
+}
+/* the ATK/DEF plate of a finished monster on the field carries its finish */
+.tz:has(.lvr-fx-GL) .tstat,
+.fcard:has(> .lvr-fx-GL) > .fstat {
+  box-shadow: 0 0 0 1px #ff9df4, 0 0 8px #6ce3ff;
+}
+.tz:has(.lvr-fx-RO) .tstat,
+.fcard:has(> .lvr-fx-RO) > .fstat {
+  box-shadow: 0 0 0 1px #ffd56a, 0 0 8px #ffd56a;
+}
+.tz:has(.lvr-of) .tstat,
+.fcard:has(> .lvr-of) > .fstat {
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 10px #ff5ad8;
+  text-shadow: 0 1px 2px #000;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvr-spec,
+  .lvr-pop {
+    transition: none;
+    translate: none;
+  }
+}

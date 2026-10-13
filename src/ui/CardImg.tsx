@@ -9,6 +9,7 @@ import { spellWord } from './gameUi';
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
 const GLINTS = (
   <>
+    <b class="lvr-spec" />
     <b class="lvr-glint g1" />
     <b class="lvr-glint g2" />
     <b class="lvr-glint g3" />
@@ -38,6 +39,7 @@ export function CardImg({ name, back = false, class: cls = '', owner, tier: forc
         <i class="lvr-ofrim" />
         <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
         {fx}
+        <b class="lvr-spec of" />
         <b class="lvr-pop" style={{ backgroundImage: `url("${url}")` }} />
         <i class="lvr-spk s1" />
         <i class="lvr-spk s2" />
