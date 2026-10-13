@@ -21,19 +21,29 @@ export interface CardRef {
   /** screen rectangle of the card on the board, when it is there */
   rect: Rect | null;
   def: boolean;
+  /** (activate's field list) destroyed by the effect in the same update */
+  dies?: boolean;
 }
 
 export type Cue =
   | { kind: 'summon'; card: CardRef; special: boolean }
   | { kind: 'set'; card: CardRef; monster: boolean }
   | { kind: 'flip'; card: CardRef }
-  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster' }
+  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster'; targets?: Target[]; field?: CardRef[] }
+  /** a chain link's target, picked after its activation already played (a human choosing) */
+  | { kind: 'target'; card: CardRef; targets: Target[] }
   | { kind: 'skill'; player: Pid; name: string }
   | { kind: 'attack'; attacker: CardRef; target: CardRef | null; defender: Pid }
   | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid; dmg?: { player: Pid; amount: number } }
   | { kind: 'damage'; player: Pid; amount: number }
   | { kind: 'destroy'; card: CardRef }
   | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null };
+
+/** What an effect targets, and whether it is destroyed in the same update. */
+export interface Target {
+  card: CardRef;
+  destroyed: boolean;
+}
 
 /** Field monsters as they were last seen on screen (a destroyed card's last place). */
 export type FieldMemo = Map<number, CardRef>;
@@ -88,6 +98,17 @@ function live(c: CardRef, host: HTMLElement | null): CardRef {
   });
 }
 
+/** Cards that leave the field after event `i`, before the next activation (what that effect destroyed). */
+function gone(events: EngineEvent[], i: number): Set<number> {
+  const s = new Set<number>();
+  for (let j = i + 1; j < events.length; j++) {
+    const e = events[j];
+    if (e.kind === 'activate') break;
+    if (e.kind === 'to-gy' && e.uid !== undefined) s.add(e.uid);
+  }
+  return s;
+}
+
 /** A battle's damage plays with the blow that dealt it (one moment, not two). */
 export function coalesce(cues: Cue[]): Cue[] {
   const out: Cue[] = [];
@@ -118,7 +139,8 @@ export interface CueTrack {
 
 export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, host: HTMLElement | null, memo: FieldMemo, track: CueTrack = { battle: null }): Cue[] {
   const out: Cue[] = [];
-  for (const ev of events) {
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
     const r = (uid: number | undefined | null) => (uid === undefined || uid === null ? null : ref(state, uid, viewer, host, memo));
     switch (ev.kind) {
       case 'summon': {
@@ -149,7 +171,22 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         if (!c) break;
         const name = locate(state, c.uid)?.card.name ?? c.name;
         const k = card(name)?.kind ?? 'spell';
-        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k });
+        // the face-up monsters on the field as they stood before this update (board-wide effects strike them)
+        const doomed = gone(events, i);
+        const field: CardRef[] = [...memo.values()].filter((m) => m.faceUp && m.name).map((m) => ({ ...m, rect: rectOf(m.uid, host) ?? m.rect, dies: doomed.has(m.uid) }));
+        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field });
+        break;
+      }
+      case 'target': {
+        const t = r(ev.target);
+        if (!t) break;
+        const tg: Target = { card: t, destroyed: gone(events, i).has(t.uid) };
+        const prev = [...out].reverse().find((x) => x.kind === 'activate' && x.card.uid === ev.uid);
+        if (prev && prev.kind === 'activate') (prev.targets ??= []).push(tg);
+        else {
+          const c = r(ev.uid);
+          if (c) out.push({ kind: 'target', card: { ...c, name: locate(state, c.uid)?.card.name ?? c.name, faceUp: true }, targets: [tg] });
+        }
         break;
       }
       case 'attack': {
@@ -203,6 +240,7 @@ export function weight(c: Cue): number {
     case 'skill':
       return 4;
     case 'activate':
+    case 'target':
       return 3;
     default:
       return 1;

@@ -75,6 +75,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     flash: (c, s) =>
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
+    clear: () => layer.replaceChildren(),
   };
 }
 
@@ -227,8 +228,12 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         const ps = state.players[p];
         for (const c of [...ps.mz, ...ps.hand, ...ps.deck, ...ps.fusion, ...ps.gy]) if (c?.name) names.add(c.name);
       }
-      import("./depth")
-        .then(({ preloadArt }) => (gone ? undefined : preloadArt([...names], () => gone)))
+      // also measure each figure's feet and look now: those small canvas reads stall a frame
+      // when a monster's figure first appears mid-duel
+      Promise.all([import("./depth"), import("./stage")])
+        .then(([{ preloadArt }, { figureFoot, artTame }]) =>
+          gone ? undefined : preloadArt([...names], () => gone, (a) => (figureFoot(a), artTame(a))),
+        )
         .catch(() => {});
     });
     return () => void (gone = true);

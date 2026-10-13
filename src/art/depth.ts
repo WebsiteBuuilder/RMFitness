@@ -250,14 +250,15 @@ const CACHE_MAX = 48;
  * duel), two at a time, a short pause between each, so a cinematic never waits
  * for a picture. Stops when `stop()` turns true. At most CACHE_MAX - 8 names.
  */
-export async function preloadArt(names: string[], stop: () => boolean = () => false): Promise<void> {
+export async function preloadArt(names: string[], stop: () => boolean = () => false, each?: (art: ArtData) => void): Promise<void> {
   const list = names.filter((n) => !!card(n)).slice(0, CACHE_MAX - 8);
   let i = 0;
   const pause = () => new Promise<void>((ok) => setTimeout(ok, 60));
   const worker = async () => {
     while (i < list.length && !stop()) {
       const n = list[i++];
-      await artFor(n).catch(() => null);
+      const art = await artFor(n).catch(() => null);
+      if (art && each && !stop()) each(art);
       await pause();
     }
   };

@@ -1202,6 +1202,7 @@ uniform vec3 uFlashColor;
 uniform float uCrack;
 uniform float uCrackOp;
 uniform vec2 uCrackAt;
+uniform vec3 uCrackColor;
 uniform float uRed;
 uniform float uSpeed;
 uniform vec2 uFocus;
@@ -1239,10 +1240,11 @@ void main(){
     float radial = 1.0 - smoothstep(0.0, 0.006 / max(d, 0.03) + 0.004, rl);
     float cells = 1.0 - smoothstep(0.0, 0.035, vedge(q * (5.0 / (0.25 + d * 1.5)) + 3.7));
     float line = max(radial, cells * (1.0 - smoothstep(0.05, 0.35, d)) * 0.9 + cells * 0.35);
-    L += vec3(0.92, 0.96, 1.0) * line * m * uCrackOp;
+    L += uCrackColor * line * m * uCrackOp;
     a = max(a, line * m * 0.4 * uCrackOp);
   }
-  L += uFlashColor * uFlash * (1.0 - 0.35 * min(r, 1.0));
+  // the flash rings the subject more than it covers it, so the silhouette stays readable
+  L += uFlashColor * uFlash * (0.5 + 0.5 * smoothstep(0.05, 0.6, r));
   L = min(L, vec3(1.0));
   gl_FragColor = vec4(L, clamp(max(a, max(L.r, max(L.g, L.b))), 0.0, 1.0));
 }`;
@@ -1810,7 +1812,10 @@ void main(){
   }
   vec2 q = vUv - 0.5;
   float v = 1.0 - uVig * smoothstep(0.3, 0.8, length(q));
-  vec3 col = min(vec3(1.0), c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom);
+  // soft shoulder instead of a hard clip: stacked additive glow rolls off toward white
+  // (and the bloom is held back where the scene is already bright) so silhouettes survive
+  vec3 x = c.rgb * v + texture2D(tBloom, vUv).rgb * uBloom * (1.0 - 0.5 * smoothstep(0.6, 1.0, max(c.r, max(c.g, c.b))));
+  vec3 col = min(x, vec3(0.72)) + 0.28 * (1.0 - exp(-max(x - 0.72, 0.0) * 3.6));
   float a = max(c.a, max(col.r, max(col.g, col.b)));
   col = vec3(uFlash) + col * (1.0 - uFlash);
   a = uFlash + a * (1.0 - uFlash);
@@ -1919,7 +1924,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
       ...FX,
       depthTest: false,
       blending: NormalBlending,
-      uniforms: uniforms({ uDim: 0, uFlash: 0, uFlashColor: new Vector3(1, 1, 1), uCrack: 0, uCrackOp: 1, uCrackAt: new Vector2(0.5, 0.5), uRed: 0, uSpeed: 0, uFocus: new Vector2(0.5, 0.5), uAspect: 0.5, uTime: 0 }),
+      uniforms: uniforms({ uDim: 0, uFlash: 0, uFlashColor: new Vector3(1, 1, 1), uCrack: 0, uCrackOp: 1, uCrackAt: new Vector2(0.5, 0.5), uCrackColor: new Vector3(0.92, 0.96, 1), uRed: 0, uSpeed: 0, uFocus: new Vector2(0.5, 0.5), uAspect: 0.5, uTime: 0 }),
     }),
   glow: () =>
     new ShaderMaterial({

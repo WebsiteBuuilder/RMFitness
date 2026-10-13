@@ -72,6 +72,7 @@ function isBig(c: Cue): boolean {
     case 'flip':
       return bigCard(c.card.name);
     case 'activate':
+    case 'target':
       return SIGNATURES.has(c.card.name);
     case 'damage':
       return c.amount >= 1000;
@@ -90,6 +91,7 @@ function owner(c: Cue): Pid | null {
     case 'set':
     case 'flip':
     case 'activate':
+    case 'target':
       return c.card.controller;
     case 'skill':
       return c.player;
