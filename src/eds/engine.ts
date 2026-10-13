@@ -25,6 +25,10 @@ export interface SummonLock {
   levels?: number[];
   /** this card is exempt */
   except?: number;
+  /** audit-02: monsters with these names cannot be Summoned (Chaos Grepher) */
+  names?: string[];
+  /** audit-02: only monsters of these kinds (Fusion, Xyz...) can be Summoned from the Extra Deck (Contact Gate) */
+  extraOnly?: string[];
 }
 
 function makePlayer(name: string): PlayerState {
@@ -288,6 +292,8 @@ export class Engine {
       if (!(how === 'special' ? l.special : how === 'normal' && l.normal)) continue;
       if (l.only && !l.only.some((n) => c.name.includes(n))) return true;
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
+      if (l.names && l.names.includes(c.name)) return true; // audit-02
+      if (l.extraOnly && from === 'fusion' && !l.extraOnly.includes(this.info(c.name).sub)) return true; // audit-02
     }
     if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
     return this.liveCards().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, c, p, how, from) === true);
@@ -894,7 +900,7 @@ export class Engine {
       for (const c of [...this.player(p).hand, ...this.player(p).gy]) {
         const h = getEffect(c.name)?.watchGrave;
         const z = this.find(c.uid)?.loc;
-        if (h && this.state.winner === null && z && z.player === p && (z.zone === 'hand' || z.zone === 'gy')) yield* this.as(p, h(this, c, p, z.zone, events));
+        if (h && this.state.winner === null && z && z.player === p && (z.zone === 'hand' || z.zone === 'gy') && !(z.zone === 'gy' && this.graveSTLocked(c))) yield* this.as(p, h(this, c, p, z.zone, events)); // audit-02: graveSTLocked
       }
   }
 
@@ -928,6 +934,23 @@ export class Engine {
           kept = yield* repl(this, m, byBattle);
         } finally {
           this.actor = prev;
+        }
+        if (kept) continue;
+      }
+      // audit-02: a card in the hand discarded instead (Chronomaly Acambaro Figures).
+      const ownerNow = m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz' ? this.controller(uid) : null;
+      if (m && ownerNow !== null) {
+        let kept = false;
+        for (const c of this.player(ownerNow).hand.slice()) {
+          const h = getEffect(c.name)?.handReplace;
+          if (!h || kept || this.find(c.uid)?.loc.zone !== 'hand') continue;
+          const prev = this.actor;
+          this.actor = ownerNow;
+          try {
+            kept = yield* h(this, c, m, byBattle, byBattle ? null : prev);
+          } finally {
+            this.actor = prev;
+          }
         }
         if (kept) continue;
       }
@@ -1247,6 +1270,13 @@ export class Engine {
       for (const eqUid of fc.equips) if (this.fieldCard(eqUid)) yield* this.sendToGrave(eqUid, 'used');
       const eff = fc.token ? undefined : getEffect(fc.name);
       if (eff?.onLeaveField) yield* this.as(controller, eff.onLeaveField(this, fc, controller, reason));
+      // audit-02: cards in a GY that watch cards leaving the field (Contact Gate).
+      if (this.speed)
+        for (const q of [0, 1] as Pid[])
+          for (const c of this.player(q).gy.slice()) {
+            const h = getEffect(c.name)?.watchLeave;
+            if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && !this.graveSTLocked(c)) yield* this.as(q, h(this, c, q, fc, controller, reason));
+          }
     }
   }
 
@@ -1276,6 +1306,12 @@ export class Engine {
     const lock = this.liveCards().find((x) => x.eff.locksGrave?.(this, x.c, x.p, f.card) === true);
     if (lock) this.log(null, `${lock.c.name}: ${f.card.name} cannot leave the Graveyard`);
     return !!lock;
+  }
+
+  /** audit-02: a face-up card stops the effects of this Spell/Trap Card in the GY from being activated (Chow Sai the Ghost Stopper). */
+  graveSTLocked(card: Card): boolean {
+    if (!this.speed || this.info(card.name).kind === 'monster') return false;
+    return this.liveCards().some((x) => x.eff.locksGraveST?.(this, x.c, x.p, card) === true);
   }
 
   /** Speed Duel: a face-up card stops `player` from activating this Spell/Trap Card right now (Ancient Gear Soldier, Invader of Darkness, Mirage Dragon). */
@@ -1535,6 +1571,7 @@ export class Engine {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'gy' || f.loc.player !== player || this.prohibited(f.card.name)) return false;
+    if (this.graveSTLocked(f.card)) return false; // audit-02
     const g = getEffect(f.card.name)?.graveIgnition;
     return !!g && g.can(this, f.card, player);
   }
@@ -1690,7 +1727,7 @@ export class Engine {
       for (const p of [tp, other(tp)])
         for (const c of this.player(p).gy.slice()) {
           const h = getEffect(c.name)?.onEndPhaseInGrave;
-          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy') yield* this.as(p, h(this, c, p));
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'gy' && !this.graveSTLocked(c)) yield* this.as(p, h(this, c, p)); // audit-02: graveSTLocked
         }
     // Speed Duel: "During the End Phase, if this card is banished" (D.D. Survivor, D.D. Scout Plane).
     if (this.speed)
@@ -2523,6 +2560,7 @@ export class Engine {
         if ((kind === 'spell' && this.spellsNegated()) || (kind === 'trap' && this.trapsNegated(c.name))) return;
       }
       if (!q.repeat && !this.oncePerTurn(`quick:${c.name}:${from === 'field' ? c.uid : 0}`, player)) return;
+      if (from === 'gy' && this.graveSTLocked(c)) return; // audit-02
       if (this.activationBlocked(player, c)) return;
       if (!q.can(this, c, player, trigger, ctx)) return;
       out.push({ label: q.label ? `${c.name}: ${q.label}` : `${c.name}'s effect`, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'quick' });

@@ -289,6 +289,13 @@ export interface EffectDef {
   destroyReplace?(e: Engine, m: FieldCard, byBattle: boolean): Generator<Prompt, boolean, Choice>;
   /** This face-up monster stops `player` from activating the effects of the monster `card` (Number C65: King Overfiend). */
   locksMonsterEffects?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  // ---------- audit-02 hooks ----------
+  /** audit-02: this card in its owner's hand can be discarded instead when their face-up monster `m` would be destroyed (`by`: whose card effect, null for battle or a game action); true = it replaced the destruction (Chronomaly Acambaro Figures). */
+  handReplace?(e: Engine, card: Card, m: FieldCard, byBattle: boolean, by: Pid | null): Generator<Prompt, boolean, Choice>;
+  /** audit-02: this face-up card stops the effects of the Spell/Trap Card `card` in a GY from being activated (Chow Sai the Ghost Stopper). */
+  locksGraveST?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
+  /** audit-02: this card, in its owner's GY, sees a card leave the field without going to the GY (returned to the hand/Extra Deck, banished): Contact Gate. */
+  watchLeave?(e: Engine, card: Card, owner: Pid, fc: FieldCard, controller: Pid, reason: string): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
