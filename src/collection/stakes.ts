@@ -132,6 +132,8 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
   const loser = other(w);
   const iWon = w === seat;
   const theirs = seats[other(seat)];
+  // Lines name both players: on one phone, "you" could be either brother.
+  const me = seats[seat].name;
   let next = s;
   // The bets: the winner takes both.
   const lostBet = seats[loser].stakes?.ante;
@@ -139,7 +141,7 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
     if (lostBet!.card) {
       next = iWon ? withCards(next, [lostBet!.card]) : take(next, lostBet!.card);
       (iWon ? won : lost).push(lostBet!.card);
-      lines.push(iWon ? `You won ${lostBet!.card} from ${theirs.name}` : `${theirs.name} won your ${lostBet!.card}`);
+      lines.push(iWon ? `${me} won ${lostBet!.card} from ${theirs.name}` : `${theirs.name} won ${me}'s ${lostBet!.card}`);
     }
     if (lostBet!.chips) {
       const n = lostBet!.chips;
@@ -147,7 +149,7 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
       next = iWon ? withChips(next, n) : pay(next, n);
       // Chips past the cap aren't lost: they come back as shards.
       if (over) next = { ...next, shards: shardsOf(next) + over * SHARDS_PER_CHIP } as SpeedSave;
-      lines.push(iWon ? `You won ${n} Duel Chip${n > 1 ? 's' : ''}${over ? ` (${over} over the ${CHIP_CAP} limit became shards)` : ''}` : `You lost ${n} Duel Chip${n > 1 ? 's' : ''}`);
+      lines.push(iWon ? `${me} won ${n} Duel Chip${n > 1 ? 's' : ''}${over ? ` (${over} over the ${CHIP_CAP} limit became shards)` : ''}` : `${me} lost ${n} Duel Chip${n > 1 ? 's' : ''}`);
     }
   }
   // The rescue: the winner's win frees the card the loser sealed (see rescueFirst) and
@@ -156,7 +158,7 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
   if (rescued) {
     const prize = rescuePrize(seats[loser]);
     if (iWon) {
-      lines.push(`Rescued ${rescued} from the Shadow Realm`);
+      lines.push(`${me} rescued ${rescued} from the Shadow Realm`);
       if (prize) {
         next = withCards(next, [prize]);
         won.push(prize);
@@ -165,7 +167,7 @@ export function settleStakes(s: SpeedSave, seat: Pid, state: DuelState, seats: [
     } else if (prize) {
       next = take(next, prize);
       lost.push(prize);
-      lines.push(`${theirs.name} rescued ${rescued} and took your ${prize}`);
+      lines.push(`${theirs.name} rescued ${rescued} and took ${me}'s ${prize}`);
     }
   }
   // A 4th copy won this way breaks into shards like one from a pack.
@@ -186,6 +188,8 @@ export interface DuelTicket {
   key?: string;
   /** a duel on one phone: the other player's profile, whose save holds the twin ticket */
   partner?: string;
+  /** the online room it was played in */
+  room?: string;
 }
 
 type TicketSave = SpeedSave & { ticket?: DuelTicket | null };
@@ -206,6 +210,7 @@ export function settleTicket(s: SpeedSave, winner?: Pid): { save: SpeedSave; lin
   const fake = { winner: w } as DuelState;
   const r = settleStakes(withTicket(s, null), t.seat, fake, t.seats);
   const result = w === t.seat ? 'w' : 'l';
-  const head = result === 'w' ? `${opp} gave up your unfinished duel, so you won it.` : t.partner ? `You gave up your unfinished duel against ${opp}, so it counted as a loss.` : `You left the duel against ${opp}, so it counted as a loss.`;
+  const me = t.seats[t.seat].name;
+  const head = result === 'w' ? `${opp} gave up the unfinished duel, so ${me} won it.` : t.partner ? `${me} gave up the unfinished duel against ${opp}, so it counted as a loss.` : `${me} left the duel against ${opp}, so it counted as a loss.`;
   return { save: r.save, lines: [head, ...r.lines], opp, result, won: r.won, lost: r.lost };
 }

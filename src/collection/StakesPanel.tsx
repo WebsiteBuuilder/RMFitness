@@ -59,7 +59,10 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
       <h4>Stakes</h4>
       {crown && rec && (
         <p class="stakes-row">
-          <span class={`crown ${Math.abs(rec.streak) >= 3 ? 'hot' : ''}`}>👑</span> {crown === 'me' ? seats[mySeat].name : rival} is King of Games ({crown === 'me' ? `${rec.w}-${rec.l}` : `${rec.l}-${rec.w}`}). Win to {crown === 'me' ? 'keep' : 'take'} it.
+          <span class={`crown ${Math.abs(rec.streak) >= 3 ? 'hot' : ''}`}>👑</span>
+          <span class="crown-text">
+            {crown === 'me' ? seats[mySeat].name : rival} is King of Games ({crown === 'me' ? `${rec.w}-${rec.l}` : `${rec.l}-${rec.w}`}). Win to {crown === 'me' ? 'keep' : 'take'} it.
+          </span>
         </p>
       )}
       {([0, 1] as Pid[]).map((p) => {
@@ -93,7 +96,7 @@ export function StakesPanel({ session, view, mySeat, hotseat, betSave }: { sessi
                 </span>
               )}
               {lose.length > 0 && <span class="loss-line">If {seats[p].name} loses: {lose.join(', ')}</span>}
-              {mine(p) && noAnte(a) && !noAnte(seats[otherOf(p)].stakes?.ante) && (
+              {mine(p) && !seats[p].accepted && noAnte(a) && !noAnte(seats[otherOf(p)].stakes?.ante) && (
                 <span class="lopsided">
                   {seats[otherOf(p)].name} is betting and {seats[p].name} isn't.
                   {matchable(p) > 0 && (

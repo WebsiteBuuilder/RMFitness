@@ -78,6 +78,8 @@ export function App() {
   const [unfinished, setUnfinished] = useState<{ id: string; t: DuelTicket } | null>(null);
   /** news from an older walk-out settled as a new duel started, shown after that duel */
   const carryNews = useRef<string[]>([]);
+  /** the online room being played in, kept on tickets so only that room's rejoin waits */
+  const roomCode = useRef<string | undefined>(undefined);
   const [pendingJoin, setPendingJoin] = useState<string | null>(() => {
     const code = new URLSearchParams(location.search).get('join');
     return code && /^[A-Z]{4}$/i.test(code) ? code.toUpperCase() : null;
@@ -129,7 +131,7 @@ export function App() {
       // A duel on this phone left unfinished: ask who gave up. A Link Battle this profile
       // walked out of (the app was closed) counts as a loss, unless it's being rejoined.
       if (t.partner) setUnfinished({ id, t });
-      else if (!pendingJoin) {
+      else if (!pendingJoin || pendingJoin !== t.room) {
         const left = settleLeftDuel(s)!;
         s = left.save;
         setSpeedNews(left.lines);
@@ -154,7 +156,7 @@ export function App() {
       writeSpeedSave(id, r.save);
       if (id === profile?.id) setSpeedSaveState(r.save);
       const who = t.seats[t.seat].name;
-      lines.push(...r.lines.slice(1).map((l) => `${who}: ${l}`));
+      lines.push(...r.lines.slice(1));
       cards.push({ who, won: r.won, lost: r.lost });
     }
     setUnfinished(null);
@@ -177,7 +179,7 @@ export function App() {
         carryNews.current.push(...left.lines);
         s = left.save;
       }
-      return withTicket(s, { seat, seats, at: Date.now(), key, partner: partnerId });
+      return withTicket(s, { seat, seats, at: Date.now(), key, partner: partnerId, room: partnerId ? undefined : roomCode.current });
     };
     setSpeedSave(stamp(speedSave, mySeat, partner));
     if (partner) writeSpeedSave(partner, stamp(speedSaveOf(partner), other(mySeat), profile.id));
@@ -249,7 +251,8 @@ export function App() {
     } else {
       setHotseat(false);
       setMySeat(c.mode === 'host' ? 0 : 1);
-      setSession(new DuelSession(makeOnline(c.mode === 'join' ? c.code : newCode(), c.mode === 'host')));
+      roomCode.current = c.mode === 'join' ? c.code : newCode();
+      setSession(new DuelSession(makeOnline(roomCode.current, c.mode === 'host')));
     }
     setScreen('duel');
   };
@@ -332,7 +335,8 @@ export function App() {
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         cards.push({ who: seats[seat].name, won: bet.won, lost: bet.lost });
-        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines] : rv.lines.map((l) => (l.startsWith('👑') ? l : `${seats[seat].name}: ${l}`))));
+        const named = (l: string) => (l.startsWith('👑') || !hotseat ? l : `${seats[seat].name}: ${l}`);
+        news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines.map(named)] : rv.lines.map(named)));
         return rv.save;
       };
       // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".

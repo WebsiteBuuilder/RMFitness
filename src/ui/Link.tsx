@@ -209,7 +209,7 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : undefined, onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : undefined, onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
     </div>
   );

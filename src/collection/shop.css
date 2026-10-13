@@ -654,16 +654,17 @@
   border: 2px solid var(--gold, #f5c542);
   border-radius: 14px;
   background: rgba(10, 14, 40, 0.85);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--gold, #f5c542);
   pointer-events: none;
-  max-width: 34vw;
+  max-width: 44vw;
+  animation: pot-glow 2.4s ease-in-out infinite;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .duel-pot .cimg {
-  width: 18px;
+  width: 28px;
   height: auto;
 }
 .bet-for {
@@ -675,4 +676,32 @@
 }
 .news-cards {
   flex-wrap: wrap;
+}
+
+/* ---- round 5 ---- */
+@keyframes pot-glow {
+  50% { box-shadow: 0 0 12px var(--gold, #f5c542); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duel-pot { animation: none; }
+}
+.crown-text {
+  flex: 1;
+  min-width: 0;
+}
+.menu.start-duel .menu-item:not(.off) {
+  background: linear-gradient(#ffd75e, #e0a520);
+  color: #241500;
+  border: 3px solid #fff3c4;
+  border-radius: 10px;
+  justify-content: center;
+  text-align: center;
+  padding: 14px 12px;
+  box-shadow: 0 0 14px rgba(255, 215, 94, 0.6);
+}
+.menu.start-duel .menu-item:not(.off) .cursor {
+  display: none;
+}
+.menu.start-duel .menu-item.off {
+  opacity: 0.6;
 }
