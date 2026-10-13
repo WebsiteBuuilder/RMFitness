@@ -559,6 +559,41 @@ export interface FigureOptions {
   edge?: number;
 }
 
+/** A card picture's two textures (the art and its relief), shared by every figure of it in every renderer. */
+export interface ArtTextures {
+  art: CanvasTexture;
+  depth: DataTexture | Texture;
+  /** figures using them now */
+  users: number;
+}
+const artTex = new WeakMap<ArtData, ArtTextures>();
+
+/** The textures of a card picture, made once (an upload happens on first use, or ahead of it in Stage.upload). */
+export function artTextures(art: ArtData): ArtTextures {
+  let t = artTex.get(art);
+  if (t) return t;
+  const tex = new CanvasTexture(art.art);
+  tex.minFilter = LinearFilter;
+  tex.generateMipmaps = false;
+  const depth = art.relief ? new Texture(art.relief) : new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
+  depth.flipY = true;
+  depth.magFilter = LinearFilter;
+  depth.minFilter = LinearFilter;
+  depth.generateMipmaps = false;
+  depth.needsUpdate = true;
+  t = { art: tex, depth, users: 0 };
+  artTex.set(art, t);
+  return t;
+}
+
+/** A figure is done with its textures: the GPU copies go once no figure uses them (they upload again if needed). */
+function releaseArtTextures(t: ArtTextures) {
+  if (--t.users > 0) return;
+  t.users = 0;
+  t.art.dispose();
+  t.depth.dispose();
+}
+
 export class Figure implements Fx {
   mesh: Mesh;
   mat: ShaderMaterial;
@@ -574,6 +609,7 @@ export class Figure implements Fx {
   /** fixed detail (0..2), or null to follow the stage's governor */
   detail: number | null = null;
   private appliedDetail = -1;
+  private texs: ArtTextures;
   private tex: CanvasTexture;
   private depthTex: DataTexture | Texture;
   alive = true;
@@ -602,15 +638,11 @@ export class Figure implements Fx {
     }
     geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
     geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
-    this.tex = new CanvasTexture(art.art);
-    this.tex.minFilter = LinearFilter;
-    this.tex.generateMipmaps = false;
-    this.depthTex = art.relief ? new Texture(art.relief) : new DataTexture(art.depth, DEPTH_SIZE, DEPTH_SIZE, RedFormat);
-    this.depthTex.flipY = true;
-    this.depthTex.magFilter = LinearFilter;
-    this.depthTex.minFilter = LinearFilter;
-    this.depthTex.generateMipmaps = false;
-    this.depthTex.needsUpdate = true;
+    // shared per card picture: uploaded once (ahead of time, see Stage.upload), not per figure
+    this.texs = artTextures(art);
+    this.texs.users++;
+    this.tex = this.texs.art;
+    this.depthTex = this.texs.depth;
     const texN = art.relief ? art.relief.naturalWidth || 256 : DEPTH_SIZE;
     const tune = tuneFor(art.id);
     this.foot = figureFoot(art);
@@ -683,8 +715,7 @@ export class Figure implements Fx {
     this.mat.dispose();
     this.wallMat.dispose();
     this.shadow.dispose();
-    this.tex.dispose();
-    this.depthTex.dispose();
+    releaseArtTextures(this.texs);
   }
 }
 
@@ -847,6 +878,7 @@ export class Particles implements Fx {
   private phys: Float32Array; // gravity drag
   private pull: Float32Array; // px py strength swirl
   private next = 0;
+  private lim: number;
   active = 0;
   /** quality governor: fraction of requested particles actually emitted */
   emitScale = 1;
@@ -854,6 +886,7 @@ export class Particles implements Fx {
 
   constructor(max: number) {
     this.max = max;
+    this.lim = max;
     this.geo = new BufferGeometry();
     this.pos = new Float32Array(max * 3);
     this.col = new Float32Array(max * 3);
@@ -874,12 +907,27 @@ export class Particles implements Fx {
     this.points.renderOrder = 10;
   }
 
+  /** How much of the pool is used (the quality governor lowers it on the cheapest tiers). */
+  get limit() {
+    return this.lim;
+  }
+  set limit(n: number) {
+    n = Math.max(1, Math.min(this.max, Math.round(n)));
+    if (n === this.lim) return;
+    // particles past a lowered limit die now (their slots are no longer stepped or drawn)
+    for (let i = n; i < this.lim; i++) (this.life[i * 2 + 1] = 0), (this.alpha[i] = 0), (this.size[i] = 0);
+    if (n < this.lim) for (const name of P_ATTRS) this.geo.getAttribute(name).needsUpdate = true;
+    this.lim = n;
+    if (this.next >= n) this.next = 0;
+    this.geo.setDrawRange(0, n);
+  }
+
   emit(o: Emit, count = 1) {
     // Under load emit fewer (stochastic rounding keeps single-particle trickles alive).
     if (this.emitScale < 1) count = Math.floor(count * this.emitScale + Math.random());
     for (let n = 0; n < count; n++) {
       const i = this.next;
-      this.next = (this.next + 1) % this.max;
+      this.next = (this.next + 1) % this.lim;
       const r = o.r ?? 0;
       const b = o.burst ?? 0;
       const th = Math.random() * Math.PI * 2;
@@ -915,7 +963,7 @@ export class Particles implements Fx {
 
   update(dt: number) {
     let active = 0;
-    for (let i = 0; i < this.max; i++) {
+    for (let i = 0; i < this.lim; i++) {
       const mx = this.life[i * 2 + 1];
       if (mx <= 0) continue;
       const age = (this.life[i * 2] += dt);
@@ -949,7 +997,12 @@ export class Particles implements Fx {
       this.alpha[i] = k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88;
     }
     this.active = active;
-    for (const name of P_ATTRS) this.geo.getAttribute(name).needsUpdate = true;
+    for (const name of P_ATTRS) {
+      const a = this.geo.getAttribute(name) as BufferAttribute;
+      // upload only the part of the pool in use
+      if (this.lim < this.max) (a.clearUpdateRanges(), a.addUpdateRange(0, this.lim * a.itemSize));
+      a.needsUpdate = true;
+    }
     return true;
   }
 
@@ -2313,6 +2366,8 @@ export class Stage {
     liveTier = this.level;
     setFigureDetail(this.level === 0 ? 0 : this.level === 1 ? 1 : 2);
     this.particles.emitScale = l.emit;
+    // the two cheapest tiers keep a smaller particle pool (less to step and upload every frame)
+    this.particles.limit = this.level <= 1 ? Math.min(this.particles.max, 900) : this.particles.max;
     this.resetGovernor();
     const sizeNow = this.renderer.getPixelRatio();
     const needPost = l.post && !this.post;
@@ -2329,6 +2384,35 @@ export class Stage {
   prewarm(): Promise<void> {
     if (this.lost || this.disposed) return Promise.resolve();
     return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed));
+  }
+
+  private uploads: Texture[] = [];
+  private uploadRaf = 0;
+
+  /**
+   * Uploads a card picture's textures to the GPU ahead of its cinematic, one texture
+   * per frame (an upload mid-shot stalls the GPU for a long frame on some devices).
+   */
+  upload(art: ArtData) {
+    if (this.lost || this.disposed) return;
+    const t = artTextures(art);
+    for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
+    this.uploadRaf ||= requestAnimationFrame(this.onUpload);
+  }
+
+  private onUpload = () => this.uploadOne();
+  private uploadOne() {
+    this.uploadRaf = 0;
+    if (this.lost || this.disposed) return void (this.uploads.length = 0);
+    const x = this.uploads.shift();
+    if (!x) return;
+    try {
+      // a no-op when this renderer already has it
+      this.renderer.initTexture(x);
+    } catch {
+      /* a lost context mid-upload: it uploads on first use instead */
+    }
+    if (this.uploads.length) this.uploadRaf = requestAnimationFrame(this.onUpload);
   }
 
   resize() {
@@ -2575,6 +2659,8 @@ export class Stage {
     this.stop();
     this.clear();
     this.disposed = true;
+    cancelAnimationFrame(this.uploadRaf);
+    this.uploads.length = 0;
     this.canvas.removeEventListener('webglcontextlost', this.handleLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleRestore, false);
     document.removeEventListener('visibilitychange', this.handleVisibility);

@@ -27,8 +27,11 @@ export function getArtSetting(): ArtSetting {
   return "full";
 }
 
-const HOLD_MS = 400;
+/** Hold this long to skip everything (long enough that a slow tap never does). */
+const HOLD_MS = 575;
 const DOUBLE_TAP_MS = 350;
+/** the skip pill's width (art.css) */
+const SKIP_W = 116;
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
@@ -100,12 +103,25 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   const waiting = useRef<{ cues: Cue[]; batch: number; scales: number[] }[]>([]);
   const viewerRef = useRef(viewer);
   viewerRef.current = viewer;
-  const [active, setActive] = useState(false);
+  /** a cinematic is on screen (from its first built frame until the stage is idle) */
+  const [active, setActiveState] = useState(false);
+  /** a chain is on its way to the stage (the stage takes taps for the held board meanwhile) */
+  const [armed, setArmed] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const pill = useRef<HTMLDivElement>(null);
   const boardCanvas = useRef<HTMLCanvasElement>(null);
   const board = useRef<BoardLayer | null>(null);
   const boardLoading = useRef(false);
   const lastTap = useRef(0);
   const holdTimer = useRef(0);
+
+  /** The stage shows (or hides): the body class goes with it at once, not at the next render. */
+  const setActive = (on: boolean) => {
+    document.body.classList.toggle("art-on", on);
+    if (on) placeSkip();
+    setActiveState(on);
+  };
 
   /** Loads three.js and builds the director (once). */
   const ensure = (): Promise<Director | null> => {
@@ -122,13 +138,15 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
           makeUi(layer.current, (): number => d.stage.speed * d.rate),
         );
         d.timeScale = getAnimSpeed();
-        d.onBusy = () => (setArtBusy(true), setActive(true));
+        d.onBusy = () => (setArtBusy(true), setArmed(true));
         // the computer goes on (the stage may still hold the fighters for the blow, or fade out)
         d.onSettle = () => setArtBusy(false);
-        d.onIdle = () => (setArtBusy(false), setActive(false), clearArtFocus());
+        d.onIdle = () => (setArtBusy(false), setArmed(false), setActive(false), clearArtFocus());
         d.onCommit = chainCommitted;
         d.onBatchEnd = chainEnded;
-        d.onCueStart = chainStarted;
+        // the stage turns on with the first cinematic actually built: a chain with nothing
+        // to draw, or one skipped before it started, never flashes an empty stage
+        d.onCueStart = (batch, seconds) => (setActive(true), chainStarted(batch, seconds));
         // no WebGL mid-cinematic: the board shows the duel as it is at once
         d.onLost = releaseBoard;
         d.viewer = viewerRef.current;
@@ -145,6 +163,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         broken.current = true;
         dropWaiting();
         setArtBusy(false);
+        setArmed(false);
         setActive(false);
         return null;
       })
@@ -160,6 +179,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       .then(({ BoardLayer }) => {
         if (!boardCanvas.current || board.current) return;
         board.current = new BoardLayer(boardCanvas.current);
+        // under a cinematic's full dim only the stage draws
+        board.current.covered = () => !!dir.current?.covering;
         board.current.sync(latest.current);
       })
       .catch((err) => console.warn("3D field figures unavailable", err))
@@ -175,19 +196,62 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
 
   const clearLayer = () => layer.current?.replaceChildren();
 
-  /** Tap: skip the chain on stage. */
+  /** Nothing more to play: the stage goes blank this frame and the board is released (no fade). */
+  const hideNow = () => {
+    if (dir.current?.hideNow()) setActive(false);
+  };
+
+  /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
+    if (stateRef.current.winner !== null) return skipAll(false);
     clearLayer();
     if (dir.current) dir.current.skip();
     else dropWaiting();
+    hideNow();
   };
 
   /** Hold / double tap: skip everything (and the rest of the opponent's turn). */
-  const skipAll = () => {
+  const skipAll = (buzz = true) => {
+    // a hold that fires: a short buzz says so
+    if (buzz) navigator.vibrate?.(15);
     clearLayer();
     skipAllChains();
     dropWaiting();
     dir.current?.skipEverything();
+    hideNow();
+  };
+
+  /**
+   * The skip pill sits small at the top centre, inside the opponent's bar (clear of
+   * the hand, the Spell/Trap row and their Life Points). And the cinematic's
+   * figures keep clear of the bottom bar: --art-safe-bottom (read by the director).
+   */
+  const placeSkip = () => {
+    const bar = document.querySelector<HTMLElement>(".duel .tbar.top, .duel .pbar.top");
+    const el = pill.current;
+    if (el) {
+      if (bar) {
+        const r = bar.getBoundingClientRect();
+        const cs = getComputedStyle(bar);
+        const pt = parseFloat(cs.paddingTop) || 0;
+        const inner = r.height - pt - (parseFloat(cs.paddingBottom) || 0);
+        // centred on the bar's content (below a notch's padding)
+        el.style.top = `${Math.round(r.top + pt + Math.max(0, (inner - 24) / 2))}px`;
+        // centred, but never over their Life Points
+        const lp = bar.querySelector<HTMLElement>(".tlp, .lp");
+        const mid = window.innerWidth / 2 - SKIP_W / 2;
+        el.style.left = `${Math.round(Math.max(4, lp ? Math.min(mid, lp.getBoundingClientRect().left - 6 - SKIP_W) : mid))}px`;
+      } else el.style.top = "";
+    }
+    placeSafe();
+  };
+  const placeSafe = () => {
+    const cv = canvas.current;
+    const low = document.querySelector<HTMLElement>(".duel .tbar.bottom, .duel .pbar.bottom");
+    if (!cv) return;
+    const top = low?.getBoundingClientRect().top ?? 0;
+    if (low && top > window.innerHeight * 0.5) cv.style.setProperty("--art-safe-bottom", `${Math.round(window.innerHeight - top + 8)}`);
+    else cv.style.removeProperty("--art-safe-bottom");
   };
 
   // Plug into the flow.
@@ -197,6 +261,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       ready: () => !broken.current,
       busy: () => !!dir.current?.busy || waiting.current.length > 0,
       play: (cues, batch, scales) => {
+        placeSafe();
         if (dir.current) {
           dir.current.viewer = viewerRef.current;
           dir.current.push(cues, batch, scales);
@@ -204,10 +269,16 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
         }
         waiting.current.push({ cues, batch, scales });
         setArtBusy(true);
-        setActive(true);
+        setArmed(true);
         void ensure();
       },
-      skip: () => (clearLayer(), dir.current?.skip()),
+      // a choice for the player is up: everything on stage goes, at once
+      skip: () => {
+        clearLayer();
+        // (the board already shows everything: whatever is still queued is behind it)
+        dir.current?.skipEverything();
+        hideNow();
+      },
     });
     return () => attachArtSink(null);
   }, [on3d]);
@@ -261,6 +332,29 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (board.current) return board.current.sync(standing);
     if (standing.length) ensureBoard();
   }, [standKey]);
+
+  // The cards likely to star in the next cinematics (both hands, both fields): their
+  // pictures go up to the stage's GPU now, one texture per frame in quiet time, so a
+  // cinematic never stalls on an upload.
+  const hotKey = on3d
+    ? ([0, 1] as Pid[])
+        .flatMap((p) => [...state.players[p].hand, ...state.players[p].mz, ...state.players[p].sz])
+        .map((c) => c?.name ?? "")
+        .filter(Boolean)
+        .sort()
+        .join("|")
+    : "";
+  useEffect(() => {
+    if (!hotKey) return;
+    let gone = false;
+    const t = window.setTimeout(() => {
+      void Promise.all([import("./depth"), ensure()]).then(([{ artFor }, d]) => {
+        if (gone || !d) return;
+        for (const name of new Set(hotKey.split("|"))) void artFor(name).then((a) => !gone && d.stage.upload(a), () => {});
+      });
+    }, 300);
+    return () => ((gone = true), clearTimeout(t));
+  }, [hotKey]);
   const latest = useRef(standing);
   latest.current = standing;
 
@@ -272,7 +366,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   }, [speed]);
 
   useEffect(() => {
-    const onResize = () => (dir.current?.resize(), board.current?.resize());
+    const onResize = () => (dir.current?.resize(), board.current?.resize(), placeSkip());
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
@@ -282,6 +376,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       board.current?.dispose();
       board.current = null;
       setArtBusy(false);
+      document.body.classList.remove("art-on");
     };
   }, []);
 
@@ -395,7 +490,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   // While the board lags behind a cinematic, the whole stage takes taps (so nobody
   // acts on a board that is about to change); otherwise taps reach the duel, and
   // skip on the way unless they are meant for a prompt or a button.
-  const held = active && boardHeld();
+  const held = (active || armed) && boardHeld();
   heldRef.current = held;
   // (a touch handed through above made the stage step aside until this redraw)
   if (host.current) host.current.style.pointerEvents = "";
@@ -403,6 +498,10 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   return (
     <>
       <canvas ref={boardCanvas} class="art-board" />
+      {/* over the raised Life Points bars, so it stays tappable */}
+      <div ref={pill} class={`art-skip ${active ? "on" : ""}`} onPointerDown={(ev) => active && onDown(ev)}>
+        Tap: skip · Hold: all
+      </div>
       <div
         ref={host}
         class={`art-stage ${active ? "on" : ""} ${held ? "hold" : ""}`}
@@ -410,11 +509,6 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       >
         <canvas ref={canvas} class="art-canvas" />
         <div ref={layer} class="art-layer" />
-        {active && (
-          <div class="art-skip" onPointerDown={(ev) => !held && onDown(ev)}>
-            Tap: skip · Hold: skip all
-          </div>
-        )}
         {sr && !active && (
           <div class="art-plaque">
             <b>{sr.loserName}</b> was sent to the Shadow Realm

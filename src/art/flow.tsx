@@ -36,6 +36,8 @@ export interface ArtSink {
 export const START_GRACE_MS = 4000;
 /** Once a chain's cinematic is playing, the board waits at most its length plus this. */
 export const WATCHDOG_SLACK_MS = 1500;
+/** An opponent's summon that is not a big one plays this much faster (a short version). */
+export const OPP_SUMMON_SCALE = 2.5;
 const stageEl = () => (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'));
 const SIGNATURES = new Set(SIGNATURE_CARDS);
 
@@ -197,6 +199,8 @@ export class Flow {
         if (!c.card.name) return 1;
         const again = this.summoned.has(c.card.name);
         this.summoned.add(c.card.name);
+        // the opponent's everyday summon: a short version (~1.3 s), so their turn keeps moving
+        if (c.card.controller !== viewer && !isBig(c)) return OPP_SUMMON_SCALE;
         return again ? 2 : 1;
       });
       // the board keeps showing the duel as it was before this chain
@@ -352,7 +356,11 @@ export function boardHeld(): boolean {
  */
 export function useShownState(real: DuelState, seat: Pid | null): DuelState {
   const ref = useRef<Flow | null>(null);
-  if (!ref.current) ref.current = new Flow();
+  if (!ref.current) {
+    ref.current = new Flow();
+    // a new duel screen: Life Points start where they are
+    lpShown.clear();
+  }
   const f = ref.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
   f.rerender = () => force(0);
@@ -361,8 +369,9 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
   useLayoutEffect(() => {
     flow = f;
     f.drawn();
+    // before the paint: a prompt never shows over a cinematic, not even for a frame
+    f.afterRender();
   });
-  useEffect(() => f.afterRender());
   useEffect(
     () => () => {
       f.dispose();
@@ -373,26 +382,42 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
   return shown;
 }
 
-/** Life Points that count down (or up) over 0.6 s, flashing red when they drop. */
-export function LpCount({ value }: { value: number }) {
-  const [v, setV] = useState(value);
+/** The Life Points last on screen per player: a remounted counter ticks on from there instead of jumping. */
+const lpShown = new Map<Pid, number>();
+const LP_TICK_MS = 600;
+
+/**
+ * Life Points that count down (or up) over 0.6 s, flashing red when they drop.
+ * `who`: the player, so the count carries over a remount. Timed by the wall clock
+ * (a timer backs up requestAnimationFrame), so it lands on time even when frames are throttled.
+ */
+export function LpCount({ value, who }: { value: number; who?: Pid }) {
+  const start = (who !== undefined ? lpShown.get(who) : undefined) ?? value;
+  const [v, setV] = useState(start);
   const [hits, setHits] = useState(0);
-  const cur = useRef(value);
+  const cur = useRef(start);
   useEffect(() => {
     const from = cur.current;
-    if (from === value) return;
+    const show = (n: number) => {
+      cur.current = n;
+      if (who !== undefined) lpShown.set(who, n);
+      setV(n);
+    };
+    if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
     const t0 = performance.now();
     let raf = 0;
-    const step = (now: number) => {
-      const k = Math.min(1, (now - t0) / 600);
-      const e = 1 - (1 - k) ** 3;
-      cur.current = Math.round(from + (value - from) * e);
-      setV(cur.current);
-      if (k < 1) raf = requestAnimationFrame(step);
+    const tick = () => {
+      const k = Math.min(1, (performance.now() - t0) / LP_TICK_MS);
+      show(Math.round(from + (value - from) * (1 - (1 - k) ** 3)));
+      return k >= 1;
+    };
+    const step = () => {
+      raf = tick() ? 0 : requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    const backup = setInterval(() => tick() && clearInterval(backup), 100);
+    return () => (cancelAnimationFrame(raf), clearInterval(backup));
   }, [value]);
   return (
     <span key={hits} class={`lp-count ${hits ? 'lp-hit' : ''}`}>

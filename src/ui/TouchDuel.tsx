@@ -375,7 +375,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         )}
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
-          <LpCount value={ps.lp} />
+          <LpCount value={ps.lp} who={p} />
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
         {top && (

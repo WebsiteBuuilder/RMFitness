@@ -508,7 +508,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar top">
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
-          LP <LpCount value={opp.lp} />
+          LP <LpCount value={opp.lp} who={other(acting)} />
           {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
@@ -558,7 +558,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="pbar bottom">
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
-          LP <LpCount value={me.lp} />
+          LP <LpCount value={me.lp} who={acting} />
           {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>

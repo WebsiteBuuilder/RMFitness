@@ -3,7 +3,8 @@
 // on its card for as long as it stays there, on a glowing base disc with a soft
 // contact shadow. One small canvas under the duel's controls, drawn at 60 fps
 // (20 while a cinematic plays, 30 when the stage's governor is on its lowest
-// tier) and only while a figure is on the field. Positions come from the cards on
+// tier) and only while a figure is on the field; not at all while a cinematic's
+// full dim covers the duel. Positions come from the cards on
 // screen ([data-uid]), so Classic and Touch both work unchanged.
 //
 // Kept cheap for phones: card positions are measured only when the layout may
@@ -182,6 +183,12 @@ export class BoardLayer {
   private measuredAt = 0;
   private settleUntil = 0;
   private ro: ResizeObserver | null = null;
+  /**
+   * True while the cinematic's dim covers the duel almost completely (set by the art
+   * stage): the figures stay as last drawn and the board draws nothing, so only one
+   * WebGL canvas renders; it draws again the frame the dim lifts.
+   */
+  covered: () => boolean = () => false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = makeRenderer(canvas, "low-power");
@@ -353,6 +360,11 @@ export class BoardLayer {
   private tick = (now: number) => {
     this.raf = 0;
     if (this.dead || this.lost) return;
+    // Under a full dim: draw nothing once the figures the cinematic is about have stepped aside.
+    if (this.covered() && this.asideDone()) {
+      if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
+      return;
+    }
     const dt = Math.min(0.1, (now - this.last) / 1000);
     // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
     // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
@@ -365,6 +377,13 @@ export class BoardLayer {
     }
     if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
   };
+
+  /** Every figure a cinematic is about has finished stepping aside (none is left half drawn under the dim). */
+  private asideDone() {
+    const focus = artFocus();
+    for (const p of this.pieces.values()) if (p.fig && focus.has(p.uid) && p.vis > 0) return false;
+    return true;
+  }
 
   /** Reads where each figure's card is on screen (the only layout reads). */
   private measure(now: number) {

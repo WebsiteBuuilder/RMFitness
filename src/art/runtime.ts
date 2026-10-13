@@ -339,6 +339,15 @@ export class Director {
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
+    // Upload the pictures of every card this chain shows now, one texture per frame,
+    // so no cinematic stalls the GPU uploading one mid-shot.
+    for (const cue of cues) {
+      const refs = cue.kind === 'attack' || cue.kind === 'hit' ? [cue.attacker, cue.target] : 'card' in cue ? [cue.card] : [];
+      for (const r of refs) if (r?.name) void artFor(r.name).then((a) => this.stage.upload(a), () => {});
+    }
+    // From idle, the stage stays clear until the first cinematic is built (a chain with
+    // nothing to draw never dims the screen for a few frames).
+    if (!this.current && !this.held) this.dimTarget = 0;
     this.fastFade = false;
     this.settledSent = false;
     this.idleSent = false;
@@ -408,6 +417,44 @@ export class Director {
     this.endCurrent(true);
     for (const b of rest) this.onBatchEnd?.(b);
     this.stage.particles.clear();
+  }
+
+  /**
+   * After a skip with nothing else to play: the stage goes blank this very frame
+   * (no fast fade) and reports idle, so the board and the duel get the screen back
+   * at once. False (nothing done) while a cinematic is still playing or queued.
+   */
+  hideNow(): boolean {
+    if (this.current || this.queue.length || this.trailing.length) return false;
+    this.dropHeld();
+    for (const a of this.actors.values()) this.dropActor(a);
+    this.actors.clear();
+    for (const a of this.outgoing) this.dropActor(a);
+    this.outgoing = [];
+    this.stage.clear();
+    this.ui.clear?.();
+    this.bg = this.bgTarget = 0;
+    this.dim = this.dimTarget = 0;
+    this.veil.u.uDim.value = 0;
+    this.front.u.uFlash.value = 0;
+    this.stage.backdrop.u.uOpacity.value = 0;
+    this.resetCam();
+    this.stage.camera.up.set(0, 1, 0);
+    // stop() clears the canvas: blank on the next composite
+    this.stage.stop();
+    this.skipAll = false;
+    this.fastFade = false;
+    this.idleFor = 0;
+    this.idle();
+    return true;
+  }
+
+  /**
+   * The dim covers the duel almost completely (a cinematic is playing at full dim):
+   * the field figures layer under it need not draw (board.ts).
+   */
+  get covering(): boolean {
+    return this.current !== null && this.dim > 0.7 && this.dimTarget > 0.7;
   }
 
   /** Ends the cinematic on stage (finishing it first when skipped), reports a finished chain, starts the next. */
@@ -2454,16 +2501,20 @@ export class Director {
   private async victory(winner: Pid | 'draw'): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
-    const tl = new Timeline(1.6, st);
+    // short: the result window follows about 2 s after the Life Points hit 0
+    const D = 1.1;
+    const tl = new Timeline(D, st);
     this.bgTarget = 0.5;
     this.dimTarget = 0.8;
     const color = winner === 'draw' ? 0xc0c0ff : winner === this.viewer ? 0xffd75a : 0xff5a5a;
     const ring = tl.own(new Ring(3.2 * U, color, 99, { inner: 0.7, outer: 0.95, star: 8 }));
     ring.spinSpeed = 1.2;
     ring.u.uOpacity.value = 0;
-    tl.span(0, 0.5, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
-    tl.span(1.1, 1.6, (k) => (ring.u.uOpacity.value = 1 - k));
-    this.shafts(tl, { x: 0, y: -1.6 * U, z: -0.5 }, 5 * U, color, 0, 1.6, 3, 0.7);
+    tl.span(0, 0.4, (k) => (ring.mesh.scale.setScalar(easeOut(k)), (ring.u.uOpacity.value = k)));
+    tl.span(0.75, D, (k) => (ring.u.uOpacity.value = 1 - k));
+    this.shafts(tl, { x: 0, y: -1.6 * U, z: -0.5 }, 5 * U, color, 0, D, 3, 0.7);
+    // no linger after it: the fighters and the dim go at once
+    tl.at(D, () => (this.fastFade = true), false);
     tl.at(0.1, () => {
       boom(0.7);
       st.pulse('flash', 0.5);
