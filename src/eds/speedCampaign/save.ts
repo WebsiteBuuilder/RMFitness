@@ -3,6 +3,7 @@
 // this file only remembers where you are on the road, your stars and your runs.
 import type { SpeedDeck } from '../speedSave';
 import type { Run, RunSummary } from './labyrinth';
+import type { LegendsProgress } from './legends';
 
 export interface CampaignProgress {
   /** the Starter Deck character the road started with (null until picked) */
@@ -67,6 +68,8 @@ export interface SoloSave {
   practice: PracticePrefs;
   /** the Tag Road (2v2 campaign): which tag pairs were beaten */
   tagRoad?: { wins: Record<string, number>; losses: number };
+  /** Card Legends: the story duels won and the daily rematch */
+  legends?: LegendsProgress;
 }
 
 export function newSoloSave(): SoloSave {
