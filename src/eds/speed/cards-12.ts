@@ -96,7 +96,7 @@ function coin(e: Engine, p: Pid, what: string): boolean {
 /** Light Barrier on `p`'s field, with its effects on (not turned off by its own Tails, not negated). */
 const lightBarrier = (e: Engine, p: Pid) => {
   const lb = e.player(p).field;
-  return !!lb && lb.faceUp && !!lb.active && lb.name === 'Light Barrier' && !lb.tags?.lbOff && !e.spellsNegated();
+  return !!lb && lb.faceUp && !!lb.active && e.isNamed(lb, 'Light Barrier') && !lb.tags?.lbOff && !e.spellsNegated();
 };
 /** Arcana Force "When this card is Summoned, toss a coin" (tags.coin 1 = Heads, 2 = Tails); Light Barrier lets you choose. */
 function arcanaCoin(): Partial<EffectDef> {
@@ -153,7 +153,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   const roidsBack = (e: Engine, p: Pid) => {
     const back = (e.state.fx.gyToHand ?? {}) as Record<number, number>;
     const used = (e.state.fx.ambulanced ?? {}) as Record<number, number>;
-    return e.player(p).hand.filter((c) => canSS(e, c) && named(c, 'roid') && back[c.uid] === e.state.turn && used[c.uid] !== e.state.turn);
+    return e.player(p).hand.filter((c) => canSS(e, c) && named(e, c, 'roid') && back[c.uid] === e.state.turn && used[c.uid] !== e.state.turn);
   };
   E['Ambulanceroid'] = {
     quick: {
@@ -203,7 +203,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // The Synchro Material effect never applies (no Synchro Monsters).
   E['Blackwing - Brisote the Tailwind'] = {
     summonProc: {
-      can: (e, _c, p) => freeMZ(e, p) && destroyedLog(e).filter((x) => x.controller === p && x.faceUp && named(x.name, 'Blackwing')).length >= 2,
+      can: (e, _c, p) => freeMZ(e, p) && destroyedLog(e).filter((x) => x.controller === p && x.faceUp && named(e, x.name, 'Blackwing')).length >= 2,
       *run(e, c, p) {
         if (freeMZ(e, p)) yield* e.specialSummon(c.uid, p, 'atk');
       },
@@ -464,7 +464,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     locksActivation: (e, _m, ctl, p, kind) => kind === 'trap' && p !== ctl && e.state.phase === 'BP',
   };
 
-  const wyvernTargets = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => canSS(e, c) && named(c, 'Red-Eyes') && c.name !== 'Red-Eyes B. Chick' && c.name !== 'Red-Eyes Wyvern');
+  const wyvernTargets = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => canSS(e, c) && named(e, c, 'Red-Eyes') && !e.isNamed(c, 'Red-Eyes B. Chick') && !e.isNamed(c, 'Red-Eyes Wyvern'));
   E['Red-Eyes Wyvern'] = {
     *onEndPhaseInGrave(e, card, p) {
       if (e.state.turnPlayer !== p || e.player(p).normalSummoned || !freeMZ(e, p) || !wyvernTargets(e, p).length) return;
@@ -521,7 +521,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (e.fieldCard(target.card.uid)) yield* e.destroy([target.card.uid]);
       },
     },
-    guardsFromAttack: (_e, src, target) => target.uid !== src.uid && target.faceUp && named(target, 'Archfiend') && target.name !== 'Vilepawn Archfiend',
+    guardsFromAttack: (e, src, target) => target.uid !== src.uid && target.faceUp && named(e, target, 'Archfiend') && !e.isNamed(target, 'Vilepawn Archfiend'),
   };
 
   // ===================== Fusion Monsters =====================
@@ -669,9 +669,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ===================== Spells =====================
   // "All Fusion Monsters you control are also treated as Frightfur monsters" cannot change card names here.
-  const frightfurExtra = (e: Engine, p: Pid) => e.player(p).fusion.filter((c) => named(c, 'Frightfur'));
+  const frightfurExtra = (e: Engine, p: Pid) => e.player(p).fusion.filter((c) => named(e, c, 'Frightfur'));
   E['Frightfur Sanctuary'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
+    // "All Fusion Monsters you control are also treated as "Frightfur" monsters."
+    addsNames: (e, _src, srcController, target) => (e.controller(target.uid) === srcController && isFusion(e, target) ? ['Frightfur'] : undefined),
     *resolve() {},
     activateCost: {
       can: (e, c, p) => e.player(p).hand.some((x) => x.uid !== c.uid) && frightfurExtra(e, p).length >= 2,
@@ -683,7 +685,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       },
     },
     *onSentToGrave(e, _card, p) {
-      const list = e.player(p).gy.filter((c) => isFusion(e, c) && named(c, 'Frightfur'));
+      const list = e.player(p).gy.filter((c) => isFusion(e, c) && named(e, c, 'Frightfur'));
       if (!list.length || !(yield* e.yesno(p, 'Frightfur Sanctuary: return 1 "Frightfur" Fusion Monster from your GY to the Extra Deck?'))) return;
       const c = yield* pickOne(e, p, 'Return which Frightfur Fusion Monster?', list);
       if (c) toExtra(e, c.uid);
@@ -726,14 +728,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const mineAttacks = e.state.turnPlayer === p;
       const arcana = mineAttacks ? attacker : target;
       const victim = mineAttacks ? target : attacker;
-      if (!named(arcana, 'Arcana Force') || e.fieldCard(victim.uid) || e.find(victim.uid)?.loc.player !== other(p)) return;
+      if (!named(e, arcana, 'Arcana Force') || e.fieldCard(victim.uid) || e.find(victim.uid)?.loc.player !== other(p)) return;
       const gain = info(e, victim).atk ?? 0;
       if (gain > 0) e.gainLp(p, gain);
     },
   };
 
   // The Xyz Summon cannot happen (no Xyz Monsters): both Heraldic Beasts are Special Summoned.
-  const heraldic = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => canSS(e, c) && named(c, 'Heraldic Beast'));
+  const heraldic = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => canSS(e, c) && named(e, c, 'Heraldic Beast'));
   E['Advanced Heraldry Art'] = {
     canActivate: (e, _c, p, t) => isMain(t) && heraldic(e, p).length >= 2 && e.player(p).mz.filter((z) => z === null).length >= 2,
     *activate(e, link, p) {
@@ -748,11 +750,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const terrorkings = (e: Engine, p: Pid, except = -1) => faceUpMonsters(e, p).filter((m) => m.name === 'Terrorking Archfiend' && m.uid !== except);
+  const terrorkings = (e: Engine, p: Pid, except = -1) => faceUpMonsters(e, p).filter((m) => e.isNamed(m, 'Terrorking Archfiend') && m.uid !== except);
   E['Checkmate'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => m.faceUp && named(m, 'Archfiend') && terrorkings(e, p, m.uid).length > 0),
+    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => m.faceUp && named(e, m, 'Archfiend') && terrorkings(e, p, m.uid).length > 0),
     *activate(e, _l, p) {
-      return yield* tributeCost(e, p, 1, (m) => m.faceUp && named(m, 'Archfiend') && terrorkings(e, p, m.uid).length > 0);
+      return yield* tributeCost(e, p, 1, (m) => m.faceUp && named(e, m, 'Archfiend') && terrorkings(e, p, m.uid).length > 0);
     },
     *resolve(e, _l, p) {
       const t = yield* pickOne(e, p, 'Checkmate: which Terrorking Archfiend can attack directly?', terrorkings(e, p));
@@ -764,7 +766,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   const recoverPairs = (e: Engine, p: Pid) => {
     const used = usedAsMaterial(e);
-    return { polys: e.player(p).gy.filter((c) => c.name === 'Polymerization'), mats: e.player(p).gy.filter((c) => isMonster(e, c) && used.has(c.uid)) };
+    return { polys: e.player(p).gy.filter((c) => e.isNamed(c, 'Polymerization')), mats: e.player(p).gy.filter((c) => isMonster(e, c) && used.has(c.uid)) };
   };
   E['Fusion Recovery'] = {
     canActivate: (e, _c, p, t) => isMain(t) && recoverPairs(e, p).polys.length > 0 && recoverPairs(e, p).mats.length > 0,
@@ -832,19 +834,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ===================== Traps =====================
-  const numbers = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(m, 'Number'));
+  const numbers = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(e, m, 'Number'));
   E['Number Wall'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && numbers(e, p).length > 0,
     *resolve() {},
     shields: (e, _src, target, how) => {
-      if (!target.faceUp || !named(target, 'Number')) return false;
+      if (!target.faceUp || !named(e, target, 'Number')) return false;
       if (how === 'effect') return true;
       if (how !== 'battle') return false;
       const foe = battlePartner(e, target.uid);
-      return !foe || !named(foe, 'Number');
+      return !foe || !named(e, foe, 'Number');
     },
     *onAnyToGrave(e, fc, p, events) {
-      if (!events.some((v) => v.from === 'mz' && v.controller === p && v.reason === 'destroyed' && named(v.card, 'Number')) || !e.fieldCard(fc.uid)) return;
+      if (!events.some((v) => v.from === 'mz' && v.controller === p && v.reason === 'destroyed' && named(e, v.card, 'Number')) || !e.fieldCard(fc.uid)) return;
       e.log(p, 'Number Wall is destroyed (a "Number" monster was destroyed)');
       yield* e.destroy([fc.uid]);
     },
@@ -907,7 +909,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const frightfurMine = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => isFusion(e, m) && named(m, 'Frightfur'));
+  const frightfurMine = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => isFusion(e, m) && named(e, m, 'Frightfur'));
   const fusionTheirs = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, other(p)).filter((m) => isFusion(e, m)));
   E['Fusion Fright Waltz'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && targetable(e, frightfurMine(e, p)).length > 0 && fusionTheirs(e, p).length > 0,
@@ -976,9 +978,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // "When ... is destroyed": can be activated for the rest of that turn.
-  const deityPool = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => c.name === 'Vennominaga the Deity of Poisonous Snakes');
+  const deityPool = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => e.isNamed(c, 'Vennominaga the Deity of Poisonous Snakes'));
   E['Rise of the Snake Deity'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && deityPool(e, p).length > 0 && destroyedLog(e).some((x) => x.controller === p && x.faceUp && !x.byBattle && x.name === 'Vennominon the King of Poisonous Snakes'),
+    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && deityPool(e, p).length > 0 && destroyedLog(e).some((x) => x.controller === p && x.faceUp && !x.byBattle && e.isNamed(x, 'Vennominon the King of Poisonous Snakes')),
     *resolve(e, _l, p) {
       yield* summonOneOf(e, p, 'Rise of the Snake Deity: Special Summon which monster?', deityPool(e, p));
     },

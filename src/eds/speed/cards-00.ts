@@ -166,9 +166,9 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
 
   // "You can only activate 1 X per turn" uses e.oncePerTurn / e.useOnce with the card name.
   E['Jar of Avarice'] = {
-    canActivate: (e, c, p, t) => anyTime(t) && e.oncePerTurn(c.name, p) && e.player(p).gy.filter((g) => g.name !== c.name).length >= 5,
+    canActivate: (e, c, p, t) => anyTime(t) && e.oncePerTurn(c.name, p) && e.player(p).gy.filter((g) => !e.sameName(g, c)).length >= 5,
     *activate(e, link, p) {
-      const chosen = yield* pick(e, p, 'Jar of Avarice: shuffle which 5 cards into the Deck?', e.player(p).gy.filter((g) => g.name !== link.card.name), 5, 5, true);
+      const chosen = yield* pick(e, p, 'Jar of Avarice: shuffle which 5 cards into the Deck?', e.player(p).gy.filter((g) => !e.sameName(g, link.card)), 5, 5, true);
       if (!chosen) return false;
       e.useOnce(link.card.name, p);
       link.payload = chosen.map((c) => c.uid);
@@ -213,7 +213,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
 
   // An Equip Spell giving protection (shields) and a battle trigger (hostAfterBattle).
   E['Amazoness Heirloom'] = {
-    ..._h.equipFor((_e, m) => m.name.includes('Amazoness'), undefined),
+    ..._h.equipFor((e, m) => e.nameHas(m, 'Amazoness'), undefined),
     shields(e, src, target, how) {
       if (how !== 'battle' || src.equippedTo !== target.uid || tag(src).savedTurn === e.state.turn) return false;
       tag(src).savedTurn = e.state.turn;

@@ -49,15 +49,16 @@ const cardsOn = (e: Engine, p: Pid) => e.monsters(p).length + stOf(e, p).length;
 /** This monster now has another monster's name and original effect (Number 8, Number C69, One-Eyed Skill Gainer). */
 function copyFrom(e: Engine, m: FieldCard, from: FieldCard, p: Pid, opts: { turn?: boolean; gain?: boolean }) {
   const names = (e.state.fx.copyNames ??= []) as string[];
-  let i = names.indexOf(from.name);
-  if (i < 0) i = names.push(from.name) - 1;
+  const name = e.nameOf(from);
+  let i = names.indexOf(name);
+  if (i < 0) i = names.push(name) - 1;
   const t = tag(m);
   t.copyFx = i + 1;
   if (opts.turn) t.copyTurn = e.state.turn;
   else delete t.copyTurn;
   if (opts.gain) t.copyGain = 1;
   else delete t.copyGain;
-  e.log(p, `${m.name}'s name becomes ${from.name} and it ${opts.gain ? 'gains' : 'takes on'} its effect${opts.turn ? ' until the End Phase' : ''}`);
+  e.log(p, `${m.name}'s name becomes ${name} and it ${opts.gain ? 'gains' : 'takes on'} its effect${opts.turn ? ' until the End Phase' : ''}`);
 }
 
 /** ATK gained "during that damage calculation only": undone once the battle is over (stateCheck of the card that gave it). */
@@ -655,7 +656,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   E['Princess Cologne'] = {
     *onSpecialSummon(e, m, p) {
       if (!m.tags?.xyzS) return;
-      const box = e.player(p).gy.filter((c) => c.name === 'Box of Friends');
+      const box = e.player(p).gy.filter((c) => e.isNamed(c, 'Box of Friends'));
       if (!box.length || !freeMZ(e, p) || !(yield* e.yesno(p, 'Princess Cologne: Special Summon "Box of Friends" from your GY?'))) return;
       yield* summonOneOf(e, p, 'Special Summon which "Box of Friends"?', box);
     },

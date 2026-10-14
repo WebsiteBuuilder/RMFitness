@@ -5,6 +5,17 @@ import { TIERS, meterOf, tierIndex } from '../level/leveling';
 import { profileXpOf, rarityFor } from '../level/view';
 import { spellWord } from './gameUi';
 
+/** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
+const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
+const GLINTS = (
+  <>
+    <b class="lvr-spec" />
+    <b class="lvr-glint g1" />
+    <b class="lvr-glint g2" />
+    <b class="lvr-glint g3" />
+  </>
+);
+
 /** Card picture with a drawn fallback when the image is missing. `owner` picks whose rarity a duel card shows. */
 export function CardImg({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
@@ -13,16 +24,27 @@ export function CardImg({ name, back = false, class: cls = '', owner, tier: forc
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
   const tier = TIERS[forceTier ?? rarityFor(name, owner)];
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
-  const fx = tier.id !== 'N' && <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={tier.short} />;
+  const fx = tier.id !== 'N' && (
+    <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={CHIP[tier.id] ?? tier.short}>
+      {/* Glossy and Royal: twinkling glints on the clear coat */}
+      {(tier.id === 'GL' || tier.id === 'RO') && GLINTS}
+    </i>
+  );
   const url = broken === name ? null : imageUrl(name);
   // Overframe: the picture gets its own box so the art can break out of the frame anywhere it shows.
   if (url && tier.id === 'OF')
     return (
       <span class={`lvr-of ${cls.replace(/\blvr(-OF)?\b/g, '')}`}>
+        <i class="lvr-rays" />
+        <i class="lvr-ofrim" />
         <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
         {fx}
+        <b class="lvr-spec of" />
         <b class="lvr-pop" style={{ backgroundImage: `url("${url}")` }} />
-        <i class="lvr-chip">OVER</i>
+        <i class="lvr-spk s1" />
+        <i class="lvr-spk s2" />
+        <i class="lvr-spk s3" />
+        <i class="lvr-chip">OVERFRAME</i>
       </span>
     );
   if (url)
@@ -49,11 +71,13 @@ export function CardImg({ name, back = false, class: cls = '', owner, tier: forc
 }
 
 /** Full card readout. */
-export function CardInfoPanel({ name }: { name: string }) {
+export function CardInfoPanel({ name, owner }: { name: string; /** in a duel: whose copy (its finish shows) */ owner?: Pid }) {
   const info = card(name);
   return (
     <div class="cinfo">
-      <CardImg name={name} class="cinfo-img" />
+      <span class="cinfo-pic">
+        <CardImg name={name} class="cinfo-img" owner={owner} />
+      </span>
       <div class="cinfo-text">
         <div class="cinfo-name">{name}</div>
         {info ? (

@@ -29,21 +29,21 @@ export interface Chapter {
 
 // ---------- Story decks (the player borrows these) ----------
 
-const JOEY_STORY: CampaignNode['story'] = {
+export const JOEY_STORY: CampaignNode['story'] = {
   as: 'Joey Wheeler',
   main: ['Red-Eyes Black Dragon', 'Gearfried the Red-Eyes Iron Knight', 'Baby Dragon*2', 'Time Wizard', "Alligator's Sword*2", 'Axe Raider*2', 'Blue Flame Swordsman*2', 'Rocket Warrior', 'Little-Winguard', 'Masaki the Legendary Swordsman', 'Swordstalker', 'Legendary Sword', 'Salamandra', 'Sogen', 'Graceful Dice', 'Skull Dice', 'Kunai with Chain', 'Red-Eyes Spirit'],
   extra: [],
   skill: null,
 };
 
-const JADEN_STORY: CampaignNode['story'] = {
+export const JADEN_STORY: CampaignNode['story'] = {
   as: 'Jaden Yuki',
   main: ['Elemental HERO Avian*2', 'Elemental HERO Burstinatrix*2', 'Elemental HERO Clayman*2', 'Elemental HERO Sparkman*2', 'Elemental HERO Bubbleman', 'Elemental HERO Prisma', 'Elemental HERO Bladedge', 'Elemental HERO Neos', 'Winged Kuriboh', 'Miracle Fusion*2', 'A Hero Lives', 'E - Emergency Call', 'H - Heated Heart', 'Hero Signal', 'Hero Counterattack', 'Negate Attack'],
   extra: ['Elemental HERO Flame Wingman', 'Elemental HERO Thunder Giant', 'Elemental HERO Rampart Blaster', 'Elemental HERO Steam Healer', 'Elemental HERO Shining Flare Wingman', 'Elemental HERO Wildedge'],
   skill: 'HEROES UNITE - FUSION!!',
 };
 
-const YUGI_STORY: CampaignNode['story'] = {
+export const YUGI_STORY: CampaignNode['story'] = {
   as: 'Yugi Muto',
   main: ['Dark Magician*2', 'Dark Magician Girl', 'Skilled Dark Magician', 'Breaker the Magical Warrior*2', 'Big Shield Gardna', 'Kuriboh', 'Alpha The Magnet Warrior', 'Beta The Magnet Warrior', 'Gamma the Magnet Warrior', 'Valkyrion the Magna Warrior', 'Celtic Guardian*2', 'Feral Imp', 'Thousand Knives', 'Dark Magic Attack', "Magician's Circle", 'Mirror Wall', 'Waboku'],
   extra: [],

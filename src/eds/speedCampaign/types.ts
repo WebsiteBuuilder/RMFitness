@@ -69,7 +69,8 @@ export interface DuelOutcome {
 export type DuelContext =
   | { kind: 'practice'; oppId: string; deckId: string | null; first: 'me' | 'cpu' | 'coin'; conditions: boolean; watch?: boolean }
   | { kind: 'campaign'; nodeId: string }
-  | { kind: 'labyrinth'; runId: string; stopId: string };
+  | { kind: 'labyrinth'; runId: string; stopId: string }
+  | { kind: 'legend'; duelId: string; rematch?: boolean };
 
 /** Everything needed to start one duel against the computer. */
 export interface CpuDuelSpec {

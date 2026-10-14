@@ -37,6 +37,10 @@ class OnlineController {
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private noticeSeq = 0;
   private lastOut: OutgoingInvite | null = null;
+  /** this window stepped aside for another window of the same profile */
+  passive = false;
+  private instance = Math.random().toString(36).slice(2);
+  private channel: BroadcastChannel | null = null;
   /** tests swap in their own transport */
   makeTransport: () => Transport = () => new PeerTransport();
 
@@ -51,9 +55,23 @@ class OnlineController {
         history.replaceState(null, '', location.pathname + (q ? `?${q}` : ''));
       }
     }
+    try {
+      this.channel = new BroadcastChannel('eds-online-v1');
+      this.channel.onmessage = (e: MessageEvent) => {
+        const m = e.data as { t?: string; profile?: string; from?: string };
+        if (m?.t === 'claim' && m.from !== this.instance && m.profile && m.profile === this.profile?.id && this.presence) this.stepAside();
+      };
+    } catch {
+      /* no BroadcastChannel: one window at a time is all that works */
+    }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') this.presence?.wake();
+        if (document.visibilityState !== 'visible') return;
+        if (this.passive && this.profile) {
+          this.passive = false;
+          this.goOnline(this.profile);
+          this.changed();
+        } else this.presence?.wake();
       });
       window.addEventListener('online', () => this.presence?.wake());
     }
@@ -85,12 +103,9 @@ class OnlineController {
     this.profile = p;
     this.panelOpen = false;
     this.lastOut = null;
+    this.passive = false;
     if (p) {
-      const data = loadOnline(p.id);
-      const pr = new Presence({ transport: this.makeTransport(), data, me: { name: p.alias, color: p.color }, save: (d) => writeOnline(p.id, d) });
-      this.presence = pr;
-      this.unsubPresence = pr.subscribe(() => this.changed());
-      pr.start();
+      const pr = this.goOnline(p);
       if (this.pendingFriend) {
         const r = pr.add(this.pendingFriend);
         if (r === 'added' || r === 'accepted') this.addedFromLink = this.pendingFriend;
@@ -98,6 +113,30 @@ class OnlineController {
         this.panelOpen = true;
       }
     }
+    this.changed();
+  }
+
+  private goOnline(p: Profile): Presence {
+    // fresh from storage: another window of this game may have changed the list
+    const data = loadOnline(p.id);
+    const pr = new Presence({ transport: this.makeTransport(), data, me: { name: p.alias, color: p.color }, save: (d) => writeOnline(p.id, d) });
+    this.presence = pr;
+    this.unsubPresence = pr.subscribe(() => this.changed());
+    pr.onNotice = (text) => this.say(text);
+    pr.start();
+    // the newest window of this profile is the one online; any older one steps aside
+    this.channel?.postMessage({ t: 'claim', profile: p.id, from: this.instance });
+    return pr;
+  }
+
+  /** Another window (the installed app, a browser tab) took this profile online. */
+  private stepAside() {
+    this.unsubPresence?.();
+    this.unsubPresence = null;
+    this.presence?.stop();
+    this.presence = null;
+    this.passive = true;
+    this.panelOpen = false;
     this.changed();
   }
 
