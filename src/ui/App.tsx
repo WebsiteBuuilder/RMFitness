@@ -36,7 +36,8 @@ import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, TIERS, tierIndex, withLevels, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult, tooQuick } from '../collection/economy';
+import { noteRequests, summaryOf } from '../collection/requests';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
 import { DuelPot } from '../collection/StakesPanel';
@@ -319,7 +320,15 @@ export function App() {
     const speedNow = speedSave ?? loadSpeedSave(profile.id);
     const r = settleSolo(sd.ctx, o, speedNow, loadSolo(profile.id));
     writeSolo(profile.id, r.solo);
-    if (r.speed !== speedNow) setSpeedSave(r.speed);
+    // Duelist Requests: Road and Labyrinth duels count (Practice and watching never do).
+    const st = session?.engine.state;
+    const req = !left && st && sd.ctx.kind !== 'practice' && !sd.spec.watch ? noteRequests(r.speed, summaryOf(st, 0), true) : null;
+    if (req?.lines.length) {
+      setSpeedNews(req.lines);
+      setNewsCards([{ who: '', won: req.cards, lost: [] }]);
+    }
+    const speedOut = req ? req.save : r.speed;
+    if (speedOut !== speedNow) setSpeedSave(speedOut);
     setSoloReport(left && sd.ctx.kind !== 'labyrinth' ? null : r.report);
     lastSoloSpec.current = sd.spec;
     session?.close();
@@ -535,14 +544,24 @@ export function App() {
         news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines.map(named)] : rv.lines.map(named)));
         return rv.save;
       };
+      // Duelist Requests: duels that pay prizes move today's requests on.
+      const reqs = (s: SpeedSave, seat: Pid): SpeedSave => {
+        if (!st) return s;
+        const counts = cpu ? !activeDeck(s)?.open : !!seats && staked(seats[0].stakes, seats[1].stakes) && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
+        const r = noteRequests(s, summaryOf(st, seat), counts);
+        const who = seats?.[seat].name ?? '';
+        news.push(...(hotseat && !cpu ? r.lines.map((l) => `${who}: ${l}`) : r.lines));
+        if (r.cards.length) cards.push({ who, won: r.cards, lost: [] });
+        return r.save;
+      };
       // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".
       const first = (s: SpeedSave, seat: Pid) => (!cpu && st && seats ? rescueFirst(s, seat, st, [seats[0], seats[1]], winner) : s);
-      const mineAfter = speedSave ? withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), null) : null;
+      const mineAfter = speedSave ? withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), mySeat), null) : null;
       if (mineAfter) setSpeedSave(mineAfter);
       if (hotseat && p2Profile && p2Profile !== profile?.id) {
         const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
         const seat2 = other(mySeat);
-        writeSpeedSave(p2Profile, withTicket(lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2), null));
+        writeSpeedSave(p2Profile, withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2), seat2), null));
       }
       const allNews = [...carryNews.current, ...news];
       setSpeedNews(allNews);
@@ -759,49 +778,7 @@ export function App() {
         ) : (
           <div class="loading">Loading Speed Duel cards…</div>
         );
-      if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
-      if (tagOpen)
-        return (
-          <TagHub
-            speed={speedSave ?? speedSaveOf(profile.id)}
-            solo={loadSolo(profile.id)}
-            report={tagReport}
-            onReportSeen={() => setTagReport(null)}
-            onPlay={playTag}
-            onJoin={joinTag}
-            onBack={() => (setTagReport(null), setTagOpen(false))}
-          />
-        );
-      if (soloMode)
-        return (
-          <Solo
-            mode={soloMode}
-            profile={profile}
-            name={save.name}
-            speed={speedSave ?? speedSaveOf(profile.id)}
-            onSpeed={setSpeedSave}
-            report={soloReport}
-            lastSpec={lastSoloSpec.current}
-            onReportSeen={() => setSoloReport(null)}
-            onDuel={startSoloDuel}
-            onMode={setSoloMode}
-            onExit={() => (setSoloReport(null), setSoloMode(null))}
-          />
-        );
-      return (
-        <>
-          <SpeedHub onTag={() => setTagOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
-          {unfinished && (
-            <Overlay>
-              <Win title="Unfinished duel">
-                <p>
-                  {unfinished.t.seats[0].name} and {unfinished.t.seats[1].name} never finished their duel on this phone, so the bets are still on. Who gave up?
-                </p>
-                <Menu items={([0, 1] as Pid[]).map((p) => ({ label: `${unfinished.t.seats[p].name} gave up`, onPick: () => settleUnfinished(other(p)) }))} />
-              </Win>
-            </Overlay>
-          )}
-          {speedNews.length > 0 && (
+      const newsOverlay = speedNews.length > 0 && (
             <Overlay onClose={() => setSpeedNews([])}>
               <Win title="After the duel" onClose={() => setSpeedNews([])}>
                 {newsCards
@@ -831,7 +808,53 @@ export function App() {
                 <Menu items={[{ label: 'OK', onPick: () => setSpeedNews([]) }]} />
               </Win>
             </Overlay>
+          );
+      if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
+      if (tagOpen)
+        return (
+          <TagHub
+            speed={speedSave ?? speedSaveOf(profile.id)}
+            solo={loadSolo(profile.id)}
+            report={tagReport}
+            onReportSeen={() => setTagReport(null)}
+            onPlay={playTag}
+            onJoin={joinTag}
+            onBack={() => (setTagReport(null), setTagOpen(false))}
+          />
+        );
+      if (soloMode)
+        return (
+          <>
+            <Solo
+              mode={soloMode}
+              profile={profile}
+              name={save.name}
+              speed={speedSave ?? speedSaveOf(profile.id)}
+              onSpeed={setSpeedSave}
+              report={soloReport}
+              lastSpec={lastSoloSpec.current}
+              onReportSeen={() => setSoloReport(null)}
+              onDuel={startSoloDuel}
+              onMode={setSoloMode}
+              onExit={() => (setSoloReport(null), setSoloMode(null))}
+            />
+            {!soloReport && newsOverlay}
+          </>
+        );
+      return (
+        <>
+          <SpeedHub onTag={() => setTagOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          {unfinished && (
+            <Overlay>
+              <Win title="Unfinished duel">
+                <p>
+                  {unfinished.t.seats[0].name} and {unfinished.t.seats[1].name} never finished their duel on this phone, so the bets are still on. Who gave up?
+                </p>
+                <Menu items={([0, 1] as Pid[]).map((p) => ({ label: `${unfinished.t.seats[p].name} gave up`, onPick: () => settleUnfinished(other(p)) }))} />
+              </Win>
+            </Overlay>
           )}
+          {newsOverlay}
         </>
       );
     case 'duel': {
