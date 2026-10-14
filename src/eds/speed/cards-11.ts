@@ -39,7 +39,7 @@ const isEffectLink = (link: ChainLink | undefined) => !!(link?.payload as { effe
 const destroyedMonster = (v: GraveEvent) => v.from === 'mz' && v.reason === 'destroyed';
 const continuousSpell = (): Pick<EffectDef, 'canActivate' | 'resolve'> => ({ canActivate: (_e, _c, _p, t) => isMain(t), *resolve() {} });
 const continuousTrap = (): Pick<EffectDef, 'canActivate' | 'resolve'> => ({ canActivate: (_e, _c, _p, t) => anyTime(t), *resolve() {} });
-const meisei = (e: Engine, p: Pid) => e.monsters(p).some((m) => m.faceUp && m.name === 'Sealmaster Meisei');
+const meisei = (e: Engine, p: Pid) => e.monsters(p).some((m) => m.faceUp && e.isNamed(m, 'Sealmaster Meisei'));
 function* destroySelf(e: Engine, fc: FieldCard, why: string): Step {
   if (!e.fieldCard(fc.uid)) return;
   e.log(e.controller(fc.uid), `${fc.name} is destroyed (${why})`);
@@ -72,7 +72,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // ---------- Continuous Spells ----------
   E['Ancient Gear Castle'] = {
     ...continuousSpell(),
-    aura: (_e, _src, m) => (m.faceUp && named(m, 'Ancient Gear') ? { atk: 300, def: 0 } : undefined),
+    aura: (e, _src, m) => (m.faceUp && named(e, m, 'Ancient Gear') ? { atk: 300, def: 0 } : undefined),
     *onAnySummon(e, fc, p, _m, _mp, kind) {
       if (kind !== 'normal') return;
       fc.counters++;
@@ -82,7 +82,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       fc.counters++;
       e.log(p, `A counter is placed on Ancient Gear Castle (${fc.counters})`);
     },
-    tributeFor: (_e, fc, _p, monster, need) => named(monster, 'Ancient Gear') && fc.counters >= need,
+    tributeFor: (e, fc, _p, monster, need) => named(e, monster, 'Ancient Gear') && fc.counters >= need,
   };
 
   E['Arcane Barrier'] = {
@@ -157,11 +157,11 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     quick: {
       label: 'negate that Spell/Trap effect',
       can: (e, _c, p, t, ctx) =>
-        (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && !ctx.link.negated && info(e, ctx.link.card).kind !== 'monster' && e.find(ctx.link.card.uid)?.loc.zone !== 'mz' && faceUpMonsters(e, p).some((m) => m.name === 'Hamon, Lord of Striking Thunder' && m.pos === 'atk'),
+        (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && !ctx.link.negated && info(e, ctx.link.card).kind !== 'monster' && e.find(ctx.link.card.uid)?.loc.zone !== 'mz' && faceUpMonsters(e, p).some((m) => e.isNamed(m, 'Hamon, Lord of Striking Thunder') && m.pos === 'atk'),
       *run(e, _c, p, link) {
         const target = (link.payload as { ctx?: ChainCtx }).ctx?.link;
         negateLink(e, target, p);
-        const hamon = yield* pickOne(e, p, 'Cerulean Skyfire: change which Hamon to Defense Position?', faceUpMonsters(e, p).filter((m) => m.name === 'Hamon, Lord of Striking Thunder' && m.pos === 'atk'));
+        const hamon = yield* pickOne(e, p, 'Cerulean Skyfire: change which Hamon to Defense Position?', faceUpMonsters(e, p).filter((m) => e.isNamed(m, 'Hamon, Lord of Striking Thunder') && m.pos === 'atk'));
         if (hamon) {
           hamon.pos = 'def';
           e.log(p, `${hamon.name} changes to Defense Position`);
@@ -170,7 +170,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
     // Approximated: a Sacred Beast leaving the field is seen when it goes to the GY (not when it is banished or returned).
     *onAnyToGrave(e, _fc, p, events) {
-      if (!events.some((v) => v.from === 'mz' && v.faceUp && v.controller === p && LORDS.includes(v.card.name))) return;
+      if (!events.some((v) => v.from === 'mz' && v.faceUp && v.controller === p && e.namesOf(v.card).some((nm) => LORDS.includes(nm)))) return;
       ((e.state.fx.noDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
       e.log(p, `Cerulean Skyfire: ${e.player(p).name} takes no damage this turn`);
     },
@@ -179,12 +179,12 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // The no-negation itself lives in negateLink (helpers.ts).
   E['Constellar Belt'] = { ...continuousSpell() };
 
-  const gravekeeperOut = (e: Engine) => faceUpMonsters(e).some((m) => named(m, "Gravekeeper's"));
-  const necrovalley = (e: Engine) => !!e.anyActive('Necrovalley') || (![0, 1].some((q) => e.player(q as Pid).field?.faceUp) && faceUpMonsters(e).some((m) => m.name === "Gravekeeper's Priestess" && !e.isNegated(m)));
+  const gravekeeperOut = (e: Engine) => faceUpMonsters(e).some((m) => named(e, m, "Gravekeeper's"));
+  const necrovalley = (e: Engine) => !!e.anyActive('Necrovalley') || (![0, 1].some((q) => e.player(q as Pid).field?.faceUp) && faceUpMonsters(e).some((m) => e.isNamed(m, "Gravekeeper's Priestess") && !e.isNegated(m)));
   E['Hidden Temples of Necrovalley'] = {
     canActivate: (e, _c, _p, t) => isMain(t) && gravekeeperOut(e) && necrovalley(e),
     *resolve() {},
-    forbidsSummon: (_e, _fc, _p, monster, _who, how) => how === 'special' && !named(monster, "Gravekeeper's"),
+    forbidsSummon: (e, _fc, _p, monster, _who, how) => how === 'special' && !named(e, monster, "Gravekeeper's"),
     *stateCheck(e, fc) {
       if (!gravekeeperOut(e) || !necrovalley(e)) yield* destroySelf(e, fc, 'no "Gravekeeper\'s" monster or "Necrovalley" on the field');
     },
@@ -196,7 +196,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       if (e.state.turnPlayer !== p) return;
       if (e.createToken('Slime Token', p, 'atk', true, { atk: 500, def: 500, level: 1, attribute: 'WATER', race: 'Aqua' })) e.log(p, 'Jam Breeding Machine makes a Slime Token');
     },
-    forbidsSummon: (_e, _fc, p, monster, who, how) => who === p && how !== 'set' && monster.name !== 'Slime Token',
+    forbidsSummon: (e, _fc, p, monster, who, how) => who === p && how !== 'set' && !e.isNamed(monster, 'Slime Token'),
   };
 
   const assemblyTargets = (e: Engine, p: Pid, n: number) => e.player(p).gy.filter((c) => isMonster(e, c) && info(e, c).race === 'Machine' && !isExtraOrRitual(e, c) && (info(e, c).level ?? 0) <= n);
@@ -220,7 +220,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   const divineInHand = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && info(e, c).race === 'Divine-Beast');
-  const rebornFor = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Monster Reborn');
+  const rebornFor = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Monster Reborn'));
   E['Millennium Revelation'] = {
     ...continuousSpell(),
     ignition: {
@@ -256,9 +256,9 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   const GAIAS = ['Gaia The Fierce Knight', 'Swift Gaia the Fierce Knight', 'Gaia the Dragon Champion'];
   E['Spiral Spear Strike'] = {
     ...continuousSpell(),
-    grantsPiercing: (e, _fc, p, attacker) => e.controller(attacker.uid) === p && GAIAS.includes(attacker.name),
+    grantsPiercing: (e, _fc, p, attacker) => e.controller(attacker.uid) === p && e.namesOf(attacker).some((nm) => GAIAS.includes(nm)),
     *onBattleDamageDealt(e, fc, attacker, p) {
-      if (!fc.active || e.spellsNegated() || attacker.name !== 'Gaia the Dragon Champion') return;
+      if (!fc.active || e.spellsNegated() || !e.isNamed(attacker, 'Gaia the Dragon Champion')) return;
       const b = e.state.battle;
       const target = b && b.target !== null ? e.fieldCard(b.target) : null;
       if (!target || target.pos !== 'def') return;
@@ -325,7 +325,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   // ---------- Continuous Traps ----------
-  const lordCount = (e: Engine, p: Pid) => new Set(faceUpMonsters(e, p).filter((m) => LORDS.includes(m.name)).map((m) => m.name)).size;
+  const lordCount = (e: Engine, p: Pid) => new Set(faceUpMonsters(e, p).filter((m) => e.namesOf(m).some((nm) => LORDS.includes(nm))).map((m) => m.name)).size;
   const contTrapsInGy = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => info(e, c).kind === 'trap' && info(e, c).sub === 'Continuous');
   E['Awakening of the Sacred Beasts'] = {
     ...continuousTrap(),
@@ -348,7 +348,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
   };
 
-  const archfiends = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(m, 'Archfiend'));
+  const archfiends = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(e, m, 'Archfiend'));
   E['Battle-Scarred'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && archfiends(e, p).length > 0,
     *activate(e, link, p) {
@@ -509,7 +509,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
   };
 
-  const helios = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => c.name === 'Helios - The Primordial Sun');
+  const helios = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => e.isNamed(c, 'Helios - The Primordial Sun'));
   E['Macro Cosmos'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve(e, _link, p) {

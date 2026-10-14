@@ -273,6 +273,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
+            {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
             {c.faceUp && kind === 'm' && (
               <div class="fstat">
                 {c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)}
@@ -381,7 +382,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (selCard) {
       const info = cardInfo(selCard.name);
       return (
-        <Win title={canSeeSel ? selCard.name : 'Face-down card'} class="msgwin">
+        <Win title={canSeeSel ? (e.nameOf(selCard) !== selCard.name ? `${e.nameOf(selCard)} (${selCard.name})` : selCard.name) : 'Face-down card'} class="msgwin">
           {canSeeSel && info && (
             <div class="selstat">
               {info.kind === 'monster' ? `Lv${info.level} ${info.attribute}/${info.race} ATK ${info.atk} DEF ${info.def}` : `${info.sub} ${info.kind === 'spell' ? spellWord(e.speed) : 'Trap'}`}

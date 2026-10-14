@@ -1,0 +1,187 @@
+/* Card Legends: legend covers, story scenes, the daily rematch. Uses the solo modes' navy and gold. */
+.lg-covers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.lg-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--so-line);
+  background: linear-gradient(180deg, var(--so-card2), var(--so-card));
+  text-align: center;
+  min-width: 0;
+}
+.lg-cover b {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.lg-cover.done {
+  border-color: var(--so-gold);
+  box-shadow: 0 0 0 1px var(--so-gold2) inset, 0 0 18px rgba(242, 193, 78, 0.25);
+}
+.lg-cover.locked {
+  opacity: 0.55;
+}
+.lg-cover.locked .lg-art {
+  filter: grayscale(1) brightness(0.45);
+}
+.lg-n,
+.lg-prog {
+  font-size: 11px;
+  color: var(--so-dim);
+  letter-spacing: 0.04em;
+}
+.lg-n {
+  text-transform: uppercase;
+  color: var(--so-gold);
+}
+.lg-art {
+  width: 72px;
+  aspect-ratio: 59 / 86;
+  border-radius: 6px;
+  overflow: hidden;
+  flex: none;
+}
+.lg-art .cimg {
+  width: 100%;
+  height: 100%;
+}
+.lg-art.small {
+  width: 48px;
+}
+.lg-art.big {
+  width: 92px;
+}
+.lg-art.hero {
+  width: 140px;
+  margin: 10px auto;
+  box-shadow: 0 0 32px rgba(242, 193, 78, 0.5);
+  animation: lg-rise 0.9s ease-out both;
+}
+@keyframes lg-rise {
+  from {
+    transform: translateY(18px) scale(0.85);
+    opacity: 0;
+  }
+}
+.lg-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.lg-head h3 {
+  margin: 2px 0 4px;
+}
+.lg-head p {
+  margin: 0;
+}
+.lg-pay {
+  margin-left: auto;
+  flex: none;
+  font-weight: 700;
+  color: var(--so-gold);
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--so-gold2);
+}
+.lg-pay.won {
+  color: #7be495;
+  border-color: #2f7d4a;
+}
+.lg-scene {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+.lg-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--so-card);
+  border-left: 3px solid var(--so-line);
+  animation: lg-in 0.4s ease-out both;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.lg-line b {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--so-blue);
+}
+.lg-line.lg-card {
+  border-left-color: var(--so-gold);
+  font-style: italic;
+  background: linear-gradient(90deg, rgba(242, 193, 78, 0.12), var(--so-card) 60%);
+}
+.lg-line.lg-card b {
+  color: var(--so-gold);
+  font-style: normal;
+}
+@keyframes lg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.lg-rematch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  margin: 0 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--so-gold2);
+  background: linear-gradient(90deg, rgba(242, 193, 78, 0.16), var(--so-card));
+}
+.lg-rematch > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lg-rematch span {
+  font-size: 12px;
+  color: var(--so-dim);
+}
+.lg-rematch.spent {
+  opacity: 0.6;
+  border-color: var(--so-line);
+}
+.lg-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--so-line);
+  background: var(--so-card);
+}
+.lg-deck.on {
+  border-color: var(--so-gold);
+}
+.lg-deck span {
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-line,
+  .lg-art.hero {
+    animation: none;
+  }
+}

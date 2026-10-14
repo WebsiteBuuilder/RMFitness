@@ -121,7 +121,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   // ---------- Bujintei Tsukuyomi ----------
-  const bujinTargets = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => named(c, 'Bujin') && info(e, c).kind === 'monster' && levelOf(e, c) === 4 && raceOf(e, c) === 'Beast-Warrior');
+  const bujinTargets = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => named(e, c, 'Bujin') && info(e, c).kind === 'monster' && levelOf(e, c) === 4 && raceOf(e, c) === 'Beast-Warrior');
   E['Bujintei Tsukuyomi'] = {
     ignition: {
       can: (e, m, p) => matCount(e, m) >= 1 && e.player(p).hand.length >= 1,
@@ -154,7 +154,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       );
     },
     // "You can only control 1 Bujintei Tsukuyomi."
-    selfSummonBlock: (e, card, p) => e.monsters(p).some((m) => m.faceUp && m.name === card.name),
+    selfSummonBlock: (e, card, p) => e.monsters(p).some((m) => m.faceUp && e.sameName(m, card)),
   };
 
   // ---------- Downerd Magician ----------
@@ -249,7 +249,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     return out;
   };
   E[GEFA] = {
-    extraProc: altXyz((e, m) => named(m, 'Galaxy-Eyes') && m.name !== GEFA),
+    extraProc: altXyz((e, m) => named(e, m, 'Galaxy-Eyes') && m.name !== GEFA),
     ignition: {
       repeat: true,
       can: (e, m, p) => gefaModes(e, m, p).length > 0,
@@ -294,7 +294,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   // ---------- Hierophant of Prophecy ----------
-  const spellbooks = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => named(c, 'Spellbook') && isSpell(e, c)).length;
+  const spellbooks = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => named(e, c, 'Spellbook') && isSpell(e, c)).length;
   E['Hierophant of Prophecy'] = {
     ignition: {
       can: (e, m, p) => matCount(e, m) >= 1 && spellbooks(e, p) > 0 && stOf(e, other(p)).length > 0,

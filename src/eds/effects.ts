@@ -205,6 +205,10 @@ export interface EffectDef {
   graveAura?(e: Engine, card: Card, target: FieldCard, owner: Pid): { atk: number; def: number } | undefined;
   /** The name this monster has while on the field, when an effect changes it (Proto-Cyber Dragon); used for Fusion Materials. */
   fieldName?(e: Engine, m: FieldCard): string | undefined;
+  /** Names this face-up card also has while it stays face-up (D Cubed: also a "Destiny HERO" monster); see Engine.namesOf. */
+  extraNames?(e: Engine, m: FieldCard): string[] | undefined;
+  /** An active Spell/Trap gives the face-up monster `target` more names (Frightfur Sanctuary: Fusion Monsters are also "Frightfur"). */
+  addsNames?(e: Engine, src: FieldCard, srcController: Pid, target: FieldCard): string[] | undefined;
   // ---------- Speed Duel hooks added for batch 16 ----------
   /** "If this card attacks, your opponent cannot activate Spell/Trap Cards until the end of the Damage Step." */
   attackSealsST?: boolean | ((e: Engine, m: FieldCard) => boolean);
@@ -387,9 +391,11 @@ function reindex() {
 export function getEffect(name: string): EffectDef | undefined {
   const hit = E[name];
   if (hit) return hit;
-  if (indexed !== Object.keys(E).length) reindex();
+  // Cards without a script are looked up constantly (every name check reads a card's script): answer from the cache
+  // first, and only count the registered scripts when a name is new. Scripts register when the game loads.
   const cached = CACHE.get(name);
   if (cached !== undefined) return cached ?? undefined;
+  if (indexed !== Object.keys(E).length) reindex();
   let found: EffectDef | undefined = LOWER[name.toLowerCase()];
   if (!found) for (const n of resolveNames(name)) if ((found = E[n] ?? LOWER[n.toLowerCase()])) break;
   CACHE.set(name, found ?? null);
@@ -1086,7 +1092,7 @@ delete E['Ultimate Offering'];
 
 const ctrl = (e: Engine, m: FieldCard): Pid => e.controller(m.uid) ?? m.owner;
 /** audit-eds: a card whose name is (treated as) "Harpie Lady" (Harpie Lady 1, Cyber Harpie Lady...). */
-const isHarpieLady = (e: Engine, name: string) => name === 'Harpie Lady' || e.info(name).desc.includes('always treated as "Harpie Lady"');
+const isHarpieLady = (e: Engine, c: Card | string) => e.isNamed(c, 'Harpie Lady');
 const race = (r: string) => (e: Engine, m: FieldCard) => e.raceOf(m) === r;
 const attr = (a: string) => (e: Engine, m: FieldCard) => e.info(m.name).attribute === a;
 const countField = (e: Engine, test: (m: FieldCard) => boolean) => allMonsters(e).filter((m) => m.faceUp && test(m)).length;
@@ -1118,7 +1124,7 @@ function equipFor(test: (e: Engine, m: FieldCard) => boolean, bonus: EffectDef['
 
 // ---------- type-restricted equips ----------
 E['Electro-Whip'] = equipFor(race('Thunder'), () => ({ atk: 300, def: 300 }));
-E['Cyber Shield'] = equipFor((e, m) => isHarpieLady(e, m.name) || m.name === 'Harpie Lady Sisters', () => ({ atk: 500, def: 0 })); // audit-eds: cards named "Harpie Lady" too
+E['Cyber Shield'] = equipFor((e, m) => isHarpieLady(e, m) || e.isNamed(m, 'Harpie Lady Sisters'), () => ({ atk: 500, def: 0 })); // audit-eds: cards named "Harpie Lady" too
 E['Steel Shell'] = equipFor(attr('WATER'), () => ({ atk: 400, def: -200 }));
 E['Machine Conversion Factory'] = equipFor(race('Machine'), () => ({ atk: 300, def: 300 }));
 E['Follow Wind'] = equipFor(race('Winged Beast'), () => ({ atk: 300, def: 300 }));
@@ -1188,14 +1194,14 @@ E['Buster Blader'] = {
 };
 E["Harpie's Pet Dragon"] = {
   selfBonus: (e) => {
-    const n = countField(e, (m) => isHarpieLady(e, m.name)); // audit-eds: each "Harpie Lady" (Harpie Lady Sisters is not one)
+    const n = countField(e, (m) => isHarpieLady(e, m)); // audit-eds: each "Harpie Lady" (Harpie Lady Sisters is not one)
     return { atk: 300 * n, def: 300 * n };
   },
 };
-E['Swamp Battleguard'] = { selfBonus: (e, m) => ({ atk: 500 * e.monsters(ctrl(e, m)).filter((x) => x.faceUp && x.name === 'Lava Battleguard').length, def: 0 }) };
-E['Lava Battleguard'] = { selfBonus: (e, m) => ({ atk: 500 * e.monsters(ctrl(e, m)).filter((x) => x.faceUp && x.name === 'Swamp Battleguard').length, def: 0 }) };
+E['Swamp Battleguard'] = { selfBonus: (e, m) => ({ atk: 500 * e.monsters(ctrl(e, m)).filter((x) => x.faceUp && e.isNamed(x, 'Lava Battleguard')).length, def: 0 }) };
+E['Lava Battleguard'] = { selfBonus: (e, m) => ({ atk: 500 * e.monsters(ctrl(e, m)).filter((x) => x.faceUp && e.isNamed(x, 'Swamp Battleguard')).length, def: 0 }) };
 E['Dark Magician Girl'] = {
-  selfBonus: (e) => ({ atk: 300 * [...e.player(0).gy, ...e.player(1).gy].filter((c) => c.name === 'Dark Magician' || c.name === 'Magician of Black Chaos').length, def: 0 }),
+  selfBonus: (e) => ({ atk: 300 * [...e.player(0).gy, ...e.player(1).gy].filter((c) => e.isNamed(c, 'Dark Magician') || e.isNamed(c, 'Magician of Black Chaos')).length, def: 0 }),
 };
 E['Flash Assailant'] = { selfBonus: (e, m) => ({ atk: -400 * e.player(ctrl(e, m)).hand.length, def: -400 * e.player(ctrl(e, m)).hand.length }) };
 E['Insect Queen'] = {
@@ -1459,7 +1465,7 @@ E['Giant Germ'] = {
   *onDestroyedByBattle(e, _m, controller) {
     e.damage(other(controller), 500);
     const ps = e.player(controller);
-    const more = ps.deck.filter((c) => c.name === 'Giant Germ');
+    const more = ps.deck.filter((c) => e.isNamed(c, 'Giant Germ'));
     if (!more.length || !hasFreeZone(e, controller) || e.state.winner !== null) return;
     if (!(yield* e.yesno(controller, 'Giant Germ: Special Summon the other Giant Germs from your Deck?'))) return;
     for (const c of more) if (hasFreeZone(e, controller)) yield* e.specialSummon(c.uid, controller, 'atk');
@@ -1470,7 +1476,7 @@ E['Nimble Momonga'] = {
   *onDestroyedByBattle(e, _m, controller) {
     e.gainLp(controller, 1000);
     const ps = e.player(controller);
-    const more = ps.deck.filter((c) => c.name === 'Nimble Momonga');
+    const more = ps.deck.filter((c) => e.isNamed(c, 'Nimble Momonga'));
     if (!more.length || !hasFreeZone(e, controller)) return;
     if (!(yield* e.yesno(controller, 'Nimble Momonga: Set the other Nimble Momongas from your Deck?'))) return;
     for (const c of more) if (hasFreeZone(e, controller)) yield* e.specialSummon(c.uid, controller, 'def', false);
@@ -1783,10 +1789,10 @@ E['The Shallow Grave'] = {
   },
 };
 E['Fusion Sage'] = {
-  canActivate: (e, _c, p, t) => isMain(t) && e.player(p).deck.some((c) => c.name === 'Polymerization'),
+  canActivate: (e, _c, p, t) => isMain(t) && e.player(p).deck.some((c) => e.isNamed(c, 'Polymerization')),
   *resolve(e, _l, p) {
     const ps = e.player(p);
-    const c = ps.deck.find((x) => x.name === 'Polymerization');
+    const c = ps.deck.find((x) => e.isNamed(x, 'Polymerization'));
     if (c) {
       e.toHand(c.uid);
       e.log(p, `${ps.name} adds Polymerization to the hand`);
@@ -1798,12 +1804,12 @@ E['Elegant Egotist'] = {
   canActivate: (e, _c, p, t) => {
     const ps = e.player(p);
     // audit-eds: cards whose name is treated as "Harpie Lady" count too.
-    return isMain(t) && hasFreeZone(e, p) && allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m.name)) && [...ps.hand, ...ps.deck].some((c) => isHarpieLady(e, c.name) || c.name === 'Harpie Lady Sisters');
+    return isMain(t) && hasFreeZone(e, p) && allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m)) && [...ps.hand, ...ps.deck].some((c) => isHarpieLady(e, c) || e.isNamed(c, 'Harpie Lady Sisters'));
   },
   *resolve(e, _l, p) {
     const ps = e.player(p);
-    if (e.speed && !allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m.name))) return; // audit-eds
-    const targets = [...ps.hand, ...ps.deck].filter((c) => isHarpieLady(e, c.name) || c.name === 'Harpie Lady Sisters');
+    if (e.speed && !allMonsters(e).some((m) => m.faceUp && isHarpieLady(e, m))) return; // audit-eds
+    const targets = [...ps.hand, ...ps.deck].filter((c) => isHarpieLady(e, c) || e.isNamed(c, 'Harpie Lady Sisters'));
     const picks = yield* e.select(p, 'Elegant Egotist: Special Summon which Harpie?', e.optionsFor(targets), 1, 1);
     if (picks && targets[picks[0]] && hasFreeZone(e, p)) {
       // audit-eds: this is how Harpie Lady Sisters must first be Special Summoned.
@@ -1838,11 +1844,10 @@ function fillable(mats: Card[][], used: number[] = []): boolean {
   if (mats.length === 0) return true;
   return mats[0].some((c) => !used.includes(c.uid) && fillable(mats.slice(1), [...used, c.uid]));
 }
-/** The card id a material counts as: a monster on the field whose name an effect changed (Proto-Cyber Dragon) counts as that card. */
-function matId(e: Engine, c: Card): number {
-  const fc = e.fieldCard(c.uid);
-  const n = fc && fc.faceUp && e.find(c.uid)?.loc.zone === 'mz' ? e.effectOn(fc)?.fieldName?.(e, fc) : undefined;
-  return e.info(n ?? c.name).id;
+/** Does this card count as the Fusion Material with this card id? Its current names count (Engine.namesOf): a monster whose
+ * name an effect changed (Proto-Cyber Dragon is "Cyber Dragon"), or a card always treated as another (Harpie Lady 1). */
+function matIs(e: Engine, c: Card, id: number): boolean {
+  return e.namesOf(c).some((n) => e.info(n).id === id);
 }
 /** Every Fusion Monster in the Fusion Deck the player could fuse right now, with the candidate cards for each material. */
 function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
@@ -1861,7 +1866,7 @@ function fusionPlans(e: Engine, p: Pid): FusionPlan[] {
     }
     // Beastking of the Swamps & co. can stand in for any one material.
     const subs = getEffect(fusion.name)?.noFusionSub ? [] : pool.filter((c) => getEffect(c.name)?.fusionSub || (e.state.fx.fusionSubs as Record<number, number> | undefined)?.[c.uid] === e.state.turn); // audit-03: noFusionSub; audit-skills: Pal-O'Mine-zation!
-    const mats = ids.map((id) => [...pool.filter((c) => matId(e, c) === id), ...subs.filter((c) => matId(e, c) !== id)]);
+    const mats = ids.map((id) => [...pool.filter((c) => matIs(e, c, id)), ...subs.filter((c) => !matIs(e, c, id))]);
     if (!assignable(e, mats, ids)) continue;
     out.push({ fusion, mats });
   }
@@ -1872,7 +1877,7 @@ function assignable(e: Engine, mats: Card[][], ids: number[], used: number[] = [
   if (mats.length === 0) return true;
   return mats[0].some((c) => {
     if (used.includes(c.uid)) return false;
-    const asSub = matId(e, c) !== ids[0];
+    const asSub = !matIs(e, c, ids[0]);
     if (asSub && subbed) return false;
     return assignable(e, mats.slice(1), ids.slice(1), [...used, c.uid], subbed || asSub);
   });
@@ -1897,8 +1902,8 @@ E['Polymerization'] = {
         continue;
       }
       const ids = e.fusionMaterials(plan.fusion.name)!;
-      const subTaken = chosen.some((u, j) => { const f = e.find(u); return !f || matId(e, f.card) !== ids[j]; });
-      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && matId(e, c) !== ids[i]) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || matId(e, c) !== ids[i]));
+      const subTaken = chosen.some((u, j) => { const f = e.find(u); return !f || !matIs(e, f.card, ids[j]); });
+      const free = cands.filter((c) => !chosen.includes(c.uid) && !(subTaken && !matIs(e, c, ids[i])) && assignable(e, plan.mats.slice(i + 1), ids.slice(i + 1), [...chosen, c.uid], subTaken || !matIs(e, c, ids[i])));
       if (free.length === 0) return false;
       if (free.length === 1) {
         chosen.push(free[0].uid);
