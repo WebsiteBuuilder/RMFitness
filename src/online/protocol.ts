@@ -53,6 +53,8 @@ export interface Transport {
   connect(code: string): Link;
   /** try again now (the app came back to the screen) */
   wake(): void;
+  /** a link to a phone that is online failed to open: switch to other connection routes */
+  trouble?(): void;
   stop(): void;
 }
 

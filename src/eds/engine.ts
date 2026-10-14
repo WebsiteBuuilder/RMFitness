@@ -6,6 +6,7 @@ import type { Action, Card, CardInfo, ChainLink, DuelState, EngineEvent, FieldCa
 import { EDS_RULES, MONSTER_ZONES, PHASES, PHASE_NAME, STARTING_LP, ST_ZONES, rulesFor } from './types';
 import { extraProcFor, getEffect, setNameResolver, type EffectDef, type GraveEvent, type SummonHow, type Trigger } from './effects';
 import { getSkill } from './skills';
+import { nameRule, setNameEngine } from './names';
 import { noteLevelEvent } from '../level/leveling';
 import { TAG_LP, swapIn, type TagTeam } from './tag';
 
@@ -331,16 +332,16 @@ export class Engine {
     if (how === 'flip' && (c as FieldCard).tags?.noFlip) return true; // audit-05: "cannot change its battle position" also stops a Flip Summon (Floodgate Trap Hole)
     if (how !== 'set' && fx.summonLock?.[p] === this.state.turn && fx.summonLockExcept !== c.uid) return true;
     if (how === 'special' && fx.ignoreCond !== c.uid && getEffect(c.name)?.cannotSpecial?.(this, c, p, from)) return true; // a Summoning condition: effects that ignore it skip it too
-    if (how === 'special' && from === 'fusion' && this.liveST().some((x) => x.c.name === 'Summon Gate') && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
+    if (how === 'special' && from === 'fusion' && this.liveST().some((x) => this.isNamed(x.c, 'Summon Gate')) && (fx.extraSummons?.[p]?.turn === this.state.turn ? fx.extraSummons[p].n : 0) >= 3) return true;
     if (how === 'special' && from !== null && getEffect(c.name)?.cannotSpecialSummon && fx.ignoreCond !== c.uid) return true;
     // "You cannot Normal or Special Summon ... this turn, except ..." (summonLocks: see SummonLock).
     for (const l of (fx.summonLocks ?? []) as SummonLock[]) {
       if (l.p !== p || l.turn !== this.state.turn || c.uid === l.except) continue;
       if (!(how === 'special' ? l.special : how === 'normal' && l.normal)) continue;
-      if (l.only && !l.only.some((n) => c.name.includes(n))) return true;
+      if (l.only && !l.only.some((n) => this.nameHas(c, n))) return true;
       if (l.levels && l.levels.includes(this.info(c.name).level ?? 0)) return true;
       if (l.subs && !l.subs.includes(this.info(c.name).sub)) return true; // audit-04: "except Fusion Monsters" (Elemental HERO Blazeman)
-      if (l.names && l.names.includes(c.name)) return true; // audit-02
+      if (l.names && this.namesOf(c).some((n) => l.names!.includes(n))) return true; // audit-02
       if (l.extraOnly && from === 'fusion' && !l.extraOnly.includes(this.info(c.name).sub)) return true; // audit-02
     }
     if (getEffect(c.name)?.selfSummonBlock?.(this, c, p, how, from)) return true;
@@ -363,7 +364,7 @@ export class Engine {
   activationBlocked(player: Pid, card: Card): boolean {
     if (!this.speed) return false;
     const fx = this.state.fx;
-    if (this.nameLocked(card.name)) return true;
+    if (this.nameLocked(card)) return true;
     // audit-06: "for the rest of this turn, you cannot activate cards, or the effects of cards, with that name" (Generation Next): fx.turnNameLocks.
     if (((fx.turnNameLocks ?? []) as { p: Pid; name: string; turn: number }[]).some((x) => x.p === player && x.name === card.name && x.turn === this.state.turn)) return true;
     if (((card as FieldCard).tags?.noActTurn ?? -1) === this.state.turn && this.find(card.uid)?.loc.zone === 'sz') return true;
@@ -385,9 +386,11 @@ export class Engine {
   }
 
   /** b17: "cards with that name, and their effects, cannot be activated" while a given card stays on the field (Number 45: Crumble Logos). fx.nameLocks: { name, src }. */
-  nameLocked(name: string): boolean {
+  nameLocked(c: { name: string; uid?: number } | string): boolean {
     const list = (this.state.fx.nameLocks ?? []) as { name: string; src: number }[];
-    return list.some((x) => x.name === name && !!this.fieldCard(x.src));
+    if (!list.length) return false;
+    const names = this.namesOf(c);
+    return list.some((x) => names.includes(x.name) && !!this.fieldCard(x.src));
   }
 
   /** Speed Duel: extra attacks a monster was granted (Evil HERO Infernal Gainer, Diffusion Wave-Motion). */
@@ -407,7 +410,7 @@ export class Engine {
     if (!this.speed) return false;
     for (const p of [0, 1] as Pid[]) {
       const t = this.activeSpells(p).find((c) => c.name === name);
-      if (t && !this.anyActive(cancelledBy) && this.monsters(p).some((m) => m.faceUp && m.name === 'Sealmaster Meisei')) return true;
+      if (t && !this.anyActive(cancelledBy) && this.monsters(p).some((m) => m.faceUp && this.isNamed(m, 'Sealmaster Meisei'))) return true;
     }
     return false;
   }
@@ -473,8 +476,9 @@ export class Engine {
   }
 
   /** `sandbox`: a throwaway copy (the computer's lookahead) that must not reset the shared effect cache. */
-  constructor(public readonly db: Map<string, CardInfo>, sandbox = false) {
+  constructor(public readonly db: Map<string, CardInfo>, private readonly sandbox = false) {
     if (sandbox) return;
+    setNameEngine(this);
     setNameResolver((n) => {
       const i = this.db.get(n) ?? this.db.get(n.toLowerCase());
       return i ? [i.name, ...(i.alias ? [i.alias] : [])] : [];
@@ -483,7 +487,7 @@ export class Engine {
 
   /** Ceremonial Bell, Respect Play and The Eye of Truth show hands. */
   handRevealed(p: Pid): boolean {
-    if ([...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && m.name === 'Ceremonial Bell')) return true;
+    if ([...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.isNamed(m, 'Ceremonial Bell'))) return true;
     if (this.anyActive('Respect Play') && this.state.turnPlayer === p && !this.trapsNegated()) return true;
     if (this.anyActive('The Eye of Truth', other(p)) && !this.trapsNegated()) return true;
     return false;
@@ -628,7 +632,7 @@ export class Engine {
       if (fx.dnaRace && fx.dnaSource && this.fieldCard(fx.dnaSource)?.active && m.faceUp && !this.trapsNegated('DNA Surgery')) return fx.dnaRace;
       if (fx.declRace?.[m.uid] && this.find(m.uid)?.loc.zone === 'mz') return fx.declRace[m.uid];
       const ctl = this.controller(m.uid);
-      if (ctl !== null && this.monsters(ctl).some((x) => x.faceUp && x.name === 'Parasite Paracide' && x.owner !== ctl)) return 'Insect';
+      if (ctl !== null && this.monsters(ctl).some((x) => x.faceUp && this.isNamed(x, 'Parasite Paracide') && x.owner !== ctl)) return 'Insect';
       // A Trap Card Special Summoned as a monster (Quantum Cat, Zoma the Spirit) has the Type its script gave it.
       const trap = (this.state.fx.trapMonster as Record<number, { race?: string }> | undefined)?.[m.uid];
       if (trap?.race && this.find(m.uid)?.loc.zone === 'mz') return trap.race;
@@ -636,11 +640,95 @@ export class Engine {
     return this.info(m.name).race ?? '';
   }
 
+  // ---------- card names ----------
+  /**
+   * The names a card has right now. A card keeps its printed name unless an effect changes it: its own text
+   * ("name becomes "Harpie Lady" while on the field or in the GY", "always treated as "Umi"", names.ts), its script
+   * (fieldName: Proto-Cyber Dragon, Elemental HERO Prisma, Copy Knight), a copied name (Number 8, Neo-Spacian Dark Panther),
+   * a rename stored by an effect (renameUntilEnd) or a face-up card that adds a name (addsNames: Frightfur Sanctuary).
+   * The first name is the one shown on screen.
+   */
+  namesOf(c: { name: string; uid?: number } | string): string[] {
+    const given = typeof c === 'string' ? { name: c } : c;
+    const base = given.name;
+    if (!this.speed || !base) return [base];
+    const rule = nameRule(this.info(base));
+    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy) return [base];
+    // Where the card is now (a FieldCard kept from before it left the field is the same card, now elsewhere).
+    const f = given.uid !== undefined && given.uid >= 0 ? this.find(given.uid) : null;
+    const card = f?.card.name === base ? f.card : given;
+    const zone = f && card === f.card ? f.loc.zone : null;
+    const out: string[] = [];
+    if (zone === 'mz' || zone === 'sz' || zone === 'field') {
+      const fc = card as FieldCard;
+      if (fc.faceUp) {
+        // Reading a script can ask for names again (negation checks look for cards by name): those inner reads see printed names.
+        const outer = !this.naming;
+        this.naming++;
+        try {
+          const renamed = outer ? this.renamedTo(fc) : undefined;
+          if (renamed) out.push(renamed);
+          else if (rule.becomes && (!rule.becomes.gemini || fc.tags?.gemini === 1)) out.push(rule.becomes.name);
+          if (outer) {
+            for (const n of this.effectOn(fc)?.extraNames?.(this, fc) ?? []) out.push(n);
+            if (zone === 'mz') for (const x of this.liveST()) for (const n of x.eff.addsNames?.(this, x.c, x.p, fc) ?? []) out.push(n);
+          }
+        } finally {
+          this.naming--;
+        }
+      }
+    } else if (zone === 'gy' && rule.becomes?.gy) out.push(rule.becomes.name);
+    if (!out.length || !out.some((n) => n !== base && !rule.also.includes(n))) out.unshift(base);
+    for (const n of rule.also) if (!out.includes(n)) out.push(n);
+    return [...new Set(out)];
+  }
+
+  private naming = 0;
+
+  /** The name a card shows and is called by right now (see namesOf). */
+  nameOf(c: { name: string; uid?: number } | string): string {
+    return this.namesOf(c)[0];
+  }
+
+  /** Does this card have this exact name right now ("Harpie Lady", "Umi", "Cyber Dragon")? */
+  isNamed(c: { name: string; uid?: number } | string, name: string): boolean {
+    return this.namesOf(c).includes(name);
+  }
+
+  /** Does one of this card's names contain this text ("Harpie", "Archfiend", "Cyberdark")? */
+  nameHas(c: { name: string; uid?: number } | string, part: string): boolean {
+    return this.namesOf(c).some((n) => n.includes(part));
+  }
+
+  /** Do the two cards share a name right now ("monsters with the same name")? */
+  sameName(a: { name: string; uid?: number } | string, b: { name: string; uid?: number } | string): boolean {
+    const nb = this.namesOf(b);
+    return this.namesOf(a).some((n) => nb.includes(n));
+  }
+
+  /** A face-up card's name until the End Phase (or for as long as it stays face-up), set by an effect. */
+  renameUntilEnd(uid: number, name: string, thisTurnOnly = true) {
+    ((this.state.fx.renamed ??= {}) as Record<number, { name: string; turn?: number }>)[uid] = { name, turn: thisTurnOnly ? this.state.turn : undefined };
+  }
+
+  /** The name an effect gave this face-up card, if any. */
+  private renamedTo(fc: FieldCard): string | undefined {
+    const r = (this.state.fx.renamed as Record<number, { name: string; turn?: number }> | undefined)?.[fc.uid];
+    if (r && (r.turn === undefined || r.turn === this.state.turn)) return r.name;
+    const t = fc.tags;
+    if (t?.copyFx && (t.copyTurn === undefined || t.copyTurn === this.state.turn) && this.find(fc.uid)?.loc.zone === 'mz') {
+      const n = ((this.state.fx.copyNames ?? []) as string[])[t.copyFx - 1];
+      if (n) return n;
+    }
+    const eff = this.effectOn(fc);
+    return eff?.fieldName?.(this, fc);
+  }
+
   /** Is any face-up, active copy of this card on the field? */
   anyActive(name: string, p?: Pid): FieldCard | null {
     for (const q of p === undefined ? ([0, 1] as Pid[]) : [p]) {
-      for (const c of this.activeSpells(q)) if (c.name === name) return c;
-      for (const m of this.monsters(q)) if (m.faceUp && m.name === name) return m;
+      for (const c of this.activeSpells(q)) if (this.isNamed(c, name)) return c;
+      for (const m of this.monsters(q)) if (m.faceUp && this.isNamed(m, name)) return m;
       if (this.speed && this.skillDefs().some((x) => x.p === q && x.sk.namesAs?.(this, q) === name)) return this.skillCard(q); // audit-skills
       if (this.speed) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
       if (this.speed) for (const c of this.activeSpells(q)) if (getEffect(c.name)?.countsAs?.(this, c) === name) return c; // audit-00: A Legendary Ocean is "Umi"
@@ -681,9 +769,11 @@ export class Engine {
    * Is this card name forbidden by Prohibition? Pass the card's uid when it is on the field:
    * cards that were already on the field when Prohibition resolved are not affected.
    */
-  prohibited(name: string, uid?: number): boolean {
+  prohibited(c: { name: string; uid?: number } | string, uid?: number): boolean {
     const list = (this.state.fx.prohibit ?? []) as { name: string; src: number; exempt?: number[] }[];
-    return list.some((x) => x.name === name && this.fieldCard(x.src)?.active && !(uid !== undefined && x.exempt?.includes(uid) && this.fieldCard(uid)));
+    if (!list.length) return false;
+    const names = this.namesOf(c);
+    return list.some((x) => names.includes(x.name) && this.fieldCard(x.src)?.active && !(uid !== undefined && x.exempt?.includes(uid) && this.fieldCard(uid)));
   }
 
   /** Lord of D.: Dragons cannot be targeted by card effects. */
@@ -692,7 +782,7 @@ export class Engine {
     if (m.faceUp && this.speed && this.shielded(m, 'target')) return true;
     // Speed Duel: "your opponent cannot target it until the end of their turn" that outlasts its source (Abyss Prop - Wild Wagon).
     if (m.faceUp && this.speed && (m.tags?.oppNoTargetUntil ?? -1) >= this.state.turn && this.actor !== this.controller(m.uid)) return true;
-    return m.faceUp && this.raceOf(m) === 'Dragon' && [...this.monsters(0), ...this.monsters(1)].some((x) => x.faceUp && x.name === 'Lord of D.');
+    return m.faceUp && this.raceOf(m) === 'Dragon' && [...this.monsters(0), ...this.monsters(1)].some((x) => x.faceUp && this.isNamed(x, 'Lord of D.'));
   }
 
   /** Equip bonuses plus auras from face-up effect monsters and Field Spells. */
@@ -795,6 +885,8 @@ export class Engine {
     const f = this.find(uid);
     if (!f) return null;
     const ps = this.player(f.loc.player);
+    // A name an effect gave a card on the field ends when it leaves the field.
+    if ((f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field') && this.state.fx.renamed) delete (this.state.fx.renamed as Record<number, unknown>)[uid];
     switch (f.loc.zone) {
       case 'hand':
         ps.hand.splice(f.loc.index, 1);
@@ -980,8 +1072,8 @@ export class Engine {
     const ev: GraveEvent | null = this.speed ? { card: { uid, name: f.card.name, owner: f.card.owner }, from: f.loc.zone, controller, reason, byBattle, faceUp: !!fc?.faceUp, pos: fc?.pos, race: fc ? this.raceOf(fc) : this.info(f.card.name).race ?? '', toGy: false, token: !!f.card.token, by: this.actor } : null;
     const card = this.detach(uid)!;
     if (byBattle && fc?.tags) fc.tags.leftBy = -1; // b17: destroyed by battle, not by a card effect
-    if (card.token || card.name.startsWith('__token')) {
-      if (fc && reason === 'destroyed' && !byBattle && !card.name.startsWith('__token')) this.logLeave(controller, card.name, 'was destroyed', /destroy/i);
+    if (card.token || this.namesOf(card).some((nm) => nm.startsWith('__token'))) {
+      if (fc && reason === 'destroyed' && !byBattle && !this.namesOf(card).some((nm) => nm.startsWith('__token'))) this.logLeave(controller, card.name, 'was destroyed', /destroy/i);
       if (fc) {
         for (const eqUid of fc.equips.slice()) yield* this.sendToGrave(eqUid, 'used');
         const eff = muted ? undefined : getEffect(card.name);
@@ -990,7 +1082,7 @@ export class Engine {
       if (ev) yield* this.graveWatch(ev);
       return;
     }
-    const banisher = [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && (m.name === 'Banisher of the Light' || this.effectOn(m)?.banishInstead?.(this, m, this.controller(m.uid) ?? m.owner, card) === true)) || this.liveST().some((x) => x.eff.banishInstead?.(this, x.c, x.p, card) === true);
+    const banisher = [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && (this.isNamed(m, 'Banisher of the Light') || this.effectOn(m)?.banishInstead?.(this, m, this.controller(m.uid) ?? m.owner, card) === true)) || this.liveST().some((x) => x.eff.banishInstead?.(this, x.c, x.p, card) === true);
     // Speed Duel: a face-up monster sends battle-destroyed monsters to the Deck instead (Grave Protector).
     const toDeck = !banisher && this.speed && byBattle && f.loc.zone === 'mz' && [...this.monsters(0), ...this.monsters(1)].some((m) => m.faceUp && this.effectOn(m)?.deckInstead?.(this, m, card) === true);
     if (ev) ev.toGy = !banisher && !toDeck;
@@ -1469,7 +1561,7 @@ export class Engine {
     const fc = f.loc.zone === 'mz' || f.loc.zone === 'sz' || f.loc.zone === 'field' ? (f.card as FieldCard) : null;
     const card = this.detach(uid)!;
     if (fc) this.leftField(fc, f.loc.player, 'banished');
-    if (card.token || card.name.startsWith('__token')) {
+    if (card.token || this.namesOf(card).some((nm) => nm.startsWith('__token'))) {
       // A banished Token ceases to exist (it can never come back to the field).
       this.event('to-gy', { uid, player: card.owner });
       this.log(card.owner, `${card.name} was removed from play`);
@@ -1604,6 +1696,7 @@ export class Engine {
 
   // ---------- action entry ----------
   apply(action: Action) {
+    if (!this.sandbox) setNameEngine(this); // the duel being played answers name checks (names.ts)
     if (this.state.winner !== null) return;
     if (action.type === 'START') return this.start(action);
     if (!this.state.started) return;
@@ -1865,7 +1958,7 @@ export class Engine {
   canUseGraveEffect(player: Pid, uid: number): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(uid);
-    if (!f || f.loc.zone !== 'gy' || f.loc.player !== player || this.prohibited(f.card.name)) return false;
+    if (!f || f.loc.zone !== 'gy' || f.loc.player !== player || this.prohibited(f.card)) return false;
     if (this.graveSTLocked(f.card)) return false; // audit-02
     const g = getEffect(f.card.name)?.graveIgnition;
     return !!g && g.can(this, f.card, player);
@@ -1950,7 +2043,7 @@ export class Engine {
             const eff = getEffect(c.name);
             if (!c.faceUp || !c.active || !eff?.onStandby || !this.fieldCard(c.uid)) continue;
             const kind = this.info(c.name).kind;
-            if ((kind === 'spell' && this.spellsNegated() && c.name !== 'Imperial Order') || (kind === 'trap' && this.trapsNegated(c.name))) continue;
+            if ((kind === 'spell' && this.spellsNegated() && !this.isNamed(c, 'Imperial Order')) || (kind === 'trap' && this.trapsNegated(c.name))) continue;
             yield* this.trig(c.uid, p, this.as(p, eff.onStandby(this, c, p), c));
           }
           for (const m of this.monsters(p)) {
@@ -2187,7 +2280,7 @@ export class Engine {
     if (faceUp !== true && this.skillFx().some((x) => x.eff.forbidsSummon?.(this, x.c, x.p, card, player, 'set', 'hand') === true)) return false; // audit-skills: "cannot Summon/Set" Skills
     const info = this.info(card.name);
     if (info.kind !== 'monster' || info.sub === 'Fusion' || info.sub === 'Ritual') return false;
-    if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card.name)) return false;
+    if (getEffect(card.name)?.cannotNormalSummon || this.prohibited(card)) return false;
     if (faceUp === false && getEffect(card.name)?.cannotNormalSet) return false; // audit-eds
     if (this.chainEnergyBlocks(player)) return false;
     if (faceUp === false && this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: Absorbing Jar
@@ -2246,7 +2339,7 @@ export class Engine {
   /** audit-07: a monster that can only be Tributed for the Tribute Summon of a monster whose name includes fx.tribFor[uid] (Jurrac Tokens). */
   tribLocked(m: FieldCard, card: Card): boolean {
     const t = (this.state.fx.tribFor as Record<number, string> | undefined)?.[m.uid];
-    return this.speed && typeof t === 'string' && !card.name.includes(t);
+    return this.speed && typeof t === 'string' && !this.nameHas(card, t);
   }
 
   /** Speed Duel: active Spells/Traps that can be Tributed instead of all the monsters (Ancient Gear Castle). */
@@ -2432,7 +2525,7 @@ export class Engine {
   canSpecialProc(player: Pid, card: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(card.uid);
-    if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card.name)) return false;
+    if (!f || f.loc.player !== player || (f.loc.zone !== 'hand' && f.loc.zone !== 'fusion') || this.prohibited(card)) return false;
     const proc = this.procFor(card, f.loc.zone);
     if (this.chainEnergyBlocks(player)) return false;
     // audit-05/07/10: a summonRule can allow the card's own procedure ("cannot be Special Summoned by other ways"); batches read fx.procSummon, fx.procCheck or fx.procSS.
@@ -2573,7 +2666,7 @@ export class Engine {
   canUseMonsterEffect(player: Pid, m: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player || this.state.prompt) return false;
     const f = this.find(m.uid);
-    if (!f || f.loc.player !== player || this.prohibited(m.name, m.uid) || this.nameLocked(m.name)) return false;
+    if (!f || f.loc.player !== player || this.prohibited(m, m.uid) || this.nameLocked(m)) return false;
     const eff = this.effectOn(m);
     if (this.info(m.name).kind === 'monster' && this.monsterEffectsLocked(player, m)) return false; // b18
     if (f.loc.zone === 'hand') return !!eff?.handIgnition && eff.handIgnition.can(this, m, player);
@@ -2658,7 +2751,7 @@ export class Engine {
   canSet(player: Pid, card: Card): boolean {
     if (!this.inMainPhase() || this.state.turnPlayer !== player) return false;
     const info = this.info(card.name);
-    if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card.name)) return false;
+    if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card)) return false;
     if (this.chainEnergyBlocks(player)) return false;
     if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
     if (info.sub === 'Field') return !this.player(player).field;
@@ -2692,7 +2785,7 @@ export class Engine {
     if (!f || f.loc.player !== player) return false;
     const info = this.info(f.card.name);
     const eff = getEffect(f.card.name);
-    if (!eff?.resolve || this.prohibited(f.card.name, f.card.uid) || this.activationBlocked(player, f.card)) return false;
+    if (!eff?.resolve || this.prohibited(f.card, f.card.uid) || this.activationBlocked(player, f.card)) return false;
     if (eff.activateCost && !eff.activateCost.can(this, f.card, player)) return false;
     if (f.loc.zone === 'hand' && this.chainEnergyBlocks(player)) return false;
     if (info.kind === 'spell') {
@@ -2967,7 +3060,7 @@ export class Engine {
     const ps = this.player(player);
     const consider = (c: Card, from: 'field' | 'hand' | 'gy' | 'extra') => {
       const q = (from === 'field' ? this.effectOn(c) : getEffect(c.name))?.quick;
-      if (!q || (q.from ?? 'field') !== from || this.prohibited(c.name, from === 'field' ? c.uid : undefined)) return;
+      if (!q || (q.from ?? 'field') !== from || this.prohibited(c, from === 'field' ? c.uid : undefined)) return;
       if (from === 'field') {
         const fc = c as FieldCard;
         if (!fc.faceUp && !(q.faceDown && this.find(c.uid)?.loc.zone === 'mz')) return; // audit-eds: Big Shield Gardna
@@ -3023,7 +3116,7 @@ export class Engine {
       if (fc.faceUp || sealed) continue;
       const info = this.info(fc.name);
       const eff = getEffect(fc.name);
-      if (!eff?.resolve || !eff.canActivate || this.prohibited(fc.name, fc.uid) || this.activationBlocked(player, fc)) continue;
+      if (!eff?.resolve || !eff.canActivate || this.prohibited(fc, fc.uid) || this.activationBlocked(player, fc)) continue;
       if ((info.kind === 'spell' || info.kind === 'trap') && (this.activationLocked(player, info.kind) || this.cardActivationLocked(player, fc))) continue;
       if (info.kind === 'trap' && (fc.placedTurn === this.state.turn || this.trapsSealed(player))) continue;
       if (info.kind === 'spell' && (info.sub !== 'Quick-Play' || this.spellsSealed())) continue;
@@ -3201,7 +3294,7 @@ export class Engine {
   /** Kuriboh: the defending player may discard it to take no battle damage. */
   private *kuriboh(p: Pid, amount: number): Generator<Prompt, number, Choice> {
     if (amount <= 0) return amount;
-    const k = this.player(p).hand.find((c) => c.name === 'Kuriboh');
+    const k = this.player(p).hand.find((c) => this.isNamed(c, 'Kuriboh'));
     if (!k || this.prohibited('Kuriboh')) return amount;
     const yes = yield* this.yesno(p, `Discard Kuriboh to take no damage from this attack (${amount})?`);
     if (!yes) return amount;
@@ -3248,7 +3341,7 @@ export class Engine {
     } finally {
       this.battleHit = false;
     }
-    const reflect = [a, t].some((m) => m && m.name === 'Relinquished' && this.controller(m.uid) === p && m.tags?.absorbed);
+    const reflect = [a, t].some((m) => m && this.isNamed(m, 'Relinquished') && this.controller(m.uid) === p && m.tags?.absorbed);
     if (reflect && this.state.winner === null) {
       this.log(p, 'Relinquished passes the damage on');
       this.damage(other(p), amount);

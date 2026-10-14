@@ -261,7 +261,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const blsMonster = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Black Luster Soldier');
+  const blsMonster = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Black Luster Soldier');
   E['Charging Gaia the Fierce Knight'] = {
     handIgnition: {
       can: (e, c, p) => !e.player(p).normalSummoned && freeMZ(e, p) && !e.summonBlocked(p, c, 'normal', 'hand') && !e.chainEnergyBlocks(p),
@@ -399,7 +399,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const puppets = (e: Engine, m: FieldCard, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((x) => x.uid !== m.uid && named(x, 'Gimmick Puppet')));
+  const puppets = (e: Engine, m: FieldCard, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((x) => x.uid !== m.uid && named(e, x, 'Gimmick Puppet')));
   E['Gimmick Puppet Gear Changer'] = {
     selfSummonBlock: (_e, _c, _p, how, from) => how === 'special' && from === 'deck',
     ignition: {
@@ -439,17 +439,24 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Its name change (to the sent Knight's name until the End Phase) is not applied.
+  // Its name becomes the sent Knight's name until the End Phase (renameUntilEnd).
   const KNIGHTS = ["Queen's Knight", "King's Knight", "Jack's Knight"];
   const lightWarriorsIn = (e: Engine, p: Pid, except: number) => e.player(p).gy.filter((c) => c.uid !== except && isMonster(e, c) && attrOf(e, c) === 'LIGHT' && info(e, c).race === 'Warrior');
   E["Joker's Knight"] = {
     handIgnition: {
-      can: (e, c, p) => e.oncePerTurn("Joker's Knight:1", p) && freeMZ(e, p) && e.player(p).deck.some((x) => KNIGHTS.includes(x.name)) && !e.summonBlocked(p, c, 'special', 'hand'),
+      can: (e, c, p) => e.oncePerTurn("Joker's Knight:1", p) && freeMZ(e, p) && e.player(p).deck.some((x) => e.namesOf(x).some((nm) => KNIGHTS.includes(nm))) && !e.summonBlocked(p, c, 'special', 'hand'),
       *run(e, c, p) {
-        const sent = yield* deckToGrave(e, p, "Joker's Knight: send which Knight to the GY?", (x) => KNIGHTS.includes(x.name));
+        const sent = yield* deckToGrave(e, p, "Joker's Knight: send which Knight to the GY?", (x) => e.namesOf(x).some((nm) => KNIGHTS.includes(nm)));
         if (!sent) return;
         e.useOnce("Joker's Knight:1", p);
-        if (inZone(e, c.uid, 'hand') && freeMZ(e, p)) yield* e.specialSummon(c.uid, p, 'atk');
+        if (inZone(e, c.uid, 'hand') && freeMZ(e, p)) {
+          yield* e.specialSummon(c.uid, p, 'atk');
+          const me = e.fieldCard(c.uid);
+          if (me) {
+            e.renameUntilEnd(me.uid, sent.name);
+            e.log(p, `Joker's Knight's name becomes "${sent.name}" until the End Phase`);
+          }
+        }
       },
     },
     *onEndPhaseInGrave(e, card, owner) {
@@ -528,7 +535,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // The negation of the effects of monsters it destroys by battle is not applied.
-  const archfiendBy = (e: Engine, c: Card, p: Pid) => faceUpMonsters(e, p).some((m) => m.uid !== c.uid && named(m, 'Archfiend'));
+  const archfiendBy = (e: Engine, c: Card, p: Pid) => faceUpMonsters(e, p).some((m) => m.uid !== c.uid && named(e, m, 'Archfiend'));
   E['Terrorking Archfiend'] = {
     selfSummonBlock: (e, c, p, how) => (how === 'normal' || how === 'flip') && !archfiendBy(e, c, p),
     *onStandby(e, _m, p) {
@@ -555,17 +562,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Warrior of Atlantis'] = {
     handIgnition: {
-      can: (e, _c, p) => e.player(p).deck.some((c) => c.name === 'A Legendary Ocean'),
+      can: (e, _c, p) => e.player(p).deck.some((c) => e.isNamed(c, 'A Legendary Ocean')),
       *run(e, c, p) {
         yield* e.discard(p, c.uid);
-        yield* searchDeck(e, p, 'Add "A Legendary Ocean"', (x) => x.name === 'A Legendary Ocean');
+        yield* searchDeck(e, p, 'Add "A Legendary Ocean"', (x) => e.isNamed(x, 'A Legendary Ocean'));
       },
     },
   };
 
   // ===================== Fusion Monsters =====================
   // "Fusion Summoned" is taken to be any copy on the field; it protects against all of the opponent's targeting.
-  const brigrandPick = (e: Engine, c: Card) => isMonster(e, c) && (named(c, 'Tri-Brigade') || c.name === 'Fallen of Albaz');
+  const brigrandPick = (e: Engine, c: Card) => isMonster(e, c) && (named(e, c, 'Tri-Brigade') || e.isNamed(c, 'Fallen of Albaz'));
   E['Brigrand the Glory Dragon'] = {
     battleProof: () => true,
     shields: (e, src, target, how, srcCtl) => how === 'target' && target.uid !== src.uid && e.controller(target.uid) === srcCtl && e.actor === other(srcCtl),
@@ -590,7 +597,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const dhero = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Destiny HERO');
+  const dhero = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Destiny HERO');
   E['Destiny HERO - Dangerous'] = {
     quick: {
       label: 'discard 1 card: send a "Destiny HERO" to the GY; your "Destiny HERO" monsters gain ATK',
@@ -608,7 +615,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         if (fromDeck) e.player(p).deck = e.shuffle(e.player(p).deck);
         if (!inZone(e, c.uid, 'gy')) return;
         const n = e.player(p).gy.filter((x) => dhero(e, x)).length;
-        for (const m of faceUpMonsters(e, p).filter((x) => named(x, 'Destiny HERO'))) boostTurn(m, 200 * n);
+        for (const m of faceUpMonsters(e, p).filter((x) => named(e, x, 'Destiny HERO'))) boostTurn(m, 200 * n);
         e.log(p, `"Destiny HERO" monsters gain ${200 * n} ATK`);
       },
     },
@@ -718,9 +725,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Bashing Shield'] = h.equipFor((e, m) => !isExtraOrRitual(e, m), () => ({ atk: 1000, def: 0 }), { hostNoBattleDamage: () => true });
 
   // 2+: the halving is offered when an attack is declared and applies to that battle.
-  const cbInST = (e: Engine, p: Pid) => e.spells(p).filter((c) => c.faceUp && named(c, 'Crystal Beast') && info(e, c).kind === 'monster');
+  const cbInST = (e: Engine, p: Pid) => e.spells(p).filter((c) => c.faceUp && named(e, c, 'Crystal Beast') && info(e, c).kind === 'monster');
   const cbCount = (e: Engine, p: Pid) => cbInST(e, p).length;
-  const cbMonsters = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(m, 'Crystal Beast'));
+  const cbMonsters = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(e, m, 'Crystal Beast'));
   const RR = 'Ancient City - Rainbow Ruins';
   E[RR] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
@@ -783,7 +790,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Its Ritual and Fusion effects are offered right after the Summon (Synchro and Xyz Summons do not exist here).
-  const zefra = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Zefra');
+  const zefra = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Zefra');
   const hasZefra = (e: Engine, uids: number[] | undefined) => !!uids?.some((u) => {
     const c = e.find(u)?.card;
     return !!c && zefra(e, c);
@@ -832,7 +839,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!/"Fallen of Albaz"/.test(info(e, fusion).desc.split('\n')[0]) || e.summonBlocked(p, fusion, 'special', 'fusion')) continue;
       const b = secondSpec(e, fusion);
       if (!b) continue;
-      const a = pool.filter((c) => c.name === 'Fallen of Albaz' || !!e.effectOn(c)?.fusionSub);
+      const a = pool.filter((c) => e.isNamed(c, 'Fallen of Albaz') || !!e.effectOn(c)?.fusionSub);
       if (a.some((x) => pool.some((y) => y.uid !== x.uid && b(y)))) out.push({ fusion, a, b });
     }
     return out;
@@ -1026,7 +1033,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         .map((l) => l.text.match(/^(.+) is in face-up Defense Position and is destroyed$/)?.[1])
         .filter((n): n is string => !!n),
     );
-    return e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Cloudian') && names.has(c.name));
+    return e.player(p).gy.filter((c) => isMonster(e, c) && named(e, c, 'Cloudian') && e.namesOf(c).some((nm) => names.has(nm)));
   };
   E['Raging Cloudian'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && selfDestroyedCloudians(e, p).length > 0,

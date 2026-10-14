@@ -82,11 +82,12 @@ function levelChanges(e: Engine, c: Card, lv: number): number {
 }
 export const levelOf = (e: Engine, c: Card): number => levelChanges(e, c, declared(e, c, 'declLevel') ?? trapMonster(e, c)?.level ?? info(e, c).level ?? 0);
 /** Advanced Dark: "Crystal Beast" monsters on the field and in the GY are DARK. */
-const advancedDark = (e: Engine, c: Card) => named(c, 'Crystal Beast') && info(e, c).kind === 'monster' && ['mz', 'gy'].includes(e.find(c.uid)?.loc.zone ?? '') && e.liveST().some((x) => x.c.name === 'Advanced Dark');
+const advancedDark = (e: Engine, c: Card) => named(e, c, 'Crystal Beast') && info(e, c).kind === 'monster' && ['mz', 'gy'].includes(e.find(c.uid)?.loc.zone ?? '') && e.liveST().some((x) => e.isNamed(x.c, 'Advanced Dark'));
 export const attrOf = (e: Engine, c: Card): string => declared(e, c, 'declAttr') ?? trapMonster(e, c)?.attribute ?? (advancedDark(e, c) ? 'DARK' : info(e, c).attribute ?? '');
 export const raceOf = (e: Engine, c: Card) => ('faceUp' in c ? e.raceOf(c) : info(e, c).race ?? '');
 /** "Archetype" check by name: names("Harpie") matches "Harpie Lady", "Harpie's Pet Dragon"... */
-export const named = (c: Card | string, part: string) => (typeof c === 'string' ? c : c.name).includes(part);
+/** Does one of the card's current names contain this text ("Harpie", "Archfiend")? Names changed by effects count (Engine.namesOf). */
+export const named = (e: Engine, c: Card | string, part: string) => e.nameHas(c, part);
 /** A Normal Monster card (no effect). */
 export const isNormalMonster = (e: Engine, c: Card) => isMonster(e, c) && info(e, c).sub === 'Normal';
 /** Fusion/Ritual/Extra Deck monsters cannot be Normal Summoned and need a proper summon to be revived. */
@@ -247,7 +248,7 @@ export function negateLink(e: Engine, link: ChainLink | undefined, by: Pid) {
   const fx = (link.payload as { effect?: string } | undefined)?.effect;
   const m = fx ? e.fieldCard(link.card.uid) : null;
   const light = fx && (m ? e.controller(m.uid) !== null && m.faceUp && attrOf(e, m) === 'LIGHT' : info(e, link.card).kind === 'monster' && attrOf(e, link.card) === 'LIGHT');
-  if (light && e.liveST().some((x) => x.c.name === 'Constellar Belt')) {
+  if (light && e.liveST().some((x) => e.isNamed(x.c, 'Constellar Belt'))) {
     e.log(by, `Constellar Belt: ${link.card.name}'s activation cannot be negated`);
     return;
   }

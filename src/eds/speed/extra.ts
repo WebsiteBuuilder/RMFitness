@@ -62,7 +62,7 @@ export function fits(e: Engine, c: Card, qual: string): boolean {
   if (!q) return true;
   const info = e.info(c.name);
   const names = [...q.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  if (names.length && !names.some((n) => c.name.includes(n))) return false;
+  if (names.length && !names.some((n) => e.nameHas(c, n))) return false;
   q = q.replace(/"[^"]+"/g, ' ');
   const attrs = ATTRS.filter((a) => new RegExp(`\\b${a}\\b`).test(q));
   if (attrs.length && !attrs.includes(attrOf(e, c))) return false;

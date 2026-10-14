@@ -365,9 +365,9 @@ section('Neo-Spacian Dark Panther');
   const p = place(e, 0, 'Neo-Spacian Dark Panther');
   place(e, 1, 'Axe Raider');
   effect(e, 0, p);
-  check(def('Neo-Spacian Dark Panther').fieldName!(e, p!) === 'Axe Raider', "its name becomes the opponent's monster's name");
+  check(e.nameOf(p!) === 'Axe Raider', "its name becomes the opponent's monster's name");
   endTurn(e);
-  check(def('Neo-Spacian Dark Panther').fieldName!(e, p!) === undefined, 'until the End Phase');
+  check(e.nameOf(p!) === 'Neo-Spacian Dark Panther', 'until the End Phase');
 }
 
 section('Phantom Beast Cross-Wing');

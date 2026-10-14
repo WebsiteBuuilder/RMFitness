@@ -704,7 +704,7 @@ T('Beware the Brothers Paradox!', () => {
 T('Blaze Accelerator Deployment (Skill Card)', () => {
   const e = sd('Blaze Accelerator Deployment (Skill Card)', ['Blaze Accelerator']);
   const b = putST(e, 0, 'Blaze Accelerator', true);
-  check(use(e, 0) && b.name === 'Tri-Blaze Accelerator' && !can(e), 'Blaze Accelerator becomes "Tri-Blaze Accelerator" (once per turn)');
+  check(use(e, 0) && e.isNamed(b, 'Tri-Blaze Accelerator') && b.name === 'Blaze Accelerator' && !can(e), 'Blaze Accelerator becomes "Tri-Blaze Accelerator" (once per turn)');
 });
 T('Catch of the Day', () => {
   const e = sd('Catch of the Day', ['The Legendary Fisherman', 'Umi', 'Mother Grizzly'], [FILL]);
@@ -812,7 +812,7 @@ T('Forbidden Cyber Style Technique', () => {
   const e = sd('Forbidden Cyber Style Technique', ['Cyber Phoenix', 'Proto-Cyber Dragon']);
   check(!can(e), 'needs 1500 or less LP');
   e.player(0).lp = 1500;
-  check(use(e, 0, { pick: ['Cyber Phoenix', 'Proto-Cyber Dragon'] }) && lp(e, 0) === 50 && e.monsters(0).length === 2 && e.monsters(0).every((m) => m.name === 'Cyber Dragon'), 'LP to 50; Special Summon Cyber monsters as "Cyber Dragon"');
+  check(use(e, 0, { pick: ['Cyber Phoenix', 'Proto-Cyber Dragon'] }) && lp(e, 0) === 50 && e.monsters(0).length === 2 && e.monsters(0).every((m) => e.isNamed(m, 'Cyber Dragon')), 'LP to 50; Special Summon Cyber monsters as "Cyber Dragon"');
   check(!e.canNormalSummon(0, e.player(0).hand[0]), 'cannot Summon except by Fusion this turn');
   endTurn(e);
   check(e.monsters(0).length === 0, 'destroyed in the End Phase');
@@ -820,7 +820,7 @@ T('Forbidden Cyber Style Technique', () => {
 T('Forged Steel', () => {
   const e = sd('Forged Steel', ['Koumori Dragon']);
   const k = place(e, 0, 'Koumori Dragon');
-  check(use(e, 0) && k.name === 'Red-Eyes Black Dragon', 'a Dragon Normal Monster becomes "Red-Eyes Black Dragon"');
+  check(use(e, 0) && e.isNamed(k, 'Red-Eyes Black Dragon'), 'a Dragon Normal Monster becomes "Red-Eyes Black Dragon"');
   check(!can(e), 'once per Duel');
 });
 T('Grit', () => {
@@ -1049,7 +1049,7 @@ T('Unlocking the Power', () => {
 T('Vampiric Aristocracy', () => {
   const e = sd('Vampiric Aristocracy', ['Vampire Lady']);
   const v = place(e, 0, 'Vampire Lady');
-  check(use(e, 0) && v.name === 'Vampire Lord' && !can(e), 'a Zombie Vampire becomes "Vampire Lord" (once per Duel)');
+  check(use(e, 0) && e.isNamed(v, 'Vampire Lord') && !can(e), 'a Zombie Vampire becomes "Vampire Lord" (once per Duel)');
   kill(e, [v], 1);
   check(e.player(0).gy.some((c) => c.name === 'Vampire Lady'), 'its name returns when it leaves the field');
 });

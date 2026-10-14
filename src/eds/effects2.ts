@@ -81,7 +81,7 @@ function namedTributes(e: Engine, p: Pid, names: string[], fromHand: boolean): (
 /** The Petit Moth line: tribute Petit Moth that has worn Cocoon of Evolution for `turns` of its controller's turns. */
 function mothProc(turns: number): EffectDef {
   const ready = (e: Engine, p: Pid) =>
-    e.monsters(p).find((m) => m.name === 'Petit Moth' && m.equips.some((u) => {
+    e.monsters(p).find((m) => e.isNamed(m, 'Petit Moth') && m.equips.some((u) => {
       const c = e.fieldCard(u);
       return c?.name === 'Cocoon of Evolution' && (c.tags?.age ?? 0) >= turns;
     }));
@@ -119,10 +119,10 @@ function toon(tributes: number): EffectDef {
         e.payLp(p, 500);
       },
     },
-    directAttack: (e, _m, p) => !e.monsters(other(p)).some((x) => x.faceUp && TOONS.has(x.name)),
+    directAttack: (e, _m, p) => !e.monsters(other(p)).some((x) => x.faceUp && e.namesOf(x).some((nm) => TOONS.has(nm))),
     targetFilter: (e, m, t) => {
       const p = ctrl(e, m);
-      const toons = e.monsters(other(p)).filter((x) => x.faceUp && TOONS.has(x.name));
+      const toons = e.monsters(other(p)).filter((x) => x.faceUp && e.namesOf(x).some((nm) => TOONS.has(nm)));
       return toons.length === 0 || toons.includes(t);
     },
   };
@@ -318,12 +318,12 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       link.targetUid = targets[picks[0]].uid;
     },
   };
-  E['Magical Labyrinth'] = equipFor((_e, m) => m.name === 'Labyrinth Wall', () => ({ atk: 0, def: 0 }), {
+  E['Magical Labyrinth'] = equipFor((e, m) => e.isNamed(m, 'Labyrinth Wall'), () => ({ atk: 0, def: 0 }), {
     ignition: {
-      can: (e, eq, p) => eq.equippedTo !== undefined && !!e.fieldCard(eq.equippedTo) && e.player(p).deck.some((c) => c.name === 'Wall Shadow'),
+      can: (e, eq, p) => eq.equippedTo !== undefined && !!e.fieldCard(eq.equippedTo) && e.player(p).deck.some((c) => e.isNamed(c, 'Wall Shadow')),
       *run(e, eq, p) {
         const host = eq.equippedTo !== undefined ? e.fieldCard(eq.equippedTo) : null;
-        const ws = e.player(p).deck.find((c) => c.name === 'Wall Shadow');
+        const ws = e.player(p).deck.find((c) => e.isNamed(c, 'Wall Shadow'));
         if (!host || !ws) return;
         yield* e.sendToGrave(host.uid, 'tribute');
         yield* e.specialSummon(ws.uid, p, 'atk');
@@ -422,7 +422,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Aqua Chorus'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve() {},
-    aura: (e, src, m) => (src.active && faceUp(e).filter((x) => x.name === m.name).length >= 2 ? { atk: 500, def: 500 } : undefined),
+    aura: (e, src, m) => (src.active && faceUp(e).filter((x) => e.sameName(x, m)).length >= 2 ? { atk: 500, def: 500 } : undefined),
   };
   E['Castle of Dark Illusions'] = {
     *flip(_e, m) {
@@ -440,12 +440,12 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Pumpking the King of Ghosts'] = {
     selfBonus: (e, m) => {
-      if (!faceUp(e).some((x) => x.name === 'Castle of Dark Illusions')) return { atk: 0, def: 0 };
+      if (!faceUp(e).some((x) => e.isNamed(x, 'Castle of Dark Illusions'))) return { atk: 0, def: 0 };
       const n = 100 + 100 * (m.tags?.pump ?? 0);
       return { atk: n, def: n };
     },
     *onStandby(e, m, p) {
-      if (e.state.turnPlayer === p && (m.tags?.pump ?? 0) < 3 && faceUp(e).some((x) => x.name === 'Castle of Dark Illusions')) tag(m).pump = (m.tags?.pump ?? 0) + 1;
+      if (e.state.turnPlayer === p && (m.tags?.pump ?? 0) < 3 && faceUp(e).some((x) => e.isNamed(x, 'Castle of Dark Illusions'))) tag(m).pump = (m.tags?.pump ?? 0) + 1;
     },
   };
 
@@ -504,9 +504,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Perfectly Ultimate Great Moth'] = mustFirst(mothProc(6));
   E['Cocoon of Evolution'] = {
     handIgnition: {
-      can: (e, _c, p) => freeST(e, p) >= 0 && e.monsters(p).some((m) => m.faceUp && m.name === 'Petit Moth'),
+      can: (e, _c, p) => freeST(e, p) >= 0 && e.monsters(p).some((m) => m.faceUp && e.isNamed(m, 'Petit Moth')),
       *run(e, card, p) {
-        const moths = e.monsters(p).filter((m) => m.faceUp && m.name === 'Petit Moth');
+        const moths = e.monsters(p).filter((m) => m.faceUp && e.isNamed(m, 'Petit Moth'));
         const picks = yield* e.select(p, 'Cocoon of Evolution: equip to which Petit Moth?', e.optionsFor(moths), 1, 1, true);
         const zone = freeST(e, p);
         if (!picks || zone < 0) return;
@@ -544,7 +544,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
     },
     *resolve() {},
     *onLeaveField(e, _fc, p) {
-      const toons = e.monsters(p).filter((m) => TOONS.has(m.name));
+      const toons = e.monsters(p).filter((m) => e.namesOf(m).some((nm) => TOONS.has(nm)));
       if (toons.length) {
         e.log(p, 'Toon World is gone, and the Toons with it');
         yield* e.destroy(toons.map((m) => m.uid));
@@ -565,11 +565,11 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Thunder Dragon'] = {
     handIgnition: {
-      can: (e, c, p) => e.player(p).deck.some((x) => x.name === c.name),
+      can: (e, c, p) => e.player(p).deck.some((x) => e.sameName(x, c)),
       *run(e, card, p) {
         yield* e.discard(p, card.uid);
         const ps = e.player(p);
-        const list = ps.deck.filter((x) => x.name === card.name);
+        const list = ps.deck.filter((x) => e.sameName(x, card));
         const picks = yield* e.select(p, 'Thunder Dragon: add up to 2 Thunder Dragons to your hand', e.optionsFor(list), 1, 2);
         for (const i of picks ?? []) e.toHand(list[i].uid);
         ps.deck = e.shuffle(ps.deck);
@@ -577,9 +577,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
     },
   };
   E['The Flute of Summoning Dragon'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && faceUp(e).some((m) => m.name === 'Lord of D.' || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.') && hasFreeZone(e, p) && e.player(p).hand.some((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon'), // audit-10
+    canActivate: (e, _c, p, t) => isMain(t) && faceUp(e).some((m) => e.isNamed(m, 'Lord of D.') || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.') && hasFreeZone(e, p) && e.player(p).hand.some((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon'), // audit-10
     *resolve(e, _l, p) {
-      if (!faceUp(e).some((m) => m.name === 'Lord of D.' || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.')) return; // audit-10: The King of D. is "Lord of D." on the field
+      if (!faceUp(e).some((m) => e.isNamed(m, 'Lord of D.') || e.effectOn(m)?.fieldName?.(e, m) === 'Lord of D.')) return; // audit-10: The King of D. is "Lord of D." on the field
       const list = e.player(p).hand.filter((c) => isMonster(e, c) && e.info(c.name).race === 'Dragon' && e.info(c.name).sub !== 'Ritual');
       const picks = yield* e.select(p, 'Special Summon up to 2 Dragons from your hand', e.optionsFor(list), 1, 2);
       for (const i of picks ?? []) if (hasFreeZone(e, p)) yield* e.specialSummon(list[i].uid, p, 'atk');
@@ -616,9 +616,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Monster Eye'] = {
     ignition: {
-      can: (e, _m, p) => e.player(p).lp > 1000 && e.player(p).gy.some((c) => c.name === 'Polymerization'),
+      can: (e, _m, p) => e.player(p).lp > 1000 && e.player(p).gy.some((c) => e.isNamed(c, 'Polymerization')),
       *run(e, _m, p) {
-        const c = e.player(p).gy.find((x) => x.name === 'Polymerization');
+        const c = e.player(p).gy.find((x) => e.isNamed(x, 'Polymerization'));
         if (!c) return;
         e.payLp(p, 1000);
         e.toHand(c.uid);
@@ -697,9 +697,9 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
           e.log(p, `Time Wizard: ${toss ? 'Heads' : 'Tails'}! Time Magic destroys the opponent's monsters`);
           yield* e.destroy(e.monsters(other(p)).map((m) => m.uid));
           // Dark Magician ages into Dark Sage (EDS only: not part of the Speed Duel text). audit-eds
-          const dm = e.speed ? undefined : e.monsters(p).find((m) => m.faceUp && m.name === 'Dark Magician');
+          const dm = e.speed ? undefined : e.monsters(p).find((m) => m.faceUp && e.isNamed(m, 'Dark Magician'));
           const ps = e.player(p);
-          const sage = [...ps.hand, ...ps.deck].find((c) => c.name === 'Dark Sage');
+          const sage = [...ps.hand, ...ps.deck].find((c) => e.isNamed(c, 'Dark Sage'));
           if (dm && sage && (yield* e.yesno(p, 'Time passes for Dark Magician... Tribute it to Special Summon Dark Sage?'))) {
             yield* e.sendToGrave(dm.uid, 'tribute');
             yield* e.specialSummon(sage.uid, p, 'atk');
@@ -819,7 +819,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Kotodama'] = {
     *onAnySummon(e, w, _wp, m) {
-      if (m.uid !== w.uid && faceUp(e).some((x) => x.uid !== m.uid && x.name === m.name)) {
+      if (m.uid !== w.uid && faceUp(e).some((x) => x.uid !== m.uid && e.sameName(x, m))) {
         e.log(null, `Kotodama: two ${m.name} cannot share the field`);
         yield* e.destroy([m.uid]);
       }
@@ -934,7 +934,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Dragon Piper'] = {
     *flip(e) {
-      const jars = allST(e).filter((c) => c.faceUp && c.name === 'Dragon Capture Jar');
+      const jars = allST(e).filter((c) => c.faceUp && e.isNamed(c, 'Dragon Capture Jar'));
       if (!jars.length) return;
       yield* e.destroy(jars.map((c) => c.uid));
       for (const m of faceUp(e)) if (e.raceOf(m) === 'Dragon') m.pos = 'atk';
@@ -964,7 +964,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   };
   E['Weather Report'] = {
     *flip(e, _m, p) {
-      const swords = fieldST(e, other(p)).filter((c) => c.faceUp && c.name === 'Swords of Revealing Light');
+      const swords = fieldST(e, other(p)).filter((c) => c.faceUp && e.isNamed(c, 'Swords of Revealing Light'));
       if (swords.length) yield* e.destroy(swords.map((c) => c.uid));
     },
   };
@@ -1255,7 +1255,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
           if (e.find(t.uid)?.loc.zone === 'gy') e.banish(t.uid);
         } else e.banish(t.uid);
         e.log(p, `Nobleman of Crossout removes ${t.name} from play`);
-        if (isFlip) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => x.name === t.name)) e.banish(c.uid);
+        if (isFlip) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => e.sameName(x, t))) e.banish(c.uid);
       },
     ),
     *activate(e, link, p) {
@@ -1281,7 +1281,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         if (e.find(t.uid)?.loc.zone === 'gy') e.banish(t.uid);
       } else e.banish(t.uid);
       e.log(p, `Nobleman of Extermination removes ${t.name} from play`);
-      if (trap) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => x.name === t.name)) e.banish(c.uid);
+      if (trap) for (const q of [0, 1] as Pid[]) for (const c of e.player(q).deck.filter((x) => e.sameName(x, t))) e.banish(c.uid);
     },
   );
   E['Eternal Drought'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Fish', 'Fish');
@@ -1522,7 +1522,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       if (!m) return;
       const owner = m.loc.player;
       const ps = e.player(owner);
-      const copies = [...ps.hand, ...ps.deck].filter((c) => c.name === m.card.name);
+      const copies = [...ps.hand, ...ps.deck].filter((c) => e.sameName(c, m.card));
       e.log(link.player, `Chain Destruction destroys ${copies.length} more ${m.card.name}`);
       for (const c of copies) yield* e.sendToGrave(c.uid, 'destroyed');
     },
@@ -1663,7 +1663,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Numinous Healer'] = trap(
     (_e, _c, p, t, ctx) => t === 'damage' && ctx.damaged === p,
     function* (e, _l, p) {
-      const n = e.player(p).gy.filter((c) => c.name === 'Numinous Healer').length;
+      const n = e.player(p).gy.filter((c) => e.isNamed(c, 'Numinous Healer')).length;
       e.gainLp(p, 1000 + 500 * n);
     },
   );
@@ -1856,7 +1856,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
         if (m) tag(m).reborn = 1;
         // Speed Duel, Millennium Revelation: a Ra revived with Monster Reborn this turn goes to the GY in the End Phase.
-        if (m && m.name === 'The Winged Dragon of Ra' && e.state.fx.revelation?.[p] === e.state.turn) tag(m).sendAtEnd = e.state.turn;
+        if (m && e.isNamed(m, 'The Winged Dragon of Ra') && e.state.fx.revelation?.[p] === e.state.turn) tag(m).sendAtEnd = e.state.turn;
       },
     };
   }
