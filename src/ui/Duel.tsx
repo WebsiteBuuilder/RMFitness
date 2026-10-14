@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
-import type { Card, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
+import type { Card, DuelState, EngineEvent, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
 import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
-import { playBlip, playDraw, playHit, playSummon, playWin, unlockAudio } from './sound';
+import { playBlip, playDraw, playWin, setSoundEnabled, unlockAudio, useSoundEnabled } from './sound';
+import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
 import { spellWord } from './gameUi';
@@ -66,6 +67,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
   const artItems = useCinematicsMenu();
+  const soundOn = useSoundEnabled();
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -97,10 +99,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (!ev || ev.seq === lastSeq.current) return;
     lastSeq.current = ev.seq;
     setAnim(ev);
-    if (ev.kind === 'summon' || ev.kind === 'flip') playSummon();
-    else if (ev.kind === 'damage' || ev.kind === 'hit') playHit();
-    else if (ev.kind === 'draw') playDraw();
-    else if (ev.kind === 'win') playWin();
+    // Speed Duel sounds come with its cues (art/flow); Life Points sound from the counter.
+    if (!e.speed) eventSound(ev, state);
     const t = setTimeout(() => setAnim(null), 700);
     return () => clearTimeout(t);
   }, [state.lastEvent]);
@@ -513,6 +513,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
               items={[
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
+                { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
@@ -633,4 +634,41 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       {overlays}
     </div>
   );
+}
+
+/** The card a uid names, wherever it is. */
+function cardOf(state: DuelState, uid: number | undefined): Card | null {
+  if (uid === undefined) return null;
+  for (const ps of state.players) {
+    for (const c of [...ps.mz, ...ps.sz, ps.field, ...ps.hand, ...ps.gy, ...ps.removed]) if (c && c.uid === uid) return c;
+  }
+  return null;
+}
+
+/** Eternal Duelist Soul: a show-style sound for the latest engine event. */
+function eventSound(ev: EngineEvent, state: DuelState) {
+  switch (ev.kind) {
+    case 'summon':
+      return sfx.summon(ev.how);
+    case 'set':
+      return sfx.setCard();
+    case 'flip':
+      return sfx.flip();
+    case 'activate': {
+      const kind = cardInfo(cardOf(state, ev.uid)?.name ?? '')?.kind;
+      return kind === 'trap' ? sfx.trap() : kind === 'spell' ? sfx.spell() : sfx.monsterEffect();
+    }
+    case 'attack':
+      return sfx.attack(ev.target === null);
+    case 'hit':
+      return sfx.clash();
+    case 'damage':
+      return sfx.impact();
+    case 'to-gy':
+      return ev.zone === 'mz' || ev.zone === 'sz' || ev.zone === 'field' ? sfx.shatter() : undefined;
+    case 'draw':
+      return ev.effect ? playDraw() : undefined;
+    case 'win':
+      return playWin();
+  }
 }

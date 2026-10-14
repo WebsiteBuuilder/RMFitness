@@ -17,6 +17,8 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact/hooks';
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
+import { lpCount as lpCountSound } from '../ui/duelSfx';
+import { cueSound } from './cueSound';
 import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
@@ -247,9 +249,11 @@ export class Flow {
     this.lastSeq = top;
     if (this.skipTurn !== null && (real.turn !== this.skipTurn || real.winner !== null)) this.skipTurn = null;
     let cues: Cue[] = [];
-    if (fresh.length && real.rules?.mode === 'speed' && sink?.ready() && this.skipTurn === null) {
-      cues = coalesce(toCues(fresh, real, viewer, host, this.memo, this.track));
-      cues = pickCues(cues, getCinematics(), viewer);
+    if (fresh.length && real.rules?.mode === 'speed' && this.skipTurn === null) {
+      const all = coalesce(toCues(fresh, real, viewer, host, this.memo, this.track));
+      cues = sink?.ready() ? pickCues(all, getCinematics(), viewer) : [];
+      // what gets no cinematic still makes its sound, a beat apart
+      all.filter((c) => !cues.includes(c)).forEach((c, i) => cueSound(c, i * 0.12));
     }
     this.memo = memoField(real, viewer, host, this.memo);
     if (cues.length) {
@@ -557,6 +561,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     };
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
+    lpCountSound(value - from, value, LP_TICK_MS);
     const t0 = performance.now();
     let raf = 0;
     let k = 0;
