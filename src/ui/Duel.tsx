@@ -55,7 +55,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [sel, setSel] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [picks, setPicks] = useState<number[]>([]);
-  const [info, setInfo] = useState<string | null>(null);
+  const [info, setInfoName] = useState<string | null>(null);
+  // whose copy the Card Info shows (its finish is that duelist's)
+  const [infoOwner, setInfoOwner] = useState<Pid | undefined>(undefined);
+  const setInfo = (name: string | null, owner?: Pid) => (setInfoName(name), setInfoOwner(owner));
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [askSurrender, setAskSurrender] = useState(false);
@@ -247,7 +250,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     commands.push({ label: 'Quick Effect', onPick: () => send({ type: 'QUICK_EFFECT', player: acting, uid: selCard.uid }) });
   }
   const canSeeSel = !!selCard && (!selField || selField.faceUp || selected?.loc.player === acting);
-  if (selCard && canSeeSel) commands.push({ label: 'Card Info', onPick: () => setInfo(selCard.name) });
+  if (selCard && canSeeSel) commands.push({ label: 'Card Info', onPick: () => setInfo(selCard.name, selCard.owner) });
 
   const highlight = (uid: number): string => {
     let cls = '';
@@ -292,7 +295,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     return (
       <div class={`sidebox ${top ? 'top' : 'bottom'}`}>
         <button class="pile" onClick={() => setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy })}>
-          <div class="pile-stack">{ps.gy.length > 0 && <CardImg name={ps.gy[ps.gy.length - 1].name} />}</div>
+          <div class="pile-stack">{ps.gy.length > 0 && <CardImg name={ps.gy[ps.gy.length - 1].name} owner={ps.gy[ps.gy.length - 1].owner} />}</div>
           <span>GY {ps.gy.length}</span>
         </button>
         <div class="pile">
@@ -300,7 +303,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <span>Deck {ps.deck.length}</span>
         </div>
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
-          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} /> : <span class="zlabel">F</span>}
+          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
         </div>
         {ps.removed.length > 0 && (
@@ -415,7 +418,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>
-            <CardInfoPanel name={info} />
+            <CardInfoPanel name={info} owner={infoOwner} />
           </Win>
         </Overlay>
       )}
@@ -432,8 +435,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                   .map((c) =>
                     canAct && !prompt && e.canSpecialProc(acting, c) ? (
                       <div key={c.uid} class="gcard">
-                        <button onClick={() => setInfo(c.name)}>
-                          <CardImg name={c.name} />
+                        <button onClick={() => setInfo(c.name, c.owner)}>
+                          <CardImg name={c.name} owner={c.owner} />
                           <span>{c.name}</span>
                         </button>
                         <button class="gbtn geff" onClick={() => (setPile(null), send({ type: 'SPECIAL', player: acting, uid: c.uid }))}>
@@ -442,8 +445,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                       </div>
                     ) : canAct && !prompt && (e.canUseGraveEffect(acting, c.uid) || e.canUseQuickNow(acting, c.uid)) ? (
                       <div key={c.uid} class="gcard">
-                        <button onClick={() => setInfo(c.name)}>
-                          <CardImg name={c.name} />
+                        <button onClick={() => setInfo(c.name, c.owner)}>
+                          <CardImg name={c.name} owner={c.owner} />
                           <span>{c.name}</span>
                         </button>
                         <button class="gbtn geff" onClick={() => (setPile(null), send({ type: e.canUseGraveEffect(acting, c.uid) ? 'GRAVE_EFFECT' : 'QUICK_EFFECT', player: acting, uid: c.uid }))}>
@@ -451,8 +454,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                         </button>
                       </div>
                     ) : (
-                      <button key={c.uid} class="gcard" onClick={() => setInfo(c.name)}>
-                        <CardImg name={c.name} />
+                      <button key={c.uid} class="gcard" onClick={() => setInfo(c.name, c.owner)}>
+                        <CardImg name={c.name} owner={c.owner} />
                         <span>{c.name}</span>
                       </button>
                     ),
@@ -566,7 +569,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       </div>
       <div class="opp-hand">
         {opp.hand.map((c) => (
-          <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name)}>
+          <div key={c.uid} class={`hcard ${oppHandShown ? '' : 'back'} ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={() => oppHandShown && setInfo(c.name, c.owner)}>
             <CardImg name={c.name} back={!oppHandShown} owner={c.owner} />
           </div>
         ))}

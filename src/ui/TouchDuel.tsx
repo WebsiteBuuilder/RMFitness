@@ -47,7 +47,7 @@ export interface TouchCtl {
   canSeeSel: boolean;
   oppHandShown: boolean;
   nextPhaseLabel: string;
-  setInfo: (name: string | null) => void;
+  setInfo: (name: string | null, owner?: Pid) => void;
   setPile: (p: { title: string; cards: Card[] } | null) => void;
   /** show a player's Speed Duel Skill */
   openSkill: (p: Pid) => void;
@@ -335,7 +335,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           if (ps.field) tapCard(ps.field.uid);
         }}
       >
-        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} /> : <span class="tz-label">FIELD</span>}
+        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
       </div>
     );
@@ -345,7 +345,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const ps = state.players[p];
     return (
       <button class="tpile" onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy }))}>
-        {ps.gy.length > 0 ? <CardImg name={ps.gy[ps.gy.length - 1].name} /> : <span class="tz-label">GY</span>}
+        {ps.gy.length > 0 ? <CardImg name={ps.gy[ps.gy.length - 1].name} owner={ps.gy[ps.gy.length - 1].owner} /> : <span class="tz-label">GY</span>}
         <span class="tcount">{ps.gy.length}</span>
       </button>
     );
@@ -578,7 +578,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       {lpBar(oppId, true)}
       <div class="topp-hand">
         {opp.hand.map((c) => (
-          <div key={c.uid} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name))}>
+          <div key={c.uid} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name, c.owner))}>
             <CardImg name={c.name} back={!ctl.oppHandShown} owner={c.owner} />
           </div>
         ))}
@@ -642,8 +642,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
 
         {selCard && canSeeSel && !drag && (
-          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name))}>
-            <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
+          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
+            <span class="tdetail-pic">
+              <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
+            </span>
             <div class="tdetail-text">
               <b>{e.nameOf(selCard)}</b>
               {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
@@ -697,8 +699,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tchain" onClick={(ev) => ev.stopPropagation()}>
           <span class="tchain-title">Chain</span>
           {state.chain.map((l, i) => (
-            <button key={i} class={`tlink ${l.player === acting ? 'mine' : 'theirs'} ${l.negated ? 'neg' : ''}`} onClick={() => ctl.setInfo(l.card.name)}>
-              <CardImg name={l.card.name} />
+            <button key={i} class={`tlink ${l.player === acting ? 'mine' : 'theirs'} ${l.negated ? 'neg' : ''}`} onClick={() => ctl.setInfo(l.card.name, l.card.owner)}>
+              <CardImg name={l.card.name} owner={l.card.owner} />
               <span>{i + 1}</span>
             </button>
           ))}
