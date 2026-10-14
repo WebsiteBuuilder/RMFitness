@@ -9,10 +9,21 @@ import { profileFor, SIGNATURE_CARDS } from './profile';
 import { classify, FX_FAMILIES, type FxFamily } from './families';
 import type { Director } from './runtime';
 import { getArtSetting } from './ArtStage';
+import { showDuelRarity } from '../level/duelRarity';
+import { FINISH_TAG } from './finish';
 import './art.css';
 
 const ref = (uid: number, name: string, controller: 0 | 1, faceUp = true, rect: CardRef['rect'] = null): CardRef => ({ uid, name, faceUp, controller, rect, def: false });
 
+/** The finishes the viewer can show a summon in (TIERS indexes; null: the profile's own). */
+const FINISHES: [string, number | null][] = [
+  ['Yours', null],
+  ['Plain', 0],
+  ['UR', 3],
+  ['Glossy', 4],
+  ['Royal', 5],
+  ['Overframe', 6],
+];
 export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -64,7 +75,7 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
         const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
         const once = bannerOnce();
         const d = new Director(canvas.current, getArtSetting() === 'fast' ? 'fast' : 'full', {
-          banner: (o) => void (once(o.title) && add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}`, `<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) })),
+          banner: (o) => void (once(o.title) && add(`art-banner ${o.big ? 'big' : ''} pos-${o.pos ?? 'bottom'}${o.finish ? ` fin-${o.finish}` : ''}`, `${o.finish ? `<i class="art-fin">${FINISH_TAG[o.finish] ?? ''}</i>` : ''}<b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}`, Math.max(0.6, o.dur), { '--c': hx(o.color) })),
           number: (o) => add(`art-number side-${o.side}`, esc(o.text), 1.3, { '--c': hx(o.color), '--s': String(o.size) }),
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
@@ -82,11 +93,15 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
       dead = true;
       window.removeEventListener('resize', onResize);
       dir.current?.dispose();
+      showDuelRarity(null);
     };
   }, []);
 
+  /** the finish to watch the card in (null: this profile's own) */
+  const [finish, setFinish] = useState<number | null>(null);
   const run = (cues: Cue[]) => {
     unlockAudio();
+    showDuelRarity(finish === null ? null : [{ [name]: finish }, {}]);
     dir.current?.clear();
     dir.current?.push(cues);
   };
@@ -227,6 +242,16 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
               </button>
             )}
           </div>
+          {isMonster && (
+            <div class="artlab-btns artlab-fin">
+              <span class="hint">Finish:</span>
+              {FINISHES.map(([label, f]) => (
+                <button key={label} class={`gbtn ${finish === f ? 'on' : ''}`} onClick={() => setFinish(f)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {isMonster && <p class="hint">Opponent: {foe}</p>}
           <details class="artlab-show">
             <summary>Effect families ({FX_FAMILIES.length})</summary>

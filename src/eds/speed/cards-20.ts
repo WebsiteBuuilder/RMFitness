@@ -18,7 +18,7 @@ const zoneOf = (e: Engine, uid: number) => e.find(uid)?.loc.zone;
 /** A monster in the GY that can be Special Summoned by a card effect (Extra Deck and Ritual Monsters are left out: they need a proper Summon first). */
 const revivable = (e: Engine, p: Pid, c: Card) => isMonster(e, c) && !['Fusion', 'Xyz', 'Synchro', 'Link', 'Ritual'].includes(sub(e, c)) && !e.summonBlocked(p, c, 'special', 'gy');
 /** "Galaxy-Eyes" or "Cipher" Xyz Monsters you control. */
-const cipherXyz = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => sub(e, m) === 'Xyz' && (named(m, 'Galaxy-Eyes') || named(m, 'Cipher'))));
+const cipherXyz = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => sub(e, m) === 'Xyz' && (named(e, m, 'Galaxy-Eyes') || named(e, m, 'Cipher'))));
 /** Xyz Monsters' Rank. */
 const rankOf = (e: Engine, c: Card) => info(e, c).rank ?? 0;
 /** "Destroyed by your opponent's card": who was resolving an effect when it left the field (read by onDestroyed). */
@@ -54,7 +54,7 @@ function windSynchros(e: Engine, p: Pid): { card: Card; sets: FieldCard[][] }[] 
   const out: { card: Card; sets: FieldCard[][] }[] = [];
   for (const c of e.player(p).fusion) {
     if (sub(e, c) !== 'Synchro' || attrOf(e, c) !== 'WIND' || e.summonBlocked(p, c, 'special', 'fusion')) continue;
-    const sets = extraMaterialSets(e, p, c.name).filter((s) => s.some((m) => info(e, m).tuner && named(m, 'Speedroid')));
+    const sets = extraMaterialSets(e, p, c.name).filter((s) => s.some((m) => info(e, m).tuner && named(e, m, 'Speedroid')));
     if (sets.length) out.push({ card: c, sets });
   }
   return out;
@@ -72,7 +72,7 @@ function astralTargets(e: Engine, p: Pid): FieldCard[] {
 }
 
 /** Cynet Circuit: "Firewall" Link Monsters `p` controls. */
-const firewalls = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => sub(e, m) === 'Link' && named(m, 'Firewall')));
+const firewalls = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => sub(e, m) === 'Link' && named(e, m, 'Firewall')));
 /**
  * The zones "linked to" a Link Monster. This game has no Link Arrows (Link Monsters use the normal Monster Zones and
  * there is no Extra Monster Zone), so the zones linked to it are taken to be the open Monster Zones right next to it
@@ -87,7 +87,7 @@ function linkedZones(e: Engine, m: FieldCard): number[] {
 
 export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // ======================= Fusion Monsters =======================
-  const ojama = (e: Engine, c: Card) => isMonster(e, c) && named(c, 'Ojama');
+  const ojama = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Ojama');
   E['Ojama Knight'] = {
     fusionTests: [ojama, ojama],
     onSpecialSummon: blockZones,
@@ -237,8 +237,8 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // ======================= Traps =======================
   // "Until the End Phase" is kept until the end of the turn. The copy is looked up by name (engine copiedEffect) and
   // reads the selected monster's own coin result (tags.coin).
-  const arcanaMine = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(m, 'Arcana Force'));
-  const arcanaGy = (e: Engine) => [...e.player(0).gy, ...e.player(1).gy].filter((c) => isMonster(e, c) && named(c, 'Arcana Force'));
+  const arcanaMine = (e: Engine, p: Pid) => faceUpMonsters(e, p).filter((m) => named(e, m, 'Arcana Force'));
+  const arcanaGy = (e: Engine) => [...e.player(0).gy, ...e.player(1).gy].filter((c) => isMonster(e, c) && named(e, c, 'Arcana Force'));
   E['Arcana Call'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && arcanaMine(e, p).length > 0 && arcanaGy(e).length > 0,
     *resolve(e, _link, p) {
@@ -297,13 +297,13 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (!m || !m.faceUp || e.controller(m.uid) !== p || !e.matsOf(m).length) return;
       if (!(yield* e.detachMats(m, e.matsOf(m).length))) return;
-      const copy = e.player(p).fusion.find((c) => c.name === m.name && !e.summonBlocked(p, c, 'special', 'fusion'));
+      const copy = e.player(p).fusion.find((c) => e.sameName(c, m) && !e.summonBlocked(p, c, 'special', 'fusion'));
       if (!copy || !freeMZ(e, p)) return;
       yield* e.specialSummon(copy.uid, p, 'atk');
     },
   };
 
-  const dieTuners = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && info(e, c).tuner && named(c, 'Speedroid') && revivable(e, p, c));
+  const dieTuners = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && info(e, c).tuner && named(e, c, 'Speedroid') && revivable(e, p, c));
   E['Re-dyce-cle'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && dieTuners(e, p).length > 0,
     *activate(e, link, p) {
@@ -368,12 +368,12 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       }
     },
     graveIgnition: {
-      can: (e, _c, p) => e.player(p).lp <= 2000 && e.oncePerTurn('Cynet Circuit:2', p) && e.player(p).gy.some((c) => sub(e, c) === 'Link' && named(c, 'Firewall')),
+      can: (e, _c, p) => e.player(p).lp <= 2000 && e.oncePerTurn('Cynet Circuit:2', p) && e.player(p).gy.some((c) => sub(e, c) === 'Link' && named(e, c, 'Firewall')),
       *run(e, card, p) {
         if (zoneOf(e, card.uid) !== 'gy') return;
         e.useOnce('Cynet Circuit:2', p);
         e.banish(card.uid);
-        const c = yield* pickOne(e, p, 'Cynet Circuit: return which Firewall Link Monster to the Extra Deck?', e.player(p).gy.filter((x) => sub(e, x) === 'Link' && named(x, 'Firewall')));
+        const c = yield* pickOne(e, p, 'Cynet Circuit: return which Firewall Link Monster to the Extra Deck?', e.player(p).gy.filter((x) => sub(e, x) === 'Link' && named(e, x, 'Firewall')));
         if (!c) return;
         e.toHandOf(c.uid, p); // an Extra Deck monster goes to the Extra Deck instead of the hand
         if (zoneOf(e, c.uid) !== 'fusion') return;

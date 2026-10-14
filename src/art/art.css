@@ -762,3 +762,131 @@
 .artlab-fams button.on {
   outline: 2px solid #ffd75a;
 }
+
+/* ---------- card finishes on the summon name plate ----------
+   The tag above the name says the finish; Glossy and Overframe plates get a moving
+   rainbow edge (a transform-animated layer, nothing repainted). */
+.art-banner .art-fin {
+  display: block;
+  margin: 0 0 2px;
+  font: 900 italic 11px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.14em;
+  color: #ffd56a;
+  text-shadow: 0 1px 2px #000, 0 0 8px #ffc94a;
+  animation: art-text var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+.art-banner.fin-UR,
+.art-banner.fin-RO {
+  --edge: #ffd56a;
+}
+.art-banner.fin-GL {
+  --edge: #c9b3ff;
+  overflow: hidden;
+}
+.art-banner.fin-GL .art-fin {
+  color: #fff;
+  text-shadow: 0 1px 2px #000, 0 0 6px #ff7ae6, 0 0 10px #6ce3ff;
+}
+.art-banner.fin-RO .art-fin {
+  color: #fff6d8;
+  text-shadow: 0 1px 2px #000, 0 0 10px #ffd56a;
+}
+.art-banner.fin-OF {
+  --edge: #ff8ce8;
+  overflow: hidden;
+}
+.art-banner.fin-OF .art-fin {
+  font-size: 13px;
+  color: #fff;
+  text-shadow: 0 1px 2px #000, 0 0 6px #ff4fd0, 0 0 12px #4fe0ff;
+}
+/* a rainbow band sliding along the top and bottom edges of an Overframe plate */
+.art-banner.fin-OF b::after,
+.art-banner.fin-GL b::after {
+  content: '';
+  position: absolute;
+  left: -100%;
+  right: -100%;
+  top: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #ff4fd0, #ffb84f, #fff6c8, #7cff9e, #4fe0ff, #a24fff, #ff4fd0) top / 50% 2px repeat-x,
+    linear-gradient(90deg, #ff4fd0, #ffb84f, #fff6c8, #7cff9e, #4fe0ff, #a24fff, #ff4fd0) bottom / 50% 2px repeat-x;
+  animation: art-fin-roll 1.6s linear infinite;
+}
+.art-banner.fin-GL b::after {
+  opacity: 0.75;
+  animation-duration: 2.4s;
+}
+@keyframes art-fin-roll {
+  to {
+    transform: translateX(25%);
+  }
+}
+
+/* the OVERFRAME stamp at the moment the card's frame shatters */
+.art-caption.art-over {
+  top: 30%;
+  padding: 2px 8px;
+  background: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
+  font-size: min(40px, 8.6vw);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: #fff;
+  -webkit-text-stroke: 1px #5a0a4a;
+  text-shadow:
+    -2px 0 0 #ff4fd0,
+    2px 0 0 #4fe0ff,
+    0 0 14px #ff4fd0,
+    0 0 26px #4fe0ff,
+    0 3px 3px #000;
+  animation: art-over var(--d) cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+.art-caption.art-over::before,
+.art-caption.art-over::after {
+  content: '✦';
+  color: #ffd56a;
+  font-size: 0.6em;
+  margin-top: -0.4em;
+}
+.art-caption.art-over::before {
+  left: -0.7em;
+}
+.art-caption.art-over::after {
+  right: -0.7em;
+}
+@keyframes art-over {
+  0% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(0.94);
+  }
+  22% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .art-banner.fin-OF b::after,
+  .art-banner.fin-GL b::after {
+    animation: none;
+  }
+}

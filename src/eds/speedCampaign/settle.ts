@@ -4,12 +4,14 @@ import { settleCampaign, type Settled } from './campaign';
 import { afterDuel, better, stopById, summaryOf, todayString, type Run, type RunSummary } from './labyrinth';
 import type { SoloSave } from './save';
 import { grant } from './rewards';
+import { settleLegend, type LegendSettled } from './legends';
 import type { DuelContext, DuelOutcome } from './types';
 
 export type SoloReport =
   | { kind: 'practice'; outcome: DuelOutcome; ctx: Extract<DuelContext, { kind: 'practice' }> }
   | { kind: 'campaign'; outcome: DuelOutcome; nodeId: string; settled: Settled }
-  | { kind: 'labyrinth'; outcome: DuelOutcome; run: Run | null; ended: RunSummary | null };
+  | { kind: 'labyrinth'; outcome: DuelOutcome; run: Run | null; ended: RunSummary | null }
+  | { kind: 'legend'; outcome: DuelOutcome; duelId: string; rematch: boolean; settled: LegendSettled };
 
 /** Ends a run: pays its Soul Fragments, files it in the history, unlocks the next Curse. */
 export function endRun(solo: SoloSave, run: Run): { solo: SoloSave; summary: RunSummary } {
@@ -38,6 +40,10 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
     if (o.forfeit) return { speed, solo, report: { kind: 'campaign', outcome: o, nodeId: ctx.nodeId, settled: { speed, solo, stars: [false, false, false], newStars: [false, false, false], lines: [], cards: [], picks: [], firstWin: false, cleared: null } } };
     const settled = settleCampaign(speed, solo, ctx.nodeId, o);
     return { speed: settled.speed, solo: settled.solo, report: { kind: 'campaign', outcome: o, nodeId: ctx.nodeId, settled } };
+  }
+  if (ctx.kind === 'legend') {
+    const settled = settleLegend(speed, solo, ctx.duelId, o, !!ctx.rematch);
+    return { speed: settled.speed, solo: settled.solo, report: { kind: 'legend', outcome: o, duelId: ctx.duelId, rematch: !!ctx.rematch, settled } };
   }
   const run = solo.labyrinth.run;
   if (!run || run.id !== ctx.runId) return { speed, solo, report: { kind: 'labyrinth', outcome: o, run, ended: null } };

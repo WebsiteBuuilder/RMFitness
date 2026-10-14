@@ -169,12 +169,12 @@ function FriendsPanel() {
     if (!c) return setMsg('A friend code is 6 letters and numbers, like K7Q-2MX.');
     const r = pr.add(c);
     setCode('');
-    setMsg(r === 'self' ? "That's your own code." : r === 'already' ? 'Already on your list.' : r === 'accepted' ? 'Friend added!' : 'Request sent. They show up once their game is open.');
+    setMsg(r === 'self' ? "That's your own code." : r === 'already' ? 'Already on your list.' : r === 'accepted' ? 'Friend added!' : 'Added! They show up here as soon as their game is open.');
   };
 
   const state = pr.state;
   const stateText =
-    state === 'ready' ? 'You are online' : state === 'connecting' ? 'Going online…' : state === 'elsewhere' ? 'This profile is online on another phone or tab' : "Can't reach the online service. Check your connection.";
+    state === 'ready' ? 'You are online' : state === 'connecting' ? 'Going online…' : state === 'elsewhere' ? 'This profile is open on another phone. Close it there to go online here.' : "Can't reach the online service. Check your connection.";
   const list = pr.friends();
   const requests = list.filter((f) => f.status === 'request');
   const friends = list.filter((f) => f.status !== 'request');
@@ -276,9 +276,11 @@ function FriendRow({ f, game, onRemove, onMsg }: { f: FriendView; game: GameMode
   const openRoom = f.online && a?.kind === 'room' && a.open ? a : null;
   const busy = f.online && a && a.kind !== 'menu' && !openRoom;
   let sub: string;
-  if (f.status === 'sent') sub = f.online ? 'Waiting for them to accept' : 'Request sent · waiting for them to come online';
+  const reach = online.presence?.reach.get(f.code);
+  if (reach === 'blocked' && !f.online) sub = "Their game is open, but the phones can't link yet. Retrying…";
+  else if (f.status === 'sent') sub = f.online ? 'Connecting…' : 'Added · shows up when their game is open';
   else if (f.online) sub = doing(a);
-  else sub = f.lastSeen ? `Offline · seen ${ago(Date.now() - f.lastSeen)}` : 'Offline';
+  else sub = f.lastSeen ? `Offline · seen ${ago(Date.now() - f.lastSeen)}` : 'Offline · their game is closed';
   return (
     <div class={`ol-row ${f.online ? 'online' : ''}`}>
       <span class="ol-av">

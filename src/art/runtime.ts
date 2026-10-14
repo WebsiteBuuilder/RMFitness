@@ -13,13 +13,14 @@ import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
-import { backOut, BASE_FOV, CardPanel, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
+import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
+import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
-  banner(o: { title: string; sub?: string; color: number; big?: boolean; dur: number; pos?: 'top' | 'mid' | 'bottom' }): void;
+  banner(o: { title: string; sub?: string; color: number; big?: boolean; dur: number; pos?: 'top' | 'mid' | 'bottom'; /** the card's finish ('UR', 'GL', 'RO', 'OF'): its plate shows it */ finish?: string }): void;
   number(o: { text: string; color: number; side: 'top' | 'bottom'; size: number }): void;
   flash(color: number, strength: number): void;
   caption(text: string, dur: number, cls?: string): void;
@@ -812,6 +813,14 @@ export class Director {
     return new Figure(art, size, segs, glow, size * (0.22 + prof.depth * 0.3), { rim: art.palette[0], edge: prof.tier >= 2 ? 1 : 0 });
   }
 
+  /** A finished card's figure (Ultra Rare and up) is rim-lit in its finish in every scene it is in. */
+  private finishRim(fig: Figure, c: CardRef) {
+    const fin = finishOf(c);
+    if (fin < FIN.UR) return;
+    rimColor(finishGlow(fin, c.uid * 0.37), fig.u.uRim.value as Vector3);
+    fig.u.uRimAmt.value = fin >= FIN.OF ? 1.7 : fin >= FIN.GL ? 1.35 : 1.15;
+  }
+
   private dropActor(a: Actor) {
     if (a.fig) this.stage.remove(a.fig);
     if (a.back) this.stage.remove(a.back);
@@ -829,6 +838,7 @@ export class Director {
       const col = this.colors(prof, art);
       a.fig = this.stage.add(this.figure(art, size, prof, col.main));
       a.fig.u.uOpacity.value = 0;
+      this.finishRim(a.fig, c);
     } else {
       a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
       if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
@@ -852,6 +862,7 @@ export class Director {
     if (art) {
       a.fig = this.stage.add(this.figure(art, size, prof, this.colors(prof, art).main));
       a.fig.mesh.scale.setScalar(size);
+      this.finishRim(a.fig, c);
     } else {
       a.back = this.stage.add(new CardPanel(cardBack(), size * 0.8, 0x4c4a50));
       if (c.def) a.back.mesh.rotation.z = Math.PI / 2;
@@ -1249,8 +1260,13 @@ export class Director {
     const extra = method === 'xyz' || method === 'synchro' || method === 'link';
     const fusionish = entr === 'fusion' || entr === 'ritual' || extra;
     const big = isBig(info, prof) || extra || method === 'fusion' || method === 'ritual';
-    const C = big && art ? 0.62 : 0;
-    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0);
+    // the card's finish (its owner's, Speed Duel card leveling): Overframe always gets the
+    // cut-in and its own entrance, the card's frame shattering as the monster leaps out
+    const fin = finishOf(c);
+    const over = fin >= FIN.OF;
+    const finPal = finishPalette(fin);
+    const C = (big || over) && art ? 0.62 : 0;
+    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0);
     const LAND = 0.42;
     // the summon starts under the cut-in's exit (no dead air between them)
     const S = C ? C - 0.3 : 0;
@@ -1272,7 +1288,7 @@ export class Director {
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
-      const ci = tl.own(new CutIn(art.art, c.name, [how, sub.replace(/★+\s*/, '')].filter(Boolean).join('  ·  '), col.main, GOLD));
+      const ci = tl.own(new CutIn(art.art, c.name, (over ? ['✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), over ? 0xff4fd0 : col.main, over ? 0x4fe0ff : GOLD));
       tl.span(0, C, (k) => {
         ci.u.uK.value = k;
         ci.u.uAspect.value = st.camera.aspect;
@@ -1319,17 +1335,64 @@ export class Director {
       // a light sweep across its face as it turns toward the camera
       flyer.u.uSheen.value = lerp(-0.4, 1.8, clamp01((k - 0.35) / 0.65));
     });
-    // it dissolves into light as the monster's reveal starts (showAt, below)
-    span(0.32, 0.5, (k) => {
-      flyer.u.uOpacity.value = 1 - easeOut(k);
-      flyer.u.uTint.value = lerp(0.35, 0.5, k);
-      flyer.mesh.scale.setScalar(1.35 * (1 + 0.08 * easeOut(k)));
-    });
-    span(0.34, 0.5, (_k, dt) => {
-      const n = Math.floor(160 * this.q * dt + 0.5);
-      const p = flyer.mesh.position;
-      for (let i = 0; i < n; i++) st.particles.emit({ x: p.x + (r() - 0.5) * 1.1 * U, y: p.y + (r() - 0.5) * 1.6 * U, z: p.z, vy: 1.2 * U, life: 0.5, size: 0.08 * U, color: i % 2 ? col.light : col.main, drag: 1.5 });
-    });
+    // a finished card's edge and sheen glow in its finish (gold, Glossy's prism, the Overframe rainbow)
+    if (fin >= FIN.UR) span(0, over ? 0.62 : 0.5, (k) => setRgb(flyer.u.uGlow.value as Vector3, finishGlow(fin, k * 3)));
+    if (over) {
+      // Overframe: the card hangs in the air, shaking with rainbow light, the sheen racing
+      // across it again and again... then the frame bursts and the monster leaps out of it
+      span(0.32, 0.6, (k) => {
+        const e = easeIn(k);
+        flyer.mesh.position.x = Math.sin(k * 70) * 0.03 * U * e;
+        flyer.mesh.rotation.z = Math.sin(k * 53) * 0.03 * e;
+        flyer.mesh.scale.setScalar(1.35 * (1 + 0.06 * e));
+        flyer.u.uSheen.value = -0.4 + ((k * 3) % 1) * 2.2;
+        flyer.u.uTint.value = 0.35 * e;
+      });
+      span(0.32, 0.6, (_k, dt) => {
+        const n = Math.floor(120 * this.q * dt + 0.5);
+        const p = flyer.mesh.position;
+        for (let i = 0; i < n; i++) {
+          const a = r() * Math.PI * 2;
+          st.particles.emit({ x: p.x + Math.cos(a) * 1.2 * U, y: p.y + Math.sin(a) * 1.4 * U, z: p.z, life: 0.4, size: 0.07 * U, color: finPal![i % finPal!.length], drag: 0, pull: { x: p.x, y: p.y, strength: 14 * U, swirl: 8 * U } });
+        }
+      });
+      tl.at(S + 0.38, () => whoosh(0.5, 900, 4200, 0.45));
+      tl.at(S + 0.6, () => {
+        this.panelShards(tl, flyer, 0xfff6c8, 3.4 * U);
+        st.pulse('chroma', 0.7);
+        st.pulse('flash', 0.4);
+        this.flash(0xffffff, 0.34);
+        st.shake(0.55);
+        st.hitStop(0.1);
+        boom(0.8);
+        chime(r());
+        const p = flyer.mesh.position;
+        finPal!.forEach((fc, i) => st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.2, burst: (3.5 + i * 0.4) * U, life: 0.9, size: 0.11 * U, color: fc, drag: 1.6 }, Math.round(22 * this.q)));
+        this.ui.caption('OVERFRAME', 1.1, 'art-over');
+      });
+      // two rainbow shock rings out of the shatter
+      [0, 0.12].forEach((d, i) => {
+        const g = tl.own(new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x4fe0ff : 0xff4fd0, i ? 0xa24fff : 0xffb84f));
+        g.mesh.position.set(0, restY, 0.3);
+        g.u.uOpacity.value = 0;
+        span(0.6 + d, 1.25 + d, (k) => {
+          g.u.uK.value = easeOut(k);
+          g.u.uOpacity.value = 1 - k;
+        });
+      });
+    } else {
+      // it dissolves into light as the monster's reveal starts (showAt, below)
+      span(0.32, 0.5, (k) => {
+        flyer.u.uOpacity.value = 1 - easeOut(k);
+        flyer.u.uTint.value = lerp(0.35, 0.5, k);
+        flyer.mesh.scale.setScalar(1.35 * (1 + 0.08 * easeOut(k)));
+      });
+      span(0.34, 0.5, (_k, dt) => {
+        const n = Math.floor(160 * this.q * dt + 0.5);
+        const p = flyer.mesh.position;
+        for (let i = 0; i < n; i++) st.particles.emit({ x: p.x + (r() - 0.5) * 1.1 * U, y: p.y + (r() - 0.5) * 1.6 * U, z: p.z, vy: 1.2 * U, life: 0.5, size: 0.08 * U, color: finPal ? finPal[i % finPal.length] : i % 2 ? col.light : col.main, drag: 1.5 });
+      });
+    }
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
 
     // the summon method's own shot (Xyz galaxy, Synchro rings, Link arrows, Tribute souls...)
@@ -1359,7 +1422,7 @@ export class Director {
     });
 
     // light shafts behind the monster
-    const showAt = 0.42;
+    const showAt = over ? 0.62 : 0.42;
     this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
 
     // the monster
@@ -1526,8 +1589,29 @@ export class Director {
         this.flash(col.main, 0.25 + tier * 0.08);
       }
     });
-    // name plate
-    at(showAt + 0.2, () => this.ui.banner({ title: c.name, sub: [how, sub].filter(Boolean).join(' · '), color: col.main, big: tier >= 2, dur: E - showAt - 0.15, pos: 'bottom' }));
+    // the finish shows on the monster: its rim light takes the finish's color (the Overframe
+    // rainbow turning), and Glossy, Royal and Overframe glints rise around it
+    if (fig && fin >= FIN.UR) {
+      span(showAt, E + LAND, (k) => {
+        const g = finishGlow(fin, S + showAt + k * (E + LAND - showAt));
+        rimColor(g, fig.u.uRim.value as Vector3);
+        fig.u.uRimAmt.value = over ? 1.8 : fin >= FIN.GL ? 1.4 : 1.15;
+      });
+    }
+    if (finPal && fin >= FIN.GL) {
+      at(showAt + 0.05, () => {
+        finPal.forEach((fc, i) => P.emit({ x: 0, y: restY, z: 0.3, burst: (2.6 + i * 0.3) * U, life: 0.8, size: 0.09 * U, color: fc, drag: 2 }, Math.round((over ? 14 : 9) * q)));
+        if (!over) chime(r());
+      });
+      span(showAt, E - 0.15, (_k, dt) =>
+        emit((over ? 70 : 34) * q, dt, () => {
+          const a = Math.random() * Math.PI * 2;
+          P.emit({ x: Math.cos(a) * (0.5 + Math.random() * 0.6) * size, y: restY + (Math.random() - 0.4) * size, z: 0.35, vy: 0.9 * U, life: 0.7, size: (0.05 + Math.random() * 0.05) * U, color: finPal[(Math.random() * finPal.length) | 0], drag: 1 });
+        }),
+      );
+    }
+    // name plate (with the card's finish on it)
+    at(showAt + 0.2, () => this.ui.banner({ title: c.name, sub: [how, sub].filter(Boolean).join(' · '), color: col.main, big: tier >= 2 || over, dur: E - showAt - 0.15, pos: 'bottom', finish: finishId(fin) || undefined }));
 
     // ...then it flies onto its card on the field (the board's figure takes over there)
     let pose: ReturnType<Director['landingPose']> | null = null;

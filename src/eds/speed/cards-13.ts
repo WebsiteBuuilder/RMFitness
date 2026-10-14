@@ -211,7 +211,7 @@ function unionFits(e: Engine, u: Card, m: FieldCard): boolean {
   const d = info(e, u).desc;
   if (/Machine monster/i.test(d) && raceOf(e, m) === 'Machine') return true;
   const names = [...d.matchAll(/"([^"]+)"/g)].map((x) => x[1]).filter((n) => n !== u.name);
-  return names.includes(m.name);
+  return e.namesOf(m).some((nm) => names.includes(nm));
 }
 
 // ---------- Fusion helpers ----------
@@ -275,7 +275,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       yield* e.specialSummon(card.uid, p, atk ? 'atk' : 'def');
     },
     *onAnySummon(e, w, wp, m, _mp, kind) {
-      if (kind !== 'special' || !named(m, 'Artifact') || e.state.turnPlayer === wp || !e.fieldCard(w.uid)?.faceUp) return;
+      if (kind !== 'special' || !named(e, m, 'Artifact') || e.state.turnPlayer === wp || !e.fieldCard(w.uid)?.faceUp) return;
       e.log(wp, 'Artifact Caduceus: draw 1 card');
       e.draw(wp, 1);
     },
@@ -308,7 +308,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!events.some((v) => ['mz', 'sz', 'field'].includes(v.from) && v.reason === 'destroyed' && !v.byBattle)) return;
       if (zone === 'gy' && events.some((v) => v.card.uid === card.uid)) return; // it was not in the GY yet
       if (!e.oncePerTurn('Chaos Nephthys', p) || !freeMZ(e, p)) return;
-      const gy = e.player(p).gy.filter((c) => isMonster(e, c) && c.name !== 'Chaos Nephthys');
+      const gy = e.player(p).gy.filter((c) => isMonster(e, c) && !e.isNamed(c, 'Chaos Nephthys'));
       const lights = gy.filter((c) => attrOf(e, c) === 'LIGHT');
       const darks = gy.filter((c) => attrOf(e, c) === 'DARK');
       if (!lights.length || !darks.length) return;
@@ -396,7 +396,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const l = ctx.link;
         if (!l || l.player !== other(p) || l.negated || l.targetUid === undefined) return false;
         const m = e.fieldCard(l.targetUid);
-        return !!m && m.faceUp && e.controller(m.uid) === p && named(m, 'Archfiend') && !rolled(e).includes(`${e.state.turn}:${l.card.uid}:${c.uid}`);
+        return !!m && m.faceUp && e.controller(m.uid) === p && named(e, m, 'Archfiend') && !rolled(e).includes(`${e.state.turn}:${l.card.uid}:${c.uid}`);
       },
       *cost(e, c, _p, _link, ctx) {
         rolled(e).push(`${e.state.turn}:${ctx.link!.card.uid}:${c.uid}`);
@@ -468,7 +468,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Ghostrick Doll'] = {
-    summonRule: (e, _c, p, how) => how !== 'normal' || faceUpMonsters(e, p).some((m) => named(m, 'Ghostrick')),
+    summonRule: (e, _c, p, how) => how !== 'normal' || faceUpMonsters(e, p).some((m) => named(e, m, 'Ghostrick')),
     ignition: {
       can: (e, m) => m.faceUp && e.find(m.uid)?.loc.zone === 'mz',
       *run(e, m, p) {
@@ -487,7 +487,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       for (const x of list) yield* setFaceDown(e, x);
       const n = list.length;
       e.log(p, `Ghostrick Doll changes ${n} monster${n === 1 ? '' : 's'} to face-down Defense Position`);
-      const ghosts = e.player(p).deck.filter((c) => isMonster(e, c) && named(c, 'Ghostrick') && levelOf(e, c) <= n);
+      const ghosts = e.player(p).deck.filter((c) => isMonster(e, c) && named(e, c, 'Ghostrick') && levelOf(e, c) <= n);
       if (!ghosts.length || !freeMZ(e, p) || !(yield* e.yesno(p, 'Ghostrick Doll: Special Summon a "Ghostrick" monster from your Deck in face-down Defense Position?'))) return;
       const c = yield* pickOne(e, p, 'Special Summon which "Ghostrick" monster?', ghosts);
       if (!c) return;
@@ -669,7 +669,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     summonRule: fusionOnly,
     selfBonus: (e, m) => {
       const p = e.controller(m.uid) ?? m.owner;
-      return { atk: 100 * e.player(p).gy.filter((c) => isMonster(e, c) && (named(c, 'Neo-Spacian') || named(c, 'HERO'))).length, def: 0 };
+      return { atk: 100 * e.player(p).gy.filter((c) => isMonster(e, c) && (named(e, c, 'Neo-Spacian') || named(e, c, 'HERO'))).length, def: 0 };
     },
     *afterBattle(e, _a, _t, p, destroyed) {
       if (!destroyed || !e.player(p).deck.some((c) => neosCard(e, c)) || !(yield* e.yesno(p, 'Brave Neos: add a Spell/Trap that lists "Elemental HERO Neos" from your Deck?'))) return;
@@ -712,7 +712,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     piercing: true,
     locksCardActivation: attackLock,
     *onDestroyed(e, _card, p) {
-      const golems = e.player(p).gy.filter((c) => c.name === 'Ancient Gear Golem');
+      const golems = e.player(p).gy.filter((c) => e.isNamed(c, 'Ancient Gear Golem'));
       if (!golems.length || !freeMZ(e, p) || !(yield* e.yesno(p, 'Ultimate Ancient Gear Golem: Special Summon "Ancient Gear Golem" from your GY?'))) return;
       const g = yield* pickOne(e, p, 'Special Summon which Ancient Gear Golem?', golems);
       if (!g) return;
@@ -726,7 +726,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ---------- Spells ----------
-  E['Amplifier'] = h.equipFor((_e, m) => m.name === 'Jinzo', () => ({ atk: 0, def: 0 }), {
+  E['Amplifier'] = h.equipFor((e, m) => e.isNamed(m, 'Jinzo'), () => ({ atk: 0, def: 0 }), {
     freesOwnTraps: true,
     *onLeaveField(e, fc) {
       const host = fc.equippedTo !== undefined ? e.fieldCard(fc.equippedTo) : null;
@@ -742,16 +742,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     if (!b) return false;
     return [b.attacker, b.target].some((u) => {
       const m = u !== null ? e.fieldCard(u) : null;
-      return !!m && m.faceUp && e.controller(m.uid) === p && named(m, 'Crystal Beast');
+      return !!m && m.faceUp && e.controller(m.uid) === p && named(e, m, 'Crystal Beast');
     });
   };
   E['Advanced Dark'] = {
     ...h.fieldSpell(() => undefined),
     quick: {
       label: 'take no battle damage from this battle',
-      can: (e, _c, p, t) => t === 'attack' && crystalBattle(e, p) && e.player(p).deck.some((c) => isMonster(e, c) && named(c, 'Crystal Beast')),
+      can: (e, _c, p, t) => t === 'attack' && crystalBattle(e, p) && e.player(p).deck.some((c) => isMonster(e, c) && named(e, c, 'Crystal Beast')),
       *cost(e, _c, p) {
-        const c = yield* deckToGrave(e, p, 'Advanced Dark: send which "Crystal Beast" monster from your Deck to the GY?', (x) => isMonster(e, x) && named(x, 'Crystal Beast'));
+        const c = yield* deckToGrave(e, p, 'Advanced Dark: send which "Crystal Beast" monster from your Deck to the GY?', (x) => isMonster(e, x) && named(e, x, 'Crystal Beast'));
         if (!c) return false;
       },
       *run(e, _c, p) {
@@ -763,7 +763,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // Cards in the GY cannot leave it (engine.graveLocked). Approximation: Type/Attribute changes in the GY are not negated.
   E['Necrovalley'] = {
-    ...h.fieldSpell((_e, m) => (named(m, "Gravekeeper's") ? { atk: 500, def: 500 } : undefined)),
+    ...h.fieldSpell((e, m) => (named(e, m, "Gravekeeper's") ? { atk: 500, def: 500 } : undefined)),
     locksGrave: () => true,
   };
 
@@ -812,7 +812,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // Approximation: the banishing of the opponent's cards is not applied (no "Aesir" monster exists here anyway).
-  const aesir = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(m, 'Aesir')));
+  const aesir = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(e, m, 'Aesir')));
   E['Gotterdammerung'] = {
     canActivate: (e, _c, p, t) => isMain(t) && aesir(e, p).length > 0 && freeMZ(e, other(p)),
     *activate(e, link, p) {
@@ -848,7 +848,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  const artifactInDeck = (e: Engine, p: Pid) => e.player(p).deck.some((c) => isMonster(e, c) && named(c, 'Artifact'));
+  const artifactInDeck = (e: Engine, p: Pid) => e.player(p).deck.some((c) => isMonster(e, c) && named(e, c, 'Artifact'));
   E['Artifact Ignition'] = {
     canActivate: (e, c, p, t) => (isMain(t) || anyTime(t)) && artifactInDeck(e, p) && allST(e).some((x) => x.uid !== c.uid),
     *activate(e, link, p) {
@@ -860,7 +860,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (link.targetUid === undefined || !e.fieldCard(link.targetUid)) return;
       yield* e.destroy([link.targetUid]);
       if (e.fieldCard(link.targetUid)) return;
-      const arts = e.player(p).deck.filter((c) => isMonster(e, c) && named(c, 'Artifact'));
+      const arts = e.player(p).deck.filter((c) => isMonster(e, c) && named(e, c, 'Artifact'));
       const a = yield* pickOne(e, p, 'Artifact Ignition: Set which "Artifact" monster from your Deck?', arts);
       if (!a) return;
       setAsSpell(e, a.uid, p);
@@ -929,7 +929,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Abyss Actors Back Stage'] = {};
 
   // Approximation: the Trap stays face-up until the End Phase so it can see the battle.
-  const samurai = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(m, 'Six Samurai')));
+  const samurai = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(e, m, 'Six Samurai')));
   E['Breakthrough!'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && samurai(e, p).length > 0,
     *activate(e, link, p) {
@@ -946,7 +946,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *afterAnyBattle(e, fc, p, attacker, target) {
       if (fc.tags?.btTurn !== e.state.turn || attacker.uid !== fc.tags.btTarget || e.fieldCard(target.uid)) return;
-      for (const m of faceUpMonsters(e, p)) if (named(m, 'Six Samurai') || m.name === 'Great Shogun Shien') tag(m).directTurn = e.state.turn;
+      for (const m of faceUpMonsters(e, p)) if (named(e, m, 'Six Samurai') || e.isNamed(m, 'Great Shogun Shien')) tag(m).directTurn = e.state.turn;
       e.log(p, 'Breakthrough!: the Six Samurai can attack directly this turn');
     },
     *onEndPhase(e, fc) {

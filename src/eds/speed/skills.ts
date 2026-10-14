@@ -3,6 +3,7 @@
 // engine's default for `use`; Skills that have several parts each "once per Duel" track them
 // with e.oncePerDuel(key). Continuous Skills that have no activation start face-up (startOfDuel).
 import type { SkillDef } from '../skills';
+import { nameEngine } from '../names';
 import type { Choice, Engine, Step } from '../engine';
 import type { Card, FieldCard, Pid, Prompt } from '../types';
 
@@ -81,7 +82,7 @@ const inDeck = (e: Engine, p: Pid, test: (c: Card) => boolean) => e.player(p).de
 const inHand = (e: Engine, p: Pid, test: (c: Card) => boolean) => e.player(p).hand.filter(test);
 const faceDownST = (e: Engine, p: Pid) => e.spells(p).filter((c) => !c.faceUp);
 /** "It's Jinzo!": "Jinzo" monsters are unaffected by the opponent's Skills. Filters what a Skill of `p` may affect. */
-const affectable = <T extends FieldCard>(e: Engine, p: Pid, list: T[]) => list.filter((m) => !(m.name === 'Jinzo' && e.controller(m.uid) === other(p) && e.player(other(p)).skill === "It's Jinzo!"));
+const affectable = <T extends FieldCard>(e: Engine, p: Pid, list: T[]) => list.filter((m) => !(e.isNamed(m, 'Jinzo') && e.controller(m.uid) === other(p) && e.player(other(p)).skill === "It's Jinzo!"));
 
 function* toHandFrom(e: Engine, p: Pid, title: string, cards: Card[], reveal = false): Gen<Card | null> {
   const c = yield* pickOne(e, p, title, cards);
@@ -301,7 +302,7 @@ K['Power of Dark'] = raceAura(['Fiend', 'Spellcaster'], ['Fairy']);
 K['Straight to the Grave'] = raceAura(['Dinosaur', 'Zombie', 'Rock']);
 K['Dinosaur Kingdom'] = raceAura(['Dinosaur'], [], 300);
 // The Field Zone card is treated as "Necrovalley" in name only; the Skill gives the stat bonus.
-K['Tomb of the Pharaoh'] = { ...fieldSkill((_e, m) => (m.name.startsWith("Gravekeeper's") ? 200 : undefined)), namesAs: () => 'Necrovalley' };
+K['Tomb of the Pharaoh'] = { ...fieldSkill((e, m) => (e.namesOf(m).some((nm) => nm.startsWith("Gravekeeper's")) ? 200 : undefined)), namesAs: () => 'Necrovalley' };
 // Its effect is exactly "Umi", and its name becomes "Umi": a card treated as Umi goes to the Field Zone.
 K['Mythic Depths'] = {
   *startOfDuel(e, p) {
@@ -335,7 +336,7 @@ K['Call of the Haunted (Skill Card)'] = {
 // ---------- Draw Phase searches ----------
 K['Destiny Draw (Skill Card)'] = lpDraw('destiny', 2000, () => true, 'any card');
 K['Flight of the Harpies'] = lpDraw('harpies', 1800, (e, c) => arch(e, c, 'Harpie'), 'a "Harpie" card');
-K["Gravekeeper's Lot"] = lpDraw('gravekeeper', 1800, (_e, c) => c.name.startsWith("Gravekeeper's"), 'a "Gravekeeper\'s" card');
+K["Gravekeeper's Lot"] = lpDraw('gravekeeper', 1800, (e, c) => e.namesOf(c).some((nm) => nm.startsWith("Gravekeeper's")), 'a "Gravekeeper\'s" card');
 
 K['Final Draw'] = {
   // The computer never plays it: using it loses the Duel.
@@ -490,7 +491,7 @@ K["It's Jinzo!"] = {
   use: {
     phase: 'main',
     oncePerDuel: false,
-    can: (e, p) => faceUp(e, p, (m) => m.name === 'Jinzo').length > 0 && faceDownST(e, other(p)).length > 0,
+    can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, 'Jinzo')).length > 0 && faceDownST(e, other(p)).length > 0,
     *run(e, p) {
       const c = yield* pickOne(e, p, "It's Jinzo!: look at which face-down card?", faceDownST(e, other(p)));
       if (!c) return;
@@ -548,7 +549,7 @@ K['Beatdown!'] = {
 K['Ruthless Means'] = {
   use: {
     phase: 'main',
-    can: (e, p) => faceUp(e, p, (m) => m.name.includes('Evil HERO')).length > 0 && e.player(p).hand.length > 0 && affectable(e, p, faceUp(e, other(p))).length > 0,
+    can: (e, p) => faceUp(e, p, (m) => e.nameHas(m, 'Evil HERO')).length > 0 && e.player(p).hand.length > 0 && affectable(e, p, faceUp(e, other(p))).length > 0,
     *run(e, p) {
       if (!(yield* discardOne(e, p, 'Ruthless Means: discard 1 card', e.player(p).hand))) return;
       const m = yield* pickOne(e, p, 'Ruthless Means: choose a face-up monster your opponent controls', affectable(e, p, faceUp(e, other(p))));
@@ -639,11 +640,11 @@ K['Dark Creation'] = (() => {
 K["It's No Monster, It's a God!"] = {
   use: {
     phase: 'main',
-    can: (e, p) => e.player(p).hand.length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => c.name === 'Obelisk the Tormentor'),
+    can: (e, p) => e.player(p).hand.length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => e.isNamed(c, 'Obelisk the Tormentor')),
     *run(e, p) {
       const cs = yield* pick(e, p, "It's No Monster, It's a God!: discard any number of cards", e.player(p).hand, 1, e.player(p).hand.length);
       for (const c of cs ?? []) yield* e.discard(p, c.uid);
-      yield* toHandFrom(e, p, 'Add "Obelisk the Tormentor" to your hand', [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Obelisk the Tormentor'));
+      yield* toHandFrom(e, p, 'Add "Obelisk the Tormentor" to your hand', [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Obelisk the Tormentor')));
     },
   },
 };
@@ -788,7 +789,7 @@ K['Into the Darkness Below'] = (() => {
 })();
 K["The World's Greatest Fisherman"] = (() => {
   const water = (e: Engine, c: Card) => mon(e, c) && attrOf(e, c) === 'WATER';
-  const targets = (e: Engine, p: Pid, d: Card) => inGY(e, p, (c) => water(e, c) && c.name !== d.name && c.uid !== d.uid && levelOf(e, c) <= 2 * levelOf(e, d));
+  const targets = (e: Engine, p: Pid, d: Card) => inGY(e, p, (c) => water(e, c) && !e.sameName(c, d) && c.uid !== d.uid && levelOf(e, c) <= 2 * levelOf(e, d));
   const discards = (e: Engine, p: Pid) => inHand(e, p, (c) => water(e, c) && targets(e, p, c).length > 0);
   return {
     use: {
@@ -807,7 +808,7 @@ K['Setting Sun'] = (() => {
   const unknownAtk = (e: Engine, c: Card) => mon(e, c) && info(e, c).atk === -1;
   const targets = (e: Engine, p: Pid) => {
     const mine = new Set(stOf(e, p).concat(e.monsters(p)).filter((c) => c.faceUp).map((c) => c.name));
-    return inDeck(e, p, (c) => unknownAtk(e, c) && !mine.has(c.name));
+    return inDeck(e, p, (c) => unknownAtk(e, c) && !e.namesOf(c).some((nm) => mine.has(nm)));
   };
   return {
     use: {
@@ -827,7 +828,7 @@ K['Nightmare Sonic Blast!'] = {
   use: {
     phase: 'main',
     oncePerDuel: false,
-    can: (e, p) => faceUp(e, p, (m) => m.name === 'Serpent Night Dragon').length > 0 && e.player(p).deck.length > 0,
+    can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, 'Serpent Night Dragon')).length > 0 && e.player(p).deck.length > 0,
     *run(e, p) {
       const top = e.player(p).deck.slice(0, 4);
       yield* e.reveal(p, 'Nightmare Sonic Blast!: revealed cards', top);
@@ -853,20 +854,20 @@ K['Under Pressure'] = {
   use: {
     phase: 'main',
     oncePerDuel: false,
-    can: (e, p) => faceUp(e, p, (m) => m.name === 'Hyozanryu').length > 0 && e.player(p).deck.length > 0,
+    can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, 'Hyozanryu')).length > 0 && e.player(p).deck.length > 0,
     *run(e, p) {
       const top = e.player(p).deck.slice(0, 4);
       yield* e.reveal(p, 'Under Pressure: revealed cards', top);
       yield* e.reveal(other(p), 'Your opponent reveals the top cards of their Deck', top);
-      if (top.some((c) => c.name === 'Carboneddon')) {
-        const h = yield* pickOne(e, p, 'Carboneddon: which "Hyozanryu" gains 1000 ATK?', faceUp(e, p, (m) => m.name === 'Hyozanryu'));
+      if (top.some((c) => e.isNamed(c, 'Carboneddon'))) {
+        const h = yield* pickOne(e, p, 'Carboneddon: which "Hyozanryu" gains 1000 ATK?', faceUp(e, p, (m) => e.isNamed(m, 'Hyozanryu')));
         if (h) boostTurn(h, 1000);
       }
-      if (top.some((c) => c.name === 'Hydrogeddon')) {
-        const h = yield* pickOne(e, p, 'Hydrogeddon: which "Hyozanryu" is unaffected by your opponent\'s monster effects this turn?', faceUp(e, p, (m) => m.name === 'Hyozanryu'));
+      if (top.some((c) => e.isNamed(c, 'Hydrogeddon'))) {
+        const h = yield* pickOne(e, p, 'Hydrogeddon: which "Hyozanryu" is unaffected by your opponent\'s monster effects this turn?', faceUp(e, p, (m) => e.isNamed(m, 'Hyozanryu')));
         if (h) Object.assign(tag(h), { unaffTurn: e.state.turn, unaffBy: other(p) });
       }
-      if (top.some((c) => c.name === 'Oxygeddon') && affectable(e, p, faceUp(e, other(p))).length) {
+      if (top.some((c) => e.isNamed(c, 'Oxygeddon')) && affectable(e, p, faceUp(e, other(p))).length) {
         const t = yield* pickOne(e, p, 'Oxygeddon: destroy which face-up monster?', affectable(e, p, faceUp(e, other(p))));
         if (t) {
           yield* e.destroy([t.uid]);
@@ -882,9 +883,9 @@ K['Small Roid Big City'] = {
   // monster from your Deck to the GY to switch that monster's original ATK/DEF (applied for that battle).
   *onAttack(e, p, attacker, target) {
     if (!target) return;
-    const mineM = [attacker, target].find((m) => e.controller(m.uid) === p && m.faceUp && mon(e, m) && m.name.includes('roid'));
+    const mineM = [attacker, target].find((m) => e.controller(m.uid) === p && m.faceUp && mon(e, m) && e.nameHas(m, 'roid'));
     const theirs = [attacker, target].find((m) => e.controller(m.uid) === other(p));
-    const fodder = inDeck(e, p, (c) => mon(e, c) && c.name.includes('roid'));
+    const fodder = inDeck(e, p, (c) => mon(e, c) && e.nameHas(c, 'roid'));
     if (!mineM || !theirs || !fodder.length || !e.oncePerTurn('skill:roidSwap', p)) return;
     if (!(yield* e.yesno(p, `Small Roid Big City: send a "roid" monster from your Deck to the GY to switch ${mineM.name}'s original ATK and DEF?`))) return;
     const c = yield* pickOne(e, p, 'Send which "roid" monster to the GY?', fodder);
@@ -904,19 +905,19 @@ K['Small Roid Big City'] = {
   },
   use: {
     oncePerDuel: false,
-    can: (e, p) => [...faceUp(e, p), ...stOf(e, p).filter((c) => c.faceUp)].length > 0 && inDeck(e, p, (c) => c.name.includes('roid')).length > 0,
+    can: (e, p) => [...faceUp(e, p), ...stOf(e, p).filter((c) => c.faceUp)].length > 0 && inDeck(e, p, (c) => e.nameHas(c, 'roid')).length > 0,
     *run(e, p) {
       const t = yield* pickOne(e, p, 'Small Roid Big City: destroy which face-up card you control?', [...faceUp(e, p), ...stOf(e, p).filter((c) => c.faceUp)]);
       if (!t) return;
       yield* e.destroy([t.uid]);
       if (e.fieldCard(t.uid)) return;
-      yield* toHandFrom(e, p, 'Add 1 "roid" card from your Deck to your hand', inDeck(e, p, (c) => c.name.includes('roid')));
+      yield* toHandFrom(e, p, 'Add 1 "roid" card from your Deck to your hand', inDeck(e, p, (c) => e.nameHas(c, 'roid')));
     },
   },
 };
 K['Victory of the Shadow Riders'] = (() => {
   const LORDS = ['Uria, Lord of Searing Flames', 'Hamon, Lord of Striking Thunder', 'Raviel, Lord of Phantasms'];
-  const lords = (e: Engine, p: Pid) => inDeck(e, p, (c) => LORDS.includes(c.name));
+  const lords = (e: Engine, p: Pid) => inDeck(e, p, (c) => e.namesOf(c).some((nm) => LORDS.includes(nm)));
   const zero = (e: Engine, p: Pid) => inGY(e, p, (c) => fiend0(e, c));
   const fiend0 = (e: Engine, c: Card) => summonable(e, c) && race(e, c) === 'Fiend' && info(e, c).atk === 0 && info(e, c).def === 0;
   /** If no 0 ATK/DEF Fiend is in the GY yet, the discarded card must be one. */
@@ -942,7 +943,7 @@ K['Victory of the Shadow Riders'] = (() => {
 
 // ---------- Skills with several parts ----------
 K['Tribal Synergy'] = (() => {
-  const amaz = (e: Engine, c: Card) => mon(e, c) && c.name.includes('Amazoness');
+  const amaz = (e: Engine, c: Card) => mon(e, c) && e.nameHas(c, 'Amazoness');
   const harp = (e: Engine, c: Card) => mon(e, c) && arch(e, c, 'Harpie');
   const inH = (e: Engine, p: Pid) => opd(e, p, 'tribal1') && inHand(e, p, (c) => amaz(e, c)).length > 0 && inHand(e, p, (c) => harp(e, c)).length > 0 && e.player(p).deck.length > 0;
   const onF = (e: Engine, p: Pid) => opd(e, p, 'tribal2') && faceUp(e, p, (m) => amaz(e, m)).length > 0 && faceUp(e, p, (m) => harp(e, m)).length > 0 && e.player(p).deck.length > 0;
@@ -973,8 +974,8 @@ K['Tribal Synergy'] = (() => {
 })();
 K["Magician's Act"] = {
   *startOfDuel(e, p) {
-    const dmDeck = inDeck(e, p, (c) => c.name === 'Dark Magician');
-    const dmHand = inHand(e, p, (c) => c.name === 'Dark Magician');
+    const dmDeck = inDeck(e, p, (c) => e.isNamed(c, 'Dark Magician'));
+    const dmHand = inHand(e, p, (c) => e.isNamed(c, 'Dark Magician'));
     const labels = ['Do not use it now'];
     if (dmDeck.length) labels.push('Add "Dark Magician" from your Deck, then shuffle 1 card from your hand into the Deck');
     if (dmHand.length) labels.push('Shuffle "Dark Magician" from your hand into the Deck, then draw 1 card');
@@ -993,9 +994,9 @@ K["Magician's Act"] = {
   },
   use: {
     phase: 'main',
-    can: (e, p) => faceUp(e, p, (m) => m.name === 'Dark Magician').length > 0 && e.player(p).deck.length >= 2,
+    can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, 'Dark Magician')).length > 0 && e.player(p).deck.length >= 2,
     *run(e, p) {
-      const m = yield* pickOne(e, p, 'Tribute which "Dark Magician"?', faceUp(e, p, (x) => x.name === 'Dark Magician'));
+      const m = yield* pickOne(e, p, 'Tribute which "Dark Magician"?', faceUp(e, p, (x) => e.isNamed(x, 'Dark Magician')));
       if (!m) return;
       yield* tribute(e, p, m);
       e.draw(p, 2);
@@ -1006,30 +1007,30 @@ K['Dragon Caller'] = {
   use: {
     phase: 'main',
     can: (e, p) =>
-      (normalSummonedNow(e, p, (m) => m.name === 'Lord of D.') && [...e.player(p).deck, ...e.player(p).gy].some((c) => c.name === 'The Flute of Summoning Dragon')) ||
-      (inHand(e, p, (c) => c.name === 'The Flute of Summoning Dragon').length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => c.name === 'Lord of D.')),
+      (normalSummonedNow(e, p, (m) => e.isNamed(m, 'Lord of D.')) && [...e.player(p).deck, ...e.player(p).gy].some((c) => e.isNamed(c, 'The Flute of Summoning Dragon'))) ||
+      (inHand(e, p, (c) => e.isNamed(c, 'The Flute of Summoning Dragon')).length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => e.isNamed(c, 'Lord of D.'))),
     *run(e, p) {
       const pool = [...e.player(p).deck, ...e.player(p).gy];
-      const a = normalSummonedNow(e, p, (m) => m.name === 'Lord of D.') && pool.some((c) => c.name === 'The Flute of Summoning Dragon');
-      const b = inHand(e, p, (c) => c.name === 'The Flute of Summoning Dragon').length > 0 && pool.some((c) => c.name === 'Lord of D.');
+      const a = normalSummonedNow(e, p, (m) => e.isNamed(m, 'Lord of D.')) && pool.some((c) => e.isNamed(c, 'The Flute of Summoning Dragon'));
+      const b = inHand(e, p, (c) => e.isNamed(c, 'The Flute of Summoning Dragon')).length > 0 && pool.some((c) => e.isNamed(c, 'Lord of D.'));
       const o = a && b ? yield* chooseOption(e, p, 'Dragon Caller: which Skill?', ['Add "The Flute of Summoning Dragon"', 'Reveal the Flute, add "Lord of D."']) : a ? 0 : 1;
-      if (o === 0) yield* toHandFrom(e, p, 'Add "The Flute of Summoning Dragon"', pool.filter((c) => c.name === 'The Flute of Summoning Dragon'));
+      if (o === 0) yield* toHandFrom(e, p, 'Add "The Flute of Summoning Dragon"', pool.filter((c) => e.isNamed(c, 'The Flute of Summoning Dragon')));
       else {
-        yield* e.reveal(other(p), 'Your opponent reveals', inHand(e, p, (c) => c.name === 'The Flute of Summoning Dragon').slice(0, 1));
-        yield* toHandFrom(e, p, 'Add "Lord of D."', pool.filter((c) => c.name === 'Lord of D.'));
+        yield* e.reveal(other(p), 'Your opponent reveals', inHand(e, p, (c) => e.isNamed(c, 'The Flute of Summoning Dragon')).slice(0, 1));
+        yield* toHandFrom(e, p, 'Add "Lord of D."', pool.filter((c) => e.isNamed(c, 'Lord of D.')));
       }
     },
   },
 };
 K['Magnetic Attraction'] = (() => {
-  const mw = (e: Engine, c: Card) => mon(e, c) && c.name.includes('Magnet Warrior') && levelOf(e, c) <= 4;
+  const mw = (e: Engine, c: Card) => mon(e, c) && e.nameHas(c, 'Magnet Warrior') && levelOf(e, c) <= 4;
   const a = (e: Engine, p: Pid) => {
     if (!opd(e, p, 'magnet1')) return [];
     const now = e.monsters(p).filter((m) => m.faceUp && m.placedTurn === e.state.turn && !m.posChanged && mw(e, m));
     if (!e.player(p).normalSummoned || !now.length) return [];
-    return inDeck(e, p, (c) => mw(e, c) && now.some((m) => m.name !== c.name));
+    return inDeck(e, p, (c) => mw(e, c) && now.some((m) => !e.sameName(m, c)));
   };
-  const b = (e: Engine, p: Pid) => opd(e, p, 'magnet2') && new Set(inHand(e, p, (c) => mw(e, c)).map((c) => c.name)).size >= 2 && inDeck(e, p, (c) => c.name === 'Valkyrion the Magna Warrior').length > 0;
+  const b = (e: Engine, p: Pid) => opd(e, p, 'magnet2') && new Set(inHand(e, p, (c) => mw(e, c)).map((c) => c.name)).size >= 2 && inDeck(e, p, (c) => e.isNamed(c, 'Valkyrion the Magna Warrior')).length > 0;
   return {
     use: {
       phase: 'main',
@@ -1045,16 +1046,16 @@ K['Magnetic Attraction'] = (() => {
         } else {
           useOpd(e, p, 'magnet2');
           const first = yield* pickOne(e, p, 'Reveal a "Magnet Warrior"', inHand(e, p, (c) => mw(e, c)));
-          const second = first ? yield* pickOne(e, p, 'Reveal another "Magnet Warrior" with a different name', inHand(e, p, (c) => mw(e, c) && c.name !== first.name)) : null;
+          const second = first ? yield* pickOne(e, p, 'Reveal another "Magnet Warrior" with a different name', inHand(e, p, (c) => mw(e, c) && !e.sameName(c, first))) : null;
           yield* e.reveal(other(p), 'Your opponent reveals', [first, second].filter((c): c is Card => !!c));
-          yield* toHandFrom(e, p, 'Add "Valkyrion the Magna Warrior"', inDeck(e, p, (c) => c.name === 'Valkyrion the Magna Warrior'));
+          yield* toHandFrom(e, p, 'Add "Valkyrion the Magna Warrior"', inDeck(e, p, (c) => e.isNamed(c, 'Valkyrion the Magna Warrior')));
         }
       },
     },
   } as SkillDef;
 })();
 K['Machine Angel Ascension'] = (() => {
-  const piece = (e: Engine, c: Card) => (mon(e, c) && info(e, c).sub === 'Ritual' && c.name.includes('Cyber Angel')) || (isSpell(e, c) && info(e, c).sub === 'Ritual' && c.name.includes('Machine Angel'));
+  const piece = (e: Engine, c: Card) => (mon(e, c) && info(e, c).sub === 'Ritual' && e.nameHas(c, 'Cyber Angel')) || (isSpell(e, c) && info(e, c).sub === 'Ritual' && e.nameHas(c, 'Machine Angel'));
   const a = (e: Engine, p: Pid) => opd(e, p, 'angel1') && inHand(e, p, (c) => isSpell(e, c)).length > 0 && inDeck(e, p, (c) => piece(e, c)).length > 0;
   const b = (e: Engine, p: Pid) => opd(e, p, 'angel2') && inGY(e, p, (c) => piece(e, c)).length > 0;
   return {
@@ -1113,9 +1114,9 @@ K['Cocoon of Ultra Evolution (Skill Card)'] = (() => {
   } as SkillDef;
 })();
 K['Fury of Thunder'] = (() => {
-  const a = (e: Engine, p: Pid) => opd(e, p, 'fury1') && faceUp(e, p, (m) => m.name === 'Slifer the Sky Dragon').length > 0 && e.player(p).hand.length < 4;
+  const a = (e: Engine, p: Pid) => opd(e, p, 'fury1') && faceUp(e, p, (m) => e.isNamed(m, 'Slifer the Sky Dragon')).length > 0 && e.player(p).hand.length < 4;
   // "If Slifer is sent to the GY": offered while Slifer is in your GY.
-  const b = (e: Engine, p: Pid) => opd(e, p, 'fury2') && inGY(e, p, (c) => c.name === 'Slifer the Sky Dragon').length > 0;
+  const b = (e: Engine, p: Pid) => opd(e, p, 'fury2') && inGY(e, p, (c) => e.isNamed(c, 'Slifer the Sky Dragon')).length > 0;
   return {
     use: {
       oncePerDuel: false,
@@ -1130,7 +1131,7 @@ K['Fury of Thunder'] = (() => {
           if (n > 0) e.draw(p, n);
         } else {
           useOpd(e, p, 'fury2');
-          const c = inGY(e, p, (x) => x.name === 'Slifer the Sky Dragon')[0];
+          const c = inGY(e, p, (x) => e.isNamed(x, 'Slifer the Sky Dragon'))[0];
           if (c) yield* shuffleIn(e, [c.uid]);
         }
       },
@@ -1147,8 +1148,8 @@ K['Archfiend\'s Promotion'] = (() => {
     const j = q.mz.length - 1 - i;
     return !q.mz[j] && !q.sz[j];
   };
-  const pawns = (e: Engine, p: Pid) => faceUp(e, p, (m) => m.name === 'Vilepawn Archfiend' && free(e, p, m));
-  const targets = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => summonable(e, c) && c.name.includes('Archfiend') && RANKS.test(c.name) && levelOf(e, c) <= 8);
+  const pawns = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'Vilepawn Archfiend') && free(e, p, m));
+  const targets = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => summonable(e, c) && e.nameHas(c, 'Archfiend') && RANKS.test(c.name) && levelOf(e, c) <= 8);
   return {
     use: {
       phase: 'main',
@@ -1166,7 +1167,7 @@ K['Archfiend\'s Promotion'] = (() => {
 K['Armed and Ready!'] = (() => {
   const mentioned = (e: Engine, m: Card) => [...(info(e, m).desc ?? '').matchAll(/"([^"]*LV[^"]*)"/g)].map((x) => x[1]).filter((n) => n !== m.name);
   const sources = (e: Engine, p: Pid) => faceUp(e, p, (m) => /LV\d/.test(m.name) && mentioned(e, m).length > 0);
-  const pool = (e: Engine, p: Pid, names: string[], except: number) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.uid !== except && names.includes(c.name));
+  const pool = (e: Engine, p: Pid, names: string[], except: number) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.uid !== except && e.namesOf(c).some((nm) => names.includes(nm)));
   const ready = (e: Engine, p: Pid) => sources(e, p).filter((m) => pool(e, p, mentioned(e, m), m.uid).length > 0);
   return {
     use: {
@@ -1184,8 +1185,8 @@ K['Armed and Ready!'] = (() => {
   } as SkillDef;
 })();
 K['The Right Hero for the Job'] = (() => {
-  const hero = (e: Engine, c: Card) => mon(e, c) && c.name.includes('Elemental HERO');
-  const shuffleable = (e: Engine, p: Pid) => faceUp(e, p, (m) => hero(e, m) && info(e, m).sub !== 'Fusion' && inDeck(e, p, (c) => summonable(e, c) && hero(e, c) && levelOf(e, c) <= 4 && c.name !== m.name).length > 0);
+  const hero = (e: Engine, c: Card) => mon(e, c) && e.nameHas(c, 'Elemental HERO');
+  const shuffleable = (e: Engine, p: Pid) => faceUp(e, p, (m) => hero(e, m) && info(e, m).sub !== 'Fusion' && inDeck(e, p, (c) => summonable(e, c) && hero(e, c) && levelOf(e, c) <= 4 && !e.sameName(c, m)).length > 0);
   return {
     use: {
       phase: 'main',
@@ -1201,7 +1202,7 @@ K['The Right Hero for the Job'] = (() => {
   } as SkillDef;
 })();
 K['Land of the Ojamas (Skill Card)'] = (() => {
-  const ojamaMon = (e: Engine, c: Card) => mon(e, c) && c.name.startsWith('Ojama');
+  const ojamaMon = (e: Engine, c: Card) => mon(e, c) && e.namesOf(c).some((nm) => nm.startsWith('Ojama'));
   return {
     *startOfDuel() {},
     // While you control an "Ojama" monster, the original ATK/DEF of all monsters are switched.
@@ -1214,9 +1215,9 @@ K['Land of the Ojamas (Skill Card)'] = (() => {
     use: {
       phase: 'main',
       oncePerDuel: false,
-      can: (e, p) => freeMZ(e, p) && inHand(e, p, (c) => c.name.startsWith('Ojama')).length > 0 && (inGY(e, p, (c) => summonable(e, c) && ojamaMon(e, c)).length > 0 || inHand(e, p, (c) => summonable(e, c) && ojamaMon(e, c)).length > 0),
+      can: (e, p) => freeMZ(e, p) && inHand(e, p, (c) => e.namesOf(c).some((nm) => nm.startsWith('Ojama'))).length > 0 && (inGY(e, p, (c) => summonable(e, c) && ojamaMon(e, c)).length > 0 || inHand(e, p, (c) => summonable(e, c) && ojamaMon(e, c)).length > 0),
       *run(e, p) {
-        const c = yield* pickOne(e, p, 'Land of the Ojamas: send which "Ojama" card to the GY?', inHand(e, p, (x) => x.name.startsWith('Ojama') && (summonable(e, x) && ojamaMon(e, x) ? true : inGY(e, p, (g) => summonable(e, g) && ojamaMon(e, g)).length > 0)));
+        const c = yield* pickOne(e, p, 'Land of the Ojamas: send which "Ojama" card to the GY?', inHand(e, p, (x) => e.namesOf(x).some((nm) => nm.startsWith('Ojama')) && (summonable(e, x) && ojamaMon(e, x) ? true : inGY(e, p, (g) => summonable(e, g) && ojamaMon(e, g)).length > 0)));
         if (!c) return;
         yield* e.sendToGrave(c.uid, 'cost');
         yield* ssOne(e, p, 'Special Summon an "Ojama" monster from your GY', inGY(e, p, (x) => summonable(e, x) && ojamaMon(e, x)));
@@ -1261,7 +1262,7 @@ K['Behold, Gate Guardian!'] = (() => {
   return {
     // "Once while face-up, when this card is targeted for an attack": the attacker's ATK becomes 0 until the end of the Damage Step.
     *onAttack(e, p, attacker, target) {
-      if (!target || target.name !== 'Gate Guardian' || !target.faceUp || e.controller(target.uid) !== p || e.controller(attacker.uid) === p) return;
+      if (!target || !e.isNamed(target, 'Gate Guardian') || !target.faceUp || e.controller(target.uid) !== p || e.controller(attacker.uid) === p) return;
       if (target.tags?.gateUsed || !(yield* e.yesno(p, `Gate Guardian: change ${attacker.name}'s ATK to 0 until the end of the Damage Step?`))) return;
       tag(target).gateUsed = 1;
       e.state.fx.zeroAttack = attacker.uid;
@@ -1299,12 +1300,12 @@ K['Behold, Gate Guardian!'] = (() => {
 K['Ancient Ruler Rises'] = (() => {
   const SARC = ['The First Sarcophagus', 'The Second Sarcophagus', 'The Third Sarcophagus'];
   const zombie2 = (e: Engine, c: Card) => mon(e, c) && race(e, c) === 'Zombie' && levelOf(e, c) === 2;
-  const sarcs = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy, ...e.player(p).removed].filter((c) => SARC.includes(c.name));
+  const sarcs = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy, ...e.player(p).removed].filter((c) => e.namesOf(c).some((nm) => SARC.includes(nm)));
   return {
     *startOfDuel() {},
     aura(e, p, m) {
-      if (m.name !== 'Spirit of the Pharaoh' || e.controller(m.uid) !== p) return undefined;
-      const servant = (c: Card) => c.name === "Pharaoh's Servant" || c.name === 'Pharaonic Protector';
+      if (!e.isNamed(m, 'Spirit of the Pharaoh') || e.controller(m.uid) !== p) return undefined;
+      const servant = (c: Card) => e.isNamed(c, "Pharaoh's Servant") || e.isNamed(c, 'Pharaonic Protector');
       const n = faceUp(e, p, servant).length + e.player(p).gy.filter(servant).length;
       return n ? { atk: 900 * n, def: 0 } : undefined;
     },
@@ -1335,10 +1336,10 @@ K['Cyberdark Style (Skill Card)'] = {
     can: (e, p) => {
       const lp = e.player(p).lp;
       const met = (lp <= 3000 ? 1 : 0) + (lp <= 2000 ? 1 : 0) + (lp <= 1000 ? 1 : 0);
-      return (e.player(p).skillUses ?? 0) < met && inDeck(e, p, (c) => mon(e, c) && c.name.includes('Cyberdark')).length >= 3;
+      return (e.player(p).skillUses ?? 0) < met && inDeck(e, p, (c) => mon(e, c) && e.nameHas(c, 'Cyberdark')).length >= 3;
     },
     *run(e, p) {
-      const three = yield* pick(e, p, 'Cyberdark Style: choose 3 "Cyberdark" monsters from your Deck', inDeck(e, p, (c) => mon(e, c) && c.name.includes('Cyberdark')), 3, 3);
+      const three = yield* pick(e, p, 'Cyberdark Style: choose 3 "Cyberdark" monsters from your Deck', inDeck(e, p, (c) => mon(e, c) && e.nameHas(c, 'Cyberdark')), 3, 3);
       if (!three || three.length < 3) return;
       yield* e.reveal(other(p), 'Your opponent chose these cards; 1 is added to their hand at random', three);
       const c = three[Math.floor(e.rand() * 3)];
@@ -1353,10 +1354,10 @@ K['Cyberdark Style (Skill Card)'] = {
 K['Ritual Ceremony'] = (() => {
   const canRitual = (e: Engine, spell: Card, monster: Card) => {
     if (!isSpell(e, spell) || info(e, spell).sub !== 'Ritual') return false;
-    if (e.ritualOf(spell.name)?.monster === monster.name) return true;
+    if (e.isNamed(monster, e.ritualOf(spell.name)?.monster ?? '')) return true;
     const d = info(e, spell).desc ?? '';
     if (d.includes(`"${monster.name}"`)) return true;
-    return [...d.matchAll(/Ritual Summon (?:any|1) "([^"]+)"/g)].some((x) => monster.name.includes(x[1]));
+    return [...d.matchAll(/Ritual Summon (?:any|1) "([^"]+)"/g)].some((x) => e.nameHas(monster, x[1]));
   };
   const rituals = (e: Engine, p: Pid) => inHand(e, p, (c) => mon(e, c) && info(e, c).sub === 'Ritual' && inDeck(e, p, (s) => canRitual(e, s, c)).length > 0);
   return {
@@ -1396,7 +1397,7 @@ function discardFuse(label: string, plans: (e: Engine, p: Pid, except: number) =
 }
 const without = (cards: Card[], uid: number) => cards.filter((c) => c.uid !== uid);
 K['HEROES UNITE - FUSION!!'] = (() => {
-  const hero = (c: Card) => c.name.includes('Elemental HERO');
+  const hero = (c: Card) => nameEngine().nameHas(c, 'Elemental HERO');
   const plans = (e: Engine, p: Pid, except: number) =>
     fusionPlans(e, p, hero, (f) => {
       const ids = e.fusionMaterials(f.name) ?? [];
@@ -1409,14 +1410,14 @@ K['HEROES UNITE - FUSION!!'] = (() => {
   return { use: { phase: 'main', can: d.can, *run(e, p) { yield* d.run(e, p); } } } as SkillDef;
 })();
 K['Beasts of Phantom'] = (() => {
-  const plans = (e: Engine, p: Pid, except: number) => fusionPlans(e, p, (f) => f.name === 'Chimera the Flying Mythical Beast', () => without(handField(e, p), except));
+  const plans = (e: Engine, p: Pid, except: number) => fusionPlans(e, p, (f) => e.isNamed(f, 'Chimera the Flying Mythical Beast'), () => without(handField(e, p), except));
   const d = discardFuse('Beasts of Phantom', plans);
   const beasts = (e: Engine, p: Pid) => inGY(e, p, (c) => mon(e, c) && arch(e, c, 'Phantom Beast'));
   return {
     // "If Chimera was Fusion Summoned this turn" by any card (a Special Summon from the Extra Deck).
     eff: {
       *onAnySummon(e, _c, ctl, m, mctl, kind) {
-        if (kind === 'special' && mctl === ctl && m.name === 'Chimera the Flying Mythical Beast' && m.tags?.ssExtra) setN(e, ctl, 'chimera', e.state.turn);
+        if (kind === 'special' && mctl === ctl && e.isNamed(m, 'Chimera the Flying Mythical Beast') && m.tags?.ssExtra) setN(e, ctl, 'chimera', e.state.turn);
       },
     },
     use: {
@@ -1442,7 +1443,7 @@ K['Cyber Blade Fusion'] = (() => {
     fusionPlans(
       e,
       p,
-      (f) => f.name === 'Cyber Blader',
+      (f) => e.isNamed(f, 'Cyber Blader'),
       () => [...without(handField(e, p), except), ...inDeck(e, p, (c) => mon(e, c))],
       (_f, mats) => {
         // One of the materials comes from your field, the other from your hand, field or Deck.
@@ -1490,8 +1491,8 @@ K['Union Combination'] = (() => {
   } as SkillDef;
 })();
 K['Thousand-Eyes Spell'] = (() => {
-  const fplans = (e: Engine, p: Pid, except: number) => fusionPlans(e, p, (f) => f.name === 'Thousand-Eyes Restrict', () => without(handField(e, p), except));
-  const relinq = (e: Engine, p: Pid, except: number) => inHand(e, p, (c) => c.uid !== except && c.name === 'Relinquished');
+  const fplans = (e: Engine, p: Pid, except: number) => fusionPlans(e, p, (f) => e.isNamed(f, 'Thousand-Eyes Restrict'), () => without(handField(e, p), except));
+  const relinq = (e: Engine, p: Pid, except: number) => inHand(e, p, (c) => c.uid !== except && e.isNamed(c, 'Relinquished'));
   const offerings = (e: Engine, p: Pid, r: Card | undefined, except: number) =>
     [...inHand(e, p, (c) => mon(e, c) && c.uid !== except && c !== r && levelOf(e, c) >= 1), ...e.monsters(p).filter((m) => levelOf(e, m) >= 1)];
   const canRitual = (e: Engine, p: Pid, except: number) => {
@@ -1531,8 +1532,8 @@ K['Thousand-Eyes Spell'] = (() => {
   } as SkillDef;
 })();
 K['Believe in your Bro'] = (() => {
-  const hero = (c: Card) => c.name.includes('Elemental HERO');
-  const roid = (e: Engine, c: Card) => mon(e, c) && c.name.includes('roid') && race(e, c) === 'Machine';
+  const hero = (c: Card) => nameEngine().nameHas(c, 'Elemental HERO');
+  const roid = (e: Engine, c: Card) => mon(e, c) && e.nameHas(c, 'roid') && race(e, c) === 'Machine';
   const hasHero = (e: Engine, p: Pid) => faceUp(e, p, hero).length > 0;
   const hasRoid = (e: Engine, p: Pid) => faceUp(e, p, (m) => roid(e, m)).length > 0;
   const gyRoids = (e: Engine, p: Pid) => inGY(e, p, (c) => roid(e, c) && levelOf(e, c) <= 6);
@@ -1575,7 +1576,7 @@ K['Believe in your Bro'] = (() => {
   } as SkillDef;
 })();
 K['HERO World'] = (() => {
-  const heroes = (e: Engine, p: Pid) => faceUp(e, p, (m) => m.name.includes('HERO') && (isNormalMonster(e, m) || info(e, m).sub === 'Fusion'));
+  const heroes = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.nameHas(m, 'HERO') && (isNormalMonster(e, m) || info(e, m).sub === 'Fusion'));
   const fireTargets = (e: Engine, p: Pid) => affectable(e, p, faceUpMonsters(e).filter((m) => attrOf(e, m) !== 'FIRE' && !!m.tags?.ss));
   const options = (e: Engine, p: Pid) => {
     const attrs = new Set(heroes(e, p).map((m) => attrOf(e, m)));
@@ -1663,9 +1664,9 @@ function battleDamageIn(e: Engine, p: Pid, battle = e.state.fx.battleNo ?? 0): n
 // ----- name changes made by Skills: undone when the card leaves the field (or at the End Phase) -----
 type Rename = { uid: number; orig: string; until?: number };
 function rename(e: Engine, m: FieldCard, name: string, until?: number) {
-  ((e.state.fx.skillRenames ??= []) as Rename[]).push({ uid: m.uid, orig: m.name, until });
-  e.log(ctlOf(e, m), `${m.name}'s name becomes "${name}"`);
-  m.name = name;
+  // Only the name changes (the card keeps its own effects); the engine's name rule shows it and every name check reads it.
+  e.log(ctlOf(e, m), `${e.nameOf(m)}'s name becomes "${name}"`);
+  e.renameUntilEnd(m.uid, name, until !== undefined);
 }
 function restoreRenames(e: Engine, endPhase = false) {
   const list = (e.state.fx.skillRenames ?? []) as Rename[];
@@ -1744,8 +1745,8 @@ function setST(e: Engine, p: Pid, c: Card): boolean {
 
 // ----- Ancient Fusion -----
 K['Ancient Fusion'] = (() => {
-  const ag = (c: Card) => c.name.includes('Ancient Gear');
-  const golem = (c: Card) => c.name.includes('Ancient Gear Golem');
+  const ag = (c: Card) => nameEngine().nameHas(c, 'Ancient Gear');
+  const golem = (c: Card) => nameEngine().nameHas(c, 'Ancient Gear Golem');
   // Materials from your field; if one of them is an "Ancient Gear Golem" monster, the other(s) may come from the hand or Deck.
   const plans = (e: Engine, p: Pid, except: number) =>
     fusionPlans(
@@ -1791,7 +1792,7 @@ K["Archfiend's Conscription"] = {
       e.log(p, `Archfiend's Conscription: the die shows ${n}`);
       e.payLp(p, n * 200);
       if (e.state.winner !== null || n < 2 || n > 4) return;
-      const list = [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => summonable(e, c) && c.name.includes('Archfiend') && levelOf(e, c) === n);
+      const list = [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => summonable(e, c) && e.nameHas(c, 'Archfiend') && levelOf(e, c) === n);
       if (!list.length || !freeMZ(e, p) || !(yield* e.yesno(p, `Special Summon a Level ${n} "Archfiend" monster from your hand, Deck or GY?`))) return;
       yield* ssOne(e, p, `Special Summon a Level ${n} "Archfiend" monster`, list);
     },
@@ -1819,9 +1820,9 @@ K['Blaze Accelerator Deployment (Skill Card)'] = {
   use: {
     oncePerDuel: true,
     timesPerDuel: 2,
-    can: (e, p) => stOf(e, p).some((c) => c.faceUp && c.name === 'Blaze Accelerator'),
+    can: (e, p) => stOf(e, p).some((c) => c.faceUp && e.isNamed(c, 'Blaze Accelerator')),
     *run(e, p) {
-      const c = yield* pickOne(e, p, 'Change the name of which "Blaze Accelerator"?', stOf(e, p).filter((x) => x.faceUp && x.name === 'Blaze Accelerator'));
+      const c = yield* pickOne(e, p, 'Change the name of which "Blaze Accelerator"?', stOf(e, p).filter((x) => x.faceUp && e.isNamed(x, 'Blaze Accelerator')));
       if (c) rename(e, c, 'Tri-Blaze Accelerator');
     },
   },
@@ -1829,8 +1830,8 @@ K['Blaze Accelerator Deployment (Skill Card)'] = {
 
 // ----- Catch of the Day -----
 K['Catch of the Day'] = (() => {
-  const fisher = (e: Engine, p: Pid) => faceUp(e, p, (m) => m.name === 'The Legendary Fisherman');
-  const umi = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Umi');
+  const fisher = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'The Legendary Fisherman'));
+  const umi = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Umi'));
   const water = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => summonable(e, c) && attrOf(e, c) === 'WATER' && levelOf(e, c) <= 4);
   function* trigger(e: Engine, p: Pid): Step {
     if (!e.oncePerTurn('skill:catch', p) || !freeMZ(e, p) || !water(e, p).length) return;
@@ -1853,13 +1854,13 @@ K['Catch of the Day'] = (() => {
         return undefined;
       },
       *afterAnyBattle(e, _c, p, attacker, target) {
-        const f = [attacker, target].find((m) => m.name === 'The Legendary Fisherman' && ctlOf(e, m) === p);
+        const f = [attacker, target].find((m) => e.isNamed(m, 'The Legendary Fisherman') && ctlOf(e, m) === p);
         const foe = f === attacker ? target : attacker;
         if (!f || !e.fieldCard(f.uid)) return;
         if ((!e.fieldCard(foe.uid) && !!e.find(foe.uid)) || battleDamageIn(e, other(p)) > 0) yield* trigger(e, p);
       },
       *onBattleDamageDealt(e, _c, attacker, p) {
-        if (e.state.battle?.target === null && attacker.name === 'The Legendary Fisherman' && ctlOf(e, attacker) === p) yield* trigger(e, p);
+        if (e.state.battle?.target === null && e.isNamed(attacker, 'The Legendary Fisherman') && ctlOf(e, attacker) === p) yield* trigger(e, p);
       },
     },
   } as SkillDef;
@@ -1872,7 +1873,7 @@ K['Chemistry in Motion'] = (() => {
   const c1 = (e: Engine, p: Pid) => inHand(e, p, (c) => dino(e, c) && inDeck(e, p, (d) => dino(e, d) && attrOf(e, d) !== attrOf(e, c)).length > 0);
   const c2 = (e: Engine, p: Pid) => inHand(e, p, (c) => dino(e, c) && ['WIND', 'WATER'].includes(attrOf(e, c)) && e.canNormalSummon(p, c, true, true));
   const waterDinos = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.raceOf(m) === 'Dinosaur' && attrNow(e, m) === 'WATER');
-  const bonding = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Bonding - H2O');
+  const bonding = (e: Engine, p: Pid) => [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Bonding - H2O'));
   const ready = (e: Engine, p: Pid) => {
     const k = n(e, p) + 1;
     if (k === 1) return c1(e, p).length > 0;
@@ -1915,7 +1916,7 @@ K['Chemistry in Motion'] = (() => {
 
 // ----- Chillin' Outback -----
 K["Chillin' Outback"] = (() => {
-  const roo = (m: Card) => m.name.includes('Koala') || m.name.includes('Kangaroo');
+  const roo = (m: Card) => nameEngine().nameHas(m, 'Koala') || nameEngine().nameHas(m, 'Kangaroo');
   return {
     use: {
       phase: 'main',
@@ -1946,7 +1947,7 @@ K['Cloudy Skies of Grey'] = {
       const snap = (e.state.fx.fogSnap ?? {}) as Record<number, number>;
       for (const ev of events) {
         const n = snap[ev.card.uid] ?? 0;
-        if (ev.from !== 'mz' || ev.reason !== 'destroyed' || !ev.card.name.includes('Cloudian') || n <= 0) continue;
+        if (ev.from !== 'mz' || ev.reason !== 'destroyed' || !e.nameHas(ev.card, 'Cloudian') || n <= 0) continue;
         delete snap[ev.card.uid];
         const t = yield* pickOne(e, p, `Cloudy Skies of Grey: place ${n} Fog Counter(s) on which monster?`, faceUpMonsters(e));
         if (!t) continue;
@@ -1959,7 +1960,7 @@ K['Cloudy Skies of Grey'] = {
 
 // ----- Consumed By Darkness -----
 K['Consumed By Darkness'] = (() => {
-  const cb = (c: Card) => c.name.includes('Crystal Beast');
+  const cb = (c: Card) => nameEngine().nameHas(c, 'Crystal Beast');
   return {
     *startOfDuel() {},
     eff: {
@@ -1970,7 +1971,7 @@ K['Consumed By Darkness'] = (() => {
     },
     *onAttack(e, p, attacker, target) {
       // "If an Ultimate Crystal monster attacks, negate the effects of the attack target during that Battle Phase" (this turn).
-      if (attacker.name.includes('Ultimate Crystal') && ctlOf(e, attacker) === p && target) tag(target).negatedTurn = e.state.turn;
+      if (e.nameHas(attacker, 'Ultimate Crystal') && ctlOf(e, attacker) === p && target) tag(target).negatedTurn = e.state.turn;
       // Decided at the attack declaration: send 1 "Crystal Beast" from the Deck to take no battle damage from that battle.
       const mine = [attacker, target].find((m) => m && cb(m) && ctlOf(e, m) === p);
       const foe = mine === attacker ? target : attacker;
@@ -1990,11 +1991,11 @@ K['Consumed By Darkness'] = (() => {
 
 // ----- Crystal Transcendence -----
 K['Crystal Transcendence'] = (() => {
-  const cbMon = (e: Engine, c: Card) => mon(e, c) && c.name.includes('Crystal Beast');
+  const cbMon = (e: Engine, c: Card) => mon(e, c) && e.nameHas(c, 'Crystal Beast');
   const names = (e: Engine, p: Pid) => [...new Set(inDeck(e, p, (c) => cbMon(e, c)).map((c) => c.name))];
   const max = (e: Engine, p: Pid) => Math.min(3, e.player(p).hand.length, names(e, p).length, e.player(p).sz.filter((z, i) => z === null && !e.zoneLocked(e.player(p), 'sz', i)).length);
   return {
-    eff: { forbidsSummon: (e, _c, ctl, monster, summoner) => summoner === ctl && !!e.player(ctl).skillRevealed && !monster.name.includes('Crystal') && race(e, monster) !== 'Dragon' },
+    eff: { forbidsSummon: (e, _c, ctl, monster, summoner) => summoner === ctl && !!e.player(ctl).skillRevealed && !e.nameHas(monster, 'Crystal') && race(e, monster) !== 'Dragon' },
     use: {
       phase: 'main',
       oncePerDuel: true,
@@ -2006,7 +2007,7 @@ K['Crystal Transcendence'] = (() => {
         for (const c of sent) yield* e.sendToGrave(c.uid, 'cost');
         const taken: string[] = [];
         for (let i = 0; i < sent.length; i++) {
-          const c = yield* pickOne(e, p, 'Place which "Crystal Beast" in your Spell & Trap Zone?', inDeck(e, p, (x) => cbMon(e, x) && !taken.includes(x.name)));
+          const c = yield* pickOne(e, p, 'Place which "Crystal Beast" in your Spell & Trap Zone?', inDeck(e, p, (x) => cbMon(e, x) && !e.namesOf(x).some((nm) => taken.includes(nm))));
           if (!c || !placeFaceUp(e, c, p)) break;
           taken.push(c.name);
         }
@@ -2021,7 +2022,7 @@ K['Crystal Transcendence'] = (() => {
 K['Dark Unity'] = (() => {
   const ssOpp = (e: Engine, p: Pid) => affectable(e, p, faceUp(e, other(p), (m) => !!m.tags?.ss));
   const a = (e: Engine, p: Pid) => opd(e, p, 'unity1') && e.player(p).lp > 2000 && ssOpp(e, p).length > 0;
-  const b = (e: Engine, p: Pid) => opd(e, p, 'unity2') && e.player(p).hand.length > 0 && inDeck(e, p, (c) => c.name === 'Dark Fusion').length > 0;
+  const b = (e: Engine, p: Pid) => opd(e, p, 'unity2') && e.player(p).hand.length > 0 && inDeck(e, p, (c) => e.isNamed(c, 'Dark Fusion')).length > 0;
   return {
     use: {
       oncePerDuel: false,
@@ -2042,7 +2043,7 @@ K['Dark Unity'] = (() => {
           }
         } else {
           useOpd(e, p, 'unity2');
-          if (yield* discardOne(e, p, 'Dark Unity: discard 1 card', e.player(p).hand)) yield* toHandFrom(e, p, 'Add "Dark Fusion"', inDeck(e, p, (c) => c.name === 'Dark Fusion'));
+          if (yield* discardOne(e, p, 'Dark Unity: discard 1 card', e.player(p).hand)) yield* toHandFrom(e, p, 'Add "Dark Fusion"', inDeck(e, p, (c) => e.isNamed(c, 'Dark Fusion')));
         }
       },
     },
@@ -2051,7 +2052,7 @@ K['Dark Unity'] = (() => {
 
 // ----- Delicious Morsel! -----
 K['Delicious Morsel!'] = (() => {
-  const vamp = (e: Engine, m: FieldCard) => m.name.includes('Vampire') && e.raceOf(m) === 'Zombie';
+  const vamp = (e: Engine, m: FieldCard) => e.nameHas(m, 'Vampire') && e.raceOf(m) === 'Zombie';
   function note(e: Engine, p: Pid, mine: FieldCard[], dmg: number) {
     if (dmg <= 0 || !mine.length) return;
     if (getN(e, p, 'morselTurn') !== e.state.turn) (setN(e, p, 'morselTurn', e.state.turn), setN(e, p, 'morselTotal', 0), setN(e, p, 'morselVamp', 0));
@@ -2147,10 +2148,10 @@ K['Ectoplasmic Fortification!'] = {
 K['Elements of Thunder, Water, and Wind'] = (() => {
   const TRIO = ['Suijin', 'Kazejin', 'Sanga of the Thunder'];
   const allThree = (e: Engine, p: Pid) => TRIO.every((n) => faceUp(e, p, (m) => m.name === n).length > 0);
-  const gate = (e: Engine, p: Pid) => inDeck(e, p, (c) => c.name === 'Gate Guardian');
-  const canA = (e: Engine, p: Pid) => !isTurn(e, p, 'elements') && inHand(e, p, (c) => TRIO.includes(c.name)).length > 0;
+  const gate = (e: Engine, p: Pid) => inDeck(e, p, (c) => e.isNamed(c, 'Gate Guardian'));
+  const canA = (e: Engine, p: Pid) => !isTurn(e, p, 'elements') && inHand(e, p, (c) => e.namesOf(c).some((nm) => TRIO.includes(nm))).length > 0;
   return {
-    eff: { tributeDiscount: (e, _c, ctl, monster, summoner) => (summoner === ctl && isTurn(e, ctl, 'elements') && TRIO.includes(monster.name) ? 2 : 0) },
+    eff: { tributeDiscount: (e, _c, ctl, monster, summoner) => (summoner === ctl && isTurn(e, ctl, 'elements') && e.namesOf(monster).some((nm) => TRIO.includes(nm)) ? 2 : 0) },
     use: {
       oncePerDuel: false,
       can: (e, p) => e.player(p).lp <= 1000 && (canA(e, p) || (allThree(e, p) && gate(e, p).length > 0)),
@@ -2234,7 +2235,7 @@ K['Fog Warning'] = {
 
 // ----- Forbidden Cyber Style Technique -----
 K['Forbidden Cyber Style Technique'] = (() => {
-  const cyber = (e: Engine, c: Card) => summonable(e, c) && race(e, c) === 'Machine' && c.name.includes('Cyber');
+  const cyber = (e: Engine, c: Card) => summonable(e, c) && race(e, c) === 'Machine' && e.nameHas(c, 'Cyber');
   const pool = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => cyber(e, c));
   return {
     eff: {
@@ -2263,9 +2264,9 @@ K['Forbidden Cyber Style Technique'] = (() => {
 
 // ----- Forged Steel -----
 K['Forged Steel'] = (() => {
-  const red = (e: Engine, m: FieldCard) => m.name.includes('Red-Eyes') || (isNormalMonster(e, m) && e.raceOf(m) === 'Dragon');
-  const a = (e: Engine, p: Pid) => opd(e, p, 'forged') && faceUp(e, p, (m) => red(e, m) && m.name !== 'Red-Eyes Black Dragon').length > 0;
-  const redd = (e: Engine, p: Pid) => faceUp(e, p, (m) => m.name === 'Red-Eyes Darkness Dragon' && !e.isNegated(m) && e.oncePerTurn(`skill:redd:${m.uid}`, p));
+  const red = (e: Engine, m: FieldCard) => e.nameHas(m, 'Red-Eyes') || (isNormalMonster(e, m) && e.raceOf(m) === 'Dragon');
+  const a = (e: Engine, p: Pid) => opd(e, p, 'forged') && faceUp(e, p, (m) => red(e, m) && !e.isNamed(m, 'Red-Eyes Black Dragon')).length > 0;
+  const redd = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'Red-Eyes Darkness Dragon') && !e.isNegated(m) && e.oncePerTurn(`skill:redd:${m.uid}`, p));
   const dragons = (e: Engine, p: Pid) => inGY(e, p, (c) => summonable(e, c) && race(e, c) === 'Dragon');
   const b = (e: Engine, p: Pid) => e.inMainPhase() && redd(e, p).length > 0 && freeMZ(e, p) && dragons(e, p).length > 0;
   return {
@@ -2281,7 +2282,7 @@ K['Forged Steel'] = (() => {
         const o = okA && okB ? yield* chooseOption(e, p, 'Forged Steel: which Skill?', ['Change a name to "Red-Eyes Black Dragon"', '"Red-Eyes Darkness Dragon": Special Summon a Dragon from your GY']) : okA ? 0 : 1;
         if (o === 0) {
           useOpd(e, p, 'forged');
-          const m = yield* pickOne(e, p, 'Which monster becomes "Red-Eyes Black Dragon"?', faceUp(e, p, (x) => red(e, x) && x.name !== 'Red-Eyes Black Dragon'));
+          const m = yield* pickOne(e, p, 'Which monster becomes "Red-Eyes Black Dragon"?', faceUp(e, p, (x) => red(e, x) && !e.isNamed(x, 'Red-Eyes Black Dragon')));
           if (m) rename(e, m, 'Red-Eyes Black Dragon');
         } else if (o === 1) {
           const r = redd(e, p)[0];
@@ -2392,7 +2393,7 @@ K['Here Goes Something!'] = (() => {
   return {
     use: {
       phase: 'battle',
-      can: (e, p) => e.monsters(p).length === 1 && faceUp(e, p, (m) => m.name.includes('Elemental HERO')).length === 1,
+      can: (e, p) => e.monsters(p).length === 1 && faceUp(e, p, (m) => e.nameHas(m, 'Elemental HERO')).length === 1,
       *run(e, p) {
         const m = e.monsters(p)[0];
         tag(m).hgs = e.state.turn;
@@ -2441,7 +2442,7 @@ K['Hieratic Chant'] = {
   use: {
     phase: 'main',
     oncePerDuel: false,
-    can: (e, p) => e.player(p).hand.length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => c.name === 'The Winged Dragon of Ra'),
+    can: (e, p) => e.player(p).hand.length > 0 && [...e.player(p).deck, ...e.player(p).gy].some((c) => e.isNamed(c, 'The Winged Dragon of Ra')),
     *run(e, p) {
       const hand = e.player(p).hand.slice();
       yield* e.together(
@@ -2449,7 +2450,7 @@ K['Hieratic Chant'] = {
           for (const c of hand) yield* e.discard(p, c.uid);
         })(),
       );
-      const ra = yield* toHandFrom(e, p, 'Add "The Winged Dragon of Ra"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'The Winged Dragon of Ra'));
+      const ra = yield* toHandFrom(e, p, 'Add "The Winged Dragon of Ra"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'The Winged Dragon of Ra')));
       if (ra) {
         ((e.state.fx.extraTribute ??= [-1, -1]) as number[])[p] = e.state.turn;
         e.log(p, 'You can Tribute Summon once more this turn');
@@ -2462,9 +2463,9 @@ K['Hieratic Chant'] = {
 // ----- Hyper Metamorphosis -----
 K['Hyper Metamorphosis'] = (() => {
   const small = (e: Engine, p: Pid) => faceUp(e, p, (m) => isNormalMonster(e, m) && e.raceOf(m) === 'Insect' && levelOf(e, m) <= 3);
-  const moths = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => c.name === 'Perfectly Ultimate Great Moth');
+  const moths = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck].filter((c) => e.isNamed(c, 'Perfectly Ultimate Great Moth'));
   /** Hand cards that can be discarded while a Moth stays reachable. */
-  const discards = (e: Engine, p: Pid) => (inDeck(e, p, (c) => c.name === 'Perfectly Ultimate Great Moth').length || moths(e, p).length > 1 ? e.player(p).hand : e.player(p).hand.filter((c) => c.name !== 'Perfectly Ultimate Great Moth'));
+  const discards = (e: Engine, p: Pid) => (inDeck(e, p, (c) => e.isNamed(c, 'Perfectly Ultimate Great Moth')).length || moths(e, p).length > 1 ? e.player(p).hand : e.player(p).hand.filter((c) => !e.isNamed(c, 'Perfectly Ultimate Great Moth')));
   return {
     use: {
       oncePerDuel: false,
@@ -2539,8 +2540,8 @@ K["It's My Lucky Day!"] = {
 
 // ----- Knight of Legend -----
 K['Knight of Legend'] = (() => {
-  const gaia = (c: Card) => c.name.includes('Gaia The Fierce Knight') || c.name.includes('Gaia the Fierce Knight');
-  const champ = (c: Card) => gaia(c) || c.name.includes('Gaia the Dragon Champion');
+  const gaia = (c: Card) => nameEngine().nameHas(c, 'Gaia The Fierce Knight') || nameEngine().nameHas(c, 'Gaia the Fierce Knight');
+  const champ = (c: Card) => gaia(c) || nameEngine().nameHas(c, 'Gaia the Dragon Champion');
   const on = (e: Engine, p: Pid) => !!e.player(p).skillRevealed && faceUp(e, p, (m) => champ(m)).length > 0;
   return {
     use: { phase: 'main', can: () => true, *run() {} },
@@ -2583,7 +2584,7 @@ K['Looking into the Future'] = {
 // ----- Middle Age Mechs (Skill Card) -----
 K['Middle Age Mechs (Skill Card)'] = {
   *startOfDuel() {},
-  aura: (_e, _p, m) => (m.name.includes('Ancient Gear') ? { atk: 300, def: 0 } : undefined),
+  aura: (e, _p, m) => (e.nameHas(m, 'Ancient Gear') ? { atk: 300, def: 0 } : undefined),
   eff: {
     *onAnySummon(e, c, _ctl, _m, _mctl, kind) {
       if (kind !== 'normal') return;
@@ -2594,7 +2595,7 @@ K['Middle Age Mechs (Skill Card)'] = {
       c.counters++;
       e.log(null, `Middle Age Mechs: ${c.counters} counter(s)`);
     },
-    tributeFor: (e, c, _ctl, monster, need) => monster.name.includes('Ancient Gear') && mon(e, monster) && c.counters >= need,
+    tributeFor: (e, c, _ctl, monster, need) => e.nameHas(monster, 'Ancient Gear') && mon(e, monster) && c.counters >= need,
   },
 };
 
@@ -2618,11 +2619,11 @@ K['No More Mrs. Nice Mai!'] = {
 
 // ----- No One Suspects the Dark Scorpion Gang! -----
 K['No One Suspects the Dark Scorpion Gang!'] = (() => {
-  const gang = (c: Card) => c.name === 'Don Zaloog' || c.name.includes('Dark Scorpion');
-  const ds = (e: Engine, c: Card) => summonable(e, c) && c.name.includes('Dark Scorpion');
+  const gang = (c: Card) => nameEngine().isNamed(c, 'Don Zaloog') || nameEngine().nameHas(c, 'Dark Scorpion');
+  const ds = (e: Engine, c: Card) => summonable(e, c) && e.nameHas(c, 'Dark Scorpion');
   const pairs = (e: Engine, p: Pid, except = -1) => {
     const hand = inHand(e, p, (c) => c.uid !== except && ds(e, c));
-    return hand.filter((h) => inDeck(e, p, (d) => ds(e, d) && d.name !== h.name).length > 0);
+    return hand.filter((h) => inDeck(e, p, (d) => ds(e, d) && !e.sameName(d, h)).length > 0);
   };
   return {
     *startOfDuel() {},
@@ -2639,12 +2640,12 @@ K['No One Suspects the Dark Scorpion Gang!'] = (() => {
     canAttackDirectly: (e, p, m) => gang(m) && ctlOf(e, m) === p,
     use: {
       phase: 'main',
-      can: (e, p) => faceUp(e, p, (m) => m.name === 'Don Zaloog').length > 0 && e.openMonsterZones(p) >= 2 && e.player(p).hand.some((c) => pairs(e, p, c.uid).length > 0),
+      can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, 'Don Zaloog')).length > 0 && e.openMonsterZones(p) >= 2 && e.player(p).hand.some((c) => pairs(e, p, c.uid).length > 0),
       *run(e, p) {
         if (!(yield* discardOne(e, p, 'Discard 1 card', e.player(p).hand.filter((c) => pairs(e, p, c.uid).length > 0)))) return;
         const h = yield* pickOne(e, p, 'Special Summon which "Dark Scorpion" from your hand?', pairs(e, p));
         if (!h) return;
-        const d = yield* pickOne(e, p, 'Special Summon which "Dark Scorpion" from your Deck?', inDeck(e, p, (c) => ds(e, c) && c.name !== h.name));
+        const d = yield* pickOne(e, p, 'Special Summon which "Dark Scorpion" from your Deck?', inDeck(e, p, (c) => ds(e, c) && !e.sameName(c, h)));
         yield* ss(e, p, h);
         if (d) yield* ss(e, p, d);
       },
@@ -2656,7 +2657,7 @@ K['No One Suspects the Dark Scorpion Gang!'] = (() => {
 K['Order of the Queen'] = {
   *startOfDuel() {},
   eff: {
-    negatesBattleVictims: (e, _c, killer, ctl) => e.state.battle?.attacker === killer.uid && killer.name.includes('Amazoness') && faceUp(e, ctl, (m) => m.name === 'Amazoness Queen').length > 0,
+    negatesBattleVictims: (e, _c, killer, ctl) => e.state.battle?.attacker === killer.uid && e.nameHas(killer, 'Amazoness') && faceUp(e, ctl, (m) => e.isNamed(m, 'Amazoness Queen')).length > 0,
   },
 };
 
@@ -2713,7 +2714,7 @@ K['Power of Friendship'] = {
 
 // ----- Powerful Group of Guys -----
 K['Powerful Group of Guys'] = (() => {
-  const dh = (c: Card) => c.name.includes('Destiny HERO');
+  const dh = (c: Card) => nameEngine().nameHas(c, 'Destiny HERO');
   const targets = (e: Engine, p: Pid) => {
     const mine = e.monsters(p);
     if (mine.length !== 1 || !mine[0].faceUp || !dh(mine[0])) return [];
@@ -2737,7 +2738,7 @@ K['Powerful Group of Guys'] = (() => {
 K['Professor of Alchemy'] = (() => {
   const cands = (e: Engine, p: Pid) => [...inHand(e, p, (c) => mon(e, c) && levelOf(e, c) >= 1 && levelOf(e, c) <= 4), ...faceUp(e, p, (m) => !m.token && levelOf(e, m) >= 1 && levelOf(e, m) <= 4)];
   return {
-    canAttackDirectly: (_e, _p, m) => m.name === 'Alchemy Beast Token',
+    canAttackDirectly: (e, _p, m) => e.isNamed(m, 'Alchemy Beast Token'),
     use: {
       phase: 'main',
       oncePerDuel: false,
@@ -2764,7 +2765,7 @@ K['Professor of Alchemy'] = (() => {
 K['Rainbow Crystal Collection'] = {
   *startOfDuel() {},
   *destroyReplace(e, p, m) {
-    if (ctlOf(e, m) !== p || !m.name.includes('Crystal Beast') || freeST(e, p) < 0) return false;
+    if (ctlOf(e, m) !== p || !e.nameHas(m, 'Crystal Beast') || freeST(e, p) < 0) return false;
     if (!(yield* e.yesno(p, `Rainbow Crystal Collection: place a Crystallization Counter on ${m.name} instead (it becomes a Continuous Spell)?`))) return false;
     const f = e.find(m.uid);
     const z = freeST(e, p);
@@ -2820,13 +2821,13 @@ K['Ritual of Black Mastery'] = (() => {
 
 // ----- Royal Flush -----
 K['Royal Flush'] = (() => {
-  const kj = (m: Card) => m.name === "King's Knight" || m.name === "Jack's Knight";
-  const kings = (e: Engine, p: Pid) => inHand(e, p, (c) => c.name === "King's Knight" && e.canNormalSummon(p, c, true, true));
+  const kj = (m: Card) => nameEngine().isNamed(m, "King's Knight") || nameEngine().isNamed(m, "Jack's Knight");
+  const kings = (e: Engine, p: Pid) => inHand(e, p, (c) => e.isNamed(c, "King's Knight") && e.canNormalSummon(p, c, true, true));
   return {
     use: {
       phase: 'main',
       oncePerDuel: false,
-      can: (e, p) => faceUp(e, p, (m) => m.name === "Queen's Knight").length > 0 && e.player(p).lp > 1000 && kings(e, p).length > 0,
+      can: (e, p) => faceUp(e, p, (m) => e.isNamed(m, "Queen's Knight")).length > 0 && e.player(p).lp > 1000 && kings(e, p).length > 0,
       *run(e, p) {
         e.payLp(p, 1000);
         setN(e, p, 'royal', e.state.turn);
@@ -2865,16 +2866,16 @@ K['Spell Proof Armor'] = (() => {
 
 // ----- Spell of Mask -----
 const spellOfMask = (): SkillDef => {
-  const gardius = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Masked Beast Des Gardius');
+  const gardius = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Masked Beast Des Gardius'));
   const both = (e: Engine, p: Pid) => {
     const pool = [...e.player(p).deck, ...e.player(p).gy];
-    return pool.some((c) => c.name === 'The Masked Beast') && pool.some((c) => c.name === 'Curse of the Masked Beast');
+    return pool.some((c) => e.isNamed(c, 'The Masked Beast')) && pool.some((c) => e.isNamed(c, 'Curse of the Masked Beast'));
   };
   return {
     eff: {
       *onAnyToGrave(e, _c, p, events) {
         const rm = (e.state.fx.ritualMats ?? {}) as Record<number, unknown>;
-        const ev = events.find((x) => x.card.name === 'The Masked Beast' && x.from === 'mz' && x.controller === p && x.reason === 'destroyed' && !x.byBattle && x.by === other(p) && !!rm[x.card.uid]);
+        const ev = events.find((x) => e.isNamed(x.card, 'The Masked Beast') && x.from === 'mz' && x.controller === p && x.reason === 'destroyed' && !x.byBattle && x.by === other(p) && !!rm[x.card.uid]);
         if (!ev || !opd(e, p, 'mask1') || !freeMZ(e, p) || !gardius(e, p).length) return;
         if (!(yield* e.yesno(p, 'Spell of Mask: Special Summon "Masked Beast Des Gardius"?'))) return;
         useOpd(e, p, 'mask1');
@@ -2884,14 +2885,14 @@ const spellOfMask = (): SkillDef => {
     },
     use: {
       oncePerDuel: false,
-      can: (e, p) => opd(e, p, 'mask2') && e.monsters(p).some((m) => m.faceUp && m.name === 'Masked Beast Des Gardius') && both(e, p),
+      can: (e, p) => opd(e, p, 'mask2') && e.monsters(p).some((m) => m.faceUp && e.isNamed(m, 'Masked Beast Des Gardius')) && both(e, p),
       *run(e, p) {
-        const g = yield* pickOne(e, p, 'Tribute which "Masked Beast Des Gardius"?', e.monsters(p).filter((m) => m.faceUp && m.name === 'Masked Beast Des Gardius'));
+        const g = yield* pickOne(e, p, 'Tribute which "Masked Beast Des Gardius"?', e.monsters(p).filter((m) => m.faceUp && e.isNamed(m, 'Masked Beast Des Gardius')));
         if (!g) return;
         useOpd(e, p, 'mask2');
         yield* tribute(e, p, g);
-        yield* toHandFrom(e, p, 'Add "The Masked Beast"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'The Masked Beast'));
-        yield* toHandFrom(e, p, 'Add "Curse of the Masked Beast"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Curse of the Masked Beast'));
+        yield* toHandFrom(e, p, 'Add "The Masked Beast"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'The Masked Beast')));
+        yield* toHandFrom(e, p, 'Add "Curse of the Masked Beast"', [...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Curse of the Masked Beast')));
       },
     },
   };
@@ -2902,8 +2903,8 @@ K['Spell of Mask (Skill Card)'] = spellOfMask();
 // ----- Terror from the Deep! -----
 // "If Kairyu-Shin you control leaves the field": noticed after the action that moved it; the Skill then flips back over.
 K['Terror from the Deep!'] = (() => {
-  const kai = (e: Engine, p: Pid) => faceUp(e, p, (m) => m.name === 'Kairyu-Shin');
-  const umi = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Umi');
+  const kai = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'Kairyu-Shin'));
+  const umi = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Umi'));
   return {
     use: {
       phase: 'main',
@@ -2936,7 +2937,7 @@ K['Terror from the Deep!'] = (() => {
 // ----- The Roids are Alright -----
 // Its "Vehicroid Connection Zone" clause is not modelled (that card keeps to "Vehicroid" Fusion Monsters).
 K['The Roids are Alright'] = (() => {
-  const roid = (c: Card) => c.name.includes('roid');
+  const roid = (c: Card) => nameEngine().nameHas(c, 'roid');
   const on = (e: Engine, p: Pid) => !getN(e, p, 'roidsOff');
   return {
     *startOfDuel() {},
@@ -2959,7 +2960,7 @@ K['Toon Mayhem!'] = {
   *startOfDuel() {},
   eff: {
     shields(e, _c, target, how, ctl) {
-      if (how === 'target' || target.name !== 'Toon World' || e.find(target.uid)?.loc.zone !== 'sz' || ctlOf(e, target) !== ctl || target.tags?.mayhemTurn === e.state.turn) return false;
+      if (how === 'target' || !e.isNamed(target, 'Toon World') || e.find(target.uid)?.loc.zone !== 'sz' || ctlOf(e, target) !== ctl || target.tags?.mayhemTurn === e.state.turn) return false;
       tag(target).mayhemTurn = e.state.turn;
       return true;
     },
@@ -3021,9 +3022,9 @@ K['Unlocking the Power'] = (() => {
       phase: 'main',
       oncePerDuel: false,
       repeat: true,
-      can: (e, p) => inHand(e, p, (c) => LORDS.includes(c.name)).length > 0 && ok(e, p),
+      can: (e, p) => inHand(e, p, (c) => e.namesOf(c).some((nm) => LORDS.includes(nm))).length > 0 && ok(e, p),
       *run(e, p) {
-        const lord = yield* pickOne(e, p, 'Unlocking the Power: Special Summon which Sacred Beast?', inHand(e, p, (c) => LORDS.includes(c.name)));
+        const lord = yield* pickOne(e, p, 'Unlocking the Power: Special Summon which Sacred Beast?', inHand(e, p, (c) => e.namesOf(c).some((nm) => LORDS.includes(nm))));
         if (!lord) return;
         const three = yield* pick(e, p, 'Send 3 face-up Fiend monsters, Continuous Spells and/or Continuous Traps you control to the GY', costs(e, p), 3, 3);
         if (!three || three.length < 3) return;
@@ -3036,7 +3037,7 @@ K['Unlocking the Power'] = (() => {
 
 // ----- Vampiric Aristocracy -----
 K['Vampiric Aristocracy'] = (() => {
-  const vamp = (e: Engine, m: FieldCard) => m.name.includes('Vampire') && e.raceOf(m) === 'Zombie' && m.name !== 'Vampire Lord';
+  const vamp = (e: Engine, m: FieldCard) => e.nameHas(m, 'Vampire') && e.raceOf(m) === 'Zombie' && !e.isNamed(m, 'Vampire Lord');
   return {
     use: {
       phase: 'main',
@@ -3050,7 +3051,7 @@ K['Vampiric Aristocracy'] = (() => {
       ...renameFx,
       // Each "Vampire Genesis" you control: if it inflicts battle damage, Set 1 card from the opponent's GY to your field.
       *onBattleDamageDealt(e, _c, attacker, p) {
-        if (attacker.name !== 'Vampire Genesis' || ctlOf(e, attacker) !== p || e.isNegated(attacker)) return;
+        if (!e.isNamed(attacker, 'Vampire Genesis') || ctlOf(e, attacker) !== p || e.isNegated(attacker)) return;
         const gy = e.player(other(p)).gy.filter((c) => (mon(e, c) ? freeMZ(e, p) && !isExtraOrRitual(e, c) : info(e, c).sub === 'Field' ? !e.player(p).field : freeST(e, p) >= 0));
         if (!gy.length || !(yield* e.yesno(p, "Vampire Genesis: Set 1 card from your opponent's GY to your field?"))) return;
         const c = yield* pickOne(e, p, 'Set which card?', gy);
@@ -3064,8 +3065,8 @@ K['Vampiric Aristocracy'] = (() => {
 
 // ----- Volcanic Cannon -----
 K['Volcanic Cannon'] = (() => {
-  const doom = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => c.name === 'Volcanic Doomfire');
-  const tri = (e: Engine, p: Pid) => stOf(e, p).filter((c) => c.faceUp && c.name === 'Tri-Blaze Accelerator');
+  const doom = (e: Engine, p: Pid) => [...e.player(p).hand, ...e.player(p).deck, ...e.player(p).gy].filter((c) => e.isNamed(c, 'Volcanic Doomfire'));
+  const tri = (e: Engine, p: Pid) => stOf(e, p).filter((c) => c.faceUp && e.isNamed(c, 'Tri-Blaze Accelerator'));
   return {
     use: {
       can: (e, p) => tri(e, p).length > 0 && freeMZ(e, p) && doom(e, p).length > 0,
@@ -3092,7 +3093,7 @@ K['Welcome to the Jungle'] = {
       return undefined;
     },
     *afterAnyBattle(e, _c, p, attacker, target) {
-      const ama = [attacker, target].find((m) => m.owner === p && m.name.includes('Amazoness') && m.pos === 'atk' && m.faceUp);
+      const ama = [attacker, target].find((m) => m.owner === p && e.nameHas(m, 'Amazoness') && m.pos === 'atk' && m.faceUp);
       const foe = ama === attacker ? target : attacker;
       if (!ama || !foe || ctlOf(e, foe) !== other(p) || !e.fieldCard(foe.uid) || battleDamageIn(e, p) <= 0) return;
       const n = ((e.state.fx.jungleAtk ?? {}) as Record<number, number>)[ama.uid] ?? e.atkOf(ama);

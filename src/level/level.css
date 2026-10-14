@@ -22,7 +22,8 @@ div.cimg.lvr-UR {
 }
 img.cimg.lvr-GL,
 div.cimg.lvr-GL {
-  box-shadow: 0 0 0 2px var(--lvr-gold), 0 0 10px #ff8cf0aa, 0 0 16px #6ce3ff88, 0 2px 6px #000a;
+  /* Glossy: a white glass edge over an iridescent band (pink → violet → cyan), soft prism glow */
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2px #ff9df4, 0 0 0 3px #b58cff, 0 0 0 4px #6ce3ff, 0 0 10px #ff8cf0cc, 0 0 20px #6ce3ff88, 0 2px 6px #000a;
 }
 img.cimg.lvr-RO,
 div.cimg.lvr-RO {
@@ -102,23 +103,15 @@ div.cimg.ctext.lvr {
   background: linear-gradient(115deg, transparent 36%, #ffe08a55 46%, #fff3c8cc 50%, #ffe08a55 54%, transparent 64%);
   animation-duration: 2.8s;
 }
-.lvr-fx-GL {
-  background: linear-gradient(135deg, #ff6ad522, #ffd56a22 25%, #6cff9e22 50%, #6ce3ff2a 75%, #b06cff22);
-  background-size: 300% 300%;
-  animation: lvr-holo 5s linear infinite;
-  mix-blend-mode: color-dodge;
-}
-.lvr-fx-GL::before {
-  background: linear-gradient(115deg, transparent 34%, #ff9df466 44%, #ffffffcc 50%, #7af0ff66 56%, transparent 66%);
-  animation-duration: 2.4s;
+/* Royal: the card's frame turns to gold foil (the art window is cut out), with a gold sweep */
+.lvr-fx-RO,
+.lvr-fx-OF {
+  clip-path: polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, 11.5% 18.5%, 11.5% 73%, 88.5% 73%, 88.5% 18.5%, 11.5% 18.5%);
 }
 .lvr-fx-RO {
   background:
-    radial-gradient(circle at 20% 15%, #ffffff40 0 6%, transparent 7%),
-    radial-gradient(circle at 78% 70%, #ffffff35 0 5%, transparent 6%),
-    conic-gradient(from 0deg, #ffd56a33, #ff8cf033, #6ce3ff33, #9dff8c33, #ffd56a33);
-  background-size: 100% 100%, 100% 100%, 220% 220%;
-  animation: lvr-holo 4s linear infinite;
+    repeating-linear-gradient(115deg, #fff3c255 0 2px, #c8961e44 2px 5px, #ffd56a66 5px 7px, #8a5a0a33 7px 10px),
+    linear-gradient(160deg, #ffcf4a66, #c8961e44 50%, #ffe9a866);
   mix-blend-mode: color-dodge;
 }
 .lvr-fx-RO::before {
@@ -275,121 +268,6 @@ div.cimg.ctext.lvr {
   margin: 4px 0;
 }
 
-/* ---------- Overframe: the top rarity, the art breaks out of the card ---------- */
-.lvr-of {
-  position: relative;
-  display: block;
-}
-.lvr-of:not([class*='-img']) {
-  width: 100%;
-  height: 100%;
-}
-.lvr-of > .cimg {
-  width: 100%;
-  height: 100%;
-}
-img.cimg.lvr-OF {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
-  animation: lvr-over-rim 3s linear infinite;
-}
-.lvr-of > .lvr-fx {
-  display: block;
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  border-radius: 3px;
-}
-.lvr-fx-OF {
-  background:
-    radial-gradient(circle at 25% 20%, #ffffff55 0 5%, transparent 6%),
-    radial-gradient(circle at 70% 60%, #ffffff40 0 4%, transparent 5%),
-    conic-gradient(from 0deg, #ff6ad540, #ffd56a40, #6cff9e40, #6ce3ff48, #b06cff40, #ff6ad540);
-  background-size: 100% 100%, 100% 100%, 240% 240%;
-  animation: lvr-holo 3.2s linear infinite;
-  mix-blend-mode: soft-light;
-}
-.lvr-fx-OF::before {
-  content: '';
-  position: absolute;
-  inset: -40% -60%;
-  background: linear-gradient(115deg, transparent 30%, #ff9df488 43%, #ffffff 50%, #7af0ff88 57%, transparent 70%);
-  transform: translateX(-60%);
-  animation: lvr-sweep 1.9s ease-in-out infinite;
-  mix-blend-mode: screen;
-}
-/* the tier chip shows wherever an Overframe card sits in a slot (bottom-left, clear of the art) */
-.lvr-of:not([class*='-img']) > .lvr-chip {
-  display: block;
-  position: absolute;
-  bottom: 14%;
-  left: 2px;
-  padding: 0 3px;
-  border-radius: 3px;
-  font: 900 7px/11px system-ui, sans-serif;
-  letter-spacing: 0.4px;
-  color: #fff;
-  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
-  box-shadow: 0 0 0 1px #fff, 0 0 6px #ff5ad8;
-  z-index: 2;
-  pointer-events: none;
-}
-.lvr-chip {
-  display: none;
-}
-/* the art itself, lifted out over the frame */
-.lvr-pop {
-  position: absolute;
-  inset: 0;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  clip-path: inset(18.5% 11.5% 27% 11.5% round 2px);
-  transform-origin: 50% 73%;
-  transform: translateY(-16%) scale(1.2);
-  filter: drop-shadow(0 6px 4px #000d) drop-shadow(0 0 5px #ff9df4cc);
-  pointer-events: none;
-  z-index: 1;
-  animation: lvr-pop-float 3s ease-in-out infinite;
-}
-@keyframes lvr-pop-float {
-  50% {
-    transform: translateY(-19%) scale(1.23);
-  }
-}
-@keyframes lvr-over-rim {
-  0% {
-    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
-  }
-  33% {
-    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ffd56a, 0 0 14px #ff5ad8, 0 2px 6px #000a;
-  }
-  66% {
-    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #4fe0ff, 0 0 14px #ffd56a, 0 2px 6px #000a;
-  }
-  100% {
-    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #ff5ad8, 0 0 14px #7af0ff, 0 2px 6px #000a;
-  }
-}
-.lv-chip.lv-OF {
-  color: #fff;
-  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
-  box-shadow: 0 0 0 1px #fff, 0 0 8px #ff5ad8;
-}
-.lv-t-OF .lv-meter > i {
-  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
-}
-@media (prefers-reduced-motion: reduce) {
-  .lvr-pop,
-  img.cimg.lvr-OF {
-    animation: none !important;
-  }
-}
-/* a breakout card in hand rises over the player bar */
-.thcard:has(> .lvr-of),
-.hcard:has(> .lvr-of) {
-  z-index: 4;
-}
-
 /* ---------- Card Levels: tappable rows, the card sheet and the rank preview ---------- */
 button.lv-row {
   width: 100%;
@@ -490,4 +368,468 @@ button.lv-row:active {
 }
 .lv-sheet .win-body {
   overflow: visible;
+}
+
+/* ---------- Glossy Ultra Rare: a clear glass coat with a moving rainbow ----------
+   Above a plain UR at a glance: the whole card gets a wet-glass shine (a bright top-left
+   highlight), an iridescent prism band that keeps rolling across it, and glints that
+   twinkle on the coat. Every animation is transform/opacity only (the GPU moves layers,
+   nothing is repainted), so a field full of Glossy cards stays smooth on a phone. */
+.lvr-fx-GL {
+  /* the foil: fine diagonal rainbow lines, dodged into the card so the art keeps its contrast
+     and only its bright parts catch the color (no milky veil) */
+  background:
+    repeating-linear-gradient(125deg, #ff3fc83a 0 2px, #ffb83f2c 2px 4px, #3fff8a2c 4px 6px, #3fd8ff3a 6px 8px, #9a3fff34 8px 10px),
+    linear-gradient(160deg, #ff3fc833, transparent 35%, transparent 65%, #3fd8ff33);
+  mix-blend-mode: color-dodge;
+}
+.lvr-fx-GL::before {
+  /* the prism band: a saturated spectrum, wider than the card, rolling across it */
+  inset: -30% -120%;
+  background: linear-gradient(115deg, transparent 32%, #ff2fb8aa 39%, #ffb02faa 43%, #4fff7aaa 47%, #ffffff99 50%, #2fd0ffaa 53%, #8a3fffaa 57%, #ff2fb888 61%, transparent 68%);
+  animation: lvr-prism 2.6s cubic-bezier(0.45, 0, 0.3, 1) infinite;
+  mix-blend-mode: normal;
+}
+.lvr-fx-GL::after {
+  background: linear-gradient(90deg, #ffd1f6, #ffffff 30%, #c9f6ff 60%, #e3d1ff) !important;
+  box-shadow: 0 0 0 1px #ff9df4, 0 0 5px #6ce3ff, 0 1px 3px #000a !important;
+}
+@keyframes lvr-prism {
+  0% {
+    transform: translateX(-38%);
+  }
+  70%,
+  100% {
+    transform: translateX(38%);
+  }
+}
+
+/* glints: four-point stars that flash on the coat (Glossy rainbow-white, Royal gold) */
+.lvr-glint {
+  position: absolute;
+  width: 26%;
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle, #fff 0 8%, transparent 22%),
+    linear-gradient(90deg, transparent 46%, #fff 50%, transparent 54%),
+    linear-gradient(0deg, transparent 46%, #fff 50%, transparent 54%);
+  -webkit-mask: radial-gradient(circle, #000 0 30%, transparent 60%);
+  mask: radial-gradient(circle, #000 0 30%, transparent 60%);
+  transform: scale(0) rotate(0deg);
+  animation: lvr-twinkle 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.lvr-glint.g1 {
+  left: 8%;
+  top: 14%;
+}
+.lvr-glint.g2 {
+  right: 6%;
+  top: 46%;
+  width: 20%;
+  animation-delay: 1.1s;
+}
+.lvr-glint.g3 {
+  left: 30%;
+  bottom: 6%;
+  width: 18%;
+  animation-delay: 2.1s;
+}
+.lvr-fx-GL .lvr-glint {
+  filter: drop-shadow(0 0 2px #ff9df4) drop-shadow(0 0 3px #6ce3ff);
+}
+.lvr-fx-RO .lvr-glint {
+  filter: drop-shadow(0 0 3px var(--lvr-gold));
+  animation-duration: 2.6s;
+}
+@keyframes lvr-twinkle {
+  0%,
+  62%,
+  100% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  74% {
+    transform: scale(1) rotate(45deg);
+    opacity: 1;
+  }
+  88% {
+    transform: scale(0.2) rotate(90deg);
+    opacity: 0;
+  }
+}
+
+/* ---------- Overframe: the top prize in the game ----------
+   A rainbow frame that keeps turning around the card, the art leaping out of the frame
+   with light rays fanning behind it, sparkles over its head, and an OVERFRAME plate.
+   Every moving part is a transform or opacity animation on its own layer. */
+.lvr-of {
+  position: relative;
+  display: block;
+  container-type: inline-size;
+  isolation: isolate;
+}
+.lvr-of:not([class*='-img']) {
+  width: 100%;
+  height: 100%;
+}
+.lvr-of > .cimg {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+img.cimg.lvr-OF {
+  box-shadow: 0 2px 6px #000a;
+}
+/* the turning rainbow frame: a spinning conic gradient behind the card, showing only at its edge */
+.lvr-ofrim {
+  position: absolute;
+  inset: -3px;
+  border-radius: 5px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow: 0 0 8px #ff5ad8cc, 0 0 16px #4fe0ffaa, 0 0 28px #ffd56a77;
+}
+.lvr-ofrim::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180%;
+  aspect-ratio: 1;
+  margin: -90% 0 0 -90%;
+  background: conic-gradient(#ff4fd0, #ffb84f, #fff6c8, #7cff9e, #4fe0ff, #a24fff, #ff4fd0);
+  animation: lvr-spin 3s linear infinite;
+}
+@keyframes lvr-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+.lvr-of > .lvr-fx {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 3px;
+  z-index: 1;
+}
+.lvr-fx-OF {
+  /* the frame itself turns to rainbow foil (the art window is cut out: the art rises out of it) */
+  background:
+    repeating-linear-gradient(125deg, #ffffff40 0 1px, transparent 1px 4px),
+    conic-gradient(from 30deg at 50% 45%, #ff3fc8cc, #ffb03fcc, #4fff7acc, #2fd0ffcc, #8a3fffcc, #ff3fc8cc);
+  mix-blend-mode: hard-light;
+  opacity: 0.85;
+}
+.lvr-fx-OF::before {
+  content: '';
+  position: absolute;
+  inset: -30% -120%;
+  background: linear-gradient(115deg, transparent 30%, #ff5ad877 40%, #ffd56a88 45%, #ffffff 50%, #6ce3ff88 55%, #b06cff77 60%, transparent 70%);
+  animation: lvr-prism 1.9s cubic-bezier(0.45, 0, 0.3, 1) infinite;
+  mix-blend-mode: screen;
+}
+/* light rays fanning out from behind the card (a halo only the top prize has) */
+.lvr-rays {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 200%;
+  aspect-ratio: 1;
+  margin: -100% 0 0 -100%;
+  background: repeating-conic-gradient(from 0deg, #fff6c8 0deg 3deg, transparent 3deg 15deg, #ff9df4dd 15deg 18deg, transparent 18deg 30deg, #7af0ffdd 30deg 33deg, transparent 33deg 45deg);
+  -webkit-mask: radial-gradient(circle, #000 0 20%, #0008 34%, transparent 50%);
+  mask: radial-gradient(circle, #000 0 20%, #0008 34%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+  animation: lvr-spin 12s linear infinite;
+}
+/* the art itself, lifted out over the frame */
+.lvr-pop {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  clip-path: inset(18.5% 11.5% 27% 11.5% round 2px);
+  transform-origin: 50% 73%;
+  transform: translateY(-17%) scale(1.24);
+  filter: drop-shadow(0 6px 4px #000d) drop-shadow(0 0 4px #fff) drop-shadow(0 0 6px #ff5ad8);
+  /* its lower edge melts back into the card's own art, so it reads as the art rising out, not a sticker */
+  -webkit-mask: linear-gradient(180deg, #000 0 56%, transparent 66%);
+  mask: linear-gradient(180deg, #000 0 56%, transparent 66%);
+  pointer-events: none;
+  z-index: 2;
+  animation: lvr-pop-float 3s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes lvr-pop-float {
+  50% {
+    transform: translateY(-21%) scale(1.27);
+  }
+}
+/* sparkles over the art */
+.lvr-spk {
+  position: absolute;
+  width: 22%;
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle, #fff 0 9%, transparent 24%),
+    linear-gradient(90deg, transparent 47%, #fff 50%, transparent 53%),
+    linear-gradient(0deg, transparent 47%, #fff 50%, transparent 53%);
+  -webkit-mask: radial-gradient(circle, #000 0 28%, transparent 60%);
+  mask: radial-gradient(circle, #000 0 28%, transparent 60%);
+  filter: drop-shadow(0 0 3px #ffd56a);
+  pointer-events: none;
+  z-index: 3;
+  transform: scale(0);
+  animation: lvr-twinkle 2.4s ease-in-out infinite;
+}
+.lvr-spk.s1 {
+  left: -6%;
+  top: -4%;
+}
+.lvr-spk.s2 {
+  right: -8%;
+  top: 12%;
+  width: 18%;
+  animation-delay: 0.8s;
+  filter: drop-shadow(0 0 3px #4fe0ff);
+}
+.lvr-spk.s3 {
+  left: 62%;
+  top: -12%;
+  width: 15%;
+  animation-delay: 1.6s;
+  filter: drop-shadow(0 0 3px #ff5ad8);
+}
+/* the OVERFRAME plate across the bottom of the card */
+.lvr-chip {
+  display: none;
+}
+.lvr-of:not([class*='-img']) > .lvr-chip,
+.lvr-of.tdetail-img > .lvr-chip,
+.lvr-of.cinfo-img > .lvr-chip {
+  display: block;
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 3%;
+  overflow: hidden;
+  text-align: center;
+  border-radius: 3px;
+  font: 900 max(5px, 8.5cqw) / 1.45 system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  color: #2a1400;
+  background: linear-gradient(180deg, #fffbe8, #ffd56a 45%, #c8961e 55%, #ffe9a8);
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2px #ff5ad8, 0 0 8px #ff5ad8, 0 0 12px #4fe0ff;
+  z-index: 4;
+  pointer-events: none;
+}
+.lvr-of > .lvr-chip::after {
+  content: '';
+  position: absolute;
+  inset: 0 -100%;
+  background: linear-gradient(105deg, transparent 40%, #ffffffdd 50%, transparent 60%);
+  animation: lvr-prism 2.2s ease-in-out infinite;
+}
+/* in small list pictures the extras would only be clutter: the frame and the leaping art stay */
+.lvr-of.crow-img > .lvr-spk,
+.lvr-of.so-mini > .lvr-spk,
+.lv-row .lvr-of > .lvr-spk,
+.lvr-of.crow-img > .lvr-rays,
+.lvr-of.so-mini > .lvr-rays,
+.lv-row .lvr-of > .lvr-rays {
+  display: none;
+}
+.lv-chip.lv-OF {
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 8px #ff5ad8;
+}
+.lv-t-OF .lv-meter > i {
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+}
+/* a breakout card in hand rises over the player bar */
+.thcard:has(> .lvr-of),
+.hcard:has(> .lvr-of) {
+  z-index: 4;
+}
+/* the zoomed card (Touch detail sheet, Card Info) shows its finish too */
+.tdetail-pic,
+.cinfo-pic {
+  position: relative;
+  display: block;
+  flex: none;
+}
+.tdetail-pic > .lvr-fx,
+.cinfo-pic > .lvr-fx {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.tdetail-pic > .lvr-fx::after,
+.cinfo-pic > .lvr-fx::after {
+  content: attr(data-r);
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font: 800 10px/14px system-ui, sans-serif;
+  color: #10131a;
+  background: linear-gradient(180deg, #ffffff, #b9c3d3);
+  box-shadow: 0 1px 2px #000a;
+}
+.tdetail-pic > .lvr-fx-OF::after,
+.cinfo-pic > .lvr-fx-OF::after {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvr-pop,
+  .lvr-ofrim::before,
+  .lvr-rays,
+  .lvr-spk,
+  .lvr-glint,
+  .lvr-of > .lvr-chip::after {
+    animation: none !important;
+  }
+}
+/* on the field with the 3D figures on, the monster's figure is what leaps out of the card:
+   the flat breakout art steps aside (the frame, rays and plate stay) */
+.art3d-on .tz-m .lvr-pop,
+.art3d-on .z-m .lvr-pop {
+  display: none;
+}
+/* the Touch detail sheet clips at its edges: the art rises a little less there */
+.tdetail-pic .lvr-pop {
+  animation: none;
+  transform: translateY(-9%) scale(1.14);
+}
+
+/* placing a Glossy, Royal or Overframe card on the field: a ring of its finish bursts out of
+   the card once (runs when the card appears in its zone; transform/opacity only) */
+.fcard:has(> .lvr-fx-GL, > .lvr-fx-RO, > .lvr-of)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 5;
+  border: 3px solid var(--lvr-land, #ffd56a);
+  box-shadow: 0 0 14px var(--lvr-land, #ffd56a), inset 0 0 10px var(--lvr-land, #ffd56a);
+  opacity: 0;
+  animation: lvr-land 1.1s cubic-bezier(0.2, 0.8, 0.3, 1) 1;
+}
+.fcard:has(> .lvr-fx-GL) {
+  --lvr-land: #ff7ae6;
+}
+.fcard:has(> .lvr-of) {
+  isolation: isolate;
+  --lvr-land: #4fe0ff;
+}
+.fcard.fd::after {
+  display: none;
+}
+@keyframes lvr-land {
+  0% {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+/* an Overframe card on the field keeps a soft rainbow halo pulsing under its figure */
+.tz-m .fcard:has(> .lvr-of)::before,
+.z-m .fcard:has(> .lvr-of)::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: -1;
+  background: conic-gradient(#ff4fd0, #ffb84f, #7cff9e, #4fe0ff, #a24fff, #ff4fd0);
+  filter: blur(6px);
+  opacity: 0.55;
+  animation: lvr-halo 2.4s ease-in-out infinite;
+}
+@keyframes lvr-halo {
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fcard::after,
+  .fcard::before {
+    animation: none !important;
+  }
+}
+
+/* ---------- the light that follows the phone's tilt (or your finger): tilt.ts ---------- */
+.lvr-spec {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, #ffffffaa 0, #ffffff40 9%, transparent 24%);
+  mix-blend-mode: overlay;
+  translate: calc(var(--lvr-tx, -0.3) * 28%) calc(var(--lvr-ty, -0.4) * 28%);
+  transition: translate 0.12s linear;
+}
+.lvr-fx-GL .lvr-spec {
+  background: radial-gradient(circle at 50% 50%, #ffffffcc 0, #ff9df455 8%, #6ce3ff33 15%, transparent 25%);
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+.lvr-fx-RO .lvr-spec {
+  background: radial-gradient(circle at 50% 50%, #fff6d8dd 0, #ffd56a66 10%, transparent 24%);
+  mix-blend-mode: screen;
+  opacity: 0.8;
+}
+.lvr-of > .lvr-spec {
+  z-index: 3;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #ffffffb0 0, #ff9df440 10%, transparent 22%);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  clip-path: inset(25% 25% round 4px);
+}
+/* Overframe's rising art follows the light too (parallax over the frame) */
+.lvr-pop {
+  translate: calc(var(--lvr-tx, 0) * -4%) calc(var(--lvr-ty, 0) * -3%);
+  transition: translate 0.12s linear;
+}
+/* the ATK/DEF plate of a finished monster on the field carries its finish */
+.tz:has(.lvr-fx-GL) .tstat,
+.fcard:has(> .lvr-fx-GL) > .fstat {
+  box-shadow: 0 0 0 1px #ff9df4, 0 0 8px #6ce3ff;
+}
+.tz:has(.lvr-fx-RO) .tstat,
+.fcard:has(> .lvr-fx-RO) > .fstat {
+  box-shadow: 0 0 0 1px #ffd56a, 0 0 8px #ffd56a;
+}
+.tz:has(.lvr-of) .tstat,
+.fcard:has(> .lvr-of) > .fstat {
+  color: #fff;
+  background: linear-gradient(90deg, #ff4fd0, #ffb84f, #4fe0ff, #a24fff);
+  box-shadow: 0 0 0 1px #fff, 0 0 10px #ff5ad8;
+  text-shadow: 0 1px 2px #000;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvr-spec,
+  .lvr-pop {
+    transition: none;
+    translate: none;
+  }
 }
