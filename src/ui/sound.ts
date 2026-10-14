@@ -1,7 +1,46 @@
+import { useEffect, useState } from 'preact/hooks';
+
 // Tiny synthesized sounds (no audio files). iPhones only allow audio after a
 // user gesture, so the context is created lazily on the first interaction.
 let ctx: AudioContext | null = null;
 let primed = false;
+
+// The Sound setting (on by default), stored on the device like the other duel options.
+const SOUND_KEY = 'eds.sound';
+const SOUND_EVT = 'eds-sound';
+let soundOff = (() => {
+  try {
+    return localStorage.getItem(SOUND_KEY) === 'off';
+  } catch {
+    return false; // storage blocked (or no browser)
+  }
+})();
+
+export const soundEnabled = () => !soundOff;
+
+export function setSoundEnabled(on: boolean) {
+  soundOff = !on;
+  try {
+    localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+  } catch {
+    /* storage blocked */
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SOUND_EVT));
+}
+
+/** The Sound setting as a hook (re-renders when it changes). */
+export function useSoundEnabled(): boolean {
+  const [on, setOn] = useState(soundEnabled);
+  useEffect(() => onSoundChange(() => setOn(soundEnabled())), []);
+  return on;
+}
+
+/** Calls `fn` whenever the Sound setting changes; returns the unsubscribe. */
+export function onSoundChange(fn: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(SOUND_EVT, fn);
+  return () => window.removeEventListener(SOUND_EVT, fn);
+}
 
 /** iOS suspends (or "interrupts") the context on calls, lock and backgrounding: wake it. */
 function wake() {
@@ -50,7 +89,7 @@ if (typeof window !== 'undefined') {
 }
 
 function tone(freq: number, duration: number, type: OscillatorType, gain: number, when = 0) {
-  if (!ctx) return;
+  if (!ctx || soundOff) return;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.type = type;
@@ -141,5 +180,5 @@ export function buzz(pattern: number | number[]) {
 
 /** The shared audio context (null until the first tap), for the 3D art engine's sounds. */
 export function audioContext(): AudioContext | null {
-  return ctx;
+  return soundOff ? null : ctx;
 }
