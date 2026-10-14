@@ -308,6 +308,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
+            {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
           </div>
         )}
         {c && c.faceUp && kind === 'm' && (
@@ -644,7 +645,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name))}>
             <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
             <div class="tdetail-text">
-              <b>{selCard.name}</b>
+              <b>{e.nameOf(selCard)}</b>
+              {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
               <DetailLine name={selCard.name} />
               <p>{cardInfo(selCard.name)?.desc}</p>
               <span class="tdetail-more">Tap for full text</span>

@@ -5,6 +5,7 @@
 // Speed Duel has no Extra Monster Zone and no Link Arrows: a Link Monster sits in a normal Monster Zone, and the
 // zones it "points to" are read as the Monster Zones next to it (adjacent indexes).
 import type { EffectDef } from '../effects';
+import { nameEngine } from '../names';
 import type { SpeedHelpers } from './helpers';
 import { extraReq, isTuner } from './extra';
 import {
@@ -81,7 +82,7 @@ function angelSets(e: Engine, p: Pid): FieldCard[][] {
 
 export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // ======================= Synchro Monsters =======================
-  const blackwing = (c: Card | string) => named(c, 'Blackwing');
+  const blackwing = (c: Card | string) => named(nameEngine(), c, 'Blackwing');
   E['Assault Blackwing - Onimaru the Divine Thunder'] = {
     *onSpecialSummon(e, m) {
       // "Treated as a Tuner while face-up" (tags.tuner, read by the Synchro procedure in extra.ts).
@@ -362,7 +363,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       if (from === 'mz' && fxMap<number>(e, 'puzzleLeft')[card.uid] === e.state.turn) fxMap<number>(e, 'puzzleGy')[card.uid] = e.state.turn;
     },
     *onEndPhaseInGrave(e, card, owner) {
-      const speedroid = (c: Card) => isMonster(e, c) && named(c, 'Speedroid') && c.name !== 'Hi-Speedroid Puzzle';
+      const speedroid = (c: Card) => isMonster(e, c) && named(e, c, 'Speedroid') && !e.isNamed(c, 'Hi-Speedroid Puzzle');
       if (fxMap<number>(e, 'puzzleGy')[card.uid] !== e.state.turn || !e.oncePerTurn('Hi-Speedroid Puzzle', owner) || !e.player(owner).gy.some(speedroid)) return;
       if (!(yield* e.yesno(owner, 'Hi-Speedroid Puzzle: add a "Speedroid" monster from your GY to your hand?'))) return;
       const c = yield* pickOne(e, owner, 'Add which Speedroid monster?', e.player(owner).gy.filter(speedroid));
@@ -421,7 +422,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   const zombieSynchro = (e: Engine, c: Card) => isMonster(e, c) && info(e, c).sub === 'Synchro' && info(e, c).race === 'Zombie';
-  const shiranuiInGy = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(c, 'Shiranui'));
+  const shiranuiInGy = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && named(e, c, 'Shiranui'));
   E['Shiranui Sunsaga'] = {
     // "You can only Special Summon Shiranui Sunsaga(s) once per turn."
     selfSummonBlock: (e, _c, p, how) => how === 'special' && (e.state.fx.sunsaga as number[] | undefined)?.[p] === e.state.turn,
@@ -457,7 +458,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // ======================= Link Monsters =======================
   // A-Counters are kept in tags.aCounter (as for Mass Hypnosis).
   const aCounters = (e: Engine) => [...e.monsters(0), ...e.monsters(1)].reduce((a, m) => a + (m.tags?.aCounter ?? 0), 0);
-  const placesACounter = (e: Engine, c: Card) => /place[sd]? (?:an? |\d+ |)A-Counters?|A-Counters? on/i.test(info(e, c).desc) && c.name !== "Cosmic Slicer Zer'oll";
+  const placesACounter = (e: Engine, c: Card) => /place[sd]? (?:an? |\d+ |)A-Counters?|A-Counters? on/i.test(info(e, c).desc) && !e.isNamed(c, "Cosmic Slicer Zer'oll");
   const reptileInHand = (e: Engine, p: Pid) => e.player(p).hand.filter((c) => isMonster(e, c) && info(e, c).race === 'Reptile' && e.canNormalSummon(p, c, true, true));
   E["Cosmic Slicer Zer'oll"] = {
     // Opponent's monsters with A-Counters: changed to Defense Position, and their effects cannot be activated
@@ -501,7 +502,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
   E['Dark Infant @Ignister'] = {
     *onSpecialSummon(e, m, p) {
-      const land = (c: Card) => c.name === 'Ignister A.I.Land';
+      const land = (c: Card) => e.isNamed(c, 'Ignister A.I.Land');
       if (!m.tags?.linkS || !e.oncePerTurn('Dark Infant @Ignister:1', p) || !e.player(p).deck.some(land)) return;
       if (!(yield* e.yesno(p, 'Dark Infant @Ignister: add "Ignister A.I.Land" from your Deck to your hand?'))) return;
       e.useOnce('Dark Infant @Ignister:1', p);
