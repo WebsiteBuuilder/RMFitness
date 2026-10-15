@@ -87,8 +87,13 @@ export interface Profile {
   alias: string;
   color: string;
   created: number;
+  /** the shared account this profile moved into (see src/accounts) */
+  uid?: string;
+  /** that account's sign-in id */
+  login?: string;
 }
 
+/** Profiles made on this phone; logging in to an existing account always fits. */
 export const MAX_PROFILES = 6;
 export const PROFILE_COLORS = ['#d8453b', '#2f7fe0', '#e0a21b', '#2fae5a', '#9b51e0', '#e0559b'];
 export const NAME_MAX = 12;
