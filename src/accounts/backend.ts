@@ -61,7 +61,7 @@ export interface CloudBackend {
   signOut(): Promise<void>;
   getSave(uid: string): Promise<CloudSave | null>;
   putSave(uid: string, s: CloudSave): Promise<void>;
-  putMeta(uid: string, meta: Partial<DuelistMeta>): Promise<void>;
+  putMeta(uid: string, meta: Partial<DuelistMeta & { login: string }>): Promise<void>;
   /** changes the signed-in account's password */
   changePassword(password: string): Promise<void>;
   /** keeps a copy of a phone's profile (device = this phone's id, profileId = its local id) */
