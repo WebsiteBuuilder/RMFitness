@@ -206,7 +206,16 @@ export class Accounts {
         uid = await withTimeout(b.create(login, cloudPassword(pw), meta));
       } catch (e) {
         const code = failCode(e);
-        if (code === 'taken') continue; // an old login of a renamed duelist: try the next one
+        if (code === 'taken') {
+          // Our own account from a move cut off by a lost signal answers to the same password: reuse it.
+          try {
+            uid = await withTimeout(b.signIn(login, cloudPassword(pw)));
+            await withTimeout(b.putMeta(uid, { ...meta, login })).catch(() => {});
+          } catch {
+            /* someone else's (a renamed duelist's old login): try the next one */
+          }
+          continue;
+        }
         if (code === 'busy') return { ok: false, why: 'busy', message: MESSAGES.busy };
         this.state = 'offline';
         return { ok: true, p, note: 'offline' };

@@ -80,7 +80,7 @@ class MemBackend implements CloudBackend {
     if (this.user !== uid) throw new CloudFail('other', 'denied');
     this.c.saves.set(uid, structuredClone(s));
   }
-  async putMeta(uid: string, meta: Partial<DuelistMeta>) {
+  async putMeta(uid: string, meta: Partial<DuelistMeta & { login: string }>) {
     this.net();
     this.c.duelists.set(uid, { ...this.c.duelists.get(uid)!, ...meta });
   }
@@ -226,6 +226,30 @@ async function main() {
   cloud.offline = false;
   r = await D.acc.logIn(loadProfiles()[0], 'harpie');
   check(r.ok && r.note === 'moved' && !!r.p.uid, 'the next login with signal moves it into an account');
+
+  // a move cut off right after the account was made: the next login reuses it, no duplicate
+  const F = phone(cloud, (st) => oldProfile(st, 'old4', 'Tea', 2));
+  F.use();
+  await F.acc.tiles();
+  const fb = (F.acc as unknown as { backend: MemBackend }).backend;
+  const realPut = fb.putSave.bind(fb);
+  fb.putSave = async () => {
+    throw new CloudFail('offline');
+  };
+  const fbCreate = fb.create.bind(fb);
+  fb.create = async (login, pw, meta) => {
+    await fbCreate(login, pw, meta);
+    cloud.duelists.delete(fb.user!); // the listing write was lost too
+    throw new CloudFail('offline');
+  };
+  r = await F.acc.setFirstPassword(loadProfiles()[0], 'friend');
+  check(r.ok && r.note === 'offline' && !r.p.uid, 'a move cut off after the account was made keeps the profile on the phone');
+  fb.create = fbCreate;
+  fb.putSave = realPut;
+  const usersBefore = cloud.users.size;
+  r = await F.acc.logIn(loadProfiles()[0], 'friend');
+  check(r.ok && r.note === 'moved' && cloud.users.size === usersBefore && cloud.duelists.get(r.p.uid!)?.alias === 'Tea', 'the next login finishes the move into that same account, listed, with no duplicate');
+  check(JSON.parse(cloud.saves.get(r.ok ? r.p.uid! : '')!.bundle.speed!).chips === 2, 'and uploads its progress');
 
   // ---------- brand-new duelist ----------
   r = await D.acc.create('Bro', 'abcd');

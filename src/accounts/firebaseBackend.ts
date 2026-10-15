@@ -61,7 +61,8 @@ export class FirebaseBackend implements CloudBackend {
     try {
       const cred = await createUserWithEmailAndPassword(auth, login, password);
       this.user = cred.user.uid;
-      await set(ref(db, `duelists/${cred.user.uid}`), { ...meta, login });
+      // The account exists now; if listing it fails, the next login lists it (see migrate).
+      await set(ref(db, `duelists/${cred.user.uid}`), { ...meta, login }).catch(() => {});
       return cred.user.uid;
     } catch (e) {
       throw fail(e);
@@ -113,7 +114,7 @@ export class FirebaseBackend implements CloudBackend {
     }
   }
 
-  async putMeta(uid: string, meta: Partial<DuelistMeta>) {
+  async putMeta(uid: string, meta: Partial<DuelistMeta & { login: string }>) {
     const { db } = await this.init();
     const { ref, update } = await import('firebase/database');
     try {
