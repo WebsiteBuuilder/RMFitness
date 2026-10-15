@@ -179,7 +179,7 @@
   text-align: left;
   color: inherit;
 }
-.sdh-note b {
+.sdh-note > b {
   flex: none;
   font-size: 13px;
 }
@@ -218,12 +218,12 @@
   transform: scale(0.98);
 }
 .sdh-tile.hero {
-  height: 150px;
+  height: clamp(150px, 27dvh, 250px);
   border: 1px solid #f2c14e99;
   box-shadow: 0 8px 22px #0009, 0 0 0 1px #f2c14e33 inset;
 }
 .sdh-tile.half {
-  height: 112px;
+  height: clamp(112px, 17dvh, 160px);
 }
 .sdh-tile.hot {
   border-color: #f2c14e;
@@ -325,6 +325,9 @@
 }
 
 .sdh-friends {
+  position: relative;
+  min-height: 50px;
+  padding-right: 36px !important;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -471,9 +474,19 @@
   color: #2a1d00;
 }
 
-/* the floating Friends button sits above the tab bar */
+.sdh-friends.live {
+  border-color: #3ddc84aa;
+}
+.sdh-friends.live > span:not(.sdh-row-go) {
+  color: #7dffb0;
+}
+.sdh-friends-ic {
+  font-size: 18px;
+}
+
+/* the Duel page has its own Friends row, so the floating Friends button stays out of the way */
 html.sd-home .ol-pill {
-  bottom: calc(var(--sdh-nav, 64px) + 12px + env(safe-area-inset-bottom));
+  display: none;
 }
 html.sd-home .ol-toast {
   bottom: calc(76px + env(safe-area-inset-bottom));

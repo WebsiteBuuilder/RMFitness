@@ -106,6 +106,24 @@ function Tile({ art, title, sub, badge, hot, size = 'big', fy, onPick }: { art: 
   );
 }
 
+/** Friends, with how many are online: stands in for the floating Friends button on this screen. */
+function FriendsRow() {
+  const [, bump] = useState(0);
+  useEffect(() => online.subscribe(() => bump((n) => n + 1)), []);
+  const pr = online.presence;
+  const count = pr?.onlineCount() ?? 0;
+  const requests = pr?.data.friends.filter((f) => f.status === 'request').length ?? 0;
+  return (
+    <button class={`sdh-friends ${count > 0 ? 'live' : ''}`} onClick={() => (playBlip(), online.openPanel())}>
+      <span class="sdh-friends-ic">👥</span>
+      <b>Friends</b>
+      <span>{count > 0 ? `${count} online now` : "see who's online and invite them"}</span>
+      {requests > 0 && <i class="sdh-badge inline">{requests}</i>}
+      <span class="sdh-row-go">›</span>
+    </button>
+  );
+}
+
 /** A plain list row for things that don't need a picture. */
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
@@ -200,8 +218,8 @@ export function SpeedHome({
         </div>
         <button class="sdh-gear" onClick={() => (playBlip(), setSettings(true))} aria-label="Settings">
           <svg viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="3.2" />
-            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
           </svg>
         </button>
       </header>
@@ -236,7 +254,7 @@ export function SpeedHome({
             {sealed.length > 0 && (
               <div class="sdh-note bad">
                 <span>
-                  {sealed.map((x) => x.name).join(', ')} {sealed.length === 1 ? 'is' : 'are'} sealed in the Shadow Realm. Win a duel to free {sealed.length === 1 ? 'it' : 'one'}, or
+                  <b>{sealed.map((x) => x.name).join(', ')}</b> {sealed.length === 1 ? 'is' : 'are'} sealed in the Shadow Realm. Win to free {sealed.length === 1 ? 'it' : 'one'}, or
                 </span>
                 <button class="chip" onClick={() => (playBlip(), go('shadow'))}>
                   beg for {sealed.length === 1 ? 'it' : 'them'} back
@@ -250,14 +268,12 @@ export function SpeedHome({
               </button>
             )}
 
-            <Tile size="hero" art="Dark Magician" fy={30} title="Link Battle" sub="Duel your brother online or on one phone" onPick={() => go('link')} />
+            <Tile size="hero" art="Dark Magician" fy={22} title="Link Battle" sub="Duel your brother online or on one phone" onPick={() => go('link')} />
             <div class="sdh-pair">
               <Tile size="half" art="Blue-Eyes White Dragon" title="VS Computer" sub="Counts for your record" onPick={() => go('cpu')} />
               {onTag && <Tile size="half" art="Harpie Lady Sisters" title="Tag Duel" sub="2v2 and Tag Road" onPick={onTag} />}
             </div>
-            <button class="sdh-friends" onClick={() => (playBlip(), online.openPanel())}>
-              👥 Friends <span>see who's online and invite them</span>
-            </button>
+            <FriendsRow />
           </>
         )}
 
