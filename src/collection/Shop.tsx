@@ -50,19 +50,28 @@ const buzz = (ms: number | number[]) => {
 };
 
 /** Duel Chips, shards and packs, labelled. Tap for how to earn each and what's left today. */
-export function ChipBar({ save, cpus = [] }: { save: SpeedSave; cpus?: string[] }) {
+export function ChipBar({ save, cpus = [], compact = false }: { save: SpeedSave; cpus?: string[]; /** the Speed Duel home's top bar: chips and packs only, as pills */ compact?: boolean }) {
   const [help, setHelp] = useState(false);
   const left = todaysPrizes(save, cpus);
   return (
     <>
-      <button class="shop-bar" onClick={() => (playBlip(), setHelp(true))} aria-label="Duel Chips, shards and packs: tap for details">
-        <span class="shop-chip">
-          <i class="dchip" /> Chips {chipsOf(save)}/{CHIP_CAP}
-        </span>
-        <span>◆ Shards {shardsOf(save)}/{SHARDS_PER_CHIP}</span>
-        <span>🂠 Packs {packsOf(save)}</span>
-        <span class="shop-q">?</span>
-      </button>
+      {compact ? (
+        <button class="shop-pills" onClick={() => (playBlip(), setHelp(true))} aria-label="Duel Chips and packs: tap for details">
+          <span class="shop-pill">
+            <i class="dchip" /> {chipsOf(save)}
+          </span>
+          <span class="shop-pill">🂠 {packsOf(save)}</span>
+        </button>
+      ) : (
+        <button class="shop-bar" onClick={() => (playBlip(), setHelp(true))} aria-label="Duel Chips, shards and packs: tap for details">
+          <span class="shop-chip">
+            <i class="dchip" /> Chips {chipsOf(save)}/{CHIP_CAP}
+          </span>
+          <span>◆ Shards {shardsOf(save)}/{SHARDS_PER_CHIP}</span>
+          <span>🂠 Packs {packsOf(save)}</span>
+          <span class="shop-q">?</span>
+        </button>
+      )}
       {help && (
         <Overlay onClose={() => setHelp(false)}>
           <Win title="Chips, shards and packs" onClose={() => setHelp(false)}>

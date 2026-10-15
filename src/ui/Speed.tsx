@@ -2,8 +2,9 @@
 // computer opponents and record, sharing profiles and the duel screen with EDS.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
-import { CONTROL_NAMES, loadSave, type ControlStyle, type Profile } from '../eds/save';
+import { loadSave, type ControlStyle, type Profile } from '../eds/save';
 import { Rankings } from './Rankings';
+import { SpeedHome, rememberedTab, type HomeTab } from './SpeedHome';
 import { getSkill } from '../eds/skills';
 import {
   COPIES,
@@ -26,7 +27,6 @@ import {
   type Starter,
 } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from './CardImg';
-import { Avatar } from './Profiles';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip } from './sound';
 import { ShadowRealmScreen } from '../art/ShadowRealmScreen';
@@ -35,11 +35,10 @@ import { sealedCards } from '../art/shadow';
 import { CardLevels, levelHeadline } from '../level/CardLevels';
 import { cardLevels } from '../level/leveling';
 import { showProfileLevels } from '../level/view';
-import { CardShop, ChipBar } from '../collection/Shop';
+import { CardShop } from '../collection/Shop';
 import { RequestsScreen, StampsScreen } from '../collection/Earn';
 import { boardOf } from '../collection/requests';
-import { stampsToClaim } from '../collection/stamps';
-import { bestCrown, chipsOf, collectionProblems, ownedOnly, packsOf, withStarter } from '../collection/economy';
+import { bestCrown, collectionProblems, ownedOnly, withStarter } from '../collection/economy';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
 import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
@@ -123,6 +122,7 @@ export function SpeedHub({
   onLink: (c: SpeedLinkChoice) => void;
 }) {
   const [sub, setSub] = useState<Sub>('menu');
+  const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
   // the duel's 3D engine downloads while the player is still here
   useEffect(() => preloadArt3d(), []);
@@ -133,7 +133,12 @@ export function SpeedHub({
   useEffect(() => () => showProfileLevels(null), []);
   useEffect(() => {
     hubBack = () => {
-      if (sub === 'menu' || save.decks.length === 0) return false;
+      if (save.decks.length === 0) return false;
+      if (sub === 'menu') {
+        if (tab === 'duel') return false;
+        setTab('duel');
+        return true;
+      }
       setSub(sub === 'edit' ? 'decks' : 'menu');
       return true;
     };
@@ -164,72 +169,25 @@ export function SpeedHub({
   if (sub === 'link') return <SpeedLink problems={problems} onPick={onLink} onBack={() => setSub('menu')} />;
 
   return (
-    <div class="screen mainmenu speedmenu">
-      <div class="menu-head">
-        <div class="menu-who">
-          <Avatar p={profile} size="small" />
-          <span>
-            <b>{profile.alias}</b> · Speed Duel
-          </span>
-        </div>
-        <div>
-          Deck: {deck ? `${deck.name} (${deck.main.length})` : 'none'}
-          {deck?.skill ? ` · Skill: ${deck.skill}` : ''}
-        </div>
-        <div>
-          Wins {save.wins} · Losses {save.losses} · Draws {save.draws}
-        </div>
-        {crown && (
-          <div>
-            <span class={`crown ${crown.rec.streak >= 3 ? 'hot' : ''}`}>👑</span> King of Games over {crown.rival} ({crown.rec.w}-{crown.rec.l}
-            {crown.rec.streak >= 3 ? `, ${crown.rec.streak} wins in a row` : ''})
-          </div>
-        )}
-      </div>
-      <ChipBar save={save} cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))} />
-      <Win title="Speed Duel">
-        <p class="hint">Speed Duel cards only. 4000 LP, 4-card hands, 3 Monster and 3 Spell/Trap Zones, no Main Phase 2, and one Skill per Duel.</p>
-        {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}. Fix it in Decks.</div>}
-        {sealed.length > 0 && (
-          <div class="warn">
-            {sealed.map((x) => x.name).join(', ')} {sealed.length === 1 ? 'is' : 'are'} sealed in the Shadow Realm. Win a duel to free {sealed.length === 1 ? 'it' : 'one'}, or{' '}
-            <button class="chip" onClick={() => setSub('shadow')}>
-              beg for {sealed.length === 1 ? 'it' : 'them'} back
-            </button>
-          </div>
-        )}
-        {headline && (
-          <div class="lv-banner">
-            ★ {headline}
-            <button class="chip" onClick={() => setSub('levels')}>
-              See card levels
-            </button>
-          </div>
-        )}
-        <Menu
-          items={[
-            { label: 'The Millennium Road', note: 'story campaign: earn cards, beat the bosses', onPick: () => onSolo('campaign') },
-            { label: 'Card Legends', note: 'stories told by the cards: earn Duel Chips', onPick: () => onSolo('legends') },
-            { label: 'Duel Labyrinth', note: 'roguelite runs, a new map every time', onPick: () => onSolo('labyrinth') },
-            ...(onTag ? [{ label: '2v2 Tag Duels', note: 'team up with your brother or a computer partner; Tag Road campaign', onPick: onTag }] : []),
-            { label: 'Duel the Computer', note: 'quick duel that counts for your record', onPick: () => setSub('cpu') },
-            { label: 'Practice Duel', note: 'any deck vs any duelist, no record', onPick: () => onSolo('practice') },
-            { label: 'Link Battle', note: 'Speed Duel rules: online or on one phone', onPick: () => setSub('link') },
-            { label: 'Card Shop', note: packsOf(save) ? `${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open!` : `packs, your cards, crafting · ${chipsOf(save)} Duel Chips`, onPick: () => setSub('shop') },
-            { label: 'Duelist Requests', note: requestsNote(save), onPick: () => setSub('requests') },
-            { label: 'Set Stamps', note: stampsToClaim(save) ? `${stampsToClaim(save)} stamp${stampsToClaim(save) === 1 ? '' : 's'} to claim!` : 'collect a set, earn its rewards', onPick: () => setSub('stamps') },
-            { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
-            { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
-            { label: 'Duelist Rankings', note: 'leaderboard, rivals and titles up to King of Games', onPick: () => setSub('rankings') },
-            { label: 'Record', onPick: () => setSub('record') },
-            { label: '3D Card Viewer', note: "watch any card's summon and attack", onPick: () => setSub('art') },
-            { label: 'Shadow Realm', note: sealed.length ? `${sealed.length} card${sealed.length === 1 ? '' : 's'} sealed` : 'who got sent there', onPick: () => setSub('shadow') },
-            { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
-            { label: 'Back to Eternal Duelist Soul', onPick: onExit },
-          ]}
-        />
-      </Win>
-    </div>
+    <SpeedHome
+      tab={tab}
+      onTab={setTab}
+      profile={profile}
+      save={save}
+      deck={deck}
+      problems={problems}
+      sealed={sealed}
+      headline={headline}
+      crown={crown}
+      requestsNote={requestsNote(save)}
+      controls={controls}
+      onControls={onControls}
+      onSolo={onSolo}
+      onTag={onTag}
+      onExit={onExit}
+      go={setSub}
+      cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))}
+    />
   );
 }
 
