@@ -2175,3 +2175,57 @@ p {
     box-shadow: 0 0 0 2px var(--gold), 0 0 2px var(--gold);
   }
 }
+
+/* ---------- shared accounts: badges and password fields ---------- */
+.who-sub.warn {
+  color: #f0b04a;
+}
+.pbadge {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 5px;
+  border: 2px solid #000;
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+}
+.pbadge.new {
+  background: var(--gold);
+  color: #3a1f00;
+  font-family: 'Press Start 2P', 'Silkscreen', monospace;
+  font-size: 8px;
+  padding: 5px 5px 4px;
+}
+.pbadge.lock {
+  background: #1d2440;
+}
+.pform-who {
+  display: block;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.pfield .pw-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.pfield .pw-row input {
+  flex: 1;
+  min-width: 0;
+}
+.pw-eye {
+  flex: none;
+  font-size: 11px;
+  padding: 0 10px;
+  color: var(--dim);
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+}

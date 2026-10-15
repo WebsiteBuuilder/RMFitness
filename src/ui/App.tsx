@@ -6,7 +6,7 @@ import { SpeedHub, speedHubBack, type SpeedLinkChoice, type SpeedOpponent } from
 import { ConfirmSheet } from './ConfirmSheet';
 import { SpeedResult, type ResultReward, type SpeedResultData } from './SpeedResult';
 import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
-import { addToTrunk, controlsOf, deckProblems, deleteProfile, loadProfiles, loadSave, newSave, withControls, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
+import { addToTrunk, controlsOf, deckProblems, loadProfiles, loadSave, newSave, withControls, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { MemoryAdapter } from '../sync/memory';
@@ -23,6 +23,7 @@ import { Duel } from './Duel';
 import { useBackButton } from './backButton';
 import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { Avatar, ProfilePicker } from './Profiles';
+import { accounts } from '../accounts';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
 import { Menu, Overlay, Win } from './Window';
 import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
@@ -239,6 +240,7 @@ export function App() {
   };
 
   const switchProfile = () => {
+    void accounts.stopSync(); // upload this duelist's latest progress to their account
     session?.close();
     setSession(null);
     setProfile(null);
@@ -693,7 +695,8 @@ export function App() {
               <Avatar p={profile} size="small" />
               <p>
                 Delete <b>{profile.alias}</b>
-                {profile.name !== profile.alias ? ` (${profile.name})` : ''}? All of their cards, decks and record will be gone for good.
+                {profile.name !== profile.alias ? ` (${profile.name})` : ''}?{' '}
+                {profile.uid ? 'It leaves this phone, but their progress stays in their account, so they can log in again any time.' : 'All of their cards, decks and record will be gone for good.'}
               </p>
             </div>
             <Menu
@@ -702,7 +705,7 @@ export function App() {
                 {
                   label: `Delete ${profile.alias}`,
                   onPick: () => {
-                    deleteProfile(profile.id);
+                    accounts.remove(profile); // a shared account keeps its progress; only this phone's copy goes
                     online.forget(profile.id);
                     switchProfile();
                   },
