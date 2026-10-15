@@ -16,6 +16,8 @@ export interface SyncAdapter {
   close(): void;
   /** starts over after an 'error' status (online rooms) */
   retry?(): void;
+  /** the host empties the log for a rematch in the same room (every phone in it follows) */
+  restart?(): void;
 }
 
 /** Shared bookkeeping for adapters: listeners and a status value. */

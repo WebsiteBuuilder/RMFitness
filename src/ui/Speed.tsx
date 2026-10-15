@@ -2,7 +2,8 @@
 // computer opponents and record, sharing profiles and the duel screen with EDS.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
-import { CONTROL_NAMES, type ControlStyle, type Profile } from '../eds/save';
+import { CONTROL_NAMES, loadSave, type ControlStyle, type Profile } from '../eds/save';
+import { Rankings } from './Rankings';
 import { getSkill } from '../eds/skills';
 import {
   COPIES,
@@ -93,7 +94,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
 
 export function SpeedHub({
   controls,
@@ -153,6 +154,7 @@ export function SpeedHub({
   if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
+  if (sub === 'rankings') return <Rankings profile={profile} speed={save} eds={loadSave(profile.id)} onBack={() => setSub('menu')} />;
   if (sub === 'art') return <ArtLab onBack={() => setSub('menu')} />;
   if (sub === 'shadow') return <ShadowRealmScreen save={save} onBack={() => setSub('menu')} />;
   if (sub === 'levels') return <CardLevels save={save} deckNames={[...new Set(save.decks.flatMap((d) => [...d.main, ...d.extra]))]} onBack={() => setSub('menu')} />;
@@ -211,6 +213,7 @@ export function SpeedHub({
             { label: 'Set Stamps', note: stampsToClaim(save) ? `${stampsToClaim(save)} stamp${stampsToClaim(save) === 1 ? '' : 's'} to claim!` : 'collect a set, earn its rewards', onPick: () => setSub('stamps') },
             { label: 'Decks', note: `${save.decks.length} deck${save.decks.length === 1 ? '' : 's'}`, onPick: () => setSub('decks') },
             { label: 'Card Levels', note: 'your cards rank up N → R → SR → UR as you duel', onPick: () => setSub('levels') },
+            { label: 'Duelist Rankings', note: 'leaderboard, rivals and titles up to King of Games', onPick: () => setSub('rankings') },
             { label: 'Record', onPick: () => setSub('record') },
             { label: '3D Card Viewer', note: "watch any card's summon and attack", onPick: () => setSub('art') },
             { label: 'Shadow Realm', note: sealed.length ? `${sealed.length} card${sealed.length === 1 ? '' : 's'} sealed` : 'who got sent there', onPick: () => setSub('shadow') },

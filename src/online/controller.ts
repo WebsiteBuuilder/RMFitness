@@ -8,6 +8,7 @@ import { Presence, type OutgoingInvite } from './presence';
 import { PeerTransport } from './peerTransport';
 import { parseFriendCode, type Activity, type Transport } from './protocol';
 import { loadOnline, writeOnline } from './store';
+import type { BoardStats } from '../collection/rankings';
 
 export interface AppHooks {
   /** open a room as its host, under this code, for this game */
@@ -94,7 +95,7 @@ class OnlineController {
   /** The profile playing on this phone goes online (null: back to the profile picker). */
   setProfile(p: Profile | null) {
     if (p?.id === this.profile?.id) {
-      if (p && this.presence) this.presence.setMe({ name: p.alias, color: p.color });
+      if (p && this.presence) this.presence.setMe({ ...this.presence.me, name: p.alias, color: p.color });
       return;
     }
     this.unsubPresence?.();
@@ -147,6 +148,13 @@ class OnlineController {
     } catch {
       /* nothing to clear */
     }
+  }
+
+  /** Shares this player's link-battle record with friends (Duelist Rankings). */
+  setBoard(board: BoardStats) {
+    const pr = this.presence;
+    if (!pr || JSON.stringify(pr.me.board) === JSON.stringify(board)) return;
+    pr.setMe({ ...pr.me, board });
   }
 
   showButton(on: boolean) {

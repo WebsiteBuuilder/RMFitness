@@ -237,6 +237,14 @@ export class PeerAdapter extends AdapterBase implements SyncAdapter {
     if (this.conn?.open) this.conn.send({ t: 'ev', ev: logged } satisfies Msg);
   }
 
+  /** Rematch: the host wipes the log and the guest's phone mirrors the empty log. */
+  restart() {
+    if (!this.isHost || this.closed) return;
+    this.events = [];
+    this.emit();
+    if (this.conn?.open) this.conn.send({ t: 'sync', events: [] } satisfies Msg);
+  }
+
   send(ev: GameEvent) {
     if (this.isHost) this.append(ev);
     else if (this.conn?.open) this.conn.send({ t: 'ev', ev } satisfies Msg);
