@@ -315,5 +315,26 @@ flush();
 wait(POLL_MS, A3.p, B5.p);
 check(statusOf(B5.p, 'AAAAAA') === 'friend' && statusOf(A3.p, 'BBBBBB') === 'friend', 'a friend whose phone lost its data is back on both lists by themselves');
 
+// ---------- recent opponents (Find a Match) ----------
+{
+  const R = player('RRRRRR', 'Recent');
+  flush();
+  R.p.metRecently({ code: 'MMMMMM', name: 'Stranger', color: '#ff0000', board: { w: 3, l: 1, d: 0, streak: 2 } });
+  R.p.metRecently({ code: 'NNNNNN', name: 'Other', color: '#00ff00' });
+  R.p.metRecently({ code: 'MMMMMM', name: 'Stranger2', color: '#ff0000' });
+  const rec = R.p.recent();
+  check(rec.length === 2 && rec[0].code === 'MMMMMM' && rec[0].name === 'Stranger2', 'recent opponents: newest first, no repeats');
+  check(rec[0].status === null, 'a stranger is not a friend yet');
+  R.p.metRecently({ code: 'RRRRRR', name: 'Me', color: '#000' });
+  check(R.p.recent().length === 2, 'never lists yourself');
+  for (let i = 0; i < 20; i++) R.p.metRecently({ code: `Q${String(i).padStart(5, 'A')}`, name: `Q${i}`, color: '#000' });
+  check(R.p.recent().length === 12, 'keeps the last 12');
+  R.p.add('NNNNNN', 'Other', '#00ff00');
+  check(R.p.data.friends.find((f) => f.code === 'NNNNNN')?.color === '#00ff00', 'adding from Recent keeps their name and color');
+  check(saved.get('RRRRRR')?.recent?.length === 12, 'the recent list is saved with the friends list');
+  R.p.stop();
+  R.t.stop();
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall friends tests passed');
 if (failures) process.exit(1);

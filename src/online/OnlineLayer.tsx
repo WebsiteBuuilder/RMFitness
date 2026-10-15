@@ -1,19 +1,25 @@
-// Friends on screen: the Friends button, the friends panel, duel invites and short notices.
+// Friends and matchmaking on screen: the Friends button, the Friends page, duel invites,
+// the Find a Match search bar, the "Opponent found!" screen and short notices.
 import { useEffect, useState } from 'preact/hooks';
 import type { GameMode } from '../eds/types';
-import { Overlay, Win } from '../ui/Window';
-import { online } from './controller';
-import { INVITE_MS, type FriendView, type IncomingInvite } from './presence';
+import { online, VERSUS_MS } from './controller';
+import { INVITE_MS, type FriendView, type IncomingInvite, type RecentRec } from './presence';
 import { parseFriendCode, showCode, type Activity } from './protocol';
+import { duelistTitle, type BoardStats } from '../collection/rankings';
+import type { Match } from './matchmaking';
 import './online.css';
+import './friends.css';
 
 const GAME: Record<GameMode, string> = { speed: 'Speed Duel', eds: 'Eternal Duelist Soul' };
 const GAME_KEY = 'eds.online.game';
+const TAB_KEY = 'eds.online.tab';
+
+type Tab = 'friends' | 'recent' | 'add';
 
 function useOnline() {
   const [, bump] = useState(0);
   useEffect(() => online.subscribe(() => bump((n) => n + 1)), []);
-  // a slow clock for "last seen" and invite countdowns
+  // a slow clock for "last seen", invite countdowns and the search timer
   useEffect(() => {
     const t = setInterval(() => bump((n) => n + 1), 1000);
     return () => clearInterval(t);
@@ -31,30 +37,37 @@ function ago(ms: number): string {
   return d === 1 ? 'yesterday' : `${d} days ago`;
 }
 
+function clock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function doing(a: Activity | null): string {
-  if (!a || a.kind === 'menu') return 'Online';
-  if (a.kind === 'room') return a.open ? `In room ${a.room} · ${GAME[a.game]}` : `Starting a ${GAME[a.game]}`;
+  if (!a || a.kind === 'menu') return 'Online · ready to duel';
+  if (a.kind === 'room') return a.open ? `In an open ${GAME[a.game]} room` : `Starting a ${GAME[a.game]}`;
   return a.game ? `In a ${GAME[a.game]}` : 'In a duel';
 }
 
-function Dot({ f }: { f: FriendView }) {
-  const busy = f.online && f.activity && f.activity.kind !== 'menu' && !(f.activity.kind === 'room' && f.activity.open);
-  return <span class={`ol-dot ${f.online ? (busy ? 'busy' : 'on') : ''}`} aria-label={f.online ? 'online' : 'offline'} />;
+/** "🎴 Expert Duelist · 12-4" from a shared record, or nothing yet. */
+function rankLine(b: BoardStats | undefined): string | null {
+  if (!b) return null;
+  const t = duelistTitle(b);
+  return `${t.icon} ${t.name} · ${b.w}-${b.l}${b.d ? `-${b.d}` : ''}`;
 }
 
-function Bubble({ name, color }: { name: string; color: string }) {
+function Bubble({ name, color, size = 'm' }: { name: string; color: string; size?: 'm' | 'l' | 'xl' }) {
   return (
-    <span class="ol-bubble" style={{ background: color }}>
+    <span class={`ol-bubble fr-b-${size}`} style={{ background: color }}>
       {(name.trim()[0] ?? '?').toUpperCase()}
     </span>
   );
 }
 
-/** Everything friends-related that floats over the app. */
+/** Everything friends- and matchmaking-related that floats over the app. */
 export function OnlineLayer() {
   const o = useOnline();
-  const button = o.button;
   const pr = o.presence;
+  if (o.versus) return <Versus m={o.versus} />;
   if (!pr) return null;
   const invite = pr.incoming[0];
   const count = pr.onlineCount();
@@ -62,7 +75,7 @@ export function OnlineLayer() {
   const out = pr.outgoing?.state === 'waiting' ? pr.outgoing : null;
   return (
     <>
-      {button && !o.panelOpen && (
+      {o.button && !o.panelOpen && !o.mm.searching && (
         <button class={`ol-pill ${count > 0 ? 'live' : ''}`} onClick={() => o.openPanel()} aria-label="Friends">
           <span class="ol-pill-ic">👥</span>
           <span>Friends</span>
@@ -70,10 +83,11 @@ export function OnlineLayer() {
           {requests > 0 && <span class="ol-badge">{requests}</span>}
         </button>
       )}
+      {o.mm.searching && !o.panelOpen && <SearchBar />}
       {out && !o.panelOpen && (
         <div class="ol-toast ol-waiting">
           <span>
-            Invited <b>{pr.data.friends.find((f) => f.code === out.to)?.name ?? 'your friend'}</b> to room {out.room}…
+            Invited <b>{pr.data.friends.find((f) => f.code === out.to)?.name ?? 'your friend'}</b> to duel…
           </span>
           <button class="gbtn" onClick={() => pr.cancelInvite()}>
             Cancel
@@ -86,10 +100,66 @@ export function OnlineLayer() {
           {o.notice.text}
         </div>
       )}
-      {o.panelOpen && <FriendsPanel />}
+      {o.panelOpen && <FriendsPage />}
     </>
   );
 }
+
+// ---------- Find a Match ----------
+
+/** The search, floating over the menus so the player can look at decks while waiting. */
+function SearchBar() {
+  const mm = online.mm;
+  const off = mm.state === 'offline';
+  return (
+    <div class={`mm-bar ${off ? 'off' : ''}`} role="status">
+      <span class="mm-radar" aria-hidden="true">
+        <i />
+      </span>
+      <span class="mm-bar-txt">
+        <b>{off ? "Can't reach the online service" : 'Finding an opponent…'}</b>
+        <small>{off ? 'Retrying. Check your Wi-Fi or data.' : `${GAME[mm.game]} · ${clock(Date.now() - mm.since)}`}</small>
+      </span>
+      <button class="mm-cancel" onClick={() => online.cancelMatch()}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/** "Opponent found!": who you're up against, then straight into the room. */
+function Versus({ m }: { m: Match }) {
+  const pr = online.presence;
+  const me = { name: pr?.me.name ?? 'You', color: pr?.me.color ?? '#3a62d0', board: pr?.me.board };
+  const them = m.opponent;
+  const friend = pr?.data.friends.find((f) => f.code === them.code && f.status === 'friend');
+  return (
+    <div class="mm-vs" role="alertdialog" aria-label="Opponent found">
+      <div class="mm-vs-flash" />
+      <div class="mm-vs-h">Opponent found!</div>
+      <div class="mm-vs-row">
+        <div class="mm-vs-side me">
+          <Bubble name={me.name} color={me.color} size="xl" />
+          <b>{me.name}</b>
+          <small>{rankLine(me.board) ?? '🃏 Rookie Duelist'}</small>
+        </div>
+        <div class="mm-vs-x">VS</div>
+        <div class="mm-vs-side them">
+          <Bubble name={them.name} color={them.color} size="xl" />
+          <b>{them.name}</b>
+          <small>{rankLine(them.board) ?? '🃏 Rookie Duelist'}</small>
+          {friend && <span class="mm-vs-tag">Your friend</span>}
+        </div>
+      </div>
+      <div class="mm-vs-sub">{m.role === 'host' ? 'Opening the duel room…' : 'Joining their duel room…'}</div>
+      <div class="mm-vs-bar">
+        <i style={{ animationDuration: `${VERSUS_MS + (m.role === 'guest' ? 1200 : 0)}ms` }} />
+      </div>
+    </div>
+  );
+}
+
+// ---------- invites ----------
 
 function InviteCard({ inv }: { inv: IncomingInvite }) {
   const pr = online.presence!;
@@ -106,7 +176,8 @@ function InviteCard({ inv }: { inv: IncomingInvite }) {
         <div>
           <b>{inv.name}</b> wants to duel!
           <div class="ol-sub">
-            {GAME[inv.game]} · room {inv.room}
+            {GAME[inv.game]}
+            {f?.board ? ` · ${rankLine(f.board)}` : ''}
           </div>
         </div>
       </div>
@@ -124,34 +195,106 @@ function InviteCard({ inv }: { inv: IncomingInvite }) {
   );
 }
 
-function FriendsPanel() {
-  const o = online;
-  const pr = o.presence!;
-  const [game, setGameState] = useState<GameMode>(() => {
+// ---------- the Friends page ----------
+
+function stored<T extends string>(key: string, ok: readonly T[], fallback: T): [T, (v: T) => void] {
+  const [v, set] = useState<T>(() => {
     try {
-      return localStorage.getItem(GAME_KEY) === 'eds' ? 'eds' : 'speed';
+      const x = localStorage.getItem(key) as T | null;
+      return x && ok.includes(x) ? x : fallback;
     } catch {
-      return 'speed';
+      return fallback;
     }
   });
-  const setGame = (g: GameMode) => {
-    setGameState(g);
-    try {
-      localStorage.setItem(GAME_KEY, g);
-    } catch {
-      /* fine for this visit */
-    }
-  };
-  const [code, setCode] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [confirm, setConfirm] = useState<string | null>(null);
-  const close = () => o.openPanel(false);
-  const link = `${location.origin}${location.pathname}?friend=${pr.data.code}`;
+  return [
+    v,
+    (x: T) => {
+      set(x);
+      try {
+        localStorage.setItem(key, x);
+      } catch {
+        /* fine for this visit */
+      }
+    },
+  ];
+}
 
+function FriendsPage() {
+  const o = online;
+  const pr = o.presence!;
+  const [game, setGame] = stored<GameMode>(GAME_KEY, ['speed', 'eds'], 'speed');
+  const list = pr.friends();
+  const requests = list.filter((f) => f.status === 'request');
+  const [tab, setTab] = stored<Tab>(TAB_KEY, ['friends', 'recent', 'add'], 'friends');
+  const [msg, setMsg] = useState<string | null>(null);
+  const close = () => o.openPanel(false);
+  // Android back closes the page
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const added = o.addedFromLink;
+  const recent = pr.recent();
+  const online_ = list.filter((f) => f.status === 'friend' && f.online);
+
+  const state = pr.state;
+  const stateText = state === 'ready' ? 'Online' : state === 'connecting' ? 'Going online…' : state === 'elsewhere' ? 'Open on another phone' : 'Offline';
+
+  return (
+    <div class="fr" role="dialog" aria-label="Friends">
+      <header class="fr-top">
+        <button class="fr-back" onClick={close} aria-label="Close">
+          ‹
+        </button>
+        <h1>Friends</h1>
+        <span class={`fr-state ${state}`}>
+          <i />
+          {stateText}
+        </span>
+      </header>
+      {state === 'elsewhere' && <div class="fr-warn">This duelist is open on another phone or window. Close it there to go online here.</div>}
+      {state === 'offline' && <div class="fr-warn">Can't reach the online service. Check your Wi-Fi or mobile data; it keeps trying.</div>}
+
+      <MeCard />
+
+      <nav class="fr-tabs">
+        <button class={tab === 'friends' ? 'on' : ''} onClick={() => setTab('friends')}>
+          Friends
+          {online_.length > 0 && <em class="live">{online_.length}</em>}
+          {requests.length > 0 && <em class="req">{requests.length}</em>}
+        </button>
+        <button class={tab === 'recent' ? 'on' : ''} onClick={() => setTab('recent')}>
+          Recent{recent.length ? <em>{recent.length}</em> : null}
+        </button>
+        <button class={tab === 'add' ? 'on' : ''} onClick={() => setTab('add')}>
+          Add friend
+        </button>
+      </nav>
+
+      <div class="fr-body">
+        {added && <div class="fr-note">Added {showCode(added)}. They show up here as soon as their game is open.</div>}
+        {msg && (
+          <div class="fr-note" onClick={() => setMsg(null)}>
+            {msg}
+          </div>
+        )}
+        {tab === 'friends' && <FriendsTab list={list} game={game} setGame={setGame} onMsg={setMsg} goAdd={() => setTab('add')} />}
+        {tab === 'recent' && <RecentTab recent={recent} onMsg={setMsg} />}
+        {tab === 'add' && <AddTab onAdded={(m) => (setMsg(m), setTab('friends'))} />}
+      </div>
+    </div>
+  );
+}
+
+/** This player: name, title, friend code and the share button. */
+function MeCard() {
+  const pr = online.presence!;
+  const [copied, setCopied] = useState(false);
+  const link = `${location.origin}${location.pathname}?friend=${pr.data.code}`;
   const share = async () => {
     try {
-      if (navigator.share) return await navigator.share({ title: 'Add me as a friend', text: `Add me on Speed Duel! My friend code is ${showCode(pr.data.code)}`, url: link });
+      if (navigator.share) return await navigator.share({ title: 'Add me as a friend', text: `Duel me in Speed Duel! My friend code is ${showCode(pr.data.code)}`, url: link });
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
     }
@@ -163,81 +306,66 @@ function FriendsPanel() {
       window.prompt('Copy your friend link:', link);
     }
   };
-
-  const add = () => {
-    const c = parseFriendCode(code);
-    if (!c) return setMsg('A friend code is 6 letters and numbers, like K7Q-2MX.');
-    const r = pr.add(c);
-    setCode('');
-    setMsg(r === 'self' ? "That's your own code." : r === 'already' ? 'Already on your list.' : r === 'accepted' ? 'Friend added!' : 'Added! They show up here as soon as their game is open.');
-  };
-
-  const state = pr.state;
-  const stateText =
-    state === 'ready' ? 'You are online' : state === 'connecting' ? 'Going online…' : state === 'elsewhere' ? 'This profile is open on another phone. Close it there to go online here.' : "Can't reach the online service. Check your connection.";
-  const list = pr.friends();
-  const requests = list.filter((f) => f.status === 'request');
-  const friends = list.filter((f) => f.status !== 'request');
-  const added = o.addedFromLink;
-
   return (
-    <Overlay onClose={close}>
-      <Win title="Friends" onClose={close} class="ol-panel">
-        <div class={`ol-state ${state}`}>
-          <span class="ol-dot on" /> {stateText}
-        </div>
-        {added && <div class="ol-note">Friend request sent to {showCode(added)}. They show up here once their game is open.</div>}
+    <div class="fr-me">
+      <Bubble name={pr.me.name} color={pr.me.color} size="l" />
+      <div class="fr-me-txt">
+        <b>{pr.me.name}</b>
+        <small>{rankLine(pr.me.board) ?? '🃏 Rookie Duelist'}</small>
+        <span class="fr-code">
+          Code <b>{showCode(pr.data.code)}</b>
+        </span>
+      </div>
+      <button class="fr-btn gold" onClick={share}>
+        {copied ? 'Copied!' : 'Share'}
+      </button>
+    </div>
+  );
+}
 
-        <div class="ol-me">
-          <div>
-            <div class="ol-sub">Your friend code</div>
-            <div class="ol-code">{showCode(pr.data.code)}</div>
-          </div>
-          <button class="gbtn" onClick={share}>
-            {copied ? 'Link copied!' : 'Share link'}
-          </button>
-        </div>
-
-        <div class="ol-add">
-          <input
-            class="code"
-            value={code}
-            maxLength={40}
-            placeholder="FRIEND CODE"
-            autocapitalize="characters"
-            onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && add()}
-          />
-          <button class="gbtn" disabled={!code.trim()} onClick={add}>
-            Add
-          </button>
-        </div>
-        {msg && <div class="ol-note">{msg}</div>}
-
-        {requests.length > 0 && (
-          <>
-            <div class="ol-h">Friend requests</div>
-            {requests.map((f) => (
-              <div class="ol-row" key={f.code}>
-                <Bubble name={f.name} color={f.color} />
-                <div class="ol-who">
-                  <b>{f.name}</b>
-                  <div class="ol-sub">wants to be friends</div>
-                </div>
-                <button class="gbtn ol-go" onClick={() => pr.accept(f.code)}>
-                  Accept
-                </button>
-                <button class="gbtn" onClick={() => pr.remove(f.code)}>
-                  No
-                </button>
+function FriendsTab({ list, game, setGame, onMsg, goAdd }: { list: FriendView[]; game: GameMode; setGame: (g: GameMode) => void; onMsg: (m: string | null) => void; goAdd: () => void }) {
+  const pr = online.presence!;
+  const [menu, setMenu] = useState<string | null>(null);
+  const requests = list.filter((f) => f.status === 'request');
+  const on = list.filter((f) => f.status !== 'request' && f.online);
+  const off = list.filter((f) => f.status !== 'request' && !f.online);
+  const anyone = list.some((f) => f.status !== 'request');
+  return (
+    <>
+      {requests.length > 0 && (
+        <section>
+          <h2>Friend requests</h2>
+          {requests.map((f) => (
+            <div class="fr-row" key={f.code}>
+              <Bubble name={f.name} color={f.color} />
+              <div class="fr-who">
+                <b>{f.name}</b>
+                <small>wants to be friends</small>
               </div>
-            ))}
-          </>
-        )}
-
-        <div class="ol-h ol-h-game">
-          <span>Friends</span>
-          <span class="ol-seg">
+              <button class="fr-btn go" onClick={() => pr.accept(f.code)}>
+                Accept
+              </button>
+              <button class="fr-btn" onClick={() => pr.remove(f.code)}>
+                No
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
+      {!anyone && (
+        <div class="fr-empty">
+          <div class="fr-empty-ic">👥</div>
+          <b>No friends yet</b>
+          <p>Share your code or link, or add theirs. Once both games are open you see each other online and can duel with one tap.</p>
+          <button class="fr-btn gold" onClick={goAdd}>
+            Add a friend
+          </button>
+        </div>
+      )}
+      {anyone && (
+        <div class="fr-game">
+          <span>Duel invites are for</span>
+          <span class="fr-seg">
             {(['speed', 'eds'] as GameMode[]).map((g) => (
               <button key={g} class={game === g ? 'on' : ''} onClick={() => setGame(g)}>
                 {g === 'speed' ? 'Speed Duel' : 'EDS'}
@@ -245,65 +373,187 @@ function FriendsPanel() {
             ))}
           </span>
         </div>
-        {friends.length === 0 && <div class="ol-empty">No friends yet. Share your link, or add their code above.</div>}
-        {friends.map((f) => (
-          <FriendRow key={f.code} f={f} game={game} onRemove={() => setConfirm(f.code)} onMsg={setMsg} />
-        ))}
-        {confirm && (
-          <div class="ol-confirm">
-            <span>Remove {friends.find((f) => f.code === confirm)?.name ?? 'this friend'}?</span>
-            <button
-              class="gbtn end"
-              onClick={() => {
-                pr.remove(confirm);
-                setConfirm(null);
-              }}
-            >
-              Remove
-            </button>
-            <button class="gbtn" onClick={() => setConfirm(null)}>
-              Keep
-            </button>
-          </div>
-        )}
-      </Win>
-    </Overlay>
+      )}
+      {on.length > 0 && (
+        <section>
+          <h2>
+            Online <em>{on.length}</em>
+          </h2>
+          {on.map((f) => (
+            <FriendRow key={f.code} f={f} game={game} menu={menu === f.code} onMenu={(x) => setMenu(x ? f.code : null)} onMsg={onMsg} />
+          ))}
+        </section>
+      )}
+      {off.length > 0 && (
+        <section>
+          <h2>Offline</h2>
+          {off.map((f) => (
+            <FriendRow key={f.code} f={f} game={game} menu={menu === f.code} onMenu={(x) => setMenu(x ? f.code : null)} onMsg={onMsg} />
+          ))}
+        </section>
+      )}
+      {anyone && on.length === 0 && game === 'speed' && <MatchHint onMsg={onMsg} />}
+    </>
   );
 }
 
-function FriendRow({ f, game, onRemove, onMsg }: { f: FriendView; game: GameMode; onRemove: () => void; onMsg: (m: string | null) => void }) {
+/** Nobody around: point at Find a Match. */
+function MatchHint({ onMsg }: { onMsg: (m: string | null) => void }) {
+  return (
+    <div class="fr-hint">
+      <span>No friends online right now. Duel whoever else is searching instead?</span>
+      <button
+        class="fr-btn go"
+        onClick={() => {
+          const err = online.findMatch('speed');
+          if (err) return onMsg(err);
+          online.openPanel(false);
+        }}
+      >
+        Find a Match
+      </button>
+    </div>
+  );
+}
+
+function FriendRow({ f, game, menu, onMenu, onMsg }: { f: FriendView; game: GameMode; menu: boolean; onMenu: (open: boolean) => void; onMsg: (m: string | null) => void }) {
+  const pr = online.presence!;
   const a = f.activity;
   const openRoom = f.online && a?.kind === 'room' && a.open ? a : null;
   const busy = f.online && a && a.kind !== 'menu' && !openRoom;
   let sub: string;
-  const reach = online.presence?.reach.get(f.code);
+  const reach = pr.reach.get(f.code);
   if (reach === 'blocked' && !f.online) sub = "Their game is open, but the phones can't link yet. Retrying…";
-  else if (f.status === 'sent') sub = f.online ? 'Connecting…' : 'Added · shows up when their game is open';
+  else if (f.status === 'sent') sub = f.online ? 'Connecting…' : 'Added · waiting for their game to open';
   else if (f.online) sub = doing(a);
-  else sub = f.lastSeen ? `Offline · seen ${ago(Date.now() - f.lastSeen)}` : 'Offline · their game is closed';
+  else sub = f.lastSeen ? `Seen ${ago(Date.now() - f.lastSeen)}` : 'Not seen online yet';
+  const rank = rankLine(f.board);
   return (
-    <div class={`ol-row ${f.online ? 'online' : ''}`}>
-      <span class="ol-av">
+    <div class={`fr-row ${f.online ? 'online' : ''} ${busy ? 'busy' : ''}`}>
+      <span class="fr-av">
         <Bubble name={f.name} color={f.color} />
-        <Dot f={f} />
+        <i class="fr-dot" />
       </span>
-      <div class="ol-who">
+      <div class="fr-who">
         <b>{f.name}</b>
-        <div class="ol-sub">{sub}</div>
+        {rank && <small class="fr-rank">{rank}</small>}
+        <small>{sub}</small>
       </div>
       {f.status === 'friend' && openRoom && (
-        <button class="gbtn ol-go" onClick={() => onMsg(online.joinRoom(openRoom.room, openRoom.game))}>
+        <button class="fr-btn go" onClick={() => onMsg(online.joinRoom(openRoom.room, openRoom.game))}>
           Join
         </button>
       )}
       {f.status === 'friend' && f.online && !openRoom && (
-        <button class="gbtn ol-go" disabled={!!busy} onClick={() => onMsg(online.inviteFriend(f.code, game))}>
-          Duel
+        <button class="fr-btn go" disabled={!!busy} onClick={() => onMsg(online.inviteFriend(f.code, game))}>
+          {busy ? 'Busy' : 'Duel'}
         </button>
       )}
-      <button class="ol-x" onClick={onRemove} aria-label={`Remove ${f.name}`}>
+      <button class="fr-more" onClick={() => onMenu(!menu)} aria-label={`More for ${f.name}`}>
         ⋯
       </button>
+      {menu && (
+        <div class="fr-menu">
+          <span>
+            Code {showCode(f.code)} · friends since {ago(Date.now() - f.since).replace(' ago', '')}
+          </span>
+          <button
+            class="fr-btn bad"
+            onClick={() => {
+              pr.remove(f.code);
+              onMenu(false);
+            }}
+          >
+            Remove friend
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+function RecentTab({ recent, onMsg }: { recent: (RecentRec & { status: string | null })[]; onMsg: (m: string | null) => void }) {
+  const pr = online.presence!;
+  if (!recent.length)
+    return (
+      <div class="fr-empty">
+        <div class="fr-empty-ic">🔎</div>
+        <b>Nobody yet</b>
+        <p>Duelists you meet with Find a Match show up here, so you can add the good ones as friends.</p>
+      </div>
+    );
+  return (
+    <section>
+      <h2>Met through Find a Match</h2>
+      {recent.map((r) => (
+        <div class="fr-row" key={r.code}>
+          <Bubble name={r.name} color={r.color} />
+          <div class="fr-who">
+            <b>{r.name}</b>
+            {r.board && <small class="fr-rank">{rankLine(r.board)}</small>}
+            <small>Matched {ago(Date.now() - r.at)}</small>
+          </div>
+          {r.status === 'friend' ? (
+            <span class="fr-tag">Friends ✓</span>
+          ) : r.status === 'sent' ? (
+            <span class="fr-tag">Added</span>
+          ) : (
+            <button
+              class="fr-btn go"
+              onClick={() => {
+                const res = pr.add(r.code, r.name, r.color);
+                onMsg(res === 'accepted' ? `${r.name} is your friend now` : `Added ${r.name}. You're friends as soon as both games are open.`);
+              }}
+            >
+              + Friend
+            </button>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function AddTab({ onAdded }: { onAdded: (msg: string) => void }) {
+  const pr = online.presence!;
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const add = () => {
+    const c = parseFriendCode(code);
+    if (!c) return setErr('A friend code is 6 letters and numbers, like K7Q-2MX.');
+    const r = pr.add(c);
+    setCode('');
+    if (r === 'self') return setErr("That's your own code.");
+    if (r === 'already') return setErr('Already on your list.');
+    onAdded(r === 'accepted' ? 'Friend added!' : `Added ${showCode(c)}. You're friends as soon as both games are open.`);
+  };
+  return (
+    <section class="fr-add">
+      <h2>Type their friend code</h2>
+      <div class="fr-add-row">
+        <input
+          value={code}
+          maxLength={40}
+          placeholder="K7Q-2MX"
+          autocapitalize="characters"
+          autocomplete="off"
+          spellcheck={false}
+          onInput={(e) => (setErr(null), setCode((e.target as HTMLInputElement).value.toUpperCase()))}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+        />
+        <button class="fr-btn go" disabled={!code.trim()} onClick={add}>
+          Add
+        </button>
+      </div>
+      {err && <div class="fr-err">{err}</div>}
+      <ol class="fr-how">
+        <li>
+          Your code is <b>{showCode(pr.data.code)}</b>. Tap <b>Share</b> above to text your link: opening it adds you on their phone.
+        </li>
+        <li>Adding a code makes you friends on both phones, no accept step.</li>
+        <li>Friends show online while their game is open. Tap Duel and they get an invite.</li>
+        <li>Your friends list moves with your duelist when you log in on another phone.</li>
+      </ol>
+    </section>
   );
 }

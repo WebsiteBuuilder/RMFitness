@@ -125,6 +125,46 @@ function FriendsRow() {
   );
 }
 
+/** Find a Match: the big button that queues for a duel against whoever else is searching. */
+function MatchTile() {
+  const [, bump] = useState(0);
+  useEffect(() => online.subscribe(() => bump((n) => n + 1)), []);
+  const mm = online.mm;
+  // the search clock ticks while it's up
+  useEffect(() => {
+    if (!mm.searching) return;
+    const t = setInterval(() => bump((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [mm.searching]);
+  if (mm.searching) {
+    const s = Math.max(0, Math.floor((Date.now() - mm.since) / 1000));
+    return (
+      <Tile
+        size="hero"
+        art="Black Luster Soldier"
+        fy={26}
+        hot
+        title="Searching…"
+        sub={mm.state === 'offline' ? "Can't reach the online service, retrying · tap to cancel" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · tap to cancel`}
+        onPick={() => online.cancelMatch()}
+      />
+    );
+  }
+  return (
+    <Tile
+      size="hero"
+      art="Black Luster Soldier"
+      fy={26}
+      title="Find a Match"
+      sub="Duel whoever else is searching right now"
+      onPick={() => {
+        const err = online.findMatch('speed');
+        if (err) online.say(err);
+      }}
+    />
+  );
+}
+
 /** A plain list row for things that don't need a picture. */
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
@@ -275,12 +315,13 @@ export function SpeedHome({
               </button>
             )}
 
-            <Tile size="hero" art="Dark Magician" fy={22} title="Link Battle" sub="Duel your brother online or on one phone" onPick={() => go('link')} />
+            <MatchTile />
             <div class="sdh-pair">
+              <Tile size="half" art="Dark Magician" fy={22} title="Link Battle" sub="Rooms, friends or one phone" onPick={() => go('link')} />
               <Tile size="half" art="Blue-Eyes White Dragon" title="VS Computer" sub="Counts for your record" onPick={() => go('cpu')} />
-              {onTag && <Tile size="half" art="Harpie Lady Sisters" title="Tag Duel" sub="2v2 and Tag Road" onPick={onTag} />}
             </div>
             <FriendsRow />
+            {onTag && <Row label="Tag Duel" note="2v2 and the Tag Road" onPick={onTag} />}
           </>
         )}
 
