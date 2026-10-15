@@ -1,0 +1,72 @@
+/* The random deck maker sheet (src/ui/RandomDeck.tsx). */
+.rdm .win-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rdm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rdm-row > span {
+  min-width: 52px;
+  font-weight: bold;
+}
+.rdm-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rdm-row .setpick {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+}
+.rdm-keep {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+}
+.rdm-keep input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.rdm-go {
+  min-height: 46px;
+  font-size: 16px;
+}
+.rdm-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rdm-head b {
+  font-size: 16px;
+}
+.rdm-head span {
+  font-size: 13px;
+}
+.rdm-grid {
+  max-height: 42dvh;
+  overflow: auto;
+}
+.rdm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.rdm-actions .gbtn {
+  min-height: 46px;
+}
+.rdm-actions .gbtn.gold {
+  background: linear-gradient(#f3d27a, #c9962e);
+  color: #2a1a00;
+  border-color: #8a6416;
+}
+.rdm-back {
+  align-self: flex-start;
+}

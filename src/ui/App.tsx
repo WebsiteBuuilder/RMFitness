@@ -940,6 +940,7 @@ export function App() {
             onReportSeen={() => setTagReport(null)}
             onPlay={playTag}
             onJoin={joinTag}
+            onSpeed={setSpeedSave}
             onBack={() => (setTagReport(null), setTagOpen(false))}
           />
         );

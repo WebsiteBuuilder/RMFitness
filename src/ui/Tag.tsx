@@ -1,7 +1,7 @@
 // 2v2 Tag Duels: the menu, the Tag Road (the 2v2 campaign), free tag duels, picking a
 // computer partner, and the bar over the board that shows whose turn it is in a tag duel.
 import { useState } from 'preact/hooks';
-import { activeDeck, speedDeckProblems, type SpeedSave } from '../eds/speedSave';
+import { activeDeck, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { collectionProblems } from '../collection/economy';
 import type { SoloSave } from '../eds/speedCampaign/save';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
@@ -9,7 +9,7 @@ import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, t
 import { LAYOUTS, sideOfPhone, type TagLayout } from '../eds/tagDuel';
 import { activeMember, benchHand } from '../eds/tag';
 import type { DuelState, Pid } from '../eds/types';
-import { Btn, Portrait, ResultBanner, Sheet, Top } from './Solo';
+import { Btn, Portrait, ResultBanner, Sheet, SoloDeckPick, Top } from './Solo';
 import { CardImg } from './CardImg';
 import './tag.css';
 
@@ -42,6 +42,8 @@ interface Props {
   onPlay: (plan: TagPlan, how: 'here' | 'host') => void;
   onJoin: (code: string) => void;
   onBack: () => void;
+  /** saves the Speed Duel save (picking the deck to duel with) */
+  onSpeed: (s: SpeedSave) => void;
 }
 
 type View = { v: 'home' } | { v: 'road' } | { v: 'free' } | { v: 'join' };
@@ -63,13 +65,31 @@ export function TagHub(p: Props) {
 
 type Ctx = Props & { deckProblems: string[]; deckName: string };
 
-function DeckBar({ deckProblems, deckName }: Ctx) {
+function DeckBar({ deckProblems, deckName, speed, onSpeed }: Ctx) {
+  const [open, setOpen] = useState(false);
+  const problemsOf = (d: SpeedDeck) => [...speedDeckProblems(d), ...collectionProblems(speed, d)];
   return (
     <div class="so-deckbar">
       <div>
-        <b>Your deck</b>
-        <span class={deckProblems.length ? 'so-bad' : 'so-good'}>{deckProblems.length ? deckProblems[0] : `${deckName} · change it in Decks`}</span>
+        <b>Your deck{deckName ? `: ${deckName}` : ''}</b>
+        <span class={deckProblems.length ? 'so-bad' : 'so-good'}>{deckProblems.length ? deckProblems[0] : `${activeDeck(speed)!.main.length} cards · ready`}</span>
       </div>
+      {speed.decks.length > 1 && (
+        <Btn kind="blue" onClick={() => setOpen(true)}>
+          Change
+        </Btn>
+      )}
+      {open && (
+        <SoloDeckPick
+          title="Deck for Tag Duels"
+          decks={speed.decks}
+          current={activeDeck(speed)}
+          problemsOf={problemsOf}
+          note="Anything goes decks can play, but they earn nothing on the Tag Road."
+          onPick={(d) => (onSpeed({ ...speed, active: d.id }), setOpen(false))}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -116,7 +136,7 @@ function Join(p: Ctx & { back: () => void }) {
         <Btn kind="gold" disabled={!ok || p.deckProblems.length > 0} onClick={() => p.onJoin(code)}>
           Join room {ok ? code : ''}
         </Btn>
-        {p.deckProblems.length > 0 && <div class="so-warn">Fix your deck first: {p.deckProblems[0]}</div>}
+        <DeckBar {...p} />
       </div>
     </>
   );
@@ -320,6 +340,7 @@ function Free(p: Ctx & { back: () => void }) {
     <>
       <Top title="Tag Duel" sub="pick the pair to face; counts for nothing" onBack={p.back} />
       <div class="so-body">
+        <DeckBar {...p} />
         <Btn kind="gold" onClick={() => setSel(all[Math.floor(Math.random() * all.length)])}>
           Random pair
         </Btn>

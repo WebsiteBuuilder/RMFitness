@@ -3,12 +3,14 @@
 import { useState } from 'preact/hooks';
 import { allCards, card, cardByPassword } from '../eds/db';
 import { PACKS, RARITY_SHORT, openPack, packByName, type PackCard } from '../eds/packs';
-import { MONTHS, WEEKDAYS, CONTROL_NAMES, addToTrunk, controlsOf, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
+import { DECK_SIZE, MONTHS, WEEKDAYS, CONTROL_NAMES, addToTrunk, controlsOf, calendarDate, deckProblems, totalCards, type Profile, type SaveFile } from '../eds/save';
 import { Avatar } from './Profiles';
 import { DUELISTS, STAGE_WINS_NEEDED, displayName, isUnlocked, lockReason, stageReached, type Duelist } from '../eds/campaign';
 import { STARTER_BLURB, STARTER_COLORS, buildStarterDeck, type StarterColor } from '../eds/starter';
 import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { RandomDeckSheet } from './RandomDeck';
+import { edsThemes, randomEdsDeck, withEdsDeck } from '../eds/edsRandom';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip, playWin, unlockAudio } from './sound';
 
@@ -327,6 +329,9 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
   const [q, setQ] = useState('');
   const [sel, setSel] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [random, setRandom] = useState(false);
+  /** the save as it was before a random deck replaced the deck */
+  const [undo, setUndo] = useState<SaveFile | null>(null);
 
   const counts = (list: string[]) => {
     const m: Record<string, number> = {};
@@ -385,7 +390,32 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
           </button>
         ))}
         <input class="search" placeholder="Search" value={q} onInput={(ev) => setQ((ev.target as HTMLInputElement).value)} />
+        <button class="chip" onClick={() => (playBlip(), setRandom(true))} aria-label="Random deck maker">
+          🎲 Random
+        </button>
+        {undo && (
+          <button class="chip" onClick={() => (playBlip(), onSave(undo), setUndo(null))}>
+            ↶ Undo
+          </button>
+        )}
       </div>
+      {random && (
+        <RandomDeckSheet
+          sizes={[DECK_SIZE]}
+          themes={() => edsThemes(save)}
+          make={(o) => randomEdsDeck(save, { ...o, keep: o.keepCards ? { main: save.main, extra: save.fusion, skill: null } : undefined })}
+          hasCards={save.main.length > 0}
+          owned
+          onUse={(r) => {
+            setUndo(save);
+            onSave(withEdsDeck(save, r.main, r.extra));
+            setRandom(false);
+            setTab('main');
+            setSel(null);
+          }}
+          onClose={() => setRandom(false)}
+        />
+      )}
       <div class="cardlist">
         {entries.length === 0 && <p class="hint">Nothing here{dbKnown ? '' : ' (card data still loading)'}.</p>}
         {entries.map(([n, c]) => {

@@ -27,6 +27,9 @@ import {
   type Starter,
 } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { RandomDeckSheet } from './RandomDeck';
+import { DeckSwitch } from './DeckPick';
+import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip } from './sound';
 import { ShadowRealmScreen } from '../art/ShadowRealmScreen';
@@ -124,6 +127,7 @@ export function SpeedHub({
   const [sub, setSub] = useState<Sub>('menu');
   const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editRandom, setEditRandom] = useState(false);
   // the duel's 3D engine downloads while the player is still here
   useEffect(() => preloadArt3d(), []);
   const deck = activeDeck(save);
@@ -149,12 +153,13 @@ export function SpeedHub({
 
   if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
-  if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id) => (setEditing(id), setSub('edit'))} onBack={() => setSub('menu')} />;
+  if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id, random) => (setEditing(id), setEditRandom(!!random), setSub('edit'))} onBack={() => setSub('menu')} />;
   if (sub === 'edit' && editing) {
     const d = save.decks.find((x) => x.id === editing);
-    if (d) return <SpeedDeckEdit deck={d} collection={d.open ? undefined : (save.collection ?? {})} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
+    if (d) return <SpeedDeckEdit key={d.id} openRandom={editRandom} deck={d} collection={d.open ? undefined : (save.collection ?? {})} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
   }
-  if (sub === 'cpu') return <CpuPick save={save} problems={problems} onPick={onCpu} onBack={() => setSub('menu')} />;
+  const deckSwitch = <DeckSwitch decks={save.decks} current={deck} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]} onPick={(d) => onSave({ ...save, active: d.id })} onManage={() => setSub('decks')} />;
+  if (sub === 'cpu') return <CpuPick save={save} problems={problems} deckSwitch={deckSwitch} onPick={onCpu} onBack={() => setSub('menu')} />;
   if (sub === 'shop') return <CardShop save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
@@ -166,7 +171,7 @@ export function SpeedHub({
   const headline = levelHeadline(save);
   const sealed = sealedCards(save);
   const crown = bestCrown(save);
-  if (sub === 'link') return <SpeedLink problems={problems} onPick={onLink} onBack={() => setSub('menu')} />;
+  if (sub === 'link') return <SpeedLink problems={problems} deckSwitch={deckSwitch} onPick={onLink} onBack={() => setSub('menu')} />;
 
   return (
     <SpeedHome
@@ -187,6 +192,8 @@ export function SpeedHub({
       onExit={onExit}
       go={setSub}
       cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))}
+      onPickDeck={(d) => onSave({ ...save, active: d.id })}
+      problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]}
     />
   );
 }
@@ -224,14 +231,14 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
   );
 }
 
-function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onEdit: (id: string) => void; onBack: () => void }) {
+function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onEdit: (id: string, random?: boolean) => void; onBack: () => void }) {
   const [sel, setSel] = useState<SpeedDeck | null>(null);
   const [adding, setAdding] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const add = (d: SpeedDeck) => {
+  const add = (d: SpeedDeck, random = false) => {
     onSave({ ...save, decks: [...save.decks, d] });
     setAdding(false);
-    onEdit(d.id);
+    onEdit(d.id, random);
   };
   const full = save.decks.length >= MAX_DECKS;
   return (
@@ -284,6 +291,7 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
             <Menu
               items={[
                 { label: 'Empty deck', note: 'from the cards you own', onPick: () => add({ id: newDeckId(), name: `Deck ${save.decks.length + 1}`, main: [], extra: [], skill: null }) },
+                { label: '🎲 Random deck', note: 'built for you from the cards you own', onPick: () => add({ id: newDeckId(), name: `Random ${save.decks.length + 1}`, main: [], extra: [], skill: null }, true) },
                 { label: 'Anything goes deck', note: "every card; earns nothing and can't be bet", onPick: () => add({ id: newDeckId(), name: `Anything ${save.decks.length + 1}`, main: [], extra: [], skill: null, open: true }) },
                 ...STARTERS.map((s) => ({ label: `Start from ${s.character}`, note: 'the copies you own', onPick: () => add(ownedOnly(save, deckFromStarter(s))) })),
               ]}
@@ -303,7 +311,10 @@ type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
  * Deck editor: every Speed Duel card, 3 copies each, plus the deck's Skill. With a
  * `collection`, only cards (and Skills) owned there are offered, up to the copies owned.
  */
-export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number> }) {
+export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; openRandom?: boolean }) {
+  const [random, setRandom] = useState(openRandom);
+  /** the deck as it was before a random deck replaced it */
+  const [undo, setUndo] = useState<SpeedDeck | null>(null);
   const [tab, setTab] = useState<Tab>('cards');
   const [kind, setKind] = useState<Kind>('all');
   const [q, setQ] = useState('');
@@ -382,8 +393,33 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
         <button class="chip" onClick={() => setRenaming(true)}>
           {deck.name} ✎
         </button>
+        <button class="chip sd-dice" onClick={() => (playBlip(), setRandom(true))} aria-label="Random deck maker">
+          🎲 Random
+        </button>
+        {undo && (
+          <button class="chip" onClick={() => (onChange(undo), setUndo(null), playBlip())}>
+            ↶ Undo
+          </button>
+        )}
         <span class={problems.length ? 'err' : 'good'}>{problems.length ? problems[0] : `Ready · ${deck.main.length} cards${deck.skill ? ` · ${deck.skill}` : ''}`}</span>
       </div>
+      {random && (
+        <RandomDeckSheet
+          sizes={[20, 25, 30]}
+          themes={(n) => speedThemes(collection, n)}
+          make={(o) => randomSpeedDeck(collection, { ...o, keep: o.keepCards ? deck : undefined })}
+          hasCards={deck.main.length + deck.extra.length > 0}
+          owned={!!collection}
+          onUse={(r) => {
+            setUndo(deck);
+            onChange({ ...deck, main: r.main, extra: r.extra, skill: r.skill });
+            setRandom(false);
+            setTab('main');
+            setSel(null);
+          }}
+          onClose={() => setRandom(false)}
+        />
+      )}
       {deck.open && <p class="hint shop-pad">Anything goes deck: every card is here, but duels with it earn no packs or chips and it can't be bet.</p>}
       {collection && tab === 'cards' && pool.length < 40 && <p class="hint shop-pad">Only cards you own are here. Get more from packs and crafting in the Card Shop.</p>}
       {tab !== 'skill' && (
@@ -504,7 +540,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection }: { deck: Sp
   );
 }
 
-function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems: string[]; onPick: (o: SpeedOpponent) => void; onBack: () => void }) {
+function CpuPick({ save, problems, deckSwitch, onPick, onBack }: { save: SpeedSave; problems: string[]; deckSwitch: preact.ComponentChildren; onPick: (o: SpeedOpponent) => void; onBack: () => void }) {
   const opps = useMemo(() => speedOpponents(), []);
   const [sel, setSel] = useState<SpeedOpponent | null>(null);
   const [level, setLevel] = useState<Difficulty>(savedDifficulty);
@@ -512,7 +548,7 @@ function CpuPick({ save, problems, onPick, onBack }: { save: SpeedSave; problems
   return (
     <div class="screen">
       <Win title="Duel the Computer" onClose={onBack}>
-        {problems.length > 0 && <div class="warn">Your deck is not ready: {problems[0]}.</div>}
+        {deckSwitch}
         <Menu
           items={opps.map((o) => {
             const r = save.record[o.name];
@@ -574,13 +610,13 @@ function SpeedRecord({ save, onBack }: { save: SpeedSave; onBack: () => void }) 
   );
 }
 
-function SpeedLink({ problems, onPick, onBack }: { problems: string[]; onPick: (c: SpeedLinkChoice) => void; onBack: () => void }) {
+function SpeedLink({ problems, deckSwitch, onPick, onBack }: { problems: string[]; deckSwitch: preact.ComponentChildren; onPick: (c: SpeedLinkChoice) => void; onBack: () => void }) {
   const [code, setCode] = useState('');
   const bad = problems.length > 0;
   return (
     <div class="screen">
       <Win title="Speed Duel Link Battle" onClose={onBack}>
-        {bad && <div class="warn">Your deck is not ready: {problems[0]}.</div>}
+        {deckSwitch}
         <Menu
           items={[
             { label: 'Friends', note: 'see who is online and invite them with one tap', onPick: () => online.openPanel() },
