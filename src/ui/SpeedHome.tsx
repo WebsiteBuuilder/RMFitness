@@ -10,6 +10,7 @@ import type { SealedCard } from '../art/shadow';
 import { CardImg } from './CardImg';
 import { Avatar } from './Profiles';
 import { Menu, Overlay, Win } from './Window';
+import { DeckMenu } from './DeckPick';
 import { playBlip } from './sound';
 import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
@@ -154,6 +155,8 @@ export function SpeedHome({
   onExit,
   go,
   cpus,
+  onPickDeck,
+  problemsOf,
 }: {
   tab: HomeTab;
   onTab: (t: HomeTab) => void;
@@ -173,7 +176,11 @@ export function SpeedHome({
   go: (to: HomeGo) => void;
   /** computer duelists' record names, for the chip help's "still to win today" */
   cpus: string[];
+  /** makes another deck the one you duel with */
+  onPickDeck: (d: SpeedDeck) => void;
+  problemsOf: (d: SpeedDeck) => string[];
 }) {
+  const [deckMenu, setDeckMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [rules, setRules] = useState(false);
   lastTab = tab;
@@ -227,10 +234,10 @@ export function SpeedHome({
       <main class="sdh-page" key={tab}>
         {tab === 'duel' && (
           <>
-            <button class="sdh-deck" onClick={() => (playBlip(), go('decks'))}>
+            <button class="sdh-deck" onClick={() => (playBlip(), save.decks.length > 1 ? setDeckMenu(true) : go('decks'))}>
               <span class="sdh-deck-pic">{ace ? <CardImg name={ace} /> : <span class="cimg cback" />}</span>
               <span class="sdh-deck-txt">
-                <small>Active deck</small>
+                <small>Active deck{save.decks.length > 1 ? ' · tap to switch' : ''}</small>
                 <b>{deck ? deck.name : 'No deck yet'}</b>
                 <span>
                   {deck ? `${deck.main.length} cards` : 'Pick a deck to duel'}
@@ -338,6 +345,7 @@ export function SpeedHome({
         ))}
       </nav>
 
+      {deckMenu && <DeckMenu decks={save.decks} current={deck ?? null} problemsOf={problemsOf} onPick={(d) => (onPickDeck(d), setDeckMenu(false))} onManage={() => go('decks')} onClose={() => setDeckMenu(false)} />}
       {settings && (
         <Overlay onClose={() => setSettings(false)}>
           <Win title="Settings" onClose={() => setSettings(false)}>

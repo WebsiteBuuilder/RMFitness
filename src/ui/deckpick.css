@@ -1,0 +1,53 @@
+/* The "Duel with" deck line and deck list (src/ui/DeckPick.tsx). */
+.dp-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+}
+.dp-line-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.dp-line-t small {
+  opacity: 0.75;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dp-line-t b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dp-line-t span {
+  font-size: 12px;
+}
+.dp-good {
+  color: #8fe39a;
+}
+.dp-bad {
+  color: #ff9a9a;
+}
+.dp-change {
+  flex: none;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.dp-win .menu.scroll {
+  max-height: 60dvh;
+  overflow: auto;
+}

@@ -24,6 +24,8 @@ export interface CampaignProgress {
   pendingPicks?: string[][];
   /** a chapter-clear screen still to show */
   cleared?: string;
+  /** one of the profile's own decks to walk the road with instead of the road deck (null or unset: the road deck) */
+  deckId?: string | null;
 }
 
 export interface LabyrinthProgress {

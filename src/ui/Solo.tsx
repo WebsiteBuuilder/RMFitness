@@ -20,6 +20,7 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { SpeedDeckEdit, speedOpponents } from './Speed';
 import { buzz, playBlip, playFanfare, playLose, playStar, playVs } from './sound';
 import { Legends } from './Legends';
+import { deckSummary } from './DeckPick';
 import './solo.css';
 
 export type SoloMode = 'campaign' | 'labyrinth' | 'practice' | 'legends';
@@ -738,6 +739,7 @@ function Road(p: Ctx) {
   const [editing, setEditing] = useState(false);
   const [view, setView] = useState<'map' | 'trophies'>('map');
   const [rival, setRival] = useState(false);
+  const [picking, setPicking] = useState(false);
   /** the result screens after a duel: 0 result, then one per star pick, then the chapter clear */
   const [stage, setStage] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
@@ -752,19 +754,22 @@ function Road(p: Ctx) {
     setRepaired(r.removed);
   }, [c.deck, speed.collection]);
 
+  // The road deck, or one of your own decks built from cards you own (Anything goes decks can't earn here).
+  const ownDecks = speed.decks.filter((d) => !d.open);
+  const chosen = c.deckId ? (ownDecks.find((d) => d.id === c.deckId) ?? null) : null;
+  const deck = chosen ?? c.deck;
   if (!c.starter) return <RoadStart {...p} />;
-  if (editing && c.deck)
+  if (editing && deck)
     return (
       <SpeedDeckEdit
-        deck={c.deck}
+        deck={deck}
         collection={speed.collection ?? {}}
-        onChange={(d) => (setSolo({ ...solo, campaign: { ...c, deck: d } }), p.onSpeed({ ...speed, road: d }))}
+        onChange={(d) => (chosen ? p.onSpeed({ ...speed, decks: speed.decks.map((x) => (x.id === d.id ? d : x)) }) : (setSolo({ ...solo, campaign: { ...c, deck: d } }), p.onSpeed({ ...speed, road: d })))}
         onBack={() => setEditing(false)}
       />
     );
 
   const ch = CHAPTERS.find((x) => x.id === chId) ?? CHAPTERS[0];
-  const deck = c.deck;
   const problems = deck ? roadDeckProblems(speed, deck) : ['No road deck'];
   const owned = Object.values(speed.collection ?? {}).reduce((a, b) => a + b, 0);
   const allIds = CHAPTERS.flatMap((x) => x.nodes.map((n) => n.id));
@@ -904,13 +909,16 @@ function Road(p: Ctx) {
           </div>
           <div class="so-deckbar">
             <div>
-              <b>Road deck</b>
+              <b>{chosen ? `Your deck: ${chosen.name}` : 'Road deck'}</b>
               <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
-              {repaired.length > 0 && <span class="so-dim">Took out {repaired.length === 1 ? repaired[0] : `${repaired.length} cards`} you no longer own and refilled the deck from your collection.</span>}
+              {!chosen && repaired.length > 0 && <span class="so-dim">Took out {repaired.length === 1 ? repaired[0] : `${repaired.length} cards`} you no longer own and refilled the deck from your collection.</span>}
             </div>
-            <Btn kind="blue" onClick={() => setEditing(true)}>
-              Edit
-            </Btn>
+            {ownDecks.length > 0 && (
+              <Btn kind="blue" onClick={() => setPicking(true)}>
+                Change
+              </Btn>
+            )}
+            <Btn onClick={() => setEditing(true)}>Edit</Btn>
           </div>
           <Btn onClick={() => setRival(true)}>Rival duel: your brother's deck</Btn>
         </div>
@@ -946,8 +954,20 @@ function Road(p: Ctx) {
             ))}
           </div>
           <div class="so-dim">Their deck: {deckOf(sel.duelist).main.length} cards{sel.duelist.skill ? ` · Skill: ${skillName(sel.duelist.skill)}` : ''}</div>
-          {!sel.story && problems.length > 0 && <div class="so-warn">Fix your road deck first: {problems[0]}</div>}
-          <Btn kind="gold" disabled={!sel.story && problems.length > 0} onClick={() => (setSel(null), duel(sel))}>
+          {!sel.story && deck && (
+            <div class="so-deckbar">
+              <div>
+                <b>Your deck: {deck.name}</b>
+                <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck.main.length} cards · ${skillName(deck.skill)}`}</span>
+              </div>
+              {ownDecks.length > 0 && (
+                <Btn kind="blue" onClick={() => setPicking(true)}>
+                  Change
+                </Btn>
+              )}
+            </div>
+          )}
+                    <Btn kind="gold" disabled={!sel.story && problems.length > 0} onClick={() => (setSel(null), duel(sel))}>
             Duel!
           </Btn>
         </Sheet>
@@ -964,6 +984,17 @@ function Road(p: Ctx) {
         </Sheet>
       )}
       {rival && <RivalSheet {...p} deck={deck} problems={problems} onClose={() => setRival(false)} />}
+      {picking && (
+        <SoloDeckPick
+          title="Deck for the Millennium Road"
+          decks={[...(c.deck ? [c.deck] : []), ...ownDecks]}
+          current={deck}
+          problemsOf={(d) => roadDeckProblems(speed, d)}
+          note={`Walk the road with your road deck or any deck built from cards you own. "Anything goes" decks can't: the road pays cards and chips.`}
+          onPick={(d) => (setSolo({ ...solo, campaign: { ...c, deckId: d.id === c.deck?.id ? null : d.id } }), setPicking(false))}
+          onClose={() => setPicking(false)}
+        />
+      )}
 
       {rep && repNode && stage === 0 && (
         <Sheet>
@@ -1744,3 +1775,25 @@ function RunEnd(p: Ctx & { s: RunSummary; onDone: () => void }) {
 
 // Re-exported for tests that walk the screens.
 export const SOLO_DEBUG = { EVENTS, allCampaignDuelists };
+
+/** The deck list in the solo screens' sheet style. */
+export function SoloDeckPick({ title, decks, current, problemsOf, note, onPick, onClose }: { title: string; decks: SpeedDeck[]; current: SpeedDeck | null; problemsOf: (d: SpeedDeck) => string[]; note?: string; onPick: (d: SpeedDeck) => void; onClose: () => void }) {
+  return (
+    <Sheet title={title} onClose={onClose}>
+      {decks.map((d) => {
+        const bad = problemsOf(d);
+        return (
+          <button key={d.id} class={`lg-deck ${current?.id === d.id ? 'on' : ''}`} onClick={() => (playBlip(), onPick(d))}>
+            <b>
+              {current?.id === d.id ? '★ ' : ''}
+              {d.name}
+              {d.open ? ' · Anything goes' : ''}
+            </b>
+            <span class={bad.length ? 'so-bad' : 'so-good'}>{bad.length ? bad[0] : deckSummary(d)}</span>
+          </button>
+        );
+      })}
+      {note && <p class="so-dim">{note}</p>}
+    </Sheet>
+  );
+}
