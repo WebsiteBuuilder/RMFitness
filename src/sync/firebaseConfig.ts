@@ -1,8 +1,8 @@
 /**
  * Firebase web config. Paste the object from the Firebase console
- * (Project settings → Your apps → SDK setup) to turn on the Firebase transport.
- * The values are public by design; access is controlled by database rules.
- * Leave null to use the direct phone-to-phone transport only.
+ * (Project settings → Your apps → SDK setup) to turn on shared duelist accounts
+ * (src/accounts). The values are public by design; access is controlled by the
+ * rules in database.rules.json. Leave null to keep every profile on its phone.
  */
 export const firebaseConfig: {
   apiKey: string;
@@ -11,3 +11,6 @@ export const firebaseConfig: {
   projectId: string;
   appId: string;
 } | null = null;
+
+/** Also send duel rooms through Firebase instead of phone-to-phone (off: rooms stay as they are). */
+export const firebaseRooms = false;

@@ -1,6 +1,6 @@
 import type { GameEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
-import { firebaseConfig } from './firebaseConfig';
+import { firebaseConfig, firebaseRooms } from './firebaseConfig';
 
 /**
  * Room log in Firebase Realtime Database: rooms/<CODE>/events/<pushKey>.
@@ -24,7 +24,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   }
 
   static available(): boolean {
-    return firebaseConfig !== null;
+    return firebaseConfig !== null && firebaseRooms;
   }
 
   private async start() {
