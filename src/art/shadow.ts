@@ -77,7 +77,7 @@ export function shadowRealmOf(state: DuelState): ShadowResult | null {
 }
 
 // ---------- the stake, kept in each profile's Speed Duel save ----------
-type ShadowSave = SpeedSave & { sealed?: SealedCard[]; cpuSealed?: Record<string, SealedCard[]> };
+type ShadowSave = SpeedSave & { sealed?: SealedCard[]; cpuSealed?: Record<string, SealedCard[]>; bailouts?: number };
 
 export function sealedCards(s: SpeedSave): SealedCard[] {
   return (s as ShadowSave).sealed ?? [];
@@ -145,6 +145,25 @@ export function withShadow(s: SpeedSave, result: 'w' | 'l' | 'd', sr: ShadowResu
   next.sealed = sealed;
   next.cpuSealed = cpuMap;
   return { save: next, freed, lost };
+}
+
+// ---------- the bail-out: "I'm wack, give me my monster back" ----------
+// Winning a duel is the proud way out. This one is free and instant: the player owns
+// up to it, the card comes straight back, and the confession is counted (a record
+// only, it never costs or pays anything).
+
+/** How many times this profile begged a card back out of the Shadow Realm. */
+export function bailoutsOf(s: SpeedSave): number {
+  return (s as ShadowSave).bailouts ?? 0;
+}
+
+/** Frees one sealed card (or every one, with null) without winning. Counts one bail-out per card. */
+export function releaseSealed(s: SpeedSave, name: string | null): { save: SpeedSave; freed: string[] } {
+  const sealed = sealedCards(s);
+  const freed = sealed.filter((x) => name === null || x.name === name).map((x) => x.name);
+  if (!freed.length) return { save: s, freed };
+  const next = { ...s, sealed: sealed.filter((x) => !freed.includes(x.name)), bailouts: bailoutsOf(s) + freed.length } as ShadowSave;
+  return { save: next, freed };
 }
 
 // ---------- the Shadow Realm log (this phone) ----------
