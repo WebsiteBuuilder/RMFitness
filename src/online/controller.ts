@@ -9,6 +9,13 @@ import { PeerTransport } from './peerTransport';
 import { parseFriendCode, type Activity, type Transport } from './protocol';
 import { loadOnline, writeOnline } from './store';
 import type { BoardStats } from '../collection/rankings';
+import { Matchmaker, type Match } from './matchmaking';
+import { PeerQueue } from './peerQueue';
+
+/** The "Opponent found!" screen stays up this long before the duel room opens. */
+export const VERSUS_MS = 2600;
+/** The joining phone waits a little longer, so the host's room is open by the time it knocks. */
+const GUEST_EXTRA_MS = 1200;
 
 export interface AppHooks {
   /** open a room as its host, under this code, for this game */
@@ -44,8 +51,26 @@ class OnlineController {
   private channel: BroadcastChannel | null = null;
   /** tests swap in their own transport */
   makeTransport: () => Transport = () => new PeerTransport();
+  /** Find a Match: the queue for a duel against whoever else is searching */
+  readonly mm: Matchmaker;
+  /** the match being shown on the "Opponent found!" screen, before its room opens */
+  versus: Match | null = null;
+  /** the room the last Find a Match opened: its lobby readies both players by itself */
+  matchedRoom: { room: string; opponent: string } | null = null;
+  /** the search stopped because the game went to the background: it picks up on return */
+  private resumeSearch = false;
+  private versusTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
+    this.mm = new Matchmaker({
+      net: () => new PeerQueue(),
+      me: () => {
+        const pr = this.presence;
+        return { name: pr?.me.name ?? this.profile?.alias ?? 'Duelist', color: pr?.me.color ?? this.profile?.color ?? '#888888', code: pr?.data.code ?? '', ...(pr?.me.board ? { board: pr.me.board } : {}) };
+      },
+    });
+    this.mm.subscribe(() => this.changed());
+    this.mm.onMatch = (m) => this.matched(m);
     if (typeof location !== 'undefined') {
       const p = new URLSearchParams(location.search);
       const f = p.get('friend');
@@ -67,7 +92,18 @@ class OnlineController {
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState !== 'visible') return;
+        if (document.visibilityState !== 'visible') {
+          // A phone in a pocket can't duel: leave the queue, and rejoin it on the way back.
+          if (this.mm.searching) {
+            this.resumeSearch = true;
+            this.mm.cancel();
+          }
+          return;
+        }
+        if (this.resumeSearch) {
+          this.resumeSearch = false;
+          if (this.profile && !this.versus) this.findMatch(this.mm.game);
+        }
         if (this.passive && this.profile) {
           this.passive = false;
           this.goOnline(this.profile);
@@ -75,6 +111,8 @@ class OnlineController {
         } else this.presence?.wake();
       });
       window.addEventListener('online', () => this.presence?.wake());
+      // closing the game leaves the queue at once (the broker forgets the slot)
+      window.addEventListener('pagehide', () => this.mm.cancel());
     }
   }
 
@@ -101,6 +139,7 @@ class OnlineController {
     this.unsubPresence?.();
     this.presence?.stop();
     this.presence = null;
+    this.cancelMatch();
     this.profile = p;
     this.panelOpen = false;
     this.lastOut = null;
@@ -132,6 +171,7 @@ class OnlineController {
 
   /** Another window (the installed app, a browser tab) took this profile online. */
   private stepAside() {
+    this.cancelMatch();
     this.unsubPresence?.();
     this.unsubPresence = null;
     this.presence?.stop();
@@ -186,6 +226,8 @@ class OnlineController {
     const pr = this.presence;
     if (!pr) return;
     if (!session || !onScreen) return pr.setActivity({ kind: 'menu' });
+    // another duel started: the queue would only pull this player away from it
+    if (this.mm.searching) this.cancelMatch();
     const update = () => {
       const room = session.adapter.roomCode;
       const online = session.adapter.kind !== 'local' && !!room;
@@ -196,6 +238,57 @@ class OnlineController {
     };
     update();
     this.unsubSession = session.listen(update);
+  }
+
+  // ---------- Find a Match ----------
+
+  /** Joins the queue. Returns why not, when it can't. */
+  findMatch(game: GameMode = 'speed'): string | null {
+    if (!this.app || !this.profile) return 'Your game is still loading';
+    if (!this.presence) return this.passive ? 'This duelist is open in another window' : 'Not online yet';
+    const problem = this.app.deckProblem(game);
+    if (problem) return problem;
+    this.resumeSearch = false;
+    this.mm.start(game);
+    return null;
+  }
+
+  cancelMatch() {
+    this.resumeSearch = false;
+    this.mm.cancel();
+    if (this.versusTimer) clearTimeout(this.versusTimer);
+    this.versusTimer = null;
+    if (this.versus) {
+      this.versus = null;
+      this.changed();
+    }
+  }
+
+  /** Someone else pressed the button: show who, then open (or join) the room. */
+  private matched(m: Match) {
+    this.versus = m;
+    this.presence?.metRecently(m.opponent);
+    navigator.vibrate?.([60, 40, 120]);
+    this.changed();
+    if (this.versusTimer) clearTimeout(this.versusTimer);
+    this.versusTimer = setTimeout(
+      () => {
+        this.versusTimer = null;
+        const app = this.app;
+        this.versus = null;
+        this.mm.clear();
+        this.panelOpen = false;
+        this.matchedRoom = { room: m.room, opponent: m.opponent.name };
+        if (app) {
+          if (m.role === 'host') {
+            app.host(m.room, m.game);
+            this.presence?.setActivity({ kind: 'room', room: m.room, game: m.game, open: true });
+          } else app.join(m.room, m.game);
+        }
+        this.changed();
+      },
+      VERSUS_MS + (m.role === 'guest' ? GUEST_EXTRA_MS : 0),
+    );
   }
 
   /** One tap on a friend: open a room (or reuse the one open) and invite them to it. */
@@ -213,6 +306,7 @@ class OnlineController {
       pr.setActivity({ kind: 'room', room, game, open: true });
     }
     if (!pr.invite(code, room, game)) return 'They just went offline';
+    this.cancelMatch();
     this.panelOpen = false;
     this.changed();
     return null;
@@ -228,6 +322,7 @@ class OnlineController {
       return problem;
     }
     if (inviteId && !pr.answer(inviteId, true)) return 'That invite expired';
+    this.cancelMatch();
     this.panelOpen = false;
     this.app.join(room, game);
     this.changed();

@@ -9,7 +9,7 @@ export function loadOnline(profileId: string, storage: Pick<Storage, 'getItem' |
     const raw = storage.getItem(key(profileId));
     if (raw) {
       const d = JSON.parse(raw) as Partial<OnlineData>;
-      if (typeof d.code === 'string' && d.code.length === 6) return { code: d.code, friends: Array.isArray(d.friends) ? d.friends : [], ignored: Array.isArray(d.ignored) ? d.ignored : [] };
+      if (typeof d.code === 'string' && d.code.length === 6) return { code: d.code, friends: Array.isArray(d.friends) ? d.friends : [], ignored: Array.isArray(d.ignored) ? d.ignored : [], recent: Array.isArray(d.recent) ? d.recent : [] };
     }
   } catch {
     /* a broken entry gets a fresh code below */

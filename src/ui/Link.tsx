@@ -233,6 +233,13 @@ export function Lobby({
     if (session.adapter.isHost && bothReady && sameGame && betsLocked(seats) && !view.toss) session.send(tossFor(view, hotseat));
   }, [rematch, view.log.length, status]);
 
+  // A room Find a Match opened: both sit down with their active deck as soon as the phones link.
+  const matched = !!code && online.matchedRoom?.room === code && !tag ? online.matchedRoom : null;
+  useEffect(() => {
+    if (!matched || rematch || status !== 'connected') return;
+    if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready)) ready();
+  }, [matched?.room, status, view.log.length]);
+
   // The room couldn't open (no connection, or no room with that code): say so, with Retry and Back.
   if (code && status === 'error')
     return (
@@ -285,7 +292,8 @@ export function Lobby({
       <Win title={code ? `Room ${code} · ${GAME_NAME[roomMode]}` : `Play on this phone · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
         {code && <p class={`status s-${status}`}>{detail || status}</p>}
         {tag && <p class="tag-room">2v2 Tag Duel · {tag.note}</p>}
-        {code && session.adapter.isHost && status === 'waiting' && (
+        {matched && <p class="hint">Find a Match: you're dueling {matched.opponent}. {session.adapter.isHost ? 'Start when you are both ready.' : ''}</p>}
+        {code && session.adapter.isHost && status === 'waiting' && !matched && (
           <p>
             Tell your brother the code <b>{code}</b> or send him this link:{' '}
             <button class={`chip ${copied ? 'copied' : ''}`} onClick={() => void invite(code)}>

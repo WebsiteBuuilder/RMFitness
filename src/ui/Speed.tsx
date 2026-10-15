@@ -619,6 +619,16 @@ function SpeedLink({ problems, deckSwitch, onPick, onBack }: { problems: string[
         {deckSwitch}
         <Menu
           items={[
+            {
+              label: 'Find a Match',
+              note: 'duel whoever else is searching right now',
+              disabled: bad,
+              onPick: () => {
+                const err = online.findMatch('speed');
+                if (err) online.say(err);
+                else onBack();
+              },
+            },
             { label: 'Friends', note: 'see who is online and invite them with one tap', onPick: () => online.openPanel() },
             { label: 'Create a room', note: 'you get a 4-letter code to send', disabled: bad, onPick: () => onPick({ mode: 'host' }) },
             { label: 'Play on this phone', note: 'take turns; Player 2 uses their own profile or a Starter Deck', disabled: bad, onPick: () => onPick({ mode: 'hotseat' }) },

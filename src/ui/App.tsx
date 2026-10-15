@@ -725,6 +725,10 @@ export function App() {
 
   // Android back button: back to the main menu from any menu screen; in a duel, ask first.
   useBackButton(() => {
+    if (online.panelOpen) {
+      online.openPanel(false);
+      return true;
+    }
     if (screen === 'duel' && session) {
       const st = session.engine.state;
       if (st.winner !== null) {

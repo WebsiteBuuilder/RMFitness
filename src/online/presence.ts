@@ -27,7 +27,21 @@ export interface OnlineData {
   friends: FriendRec[];
   /** codes removed or declined; they stay quiet until this player adds them again */
   ignored: string[];
+  /** duelists Find a Match paired this player with, newest first (to add as friends) */
+  recent?: RecentRec[];
 }
+
+/** Someone this player met through Find a Match. */
+export interface RecentRec {
+  code: string;
+  name: string;
+  color: string;
+  at: number;
+  board?: BoardStats;
+}
+
+/** How many recent opponents are kept. */
+export const RECENT_MAX = 12;
 
 export interface Me {
   name: string;
@@ -191,7 +205,7 @@ export class Presence {
   }
 
   /** Adds a friend by code. They become a friend once their phone says yes (or at once, if they asked first). */
-  add(code: string, name = 'Friend'): 'added' | 'accepted' | 'already' | 'self' {
+  add(code: string, name = 'Friend', color = '#888888'): 'added' | 'accepted' | 'already' | 'self' {
     if (code === this.data.code) return 'self';
     this.data.ignored = this.data.ignored.filter((c) => c !== code);
     const r = this.rec(code);
@@ -200,7 +214,7 @@ export class Presence {
       this.accept(code);
       return 'accepted';
     }
-    this.data.friends.push({ code, name, color: '#888888', status: 'sent', since: this.now(), lastSeen: 0 });
+    this.data.friends.push({ code, name, color, status: 'sent', since: this.now(), lastSeen: 0 });
     this.persist();
     this.dial(code);
     this.changed();
@@ -228,6 +242,27 @@ export class Presence {
     if (ls) this.drop(code, ls.link);
     this.incoming = this.incoming.filter((i) => i.from !== code);
     this.changed();
+  }
+
+  /** Find a Match paired this player with someone: they go on the Recent list. */
+  metRecently(c: { code: string; name: string; color: string; board?: BoardStats }) {
+    if (!c.code || c.code === this.data.code) return;
+    const rec: RecentRec = { code: c.code, name: c.name.slice(0, 24) || 'Duelist', color: c.color, at: this.now(), ...(c.board ? { board: c.board } : {}) };
+    this.data.recent = [rec, ...(this.data.recent ?? []).filter((r) => r.code !== c.code)].slice(0, RECENT_MAX);
+    // a friend's name and record follow what their phone just said
+    const f = this.rec(c.code);
+    if (f) {
+      f.name = rec.name;
+      f.color = rec.color;
+      if (rec.board) f.board = rec.board;
+    }
+    this.persist();
+    this.changed();
+  }
+
+  /** Recent opponents, each with where they stand on the friends list. */
+  recent(): (RecentRec & { status: FriendStatus | null })[] {
+    return (this.data.recent ?? []).map((r) => ({ ...r, status: this.rec(r.code)?.status ?? null }));
   }
 
   setMe(me: Me) {
