@@ -69,16 +69,18 @@ function DeckBar({ deckProblems, deckName, speed, onSpeed }: Ctx) {
   const [open, setOpen] = useState(false);
   const problemsOf = (d: SpeedDeck) => [...speedDeckProblems(d), ...collectionProblems(speed, d)];
   return (
-    <div class="so-deckbar">
-      <div>
-        <b>Your deck{deckName ? `: ${deckName}` : ''}</b>
-        <span class={deckProblems.length ? 'so-bad' : 'so-good'}>{deckProblems.length ? deckProblems[0] : `${activeDeck(speed)!.main.length} cards · ready`}</span>
+    <>
+      <div class="so-deckbar">
+        <div>
+          <b>Your deck{deckName ? `: ${deckName}` : ''}</b>
+          <span class={deckProblems.length ? 'so-bad' : 'so-good'}>{deckProblems.length ? deckProblems[0] : `${activeDeck(speed)!.main.length} cards · ready`}</span>
+        </div>
+        {speed.decks.length > 1 && (
+          <Btn kind="blue" onClick={() => setOpen(true)}>
+            Change
+          </Btn>
+        )}
       </div>
-      {speed.decks.length > 1 && (
-        <Btn kind="blue" onClick={() => setOpen(true)}>
-          Change
-        </Btn>
-      )}
       {open && (
         <SoloDeckPick
           title="Deck for Tag Duels"
@@ -90,7 +92,7 @@ function DeckBar({ deckProblems, deckName, speed, onSpeed }: Ctx) {
           onClose={() => setOpen(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 
