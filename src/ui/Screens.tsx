@@ -402,6 +402,7 @@ export function DeckEdit({ save, onSave, onBack }: { save: SaveFile; onSave: (s:
       {random && (
         <RandomDeckSheet
           sizes={[DECK_SIZE]}
+          skills={false}
           themes={() => edsThemes(save)}
           make={(o) => randomEdsDeck(save, { ...o, keep: o.keepCards ? { main: save.main, extra: save.fusion, skill: null } : undefined })}
           hasCards={save.main.length > 0}

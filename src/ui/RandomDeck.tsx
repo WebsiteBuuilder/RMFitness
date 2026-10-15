@@ -27,6 +27,7 @@ export function RandomDeckSheet({
   owned,
   onUse,
   onClose,
+  skills = true,
 }: {
   /** Main Deck sizes offered (the first is picked) */
   sizes: number[];
@@ -38,6 +39,8 @@ export function RandomDeckSheet({
   owned: boolean;
   onUse: (d: RandomDeck) => void;
   onClose: () => void;
+  /** the game has Skills (Speed Duel) */
+  skills?: boolean;
 }) {
   const [style, setStyle] = useState<RandomStyle>('balanced');
   const [theme, setTheme] = useState<string>('surprise');
@@ -133,7 +136,7 @@ export function RandomDeckSheet({
                 {deck.main.length} cards · {split!.monsters} monsters, {split!.spells} spells, {split!.traps} traps
                 {deck.extra.length ? ` · ${deck.extra.length} Extra` : ''}
               </span>
-              <span>Skill: {deck.skill ?? 'none'}</span>
+              {skills && <span>Skill: {deck.skill ?? 'none'}</span>}
               {deck.notes.map((n) => (
                 <span key={n} class="hint">
                   {n}
