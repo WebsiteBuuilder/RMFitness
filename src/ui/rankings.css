@@ -1,0 +1,133 @@
+/* Duelist Rankings */
+.rank-me {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 200, 90, 0.18), rgba(120, 80, 220, 0.14));
+  border: 1px solid rgba(255, 200, 90, 0.45);
+}
+.rank-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+.rank-me-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.rank-me-text b {
+  font-size: 18px;
+}
+.rank-title {
+  font-weight: 700;
+  color: #e0a526;
+}
+.rank-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+}
+.rank-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ffe08a, #e09a1c);
+}
+.rank-next {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.rank-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+.rank-tabs button {
+  flex: 1;
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rank-tabs button.on {
+  background: linear-gradient(180deg, #ffe08a, #e09a1c);
+  color: #2a1600;
+  border-color: #e0a526;
+}
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, 0.1);
+  border: 1px solid rgba(127, 127, 127, 0.22);
+}
+.rank-row.me {
+  border-color: rgba(90, 150, 255, 0.7);
+  background: rgba(90, 150, 255, 0.12);
+}
+.rank-row.top {
+  border-color: #e0a526;
+  box-shadow: 0 0 14px rgba(255, 190, 60, 0.35);
+}
+.rank-place {
+  width: 26px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 900;
+}
+.rank-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+}
+.rank-who {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.rank-who b,
+.rank-who small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-who small,
+.rank-rec small {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.rank-pharaoh {
+  color: #e0a526;
+  font-size: 12px;
+}
+.rank-rec {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+.rank-foot {
+  margin-top: 10px;
+}

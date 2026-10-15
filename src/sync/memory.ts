@@ -15,5 +15,9 @@ export class MemoryAdapter extends AdapterBase implements SyncAdapter {
     this.events = [...this.events, logged];
     this.emit();
   }
+  restart() {
+    this.events = [];
+    this.emit();
+  }
   close() {}
 }

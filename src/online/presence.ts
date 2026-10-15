@@ -1,6 +1,7 @@
 // The friends list kept live: who is online, what they're doing, friend requests and duel invites.
 import type { GameMode } from '../eds/types';
 import type { Activity, Link, Transport, TransportState, Wire } from './protocol';
+import { cleanStats, type BoardStats } from '../collection/rankings';
 
 /**
  * friend: both sides agreed. sent: this player added their code and waits for
@@ -16,6 +17,8 @@ export interface FriendRec {
   since: number;
   /** last time they were online (0 = never seen) */
   lastSeen: number;
+  /** their link-battle record, as their phone last shared it (Duelist Rankings) */
+  board?: BoardStats;
 }
 
 /** What one profile keeps on the phone. */
@@ -29,6 +32,8 @@ export interface OnlineData {
 export interface Me {
   name: string;
   color: string;
+  /** this player's link-battle record, shared with friends for the rankings */
+  board?: BoardStats;
 }
 
 export interface FriendView extends FriendRec {
@@ -365,7 +370,7 @@ export class Presence {
     const ls = this.links.get(code);
     if (!ls?.open) return;
     const r = this.rec(code);
-    this.send(ls, { t: 'hi', v: 1, code: this.data.code, name: this.me.name, color: this.me.color, activity: this.activity, friend: r?.status === 'friend' || r?.status === 'sent' });
+    this.send(ls, { t: 'hi', v: 1, code: this.data.code, name: this.me.name, color: this.me.color, activity: this.activity, friend: r?.status === 'friend' || r?.status === 'sent', ...(this.me.board ? { board: this.me.board } : {}) });
   }
 
   private send(ls: LinkState, m: Wire) {
@@ -419,6 +424,8 @@ export class Presence {
           r.name = m.name.slice(0, 24) || r.name;
           r.color = m.color;
           r.lastSeen = this.now();
+          const b = cleanStats(m.board);
+          if (b) r.board = b;
         }
         this.reach.delete(code);
         this.persist();

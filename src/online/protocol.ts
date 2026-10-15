@@ -1,5 +1,6 @@
 // Friends and presence: what two phones say to each other, and the transport they say it over.
 import type { GameMode } from '../eds/types';
+import type { BoardStats } from '../collection/rankings';
 
 /** What a player is doing right now, shown on their friends' lists. */
 export type Activity =
@@ -13,7 +14,7 @@ export type InviteAnswer = 'yes' | 'no' | 'busy';
 /** Messages on a friend link. `v` lets a newer build talk to an older one. */
 export type Wire =
   /** sent first on every link; `friend` says whether the sender has the receiver on their list */
-  | { t: 'hi'; v: 1; code: string; name: string; color: string; activity: Activity; friend: boolean }
+  | { t: 'hi'; v: 1; code: string; name: string; color: string; activity: Activity; friend: boolean; board?: BoardStats }
   | { t: 'activity'; activity: Activity }
   | { t: 'invite'; id: string; room: string; game: GameMode }
   | { t: 'invite-cancel'; id: string }
