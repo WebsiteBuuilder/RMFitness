@@ -1,0 +1,411 @@
+/* Who goes first: rock-paper-scissors, coin toss, loser's call. Full screen, both games. */
+.toss {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: radial-gradient(ellipse at 50% 45%, #2a1650 0%, #120a26 55%, #05030c 100%);
+  color: #f4ecff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  overflow: hidden;
+}
+.toss-rays {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 210, 120, 0.07) 0deg 6deg, transparent 6deg 18deg);
+  animation: toss-turn 30s linear infinite;
+  pointer-events: none;
+}
+@keyframes toss-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.toss > * {
+  position: relative;
+}
+.toss-series {
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 200, 90, 0.14);
+  border: 1px solid rgba(255, 200, 90, 0.45);
+  color: #ffd98a;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.toss-head {
+  margin: 4px 0 0;
+  font-size: clamp(20px, 6.2vw, 34px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #fff6d8 0%, #ffcf5a 45%, #d48a12 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(255, 170, 40, 0.45));
+  animation: toss-slam 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes toss-slam {
+  from {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.toss-sub {
+  margin: 0;
+  color: #bfaee0;
+  font-size: 14px;
+}
+.toss-duelists {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  margin: 8px 0;
+}
+.toss-side {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 74px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: transform 0.3s, box-shadow 0.3s, opacity 0.3s, border-color 0.3s;
+}
+.toss-side.me {
+  background: rgba(80, 140, 255, 0.12);
+  border-color: rgba(120, 170, 255, 0.35);
+}
+.toss-side.them {
+  background: rgba(255, 80, 110, 0.1);
+  border-color: rgba(255, 120, 140, 0.32);
+}
+.toss-side.won {
+  transform: scale(1.04);
+  border-color: #ffd36b;
+  box-shadow: 0 0 0 2px rgba(255, 211, 107, 0.5), 0 0 28px rgba(255, 190, 60, 0.45);
+}
+.toss-side.lost {
+  opacity: 0.55;
+}
+.toss-name {
+  font-size: 18px;
+  font-weight: 800;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toss-hand {
+  font-size: 44px;
+  line-height: 1;
+  min-width: 56px;
+}
+.toss-shake {
+  display: inline-block;
+  animation: toss-pump 0.9s ease-in-out both;
+}
+.toss-pop {
+  display: inline-block;
+  animation: toss-slam 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+/* three pumps of a fist, then the real hand shows */
+@keyframes toss-pump {
+  0%,
+  33%,
+  66%,
+  100% {
+    translate: 0 0;
+  }
+  16%,
+  50%,
+  83% {
+    translate: 0 -14px;
+  }
+}
+.toss-badge {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffe08a, #e09a1c);
+  color: #2a1600;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  animation: toss-slam 0.4s both;
+}
+.toss-badge.second {
+  background: rgba(255, 255, 255, 0.16);
+  color: #e9e0ff;
+}
+.toss-line {
+  margin: 4px 0;
+  font-size: 16px;
+  color: #e9e0ff;
+}
+.toss-line.big {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffd98a;
+  animation: toss-slam 0.4s both;
+}
+.toss-line.go {
+  font-size: 28px;
+}
+.toss-pick {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.toss-pickbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 96px;
+  height: 104px;
+  border-radius: 20px;
+  border: 2px solid rgba(255, 211, 107, 0.6);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.1s;
+}
+.toss-pickbtn:active {
+  transform: scale(0.93);
+}
+.toss-pickbtn .ic {
+  font-size: 46px;
+  line-height: 1;
+}
+.toss-pickbtn .lb {
+  font-size: 14px;
+  font-weight: 700;
+}
+.toss-btns {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 6px;
+}
+.toss-btn {
+  min-width: 132px;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.toss-btn.gold {
+  border-color: #ffd36b;
+  background: linear-gradient(180deg, #ffe08a, #e09a1c);
+  color: #2a1600;
+}
+.toss-btn:active {
+  transform: scale(0.95);
+}
+.toss-timer {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #a898c8;
+}
+.toss-timer.hurry {
+  color: #ff8a8a;
+  font-weight: 800;
+}
+.toss-coinbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.toss-coin {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  transform-style: preserve-3d;
+  transition: transform 0.6s;
+}
+.toss-coin .face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  backface-visibility: hidden;
+  background: radial-gradient(circle at 35% 30%, #fff1b8, #e3a521 60%, #9a6206);
+  border: 4px solid #ffe08a;
+  color: #5a3500;
+  font-size: 40px;
+  font-weight: 900;
+}
+.toss-coin .tails {
+  transform: rotateY(180deg);
+}
+.toss-coin.tails {
+  transform: rotateY(180deg);
+}
+.toss-coin.spin {
+  animation: toss-flip 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes toss-flip {
+  0% {
+    transform: translateY(0) rotateY(0);
+  }
+  45% {
+    transform: translateY(-90px) rotateY(1440deg);
+  }
+  100% {
+    transform: translateY(0) rotateY(2880deg);
+  }
+}
+
+/* Rematch: the call after a duel (top of the screen, over the result) */
+.rematch-dock {
+  position: fixed;
+  left: 50%;
+  top: max(10px, env(safe-area-inset-top));
+  z-index: 950;
+  width: min(420px, calc(100vw - 24px));
+  translate: -50% 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(42, 22, 80, 0.97), rgba(18, 10, 38, 0.97));
+  border: 1px solid rgba(255, 211, 107, 0.55);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 180, 60, 0.18);
+  color: #f4ecff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  animation: rematch-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+/* over the VICTORY / DEFEAT screen it sits just above Continue */
+body:has(.mdres) .rematch-dock {
+  top: auto;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  animation-name: rematch-up;
+}
+@keyframes rematch-up {
+  from {
+    translate: -50% 140%;
+    opacity: 0;
+  }
+}
+@keyframes rematch-in {
+  from {
+    translate: -50% -140%;
+  }
+}
+.rematch-dock.called {
+  border-color: #ffd36b;
+  animation: rematch-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both, rematch-glow 1.2s ease-in-out infinite;
+}
+@keyframes rematch-glow {
+  50% {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 34px rgba(255, 190, 60, 0.6);
+  }
+}
+.rematch-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rematch-series {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffd98a;
+}
+.rematch-x {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+.rematch-msg {
+  margin: 6px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.rematch-msg small {
+  display: block;
+  font-weight: 400;
+  font-size: 13px;
+  color: #bfaee0;
+}
+.rematch-go {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 14px;
+  border: 1px solid #ffd36b;
+  background: linear-gradient(180deg, #ffe08a, #e09a1c);
+  color: #2a1600;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.rematch-go:active {
+  transform: scale(0.97);
+}
+.rematch-go.wait {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e9e0ff;
+  border-color: rgba(255, 255, 255, 0.3);
+  font-weight: 700;
+}
+.rematch-slam {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(60, 20, 110, 0.92), rgba(5, 3, 12, 0.97));
+  color: #fff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  padding: 16px;
+}
+.rematch-slam h1 {
+  margin: 0;
+  font-size: clamp(30px, 11vw, 54px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  background: linear-gradient(180deg, #fff6d8, #ffcf5a 50%, #d48a12);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: toss-slam 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.rematch-slam p {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffd98a;
+  animation: toss-slam 0.5s 0.25s both;
+}

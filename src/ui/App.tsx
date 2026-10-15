@@ -21,7 +21,11 @@ import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
 import { useBackButton } from './backButton';
-import { LinkMenu, Lobby, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
+import { LinkMenu, Lobby, startFromSeats, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
+import { TossScreen } from './Toss';
+import { boardStatsOf } from './Rankings';
+import { rematchDock } from './Rematch';
+import type { Series } from '../eds/session';
 import { Avatar, ProfilePicker } from './Profiles';
 import { accounts } from '../accounts';
 import { Calendar, Campaign, DeckEdit, Intro, MainMenu, PackOpen, Password, Record, Title, type MenuChoice } from './Screens';
@@ -252,13 +256,111 @@ export function App() {
     setScreen('profiles');
   };
 
+  /** Duels against the computer: the run of duels against the same opponent, for the rematch call. */
+  const cpuSeries = useRef<{ opp: string; series: Series } | null>(null);
+  /** starts the last computer duel again (null: the duel on screen has no rematch) */
+  const cpuAgain = useRef<(() => void) | null>(null);
+  /**
+   * A duel against the computer: rock-paper-scissors first (the START waits for it), or in a
+   * rematch the last duel's loser picks. `again` starts the same duel over.
+   */
+  const tossThenStart = (ses: DuelSession, build: (first: Pid) => Action, opp?: string, again?: () => void) => {
+    ses.autoStart = build;
+    const prev = opp && cpuSeries.current?.opp === opp && rematching.current ? cpuSeries.current.series : null;
+    rematching.current = false;
+    cpuSeries.current = opp ? { opp, series: prev ?? { wins: [0, 0], draws: 0, last: null } } : null;
+    cpuAgain.current = again ?? null;
+    if (prev) {
+      ses.series = { ...prev, wins: [...prev.wins] as [number, number] };
+      ses.round = 1;
+    }
+    const last = prev?.last;
+    ses.send(last === 0 || last === 1 ? { type: 'TOSS', how: 'loser', chooser: other(last) } : { type: 'TOSS', how: 'rps' });
+  };
+  /** this render's duel starters (a rematch tapped later must see the saves as they are now) */
+  const fresh = useRef<{ startSpeedCpu?: (o: SpeedOpponent) => void; startCampaign?: (d: Duelist) => void }>({});
+  /** the next computer duel is a rematch (keeps the series going) */
+  const rematching = useRef(false);
+
+  /** A room's duel is over: keep the room open for a rematch (online, or two players on this phone). */
+  const parkRoom = (ses: DuelSession | null) => {
+    if (!ses) return;
+    const st = ses.engine.state;
+    const canRematch = !cpu && !st.tag && !!ses.adapter.restart && (hotseat || (ses.adapter.kind === 'peer' && ses.status === 'connected'));
+    if (!canRematch) return ses.close();
+    const seat = mySeat;
+    const hs = hotseat;
+    const mode = gameOf();
+    const p2 = p2Profile;
+    const close = () => {
+      unpark();
+      if (!hs && ses.engine.state.winner !== null) ses.send({ type: 'REMATCH', player: seat, want: false });
+      // a beat for the "no" to reach the other phone
+      window.setTimeout(() => ses.close(), 600);
+      rematchDock.set(null);
+    };
+    const round0 = ses.round;
+    const unsub = ses.listen(() => {
+      if (ses.startRematch()) return;
+      // the host started the rematch: back into the room
+      if (ses.round > round0) {
+        unpark();
+        rematchDock.set(null);
+        settled.current = null;
+        setSpeedResult(null);
+        setSpeedNews([]);
+        setNewsCards([]);
+        setCpu(false);
+        setHotseat(hs);
+        setMySeat(seat);
+        setDuelMode(mode);
+        setP2Profile(p2);
+        rematchP2.current = hs ? p2 : null;
+        setSession(ses);
+        setScreen('duel');
+      }
+    });
+    const unpark = () => {
+      unsub();
+      if (parked.current?.ses === ses) parked.current = null;
+    };
+    parked.current?.close();
+    parked.current = { ses, close };
+    rematchDock.set({ kind: 'room', session: ses, mySeat: seat, hotseat: hs, onClose: close });
+  };
+  /** the room kept open after its duel, for a rematch */
+  const parked = useRef<{ ses: DuelSession; close: () => void } | null>(null);
+  /** a rematch on one phone: who sat in Player 2's seat */
+  const rematchP2 = useRef<string | null>(null);
+  /** A computer duel is over: offer to run it back. */
+  const offerCpuRematch = (ses: DuelSession | null) => {
+    const again = cpuAgain.current;
+    const cs = cpuSeries.current;
+    cpuAgain.current = null;
+    if (!ses || !again || !cs || !save) return;
+    cs.series = ses.series;
+    const close = () => rematchDock.set(null);
+    rematchDock.set({ kind: 'cpu', me: save.name, opp: cs.opp, series: ses.series, onClose: close, again: () => (close(), (rematching.current = true), again()) });
+  };
+  // Starting any other duel, or leaving the profile, closes a room kept open for a rematch.
+  useEffect(() => {
+    if (session && parked.current && parked.current.ses !== session) parked.current.close();
+    if (session && rematchDock.dock?.kind === 'cpu') rematchDock.set(null);
+  }, [session]);
+  useEffect(() => {
+    if (!profile) {
+      parked.current?.close();
+      rematchDock.set(null);
+    }
+  }, [profile]);
+
   const startCampaign = (d: Duelist) => {
     if (!save) return;
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
     ses.send({ type: 'JOIN', player: 0, name: save.name, deck: save.main, fusion: save.fusion });
     ses.send({ type: 'JOIN', player: 1, name: displayName(d.name), deck: d.deck, fusion: d.fusion });
-    ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, displayName(d.name)], decks: [save.main, d.deck], fusions: [save.fusion, d.fusion] });
+    tossThenStart(ses, (first) => ({ type: 'START', first, seed: randomSeed(), names: [save.name, displayName(d.name)], decks: [save.main, d.deck], fusions: [save.fusion, d.fusion] }), displayName(d.name), () => fresh.current.startCampaign?.(d));
     setHotseat(false);
     setCpu(true);
     setCpuLevel('normal');
@@ -279,7 +381,7 @@ export function App() {
     const ses = new DuelSession(new MemoryAdapter());
     ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]) });
     ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill });
-    ses.send({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] });
+    tossThenStart(ses, (first) => ({ type: 'START', first, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] }), o.name, () => fresh.current.startSpeedCpu?.(o));
     setHotseat(false);
     setCpu(true);
     setCpuLevel(o.level ?? savedDifficulty());
@@ -290,16 +392,22 @@ export function App() {
     setScreen('duel');
   };
 
+  fresh.current = { startSpeedCpu, startCampaign };
+
   /** A solo duel (practice, campaign, Labyrinth) against the computer. */
   const startSoloDuel = (spec: CpuDuelSpec) => {
     if (!save) return;
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
     const seed = spec.seed ?? randomSeed();
+    // Rock-paper-scissors decides who goes first, unless the duel says (or watching the computer duel itself).
+    const fixed = spec.first === 'me' || spec.first === 'cpu' || spec.seed !== undefined || !!spec.watch;
     const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
     ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill });
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
-    ses.send({ type: 'START', first, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
+    const startAs = (f: Pid): Action => ({ type: 'START', first: f, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
+    if (fixed) ses.send(startAs(first));
+    else tossThenStart(ses, startAs);
     soloDuel.current = { ctx: spec.context, startLp: spec.me.setup?.lp ?? 4000, spec };
     setWatchPaused(false);
     setSoloReport(null);
@@ -446,6 +554,10 @@ export function App() {
     },
   });
   useEffect(() => online.watchSession(screen === 'duel' ? session : null, duelMode, screen === 'duel'), [session, screen, duelMode]);
+  // Duelist Rankings: friends see this profile's link-battle record.
+  useEffect(() => {
+    if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save));
+  }, [profile, save, speedSave, screen]);
   useEffect(() => online.showButton(!!profile && !!save && screen !== 'duel' && screen !== 'title' && screen !== 'profiles' && screen !== 'intro'), [profile, save, screen]);
 
   /** The game the duel on screen belongs to (a guest follows the host's game). */
@@ -570,7 +682,10 @@ export function App() {
       carryNews.current = [];
       setNewsCards(cards);
       if (st) setSpeedResult(resultOf(st, mySeat, hotseat, speedSave, mineAfter, myLevels, allNews, cards));
-      session?.close();
+      if (cpu) {
+        session?.close();
+        offerCpuRematch(session);
+      } else parkRoom(session);
       setSession(null);
       setP2Profile(null);
       setScreen('speed');
@@ -585,7 +700,10 @@ export function App() {
       const theirs = loadSave(p2Profile);
       if (theirs) writeSave(p2Profile, withResult(theirs, mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd', `Link: ${save.name}`));
     }
-    session?.close();
+    if (cpu) {
+      session?.close();
+      offerCpuRematch(session);
+    } else parkRoom(session);
     setSession(null);
     setP2Profile(null);
     setScreen(next.pendingPacks > 0 ? 'pack' : 'menu');
@@ -895,7 +1013,7 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current ? noStakes(entries) : entries} tag={tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current ? noStakes(entries) : entries} tag={tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
@@ -980,6 +1098,7 @@ function Running({
   onStarted,
   watch,
   tag,
+  rematchP2,
 }: {
   session: DuelSession;
   hotseat: boolean;
@@ -1002,6 +1121,8 @@ function Running({
   watch?: { tactics: [Tactics, Tactics]; speed: number; paused: boolean };
   /** this phone hosts a 2v2 Tag Duel room */
   tag?: { note: string; start: (seats: SessionView['seats']) => Action };
+  /** a rematch on one phone: who sat in Player 2's seat */
+  rematchP2?: string | null;
 }) {
   const view = useDuelSession(session);
   // a guest follows the host's game
@@ -1074,7 +1195,11 @@ function Running({
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
   useEffect(() => () => showDuelRarity(null), []);
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} />;
+  if (!view.state.started && view.toss && !tag) {
+    const game = view.seats[0].mode ?? mode;
+    return <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />;
+  }
+  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} />;
   if (view.state.tag) {
     // A tag duel: this phone sees the board from its team's side and moves only when its duelist is in.
     const st = view.state;

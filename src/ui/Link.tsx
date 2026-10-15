@@ -15,6 +15,9 @@ import type { SpeedSave } from '../eds/speedSave';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
 import { ConfirmSheet } from './ConfirmSheet';
+import { anteProblem, betsLocked, noAnte, staked, type Ante } from '../collection/stakes';
+import { other } from '../eds/engine';
+import type { TossHow } from '../eds/toss';
 
 export type LinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
 
@@ -74,6 +77,29 @@ export interface SeatEntry {
 
 const GAME_NAME: Record<GameMode, string> = { eds: 'Eternal Duelist Soul', speed: 'Speed Duel' };
 
+/** The START of a room's duel, from both seats, once the toss says who goes first. */
+export function startFromSeats(seats: SessionView['seats'], mode: GameMode, first: Pid): Action {
+  return {
+    type: 'START',
+    first,
+    seed: randomSeed(),
+    names: [seats[0].name, seats[1].name],
+    decks: [seats[0].deck, seats[1].deck],
+    fusions: [seats[0].fusion, seats[1].fusion],
+    ...(mode === 'speed' ? { mode: 'speed' as const, skills: [seats[0].skill ?? null, seats[1].skill ?? null] as [string | null, string | null] } : {}),
+  };
+}
+
+/** How a room decides who goes first: the last loser calls it in a rematch, else rock-paper-scissors (a coin on one phone). */
+export function tossFor(view: SessionView, hotseat: boolean): { type: 'TOSS'; how: TossHow; chooser?: Pid } {
+  const last = view.series.last;
+  if (view.round > 0 && (last === 0 || last === 1)) return { type: 'TOSS', how: 'loser', chooser: other(last) };
+  return { type: 'TOSS', how: hotseat ? 'coin' : 'rps' };
+}
+
+/** A rematch keeps a bet only while it is no bigger than last duel's (then nobody has to Accept again). */
+const withinBet = (now: Ante | null | undefined, before: Ante | null | undefined) => noAnte(now) || (!!before && (!now!.card || now!.card === before.card) && now!.chips <= before.chips);
+
 export function Lobby({
   session,
   view,
@@ -86,6 +112,7 @@ export function Lobby({
   onLeave,
   betSave = () => null,
   tag,
+  rematchP2,
 }: {
   session: DuelSession;
   view: SessionView;
@@ -102,6 +129,8 @@ export function Lobby({
   betSave?: (seat: Pid) => SpeedSave | null;
   /** a 2v2 Tag Duel room (host): what it is, and the START that seats all four duelists */
   tag?: { note: string; start: (seats: SessionView['seats']) => Action };
+  /** a rematch on one phone: the profile in Player 2's seat last duel (null: a guest) */
+  rematchP2?: string | null;
 }) {
   const { seats, status, detail } = view;
   const code = session.adapter.roomCode;
@@ -138,6 +167,13 @@ export function Lobby({
   const iAmReady = seats[mySeat].ready && (seats[mySeat].mode ?? 'eds') === roomMode;
 
   const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null, ...(roomMode === 'speed' && e.rarity ? { rarity: e.rarity } : {}), ...(roomMode === 'speed' && e.stakes ? { stakes: e.stakes } : {}) });
+  /** A rematch carries last duel's bet when this profile can still cover it. */
+  const carried = (seat: Pid, e: SeatEntry): SeatEntry => {
+    const prev = session.prevSeats?.[seat].stakes?.ante;
+    const s = betSave(seat);
+    if (roomMode !== 'speed' || !e.stakes || noAnte(prev) || !s || anteProblem(s, prev!)) return e;
+    return { ...e, stakes: { ...e.stakes, ante: prev! } };
+  };
   const ready = () => mine && mine.problems.length === 0 && join(mySeat, mine);
   const readyGuest = () => {
     onSeatProfile?.(null);
@@ -169,16 +205,33 @@ export function Lobby({
     if (e.problems.length > 0) return 'deck not ready: fix it in Deck Edit';
     return roomMode === 'speed' ? `${e.deck.length} cards${e.skill ? ` · ${e.skill}` : ''}` : `${e.deck.length} cards · W ${o.save?.wins ?? 0} L ${o.save?.losses ?? 0}`;
   };
-  const start = () =>
-    tag ? session.send(tag.start(seats)) : session.send({
-      type: 'START',
-      first: Math.random() < 0.5 ? 0 : 1,
-      seed: randomSeed(),
-      names: [seats[0].name, seats[1].name],
-      decks: [seats[0].deck, seats[1].deck],
-      fusions: [seats[0].fusion, seats[1].fusion],
-      ...(roomMode === 'speed' ? { mode: 'speed' as const, skills: [seats[0].skill ?? null, seats[1].skill ?? null] as [string | null, string | null] } : {}),
-    });
+  // Rock-paper-scissors (a coin on one phone) decides who goes first; a tag room keeps its own start.
+  const start = () => (tag ? session.send(tag.start(seats)) : !view.toss && session.send(tossFor(view, hotseat)));
+
+  // A rematch: everybody sits back down with the same decks and bets, no taps needed.
+  const rematch = view.round > 0 && !tag;
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    if (!rematch) return;
+    const id = window.setTimeout(() => setStalled(true), 4000);
+    return () => clearTimeout(id);
+  }, [rematch, view.round]);
+  useEffect(() => {
+    if (!rematch || (code && status !== 'connected' && status !== 'waiting')) return;
+    if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready || hotseat)) join(mySeat, carried(mySeat, mine));
+    if (hotseat && seats[0].ready && !seats[1].ready) {
+      const o = rematchP2 ? others.find((x) => x.profile.id === rematchP2) : undefined;
+      const e = o ? seatFor(o) : null;
+      const prev = session.prevSeats?.[1];
+      if (o && e && e.problems.length === 0) {
+        onSeatProfile?.(o.profile.id);
+        join(1, carried(1, e));
+      } else if (!rematchP2 && prev?.ready) join(1, { name: prev.name, deck: prev.deck, fusion: prev.fusion, skill: prev.skill, problems: [] });
+    }
+    if (bothReady && sameGame && staked(seats[0].stakes, seats[1].stakes) && !betsLocked(seats) && ([0, 1] as Pid[]).every((p) => withinBet(seats[p].stakes?.ante, session.prevSeats?.[p].stakes?.ante)))
+      for (const p of hotseat ? ([0, 1] as Pid[]) : [mySeat]) if (!seats[p].accepted) session.send({ type: 'ACCEPT', player: p });
+    if (session.adapter.isHost && bothReady && sameGame && betsLocked(seats) && !view.toss) session.send(tossFor(view, hotseat));
+  }, [rematch, view.log.length, status]);
 
   // The room couldn't open (no connection, or no room with that code): say so, with Retry and Back.
   if (code && status === 'error')
@@ -213,6 +266,17 @@ export function Lobby({
           <p class="hint">{session.adapter.isHost ? 'Opening your room on the online server…' : 'Checking the code with the online server…'}</p>
           <Menu items={[{ label: 'Back', onPick: onLeave }]} />
         </Win>
+      </div>
+    );
+
+  if (rematch && !stalled && !(mine && mine.problems.length > 0))
+    return (
+      <div class="rematch-slam" role="status">
+        <h1>REMATCH!</h1>
+        <p>
+          {seats[0].name || 'Player 1'} {view.series.wins[0]} – {view.series.wins[1]} {seats[1].name || 'Player 2'}
+        </p>
+        <p class="hint">Same decks, same bets. Shuffling up…</p>
       </div>
     );
 
@@ -280,7 +344,7 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel (rock-paper-scissors decides who goes first)', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : undefined, onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
       {linkToCopy && (
         <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>

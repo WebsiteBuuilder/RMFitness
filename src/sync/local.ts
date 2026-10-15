@@ -43,6 +43,16 @@ export class LocalAdapter extends AdapterBase implements SyncAdapter {
     this.emit();
   }
 
+  restart() {
+    this.events = [];
+    try {
+      localStorage.removeItem(this.key);
+    } catch {
+      /* nothing saved */
+    }
+    this.emit();
+  }
+
   close() {
     this.listeners.clear();
   }
