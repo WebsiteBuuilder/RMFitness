@@ -23,7 +23,13 @@ export function figureHeld(uid: number, now: number): boolean {
 let pressAt = -1e9;
 if (typeof window !== 'undefined') window.addEventListener('pointerdown', () => (pressAt = performance.now()), { capture: true, passive: true });
 
-/** Did a finger go down in the last 300 ms? */
+let hushUntil = 0;
+/** Something on screen needs the phone to itself for `ms` (the opening deal): loading waits. */
+export function hush(ms: number): void {
+  hushUntil = Math.max(hushUntil, performance.now() + ms);
+}
+
+/** Did a finger go down in the last 300 ms (or is the screen hushed)? */
 export function pressQuiet(now: number = performance.now()): boolean {
-  return now - pressAt < 300;
+  return now - pressAt < 300 || now < hushUntil;
 }

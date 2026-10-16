@@ -309,10 +309,12 @@ export async function preloadArt(names: string[], stop: () => boolean = () => fa
   };
   const worker = async () => {
     while (i < list.length && !stop()) {
+      // (the first waits too: the opening deal may have asked for a quiet moment)
+      await pause();
+      if (i >= list.length || stop()) break;
       const n = list[i++];
       const art = await artFor(n).catch(() => null);
       if (art && each && !stop()) each(art);
-      await pause();
     }
   };
   await Promise.all([worker(), worker()]);

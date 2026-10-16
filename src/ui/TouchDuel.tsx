@@ -610,7 +610,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const midText = (
     <>
       <span class={`tturn ${myTurn ? 'mine' : ''}`}>
-        {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} · {PHASE_NAMES[state.phase]}
+        {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name.split(' ')[0]}'s turn`} · {PHASE_NAMES[state.phase]}
       </span>
     </>
   );

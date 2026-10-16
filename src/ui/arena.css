@@ -454,14 +454,16 @@
 }
 
 /* ---- the finishing blow (TouchDuel: .ko for a beat before the result) ---- */
-.duel.touch.ko .tmat {
-  animation: ko-shake 0.5s cubic-bezier(.36, .07, .19, .97);
+/* (the shake moves the field with `translate` alone, next to the finished swing-in it keeps in its list:
+   swapping the animation list restarted the swing-in, whose first frame hid the whole field) */
+.duel.touch.armed.ko .tmat {
+  animation: tmat-in 0.75s cubic-bezier(.2, .8, .2, 1) backwards, ko-shake 0.5s cubic-bezier(.36, .07, .19, .97);
 }
 @keyframes ko-shake {
-  10%, 90% { transform: rotateX(18deg) translate(-2px, 1px); }
-  20%, 80% { transform: rotateX(18deg) translate(4px, -2px); }
-  30%, 50%, 70% { transform: rotateX(18deg) translate(-7px, 3px); }
-  40%, 60% { transform: rotateX(18deg) translate(7px, -3px); }
+  10%, 90% { translate: -2px 1px; }
+  20%, 80% { translate: 4px -2px; }
+  30%, 50%, 70% { translate: -7px 3px; }
+  40%, 60% { translate: 7px -3px; }
 }
 .duel.touch.ko .tboard::after {
   content: '';
@@ -487,7 +489,7 @@
   text-shadow: 0 0 12px #ff2a40;
 }
 @media (prefers-reduced-motion: reduce) {
-  .duel.touch.ko .tmat {
+  .duel.touch.armed.ko .tmat {
     animation: none;
   }
 }
@@ -572,3 +574,31 @@
   }
 }
 .duel.touch .tz:active { filter: brightness(1.25); }
+
+/* the result word lands: it drops in large and settles with a flash of its glow */
+.duel.touch .tresult-title {
+  animation: tresult-word 0.7s cubic-bezier(.2, .9, .25, 1.2) backwards;
+}
+@keyframes tresult-word {
+  0% {
+    transform: scale(2.2);
+    opacity: 0;
+    letter-spacing: 22px;
+  }
+  55% {
+    transform: scale(0.96);
+    opacity: 1;
+    text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
+  }
+}
+.duel.touch .tresult p,
+.duel.touch .tresult .tbtns {
+  animation: field-ui-in 0.35s 0.45s ease-out backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .duel.touch .tresult-title,
+  .duel.touch .tresult p,
+  .duel.touch .tresult .tbtns {
+    animation: none;
+  }
+}

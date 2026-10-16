@@ -9,7 +9,7 @@
 // while the tab is hidden, or when the phone asks for reduced motion.
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
-import { holdFigure } from '../art/hold';
+import { holdFigure, hush } from '../art/hold';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -215,6 +215,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // The opening deal waits for the field to swing into place (arena.css tmat-in), the
     // hands hidden meanwhile; then every rect is measured again and the cards fly.
     flights.forEach((f) => f.target && (f.target.style.opacity = '0'));
+    // the art loader stands back until the cards are in hand (its first pictures stalled the deal)
+    hush(3500);
     const go = () => {
       const now = root.current;
       for (const f of flights) {
