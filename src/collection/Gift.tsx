@@ -1,6 +1,6 @@
 // The one-time present (see GIFT in economy.ts): a wrapped box drops in, a tap tears it
 // open, confetti flies and the gift packs count up before heading to the Card Shop.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { CardImg } from '../ui/CardImg';
 import { buzz, playFanfare, playStar, playSummon } from '../ui/sound';
 import { boosterSets } from './sets';
@@ -28,11 +28,18 @@ const fanCards = () => {
   return out;
 };
 
-export function GiftReveal({ gift, onOpen, onLater }: { gift: typeof GIFT; onOpen: () => void; onLater: () => void }) {
+export function GiftReveal({ gift, onClaim, onOpen, onLater }: { gift: typeof GIFT; /** claims the gift; false when it can't be (already claimed) */ onClaim: () => boolean; onOpen: () => void; onLater: () => void }) {
   const [torn, setTorn] = useState(false);
   const [count, setCount] = useState(0);
+  const fan = useMemo(fanCards, []);
+  // Keep the floating Friends button off the present.
+  useEffect(() => {
+    document.documentElement.classList.add('no-pill');
+    return () => document.documentElement.classList.remove('no-pill');
+  }, []);
   const tear = () => {
     if (torn) return;
+    if (!onClaim()) return onLater();
     setTorn(true);
     playSummon();
     buzz([60, 40, 120]);
@@ -42,11 +49,14 @@ export function GiftReveal({ gift, onOpen, onLater }: { gift: typeof GIFT; onOpe
   useEffect(() => {
     if (!torn) return;
     const start = Date.now();
+    let last = 0;
     const t = window.setInterval(() => {
       const k = Math.min(1, (Date.now() - start) / 1100);
       const n = Math.round(gift.packs * (1 - (1 - k) ** 3));
       setCount(n);
-      if (n % 25 === 0 && n) playStar();
+      // a tick each time the count passes another 10% of the gift
+      const step = Math.floor((n / gift.packs) * 10);
+      if (step > last) (playStar(), (last = step));
       if (k >= 1) window.clearInterval(t);
     }, 40);
     return () => window.clearInterval(t);
@@ -85,7 +95,7 @@ export function GiftReveal({ gift, onOpen, onLater }: { gift: typeof GIFT; onOpe
         ) : (
           <>
             <div class="gift-fan" aria-hidden="true">
-              {fanCards().map((n, i) => (
+              {fan.map((n, i) => (
                 <span key={n} class="gift-pack" style={{ ['--i' as string]: i - 2 }}>
                   <CardImg name={n} />
                   <b>SPEED DUEL</b>
@@ -95,7 +105,7 @@ export function GiftReveal({ gift, onOpen, onLater }: { gift: typeof GIFT; onOpe
             <p class="gift-count">
               <b>{count}</b> packs
             </p>
-            <p class="gift-sub">Any set, even locked ones. Any rarity can drop, Overframe included. Open them with your brother and hit Random deck after.</p>
+            <p class="gift-sub">Any set, even locked ones. Any rarity can drop, Overframe included. Open them, then hit Random deck to build with your new cards.</p>
             <button class="gbtn gift-go" onClick={onOpen}>
               Open packs now
             </button>

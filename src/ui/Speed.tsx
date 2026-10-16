@@ -43,6 +43,7 @@ import { RequestsScreen, StampsScreen } from '../collection/Earn';
 import { boardOf } from '../collection/requests';
 import { GIFT, bestCrown, claimGift, collectionProblems, giftFor, ownedOnly, withStarter } from '../collection/economy';
 import { GiftReveal } from '../collection/Gift';
+import { accounts } from '../accounts';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
 import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
@@ -130,15 +131,19 @@ export function SpeedHub({
   const [editing, setEditing] = useState<string | null>(null);
   const [editRandom, setEditRandom] = useState(false);
   const [gift, setGift] = useState<typeof GIFT | null>(null);
-  // A one-time present waiting on this profile: claim it (the save remembers) and unwrap it.
+  // A one-time present waiting on this profile: it is claimed when the box is torn open.
   useEffect(() => {
     if (gift || sub !== 'menu' || save.decks.length === 0) return;
-    const g = giftFor(save, profile.created);
-    const next = g && claimGift(save, profile.created, g);
-    if (!next) return;
-    onSave(next);
-    setGift(g);
+    setGift(giftFor(save, profile.created, GIFT, profile.id));
   }, [save, sub]);
+  const claim = () => {
+    const next = gift && claimGift(save, profile.created, gift, profile.id);
+    if (!next) return false;
+    onSave(next);
+    // upload the claim to the shared account now, so another phone can't claim it too
+    window.setTimeout(() => void accounts.flush(), 0);
+    return true;
+  };
   // the duel's 3D engine downloads while the player is still here
   useEffect(() => preloadArt3d(), []);
   const deck = activeDeck(save);
@@ -186,7 +191,7 @@ export function SpeedHub({
 
   return (
     <>
-      {gift && <GiftReveal gift={gift} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} />}
+      {gift && <GiftReveal gift={gift} onClaim={claim} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} />}
       <SpeedHome
         tab={tab}
         onTab={setTab}

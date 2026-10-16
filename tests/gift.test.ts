@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../src/eds/speedSave';
-import { GIFT, claimGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
+import { GIFT, GIFT_PROFILES, claimGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
 import { boosterSets, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
 import { randomSpeedDeck } from '../src/eds/speedRandom';
 import { DB } from './speedkit';
@@ -32,6 +32,19 @@ const before = GIFT.madeBefore - 86_400_000;
   ok(claimGift(s, GIFT.madeBefore) === null && claimGift(s, Date.now() + 1e12) === null, 'a profile made after the cutoff gets nothing (no spare-profile farm)');
   ok(!!claimGift(s, 0), 'an old profile with no creation date still gets it');
   ok(giftFor(s, before, { ...GIFT, id: 'next' }) !== null && !!claimGift(g, before, { ...GIFT, id: 'next', packs: 5 }), 'a later gift with a new id can be given on top');
+}
+
+// ---------- one phone hands it to at most GIFT_PROFILES profiles, each once ----------
+{
+  const mem = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+  const fresh = () => migrate(newSpeedSave());
+  const a = claimGift(fresh(), before, GIFT, 'jammy');
+  ok(!!a, 'the first profile on a phone gets the gift');
+  ok(claimGift(fresh(), before, GIFT, 'jammy') === null, 'a lost or rolled-back save cannot claim it again on the same phone');
+  ok(!!claimGift(fresh(), before, GIFT, 'bro'), 'a second profile on the phone gets it too');
+  ok(giftFor(fresh(), before, GIFT, 'spare') === null && claimGift(fresh(), before, GIFT, 'spare') === null, `a ${GIFT_PROFILES + 1}rd profile on the same phone gets nothing`);
+  delete (globalThis as { localStorage?: unknown }).localStorage;
 }
 
 // ---------- opening ----------

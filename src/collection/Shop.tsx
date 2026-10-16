@@ -1,6 +1,6 @@
 // The Card Shop: open packs from the real Speed Duel sets, browse the cards you own,
 // craft cards with Duel Chips, lift a card's look one rarity step, break spare copies.
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, speedCards, skillCards } from '../eds/db';
 import { CHIP_CAP, COPIES, owned, unplayableReason, type SpeedSave } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from '../ui/CardImg';
@@ -103,10 +103,11 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
   const [opened, setOpened] = useState<Opened[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [n, setN] = useState(0);
+  const [busy, setBusy] = useState(0);
   const show = (o: Opened[]) => (setN(n + 1), setOpened(o));
 
-  /** Opens up to `count` packs of a set in a row (no set: gift packs, a different set each, from a random start). */
-  const openSome = (from: SpeedSave, set: string | null, count: number) => {
+  /** Opens up to `count` packs of a set in a row (no set: gift packs spread over every set in turn, from a random start). */
+  const openNow = (from: SpeedSave, set: string | null, count: number) => {
     const out: Opened[] = [];
     let cur = from;
     const sets = boosterSets().map((x) => x.name);
@@ -117,9 +118,16 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
       out.push(o);
       cur = o.save;
     }
+    setBusy(0);
     if (!out.length) return;
     onSave(cur);
     show(out);
+  };
+  // A big batch shows "Opening…" for a frame first, so the tap answers at once.
+  const openSome = (from: SpeedSave, set: string | null, count: number) => {
+    if (count <= MIX) return openNow(from, set, count);
+    setBusy(count);
+    window.setTimeout(() => openNow(from, set, count), 60);
   };
 
   return (
@@ -139,6 +147,14 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
       {tab === 'binder' && <MyCards save={save} onSave={onSave} onPick={setSel} />}
       {tab === 'craft' && <CraftList save={save} onPick={setSel} />}
       {sel && <CardSheet save={save} name={sel} onSave={onSave} onClose={() => setSel(null)} />}
+      {busy > 0 && (
+        <Overlay>
+          <div class="reveal opening">
+            <span class="pack big tearable" aria-hidden="true" />
+            <p>Opening {busy} packs…</p>
+          </div>
+        </Overlay>
+      )}
       {opened &&
         (opened.length === 1 ? (
           <PackReveal
@@ -186,11 +202,18 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
           </span>
           <span class="gift-txt">
             <b>{plural(gifts, 'gift pack')}</b>
-            <small>Open any set, even locked ones</small>
+            <small>Any set, even locked ones. Mixed spreads them over every set.</small>
           </span>
-          <button class="gbtn gift-mix" onClick={() => (playSummon(), onOpen(null, Math.min(MIX, gifts)))}>
-            Open {Math.min(MIX, gifts)} mixed
-          </button>
+          <span class="gift-btns">
+            <button class="gbtn gift-mix" onClick={() => (playSummon(), onOpen(null, Math.min(MIX, gifts)))}>
+              Open {Math.min(MIX, gifts)} mixed
+            </button>
+            {gifts > MIX && (
+              <button class="gbtn gift-all" onClick={() => (playSummon(), onOpen(null, gifts))}>
+                Open all {gifts}
+              </button>
+            )}
+          </span>
         </div>
       )}
       <p class="hint">
@@ -245,7 +268,8 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
               items={[
                 { label: 'Open 1 pack', onPick: () => (setPick(null), onOpen(pick, 1)) },
                 ...(pickN > MIX ? [{ label: `Open ${MIX}`, note: 'see them all at once', onPick: () => (setPick(null), onOpen(pick, MIX)) }] : []),
-                { label: `Open all ${pickN}`, note: 'see every card at once', onPick: () => (setPick(null), onOpen(pick, pickN)) },
+                // Gift packs are better spread over every set (the banner above), so one set offers its own packs or 10 at a time.
+                ...(gifts > 0 && pickN > MIX ? [] : [{ label: `Open all ${pickN}`, note: 'see every card at once', onPick: () => (setPick(null), onOpen(pick, pickN)) }]),
               ]}
             />
           </Win>
@@ -417,12 +441,21 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
     o.cards.forEach((n, i) => {
       const f = o.finishes?.[i] ?? 0;
       const had = byName.get(n);
-      if (had) (had.x++, (had.f = Math.max(had.f, f)));
-      else byName.set(n, { n, set: o.set, f, x: 1 });
+      if (!had) return void byName.set(n, { n, set: o.set, f, x: 1 });
+      had.x++;
+      had.f = Math.max(had.f, f);
+      // a card printed in several sets shows its best printing
+      if (RARITIES.indexOf(rarityIn(o.set, n)) > RARITIES.indexOf(rarityIn(had.set, n))) had.set = o.set;
     });
   const cards = [...byName.values()].sort((a, b) => Number(fresh.has(b.n)) - Number(fresh.has(a.n)) || b.f - a.f || RARITIES.indexOf(rarityIn(b.set, b.n)) - RARITIES.indexOf(rarityIn(a.set, a.n)));
   const top = best(cards.map((c) => c.f));
   const shards = opened.reduce((t, o) => t + o.shards, 0);
+  const [limit, setLimit] = useState(PAGE);
+  // Keep the floating Friends button off the cards while the summary is up.
+  useEffect(() => {
+    document.documentElement.classList.add('no-pill');
+    return () => document.documentElement.classList.remove('no-pill');
+  }, []);
   return (
     <Overlay>
       <div class="reveal summary">
@@ -432,7 +465,7 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
           {top >= 3 && ` Best pull: ${TIERS[top].name}!`}
         </p>
         <div class="binder">
-          {cards.map(({ n, set, f, x }) => (
+          {cards.slice(0, limit).map(({ n, set, f, x }) => (
             <span key={n} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`}>
               <CardImg name={n} />
               <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
@@ -442,6 +475,11 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
             </span>
           ))}
         </div>
+        {cards.length > limit && (
+          <button class="gbtn more" onClick={() => setLimit(limit + PAGE * 2)}>
+            Show more ({cards.length - limit} left)
+          </button>
+        )}
         <Menu items={[{ label: 'Done', onPick: onDone }]} />
       </div>
     </Overlay>
