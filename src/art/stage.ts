@@ -369,6 +369,12 @@ void main(){
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
 
+/** Runs `f` at the next quiet moment (an idle callback, at most ~0.8 s away), else the next frame. */
+function nextQuiet(f: () => void): number {
+  const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+  return w.requestIdleCallback ? w.requestIdleCallback(f, { timeout: 800 }) : requestAnimationFrame(f);
+}
+
 /** Where a figure's subject stands in its art (uv: 0..1, v up), measured once per art. */
 export interface Footprint {
   /** horizontal center of the feet */
@@ -2585,6 +2591,7 @@ export class Stage {
   }
 
   private uploads: Texture[] = [];
+  // (paced by idle time, not back-to-back frames: each upload competes with the board for the GPU)
   private uploadRaf = 0;
 
   /**
@@ -2595,7 +2602,7 @@ export class Stage {
     if (this.lost || this.disposed) return;
     const t = artTextures(art);
     for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
-    this.uploadRaf ||= requestAnimationFrame(this.onUpload);
+    this.uploadRaf ||= nextQuiet(this.onUpload);
   }
 
   private onUpload = () => this.uploadOne();
@@ -2610,7 +2617,7 @@ export class Stage {
     } catch {
       /* a lost context mid-upload: it uploads on first use instead */
     }
-    if (this.uploads.length) this.uploadRaf = requestAnimationFrame(this.onUpload);
+    if (this.uploads.length) this.uploadRaf = nextQuiet(this.onUpload);
   }
 
   resize() {
@@ -2913,6 +2920,7 @@ export class Stage {
     this.clear();
     this.disposed = true;
     cancelAnimationFrame(this.uploadRaf);
+    (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.uploadRaf);
     this.uploads.length = 0;
     this.canvas.removeEventListener('webglcontextlost', this.handleLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleRestore, false);

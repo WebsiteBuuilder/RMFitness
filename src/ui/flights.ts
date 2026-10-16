@@ -9,6 +9,7 @@
 // while the tab is hidden, or when the phone asks for reduced motion.
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
+import { holdFigure } from '../art/hold';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -77,6 +78,8 @@ export interface Flight {
   delay: number;
   /** opponent's side: a softer, shorter arc */
   fromOpp: boolean;
+  /** a monster landing in a Monster Zone: its 3D figure waits for the landing */
+  uid?: number;
 }
 
 /** Flies one card copy (see the file comment). */
@@ -113,6 +116,7 @@ export function fly(f: Flight): void {
     { transform: `translate(0, 0) rotate(${r1}deg) scale(${end})`, opacity: f.intoPile ? 0 : 1, offset: 1 },
   ];
   if (f.target) f.target.style.opacity = '0';
+  if (f.uid !== undefined) holdFigure(f.uid, performance.now() + f.delay + ms);
   const anim = el.animate(frames, { duration: ms, delay: f.delay, easing: 'cubic-bezier(.3,.7,.25,1)', fill: 'both' });
   const done = () => {
     el.remove();
@@ -142,6 +146,7 @@ export function fly(f: Flight): void {
 export function useFlights(root: { current: HTMLElement | null }, state: DuelState, acting: Pid): void {
   const prev = useRef<{ places: Map<number, Where>; snaps: Map<string, Snap>; key: string } | null>(null);
   const seat = useRef(acting);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   // The field swings into place as the duel opens (arena.css tmat-in): measure again once it has settled.
   useLayoutEffect(() => {
     const t = setTimeout(() => {
@@ -203,8 +208,27 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         intoPile: into,
         delay: isDraw ? draws++ * (fresh ? 110 : 90) : 0,
         fromOpp: w.endsWith(String(1 - acting)),
+        uid: w.startsWith('mz') ? uid : undefined,
       });
     }
-    flights.forEach(fly);
+    if (!fresh) return flights.forEach(fly);
+    // The opening deal waits for the field to swing into place (arena.css tmat-in), the
+    // hands hidden meanwhile; then every rect is measured again and the cards fly.
+    flights.forEach((f) => f.target && (f.target.style.opacity = '0'));
+    const deal = setTimeout(() => {
+      const now = root.current;
+      for (const f of flights) {
+        const uid = f.target?.dataset.uid;
+        const t = uid && now ? (now.querySelector(`[data-uid="${uid}"]`) as HTMLElement | null) : null;
+        const pile = t && now ? now.querySelector(`[data-pile="deck${t.closest('.thand') ? acting : 1 - acting}"]`) : null;
+        if (!t || !pile || busy()) {
+          if (f.target) f.target.style.opacity = '';
+          continue;
+        }
+        fly({ ...f, from: pile.getBoundingClientRect(), to: t.getBoundingClientRect(), target: t });
+      }
+    }, 700);
+    timers.current.push(deal);
   });
+  useLayoutEffect(() => () => timers.current.forEach(clearTimeout), []);
 }

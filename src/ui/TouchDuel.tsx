@@ -58,15 +58,6 @@ export interface TouchCtl {
   onFinished: (winner: Pid | 'draw') => void;
 }
 
-/** drifting light motes over the arena (CSS-only, transform animations) */
-const MOTES = (
-  <span class="tmotes">
-    {Array.from({ length: 10 }, (_, i) => (
-      <i key={i} style={{ '--m': String(i) } as Record<string, string>} />
-    ))}
-  </span>
-);
-
 /** the hint line under the turn row comes and goes (it moves the row a little) */
 const hintKey = (s: DuelState) => `${s.turn <= 4}${s.phase}`;
 
@@ -114,6 +105,16 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   }, [resized, figuresOn, state.winner, hintKey(state)]);
 
   useFlights(root, state, acting);
+
+  // The finishing blow: the field shakes and darkens and the loser's Life Points flash red
+  // for a beat, after their count reaches 0, before the result slides in.
+  const [resultUp, setResultUp] = useState(state.winner !== null);
+  useEffect(() => {
+    if (state.winner === null) return setResultUp(false);
+    const t = setTimeout(() => setResultUp(true), 1400);
+    return () => clearTimeout(t);
+  }, [state.winner]);
+  const loser: Pid | null = state.winner === null || state.winner === 'draw' ? null : other(state.winner);
 
   const idle = canAct && !prompt && state.winner === null;
   const actions = commands.filter((c) => !c.disabled && c.label !== 'Card Info');
@@ -466,6 +467,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   };
 
   const sheet = () => {
+    if (state.winner !== null && !resultUp) return null;
     if (state.winner !== null) {
       const won = state.winner === 'draw' ? null : state.winner === ctl.mySeat;
       const title = state.winner === 'draw' ? 'DRAW' : ctl.hotseat ? `${state.players[state.winner].name} wins` : won ? 'VICTORY' : 'DEFEAT';
@@ -567,13 +569,16 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </button>
         </div>
       );
+    // the first turns' hint: a small pill over your hand, never over the field
+    const h = hint();
+    if (h) return <div class="ttoast hint">{h}</div>;
     return null;
   };
 
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
     if (state.phase === 'BP') return state.firstTurn ? null : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it for options';
+    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it';
     return null;
   };
 
@@ -589,13 +594,12 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       <span class={`tturn ${myTurn ? 'mine' : ''}`}>
         {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} · {PHASE_NAMES[state.phase]}
       </span>
-      {hint() && <span class="thint">{hint()}</span>}
     </>
   );
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}`}
+      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${state.winner !== null && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -615,7 +619,6 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tarena" aria-hidden="true">
           <i class="tarena-glow" />
           <i class="tarena-floor" />
-          {MOTES}
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           <div class="trow">

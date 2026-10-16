@@ -20,6 +20,7 @@ import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, make
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
+import { figureHeld } from "./hold";
 
 export interface BoardMonster {
   uid: number;
@@ -446,7 +447,7 @@ export class BoardLayer {
           this.drop(p);
           continue;
         }
-      } else if (fig && p.cw > 0) {
+      } else if (fig && p.cw > 0 && !(p.show === 0 && figureHeld(p.uid, now))) {
         if (p.quick === null) {
           const at = landed.get(p.uid);
           p.quick = at !== undefined && now - at < LANDED_WINDOW_MS;
