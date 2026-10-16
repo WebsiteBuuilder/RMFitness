@@ -57,6 +57,7 @@ let handSeen = false;
 let cameFrom: { el: Element; x: number; y: number } | null = null;
 /** the menu the ring was in (its choices can change under it: Flip all → Open another) */
 let inMenu: Element | null = null;
+const rematchSeen = new WeakSet<Element>();
 let artHeld = false;
 let hintsAt = 0;
 
@@ -311,6 +312,11 @@ function validate(force = false) {
   }
   if (focused && focused.isConnected) {
     const box = rectOf(focused);
+    const re = focused.matches('.mdres-go') ? document.querySelector('.rematch-go') : null;
+    if (re && !rematchSeen.has(re) && reachable(re, rectOf(re))) {
+      rematchSeen.add(re);
+      return setFocus(re);
+    }
     if (reachable(focused, box)) return;
   }
   const c = candidates();
@@ -409,6 +415,20 @@ function move(dir: Dir) {
       // left/right stays on its own row when the next thing over is a bar or a close ×
       !((dir === 'left' || dir === 'right') && !fromBar && (x.el.matches(CLOSE) || x.el.closest(FLOATING) || x.el.closest(TABS)) && (x.box.bottom <= from.top || x.box.top >= from.bottom)),
   );
+  // a card's command bubble: its buttons first; out of it only onto another card
+  const bubble = focused.closest('.duel .tactions');
+  if (bubble) {
+    const inB = c.filter((x) => bubble.contains(x.el));
+    const k = pickNext(from, dir, inB.map((x) => x.box));
+    if (k >= 0) return void setFocus(inB[k].el);
+    const cards = c.filter((x) => x.el.matches('[data-uid]'));
+    const k2 = pickNext(from, dir, cards.map((x) => x.box));
+    if (k2 >= 0) {
+      (document.querySelector('.duel.touch') as HTMLElement | null)?.click();
+      return void setFocus(cards[k2].el);
+    }
+    return;
+  }
   const small = (x: Cand) => x.el.matches('.tskill') || /^\s*Out \d+\s*$/.test(x.el.textContent ?? '');
   const field = focused.matches(HAND) && dir === 'up' ? c.filter((x) => !small(x) && !x.el.matches(HAND)) : null;
   const j = field ? pickNext(from, dir, field.map((x) => x.box)) : -1;
@@ -816,7 +836,7 @@ function hintList(): Hint[] {
   if (document.querySelector('.art-skip.on')) return [[['a'], 'Skip (hold: all)']];
   if (kbOpen()) return [[['a'], 'Type'], [['x'], 'Delete'], [['y'], 'Caps'], [['start'], 'Done'], [['b'], 'Close']];
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
-  if (document.querySelector('.duel .tresult')) return [[['a'], 'Select']];
+  if (document.querySelector('.duel .tresult, .mdres-go')) return [[['a'], 'Select']];
   if (document.querySelector('.duel')) {
     out[0][1] = aLabel();
     if (document.querySelector('.duel .ttoast.aim')) return [out[0], [['b'], 'Cancel'], [['y'], 'Text']];
@@ -899,6 +919,8 @@ function renderHints(force = false) {
   const bt = lp ? lp.top : duel ? innerHeight : bottomBarTop();
   hints.style.bottom = bt < innerHeight ? `${Math.round(innerHeight - bt) + 4}px` : '';
   hints.style.top = lp ? 'auto' : '';
+  // (the rewards screen keeps Continue along the bottom: the hints go up top)
+  if (!lp && document.querySelector('.mdres-go')) (hints.style.top = 'calc(env(safe-area-inset-top, 0px) + 8px)'), (hints.style.bottom = 'auto');
   if (!force && key === hintKey) return;
   hintKey = key;
   // (in a duel the bar fades back after a few seconds, so the cards under it can be read)
