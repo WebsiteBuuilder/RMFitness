@@ -17,3 +17,13 @@ export function figureHeld(uid: number, now: number): boolean {
   held.delete(uid);
   return false;
 }
+
+// A press on the duel screen: for a moment the figures and the art loader stand back,
+// so what the tap opens is painted first.
+let pressAt = -1e9;
+if (typeof window !== 'undefined') window.addEventListener('pointerdown', () => (pressAt = performance.now()), { capture: true, passive: true });
+
+/** Did a finger go down in the last 300 ms? */
+export function pressQuiet(now: number = performance.now()): boolean {
+  return now - pressAt < 300;
+}

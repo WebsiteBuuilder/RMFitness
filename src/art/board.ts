@@ -20,7 +20,7 @@ import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, make
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
-import { figureHeld } from "./hold";
+import { figureHeld, pressQuiet } from "./hold";
 
 export interface BoardMonster {
   uid: number;
@@ -398,7 +398,9 @@ export class BoardLayer {
     // the sway is slow enough that it still reads as smooth)
     const settling = this.dirty || now < this.settleUntil;
     const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 6) : settling ? 1 : 4;
-    if (++this.frame % every === 0 || dt > 0.055) {
+    // a finger just went down: the tap's answer paints first, the figures wait a beat
+    const hush = !this.dirty && pressQuiet(now);
+    if (!hush && (++this.frame % every === 0 || dt > 0.055)) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);
       this.step(dt, now);

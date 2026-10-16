@@ -2,6 +2,7 @@
 // the card frame, a depth map guessed from the art (the subject stands forward,
 // the background falls back) and the art's own main colors.
 import { card, imageUrl } from '../eds/db';
+import { pressQuiet } from './hold';
 
 /** The artwork box inside a full card picture, as fractions of its size. */
 export const ART_BOX = { x: 0.12, y: 0.178, w: 0.76, h: 0.525 };
@@ -192,15 +193,16 @@ function figures(): Promise<Record<string, number[]>> {
   return figIndex;
 }
 
-async function relief(name: string): Promise<{ img: HTMLImageElement; palette: number[] } | null> {
+async function relief(name: string): Promise<{ img: HTMLImageElement; palette: number[]; px?: Uint8ClampedArray } | null> {
   const id = card(name)?.id;
   if (!id) return null;
   const palette = (await figures())[id];
   if (!palette) return null;
   try {
-    const img = await loadImage(`${BASE}cards/fig/${id}.webp`);
+    const src = `${BASE}cards/fig/${id}.webp`;
+    const [img, px] = await Promise.all([loadImage(src), pxOff(src, 64)]);
     await img.decode?.().catch(() => {});
-    return { img, palette };
+    return { img, palette, px };
   } catch {
     return null;
   }
@@ -229,12 +231,36 @@ async function build(name: string): Promise<ArtData> {
   const pre = await fig;
   const id = card(name)?.id;
   const artPx = readPx(art, 32);
-  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id, reliefPx: readPx(pre.img, 64), artPx };
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id, reliefPx: pre.px ?? readPx(pre.img, 64), artPx };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
   return { art, full, depth, relief: null, palette, id, artPx };
+}
+
+let pxWorker: Worker | null | undefined;
+let pxSeq = 0;
+const pxWaiting = new Map<number, (px: Uint8ClampedArray | undefined) => void>();
+/** The picture at `url` read at n×n by a worker, off the page (undefined where workers can't). */
+function pxOff(url: string, n: number): Promise<Uint8ClampedArray | undefined> {
+  if (pxWorker === undefined) {
+    try {
+      pxWorker = typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' ? new Worker(new URL('./px.worker.ts', import.meta.url), { type: 'module' }) : null;
+      pxWorker?.addEventListener('message', (e: MessageEvent<{ id: number; px: Uint8ClampedArray | null }>) => {
+        pxWaiting.get(e.data.id)?.(e.data.px ?? undefined);
+        pxWaiting.delete(e.data.id);
+      });
+    } catch {
+      pxWorker = null;
+    }
+  }
+  if (!pxWorker) return Promise.resolve(undefined);
+  const id = ++pxSeq;
+  return new Promise((ok) => {
+    pxWaiting.set(id, ok);
+    pxWorker!.postMessage({ id, url: new URL(url, location.href).href, n });
+  });
 }
 
 /** `src` drawn at n×n on a CPU-backed canvas and read back (undefined if that fails). */
@@ -275,7 +301,12 @@ export async function preloadArt(names: string[], stop: () => boolean = () => fa
   let i = 0;
   // between cards, wait for an idle moment (never mid-animation when the phone is busy)
   const w = typeof window !== 'undefined' ? (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) : null;
-  const pause = () => new Promise<void>((ok) => (w?.requestIdleCallback ? w.requestIdleCallback(() => ok(), { timeout: 1500 }) : setTimeout(ok, 60)));
+  const idle = () => new Promise<void>((ok) => (w?.requestIdleCallback ? w.requestIdleCallback(() => ok(), { timeout: 1500 }) : setTimeout(ok, 60)));
+  // and never while a cinematic plays or a finger is on the screen (up to 8 s of waiting, then on)
+  const pause = async () => {
+    await idle();
+    for (let k = 0; k < 40 && typeof document !== 'undefined' && (document.body.classList.contains('art-on') || pressQuiet()); k++) await new Promise((ok) => setTimeout(ok, 200));
+  };
   const worker = async () => {
     while (i < list.length && !stop()) {
       const n = list[i++];
