@@ -1765,7 +1765,10 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Windstorm of Etaqua'] = trap(
     (e, _c, p, t) => anyTime(t) && e.monsters(other(p)).some((m) => m.faceUp),
     function* (e, _l, p) {
-      for (const m of e.monsters(other(p)).filter((x) => x.faceUp)) m.pos = m.pos === 'atk' ? 'def' : 'atk';
+      for (const m of e.monsters(other(p)).filter((x) => x.faceUp)) {
+        m.pos = m.pos === 'atk' ? 'def' : 'atk';
+        e.event('position', { uid: m.uid, player: other(p) });
+      }
     },
   );
 

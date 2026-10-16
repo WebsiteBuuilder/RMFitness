@@ -2860,7 +2860,10 @@ export class Engine {
     const info = this.info(f.card.name);
     let fc: FieldCard;
     const fromHand = f.loc.zone === 'hand';
+    // something is paid on the way in (Graverobber's 2000, Chain Energy's 500, the old Field Spell): no taking it back then
+    let paidOnWay = false;
     if (((this.state.fx.borrowed ?? []) as number[]).includes(uid)) {
+      paidOnWay = true;
       this.log(player, `Graverobber: ${this.player(player).name} takes 2000 damage for using ${f.card.name}`);
       this.damage(player, 2000);
       this.state.fx.borrowed = (this.state.fx.borrowed as number[]).filter((u) => u !== uid);
@@ -2875,6 +2878,7 @@ export class Engine {
       if (ok === false) return;
     }
     if (f.loc.zone === 'hand' && info.sub === 'Field' && ps.field) {
+      paidOnWay = true;
       const prev = ps.field;
       this.log(player, `${prev.faceUp ? prev.name : 'The Set Field Spell'} is replaced and sent to the GY`);
       yield* this.sendToGrave(prev.uid, 'used');
@@ -2895,9 +2899,10 @@ export class Engine {
       fc = f.card as FieldCard;
       fc.faceUp = true;
     }
+    if (fromHand && this.spellActive('Chain Energy')) paidOnWay = true;
     if (fromHand) yield* this.chainEnergy(player);
     // backing out of its target pick (nothing paid yet) puts it back where it was, as in Master Duel
-    yield* this.startChain(player, fc, 'main', {}, cost ? undefined : fromHand ? 'hand' : 'set');
+    yield* this.startChain(player, fc, 'main', {}, cost || paidOnWay ? undefined : fromHand ? 'hand' : 'set');
   }
 
   /** Its activation was already backed out of once this turn (a second time it fizzles, so nothing can loop). */
@@ -2925,7 +2930,6 @@ export class Engine {
   *startChain(player: Pid, fc: FieldCard, trigger: Trigger, ctx: ChainCtx, back?: 'hand' | 'set'): Step {
     const eff = getEffect(fc.name)!;
     const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player, label: fc.name, negated: false };
-    this.event('activate', { uid: fc.uid, player });
     this.log(player, `${this.player(player).name} activates ${fc.name}`);
     if (eff.activate) {
       const prev = this.actor;
@@ -2933,12 +2937,15 @@ export class Engine {
       const ok = yield* eff.activate(this, link, player, ctx);
       this.actor = prev;
       if (ok === false) {
-        if (back && this.fieldCard(fc.uid) && !this.takenBackThisTurn(fc.uid)) return this.undoActivation(fc, back, player);
+        if (back && this.fieldCard(fc.uid)) return this.undoActivation(fc, back, player);
         // No legal target after all: the card fizzles and goes to the GY.
+        this.event('activate', { uid: fc.uid, player });
         yield* this.afterResolve(link);
         return;
       }
     }
+    // announced once its targets are chosen: its cinematic plays aimed at them (and never for a card taken back)
+    this.event('activate', { uid: fc.uid, player });
     this.targetEvent(link);
     this.state.chain.push(link);
     yield* this.responseWindow(this.info(fc.name).kind === 'spell' ? 'spell' : 'trap', { uid: fc.uid, link });
@@ -2971,7 +2978,7 @@ export class Engine {
         if (!link.negated && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
         if (link.negated) {
           this.log(link.player, `${link.card.name}'s effect was negated`);
-        } else if (eff?.resolve && stillThere) {
+        } else if (eff?.resolve && (stillThere || this.resolvesFromGrave(link))) {
           yield* this.as(link.player, eff.resolve(this, link, link.player));
         }
         yield* this.afterResolve(link);
@@ -2984,6 +2991,18 @@ export class Engine {
     yield* this.flushLeaves();
     yield* this.damageWindow(false);
     yield* this.flushSummonWindows();
+  }
+
+  /**
+   * Speed Duel: a Normal or Quick-Play Spell, a Ritual Spell, or a Normal or Counter Trap destroyed in the
+   * chain still resolves (Master Duel and the real rules); Continuous, Equip and Field cards need to stay.
+   */
+  private resolvesFromGrave(link: ChainLink): boolean {
+    if (!this.speed || (link.payload as { effect?: string } | undefined)?.effect) return false;
+    const info = this.info(link.card.name);
+    if (info.kind !== 'spell' && info.kind !== 'trap') return false;
+    if (!['Normal', 'Quick-Play', 'Ritual', 'Counter'].includes(info.sub)) return false;
+    return this.find(link.card.uid)?.loc.zone === 'gy';
   }
 
   /** Speed Duel: face-up monsters see each chain link right before it resolves (Freed the Matchless General, Angel O7). */
@@ -3073,6 +3092,7 @@ export class Engine {
         }
         let fc = opt ? this.fieldCard(opt.uid!) : null;
         const fromHand = !fc && !!opt && opt.value === 'hand';
+        let handPaid = false;
         // a Quick-Play Spell from the hand: it is placed face-up in a Spell & Trap Zone first
         if (!fc && opt && opt.value === 'hand') {
           const ps = this.player(responder);
@@ -3089,7 +3109,9 @@ export class Engine {
             }
             if (paid && this.find(opt.uid!)?.loc.zone === 'hand' && ps.sz[z] === null) {
               // the same bookkeeping as an activation in the Main Phase (Graverobber's borrowed card, Chain Energy)
+              handPaid = !!this.spellActive('Chain Energy');
               if (((this.state.fx.borrowed ?? []) as number[]).includes(opt.uid!)) {
+                handPaid = true;
                 this.log(responder, `Graverobber: ${ps.name} takes 2000 damage for using ${f.card.name}`);
                 this.damage(responder, 2000);
                 this.state.fx.borrowed = (this.state.fx.borrowed as number[]).filter((u) => u !== opt.uid);
@@ -3106,18 +3128,22 @@ export class Engine {
           fc.faceUp = true;
           const eff = getEffect(fc.name)!;
           const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player: responder, label: fc.name, negated: false };
-          this.event('activate', { uid: fc.uid, player: responder });
           this.log(responder, `${this.player(responder).name} activates ${fc.name}`);
           const prev = this.actor;
           this.actor = responder;
           const ok = eff.activate ? yield* eff.activate(this, link, responder, ctx) : true;
           this.actor = prev;
-          if (ok === false && this.fieldCard(fc.uid) && !(fromHand && getEffect(fc.name)?.activateCost) && !this.takenBackThisTurn(fc.uid)) {
-            // backed out of its target pick: back to the hand / face-down, and this player passes
+          if (ok === false && this.fieldCard(fc.uid) && !(fromHand && (handPaid || getEffect(fc.name)?.activateCost))) {
+            // backed out of its target pick: back to the hand / face-down, and the same window is offered
+            // again (once per card per turn, so nothing can loop)
+            const again = !this.takenBackThisTurn(fc.uid);
             this.undoActivation(fc, fromHand ? 'hand' : 'set', responder);
+            if (again) continue;
           } else if (ok === false) {
+            this.event('activate', { uid: fc.uid, player: responder });
             yield* this.afterResolve(link);
           } else {
+            this.event('activate', { uid: fc.uid, player: responder });
             this.targetEvent(link);
             this.state.chain.push(link);
             depth++;
@@ -3234,7 +3260,7 @@ export class Engine {
         const info = this.info(c.name);
         const eff = getEffect(c.name);
         if (info.kind !== 'spell' || info.sub !== 'Quick-Play' || out.some((o) => o.uid === c.uid)) continue;
-        if (myAttack && !(ctx.link && ctx.link.player !== player) && !/\bATK\b|\bDEF\b|battle|attack/i.test(info.desc ?? '')) continue;
+        if (myAttack && !(ctx.link && ctx.link.player !== player) && !/\bATK\b|\bDEF\b|battle/i.test(info.desc ?? '')) continue;
         if (!eff?.resolve || !eff.canActivate || this.prohibited(c, c.uid) || this.activationBlocked(player, c) || this.cardActivationLocked(player, c)) continue;
         if (eff.activateCost && !eff.activateCost.can(this, c, player)) continue;
         if (this.withActor(player, () => eff.canActivate!(this, c, player, trigger, ctx))) out.push({ label: c.name, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'hand' });

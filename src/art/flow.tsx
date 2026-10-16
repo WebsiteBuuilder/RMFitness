@@ -264,7 +264,11 @@ export class Flow {
       cues = sink?.ready() ? pickCues(all, mode, viewer) : [];
       // Big moments: a Spell/Trap plays when it is activated, not each time a face-up one uses its effect again
       if (mode === 'big') cues = cues.filter((c) => !(c.kind === 'activate' && c.what !== 'monster' && !SIGNATURES.has(c.card.name) && this.activated.has(c.card.uid)));
-      for (const c of all) if (c.kind === 'activate' && c.what !== 'monster') this.activated.add(c.card.uid);
+      for (const c of all) {
+        if (c.kind === 'activate' && c.what !== 'monster') this.activated.add(c.card.uid);
+        // a card that leaves the field or is Set again starts over: its next activation plays
+        else if (c.kind === 'leave' || c.kind === 'destroy' || c.kind === 'set') this.activated.delete(c.card.uid);
+      }
       // what gets no cinematic still makes its sound, a beat apart
       all.filter((c) => !cues.includes(c)).forEach((c, i) => cueSound(c, i * 0.12));
     }

@@ -866,7 +866,7 @@ section('Backing out of a target pick takes the card back');
   e.apply({ type: 'ACTIVATE', player: 0, uid: mst.uid, zone: 0 });
   if (e.state.prompt?.kind === 'select') e.apply({ type: 'CANCEL', player: 0 } as any);
   settle(e);
-  check(zone(e, mst) === 'gy', 'backed out a second time in the same turn: it is used up (so nothing can loop)');
+  check(zone(e, mst) === 'hand', 'backed out a second time in the same turn: back in the hand again');
   const e2 = duel(['Mystical Space Typhoon'], ['Waboku']);
   putST(e2, 1, 'Waboku');
   const set = putST(e2, 0, 'Mystical Space Typhoon');
@@ -874,6 +874,18 @@ section('Backing out of a target pick takes the card back');
   if (e2.state.prompt?.kind === 'select') e2.apply({ type: 'CANCEL', player: 0 } as any);
   settle(e2);
   check(zone(e2, set) === 'sz' && !e2.fieldCard(set.uid)!.faceUp, 'cancelled from a Set: it goes back face-down');
+}
+
+section('A Normal Trap destroyed in the chain still resolves');
+{
+  const e = duel(['Mystical Space Typhoon', 'Battle Ox'], ['Trap Hole']);
+  const th = putST(e, 1, 'Trap Hole');
+  grab(e, 0, 'Mystical Space Typhoon');
+  const ox = grab(e, 0, 'Battle Ox');
+  e.player(0).normalSummoned = false;
+  e.apply({ type: 'SUMMON', player: 0, uid: ox.uid, zone: 0, pos: 'atk', faceUp: true });
+  settle(e, { respond: 'Trap Hole' }, { respond: 'Mystical Space Typhoon' }, { pick: ['Trap Hole'] });
+  check(zone(e, th) === 'gy' && zone(e, ox) === 'gy', 'Mystical Space Typhoon destroys Trap Hole, but Trap Hole still destroys Battle Ox');
 }
 
 section('Field Spells: a Set replaces the old one, the same one is not played over itself');
