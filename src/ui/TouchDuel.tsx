@@ -13,6 +13,8 @@ import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
+import { useFlights } from './flights';
+import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -56,6 +58,15 @@ export interface TouchCtl {
   onFinished: (winner: Pid | 'draw') => void;
 }
 
+/** drifting light motes over the arena (CSS-only, transform animations) */
+const MOTES = (
+  <span class="tmotes">
+    {Array.from({ length: 10 }, (_, i) => (
+      <i key={i} style={{ '--m': String(i) } as Record<string, string>} />
+    ))}
+  </span>
+);
+
 const PHASE_NAMES: Record<string, string> = { DP: 'Draw', SP: 'Standby', M1: 'Main 1', BP: 'Battle', M2: 'Main 2', EP: 'End' };
 
 /** A card being dragged: where it came from and where the finger is. */
@@ -86,7 +97,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   useEffect(() => {
     const on = () => setResized((n) => n + 1);
     window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
+    // the field swings into place as the duel opens: place the turn row again once it has
+    const t = setTimeout(on, 900);
+    return () => (window.removeEventListener('resize', on), clearTimeout(t));
   }, []);
   useLayoutEffect(() => {
     const el = midRef.current;
@@ -94,6 +107,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
     if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
   });
+
+  useFlights(root, state, acting);
 
   const idle = canAct && !prompt && state.winner === null;
   const actions = commands.filter((c) => !c.disabled && c.label !== 'Card Info');
@@ -344,7 +359,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const gy = (p: Pid) => {
     const ps = state.players[p];
     return (
-      <button class="tpile" onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy }))}>
+      <button class="tpile gy" data-pile={`gy${p}`} onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy }))}>
         {ps.gy.length > 0 ? <CardImg name={ps.gy[ps.gy.length - 1].name} owner={ps.gy[ps.gy.length - 1].owner} /> : <span class="tz-label">GY</span>}
         <span class="tcount">{ps.gy.length}</span>
       </button>
@@ -355,7 +370,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const ps = state.players[p];
     const extra = ps.fusion.length > 0 || ps.removed.length > 0;
     return (
-      <div class="tpile deck">
+      <div class="tpile deck" data-pile={`deck${p}`}>
         {ps.deck.length > 0 ? <CardImg name="" back /> : <span class="tz-label">DECK</span>}
         <span class="tcount">{ps.deck.length}</span>
         {extra && (
@@ -377,6 +392,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const hurt = anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '';
     const isTurn = state.turnPlayer === p;
     const directOk = top && spots?.has('direct');
+    const frac = Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp)));
     return (
       <div
         class={`tbar ${top ? 'top' : 'bottom'} ${isTurn ? 'turn' : ''}${directOk ? (drag?.over === 'direct' ? ' drop-on' : ' drop-ok') : ''} ${mode && top && canDirect() ? 'drop-ok' : ''}`}
@@ -404,6 +420,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <LpCount value={ps.lp} who={p} />
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
+        <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
+          <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+        </i>
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
             ☰
@@ -568,7 +588,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''}`}
+      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -577,14 +597,19 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     >
       {lpBar(oppId, true)}
       <div class="topp-hand">
-        {opp.hand.map((c) => (
-          <div key={c.uid} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name, c.owner))}>
+        {opp.hand.map((c, i) => (
+          <div key={c.uid} data-uid={c.uid} style={{ '--arc': (i - (opp.hand.length - 1) / 2).toFixed(2), '--arc2': ((i - (opp.hand.length - 1) / 2) ** 2).toFixed(2) } as Record<string, string>} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name, c.owner))}>
             <CardImg name={c.name} back={!ctl.oppHandShown} owner={c.owner} />
           </div>
         ))}
       </div>
 
       <div class="tboard">
+        <div class="tarena" aria-hidden="true">
+          <i class="tarena-glow" />
+          <i class="tarena-floor" />
+          {MOTES}
+        </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           <div class="trow">
             {deck(oppId)}
@@ -666,10 +691,11 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       )}
       {lpBar(acting, false)}
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
-        {me.hand.map((c) => (
+        {me.hand.map((c, i) => (
           <div
             key={c.uid}
             data-uid={c.uid}
+            style={{ '--arc': (i - (handCount - 1) / 2).toFixed(2), '--arc2': ((i - (handCount - 1) / 2) ** 2).toFixed(2) } as Record<string, string>}
             class={`thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`}
             onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
             {...dragProps(c, 'hand')}
