@@ -60,7 +60,6 @@ export interface TouchCtl {
 }
 
 /** the hint line under the turn row comes and goes (it moves the row a little) */
-const hintKey = (s: DuelState) => `${s.turn <= 4}${s.phase}`;
 
 const PHASE_NAMES: Record<string, string> = { DP: 'Draw', SP: 'Standby', M1: 'Main 1', BP: 'Battle', M2: 'Main 2', EP: 'End' };
 
@@ -94,7 +93,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     window.addEventListener('resize', on);
     // the field swings into place as the duel opens: place the turn row again once it has
     const t = setTimeout(on, 900);
-    return () => (window.removeEventListener('resize', on), clearTimeout(t));
+    // (and when the row itself changes size: not on every step of a turn, which forced a layout each time)
+    const ro = typeof ResizeObserver !== 'undefined' && midRef.current ? new ResizeObserver(on) : null;
+    if (ro && midRef.current) ro.observe(midRef.current);
+    return () => (window.removeEventListener('resize', on), clearTimeout(t), ro?.disconnect());
   }, []);
   // (measured only when the layout can have moved: not after every render, which forced a layout each time)
   const figuresOn = typeof document !== 'undefined' && document.body.classList.contains('art3d-on');
@@ -103,7 +105,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const b = el && figuresOn ? el.getBoundingClientRect() : null;
     const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
     if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
-  }, [resized, figuresOn, state.winner, hintKey(state)]);
+  }, [resized, figuresOn, state.winner]);
 
   useFlights(root, state, acting);
 

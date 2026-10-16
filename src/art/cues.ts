@@ -65,7 +65,7 @@ export function rectOf(uid: number, host: HTMLElement | null): Rect | null {
   const el = zoneEl(uid);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  const h = host.getBoundingClientRect();
+  const h = hostRect(host, performance.now());
   if (r.width === 0) return null;
   return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2, w: r.width, h: r.height };
 }
@@ -165,12 +165,21 @@ export function coalesce(cues: Cue[]): Cue[] {
 export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | null, prev?: FieldMemo): FieldMemo {
   const m: FieldMemo = new Map();
   for (const p of [0, 1] as Pid[])
-    for (const c of state.players[p].mz) {
-      if (!c) continue;
-      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, owner: c.owner, rect: rectOf(c.uid, host) ?? prev?.get(c.uid)?.rect ?? null, def: c.pos === 'def' });
-    }
+    state.players[p].mz.forEach((c, i) => {
+      if (!c) return;
+      // a monster still in the zone and position it was last measured in keeps that place
+      // (this runs on every step of a turn: measuring each time forced a layout per step)
+      const at = `${p}${i}${c.pos}`;
+      const old = prev?.get(c.uid)?.rect ?? null;
+      const rect = old && placedAt.get(c.uid) === at ? old : rectOf(c.uid, host) ?? old;
+      if (rect) placedAt.set(c.uid, at);
+      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, owner: c.owner, rect, def: c.pos === 'def' });
+    });
   return m;
 }
+/** Where each monster's remembered place was measured (player, zone, position); forgotten on a resize. */
+const placedAt = new Map<number, string>();
+if (typeof window !== 'undefined') window.addEventListener('resize', () => placedAt.clear());
 
 export type SummonHow = 'normal' | 'tribute' | 'special' | 'fusion' | 'ritual' | 'xyz' | 'synchro' | 'link';
 const HOWS = new Set<SummonHow>(['normal', 'tribute', 'special', 'fusion', 'ritual', 'xyz', 'synchro', 'link']);
