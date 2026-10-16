@@ -529,7 +529,7 @@ section('Black Luster Soldier - Legendary Swordsman');
 section('Bashing Shield');
 {
   const e = duel(['Bashing Shield'], ['Blue-Eyes White Dragon']);
-  const f = place(e, 0, FILL);
+  const f = summon(e, 0, FILL);
   const bewd = place(e, 1, 'Blue-Eyes White Dragon');
   toTurnOf(e, 1);
   toTurnOf(e, 0);

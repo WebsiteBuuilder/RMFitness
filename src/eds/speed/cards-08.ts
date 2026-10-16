@@ -393,17 +393,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Multiplication of Ants'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => raceOf(e, m) === 'Insect' && m.faceUp) && freeZones(e, p) >= 1,
+    // audit-E: any Insect you control can be Tributed (a face-down one too).
+    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => raceOf(e, m) === 'Insect' && !e.untributable(m) && !m.tags?.summonTribOnly) && freeZones(e, p) >= 1,
     *activate(e, _l, p) {
-      if (!(yield* tributeCost(e, p, 1, (m) => raceOf(e, m) === 'Insect' && m.faceUp))) return false;
+      if (!(yield* tributeCost(e, p, 1, (m) => raceOf(e, m) === 'Insect'))) return false;
     },
     *resolve(e, _l, p) {
       if (freeZones(e, p) < 2) return;
-      for (let i = 0; i < 2; i++) e.createToken('Army Ant Token', p, 'atk', true, { atk: 500, def: 1200, level: 4, attribute: 'EARTH', race: 'Insect' });
+      for (let i = 0; i < 2; i++) {
+        const tk = e.createToken('Army Ant Token', p, 'atk', true, { atk: 500, def: 1200, level: 4, attribute: 'EARTH', race: 'Insect' });
+        // audit-E: they cannot be Tributed for a Tribute Summon (engine tribLocked: no monster's name contains this), other Tributes are fine.
+        if (tk) ((fx(e).tribFor ??= {}) as Record<number, string>)[tk.uid] = '\u0000no Tribute Summon';
+      }
     },
   };
-  // Approximation: "cannot be used as a Tribute for a Tribute Summon" is applied to every Tribute.
-  E['Army Ant Token'] = { cannotBeTributed: () => true };
 
   E['Musto, Oracle of Gusto'] = {
     ignition: {
@@ -769,13 +772,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
   // A face-up monster that destroyed a monster by battle this turn (tags.killTurn, set by the engine).
   const killers = (e: Engine) => targetable(e, faceUpMonsters(e)).filter((m) => m.tags?.killTurn === e.state.turn);
-  // Approximation: "cards and effects cannot be activated in response" is not enforced.
   E['Nordic Relic Laevateinn'] = {
     canActivate: (e, _c, _p, t) => (anyTime(t) || t === 'destroyed') && killers(e).length > 0,
     *activate(e, link, p) {
       const t = yield* pickOne(e, p, 'Nordic Relic Laevateinn: destroy which monster?', killers(e), true);
       if (!t) return false;
       link.targetUid = t.uid;
+      // audit-E: cards and effects cannot be activated in response to this card's activation (engine: payload.noResponse when it
+      // starts a chain; fx.unchainable when it is itself a response).
+      link.payload = { noResponse: true };
+      e.state.fx.unchainable = link.card.uid;
     },
     *resolve(e, link) {
       if (link.targetUid !== undefined && e.fieldCard(link.targetUid)) yield* e.destroy([link.targetUid]);
@@ -1376,8 +1382,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *resolve(e, link, p) {
       const uids = link.payload as number[];
-      if (uids.some((u) => e.find(u)?.loc.zone !== 'gy')) return;
-      for (const u of uids) {
+      // audit-E: targets that left the GY are skipped; you draw only if all 5 were shuffled into the Deck.
+      const all = uids.every((u) => e.find(u)?.loc.zone === 'gy');
+      for (const u of uids.filter((x) => e.find(x)?.loc.zone === 'gy')) {
         const c = e.find(u)!.card;
         if (isFusion(e, c)) {
           const ps = e.player(c.owner);
@@ -1385,7 +1392,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
           ps.fusion.push(c);
         } else toDeck(e, u);
       }
-      e.draw(p, 2);
+      if (all) e.draw(p, 2);
     },
   };
 
@@ -1467,7 +1474,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Applied when the attack is declared, until the end of the turn.
+  // Activated when the attack is declared (there is no damage calculation window); the ATK applies during that battle only.
   const roarPair = (e: Engine, p: Pid) => {
     const mine = myBattle(e, p);
     const foe = mine ? foeOf(e, mine.uid) : null;
@@ -1483,7 +1490,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link) {
       const r = link.payload as { mine: FieldCard; diff: number };
       const m = e.fieldCard(r.mine.uid);
-      if (m?.faceUp) boostTurn(m, r.diff + 300);
+      // audit-E: "during damage calculation only": the bonus lasts for this battle, not the rest of the turn (read by graveAura from the GY).
+      if (m?.faceUp && e.state.battle) ((fx(e).roar ??= {}) as Record<number, { uid: number; battle: number; atk: number }>)[link.card.uid] = { uid: m.uid, battle: fx(e).battleNo ?? 0, atk: r.diff + 300 };
+    },
+    graveAura: (e, card, target) => {
+      const r = ((fx(e).roar ?? {}) as Record<number, { uid: number; battle: number; atk: number }>)[card.uid];
+      return r && r.uid === target.uid && !!e.state.battle && r.battle === (fx(e).battleNo ?? 0) ? { atk: r.atk, def: 0 } : undefined;
     },
   };
 
@@ -1557,6 +1569,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     // "If exactly 1 Zombie monster you control would be destroyed, you can send this card to the GY instead" (always used).
     shields(e, src, target, how, sc) {
       if (how === 'target' || !src.active || ctrl(e, target) !== sc || raceOf(e, target) !== 'Zombie' || !e.fieldCard(src.uid)) return false;
+      // audit-E: only when exactly that 1 card would be destroyed (a destruction of several cards is grouped by the engine: graveHold > 0).
+      if (((e as unknown as { graveHold?: number }).graveHold ?? 0) > 0) return false;
       e.log(sc, `${src.name} is sent to the GY instead of ${target.name}`);
       const g = e.sendToGrave(src.uid, 'cost');
       for (let r = g.next(undefined as never); !r.done; r = g.next(false)) {
@@ -1664,11 +1678,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   const cloudian = (e: Engine, p: Pid) => e.monsters(p).filter((m) => m.faceUp && named(e, m, 'Cloudian'));
   E['Rain Storm'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && cloudian(e, p).length > 0 && [...e.monsters(other(p)), ...stOf(e, other(p))].length > 0,
+    canActivate: (e, _c, p, t) => anyTime(t) && cloudian(e, p).length > 0 && (stOf(e, other(p)).length > 0 || [...e.monsters(other(p)), ...stOf(e, other(p))].length >= 2),
     *resolve(e, _l, p) {
       const m = yield* pickOne(e, p, 'Rain Storm: select which "Cloudian" monster?', cloudian(e, p));
       if (!m) return;
-      const opt = yield* chooseOption(e, p, 'Rain Storm: reduce its ATK by', ['1000: destroy 1 Spell/Trap', '2000: destroy 2 cards']);
+      // audit-E: only the choices whose destruction can happen (1 Spell/Trap, or 2 cards).
+      const labels = ['1000: destroy 1 Spell/Trap', '2000: destroy 2 cards'];
+      const can = [stOf(e, other(p)).length > 0, [...e.monsters(other(p)), ...stOf(e, other(p))].length >= 2];
+      const shown = labels.filter((_, i) => can[i]);
+      const k = yield* chooseOption(e, p, 'Rain Storm: reduce its ATK by', shown);
+      const opt = k === null ? null : labels.indexOf(shown[k]);
       if (opt === 0) {
         boostPerm(m, -1000);
         const t = yield* pickOne(e, p, 'Destroy which Spell/Trap?', stOf(e, other(p)));

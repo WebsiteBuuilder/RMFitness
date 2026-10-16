@@ -30,18 +30,26 @@ import {
 
 export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   // Normal Spell with a target chosen at activation (activate) and applied at resolution (resolve).
+  // spells-a: Tokens cannot be turned face-down; a monster turned face-down loses its Equip Cards and the changes made to it.
+  const moonTargets = (e: Parameters<NonNullable<EffectDef['onSpecialSummon']>>[0]) => targetable(e, faceUpMonsters(e)).filter((m) => !m.token);
   E['Book of Moon'] = {
-    canActivate: (e, _c, _p, t) => anyTime(t) && targetable(e, faceUpMonsters(e)).length > 0,
+    canActivate: (e, _c, _p, t) => anyTime(t) && moonTargets(e).length > 0,
     *activate(e, link, p) {
-      const m = yield* pickOne(e, p, 'Book of Moon: change which monster to face-down Defense Position?', targetable(e, faceUpMonsters(e)), true);
+      const m = yield* pickOne(e, p, 'Book of Moon: change which monster to face-down Defense Position?', moonTargets(e), true);
       if (!m) return false;
       link.targetUid = m.uid;
     },
     *resolve(e, link) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
-      if (!m || !m.faceUp) return;
+      if (!m || !m.faceUp || m.token) return;
+      for (const u of m.equips.slice()) if (e.fieldCard(u)) yield* e.sendToGrave(u, 'destroyed');
       m.faceUp = false;
       m.pos = 'def';
+      m.atkMod = 0;
+      m.defMod = 0;
+      // How it was Summoned stays; effects applied to it while face-up (negation, lasting ATK changes...) end. A bind (Spellbinding Circle) stays.
+      const keep = ['ss', 'ssAt', 'ssFrom', 'ssExtra', 'fusS', 'noFlip', 'boundBy'];
+      m.tags = Object.fromEntries(Object.entries(m.tags ?? {}).filter(([k]) => keep.includes(k)));
       e.event('position', { uid: m.uid });
       e.log(link.player, `${m.name} is turned face-down`);
     },
@@ -122,7 +130,8 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   };
 
   // Negating a monster's effects, plus an ignition effect from the Graveyard.
-  const breakthroughTargets = (e: Parameters<NonNullable<EffectDef['onSpecialSummon']>>[0], p: 0 | 1) => targetable(e, faceUpMonsters(e, other(p))).filter((m) => info(e, m).sub !== 'Normal');
+  // spells-a: an Effect Monster: not a Normal Monster, a Token, or an Extra Deck/Ritual Monster with no effect (Flame Swordsman).
+  const breakthroughTargets = (e: Parameters<NonNullable<EffectDef['onSpecialSummon']>>[0], p: 0 | 1) => targetable(e, faceUpMonsters(e, other(p))).filter((m) => !m.token && info(e, m).sub !== 'Normal' && !info(e, m).vanilla);
   E['Breakthrough Skill'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && breakthroughTargets(e, p).length > 0,
     *activate(e, link, p) {

@@ -57,7 +57,9 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         if (power < 1800 && power < my.lp && !kills) return { type: 'PASS', player: me };
       }
       // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
-      return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
+      // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
+      const k = prompt.options.findIndex((o) => o.value !== 'hand');
+      return k >= 0 ? { type: 'CHOOSE', player: me, picks: [k] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.
     const { order: ranked, val } = rankOptions(e, me, prompt.title, prompt.options);

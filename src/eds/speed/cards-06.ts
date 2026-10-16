@@ -53,6 +53,12 @@ const EXTRA_DECK = ['Fusion', 'Xyz', 'Synchro', 'Link'];
 /** A monster that can be Special Summoned from the Deck/hand/GY by a plain effect (no Extra Deck or Ritual monsters). */
 const mainMonster = (e: Engine, c: Card) => isMonster(e, c) && !EXTRA_SUBS.includes(info(e, c).sub);
 const atkInfo = (e: Engine, c: Card) => Math.max(0, info(e, c).atk ?? 0);
+/** spells-d: an Effect Monster (not a Normal Monster, a Fusion/Ritual Monster with no effect, a Token, or a Trap Monster "treated as a Normal Monster"). */
+const isEffectMonster = (e: Engine, c: Card) => {
+  const i = info(e, c);
+  if (i.kind === 'trap') return /as an Effect Monster/i.test(i.desc);
+  return i.kind === 'monster' && i.sub !== 'Normal' && !i.vanilla && !c.token;
+};
 const defInfo = (e: Engine, c: Card) => Math.max(0, info(e, c).def ?? 0);
 /** A card named "Harpie Lady" right now: always (Cyber Harpie Lady, Harpie Lady 1-3) or on the field/GY (Harpie Queen...). */
 const isHarpieLady = (c: Card | string) => nameEngine().isNamed(c, 'Harpie Lady');
@@ -1476,14 +1482,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Approximation: damage you deal yourself this turn is also 0.
+  // Damage you deal yourself (your own costs) still counts: only battle and your opponent's effects are stopped.
   E['Hallowed Life Barrier'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && e.player(p).hand.length > 0,
     *activate(e, _l, p) {
       if (!(yield* discardCost(e, p, 1))) return false;
     },
     *resolve(e, _l, p) {
-      ((e.state.fx.noDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
+      ((e.state.fx.noOppDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
       e.log(p, `${e.player(p).name} takes no damage this turn`);
     },
   };
@@ -1574,7 +1580,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     canActivate: (e, c, p, t) => {
       const mine = e.monsters(p);
-      return isMain(t) && e.oncePerTurn(c.name, p) && e.player(p).deck.length >= 2 && mine.length === 2 && mine.every((m) => m.faceUp && raceOf(e, m) === 'Machine' && info(e, m).sub !== 'Normal');
+      return isMain(t) && e.oncePerTurn(c.name, p) && e.player(p).deck.length >= 2 && mine.length === 2 && mine.every((m) => m.faceUp && raceOf(e, m) === 'Machine' && isEffectMonster(e, m));
     },
     *activate(e, link, p) {
       e.useOnce(link.card.name, p);
@@ -1674,6 +1680,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         yield* searchDeck(e, p, "Gravekeeper's Trap: add which monster?", (c) => gkTrapTest(e, c));
       },
     },
+    // spells-d: "During the Main Phase" is either player's: in the opponent's Main Phase it is used in a response window (discard as the cost).
+    quick: {
+      repeat: true,
+      label: 'discard 1: add a "Gravekeeper\'s" or EARTH Fairy monster',
+      can: (e, c, p) => e.state.turnPlayer === other(p) && e.inMainPhase() && e.oncePerTurn(c.name, p) && e.player(p).hand.length > 0 && e.player(p).deck.some((x) => gkTrapTest(e, x)),
+      *cost(e, card, p) {
+        if (!(yield* discardCost(e, p, 1))) return false;
+        e.useOnce(card.name, p);
+      },
+      *run(e, _c, p) {
+        yield* searchDeck(e, p, "Gravekeeper's Trap: add which monster?", (c) => gkTrapTest(e, c));
+      },
+    },
   };
 
   E['Gravelstorm'] = {
@@ -1695,6 +1714,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Graydle Combat'] = {
     canActivate: (e, _c, p, t, ctx) => {
       if (!(t === 'spell' || t === 'trap' || t === 'effect') || !ctx.link || ctx.link.targetUid === undefined) return false;
+      // spells-d: "a Spell/Trap Card, or monster effect": not the later effect of a Spell/Trap already on the field.
+      if ((ctx.link.payload as { effect?: string } | undefined)?.effect && !isMonster(e, ctx.link.card)) return false;
       const m = e.fieldCard(ctx.link.targetUid);
       return !!m && m.faceUp && named(e, m, 'Graydle') && e.controller(m.uid) === p && isMonster(e, m);
     },
@@ -1927,9 +1948,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // Swaps the current values (later changes are not swapped back).
   E['Inverse Universe'] = {
-    canActivate: (e, _c, _p, t) => anyTime(t) && faceUpMonsters(e).some((m) => info(e, m).sub !== 'Normal'),
+    canActivate: (e, _c, _p, t) => anyTime(t) && faceUpMonsters(e).some((m) => isEffectMonster(e, m)),
     *resolve(e) {
-      for (const m of faceUpMonsters(e).filter((x) => info(e, x).sub !== 'Normal')) {
+      for (const m of faceUpMonsters(e).filter((x) => isEffectMonster(e, x))) {
         const a = e.atkOf(m);
         const d = e.defOf(m);
         boostPerm(m, d - a, a - d);

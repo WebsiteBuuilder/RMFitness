@@ -927,7 +927,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Tutan Mask'] = {
     canActivate: (e, _c, _p, t, ctx) => {
-      if ((t !== 'spell' && t !== 'trap') || !ctx.link || ctx.link.targetUid === undefined) return false;
+      // "A Spell/Trap Card is activated": a card activation, not the effect of a face-up Continuous card.
+      if ((t !== 'spell' && t !== 'trap') || !ctx.link || ctx.link.targetUid === undefined || (ctx.link.payload as { effect?: string } | undefined)?.effect || !(isSpell(e, ctx.link.card) || isTrap(e, ctx.link.card))) return false;
       const m = e.fieldCard(ctx.link.targetUid);
       return !!m && m.faceUp && e.find(m.uid)?.loc.zone === 'mz' && raceOf(e, m) === 'Zombie';
     },
@@ -1610,7 +1611,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Waking the Dragon'] = {
     *onLeaveField(e, fc, controller) {
-      if (fc.faceUp || leftBy(fc) !== other(controller) || fc.owner !== controller || !freeMZ(e, controller)) return;
+      // "... and is now in the GY or banished": not when it was returned to the hand or Deck.
+      if (fc.faceUp || leftBy(fc) !== other(controller) || fc.owner !== controller || !['gy', 'removed'].includes(e.find(fc.uid)?.loc.zone ?? '') || !freeMZ(e, controller)) return;
       const list = [...e.player(controller).deck.filter((c) => isMonster(e, c)), ...e.player(controller).fusion];
       if (!list.length || !(yield* e.yesno(controller, 'Waking the Dragon: Special Summon a monster from your Deck or Extra Deck?'))) return;
       yield* e.as(controller, (function* () {
@@ -1796,7 +1798,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (s && placeST(e, s.uid, q, false)) e.log(q, `${e.player(q).name} Set a card`);
     },
     *onLeaveField(e, fc, controller, reason) {
-      if (fc.faceUp || reason !== 'destroyed') return;
+      if (fc.faceUp || reason !== 'destroyed' || e.find(fc.uid)?.loc.zone !== 'gy') return; // "destroyed and sent to the GY" (not banished)
       const list = [...targetable(e, faceUpMonsters(e)), ...allST(e).filter((c) => c.faceUp)];
       if (!list.length) return;
       yield* e.as(controller, (function* () {
@@ -1815,7 +1817,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Wonder Garage'] = {
     *onLeaveField(e, fc, controller, reason) {
-      if (fc.faceUp || reason !== 'destroyed' || !freeMZ(e, controller)) return;
+      if (fc.faceUp || reason !== 'destroyed' || e.find(fc.uid)?.loc.zone !== 'gy' || !freeMZ(e, controller)) return; // "destroyed and sent to the Graveyard"
       const ok = (c: Card) => isMonster(e, c) && levelOf(e, c) <= 4 && info(e, c).race === 'Machine' && named(e, c, 'roid');
       if (!e.player(controller).hand.some(ok) || !(yield* e.yesno(controller, 'Wonder Garage: Special Summon a "roid" monster from your hand?'))) return;
       yield* summonOneOf(e, controller, 'Special Summon which monster?', e.player(controller).hand.filter(ok), 'atk');
@@ -1861,11 +1863,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Zero Gravity'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && faceUpMonsters(e).length > 0,
     *resolve(e) {
-      for (const m of faceUpMonsters(e)) {
+      const changed = faceUpMonsters(e);
+      for (const m of changed) {
         m.pos = m.pos === 'atk' ? 'def' : 'atk';
         e.event('position', { uid: m.uid });
       }
       e.log(null, 'Every face-up monster changes its battle position');
+      // Cards that watch battle position changes (Attack the Moon!) see these too.
+      for (const m of changed) if (e.fieldCard(m.uid)) yield* e.positionWatch(m, ctrl(e, m));
     },
   };
 
@@ -1883,12 +1888,19 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       yield* e.specialSummon(link.card.uid, p, 'def');
     },
     baseStats: (e, m) => (e.find(m.uid)?.loc.zone === 'mz' ? { atk: 1800, def: 500 } : undefined),
+    // Remembers the ATK of the monster it battles, so the damage still happens when both are destroyed.
+    *afterDamageCalc(e, m, _p, foe) {
+      ((e.state.fx.zomaFoe ??= {}) as Record<number, { foe: number; atk: number }>)[m.uid] = { foe: foe.uid, atk: e.atkOf(foe) };
+    },
     *onDestroyed(e, card, p, byBattle) {
       const b = e.state.battle;
+      const seen = ((e.state.fx.zomaFoe ?? {}) as Record<number, { foe: number; atk: number }>)[card.uid];
+      if (e.state.fx.zomaFoe) delete (e.state.fx.zomaFoe as Record<number, unknown>)[card.uid];
       if (!byBattle || !b) return;
       const foe = b.attacker === card.uid ? b.target : b.attacker;
       const m = foe != null ? e.fieldCard(foe) : null;
-      if (m) e.damage(other(p), e.atkOf(m));
+      const atk = m ? e.atkOf(m) : seen && seen.foe === foe ? seen.atk : 0;
+      if (atk > 0) e.damage(other(p), atk);
     },
   };
 

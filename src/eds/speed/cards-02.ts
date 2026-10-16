@@ -4,7 +4,9 @@ import { nameEngine } from '../names';
 import type { SpeedHelpers } from './helpers';
 import {
   type Card,
+  type ChainCtx,
   type Engine,
+  type Trigger,
   type FieldCard,
   type Gen,
   type Pid,
@@ -62,6 +64,19 @@ const monstersIn = (e: Engine, cards: Card[], test: (c: Card) => boolean = () =>
 function* choosePos(e: Engine, p: Pid, name: string): Gen<Pos> {
   const i = yield* chooseOption(e, p, `Special Summon ${name} in which position?`, ['Attack Position', 'Defense Position']);
   return i === 1 ? 'def' : 'atk';
+}
+/** spells-b: a Trap activated from the hand: put it face-up in a free Spell & Trap Zone (it goes to the GY after it resolves). */
+function placeFaceUpST(e: Engine, uid: number, p: Pid): FieldCard | null {
+  const z = freeST(e, p);
+  const f = e.find(uid);
+  if (z < 0 || !f || f.loc.zone !== 'hand' || f.loc.player !== p) return null;
+  e.player(p).hand.splice(f.loc.index, 1);
+  const c = f.card;
+  const fc: FieldCard = { uid: c.uid, name: c.name, owner: c.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
+  e.player(p).sz[z] = fc;
+  e.event('set', { uid, player: p });
+  e.log(p, `${e.player(p).name} activates ${c.name} from the hand`);
+  return fc;
 }
 /** Turns a monster face-up (Defense or Attack Position); a face-down monster's FLIP effect activates. */
 function* flipUp(e: Engine, m: FieldCard, pos: Pos): Step {
@@ -228,8 +243,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   const gyNormals = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => isNormalMonster(e, c));
-  // Approximated: when its monster leaves the field, Birthright is sent to the GY with it (as attached cards are), not destroyed.
-
+  // spells-b: linked through tags.birthHost instead of being attached like an Equip: when that monster leaves the field,
+  // Birthright is destroyed (an attached card was only sent to the GY with it).
   E['Birthright'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && gyNormals(e, p).length > 0,
     *activate(e, link, p) {
@@ -242,12 +257,22 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!fc) return;
       if (link.targetUid !== undefined && inZone(e, link.targetUid, 'gy') && freeMZ(e, p)) {
         yield* e.specialSummon(link.targetUid, p, 'atk');
-        if (e.fieldCard(link.targetUid) && e.fieldCard(fc.uid)) return h.attachTo(e, fc, link.targetUid);
+        if (e.fieldCard(link.targetUid) && e.fieldCard(fc.uid)) {
+          tag(fc).birthHost = link.targetUid;
+          return;
+        }
       }
       if (e.fieldCard(fc.uid)) yield* e.sendToGrave(fc.uid, 'used');
     },
+    *stateCheck(e, card) {
+      const host = card.tags?.birthHost;
+      if (host === undefined || e.fieldCard(host)) return;
+      delete tag(card).birthHost;
+      e.log(ctrl(e, card), 'Birthright: its monster left the field, so it is destroyed');
+      yield* e.destroy([card.uid]);
+    },
     *onLeaveField(e, fc) {
-      const host = fc.equippedTo !== undefined ? e.fieldCard(fc.equippedTo) : null;
+      const host = fc.tags?.birthHost !== undefined ? e.fieldCard(fc.tags.birthHost) : null;
       if (host) yield* e.destroy([host.uid]);
     },
   };
@@ -355,15 +380,34 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Simplification: it cannot be activated from the hand.
+  // spells-b: "If you control exactly 3 "Blackwing" monsters (and no other monsters), you can activate this card from your hand"
+  // (offered like a Quick Effect from the hand: the card is placed face-up in a Spell & Trap Zone, resolves, then goes to the GY).
+  const sonicCan = (e: Engine, p: Pid, t: Trigger, ctx: ChainCtx) => {
+    if (opponentAttack(e, p, t, ctx) === null || e.state.battle?.target == null) return false;
+    const target = e.fieldCard(e.state.battle.target);
+    return !!target && target.faceUp && ctrl(e, target) === p && named(e, target, 'Blackwing');
+  };
+  const sonicRun = function* (e: Engine, p: Pid): Step {
+    for (const m of e.monsters(other(p)).filter((m) => m.faceUp && m.pos === 'atk')) e.banish(m.uid);
+  };
   E['Black Sonic'] = {
-    canActivate: (e, _c, p, t, ctx) => {
-      if (opponentAttack(e, p, t, ctx) === null || e.state.battle?.target == null) return false;
-      const target = e.fieldCard(e.state.battle.target);
-      return !!target && target.faceUp && ctrl(e, target) === p && named(e, target, 'Blackwing');
-    },
+    canActivate: (e, _c, p, t, ctx) => sonicCan(e, p, t, ctx),
     *resolve(e, _l, p) {
-      for (const m of e.monsters(other(p)).filter((m) => m.faceUp && m.pos === 'atk')) e.banish(m.uid);
+      yield* sonicRun(e, p);
+    },
+    quick: {
+      from: 'hand',
+      label: 'activate it from your hand',
+      repeat: true,
+      can: (e, _c, p, t, ctx) =>
+        sonicCan(e, p, t, ctx) && freeST(e, p) >= 0 && !e.trapsSealed(p) && !e.activationLocked(p, 'trap') && e.monsters(p).length === 3 && e.monsters(p).every((m) => m.faceUp && named(e, m, 'Blackwing')),
+      *cost(e, c, p) {
+        if (!placeFaceUpST(e, c.uid, p)) return false;
+      },
+      *run(e, c, p) {
+        yield* sonicRun(e, p);
+        if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
+      },
     },
   };
 
@@ -788,9 +832,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Burst Stream of Destruction'] = {
     canActivate: (e, _c, p, t) => isMain(t) && bewdOn(e, p).length > 0 && e.monsters(other(p)).length > 0,
     *resolve(e, _l, p) {
+      // spells-b: "Blue-Eyes White Dragon" you control cannot attack this turn: ones that arrive later this turn too (lingering).
       for (const m of bewdOn(e, p)) tag(m).noAttackTurn = e.state.turn;
+      e.linger('Burst Stream of Destruction', p);
       if (!bewdOn(e, p).length) return;
       yield* e.destroy(e.monsters(other(p)).map((m) => m.uid));
+    },
+    lingering: {
+      *onAnySummon(e, owner, m, controller) {
+        if (controller === owner && m.faceUp && sameAs(e, m, 'Blue-Eyes White Dragon')) tag(m).noAttackTurn = e.state.turn;
+      },
     },
   };
 

@@ -38,7 +38,8 @@ export type Cue =
   | { kind: 'draw'; player: Pid; count: number }
   | { kind: 'set'; card: CardRef; monster: boolean }
   | { kind: 'flip'; card: CardRef }
-  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster'; targets?: Target[]; field?: CardRef[] }
+  /** lazy: a triggered or continuous effect at work (the engine's 'effect' event), not a card being activated */
+  | { kind: 'activate'; card: CardRef; what: 'spell' | 'trap' | 'monster'; targets?: Target[]; field?: CardRef[]; lazy?: boolean }
   /** a chain link's target, picked after its activation already played (a human choosing) */
   | { kind: 'target'; card: CardRef; targets: Target[] }
   | { kind: 'skill'; player: Pid; name: string }
@@ -214,7 +215,7 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         // the face-up monsters on the field as they stood before this update (board-wide effects strike them)
         const doomed = gone(events, i);
         const field: CardRef[] = [...memo.values()].filter((m) => m.faceUp && m.name).map((m) => ({ ...m, rect: rectOf(m.uid, host) ?? m.rect, dies: doomed.has(m.uid) }));
-        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field });
+        out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field, ...(ev.kind === 'effect' ? { lazy: true } : {}) });
         break;
       }
       case 'target': {

@@ -1346,6 +1346,11 @@ export class Engine {
       if (amount < 0) return this.gainLp(player, -amount);
       if (amount === 0) return;
     }
+    // "you take no damage this turn" from your opponent's attacks and effects (Hallowed Life Barrier): your own costs still hurt
+    if (amount > 0 && (this.state.fx.noOppDamage as number[] | undefined)?.[player] === this.state.turn && (this.battleHit || (this.actor !== null && this.actor !== player))) {
+      this.log(player, `${this.player(player).name} takes no damage from the opponent this turn`);
+      return;
+    }
     if (amount > 0 && this.state.fx.noDamage?.[player] === this.state.turn) {
       this.log(player, `${this.player(player).name} takes no damage this turn`);
       return;
@@ -1705,7 +1710,13 @@ export class Engine {
     if (options.length <= min && !cancel) return options.map((_, i) => i);
     const choice = yield { kind: 'select', player, title, options, min: Math.min(min, options.length), max: Math.min(max, options.length), cancel };
     if (choice === 'cancel') return null;
-    if (typeof choice === 'object' && 'picks' in choice) return choice.picks.filter((i) => i >= 0 && i < options.length).slice(0, max);
+    if (typeof choice === 'object' && 'picks' in choice) {
+      const picks = [...new Set(choice.picks.filter((i) => Number.isInteger(i) && i >= 0 && i < options.length))].slice(0, max);
+      // too few picks (a cost or a required choice): fill up with the first options left
+      const need = Math.min(min, options.length);
+      for (let i = 0; picks.length < need && i < options.length; i++) if (!picks.includes(i)) picks.push(i);
+      return picks;
+    }
     return null;
   }
 
@@ -2815,7 +2826,8 @@ export class Engine {
         if ((f.card as FieldCard).placedTurn === this.state.turn) return false;
       }
       if (f.loc.zone === 'hand' && this.freeZone(this.player(player), 'sz') < 0 && info.sub !== 'Field') return false;
-      if (f.loc.zone === 'hand' && info.sub === 'Field' && this.player(player).field) return false;
+      // a new Field Spell replaces the one already there (that one goes to the GY)
+      if (f.loc.zone === 'hand' && info.sub === 'Field' && this.player(player).field && !this.speed) return false;
       if (f.loc.zone === 'sz' || f.loc.zone === 'field') {
         const fc = f.card as FieldCard;
         if (fc.faceUp) return false;
@@ -2852,6 +2864,12 @@ export class Engine {
       const ok = yield* cost.pay(this, f.card, player);
       this.actor = prev;
       if (ok === false) return;
+    }
+    if (f.loc.zone === 'hand' && info.sub === 'Field' && ps.field) {
+      const prev = ps.field;
+      this.log(player, `${prev.faceUp ? prev.name : 'The Set Field Spell'} is replaced and sent to the GY`);
+      yield* this.sendToGrave(prev.uid, 'used');
+      if (ps.field) return;
     }
     if (f.loc.zone === 'hand') {
       const card = this.detach(uid)!;
@@ -3022,7 +3040,28 @@ export class Engine {
           responder = other(responder);
           continue;
         }
-        const fc = opt ? this.fieldCard(opt.uid!) : null;
+        let fc = opt ? this.fieldCard(opt.uid!) : null;
+        // a Quick-Play Spell from the hand: it is placed face-up in a Spell & Trap Zone first
+        if (!fc && opt && opt.value === 'hand') {
+          const ps = this.player(responder);
+          const z = this.freeZone(ps, 'sz');
+          const f = this.find(opt.uid!);
+          if (z >= 0 && f && f.loc.zone === 'hand') {
+            const cost = getEffect(f.card.name)?.activateCost;
+            let paid = true;
+            if (cost) {
+              const prev = this.actor;
+              this.actor = responder;
+              paid = (yield* cost.pay(this, f.card, responder)) !== false;
+              this.actor = prev;
+            }
+            if (paid && this.find(opt.uid!)?.loc.zone === 'hand') {
+              const card = this.detach(opt.uid!)!;
+              fc = ps.sz[z] = this.toField(card, 'atk', true);
+              fc.placedTurn = this.state.turn;
+            }
+          }
+        }
         if (fc) {
           fc.faceUp = true;
           const eff = getEffect(fc.name)!;
@@ -3142,6 +3181,18 @@ export class Engine {
       if (info.kind === 'spell' && (info.sub !== 'Quick-Play' || this.spellsSealed())) continue;
       if (info.kind === 'spell' && fc.placedTurn === this.state.turn) continue;
       if (this.withActor(player, () => eff.canActivate!(this, fc, player, trigger, ctx))) out.push({ label: fc.name, uid: fc.uid, loc: this.find(fc.uid)!.loc });
+    }
+    // Speed Duel: on your own turn a Quick-Play Spell can be activated straight from the hand in response to
+    // your opponent's card or effect (not offered after your own moves, so it never nags).
+    if (this.speed && player === this.state.turnPlayer && ctx.link && ctx.link.player !== player && !sealed && !this.spellsSealed() && !this.activationLocked(player, 'spell') && this.freeZone(this.player(player), 'sz') >= 0 && !this.trapActive('Anti-Spell Fragrance') && !this.chainEnergyBlocks(player)) {
+      for (const c of this.player(player).hand) {
+        const info = this.info(c.name);
+        const eff = getEffect(c.name);
+        if (info.kind !== 'spell' || info.sub !== 'Quick-Play' || out.some((o) => o.uid === c.uid)) continue;
+        if (!eff?.resolve || !eff.canActivate || this.prohibited(c, c.uid) || this.activationBlocked(player, c) || this.cardActivationLocked(player, c)) continue;
+        if (eff.activateCost && !eff.activateCost.can(this, c, player)) continue;
+        if (this.withActor(player, () => eff.canActivate!(this, c, player, trigger, ctx))) out.push({ label: c.name, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'hand' });
+      }
     }
     // EDS: effects of face-up Continuous Spells/Traps used in response (Ultimate Offering), after the set cards.
     if (!this.speed) out.push(...this.quickOptions(player, trigger, ctx, true));

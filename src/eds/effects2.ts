@@ -422,7 +422,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
   E['Aqua Chorus'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve() {},
-    aura: (e, src, m) => (src.active && faceUp(e).filter((x) => e.sameName(x, m)).length >= 2 ? { atk: 500, def: 500 } : undefined),
+    aura: (e, src, m) => (src.active && m.faceUp && faceUp(e).filter((x) => e.sameName(x, m)).length >= 2 ? { atk: 500, def: 500 } : undefined), // spells-b: face-up monsters only
   };
   E['Castle of Dark Illusions'] = {
     *flip(_e, m) {
@@ -1155,14 +1155,28 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       e.log(l.player, 'Shield & Sword swaps every monster\'s ATK and DEF');
     },
   );
-  E['Soul Release'] = spell(
-    (e, _c, _p, t) => isMain(t) && e.player(0).gy.length + e.player(1).gy.length > 0,
-    function* (e, _l, p) {
+  // spells-b: Speed Duel: "Target up to 5 cards in any GY(s)": chosen on activation; only the ones still in a GY are banished.
+  E['Soul Release'] = {
+    ...spell(
+      (e, _c, _p, t) => isMain(t) && e.player(0).gy.length + e.player(1).gy.length > 0,
+      function* (e, l, p) {
+        if (e.speed) {
+          for (const u of (l.payload as number[] | undefined) ?? []) if (e.find(u)?.loc.zone === 'gy') e.banish(u);
+          return;
+        }
+        const list = [...e.player(0).gy, ...e.player(1).gy];
+        const picks = yield* e.select(p, 'Soul Release: remove up to 5 cards in Graveyards from play', e.optionsFor(list), 1, 5);
+        for (const i of picks ?? []) e.banish(list[i].uid);
+      },
+    ),
+    *activate(e, link, p) {
+      if (!e.speed) return;
       const list = [...e.player(0).gy, ...e.player(1).gy];
-      const picks = yield* e.select(p, 'Soul Release: remove up to 5 cards in Graveyards from play', e.optionsFor(list), 1, 5);
-      for (const i of picks ?? []) e.banish(list[i].uid);
+      const picks = yield* e.select(p, 'Soul Release: target up to 5 cards in the GYs', e.optionsFor(list), 1, 5, true);
+      if (!picks || !picks.length) return false;
+      link.payload = picks.map((i) => list[i].uid);
     },
-  );
+  };
   E['The Cheerful Coffin'] = spell(
     (e, c, p, t) => isMain(t) && e.player(p).hand.some((x) => x.uid !== c.uid && isMonster(e, x)),
     function* (e, l, p) {
@@ -1305,13 +1319,35 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       hosts[b[0]].equips.push(eq.uid);
     },
   };
+  // spells-b: Speed Duel: a Quick-Play Spell can also be activated from the hand during your own turn (the engine only offers
+  // Set Spells in response windows): offered like a Quick Effect from the hand, placed face-up, then sent to the GY.
+  const sebekCan = (p: Pid, t: Trigger, ctx: ChainCtx) => t === 'damage' && !!ctx.direct && ctx.damaged === other(p);
   E["Sebek's Blessing"] = {
-    canActivate: (_e, _c, p, t, ctx) => t === 'damage' && !!ctx.direct && ctx.damaged === other(p),
+    canActivate: (_e, _c, p, t, ctx) => sebekCan(p, t, ctx),
     *activate(_e, link, _p, ctx) {
       link.payload = ctx.amount ?? 0;
     },
     *resolve(e, link, p) {
       e.gainLp(p, (link.payload as number) ?? 0);
+    },
+    quick: {
+      from: 'hand',
+      label: 'activate it from your hand',
+      repeat: true,
+      can: (e, c, p, t, ctx) => e.state.turnPlayer === p && sebekCan(p, t, ctx) && freeST(e, p) >= 0 && !e.spellsSealed() && !e.activationLocked(p, 'spell') && !e.cardActivationLocked(p, c),
+      *cost(e, c, p, link, ctx) {
+        const f = e.find(c.uid);
+        const z = freeST(e, p);
+        if (!f || f.loc.zone !== 'hand' || z < 0) return false;
+        e.player(p).hand.splice(f.loc.index, 1);
+        e.player(p).sz[z] = { uid: c.uid, name: c.name, owner: c.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
+        e.event('set', { uid: c.uid, player: p });
+        link.payload = { ...(link.payload as object), amount: ctx.amount ?? 0 };
+      },
+      *run(e, c, p, link) {
+        e.gainLp(p, (link.payload as { amount?: number }).amount ?? 0);
+        if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
+      },
     },
   };
 
@@ -1598,14 +1634,21 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       (e.state.fx.lightforce ??= []).push({ uid: c.uid, back: first + 6 });
     },
   );
+  // spells-b: Speed Duel: the monster is targeted when the card is activated (it used to be picked on resolution).
+  const armTargets = (e: Engine, p: Pid) => targetable(e, e.monsters(other(p)).filter((m) => m.faceUp && m.uid !== e.state.battle?.attacker));
   E['Magical Arm Shield'] = trap(
-    (e, _c, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p) && e.monsters(p).length > 0 && hasFreeZone(e, p) && e.monsters(other(p)).some((m) => m.faceUp && m.uid !== ctx.uid),
+    (e, _c, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p) && e.monsters(p).length > 0 && hasFreeZone(e, p) && armTargets(e, p).length > 0,
     function* (e, link, p) {
-      const atkUid = e.state.battle?.attacker;
-      const list = targetable(e, e.monsters(other(p)).filter((m) => m.faceUp && m.uid !== atkUid));
-      const picks = yield* e.select(p, 'Magical Arm Shield: steal which monster to take the hit?', e.optionsFor(list), 1, 1);
-      if (!picks || !list[picks[0]]) return;
-      const m = list[picks[0]];
+      let m: FieldCard | null | undefined;
+      if (e.speed) {
+        m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
+        if (!m || !m.faceUp || ctrl(e, m) !== other(p) || !e.state.battle || m.uid === e.state.battle.attacker) return;
+      } else {
+        const list = armTargets(e, p);
+        const picks = yield* e.select(p, 'Magical Arm Shield: steal which monster to take the hit?', e.optionsFor(list), 1, 1);
+        m = picks ? list[picks[0]] : undefined;
+      }
+      if (!m) return;
       if (e.takeControl(m.uid, p)) {
         m.returnAtEnd = other(p);
         // audit-eds: Speed Duel: control returns at the end of the Battle Phase.
@@ -1614,10 +1657,20 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         e.log(link.player, `${m.name} is pulled in front of the attack`);
       }
     },
+    function* (e, link, p) {
+      if (!e.speed) return;
+      const list = armTargets(e, p);
+      const picks = yield* e.select(p, 'Magical Arm Shield: steal which monster to take the hit?', e.optionsFor(list), 1, 1, true);
+      if (!picks || !list[picks[0]]) return false;
+      link.targetUid = list[picks[0]].uid;
+    },
   );
   // Approximation: offered when the opponent declares an attack in their Battle Phase; the decoys are Special Summoned as 0/0 monsters.
+  // spells-b: Speed Duel: it needs 2 Spells/Traps in the Deck and room for the 2 hats (it used to work with fewer).
   E['Magical Hats'] = trap(
-    (e, _c, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p) && e.monsters(p).length > 0,
+    (e, _c, p, t, ctx) =>
+      t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p) && e.monsters(p).length > 0 &&
+      (!e.speed || (e.player(p).deck.filter((c) => e.info(c.name).kind !== 'monster').length >= 2 && e.player(p).mz.filter((z, i) => z === null && !e.zoneLocked(e.player(p), 'mz', i)).length >= 2)),
     function* (e, _l, p) {
       const ps = e.player(p);
       const mine = e.monsters(p);
@@ -1627,6 +1680,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       hidden.faceUp = false;
       hidden.pos = 'def';
       const decoys = ps.deck.filter((c) => e.info(c.name).kind !== 'monster');
+      if (e.speed && decoys.length < 2) return;
       const dp = decoys.length ? yield* e.select(p, 'Magical Hats: pick 2 Spells/Traps from your Deck as decoys', e.optionsFor(decoys), Math.min(2, decoys.length), 2) : [];
       for (const i of dp ?? []) {
         if (!hasFreeZone(e, p)) break;
@@ -1792,7 +1846,10 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
         else yield* e.destroy([c.uid]);
       },
     },
-    (e, p, t, ctx) => t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p),
+    // spells-b: Speed Duel: the card has no activation timing of its own (it used to need an opponent's attack declaration): it can be
+    // activated during your Main Phase too. In response windows it is still only offered against an attack (the computer answers
+    // every window with its first legal card, and an attack is the moment this card is worth its upkeep).
+    (e, p, t, ctx) => (e.speed && t === 'main') || (t === 'attack' && ctx.uid !== undefined && e.controller(ctx.uid) === other(p)),
   );
   E['DNA Surgery'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && faceUp(e).length > 0,

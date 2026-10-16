@@ -151,7 +151,9 @@ function placeFaceUp(e: Engine, p: Pid, uid: number): FieldCard | null {
 // ---------- Fusion Summons with named materials (Dark Fusion, Dark Calling, Dyna Base...) ----------
 // A material slot with a null id is a kind of monster (EffectDef.fusionTests: Dyna Tank's "1 Machine + 1 Dinosaur"), not a named card.
 type FPlan = { fusion: Card; ids: (number | null)[]; slots: Card[][] };
-const subFor = (e: Engine, c: Card, id: number | null) => id !== null && info(e, c).id !== id;
+/** audit-C: a card counts as the named material under any of its current names (Engine.namesOf), like Polymerization. */
+const matIs = (e: Engine, c: Card, id: number) => e.namesOf(c).some((n) => info(e, n).id === id);
+const subFor = (e: Engine, c: Card, id: number | null) => id !== null && !matIs(e, c, id);
 function assign(e: Engine, slots: Card[][], ids: (number | null)[], used: number[], subbed: boolean, must?: number): boolean {
   if (!slots.length) return must === undefined || used.includes(must);
   return slots[0].some((c) => {
@@ -161,11 +163,74 @@ function assign(e: Engine, slots: Card[][], ids: (number | null)[], used: number
     return assign(e, slots.slice(1), ids.slice(1), [...used, c.uid], subbed || asSub, must);
   });
 }
+// audit-C: Fusion Materials written as kinds of monsters with no script test ("Evil HERO Malicious Edge" + 1 Level 6 or higher
+// Fiend monster; 1 Fiend-Type monster + 1 Rock-Type monster): read from the first line of the card text.
+const RACES = ['Beast-Warrior', 'Winged Beast', 'Sea Serpent', 'Divine-Beast', 'Aqua', 'Beast', 'Cyberse', 'Dinosaur', 'Dragon', 'Fairy', 'Fiend', 'Fish', 'Insect', 'Machine', 'Plant', 'Psychic', 'Pyro', 'Reptile', 'Rock', 'Spellcaster', 'Thunder', 'Warrior', 'Wyrm', 'Zombie'];
+function textMaterials(e: Engine, fusion: Card): { ids: (number | null)[]; tests: ((c: Card) => boolean)[] } | null {
+  const line = (info(e, fusion).desc ?? '').split('\n')[0].trim();
+  if (!line.includes('+') && !/^\d+\s/.test(line)) return null;
+  const ids: (number | null)[] = [];
+  const tests: ((c: Card) => boolean)[] = [];
+  for (const raw of line.split(/\s*\+\s*/)) {
+    const part = raw.trim();
+    const exact = part.match(/^"([^"]+)"$/);
+    if (exact) {
+      const id = info(e, exact[1]).id;
+      ids.push(id);
+      tests.push((c) => e.namesOf(c).some((n) => info(e, n).id === id));
+      continue;
+    }
+    const m = part.match(/^(\d+)\s+(.*?)\s*monsters?$/);
+    if (!m) return null;
+    let rest = m[2];
+    const conds: ((c: Card) => boolean)[] = [];
+    const lv = rest.match(/Level (\d+) or (higher|lower)/);
+    if (lv) {
+      const n = Number(lv[1]);
+      conds.push((c) => (lv[2] === 'higher' ? levelOf(e, c) >= n : levelOf(e, c) <= n));
+      rest = rest.replace(lv[0], '');
+    }
+    const arch = rest.match(/"([^"]+)"/);
+    if (arch) {
+      conds.push((c) => named(e, c, arch[1]));
+      rest = rest.replace(arch[0], '');
+    }
+    const at = rest.match(/\b(LIGHT|DARK|WATER|FIRE|EARTH|WIND|DIVINE)\b/);
+    if (at) {
+      conds.push((c) => attrOf(e, c) === at[1]);
+      rest = rest.replace(at[0], '');
+    }
+    const race = RACES.find((r) => new RegExp(`\\b${r}(-Type)?\\b`).test(rest));
+    if (race) {
+      conds.push((c) => raceOf(e, c) === race);
+      rest = rest.replace(new RegExp(`\\b${race}(-Type)?\\b`), '');
+    }
+    if (/\bNormal\b/.test(rest)) (conds.push((c) => isNormalMonster(e, c)), (rest = rest.replace(/\bNormal\b/, '')));
+    if (rest.trim() !== '' || !conds.length) return null;
+    for (let i = 0; i < Number(m[1]); i++) {
+      ids.push(null);
+      tests.push((c) => conds.every((f) => f(c)));
+    }
+  }
+  return ids.length >= 2 ? { ids, tests } : null;
+}
+function lockedFromExtra(e: Engine, p: Pid, fusion: Card): boolean {
+  const prev = fx(e).ignoreCond;
+  fx(e).ignoreCond = fusion.uid;
+  try {
+    return e.summonBlocked(p, fusion, 'special', 'fusion');
+  } finally {
+    fx(e).ignoreCond = prev;
+  }
+}
 function fusionPlansFrom(e: Engine, p: Pid, pool: Card[], test: (f: Card) => boolean, must?: number): FPlan[] {
   const mons = pool.filter((c) => isMonster(e, c) && !e.isNamed(c, 'Eater of Millions'));
   const out: FPlan[] = [];
   for (const fusion of e.player(p).fusion) {
-    if (!test(fusion)) continue;
+    // audit-C: a Fusion Monster that cannot be Special Summoned from the Extra Deck right now (summon locks: Cybernetic Horizon,
+    // Dark Contract with Patent License...) is not offered. Its own condition ("must be Special Summoned with Dark Fusion") is checked
+    // when it is Summoned (the Spell is resolving then), so it is skipped here.
+    if (!test(fusion) || lockedFromExtra(e, p, fusion)) continue;
     const tests = getDef(e, fusion)?.fusionTests;
     if (tests?.length) {
       const slots = tests.map((t) => mons.filter((c) => t(e, c)));
@@ -174,9 +239,16 @@ function fusionPlansFrom(e: Engine, p: Pid, pool: Card[], test: (f: Card) => boo
       continue;
     }
     const ids = e.fusionMaterials(fusion.name);
-    if (!ids) continue;
-    const subs = mons.filter((c) => getDef(e, c)?.fusionSub);
-    const slots = ids.map((id) => [...mons.filter((c) => info(e, c).id === id), ...subs.filter((c) => info(e, c).id !== id)]);
+    if (!ids) {
+      const tm = textMaterials(e, fusion);
+      if (!tm) continue;
+      const subs = getDef(e, fusion)?.noFusionSub ? [] : mons.filter((c) => getDef(e, c)?.fusionSub);
+      const slots = tm.tests.map((t, i) => [...mons.filter(t), ...(tm.ids[i] !== null ? subs.filter((c) => !t(c)) : [])]);
+      if (assign(e, slots, tm.ids, [], false, must)) out.push({ fusion, ids: tm.ids, slots });
+      continue;
+    }
+    const subs = getDef(e, fusion)?.noFusionSub ? [] : mons.filter((c) => getDef(e, c)?.fusionSub);
+    const slots = ids.map((id) => [...mons.filter((c) => matIs(e, c, id)), ...subs.filter((c) => !matIs(e, c, id))]);
     if (assign(e, slots, ids, [], false, must)) out.push({ fusion, ids, slots });
   }
   return out;
@@ -365,7 +437,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // The Normal Spell is negated and Dark Deal's controller discards 1 random card right away.
   E['Dark Deal'] = {
-    canActivate: (e, _c, p, t, ctx) => t === 'spell' && !!ctx.link && ctx.link.player !== p && isSpell(e, ctx.link.card) && info(e, ctx.link.card).sub === 'Normal' && e.player(p).lp > 1000,
+    canActivate: (e, _c, p, t, ctx) => t === 'spell' && !!ctx.link && !ctx.link.negated && ctx.link.player !== p && isSpell(e, ctx.link.card) && info(e, ctx.link.card).sub === 'Normal' && e.player(p).lp > 1000,
     *activate(e, link, p, ctx) {
       if (!payLp(e, p, 1000)) return false;
       link.payload = ctx.link;
@@ -686,17 +758,41 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     ]),
   };
 
-  // Its once-per-turn effect is used in your Main Phase (like an ignition effect).
+  // Once per turn (each copy): in your Main Phase, or (audit-C) as a Quick Effect on either player's turn, like any Continuous Trap.
+  const smogKey = (c: Card) => `Dark Smog:${c.uid}`;
+  const smogCan = (e: Engine, p: Pid) => e.player(other(p)).gy.some((c) => isMonster(e, c)) && e.player(p).hand.some((c) => isMonster(e, c) && raceOf(e, c) === 'Fiend');
+  const smogTargets = (e: Engine, p: Pid) => e.player(other(p)).gy.filter((c) => isMonster(e, c));
+  function* smogRun(e: Engine, p: Pid, uid: number): Step {
+    if (e.find(uid)?.loc.zone !== 'gy') return;
+    // "discard 1 Fiend-Type monster, and if you do, banish that target"
+    if (!(yield* discardCost(e, p, 1, (c) => isMonster(e, c) && raceOf(e, c) === 'Fiend'))) return;
+    if (e.find(uid)?.loc.zone === 'gy') e.banish(uid);
+  }
   E['Dark Smog'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve() {},
     ignition: {
-      can: (e, _m, p) => e.player(other(p)).gy.some((c) => isMonster(e, c)) && e.player(p).hand.some((c) => isMonster(e, c) && raceOf(e, c) === 'Fiend'),
-      *run(e, _m, p) {
-        const t = yield* pickOne(e, p, 'Dark Smog: banish which monster from the opponent\'s GY?', e.player(other(p)).gy.filter((c) => isMonster(e, c)), true);
+      repeat: true,
+      can: (e, m, p) => e.oncePerTurn(smogKey(m), p) && smogCan(e, p),
+      *run(e, m, p) {
+        const t = yield* pickOne(e, p, 'Dark Smog: banish which monster from the opponent\'s GY?', smogTargets(e, p), true);
         if (!t) return;
-        if (!(yield* discardCost(e, p, 1, (c) => isMonster(e, c) && raceOf(e, c) === 'Fiend'))) return;
-        if (e.find(t.uid)?.loc.zone === 'gy') e.banish(t.uid);
+        e.useOnce(smogKey(m), p);
+        yield* smogRun(e, p, t.uid);
+      },
+    },
+    quick: {
+      label: "banish a monster from the opponent's GY",
+      repeat: true,
+      can: (e, c, p, t) => t !== 'main' && e.oncePerTurn(smogKey(c), p) && !!e.fieldCard(c.uid)?.active && smogCan(e, p),
+      *cost(e, c, p, link) {
+        const t = yield* pickOne(e, p, 'Dark Smog: banish which monster from the opponent\'s GY?', smogTargets(e, p), true);
+        if (!t) return false;
+        e.useOnce(smogKey(c), p);
+        link.targetUid = t.uid;
+      },
+      *run(e, c, p, link) {
+        if (e.fieldCard(c.uid)?.active && link.targetUid !== undefined) yield* smogRun(e, p, link.targetUid);
       },
     },
   };
@@ -774,6 +870,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const c = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (!c || c.faceUp) return;
       yield* e.destroy([c.uid]);
+      // audit-C: "destroy that target, then discard 1 card": no discard when it was not destroyed.
+      if (e.fieldCard(c.uid) === c) return;
       const d = yield* pickOne(e, p, 'Dark World Lightning: discard 1 card', e.player(p).hand.slice());
       if (d) yield* e.discard(p, d.uid);
     },
@@ -1645,19 +1743,61 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Normal and Quick-Play Spells only; the copied card stays in the opponent's GY.
-  const doubleSpellTargets = (e: Engine, p: Pid, self: number) => e.player(other(p)).gy.filter((c) => c.uid !== self && isSpell(e, c) && ['Normal', 'Quick-Play'].includes(info(e, c).sub) && !e.isNamed(c, 'Double Spell') && canApply(e, p, c));
+  // audit-C: "place that target in the appropriate Zone on your side of the field, and ... follow its card text as if you had used it
+  // yourself": any Spell (Normal, Quick-Play, Ritual, Continuous, Equip, Field) is placed on your field and used. Normal/Quick-Play/Ritual
+  // Spells then go to their owner's GY; Continuous, Field and attached Equip Spells stay on your field.
+  const doubleSpellTargets = (e: Engine, p: Pid, self: number) =>
+    e.player(other(p)).gy.filter((c) => c.uid !== self && isSpell(e, c) && ['Normal', 'Quick-Play', 'Ritual', 'Continuous', 'Equip', 'Field'].includes(info(e, c).sub) && !e.isNamed(c, 'Double Spell') && !e.graveLocked(c.uid) && canApply(e, p, c));
+  /** A free Spell & Trap Zone for the copied Spell besides the one Double Spell itself takes (a Field Spell goes to the Field Zone). */
+  const roomFor = (e: Engine, p: Pid, c: Card, self: Card) =>
+    info(e, c).sub === 'Field' || e.player(p).sz.filter((z, i) => z === null && !e.zoneLocked(e.player(p), 'sz', i)).length - (e.find(self.uid)?.loc.zone === 'hand' ? 1 : 0) >= 1;
+  function* doubleSpellUse(e: Engine, p: Pid, card: Card): Step {
+    const f = e.find(card.uid);
+    if (!f || f.loc.zone !== 'gy' || e.graveLocked(card.uid)) return;
+    const sub = info(e, card).sub;
+    const ps = e.player(p);
+    if (sub === 'Field' && ps.field) yield* e.sendToGrave(ps.field.uid, 'used');
+    const z = sub === 'Field' ? -1 : freeST(e, p);
+    if (sub !== 'Field' && z < 0) return;
+    const g = e.find(card.uid);
+    if (!g || g.loc.zone !== 'gy') return;
+    e.player(g.loc.player).gy.splice(g.loc.index, 1);
+    const fc: FieldCard = { uid: card.uid, name: card.name, owner: card.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0 };
+    if (sub === 'Field') ps.field = fc;
+    else ps.sz[z] = fc;
+    e.event('activate', { uid: fc.uid, player: p });
+    e.log(p, `${ps.name} places ${card.name} on the field and uses its effect`);
+    const eff = getDef(e, fc);
+    const link: ChainLink = { card: fc, loc: e.find(fc.uid)!.loc, player: p, label: fc.name, negated: false };
+    let ok: boolean | void = true;
+    if (eff?.activate) {
+      const prev = e.actor;
+      e.actor = p;
+      try {
+        ok = yield* eff.activate(e, link, p, {});
+      } finally {
+        e.actor = prev;
+      }
+    }
+    if (ok !== false && eff?.resolve && e.fieldCard(fc.uid)) yield* e.as(p, eff.resolve(e, link, p));
+    // What happens to the card afterwards (like any Spell that resolved).
+    const now = e.fieldCard(fc.uid);
+    if (!now) return;
+    const stays = sub === 'Continuous' || sub === 'Field' || (sub === 'Equip' && now.equippedTo !== undefined);
+    if (ok !== false && stays) now.active = true;
+    else if (!(ok !== false && now.active && (now.turns !== undefined || now.equippedTo !== undefined))) yield* e.sendToGrave(fc.uid, 'used');
+  }
   E['Double Spell'] = {
-    canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some((x) => x.uid !== c.uid && isSpell(e, x)) && doubleSpellTargets(e, p, c.uid).length > 0,
+    canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some((x) => x.uid !== c.uid && isSpell(e, x)) && doubleSpellTargets(e, p, c.uid).some((x) => roomFor(e, p, x, c)),
     *activate(e, link, p) {
       if (!(yield* discardCost(e, p, 1, (x) => isSpell(e, x), link.card.uid))) return false;
-      const t = yield* pickOne(e, p, "Double Spell: use which Spell from your opponent's GY?", doubleSpellTargets(e, p, link.card.uid));
+      const t = yield* pickOne(e, p, "Double Spell: use which Spell from your opponent's GY?", doubleSpellTargets(e, p, link.card.uid).filter((x) => roomFor(e, p, x, link.card)));
       if (!t) return false;
       link.targetUid = t.uid;
     },
     *resolve(e, link, p) {
       const t = link.targetUid !== undefined ? e.find(link.targetUid) : null;
-      if (t?.loc.zone === 'gy' && canApply(e, p, t.card)) yield* applyEffect(e, p, t.card, false);
+      if (t?.loc.zone === 'gy' && canApply(e, p, t.card)) yield* doubleSpellUse(e, p, t.card);
     },
   };
 
@@ -1830,7 +1970,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // Any activated card that chose an "Amazoness" monster you control as its target.
   const rescued = (e: Engine, p: Pid, link?: ChainLink) => {
     const m = link?.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
-    return m && m.faceUp && named(e, m, 'Amazoness') && e.controller(m.uid) === p ? m : null;
+    // audit-C: any "Amazoness" monster on the field (the text does not say "you control"); it returns to its owner's hand.
+    return m && m.faceUp && named(e, m, 'Amazoness') && e.controller(m.uid) !== null ? m : null;
   };
   E['Dramatic Rescue'] = {
     canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!rescued(e, p, ctx.link),

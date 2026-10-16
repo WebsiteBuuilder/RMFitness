@@ -569,10 +569,10 @@ section('Flower Gathering');
 
 section('Worm Bait');
 {
-  const e = duel(['Worm Bait', 'Insect Soldiers of the Sky']);
+  const e = duel(['Worm Bait', 'Petit Moth']);
   const wb = grab(e, 0, 'Worm Bait');
   check(!e.canActivateMain(0, wb.uid), 'needs an Insect monster');
-  place(e, 0, 'Insect Soldiers of the Sky');
+  place(e, 0, 'Petit Moth');
   playSpell(e, 0, 'Worm Bait');
   check(e.monsters(0).filter((m) => m.name === 'Worm Token').length === 2, 'Special Summons 2 Worm Tokens');
   check(e.summonBlocked(0, grab(e, 0, FILL), 'normal', 'hand'), 'Level 3 or 4 monsters cannot be Summoned this turn');
@@ -621,14 +621,14 @@ section('Blast with Chain');
   const elf = place(e, 1, 'Gemini Elf')!;
   const bwc = playTrap(e, 0, 'Blast with Chain', { pick: [FILL] });
   check(zone(e, bwc) === 'sz' && e.atkOf(c) === 1900, 'equips itself: +500 ATK');
-  kill(e, [bwc], 1, 'yes', { pick: ['Gemini Elf'] });
+  kill(e, [bwc], 1, { pick: ['Gemini Elf'] });
   check(zone(e, elf) === 'gy', 'destroyed by a card effect while equipped: destroys 1 card on the field');
 }
 
 section('Formation Union');
 {
-  const e = duel(['Formation Union', 'Formation Union', 'Y-Dragon Head']);
-  const c = place(e, 0, FILL)!;
+  const e = duel(['Formation Union', 'Formation Union', 'Y-Dragon Head', 'X-Head Cannon']);
+  const c = place(e, 0, 'X-Head Cannon')!;
   const y = place(e, 0, 'Y-Dragon Head')!;
   playTrap(e, 0, 'Formation Union', { pick: ['Equip a Union monster'] });
   check(zone(e, y) === 'sz' && c.equips.includes(y.uid), 'equips a Union monster to a monster you control');

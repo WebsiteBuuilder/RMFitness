@@ -384,7 +384,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Crystal Brilliance'] = {
     canActivate: (e, c, p, t) => anyTime(t) && !e.activeSpells(p).some((x) => e.sameName(x, c) && x.uid !== c.uid),
     *resolve() {},
-    aura: (e, src, m, sc) => (src.active && m.faceUp && isCB(m) && ctrl(e, m) === sc && inZone(e, m.uid, 'mz') ? { atk: info(e, m).def ?? 0, def: 0 } : undefined),
+    // audit-C: a Crystal Beast Token's original DEF is the one it was created with.
+    aura: (e, src, m, sc) => (src.active && m.faceUp && isCB(m) && ctrl(e, m) === sc && inZone(e, m.uid, 'mz') ? { atk: (m.tags?.tk ? m.tags.tDef : info(e, m).def) ?? 0, def: 0 } : undefined),
   };
   E['Crystal Conclave'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
@@ -405,7 +406,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     ),
   };
   E['Crystal Miracle'] = {
-    canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && !ctx.link.negated && cbControlled(e, p).length > 0,
+    // audit-C: "When a Spell/Trap Card, or monster effect, is activated": a Spell/Trap card's activation or a monster's effect, not the
+    // effect of a Spell/Trap already on the field (Dark Smog, Court of Cards...).
+    canActivate: (e, _c, p, t, ctx) =>
+      (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && !ctx.link.negated && !((ctx.link.payload as { effect?: string } | undefined)?.effect && !isMonster(e, ctx.link.card)) && cbControlled(e, p).length > 0,
     *activate(e, link, _p, ctx) {
       link.payload = { target: ctx.link };
     },
@@ -529,10 +533,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     battleSubstitute: cdSub,
   };
   const cdMats = ['Cyberdark Horn', 'Cyberdark Edge', 'Cyberdark Keel'];
-  const cdPool = (e: Engine, p: Pid, name: string) => [...e.player(p).hand, ...e.player(p).gy, ...e.monsters(p)].filter((c) => c.name === name);
+  // audit-C: "from your hand, GY, and/or anywhere on your field": also a Cyberdark monster equipped in your Spell & Trap Zone.
+  const cdPool = (e: Engine, p: Pid, name: string) => [...e.player(p).hand, ...e.player(p).gy, ...e.monsters(p), ...e.spells(p).filter((c) => c.faceUp)].filter((c) => c.name === name);
   E['Cyberdark Impact!'] = {
     canActivate: (e, _c, p, t) =>
-      isMain(t) && e.player(p).fusion.some((c) => e.isNamed(c, 'Cyberdark Dragon')) && cdMats.every((n) => cdPool(e, p, n).length > 0) && (freeMZ(e, p) || cdMats.some((n) => cdPool(e, p, n).some((c) => 'pos' in c))),
+      isMain(t) && e.player(p).fusion.some((c) => e.isNamed(c, 'Cyberdark Dragon')) && cdMats.every((n) => cdPool(e, p, n).length > 0) && (freeMZ(e, p) || cdMats.some((n) => cdPool(e, p, n).some((c) => inZone(e, c.uid, 'mz')))),
     *activate(e, link, p) {
       const mats: number[] = [];
       for (const n of cdMats) {
@@ -694,13 +699,13 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const wasTrap = isTrap(e, t);
       yield* e.destroy([t.uid]);
       if (!wasTrap || e.fieldCard(t.uid)) return;
-      // Approximation: "negate the effects of 1 face-up card" offers face-up monsters only.
-      const negs = targetable(e, faceUpMonsters(e)).filter((m) => !e.isNegated(m));
-      const opts = ['Do nothing', ...(negs.length ? ['Negate the effects of a face-up monster'] : []), 'All "Jinzo" you control gain 800 ATK'];
+      // audit-C: "negate the effects of 1 face-up card on the field": face-up monsters and face-up Spells/Traps (tags.negatedTurn).
+      const negs: FieldCard[] = [...targetable(e, faceUpMonsters(e)), ...allST(e).filter((c) => c.faceUp && c.uid !== link.card.uid)].filter((m) => !e.isNegated(m));
+      const opts = ['Do nothing', ...(negs.length ? ['Negate the effects of a face-up card'] : []), 'All "Jinzo" you control gain 800 ATK'];
       const ch = yield* chooseOption(e, p, 'Cyber Energy Shock: apply an effect?', opts);
       const pickd = ch === null ? 'Do nothing' : opts[ch];
       if (pickd.startsWith('Negate')) {
-        const m = yield* pickOne(e, p, 'Negate which monster?', negs);
+        const m = yield* pickOne(e, p, 'Negate the effects of which card until the end of this turn?', negs);
         if (m) negateMonster(e, m, true);
       } else if (pickd.startsWith('All')) for (const m of e.monsters(p).filter((x) => x.faceUp && e.isNamed(x, 'Jinzo'))) boostPerm(m, 800);
     },
@@ -1078,10 +1083,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       keepOnField(link);
     },
     equipBonus: () => ({ atk: 500, def: 0 }),
-    // Approximation: checked after the equipped monster's attacks (not when it destroys an attacker).
+    // When the equipped monster attacks and destroys the opponent's monster...
     *hostAfterBattle(e, _eq, host, t) {
       const p = ctrl(e, host);
       if (t && inZone(e, t.uid, 'gy') && t.owner !== p) e.damage(other(p), 500);
+    },
+    // audit-C: ...and when it is attacked and destroys the attacker by battle.
+    *afterAnyBattle(e, card, p, attacker, t) {
+      if (card.equippedTo === undefined || card.equippedTo !== t?.uid || !e.fieldCard(t.uid) || ctrl(e, t) !== p) return;
+      if (inZone(e, attacker.uid, 'gy') && attacker.owner !== p) e.damage(other(p), 500);
     },
   };
   E['D - Counter'] = {
@@ -1301,10 +1311,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     ...stEffect(
       'Cosmos Channelling',
       '',
-      (e, _c, p) => e.monsters(p).some((m) => m.owner !== p) && summonable(e, [...e.player(p).hand, ...e.player(p).gy], (c) => machine(e, c)).length > 0,
+      // audit-C: "You can only use each effect of "Cosmos Channelling" once per turn" (by name, not per copy).
+      (e, _c, p) => e.oncePerTurn('Cosmos Channelling:1', p) && e.monsters(p).some((m) => m.owner !== p) && summonable(e, [...e.player(p).hand, ...e.player(p).gy], (c) => machine(e, c)).length > 0,
       function* (e, _c, p) {
         const m = yield* pickOne(e, p, 'Cosmos Channelling: send which monster to the GY?', e.monsters(p).filter((m) => m.owner !== p), true);
         if (!m) return;
+        e.useOnce('Cosmos Channelling:1', p);
         yield* e.sendToGrave(m.uid, 'cost');
         yield* summonOneOf(e, p, 'Cosmos Channelling: Special Summon which Machine?', summonable(e, [...e.player(p).hand, ...e.player(p).gy], (c) => machine(e, c)));
       },
@@ -1666,7 +1678,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!(yield* discardCost(e, p, 1))) return false;
     },
     *resolve(e, _l, p) {
-      for (const m of e.monsters(other(p))) boostTurn(m, -500, -500);
+      // audit-C: only face-up monsters take the stat change (a face-down one flipped later this turn keeps its stats).
+      for (const m of e.monsters(other(p)).filter((x) => x.faceUp)) boostTurn(m, -500, -500);
     },
   };
   const effectMon = (e: Engine, m: FieldCard) => {
@@ -1694,9 +1707,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     ...stEffect(
       'Cursed Eldland:1',
       '',
-      (e, _c, p) => e.player(p).lp > 800 && e.player(p).deck.some((c) => eldOrGolden(e, c)),
+      // audit-C: "You can only use each of the following effects of "Cursed Eldland" once per turn" (by name, not per copy).
+      (e, _c, p) => e.oncePerTurn('Cursed Eldland:1', p) && e.player(p).lp > 800 && e.player(p).deck.some((c) => eldOrGolden(e, c)),
       function* (e, _c, p) {
         if (!payLp(e, p, 800)) return;
+        e.useOnce('Cursed Eldland:1', p);
         yield* searchDeck(e, p, 'Cursed Eldland: add which card?', (c) => eldOrGolden(e, c));
       },
       false,

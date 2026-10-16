@@ -122,8 +122,13 @@ function isBig(c: Cue): boolean {
       // a Glossy, Royal or Overframe card always gets its entrance: the finish is the show
       return bigCard(c.card.name) || finishOf(c.card) >= FIN.GL;
     case 'activate':
-    case 'target':
-      return SIGNATURES.has(c.card.name);
+      // every Spell and Trap the moment it is activated (Dark Hole, Mirror Force, Waboku...);
+      // monster effects and continuous effects at work only for the signature cards
+      return (c.what !== 'monster' && !c.lazy) || SIGNATURES.has(c.card.name);
+    case 'target': {
+      const k = card(c.card.name)?.kind;
+      return k === 'spell' || k === 'trap' || SIGNATURES.has(c.card.name);
+    }
     case 'damage':
       return c.amount >= 1000;
     case 'set':

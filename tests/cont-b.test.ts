@@ -808,7 +808,7 @@ const lp = (e: Engine, p: Pid) => e.player(p).lp;
   endTurn(e);
   oppSummon(e, 'Vorse Raider', 'Limit Reverse', 'Basic Insect');
   const bi = mon(e, 0, 'Basic Insect');
-  check(bi && bi.pos === 'atk' && fc(e, lr.uid)?.equippedTo === bi.uid, "Limit Reverse: on the opponent's turn, Special Summons it in Attack Position");
+  check(bi && bi.pos === 'atk' && fc(e, lr.uid)?.tags?.lrTarget === bi.uid, "Limit Reverse: on the opponent's turn, Special Summons it in Attack Position");
   check(stays(e, lr.uid), 'Limit Reverse: stays face-up');
   endTurn(e);
   check(stays(e, lr.uid) && mon(e, 0, 'Basic Insect'), 'Limit Reverse: both stay over turns');

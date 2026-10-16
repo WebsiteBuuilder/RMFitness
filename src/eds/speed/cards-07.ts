@@ -574,14 +574,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   const reverseTargets = (e: Engine, p: Pid) => gyMonsters(e, p, (c) => (info(e, c).atk ?? 0) <= 1000);
-  const hostOf = (e: Engine, c: FieldCard) => (c.equippedTo !== undefined ? e.fieldCard(c.equippedTo) : null);
-  const reverseCheck = function* (e: Engine, c: FieldCard): Step {
-    const m = hostOf(e, c);
-    if (m && m.pos === 'def') {
-      e.log(null, `${m.name} is in Defense Position: Limit Reverse destroys it`);
-      yield* e.destroy([m.uid, c.uid]);
-    }
-  };
+  // audit-E: Limit Reverse is not an Equip: it remembers its target (tags.lrTarget) instead of attaching to it, so the target
+  // leaving the field another way (bounced, banished) does not take this card along; only its destruction does.
+  const lrTarget = (e: Engine, c: FieldCard) => (c.tags?.lrTarget !== undefined ? e.fieldCard(c.tags.lrTarget) : null);
   E['Limit Reverse'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && reverseTargets(e, p).length > 0,
     *activate(e, link, p) {
@@ -592,14 +587,29 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link, p) {
       const card = e.fieldCard(link.card.uid);
       if (link.targetUid !== undefined && inGy(e, link.targetUid) && freeMZ(e, p)) yield* e.specialSummon(link.targetUid, p, 'atk');
-      if (card && link.targetUid !== undefined && e.fieldCard(link.targetUid)) h.attachTo(e, card, link.targetUid);
+      if (card && link.targetUid !== undefined && e.fieldCard(link.targetUid)) tag(card).lrTarget = link.targetUid;
       else if (card) yield* e.sendToGrave(card.uid, 'used');
     },
+    // When this card leaves the field, destroy the target.
     *onLeaveField(e, fc) {
-      const m = hostOf(e, fc);
+      const m = lrTarget(e, fc);
       if (m) yield* e.destroy([m.uid]);
     },
-    stateCheck: (e, c) => reverseCheck(e, c),
+    // When the target is destroyed, destroy this card.
+    *onAnyToGrave(e, c, _p, events) {
+      if (c.tags?.lrTarget !== undefined && events.some((v) => v.card.uid === c.tags!.lrTarget && v.from === 'mz' && v.reason === 'destroyed') && e.fieldCard(c.uid)) {
+        delete c.tags.lrTarget;
+        yield* e.destroy([c.uid]);
+      }
+    },
+    // If the target is changed to Defense Position, destroy it and this card.
+    *stateCheck(e, c) {
+      const m = lrTarget(e, c);
+      if (m && m.pos === 'def') {
+        e.log(null, `${m.name} is in Defense Position: Limit Reverse destroys it`);
+        yield* e.destroy([m.uid, c.uid]);
+      } else if (!m && c.tags?.lrTarget !== undefined) delete c.tags.lrTarget; // it left the field another way
+    },
   };
 
   E['Little-Winguard'] = {
@@ -997,6 +1007,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (m?.faceUp) boostTurn(m, 3000 - e.atkOf(m));
       for (const x of e.monsters(p)) if (x.uid !== link.targetUid && raceOf(e, x) === 'Spellcaster') tag(x).noAttackTurn = e.state.turn;
+      // audit-E: "for the rest of this turn": Spellcasters that arrive later this turn cannot attack either.
+      ((e.state.fx.uniteBy ??= {}) as Record<number, number | undefined>)[p] = link.targetUid;
+      e.linger('Magicians Unite', p);
+    },
+    lingering: {
+      *onAnySummon(e, owner, m, controller) {
+        if (controller === owner && m.uid !== (e.state.fx.uniteBy ?? {})[owner] && raceOf(e, m) === 'Spellcaster') tag(m).noAttackTurn = e.state.turn;
+      },
     },
   };
 
@@ -1545,9 +1563,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       },
     },
     *onLeaveField(e, fc) {
-      // A monster it revived is banished when it leaves the field.
-      const uid = fc.equippedTo;
-      if (fc.tags?.revived && uid !== undefined && inGy(e, uid)) e.banish(uid);
+      // audit-E: equipped from the GY by its own effect: this card (not the monster) is banished when it leaves the field.
+      if (fc.tags?.revived && e.find(fc.uid) && e.find(fc.uid)?.loc.zone !== 'removed') e.banish(fc.uid);
     },
   };
 

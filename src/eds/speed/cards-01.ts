@@ -416,13 +416,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   // ---------- Amazoness ----------
   // audit-00 approximation: "they must attack this turn, if able" is not enforced (the engine cannot force a player to attack).
+  // spells-b: the 500 ATK loss has no end ("they lose 500 ATK"): it lasts while they stay face-up (it used to wear off at the end of the turn).
   E['Amazoness Archers'] = {
     canActivate: (e, _c, p, t, ctx) => opponentAttack(e, p, t, ctx) !== null && faceUpOf(e, p).some((m) => amz(m)),
     *resolve(e, _l, p) {
       for (const m of e.monsters(other(p))) {
         m.faceUp = true;
         m.pos = 'atk';
-        m.atkMod -= 500;
+        tag(m).permAtk = (m.tags?.permAtk ?? 0) - 500;
         e.event('position', { uid: m.uid });
       }
       e.log(p, 'Amazoness Archers: the opponent\'s monsters switch to Attack Position and lose 500 ATK');
@@ -508,9 +509,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Amazoness Fighting Spirit'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
-    aura(e, _src, target, srcCtl) {
+    aura(e, _src, target) {
       const b = e.state.battle;
-      if (fsBusy || !b || b.attacker !== target.uid || b.target === null || ctrl(e, target) !== srcCtl || !amz(target)) return undefined;
+      // spells-b: any "Amazoness" monster that attacks (the card does not say "you control").
+      if (fsBusy || !b || b.attacker !== target.uid || b.target === null || !target.faceUp || !amz(target)) return undefined;
       const t = e.fieldCard(b.target);
       if (!t) return undefined;
       fsBusy = true;
@@ -709,17 +711,31 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!c) return false;
       link.targetUid = c.uid;
     },
+    // spells-b: linked through tags.willHost instead of being attached like an Equip, so it is destroyed only when that monster
+    // is destroyed (an attached card went to the GY, not destroyed, whenever the monster left the field in any way).
     *resolve(e, link, p) {
       const fc = e.fieldCard(link.card.uid);
       if (link.targetUid === undefined || where(e, link.targetUid) !== 'gy' || !fc || !freeMZ(e, p)) return;
       yield* e.specialSummon(link.targetUid, p, 'atk');
       const m = e.fieldCard(link.targetUid);
       if (!m) return;
-      h.attachTo(e, fc, m.uid);
+      tag(fc).willHost = m.uid;
       m.cannotChangePos = true;
     },
+    *onAnyToGrave(e, card, _p, events) {
+      const host = card.tags?.willHost;
+      if (host === undefined || !events.some((v) => v.card.uid === host && v.reason === 'destroyed' && v.from === 'mz')) return;
+      delete tag(card).willHost;
+      if (e.fieldCard(card.uid)) yield* e.destroy([card.uid]);
+    },
+    // The monster left the field some other way (returned to the hand, banished): the link ends.
+    *stateCheck(e, card) {
+      const host = card.tags?.willHost;
+      if (host !== undefined && !e.fieldCard(host)) delete tag(card).willHost;
+    },
     *onLeaveField(e, fc) {
-      if (fc.equippedTo !== undefined && e.fieldCard(fc.equippedTo)) yield* e.destroy([fc.equippedTo]);
+      const host = fc.tags?.willHost;
+      if (host !== undefined && e.fieldCard(host)) yield* e.destroy([host]);
     },
   };
 
@@ -1384,16 +1400,32 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // "By your opponent" is read as: on the opponent's turn, or outside your own Battle Phase.
+  // spells-b: only damage your opponent caused counts: the effect of a card they control, or an attack by their monster
+  // (it used to count any damage outside your own Battle Phase, your own cards' damage included). damageMod watches each hit
+  // as it happens (it never changes the amount) and keeps the opponent's share of the damage since the last damage window.
+  const squad = (e: Engine) => (e.state.fx.backupSquad ??= {}) as Record<number, number>;
   E['Backup Squad'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve() {},
+    damageMod(e, src, srcCtl, damaged, amount, byEffect) {
+      if (damaged !== srcCtl || amount <= 0) return undefined;
+      const fresh = !((e.state.fx.hurt as number[] | undefined)?.[damaged] ?? 0);
+      const b = e.state.battle;
+      const atk = b ? e.fieldCard(b.attacker) : null;
+      const byOpp = byEffect ? e.actor === other(damaged) : !!atk && e.controller(atk.uid) === other(damaged);
+      squad(e)[src.uid] = (fresh ? 0 : squad(e)[src.uid] ?? 0) + (byOpp ? amount : 0);
+      return undefined;
+    },
     quick: {
       repeat: true,
       label: 'draw for the damage taken',
-      can: (e, c, p, t, ctx) => t === 'damage' && notChained(e, c) && ctx.damaged === p && (ctx.amount ?? 0) >= 1000 && (e.state.turnPlayer !== p || e.state.phase !== 'BP'),
+      can: (e, c, p, t, ctx) => t === 'damage' && notChained(e, c) && ctx.damaged === p && Math.min(ctx.amount ?? 0, squad(e)[c.uid] ?? 0) >= 1000,
+      *cost(e, c, _p, link, ctx) {
+        link.payload = { ...(link.payload as object), n: Math.floor(Math.min(ctx.amount ?? 0, squad(e)[c.uid] ?? 0) / 1000) };
+        squad(e)[c.uid] = 0;
+      },
       *run(e, _c, p, link) {
-        const n = Math.floor(((link.payload as { ctx: { amount?: number } }).ctx.amount ?? 0) / 1000);
+        const n = (link.payload as { n?: number }).n ?? 0;
         if (n) e.draw(p, n);
       },
     },
@@ -1453,14 +1485,25 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!m) return false;
       link.targetUid = m.uid;
     },
-    *resolve(e, link) {
+    // spells-b: linked through tags.rageHost (not attached like an Equip), so that it is destroyed when that monster leaves the
+    // field (an attached card was only sent to the GY with it).
+    *resolve(e, link, p) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       const fc = e.fieldCard(link.card.uid);
-      if (m?.faceUp && fc) h.attachTo(e, fc, m.uid);
+      if (!fc) return;
+      if (m?.faceUp && ctrl(e, m) === p && raceOf(e, m) === 'Warrior') tag(fc).rageHost = m.uid;
+      else yield* e.sendToGrave(fc.uid, 'used');
     },
-    equipBonus: (_e, eq, host) => (eq.equippedTo === host.uid ? { atk: 1000, def: 0 } : { atk: 0, def: 0 }),
+    aura: (e, src, target) => (src.tags?.rageHost === target.uid && target.faceUp ? { atk: 1000, def: 0 } : undefined),
+    *stateCheck(e, card) {
+      const host = card.tags?.rageHost;
+      if (host === undefined || e.fieldCard(host)) return;
+      delete tag(card).rageHost;
+      e.log(ctrl(e, card), 'Battleguard Rage: its monster left the field, so it is destroyed');
+      yield* e.destroy([card.uid]);
+    },
     *afterAnyBattle(e, eq, _p, a, t) {
-      const host = eq.equippedTo;
+      const host = eq.tags?.rageHost;
       const foe = a.uid === host ? t : t.uid === host ? a : null;
       if (foe && !foe.token && where(e, foe.uid) === 'gy' && e.fieldCard(eq.uid)) yield* returnToHand(e, foe.uid);
     },

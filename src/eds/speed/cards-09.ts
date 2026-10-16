@@ -442,7 +442,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  E['Recurring Nightmare'] = twoToHand('Recurring Nightmare: add which 2 DARK monsters?', (e, c) => attrOfC(e, c) === 'DARK' && (info(e, c).def ?? 0) === 0);
+  // group-F: Link Monsters have no DEF, so they do not count as 0 DEF.
+  E['Recurring Nightmare'] = twoToHand('Recurring Nightmare: add which 2 DARK monsters?', (e, c) => attrOfC(e, c) === 'DARK' && info(e, c).def === 0 && info(e, c).sub !== 'Link');
 
   const redArchfiend = (e: E9) => allMonsters(e).some((m) => m.faceUp && e.isNamed(info(e, m), 'Red Dragon Archfiend'));
   const lv1Tuners = (e: E9, p: Pid) => e.player(p).gy.filter((c) => isMonster(e, c) && !!info(e, c).tuner && levelOf(e, c) === 1);
@@ -669,8 +670,22 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
 
   E['Ritual Weapon'] = h.equipFor((e, m) => info(e, m).sub === 'Ritual' && levelOf(e, m) <= 6, () => ({ atk: 1500, def: 1500 }));
 
+  // group-F: "If your monster inflicts battle damage to your opponent": your attacker (onBattleDamageDealt), or your monster
+  // the opponent attacked (its battle damage is seen in damageMod and the mill happens after the battle).
   E["Robbin' Zombie"] = contTrap({
     *onBattleDamageDealt(e, _c, _a, p) {
+      yield* e.as(p, millTop(e, other(p), 1));
+    },
+    damageMod(e, src, p, damaged, _amount, byEffect) {
+      const b = e.state.battle;
+      if (byEffect || damaged !== other(p) || !b || e.controller(b.attacker) !== damaged || b.target === null || e.controller(b.target) !== p) return undefined;
+      tag(src).robbinBattle = e.state.fx.battleNo ?? 0;
+      tag(src).robbinLp = e.player(damaged).lp;
+      return undefined;
+    },
+    *afterAnyBattle(e, c, p) {
+      if (c.tags?.robbinBattle !== (e.state.fx.battleNo ?? 0) || e.player(other(p)).lp >= (c.tags?.robbinLp ?? 0)) return;
+      tag(c).robbinBattle = -1;
       yield* e.as(p, millTop(e, other(p), 1));
     },
   });
@@ -678,9 +693,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   const isRock = (e: E9, c: Card) => isMonster(e, c) && raceOf(e, c) === 'Rock';
   E['Rock Bombardment'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && e.player(p).deck.some((c) => isRock(e, c)),
+    // group-F: sending the Rock monster is the cost, paid when the card is activated.
+    *activate(e, _link, p) {
+      if (!(yield* deckToGrave(e, p, 'Rock Bombardment: send which Rock monster to the GY?', (c) => isRock(e, c)))) return false;
+    },
     *resolve(e, _l, p) {
-      const c = yield* deckToGrave(e, p, 'Rock Bombardment: send which Rock monster to the GY?', (c) => isRock(e, c));
-      if (c) e.damage(other(p), 500);
+      e.damage(other(p), 500);
     },
   };
 
@@ -1705,8 +1723,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     canActivate: (e, _c, p, t) => isMain(t) && e.player(p).mz.filter((z) => z === null).length >= 2,
     *resolve(e, _l, p) {
       for (let i = 0; i < 2; i++) e.createToken('Lamb Token', p, 'def', true, { atk: 0, def: 0, level: 1, attribute: 'EARTH', race: 'Beast' });
-      // audit-09: "You cannot Summon other monsters the turn you activate this card (but you can Set)" (Flip Summons are not covered).
+      // audit-09: "You cannot Summon other monsters the turn you activate this card (but you can Set)".
       ((e.state.fx.summonLocks ??= []) as SummonLock[]).push({ p, turn: e.state.turn, normal: true, special: true, only: [] });
+      // group-F: Flip Summons are Summons too (fx.summonLock stops Normal, Flip and Special Summons, not Sets).
+      ((e.state.fx.summonLock ??= [-1, -1]) as number[])[p] = e.state.turn;
     },
   };
 
@@ -1780,18 +1800,32 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ---- Super Polymerization: materials from either field ----
-  const superPool = (e: E9, p: Pid): FieldCard[] => [...e.monsters(p), ...faceUpMonsters(e, other(p))].filter((m) => !m.token);
-  const assignable = (mats: Card[][], used: number[] = []): boolean => !mats.length || mats[0].some((c) => !used.includes(c.uid) && assignable(mats.slice(1), [...used, c.uid]));
+  // group-F: monsters from either field, face-down ones included (Tokens cannot be Fusion Materials).
+  const superPool = (e: E9, p: Pid): FieldCard[] => [...e.monsters(p), ...e.monsters(other(p))].filter((m) => !m.token);
+  /** group-F: a card counts as the material with this id by any of its current names (like Polymerization). */
+  const matIs = (e: E9, c: Card, id: number) => e.namesOf(c).some((n) => e.info(n).id === id);
+  /** group-F: a Fusion substitute monster (Beastking of the Swamps) can stand in for one material, as with Polymerization. */
+  const isSub = (e: E9, fusion: Card, c: Card) => !getEffect(fusion.name)?.noFusionSub && (!!getEffect(c.name)?.fusionSub || (e.state.fx.fusionSubs as Record<number, number> | undefined)?.[c.uid] === e.state.turn);
+  /** Each material slot gets its own card; `ids` given: at most one card stands in as a substitute. */
+  const assignable = (e: E9, mats: Card[][], ids?: number[], used: number[] = [], subbed = false): boolean =>
+    !mats.length ||
+    mats[0].some((c) => {
+      if (used.includes(c.uid)) return false;
+      const asSub = !!ids && !matIs(e, c, ids[0]);
+      if (asSub && subbed) return false;
+      return assignable(e, mats.slice(1), ids?.slice(1), [...used, c.uid], subbed || asSub);
+    });
   const superPlans = (e: E9, p: Pid) => {
     const pool = superPool(e, p);
-    const out: { fusion: Card; mats: FieldCard[][] }[] = [];
+    const out: { fusion: Card; mats: FieldCard[][]; ids?: number[] }[] = [];
     for (const fusion of e.player(p).fusion) {
       if (info(e, fusion).sub !== 'Fusion' || e.summonBlocked(p, fusion, 'special', 'fusion')) continue; // audit-09
-      const ids = e.fusionMaterials(fusion.name);
+      const ids = e.fusionMaterials(fusion.name) ?? undefined;
       // audit-09: Fusion Monsters whose materials are kinds of monsters (fusionTests) work too.
       const tests = ids ? undefined : getEffect(fusion.name)?.fusionTests;
-      const mats = ids ? ids.map((id) => pool.filter((m) => info(e, m).id === id)) : tests?.map((t) => pool.filter((m) => t(e, m)));
-      if (mats && assignable(mats)) out.push({ fusion, mats });
+      const subs = ids ? pool.filter((m) => isSub(e, fusion, m)) : [];
+      const mats = ids ? ids.map((id) => [...pool.filter((m) => matIs(e, m, id)), ...subs.filter((m) => !matIs(e, m, id))]) : tests?.map((t) => pool.filter((m) => t(e, m)));
+      if (mats && assignable(e, mats, ids)) out.push({ fusion, mats, ids });
     }
     return out;
   };
@@ -1804,8 +1838,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!plan) return false;
       const chosen: number[] = [];
       for (let i = 0; i < plan.mats.length; i++) {
-        const free = plan.mats[i].filter((c) => !chosen.includes(c.uid) && assignable(plan.mats.slice(i + 1), [...chosen, c.uid]));
-        const c = free.length === 1 ? free[0] : yield* pickOne(e, p, `Super Polymerization: use which ${free[0]?.name ?? 'material'}?`, free, true);
+        const ids = plan.ids;
+        const subTaken = !!ids && chosen.some((u, j) => !matIs(e, e.find(u)!.card, ids[j]));
+        const free = plan.mats[i].filter((c) => {
+          if (chosen.includes(c.uid)) return false;
+          const asSub = !!ids && !matIs(e, c, ids[i]);
+          return !(asSub && subTaken) && assignable(e, plan.mats.slice(i + 1), ids?.slice(i + 1), [...chosen, c.uid], subTaken || asSub);
+        });
+        const c = free.length === 1 ? free[0] : yield* pickOne(e, p, `Super Polymerization: use which ${free[0] && free[0].faceUp ? free[0].name : 'material'}?`, free, true);
         if (!c) return false;
         chosen.push(c.uid);
       }

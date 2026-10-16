@@ -54,6 +54,18 @@ function lockSummons(e: Engine, p: Pid, lock: Omit<SummonLock, 'p' | 'turn'>, te
   e.state.fx.summonLocks = list;
   e.log(p, text);
 }
+/** Names of the monsters `p` Normal or Special Summoned face-up this turn, read from the log. */
+function summonedThisTurn(e: Engine, p: Pid): string[] {
+  const head = `${e.player(p).name} `;
+  const out: string[] = [];
+  for (const l of e.state.log) {
+    if (l.turn !== e.state.turn || l.player !== p || !l.text.startsWith(head)) continue;
+    const t = l.text.slice(head.length);
+    const m = t.match(/^(?:Tribute |Normal )?Summoned (.+?)(?: in Defense Position)?$/) ?? t.match(/^Special Summoned (?!a monster )(.+?) in (?:Attack|Defense) Position$/) ?? t.match(/^Special Summoned an? (.+)$/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
 /**
  * Puts a monster card (from a hand, a GY or a Monster Zone) into `p`'s Spell & Trap Zone as an Equip Card
  * attached to `host`. Returns the Equip Card.
@@ -117,29 +129,19 @@ const geminiOnly = (): Partial<EffectDef> => ({
   },
 });
 
-/** Fusion plans restricted to some Fusion Monsters, from hand + field (Fullmetalfoes Fusion). */
+/** Fusion plans restricted to some Fusion Monsters, from hand + field (Fullmetalfoes Fusion): Polymerization's plans (named or
+ * generic materials, Fusion substitutes), filtered. */
 type Plan = { fusion: Card; mats: Card[][] };
 function canAssign(e: Engine, mats: Card[][], used: number[] = []): boolean {
   if (!mats.length) return true;
   return mats[0].some((c) => !used.includes(c.uid) && canAssign(e, mats.slice(1), [...used, c.uid]));
 }
-function plansFor(e: Engine, p: Pid, test: (f: Card) => boolean): Plan[] {
-  const pool = [...e.player(p).hand.filter((c) => isMonster(e, c)), ...e.monsters(p)];
-  const out: Plan[] = [];
-  for (const fusion of e.player(p).fusion) {
-    if (!test(fusion) || e.summonBlocked(p, fusion, 'special', 'fusion')) continue;
-    const ids = e.fusionMaterials(fusion.name);
-    if (!ids) continue;
-    const mats = ids.map((id) => pool.filter((c) => info(e, c).id === id));
-    if (canAssign(e, mats)) out.push({ fusion, mats });
-  }
-  return out;
-}
-function fusionSpell(test: (f: Card) => boolean, title: string): EffectDef {
+const plansFor = (e: Engine, p: Pid, h: SpeedHelpers, test: (f: Card) => boolean): Plan[] => (h.fusionPlans(e, p) as Plan[]).filter((x) => test(x.fusion));
+function fusionSpell(h: SpeedHelpers, test: (f: Card) => boolean, title: string): EffectDef {
   return {
-    canActivate: (e, _c, p, t) => anyTime(t) && plansFor(e, p, test).length > 0,
+    canActivate: (e, _c, p, t) => anyTime(t) && plansFor(e, p, h, test).length > 0,
     *activate(e, link, p) {
-      const plans = plansFor(e, p, test);
+      const plans = plansFor(e, p, h, test);
       const f = yield* pickOne(e, p, `${title}: Fusion Summon which monster?`, plans.map((x) => x.fusion), true);
       if (!f) return false;
       const plan = plans.find((x) => x.fusion.uid === f.uid)!;
@@ -154,13 +156,23 @@ function fusionSpell(test: (f: Card) => boolean, title: string): EffectDef {
     },
     *resolve(e, link, p) {
       const { fusion, mats } = link.payload as { fusion: number; mats: number[] };
-      if (zoneOf(e, fusion) !== 'fusion' || mats.some((u) => !['hand', 'mz'].includes(zoneOf(e, u) ?? ''))) return;
+      if (zoneOf(e, fusion) !== 'fusion' || mats.some((u) => !['hand', 'mz'].includes(zoneOf(e, u) ?? '') || e.find(u)?.loc.player !== p)) return;
       for (const u of mats) yield* e.sendToGrave(u, 'used');
       if (!freeMZ(e, p)) return;
-      yield* e.specialSummon(fusion, p, 'atk');
+      // A Fusion Summon, recorded like Polymerization's (fx.fusionMatList, tags.fusS).
+      (e.state.fx.fusionMatList ??= {})[fusion] = mats.slice();
+      yield* e.specialSummon(fusion, p, 'atk', true, (fc) => void ((fc.tags ??= {}).fusS = 1));
       e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
     },
   };
+}
+/** A monster this Union monster could be equipped to by its own effect ("1 Machine monster", or the monsters its text names). */
+function unionFits(e: Engine, u: Card, m: FieldCard): boolean {
+  if (!m.faceUp || m.uid === u.uid) return false;
+  const d = info(e, u).desc;
+  if (/Machine monster/i.test(d) && raceOf(e, m) === 'Machine') return true;
+  const names = [...d.matchAll(/"([^"]+)"/g)].map((x) => x[1]).filter((n) => n !== u.name);
+  return e.namesOf(m).some((nm) => names.includes(nm));
 }
 
 export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
@@ -633,25 +645,18 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ======================= Spells =======================
+  // A mandatory trigger when the equipped monster declares an attack. It is applied right away (onAttackDeclared), so the opponent
+  // cannot activate Spells/Traps in response to it.
   E['Reverse Breaker'] = {
     ...h.equipFor((e, m) => named(e, m, 'Utopia'), () => ({ atk: 0, def: 0 })),
-    quick: {
-      label: 'destroy a Spell/Trap your opponent controls',
-      can: (e, card, p, t, ctx) => {
-        const eq = e.fieldCard(card.uid);
-        return t === 'attack' && !!eq && eq.equippedTo !== undefined && ctx.uid === eq.equippedTo && e.controller(eq.equippedTo) === p && stOf(e, other(p)).length > 0;
-      },
-      *cost(e, _c, p, link) {
-        const t = yield* pickOne(e, p, 'Reverse Breaker: destroy which Spell/Trap?', stOf(e, other(p)), true);
-        if (!t) return false;
-        link.targetUid = t.uid;
-      },
-      *run(e, _c, p, link) {
-        const t = fieldTarget(e, link);
-        if (!t) return;
-        e.log(p, `Reverse Breaker destroys ${label(t)}`);
-        yield* e.destroy([t.uid]);
-      },
+    *onAttackDeclared(e, fc, p, attacker) {
+      if (fc.equippedTo !== attacker.uid || e.controller(attacker.uid) !== p) return;
+      const list = stOf(e, other(p));
+      if (!list.length) return;
+      const t = yield* pickOne(e, p, 'Reverse Breaker: destroy which Spell/Trap your opponent controls?', list);
+      if (!t || !e.fieldCard(t.uid)) return;
+      e.log(p, `Reverse Breaker destroys ${label(t)}`);
+      yield* e.destroy([t.uid]);
     },
   };
 
@@ -735,17 +740,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // "You cannot Normal or Special Summon any Level 3 or 4 monsters the turn you activate this card": not after you did, and locked from its activation on.
   E['Worm Bait'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => m.faceUp && raceOf(e, m) === 'Insect') && e.player(p).mz.filter((z) => z === null).length >= 2,
-    *resolve(e, _l, p) {
+    canActivate: (e, _c, p, t) => isMain(t) && e.monsters(p).some((m) => m.faceUp && raceOf(e, m) === 'Insect') && e.player(p).mz.filter((z) => z === null).length >= 2 && !summonedThisTurn(e, p).some((n) => [3, 4].includes(info(e, n).level ?? 0)),
+    *activate(e, _l, p) {
       lockSummons(e, p, { normal: true, special: true, levels: [3, 4] }, `${e.player(p).name} cannot Normal or Special Summon Level 3 or 4 monsters this turn`);
+    },
+    *resolve(e, _l, p) {
       if (e.player(p).mz.filter((z) => z === null).length < 2) return;
       for (let i = 0; i < 2; i++) e.createToken('Worm Token', p, 'def', true, { atk: 0, def: 0, level: 1, attribute: 'EARTH', race: 'Insect' });
       e.log(p, `${e.player(p).name} Special Summons 2 Worm Tokens`);
     },
   };
 
-  E['Fullmetalfoes Fusion'] = fusionSpell((f) => named(nameEngine(), f, 'Metalfoes'), 'Fullmetalfoes Fusion');
+  E['Fullmetalfoes Fusion'] = fusionSpell(h, (f) => named(nameEngine(), f, 'Metalfoes'), 'Fullmetalfoes Fusion');
 
   // ======================= Traps =======================
   // A-Counters are kept in tags.aCounter.
@@ -804,15 +812,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     equipBonus: () => ({ atk: 500, def: 0 }),
     *onLeaveField(e, fc, p, reason) {
       if (reason !== 'destroyed' || fc.equippedTo === undefined) return;
+      // Mandatory ("Target 1 card on the field; destroy that target").
       const list = [...targetable(e, allMonsters(e)), ...allST(e)];
-      if (!list.length || !(yield* e.yesno(p, 'Blast with Chain: destroy 1 card on the field?'))) return;
+      if (!list.length) return;
       const t = yield* pickOne(e, p, 'Blast with Chain: destroy which card?', list);
       if (t) yield* e.as(p, e.destroy([t.uid]));
     },
   };
 
   const unionsOnField = (e: Engine, p: Pid) => e.monsters(p).filter((m) => m.faceUp && isUnion(e, m));
-  const unionHosts = (e: Engine, p: Pid, u: FieldCard) => targetable(e, e.monsters(p).filter((m) => m.faceUp && m.uid !== u.uid));
+  // "An appropriate monster": one the Union monster's own effect could equip it to.
+  const unionHosts = (e: Engine, p: Pid, u: FieldCard) => targetable(e, e.monsters(p).filter((m) => m.faceUp && m.uid !== u.uid && unionFits(e, u, m)));
   const equippedUnions = (e: Engine, p: Pid) => e.spells(p).filter((c) => c.equippedTo !== undefined && isUnion(e, c));
   const canEquipUnion = (e: Engine, p: Pid) => e.player(p).sz.filter((z) => z === null).length >= 1 && unionsOnField(e, p).some((u) => unionHosts(e, p, u).length > 0);
   E['Formation Union'] = {

@@ -726,6 +726,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ---------- Spells ----------
+  // needs-engine: Engine.trapsNegated cannot tell whose Trap it is, so a Jinzo with Amplifier stops negating the opponent's Traps too.
   E['Amplifier'] = h.equipFor((e, m) => e.isNamed(m, 'Jinzo'), () => ({ atk: 0, def: 0 }), {
     freesOwnTraps: true,
     *onLeaveField(e, fc) {
@@ -736,7 +737,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   });
 
-  // Crystal Beasts become DARK in helpers.attrOf. Approximation: the damage effect is used when the attack is declared; no "Ultimate Crystal" monster exists here.
+  // Crystal Beasts become DARK in helpers.attrOf. Approximation: the damage effect is used when the attack is declared (there is no
+  // damage calculation window). "Ultimate Crystal" monsters: Rainbow Dragon, Rainbow Dark Dragon, Rainbow Overdragon (their OCG
+  // names are "Ultimate Crystal God ..."), or any monster with "Ultimate Crystal" in its name.
+  const ultimateCrystal = (e: Engine, m: FieldCard) => named(e, m, 'Ultimate Crystal') || ['Rainbow Dragon', 'Rainbow Dark Dragon', 'Rainbow Overdragon'].some((n) => e.isNamed(m, n));
   const crystalBattle = (e: Engine, p: Pid) => {
     const b = e.state.battle;
     if (!b) return false;
@@ -747,9 +751,17 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
   E['Advanced Dark'] = {
     ...h.fieldSpell(() => undefined),
+    // "If an "Ultimate Crystal" monster attacks, negate the effects of the attack target during that Battle Phase."
+    *onAttackDeclared(e, _fc, p, attacker, target) {
+      if (!target || !attacker.faceUp || !ultimateCrystal(e, attacker) || !target.faceUp) return;
+      tag(target).negatedTurn = e.state.turn;
+      e.log(p, `Advanced Dark: ${target.name}'s effects are negated during this Battle Phase`);
+    },
     quick: {
       label: 'take no battle damage from this battle',
-      can: (e, _c, p, t) => t === 'attack' && crystalBattle(e, p) && e.player(p).deck.some((c) => isMonster(e, c) && named(e, c, 'Crystal Beast')),
+      // Not once per turn: usable in each battle (once per battle).
+      repeat: true,
+      can: (e, _c, p, t) => t === 'attack' && crystalBattle(e, p) && (e.state.fx.noBattleDamageIn as number[] | undefined)?.[p] !== e.state.fx.battleNo && e.player(p).deck.some((c) => isMonster(e, c) && named(e, c, 'Crystal Beast')),
       *cost(e, _c, p) {
         const c = yield* deckToGrave(e, p, 'Advanced Dark: send which "Crystal Beast" monster from your Deck to the GY?', (x) => isMonster(e, x) && named(e, x, 'Crystal Beast'));
         if (!c) return false;
@@ -811,7 +823,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Approximation: the banishing of the opponent's cards is not applied (no "Aesir" monster exists here anyway).
+  // The monster is destroyed during the opponent's next End Phase (read from this card in the GY), then everything they control is banished.
+  const gotter = (e: Engine) => map(e, 'gotterdammerung') as unknown as Record<number, { uid: number; p: Pid; turn: number }>;
   const aesir = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(e, m, 'Aesir')));
   E['Gotterdammerung'] = {
     canActivate: (e, _c, p, t) => isMain(t) && aesir(e, p).length > 0 && freeMZ(e, other(p)),
@@ -823,8 +836,21 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link, p) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (!m || e.controller(m.uid) !== p || !e.takeControl(m.uid, other(p))) return;
-      m.doomAt = e.state.turnPlayer === p ? e.state.turn + 1 : e.state.turn;
+      gotter(e)[link.card.uid] = { uid: m.uid, p, turn: e.state.turnPlayer === p ? e.state.turn + 1 : e.state.turn };
       e.log(p, `${m.name} goes to ${e.player(other(p)).name}`);
+    },
+    *onEndPhaseInGrave(e, card) {
+      const g = gotter(e)[card.uid];
+      if (!g || g.turn !== e.state.turn || e.state.turnPlayer !== other(g.p)) return;
+      delete gotter(e)[card.uid];
+      const m = e.fieldCard(g.uid);
+      if (!m) return;
+      yield* e.as(g.p, e.destroy([m.uid]));
+      if (e.fieldCard(m.uid)) return;
+      const opp = other(g.p);
+      const all = [...e.monsters(opp), ...stOf(e, opp)];
+      if (all.length) e.log(g.p, `Gotterdammerung banishes all cards ${e.player(opp).name} controls`);
+      for (const c of all) if (e.fieldCard(c.uid)) e.banish(c.uid);
     },
   };
 
@@ -895,10 +921,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const n = m?.name.match(numberRe);
       if (!m || !n || e.controller(m.uid) !== p) return;
       const cs = e.player(p).fusion.filter((c) => c.name.match(numberRe)?.[1] === 'C' && c.name.match(numberRe)?.[2] === n[2] && (info(e, c).rank ?? 0) === (info(e, m).rank ?? 0) + 1);
-      const c = yield* pickOne(e, p, 'Special Summon which "Number C" monster?', cs);
+      const c = yield* pickOne(e, p, 'Special Summon which "Number C" monster?', cs.filter((x) => !e.summonBlocked(p, x, 'special', 'fusion')));
       if (!c) return;
-      yield* e.sendToGrave(m.uid, 'used');
-      yield* e.specialSummon(c.uid, p, 'atk');
+      // Treated as an Xyz Summon: the target (and its Xyz Materials) become the new monster's Xyz Materials.
+      yield* e.extraSummon(p, c.uid, [m.uid], 'Xyz');
     },
   };
 
@@ -928,7 +954,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   // Its activation needs 2 "Abyss Actor" cards in the Pendulum Zones, which this game does not have.
   E['Abyss Actors Back Stage'] = {};
 
-  // Approximation: the Trap stays face-up until the End Phase so it can see the battle.
+  // A "this turn" effect (e.linger): the Trap goes to the GY as usual; fx.breakthrough remembers the selected monster.
   const samurai = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => named(e, m, 'Six Samurai')));
   E['Breakthrough!'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && samurai(e, p).length > 0,
@@ -937,20 +963,27 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (!m) return false;
       link.targetUid = m.uid;
     },
-    *resolve(e, link) {
-      const fc = e.fieldCard(link.card.uid);
-      if (!fc || link.targetUid === undefined) return;
-      fc.active = true;
-      fc.turns = 1;
-      Object.assign(tag(fc), { btTarget: link.targetUid, btTurn: e.state.turn });
+    *resolve(e, link, p) {
+      const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
+      if (!m?.faceUp) return;
+      const list = ((fx(e).breakthrough ??= []) as { uid: number; p: Pid; turn: number; on?: boolean }[]).filter((x) => x.turn === e.state.turn);
+      list.push({ uid: m.uid, p, turn: e.state.turn });
+      fx(e).breakthrough = list;
+      e.linger('Breakthrough!', p);
     },
-    *afterAnyBattle(e, fc, p, attacker, target) {
-      if (fc.tags?.btTurn !== e.state.turn || attacker.uid !== fc.tags.btTarget || e.fieldCard(target.uid)) return;
-      for (const m of faceUpMonsters(e, p)) if (named(e, m, 'Six Samurai') || e.isNamed(m, 'Great Shogun Shien')) tag(m).directTurn = e.state.turn;
-      e.log(p, 'Breakthrough!: the Six Samurai can attack directly this turn');
-    },
-    *onEndPhase(e, fc) {
-      if (fc.tags?.btTurn !== undefined && e.fieldCard(fc.uid)) yield* e.sendToGrave(fc.uid, 'used');
+    lingering: {
+      *afterAnyBattle(e, owner, attacker, target) {
+        const list = ((fx(e).breakthrough ?? []) as { uid: number; p: Pid; turn: number; on?: boolean }[]).filter((x) => x.turn === e.state.turn && x.p === owner);
+        const hit = list.find((x) => x.uid === attacker.uid && e.controller(attacker.uid) === owner && !e.fieldCard(target.uid) && target.owner !== owner);
+        if (!hit) return;
+        hit.on = true;
+        for (const m of faceUpMonsters(e, owner)) if (named(e, m, 'Six Samurai') || e.isNamed(m, 'Great Shogun Shien')) tag(m).directTurn = e.state.turn;
+        e.log(owner, 'Breakthrough!: "Great Shogun Shien" and the "Six Samurai" monsters can attack directly this turn');
+      },
+      *onAnySummon(e, owner, m, controller) {
+        const on = ((fx(e).breakthrough ?? []) as { p: Pid; turn: number; on?: boolean }[]).some((x) => x.turn === e.state.turn && x.p === owner && x.on);
+        if (on && controller === owner && e.state.phase === 'BP' && (named(e, m, 'Six Samurai') || e.isNamed(m, 'Great Shogun Shien'))) tag(m).directTurn = e.state.turn;
+      },
     },
   };
 
