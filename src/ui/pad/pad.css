@@ -175,3 +175,85 @@
 .pad-duel .pad-hints.show.dim:not(.guide):not(.under) {
   opacity: 0.3;
 }
+
+/* scrolled to: with room above, clear of a screen's title bar */
+.pad-on .pad-focus {
+  scroll-margin: 56px 0 72px;
+}
+.pad-on .duel .pad-focus {
+  scroll-margin: 0;
+}
+
+/* the controller's on-screen keyboard */
+.pad-kb {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-inline: auto;
+  max-width: 560px;
+  z-index: 2147482990;
+  padding: 10px 8px calc(48px + env(safe-area-inset-bottom, 0px));
+  background: #0b0d18f2;
+  border-top: 2px solid var(--gold, #f7c948);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 30px #000a;
+  display: grid;
+  gap: 6px;
+  animation: pad-kb-in 0.18s ease-out;
+}
+@keyframes pad-kb-in {
+  from {
+    translate: 0 40px;
+    opacity: 0;
+  }
+}
+.pad-kb-val {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #ffffff14;
+  border: 1px solid #ffffff30;
+  color: #fff;
+  font: 600 17px/1.3 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+.pad-kb-val.empty {
+  color: #ffffff70;
+}
+.pad-kb-row {
+  display: flex;
+  gap: 4px;
+}
+.pad-kb-key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  border-radius: 7px;
+  background: #1d2240;
+  border: 1px solid #ffffff2a;
+  color: #fff;
+  font: 700 16px system-ui, sans-serif;
+  padding: 0;
+}
+.pad-kb-key.wide {
+  flex: 1.6 1 0;
+  font-size: 13px;
+}
+.pad-kb-key.wide2 {
+  flex: 3 1 0;
+  font-size: 13px;
+}
+.pad-kb-shift.on {
+  background: #f7c94840;
+}
+.pad-kb-done {
+  background: linear-gradient(180deg, #f7c948, #c99a1c);
+  color: #1a1400;
+}
+.pad-kb-head {
+  color: var(--gold, #f7c948);
+  font: 700 12px system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

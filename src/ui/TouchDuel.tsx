@@ -595,7 +595,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          Choose a target: tap a glowing monster{canDirect() ? ' or their portrait' : ''}
+          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Choose a target: tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>

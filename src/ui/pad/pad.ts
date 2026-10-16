@@ -11,6 +11,7 @@ import { readPad, familyOf, glyph, familyName, type Btn, type Family, type PadLi
 import { pickNext, nearest, type Dir, type Box } from './nav';
 import { pressBack } from '../backButton';
 import { rumble } from './rumble';
+import { closeKb, kbAction, kbOpen, openKb } from './kb';
 import './pad.css';
 
 const NATIVE = 'button:not([disabled]), a[href], input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role=button], [role=tab], [tabindex]:not([tabindex="-1"]), summary';
@@ -210,7 +211,7 @@ function setFocus(el: Element | null, scroll = true) {
   }
   if (scroll) {
     const r = el.getBoundingClientRect();
-    if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (r.top < 6 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     // clear of a bar pinned along the bottom (tabs, the hint bar)
     if (!el.closest(FLOATING) && !el.closest('.duel')) {
       const bar = Math.min(bottomBarTop(), hints?.classList.contains('show') ? hints.getBoundingClientRect().top : innerHeight);
@@ -362,6 +363,17 @@ function move(dir: Dir) {
   validate(true);
   if (!focused) return;
   const el = focused as HTMLInputElement;
+  if (el.matches('select') && (dir === 'left' || dir === 'right')) {
+    const sel = el as unknown as HTMLSelectElement;
+    const i = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + (dir === 'right' ? 1 : -1)));
+    if (i !== sel.selectedIndex) {
+      sel.selectedIndex = i;
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      say(sel.options[i].text);
+    }
+    return;
+  }
   if (el.matches('input[type=range]') && (dir === 'left' || dir === 'right')) {
     if (dir === 'left') el.stepDown();
     else el.stepUp();
@@ -384,7 +396,16 @@ function move(dir: Dir) {
   const j = field ? pickNext(from, dir, field.map((x) => x.box)) : -1;
   const i = j >= 0 ? c.indexOf(field![j]) : pickNext(from, dir, c.map((x) => x.box));
   if (i >= 0) {
-    setFocus(c[i].el);
+    let to = c[i].el;
+    const row = to.parentElement;
+    const cls = (x: Element) => x.getAttribute('class') ?? '';
+    if (row && !inDuel() && !row.contains(focused) && !ON.test(cls(to))) {
+      const picked = c.find((x) => x.el.parentElement === row && ON.test(cls(x.el)));
+      if (picked) to = picked.el;
+    }
+    const duel = document.querySelector<HTMLElement>('.duel.touch');
+    if (duel?.querySelector('.tactions') && !to.closest('.tactions') && to.matches('[data-uid]')) duel.click();
+    setFocus(to);
     rumble(0, 0.12, 18);
     return;
   }
@@ -420,6 +441,12 @@ function page(down: boolean) {
     const s = { top: Math.max(r.top, 0), bottom: Math.min(r.bottom, innerHeight, bottomBarTop()) };
     const inView = c.filter((x) => x.box.top >= s.top - 1 && x.box.bottom <= s.bottom + 1 && sc.contains(x.el) && !x.el.closest(FLOATING));
     const list = inView.length ? inView : c;
+    // (already at the end: the last thing in the list, or the first at the top)
+    const end = down ? sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2 : sc.scrollTop <= 1;
+    if (end && inView.length) {
+      const ord = inView.slice().sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left);
+      return void setFocus((down ? ord[ord.length - 1] : ord[0]).el);
+    }
     setFocus(list[nearest(lastX, down ? s.top : s.bottom, list.map((x) => x.box))].el);
   };
 }
@@ -460,9 +487,21 @@ function press() {
   const el = focused as HTMLElement | null;
   if (!el) return;
   rumble(0.15, 0.3, 30);
-  if (el.matches(TEXT)) {
+  if (el.matches('select')) {
     el.focus();
     (el as HTMLSelectElement).showPicker?.();
+    return;
+  }
+  if (el.matches(TEXT)) {
+    const box = el as HTMLInputElement;
+    openKb(box, () => {
+      // back on the box; Done on a box with a button after it (Log in, Join) goes on to that button
+      if (!box.isConnected) return void validate(true);
+      setFocus(box);
+      if (box.value) move('down');
+    });
+    cameFrom = null;
+    setTimeout(() => validate(true), 30);
     return;
   }
   if (el.matches('.tphase-item, .tphase-menu button') && /battle/i.test(el.textContent ?? '')) setTimeout(() => mine().length && duelJump(false, true), 350);
@@ -473,6 +512,13 @@ function press() {
   }
   const before = new Set(candidates().map((x) => x.el));
   tap(el);
+  if (el.matches('.rv:not(.up)')) {
+    return void setTimeout(() => {
+      const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up)')][0];
+      if (next) setFocus(next);
+      else validate(true);
+    }, 80);
+  }
   // let the screen redraw, then put the ring somewhere real
   setTimeout(() => validate(true), 60);
   setTimeout(() => {
@@ -501,6 +547,7 @@ function release() {
 
 /** Back: close what is open, step back a screen; never leaves the game. */
 export function back(viaEscape = true) {
+  if (kbOpen()) return void closeKb();
   const ae = document.activeElement as HTMLElement | null;
   if (ae && ae.matches?.(TEXT)) return void ae.blur();
   if (viaEscape) {
@@ -510,7 +557,7 @@ export function back(viaEscape = true) {
   }
   const duel = document.querySelector<HTMLElement>('.duel.touch');
   if (duel) {
-    const aim = duel.querySelector<HTMLElement>('.ttoast.aim button');
+    const aim = visible('.overlay') ? null : duel.querySelector<HTMLElement>('.ttoast.aim button');
     if (aim) return void (tap(aim), setTimeout(() => validate(true), 60));
     if (duel.querySelector('.tactions, .tphase-menu, .tdetail') && !document.querySelector('.overlay, .csheet-back')) {
       // close it, and the ring goes back to the card it came from (else your hand)
@@ -628,6 +675,7 @@ function onButton(b: Btn) {
     case 'b':
       return back();
     case 'x': {
+      if (kbOpen()) return kbAction('del');
       // a screen's own X action on what the ring is on (deck editor: add or remove a copy)
       if (focused?.hasAttribute('data-pad-x') && !inDuel()) {
         if (!focused.getAttribute('data-pad-x')) return void (say("Can't add another copy of this card"), rumble(0.25, 0, 70));
@@ -647,8 +695,10 @@ function onButton(b: Btn) {
       return;
     }
     case 'y':
+      if (kbOpen()) return kbAction('shift');
       return cardInfo();
     case 'start': {
+      if (kbOpen()) return kbAction('done');
       const m = visible('.tgear, .duel .menu-btn, [aria-label="Menu"], [aria-label="Settings"]');
       if (m) return (tap(m), setTimeout(() => validate(true), 60));
       return;
@@ -667,20 +717,30 @@ function onButton(b: Btn) {
 }
 
 /** In a duel: LB to your hand, RB to the opponent's monsters. */
+/** where the two sides of the board meet (the turn row in the middle) */
+function midY() {
+  const m = document.querySelector('.duel .tmid:not(.tmid-float)')?.getBoundingClientRect();
+  return m && m.height > 0 ? m.top + m.height / 2 : innerHeight / 2;
+}
+const center = (b: Box) => (b.top + b.bottom) / 2;
 /** your monsters on the field */
 function mine(c = candidates()) {
-  return c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top >= innerHeight / 2);
+  const y = midY();
+  return c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && center(x.box) > y);
 }
 function duelJump(hand: boolean, own = false) {
+  // (a command bubble or the phase menu closes: the ring is going somewhere else)
+  const duel = document.querySelector<HTMLElement>('.duel.touch');
+  if (duel?.querySelector('.tactions, .tphase-menu')) duel.click();
   const c = candidates();
   if (own) {
     const m = mine(c).sort((a, b) => a.box.left - b.box.left);
     if (m.length) setFocus(m[Math.floor((m.length - 1) / 2)].el);
     return;
   }
-  const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top < innerHeight / 2);
+  const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && center(x.box) < midY());
   // (no monsters over there: their other cards, then their portrait)
-  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('[data-uid], .tpile, .pile') && x.box.top < innerHeight / 2);
+  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('[data-uid], .tpile, .pile') && center(x.box) < midY());
   if (!list.length) {
     const top = c.find((x) => x.el.matches('.tbar.top'));
     if (top) setFocus(top.el);
@@ -695,6 +755,7 @@ function duelJump(hand: boolean, own = false) {
 type Hint = [Btn[], string];
 function hintList(): Hint[] {
   if (document.querySelector('.art-skip.on')) return [[['a'], 'Skip (hold: all)']];
+  if (kbOpen()) return [[['a'], 'Type'], [['x'], 'Delete'], [['y'], 'Caps'], [['start'], 'Done'], [['b'], 'Close']];
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
   if (document.querySelector('.duel')) {
     out[0][1] = aLabel();
@@ -741,6 +802,22 @@ function bottomBarTop(): number {
         }
       }
     }
+  }
+  // (and anything pinned right on top of that: the Find a Match banner over the tabs)
+  for (let n = 0; n < 3 && top < innerHeight; n++) {
+    let up = top;
+    for (const fx of [0.5, 0.2, 0.8]) {
+      for (let el = document.elementFromPoint(innerWidth * fx, top - 8); el && el !== document.body; el = el.parentElement) {
+        const pos = getComputedStyle(el).position;
+        if (pos === 'fixed' || pos === 'sticky') {
+          const r = el.getBoundingClientRect();
+          if (r.bottom >= top - 14 && r.height < innerHeight * 0.3 && r.top < up) up = r.top;
+          break;
+        }
+      }
+    }
+    if (up === top) break;
+    top = up;
   }
   return top;
 }
