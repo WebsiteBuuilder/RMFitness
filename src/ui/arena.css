@@ -629,3 +629,18 @@
   font-weight: 700;
   box-shadow: 0 0 14px #ff304066;
 }
+
+/* a win: the same beat in gold (the field flares, then settles) */
+.duel.touch.ko.ko-opp .tboard::after {
+  background: radial-gradient(ellipse at 50% 50%, #ffd76014 20%, #4a3200d0 100%);
+  animation-name: ko-win;
+}
+@keyframes ko-win {
+  0% { opacity: 0; background-color: #fff6d090; }
+  10% { opacity: 1; background-color: #ffd76050; }
+  100% { opacity: 1; background-color: #ffd76010; }
+}
+.duel.touch.ko-opp .tbar.bottom .tlp {
+  color: #ffe08a;
+  text-shadow: 0 0 14px #ffc940;
+}
