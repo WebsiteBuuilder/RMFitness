@@ -5,7 +5,7 @@ import { DB as KIT, aiAction } from './speedkit';
 import { DB } from '../src/eds/db';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
-import { BOONS, POWER_MAX, RAIDS, Raid, STRIKE, duelistById, raidPool, type RaidHero, type RaidMsg, type RaidPlan } from '../src/eds/raid';
+import { BOONS, POWER_MAX, RAIDS, Raid, REVIVE_LP, STRIKE, duelistById, raidPool, type RaidHero, type RaidMsg, type RaidPlan } from '../src/eds/raid';
 import { DEFAULT_TACTICS } from '../src/eds/tactics';
 import type { Pid } from '../src/eds/types';
 
@@ -51,26 +51,29 @@ for (const r of RAIDS) {
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } }); // settles even when the move does nothing
   ok(r.pool === 2800, `a 1200 hit on board 1 leaves 2800 in the pool (got ${r.pool})`);
   ok(r.boards[1]!.engine.state.players[1].lp === 2800, 'board 2 shows the pool');
-  ok(r.power[0] === 1 && r.charge[0] === 200, 'the hit filled one Team Power');
+  ok(r.power === 1 && r.charge[0] === 200, 'the hit filled one shared Team Power');
 
   // a heal for the teammate
+  ok(!r.canAssist(0, 'heal') && !!r.assistBlock(0, 'heal'), 'no heal for a teammate at full 4000 LP');
+  r.boards[1]!.engine.state.players[0].lp = 3000;
   r.apply({ type: 'RAID_ASSIST', hero: 0, kind: 'heal' });
-  ok(r.power[0] === 0 && r.boards[1]!.engine.state.players[0].lp === 5000, 'Heal: the teammate gains 1000');
+  ok(r.power === 0 && r.boards[1]!.engine.state.players[0].lp === 4000, 'Heal: the teammate gains 1000');
+  r.boards[1]!.engine.state.players[0].lp = 3000;
   r.apply({ type: 'RAID_ASSIST', hero: 0, kind: 'heal' });
-  ok(r.boards[1]!.engine.state.players[0].lp === 5000, 'no Team Power, no heal');
+  ok(r.boards[1]!.engine.state.players[0].lp === 3000, 'no Team Power, no heal');
+  ok(r.used[0] === 1 && r.best[0] === 1200, 'the raid counts assists used and the biggest hit');
 
   // a strike
-  r.power[1] = 1;
+  r.power = 1;
   r.apply({ type: 'RAID_ASSIST', hero: 1, kind: 'strike' });
   ok(r.pool === 2800 - STRIKE && r.boards[0]!.engine.state.players[1].lp === 2800 - STRIKE, 'Strike comes off the pool on both boards');
 
   // a gift, only between moves
-  r.power[0] = 1;
   const idleBoard = ([0, 1] as Pid[]).find((b) => r.idle(b));
   if (idleBoard !== undefined) {
     const giver = idleBoard;
     const mate = (giver === 0 ? 1 : 0) as Pid;
-    r.power[giver] = 1;
+    r.power = 1;
     const card = r.boards[giver]!.engine.state.players[0].hand[0];
     const before = r.boards[mate]!.engine.state.players[0].hand.length;
     r.apply({ type: 'RAID_ASSIST', hero: giver, kind: 'gift', uid: card.uid });
@@ -80,7 +83,7 @@ for (const r of RAIDS) {
   } else ok(false, 'a board is idle at the start');
 
   // the fight ends when the pool is empty, on both boards
-  r.power[0] = POWER_MAX;
+  r.power = POWER_MAX;
   r.boards[0]!.engine.damage(1, 99999);
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
   ok(r.pool === 0 && r.boards.every((b) => b!.engine.state.winner === 0), 'an empty pool beats the enemy on both boards');
@@ -99,7 +102,7 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   r.boards[0]!.engine.damage(1, 99999);
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
   r.offers[0] = [id, 'power', 'draw'].filter((x, i, a) => a.indexOf(x) === i) as typeof r.offers[0];
-  const p0 = r.power[0];
+  const p0 = r.power;
   r.apply({ type: 'RAID_BOON', hero: 0, boon: id });
   r.apply({ type: 'RAID_BOON', hero: 1, boon: r.offers[1][0] === id ? r.offers[1][1] : r.offers[1][0] });
   const e = r.boards[0]!.engine.state;
@@ -107,7 +110,7 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   if (id === 'lp') ok(e.players[0].lp === 5000, 'Iron Will: 5000 LP');
   if (id === 'draw') ok(e.players[0].hand.length + e.players[0].mz.filter(Boolean).length + e.players[0].sz.filter(Boolean).length >= 5 - (e.turnPlayer === 0 ? 0 : 0), 'Quick Draw: 5 cards to open');
   if (id === 'first') ok(e.turnPlayer === 0 || e.turn > 1, 'Initiative: you go first');
-  if (id === 'power') ok(r.power[0] === Math.min(POWER_MAX, p0 + 1), 'Team Spirit: +1 Team Power');
+  if (id === 'power') ok(r.power === Math.min(POWER_MAX, p0 + 1 + (r.picks[1] === 'power' ? 1 : 0)), 'Team Spirit: +1 Team Power');
   if (id === 'ambush') ok(e.players[1].hand.length <= 3 + (e.turnPlayer === 1 ? 1 : 0) + (e.turn > 1 ? 9 : 0), 'Ambush: the enemy opens with a card fewer');
   if (id === 'twin') ok(r.pool === r.poolMax - 1000 * (twinOther ? 2 : 1), 'Opening Blow: 1000 less in the pool');
 }
@@ -142,8 +145,23 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   r.boards[0]!.engine.damage(0, 99999);
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
   ok(r.fallen[0] && r.phase === 'duel' && r.running(1), 'one falls, the other fights on');
-  ok(r.power[1] === 1, 'avenge: the teammate gets +1 Team Power');
-  r.power[0] = 1;
+  ok(r.power === 1, 'avenge: +1 Team Power');
+  ok(!r.canAssist(1, 'revive') && r.assistBlock(1, 'revive') === 'Needs 2 Team Power.', 'Revive costs 2');
+  r.power = 2;
+  ok(r.cpuAssist(1) === 'revive', 'a computer teammate revives a fallen teammate first');
+  r.apply({ type: 'RAID_ASSIST', hero: 1, kind: 'revive' });
+  ok(!r.fallen[0] && r.running(0) && r.boards[0]!.engine.state.players[0].lp === REVIVE_LP && r.power === 0, 'Revive: back up with 2000 LP');
+  const turn = r.boards[0]!.engine.state.turn;
+  for (let i = 0; i < 6 && r.boards[0]!.engine.state.turn === turn; i++) {
+    const st = r.boards[0]!.engine.state;
+    r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'END_TURN', player: (st.prompt?.player ?? st.turnPlayer) as Pid } });
+    if (st.prompt) r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: st.prompt.player as Pid } });
+  }
+  ok(r.boards[0]!.engine.state.turn > turn || r.boards[0]!.engine.state.prompt !== null, 'a revived board takes moves again');
+  r.boards[0]!.engine.damage(0, 99999);
+  r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
+  ok(r.fallen[0] && r.phase === 'duel', 'fallen again');
+  r.power = 1;
   const pool = r.pool;
   r.apply({ type: 'RAID_ASSIST', hero: 0, kind: 'strike' });
   ok(r.pool === pool - STRIKE, 'a fallen duelist can still Strike');
@@ -161,6 +179,21 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
   r.apply({ type: 'RAID_BOON', hero: 0, boon: r.offers[0][0] });
   ok(r.phase === 'duel' && r.stage === 1 && r.boards[1] === null, 'the next fight goes on without the one who left');
+}
+
+// ---------- pings and a dropped phone ----------
+{
+  const r = new Raid();
+  const plan = planOf('kingdom', 55);
+  plan.heroes[1].ctl = 1;
+  r.apply({ type: 'RAID_START', plan });
+  r.apply({ type: 'RAID_PING', hero: 1, ping: 'help' });
+  ok(r.feed[r.feed.length - 1].kind === 'ping' && r.feed[r.feed.length - 1].text.endsWith('Help me!'), 'a ping shows on the feed');
+  ok(r.driver(1) === 1 && !r.heroIsCpu(1), 'a linked teammate drives their own board');
+  r.apply({ type: 'RAID_AWAY', hero: 1, away: true });
+  ok(r.driver(1) === 0 && r.heroIsCpu(1), "a dropped phone: the other phone's computer plays its board");
+  r.apply({ type: 'RAID_AWAY', hero: 1, away: false });
+  ok(r.driver(1) === 1 && !r.heroIsCpu(1), 'back again: the board is theirs');
 }
 
 // ---------- whole raids, played by the computer on both boards ----------
@@ -185,12 +218,10 @@ for (let g = 0; g < N; g++) {
       for (const h of [0, 1] as Pid[]) if (r.picks[h] === null && !r.left[h]) send({ type: 'RAID_BOON', hero: h, boon: r.offers[h][g % 3] });
       continue;
     }
-    // spend Team Power now and then, the way two brothers would
+    // spend Team Power the way the computer teammate does
     for (const h of [0, 1] as Pid[]) {
-      if (r.power[h] < 2) continue;
-      const kind = (['strike', 'heal', 'gift'] as const)[(steps + h) % 3];
-      const uid = kind === 'gift' ? r.boards[h]?.engine.state.players[0].hand[0]?.uid : undefined;
-      if (r.canAssist(h, kind, uid)) send({ type: 'RAID_ASSIST', hero: h, kind, uid });
+      const kind = r.cpuAssist(h);
+      if (kind) send({ type: 'RAID_ASSIST', hero: h, kind });
     }
     let moved = false;
     for (const b of [0, 1] as Pid[]) {

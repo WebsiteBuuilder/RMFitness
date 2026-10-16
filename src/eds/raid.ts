@@ -91,7 +91,7 @@ export const RAIDS: RaidDef[] = [
     stages: [
       { label: 'Wave 1', foes: ['ghoul-cutpurse', 'ghoul-gravedigger'], pool: 5000, note: 'The ghouls come for your cards.' },
       { label: 'Wave 2', foes: ['ghoul-lantern', 'abidos'], pool: 6000, note: 'A lantern ghoul and a ghost pharaoh.' },
-      { label: 'Boss', foes: ['yami-bakura', 'yami-bakura'], pool: 10000, boss: true, foeSetup: { field: 'Yami' }, note: 'Yami Bakura starts with Yami on both boards.' },
+      { label: 'Boss', foes: ['yami-bakura', 'yami-bakura'], pool: 9500, boss: true, foeSetup: { field: 'Yami' }, note: 'Yami Bakura starts with Yami on both boards.' },
     ],
     rage: { text: 'Yami Bakura rages! Ryu Kokki crawls onto both boards.', monster: 'Ryu Kokki', card: "Dark Spirit's Mastery" },
   },
@@ -104,7 +104,7 @@ export const RAIDS: RaidDef[] = [
     stages: [
       { label: 'Wave 1', foes: ['mai', 'joey'], pool: 5500, note: 'Mai and Joey test you first.' },
       { label: 'Wave 2', foes: ['kaiba', 'masked-dealer'], pool: 6500, note: 'Kaiba and the Masked Dealer.' },
-      { label: 'Boss', foes: ['yami-yugi', 'yami-yugi'], pool: 11000, boss: true, note: 'The King of Games, on both boards.' },
+      { label: 'Boss', foes: ['yami-yugi', 'yami-yugi'], pool: 10000, boss: true, note: 'The King of Games, on both boards.' },
     ],
     rage: { text: 'The King rages! Dark Magician appears on both boards.', monster: 'Dark Magician', card: 'Dark Magic Attack' },
   },
@@ -129,18 +129,27 @@ export function raidPool(def: RaidDef): string[] {
 
 // ---------- Team Power, assists and boons ----------
 
-export const POWER_MAX = 3;
+/** Team Power is one pool the two duelists share: either one fills it, either one spends it */
+export const POWER_MAX = 4;
 /** damage dealt to the enemy that fills one Team Power */
 export const POWER_STEP = 1000;
 export const HEAL = 1000;
+/** Heal only tops a teammate up to this */
+export const HEAL_BELOW = 4000;
 export const STRIKE = 500;
+export const REVIVE_LP = 2000;
 
-export type AssistKind = 'gift' | 'heal' | 'strike';
-export const ASSISTS: Record<AssistKind, { title: string; text: string }> = {
-  gift: { title: 'Pass a card', text: "A card from your hand goes to your teammate's hand." },
-  heal: { title: 'Heal', text: `Your teammate gains ${HEAL} LP.` },
-  strike: { title: 'Strike', text: `Hit the enemy for ${STRIKE}, even after you fall.` },
+export type AssistKind = 'gift' | 'heal' | 'strike' | 'revive';
+export const ASSISTS: Record<AssistKind, { title: string; text: string; cost: number }> = {
+  gift: { title: 'Pass a card', text: "A card from your hand goes to your teammate's hand.", cost: 1 },
+  heal: { title: 'Heal', text: `Your teammate gains ${HEAL} LP (while under ${HEAL_BELOW}).`, cost: 1 },
+  strike: { title: 'Strike', text: `Hit the enemy for ${STRIKE}, even after you fall.`, cost: 1 },
+  revive: { title: 'Revive', text: `Your fallen teammate gets back up with ${REVIVE_LP} LP and fights on.`, cost: 2 },
 };
+
+/** Quick calls to your teammate's phone. */
+export type PingId = 'help' | 'now' | 'nice' | 'wait';
+export const PINGS: Record<PingId, string> = { help: 'Help me!', now: 'Hit it now!', nice: 'Nice one!', wait: 'Hold on…' };
 
 export type BoonId = 'lp' | 'draw' | 'first' | 'power' | 'ambush' | 'twin';
 export const BOONS: Record<BoonId, { title: string; text: string }> = {
@@ -177,7 +186,10 @@ export type RaidMsg =
   | { type: 'RAID_MOVE'; b: Pid; a: Action }
   | { type: 'RAID_ASSIST'; hero: Pid; kind: AssistKind; uid?: number }
   | { type: 'RAID_BOON'; hero: Pid; boon: BoonId }
-  | { type: 'RAID_LEAVE'; hero: Pid };
+  | { type: 'RAID_LEAVE'; hero: Pid }
+  | { type: 'RAID_PING'; hero: Pid; ping: PingId }
+  /** a duelist's phone dropped (the computer plays their board) or came back */
+  | { type: 'RAID_AWAY'; hero: Pid; away: boolean };
 
 export const isRaidMsg = (a: { type: string }): a is RaidMsg => a.type.startsWith('RAID_');
 
@@ -189,11 +201,13 @@ export interface RaidBoard {
   foe: CpuDuelist;
   /** the enemy's Life Points on this board when the pool was last settled */
   lastFoeLp: number;
+  /** the damage the enemy had taken (not paid as a cost) when the pool was last settled */
+  lastHurt: number;
   /** things waiting to appear on the enemy's side when the board is between moves */
   pending: { name: string; to: 'mz' | 'hand' }[];
 }
 
-export type FeedKind = 'stage' | 'hit' | 'power' | 'gift' | 'heal' | 'strike' | 'rage' | 'fall' | 'clear' | 'boon';
+export type FeedKind = 'stage' | 'hit' | 'power' | 'gift' | 'heal' | 'strike' | 'rage' | 'fall' | 'clear' | 'boon' | 'revive' | 'ping';
 export interface FeedItem {
   n: number;
   kind: FeedKind;
@@ -215,11 +229,16 @@ export class Raid {
   boards: [RaidBoard | null, RaidBoard | null] = [null, null];
   pool = 0;
   poolMax = 0;
-  power: [number, number] = [0, 0];
+  /** the team's shared Team Power */
+  power = 0;
   /** damage toward the next Team Power */
   charge: [number, number] = [0, 0];
   /** damage dealt to enemies over the whole raid */
   total: [number, number] = [0, 0];
+  /** biggest single hit each duelist landed */
+  best: [number, number] = [0, 0];
+  /** assists each duelist used */
+  used: [number, number] = [0, 0];
   phase: RaidPhase = 'duel';
   rage = false;
   offers: [BoonId[], BoonId[]] = [[], []];
@@ -230,6 +249,8 @@ export class Raid {
   left: [boolean, boolean] = [false, false];
   /** duelists who fell in this fight */
   fallen: [boolean, boolean] = [false, false];
+  /** duelists whose phone dropped: the other phone's computer plays for them until they're back */
+  away: [boolean, boolean] = [false, false];
   feed: FeedItem[] = [];
   /** bumps on every change (the screens redraw on it) */
   version = 0;
@@ -248,7 +269,8 @@ export class Raid {
   /** The phone that sends moves for board `b` (both seats): its duelist's phone, or phone 0 for a computer teammate. */
   driver(b: Pid): Pid {
     const c = this.plan?.heroes[b].ctl;
-    return c === 'cpu' || c === undefined ? 0 : c;
+    if (c === 'cpu' || c === undefined) return 0;
+    return this.away[b] ? ((c === 0 ? 1 : 0) as Pid) : c;
   }
 
   /** How sharp the enemy plays: the chosen level for the boss, a step easier for the henchmen. */
@@ -259,7 +281,7 @@ export class Raid {
   }
 
   heroIsCpu(b: Pid): boolean {
-    return this.plan?.heroes[b].ctl === 'cpu';
+    return this.plan?.heroes[b].ctl === 'cpu' || this.away[b];
   }
 
   /** The duelist a phone plays (null: none, it only watches). */
@@ -282,14 +304,43 @@ export class Raid {
 
   /** Whether a duelist may use an assist right now (and with which card, for a gift). */
   canAssist(hero: Pid, kind: AssistKind, uid?: number): boolean {
-    if (this.phase !== 'duel' || this.power[hero] < 1 || this.left[hero]) return false;
+    if (this.phase !== 'duel' || this.power < ASSISTS[kind].cost || this.left[hero] || this.pool <= 0) return false;
     const mate = (hero === 0 ? 1 : 0) as Pid;
-    if (kind === 'strike') return this.pool > 0;
+    if (kind === 'strike') return true;
+    if (kind === 'revive') {
+      const w = this.boards[mate]?.engine.state.winner;
+      return !this.left[mate] && this.fallen[mate] && w !== null && w !== 0;
+    }
     if (!this.running(mate)) return false;
-    if (kind === 'heal') return true;
+    if (kind === 'heal') return this.boards[mate]!.engine.state.players[0].lp < HEAL_BELOW;
     if (!this.idle(hero)) return false;
     const hand = this.boards[hero]!.engine.state.players[0].hand;
     return uid === undefined ? hand.length > 0 : hand.some((c) => c.uid === uid);
+  }
+
+  /** What a computer teammate spends Team Power on right now, if anything. */
+  cpuAssist(hero: Pid): AssistKind | null {
+    const mate = (hero === 0 ? 1 : 0) as Pid;
+    if (this.canAssist(hero, 'revive')) return 'revive';
+    const lp = this.boards[mate]?.engine.state.players[0].lp ?? 99999;
+    if (lp <= 1500 && this.canAssist(hero, 'heal')) return 'heal';
+    // Save 2 for a revive while the teammate is in danger; otherwise spend a full bar on strikes.
+    if (this.power >= POWER_MAX && this.canAssist(hero, 'strike')) return 'strike';
+    if (this.pool > 0 && this.pool <= STRIKE && this.canAssist(hero, 'strike')) return 'strike';
+    return null;
+  }
+
+  /** Why an assist can't be used right now (null: it can). */
+  assistBlock(hero: Pid, kind: AssistKind): string | null {
+    if (this.canAssist(hero, kind)) return null;
+    const mate = (hero === 0 ? 1 : 0) as Pid;
+    if (this.phase !== 'duel' || this.pool <= 0) return 'Not between fights.';
+    if (this.power < ASSISTS[kind].cost) return `Needs ${ASSISTS[kind].cost} Team Power.`;
+    if (kind === 'revive') return this.left[mate] ? `${this.name(mate)} left the raid.` : `Only when ${this.name(mate)} has fallen.`;
+    if (!this.running(mate)) return `${this.name(mate)} isn't dueling.`;
+    if (kind === 'heal') return `${this.name(mate)} has ${HEAL_BELOW} LP or more.`;
+    if (kind === 'gift') return this.running(hero) && this.idle(hero) ? 'No cards in your hand.' : 'Only between your moves.';
+    return null;
   }
 
   apply(m: RaidMsg) {
@@ -318,9 +369,18 @@ export class Raid {
       case 'RAID_BOON':
         if (this.phase !== 'boons' || this.picks[m.hero] !== null || !this.offers[m.hero].includes(m.boon)) return;
         this.picks[m.hero] = m.boon;
-        if (m.boon === 'power') this.power[m.hero] = Math.min(POWER_MAX, this.power[m.hero] + 1);
+        if (m.boon === 'power') this.power = Math.min(POWER_MAX, this.power + 1);
         this.push('boon', m.hero, `${this.name(m.hero)} took ${BOONS[m.boon].title}`);
         this.maybeNext();
+        break;
+      case 'RAID_PING':
+        if (!this.plan || this.left[m.hero] || !PINGS[m.ping]) return;
+        this.push('ping', m.hero, `${this.name(m.hero)}: ${PINGS[m.ping]}`);
+        break;
+      case 'RAID_AWAY':
+        if (!this.plan || this.left[m.hero] || this.away[m.hero] === m.away || this.plan.heroes[m.hero].ctl === 'cpu') return;
+        this.away[m.hero] = m.away;
+        this.push('ping', m.hero, m.away ? `${this.name(m.hero)} lost connection: the computer plays for them` : `${this.name(m.hero)} is back`);
         break;
       case 'RAID_LEAVE':
         if (this.left[m.hero] || !this.plan) return;
@@ -372,7 +432,7 @@ export class Raid {
       const first: Pid = boon === 'first' ? 0 : rng(seed ^ 0x51ed)() < 0.5 ? 0 : 1;
       const engine = new Engine(this.db);
       engine.apply({ type: 'START', first, seed, mode: 'speed', names: [hero.name, foe.name], decks: [hero.main, fd.main], fusions: [hero.extra, fd.extra], skills: [hero.skill, foe.skill], setup: [heroSetup, foeSetup] });
-      this.boards[b] = { b, engine, foe, lastFoeLp: engine.state.players[1].lp, pending: [] };
+      this.boards[b] = { b, engine, foe, lastFoeLp: engine.state.players[1].lp, lastHurt: 0, pending: [] };
     }
     this.carry = [null, null];
     this.push('stage', null, st.boss ? `${duelistById(this.def!.boss)!.name} appears!` : `${st.label}: ${st.note ?? ''}`.trim());
@@ -389,11 +449,15 @@ export class Raid {
     const foeLp = x.engine.state.players[1].lp;
     const delta = x.lastFoeLp - foeLp;
     x.lastFoeLp = foeLp;
+    // Damage the enemy took fills Team Power; Life Points it paid as a cost only come off the pool.
+    const hurt = ((x.engine.state.fx.hurt as number[] | undefined)?.[1] ?? 0) - x.lastHurt;
+    x.lastHurt += hurt;
     if (delta !== 0 && this.phase === 'duel') {
       this.pool = Math.max(0, this.pool - delta);
-      if (delta > 0) {
-        this.credit(b, delta);
-        this.push('hit', b, `${this.name(b)} hit ${x.foe.name} for ${delta}`, delta);
+      const dealt = Math.min(Math.max(0, hurt), Math.max(0, delta));
+      if (dealt > 0) {
+        this.credit(b, dealt);
+        this.push('hit', b, `${this.name(b)} hit ${x.foe.name} for ${dealt}`, dealt);
       }
     }
     this.syncPool();
@@ -412,12 +476,13 @@ export class Raid {
 
   private credit(b: Pid, dmg: number) {
     this.total[b] += dmg;
+    this.best[b] = Math.max(this.best[b], dmg);
     this.charge[b] += dmg;
     while (this.charge[b] >= POWER_STEP) {
       this.charge[b] -= POWER_STEP;
-      if (this.power[b] < POWER_MAX) {
-        this.power[b]++;
-        this.push('power', b, `${this.name(b)} +1 Team Power`);
+      if (this.power < POWER_MAX) {
+        this.power++;
+        this.push('power', b, `+1 Team Power from ${this.name(b)}`);
       }
     }
   }
@@ -425,7 +490,24 @@ export class Raid {
   private assist(hero: Pid, kind: AssistKind, uid?: number) {
     if (!this.canAssist(hero, kind, uid)) return;
     const mate = (hero === 0 ? 1 : 0) as Pid;
-    this.power[hero]--;
+    this.power -= ASSISTS[kind].cost;
+    this.used[hero]++;
+    if (kind === 'revive') {
+      const y = this.boards[mate]!;
+      const st = y.engine.state;
+      st.winner = null;
+      st.winReason = '';
+      st.prompt = null;
+      st.battle = null;
+      st.chain = [];
+      delete st.fx.finalBlow;
+      st.players[0].lp = REVIVE_LP;
+      this.fallen[mate] = false;
+      y.engine.event('heal', { player: 0, amount: REVIVE_LP });
+      this.push('revive', hero, `${this.name(hero)} revived ${this.name(mate)}!`);
+      this.syncPool();
+      return;
+    }
     if (kind === 'strike') {
       const st = this.boards[hero] ?? this.boards[mate];
       this.pool = Math.max(0, this.pool - STRIKE);
@@ -464,6 +546,14 @@ export class Raid {
       }
       return this.cleared();
     }
+    // An enemy beaten some other way (out of cards, Exodia) breaks the whole gang.
+    if (this.boards.some((x) => x?.engine.state.winner === 0)) {
+      for (const b of [0, 1] as Pid[]) {
+        const x = this.boards[b];
+        if (x && x.engine.state.winner === null) x.engine.endDuel(0, `${x.foe.name}'s side is beaten`);
+      }
+      return this.cleared();
+    }
     for (const b of [0, 1] as Pid[]) {
       const x = this.boards[b];
       if (!x || this.fallen[b]) continue;
@@ -472,9 +562,9 @@ export class Raid {
       this.fallen[b] = true;
       this.push('fall', b, `${this.name(b)} fell!`);
       const mate = (b === 0 ? 1 : 0) as Pid;
-      if (this.running(mate) && this.power[mate] < POWER_MAX) {
-        this.power[mate]++;
-        this.push('power', mate, `${this.name(mate)} +1 Team Power: avenge ${this.name(b)}!`);
+      if (this.running(mate) && this.power < POWER_MAX) {
+        this.power++;
+        this.push('power', mate, `+1 Team Power: avenge ${this.name(b)}!`);
       }
     }
     const boards = this.boards.filter((x): x is RaidBoard => !!x);

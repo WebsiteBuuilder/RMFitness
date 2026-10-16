@@ -239,6 +239,34 @@
   background: linear-gradient(180deg, #ff7a6a, #d61f3a);
   transition: width 0.6s ease-out;
 }
+.rd-bar-ghost {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #fff3c4;
+  opacity: 0.75;
+  transition: width 0.9s ease-in 0.45s;
+}
+.rd-bar.shake {
+  animation: rd-shake 0.42s ease-in-out;
+}
+@keyframes rd-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
 .rd-hud.rage .rd-bar-fill {
   background: linear-gradient(180deg, #ffb347, #ff2d2d);
 }
@@ -428,7 +456,7 @@
   position: fixed;
   z-index: 46;
   left: 50%;
-  top: 40%;
+  top: calc(env(safe-area-inset-top) + 156px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -544,6 +572,7 @@
   .rd-banner,
   .rd-toast,
   .rd-hud.rage .rd-bar,
+  .rd-bar.shake,
   .rd-power.ready {
     animation: none;
   }
@@ -666,6 +695,9 @@
   .rd-power {
     min-height: 26px;
   }
+  .rd-feed {
+    top: calc(env(safe-area-inset-top) + 104px);
+  }
 }
 /* room under the last button for the floating Friends button */
 .raid .so-sheet {
@@ -678,4 +710,65 @@
 }
 .rd-play .duel.speed:not(.touch) > .pbar.top {
   margin-bottom: 64px;
+}
+
+.rd-assist small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #ff9a9a;
+}
+.rd-assist em {
+  float: right;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  color: #f2c14e;
+}
+.rd-pings {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+.rd-pings button {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(62, 197, 255, 0.5);
+  background: rgba(6, 18, 36, 0.9);
+  color: #eef2ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rd-toast.ping {
+  border-color: #b48cff;
+}
+.rd-toast.revive {
+  border-color: #7dffb0;
+  font-size: 16px;
+}
+.rd-away {
+  position: fixed;
+  z-index: 47;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: rgba(6, 18, 36, 0.92);
+  border: 1px solid #f2c14e;
+  color: #ffe7a6;
+  font-size: 13px;
+  text-align: center;
+}
+.rd-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--so-dim, #9fb0d0);
+}
+.rd-auto {
+  font-size: 12px;
 }

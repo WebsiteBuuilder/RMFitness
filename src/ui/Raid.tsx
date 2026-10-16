@@ -11,7 +11,7 @@ import type { SoloSave } from '../eds/speedCampaign/save';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
 import { partnersFor } from '../eds/speedCampaign/tagRoad';
 import { DIFFICULTIES, DIFFICULTY_LABEL, type Difficulty } from '../eds/difficulty';
-import { ASSISTS, BOONS, POWER_MAX, POWER_STEP, RAIDS, duelistById, raidOpen, type AssistKind, type FeedItem, type Raid, type RaidDef, type RaidProgress } from '../eds/raid';
+import { ASSISTS, BOONS, PINGS, POWER_MAX, POWER_STEP, RAIDS, type PingId, duelistById, raidOpen, type AssistKind, type FeedItem, type Raid, type RaidDef, type RaidProgress } from '../eds/raid';
 import { RaidSession, useRaid } from '../eds/raidSession';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS } from '../eds/tactics';
@@ -80,7 +80,7 @@ export function RaidHub(p: HubProps) {
             The enemy has <em>one Life Point pool</em>: every hit either of you lands comes off it on both boards.
           </span>
           <span>
-            Every {POWER_STEP} damage fills <em>Team Power</em>: pass your teammate a card, heal them, or strike the boss.
+            Every {POWER_STEP} damage either of you deals fills your shared <em>Team Power</em>: pass a card, heal, strike the boss, or revive a fallen teammate.
           </span>
           <span>Two waves of henchmen, then the boss. At half LP the boss rages.</span>
         </div>
@@ -289,6 +289,12 @@ function boardSession(rs: RaidSession, b: Pid): DuelSession {
   return { engine: board.engine, adapter: { roomCode: null }, send: (a: Action) => rs.send({ type: 'RAID_MOVE', b, a }) } as unknown as DuelSession;
 }
 
+/** A board's state key: the view only changes when the board does (the duel screen's double-tap guard relies on it). */
+function boardKey(rs: RaidSession, b: Pid): string {
+  const st = rs.raid.boards[b]?.engine.state;
+  return st ? `${rs.raid.stage}:${st.turn}:${st.phase}:${st.log.length}:${st.winner}:${st.prompt?.title ?? ''}:${st.prompt?.player ?? ''}:${st.players[0].lp}:${st.players[1].lp}:${rs.status}` : '';
+}
+
 function viewOf(rs: RaidSession, b: Pid): SessionView {
   const board = rs.raid.boards[b]!;
   const seat = (name: string) => ({ name, deck: [], fusion: [], ready: true });
@@ -329,6 +335,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
   useEffect(() => setWatchMate(false), [raid.stage]);
 
   useComputers(rs, phone, shownBoard);
+  useAway(rs, hero);
 
   const leave = () => {
     setAskLeave(false);
@@ -369,6 +376,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
         <RaidHud rs={rs} hero={hero} shown={show} onWatch={(w) => setWatchMate(w)} onAssist={() => setAssist(true)} />
         <Feed raid={raid} hero={hero} />
         <StageBanner raid={raid} />
+        {raid.away[mate] && !raid.left[mate] && <div class="rd-away">{raid.name(mate)}'s phone dropped. The computer plays for them until they're back.</div>}
         {assist && <AssistSheet rs={rs} hero={hero} onClose={() => setAssist(false)} />}
         {leaveSheet}
       </div>
@@ -377,7 +385,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
 
   if (raid.phase === 'boons') return (
     <>
-      <Intermission rs={rs} hero={hero} />
+      <Intermission rs={rs} hero={hero} onLeave={() => setAskLeave(true)} />
       {leaveSheet}
     </>
   );
@@ -396,7 +404,9 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
 
 function BoardDuel({ rs, b, watching, controlsFor, onControls, onLeave, onFinished }: { rs: RaidSession; b: Pid; watching: boolean; controlsFor?: (p: Pid) => ControlStyle; onControls?: (p: Pid, c: ControlStyle) => void; onLeave: () => void; onFinished: () => void }) {
   const session = useMemo(() => boardSession(rs, b), [rs, rs.raid.boards[b]]);
-  return <Duel session={session} view={viewOf(rs, b)} mySeat={0} hotseat={false} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={onFinished} spectator={watching} />;
+  const key = boardKey(rs, b);
+  const view = useMemo(() => viewOf(rs, b), [rs, rs.raid.boards[b], key]);
+  return <Duel session={session} view={view} mySeat={0} hotseat={false} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={onFinished} spectator={watching} />;
 }
 
 /**
@@ -406,56 +416,104 @@ function BoardDuel({ rs, b, watching, controlsFor, onControls, onLeave, onFinish
  */
 function useComputers(rs: RaidSession, phone: Pid, shown: { current: Pid | null }) {
   const raid = rs.raid;
-  const timers = useRef<[{ key: string; cancel: () => void } | null, { key: string; cancel: () => void } | null]>([null, null]);
+  type Timer = { key: string; fired: boolean; tries: number; cancel: () => void };
+  const timers = useRef<[Timer | null, Timer | null]>([null, null]);
   const streak = useRef([0, 0]);
+  const [, poke] = useState(0);
   const turnAt = useRef<[{ turn: number; at: number }, { turn: number; at: number }]>([
     { turn: -1, at: 0 },
     { turn: -1, at: 0 },
   ]);
+  const sentAssist = useRef('');
   useEffect(() => {
     for (const b of [0, 1] as Pid[]) {
       const x = raid.boards[b];
       const st = x?.engine.state;
       if (st && st.turn !== turnAt.current[b].turn) turnAt.current[b] = { turn: st.turn, at: Date.now() };
-      const key = x && st ? `${raid.stage}:${b}:${st.turn}:${st.phase}:${st.log.length}:${st.prompt?.title ?? ''}:${st.prompt?.player ?? ''}:${raid.phase}` : '';
+      const key = x && st ? `${raid.stage}:${b}:${st.turn}:${st.phase}:${st.log.length}:${st.prompt?.title ?? ''}:${st.prompt?.player ?? ''}:${raid.phase}:${raid.driver(b)}:${raid.heroIsCpu(b)}` : '';
       const t = timers.current[b];
-      if (t && t.key === key) continue;
+      // Still waiting on this move, or it went out and the board hasn't answered yet.
+      if (t && t.key === key && !t.fired) continue;
+      const stuck = t && t.key === key && t.fired ? t.tries + 1 : 0;
       t?.cancel();
       timers.current[b] = null;
       if (!x || !st || raid.phase !== 'duel' || st.winner !== null || raid.driver(b) !== phone) continue;
       const seat = (st.prompt?.player ?? st.turnPlayer) as Pid;
       if (seat === 0 && !raid.heroIsCpu(b)) continue;
       const action = aiAction(x.engine, seat, { ...DEFAULT_TACTICS, level: seat === 1 ? raid.foeLevel() : raid.plan!.level });
-      if (!action) {
+      // A move the board ignored: back out of the prompt or end the turn instead of trying it again.
+      const unstick: Action[] = st.prompt
+        ? [{ type: 'PASS', player: seat }, { type: 'CANCEL', player: seat }, { type: 'NO', player: seat }]
+        : [{ type: 'END_TURN', player: seat }, { type: 'NEXT_PHASE', player: seat }];
+      if (!action && !stuck) {
         streak.current[b] = 0;
         continue;
       }
+      if (stuck > unstick.length + 1) continue; // nothing works: leave it for a human to see
       streak.current[b]++;
-      const a: Action = streak.current[b] > 80 ? { type: 'END_TURN', player: seat } : action;
+      let a: Action = stuck ? unstick[(stuck - 1) % unstick.length] : streak.current[b] > 80 ? { type: 'END_TURN', player: seat } : action!;
       if (streak.current[b] > 80) streak.current[b] = 0;
       const onScreen = shown.current === b;
       const quick = a.type === 'NEXT_PHASE' || a.type === 'PASS' || a.type === 'CHOOSE';
-      const pace = onScreen ? cpuDelay(a, { sinceTurn: Date.now() - turnAt.current[b].at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() }) : quick ? 300 : 800;
+      const pace = stuck ? 250 : onScreen ? cpuDelay(a, { sinceTurn: Date.now() - turnAt.current[b].at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() }) : quick ? 300 : 800;
+      const timer: Timer = { key, fired: false, tries: stuck, cancel: () => {} };
       const send = () => {
+        timer.fired = true;
         rs.send({ type: 'RAID_MOVE', b, a });
         const uid = spotUid(a);
         if (uid !== null && shown.current === b) spotlight(uid);
+        // If the move changed nothing, nothing redraws: look again shortly.
+        window.setTimeout(() => poke((v) => v + 1), 400);
       };
       let h = 0;
-      const stop = onScreen ? whenArtIdle(() => (h = window.setTimeout(send, pace))) : ((h = window.setTimeout(send, pace)), () => {});
-      timers.current[b] = { key, cancel: () => (stop(), clearTimeout(h)) };
+      const stop = onScreen && !stuck ? whenArtIdle(() => (h = window.setTimeout(send, pace))) : ((h = window.setTimeout(send, pace)), () => {});
+      timer.cancel = () => (stop(), clearTimeout(h));
+      timers.current[b] = timer;
     }
-    // A computer teammate picks its boon (Team Spirit if offered).
-    if (raid.phase === 'boons' && phone === 0) {
+    // A computer teammate (or one standing in for a dropped phone) spends Team Power.
+    if (raid.phase === 'duel') {
       for (const h of [0, 1] as Pid[]) {
-        if (!raid.heroIsCpu(h) || raid.picks[h] !== null) continue;
-        const pick = raid.offers[h].includes('power') ? 'power' : raid.offers[h][0];
-        const t = window.setTimeout(() => rs.send({ type: 'RAID_BOON', hero: h, boon: pick }), 900);
-        return () => clearTimeout(t);
+        if (!raid.heroIsCpu(h) || raid.driver(h) !== phone || raid.left[h]) continue;
+        const k = raid.cpuAssist(h);
+        const once = `${raid.stage}:${h}:${k}:${raid.power}:${raid.feed.length}`;
+        if (!k || sentAssist.current === once) continue;
+        sentAssist.current = once;
+        rs.send({ type: 'RAID_ASSIST', hero: h, kind: k });
       }
     }
   });
+  // A computer teammate picks its boon (Team Spirit if offered).
+  useEffect(() => {
+    if (raid.phase !== 'boons') return;
+    for (const h of [0, 1] as Pid[]) {
+      if (!raid.heroIsCpu(h) || raid.driver(h) !== phone || raid.picks[h] !== null || raid.left[h]) continue;
+      const pick = raid.offers[h].includes('power') ? 'power' : raid.offers[h][0];
+      const t = window.setTimeout(() => rs.send({ type: 'RAID_BOON', hero: h, boon: pick }), 900);
+      return () => clearTimeout(t);
+    }
+  }, [raid.phase, raid.stage, raid.picks[0], raid.picks[1], raid.away[0], raid.away[1]]);
   useEffect(() => () => timers.current.forEach((t) => t?.cancel()), []);
+}
+
+/**
+ * Two linked phones: if your teammate's phone stays unreachable, your computer plays their
+ * board so the raid doesn't stall; when your own phone gets back it takes its board back.
+ */
+function useAway(rs: RaidSession, hero: Pid) {
+  const raid = rs.raid;
+  const mate = (hero === 0 ? 1 : 0) as Pid;
+  const online = !!rs.adapter.roomCode;
+  const down = rs.status !== 'connected';
+  useEffect(() => {
+    if (!online || !raid.plan) return;
+    if (!down) {
+      if (raid.away[hero]) rs.send({ type: 'RAID_AWAY', hero, away: false });
+      return;
+    }
+    if (raid.away[mate] || raid.left[mate] || raid.heroIsCpu(mate)) return;
+    const t = window.setTimeout(() => rs.send({ type: 'RAID_AWAY', hero: mate, away: true }), 20000);
+    return () => clearTimeout(t);
+  }, [online, down, raid.away[hero], raid.away[mate], !!raid.plan]);
 }
 
 /** The boss's Life Point bar, your teammate's board in a strip, and Team Power. */
@@ -471,15 +529,27 @@ function RaidHud({ rs, hero, shown, onWatch, onAssist }: { rs: RaidSession; hero
   const watching = shown !== hero;
   const myState = raid.boards[hero]?.engine.state;
   const iFell = !raid.boards[hero] || (myState?.winner !== null && myState?.winner !== 0);
-  const canSomething = (['strike', 'heal', 'gift'] as AssistKind[]).some((k) => raid.canAssist(hero, k));
+  const canSomething = (['revive', 'strike', 'heal', 'gift'] as AssistKind[]).some((k) => raid.canAssist(hero, k));
+  // A big hit shakes the bar; the lost chunk drains a moment after the fill drops.
+  const [shake, setShake] = useState(false);
+  const lastPool = useRef(raid.pool);
+  useEffect(() => {
+    const drop = lastPool.current - raid.pool;
+    lastPool.current = raid.pool;
+    if (drop < 1000) return;
+    setShake(true);
+    const t = setTimeout(() => setShake(false), 450);
+    return () => clearTimeout(t);
+  }, [raid.pool]);
   return (
     <div class={`rd-hud ${raid.rage ? 'rage' : ''}`}>
-      <div class="rd-bar" role="status" aria-label={`${foeName}: ${raid.pool} of ${raid.poolMax} LP`}>
+      <div class={`rd-bar ${shake ? 'shake' : ''}`} role="status" aria-label={`${foeName}: ${raid.pool} of ${raid.poolMax} LP`}>
         <span class="rd-bar-l">
           <b>{foeName}</b>
           <em>{st.boss ? (raid.rage ? 'RAGING' : 'BOSS') : `${raid.stage + 1}/${raid.def!.stages.length}`}</em>
         </span>
         <span class="rd-bar-track">
+          <span class="rd-bar-ghost" style={{ width: `${pct}%` }} />
           <span class="rd-bar-fill" style={{ width: `${pct}%` }} />
           {st.boss && <span class="rd-bar-mark" />}
           <span class="rd-bar-n">
@@ -490,7 +560,8 @@ function RaidHud({ rs, hero, shown, onWatch, onAssist }: { rs: RaidSession; hero
       <div class="rd-team">
         {mb ? (
           <button class={`rd-mate ${ms!.winner !== null && ms!.winner !== 0 ? 'down' : ''} ${watching ? 'on' : ''}`} onClick={() => (playBlip(), onWatch(!watching))}>
-            <b>{watching ? 'Back to your board' : raid.name(mate)}</b>
+            <b>{watching ? `Watching ${raid.name(mate)}` : raid.name(mate)}</b>
+            {watching && <span class="rd-mate-st">tap: back to yours</span>}
             {!watching && (
               <>
                 <span class="rd-mate-lp">{ms!.players[0].lp} LP</span>
@@ -509,10 +580,10 @@ function RaidHud({ rs, hero, shown, onWatch, onAssist }: { rs: RaidSession; hero
             <span class="rd-mate-st">left the raid</span>
           </span>
         )}
-        <button class={`rd-power ${canSomething ? 'ready' : ''}`} onClick={() => (playBlip(), onAssist())} aria-label={`Team Power ${raid.power[hero]} of ${POWER_MAX}`}>
+        <button class={`rd-power ${canSomething ? 'ready' : ''}`} onClick={() => (playBlip(), onAssist())} aria-label={`Team Power ${raid.power} of ${POWER_MAX}`}>
           <span class="rd-pips">
             {Array.from({ length: POWER_MAX }, (_, i) => (
-              <i key={i} class={i < raid.power[hero] ? 'on' : ''} />
+              <i key={i} class={i < raid.power ? 'on' : ''} />
             ))}
           </span>
           <b>{iFell ? 'Help' : 'Assist'}</b>
@@ -548,20 +619,35 @@ function AssistSheet({ rs, hero, onClose }: { rs: RaidSession; hero: Pid; onClos
         </div>
       </Sheet>
     );
+  const human = raid.plan?.heroes[mate].ctl !== 'cpu' && !raid.left[mate];
   return (
     <Sheet title="Team Power" onClose={onClose}>
       <div class="rd-pips big">
         {Array.from({ length: POWER_MAX }, (_, i) => (
-          <i key={i} class={i < raid.power[hero] ? 'on' : ''} />
+          <i key={i} class={i < raid.power ? 'on' : ''} />
         ))}
       </div>
-      <p class="so-dim so-center">{raid.power[hero] < POWER_MAX ? `${toNext} more damage fills the next one.` : 'Full! Spend it.'} Each assist costs 1.</p>
-      {(['gift', 'heal', 'strike'] as AssistKind[]).map((k) => (
-        <button key={k} class={`rd-assist ${k}`} disabled={k === 'gift' ? !raid.canAssist(hero, 'gift') : !raid.canAssist(hero, k)} onClick={() => (playBlip(), k === 'gift' ? setGift(true) : send(k))}>
-          <b>{ASSISTS[k].title}</b>
-          <span>{ASSISTS[k].text}</span>
-        </button>
-      ))}
+      <p class="so-dim so-center">{raid.power < POWER_MAX ? `${toNext} more damage from you fills the next one.` : 'Full! Spend it.'} You and {raid.name(mate)} share it.</p>
+      {(['revive', 'gift', 'heal', 'strike'] as AssistKind[]).map((k) => {
+        const why = raid.assistBlock(hero, k);
+        return (
+          <button key={k} class={`rd-assist ${k}`} disabled={!!why} onClick={() => (playBlip(), k === 'gift' ? setGift(true) : send(k))}>
+            <em>{ASSISTS[k].cost} Power</em>
+            <b>{ASSISTS[k].title}</b>
+            <span>{ASSISTS[k].text}</span>
+            {why && <small>{why}</small>}
+          </button>
+        );
+      })}
+      {human && (
+        <div class="rd-pings">
+          {(Object.keys(PINGS) as PingId[]).map((id) => (
+            <button key={id} onClick={() => (playBlip(), rs.send({ type: 'RAID_PING', hero, ping: id }), onClose())}>
+              {PINGS[id]}
+            </button>
+          ))}
+        </div>
+      )}
     </Sheet>
   );
 }
@@ -572,7 +658,7 @@ function Feed({ raid, hero }: { raid: Raid; hero: Pid }) {
   const [items, setItems] = useState<(FeedItem & { at: number })[]>([]);
   const last = raid.feed.length ? raid.feed[raid.feed.length - 1].n : 0;
   useEffect(() => {
-    const fresh = raid.feed.filter((f) => f.n > seen.current && !(f.kind === 'hit' && f.hero === hero) && f.kind !== 'stage' && f.kind !== 'rage');
+    const fresh = raid.feed.filter((f) => f.n > seen.current && !((f.kind === 'hit' || f.kind === 'ping') && f.hero === hero) && f.kind !== 'stage' && f.kind !== 'rage');
     seen.current = last;
     if (!fresh.length) return;
     const now = Date.now();
@@ -583,13 +669,19 @@ function Feed({ raid, hero }: { raid: Raid; hero: Pid }) {
     const t = setTimeout(() => setItems((cur) => cur.filter((x) => Date.now() - x.at < 2600)), 2700);
     return () => clearTimeout(t);
   }, [items]);
-  const you = (t: string) => t.replace(new RegExp(`^${raid.name(hero).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`), 'You');
+  // Callouts name you as "you" (two duelists with the same name: only your own deeds).
+  const you = (f: FeedItem) => {
+    const me = raid.name(hero);
+    if (!me || (me === raid.name(hero === 0 ? 1 : 0) && f.hero !== hero)) return f.text;
+    const t = f.text.split(me).join('you').replace(/^you strikes /, 'you strike ');
+    return t[0].toUpperCase() + t.slice(1);
+  };
   return (
     <div class="rd-feed" aria-live="polite">
       {items.map((f) => (
         <div key={f.n} class={`rd-toast ${f.kind}`}>
           {f.kind === 'hit' && <b class="rd-toast-n">-{f.amount}</b>}
-          <span>{you(f.text)}</span>
+          <span>{you(f)}</span>
         </div>
       ))}
     </div>
@@ -624,12 +716,25 @@ function StageBanner({ raid }: { raid: Raid }) {
 }
 
 /** Between fights: what you did, your boon pick, and who comes next. */
-function Intermission({ rs, hero }: { rs: RaidSession; hero: Pid }) {
+const AUTO_PICK = 30;
+
+function Intermission({ rs, hero, onLeave }: { rs: RaidSession; hero: Pid; onLeave: () => void }) {
   const raid = rs.raid;
   const mate = (hero === 0 ? 1 : 0) as Pid;
   const st = raid.stageDef()!;
   const next = raid.def!.stages[raid.stage + 1];
   const picked = raid.picks[hero];
+  // Nobody waits forever on a phone left on the table: the first boon is picked after 30 seconds.
+  const [left, setLeft] = useState(AUTO_PICK);
+  useEffect(() => {
+    if (picked) return;
+    setLeft(AUTO_PICK);
+    const t = window.setInterval(() => setLeft((n) => n - 1), 1000);
+    return () => clearInterval(t);
+  }, [picked, raid.stage]);
+  useEffect(() => {
+    if (!picked && left <= 0 && raid.offers[hero].length) rs.send({ type: 'RAID_BOON', hero, boon: raid.offers[hero][0] });
+  }, [left <= 0]);
   return (
     <div class="so raid">
       <div class="rd-inter">
@@ -654,6 +759,7 @@ function Intermission({ rs, hero }: { rs: RaidSession; hero: Pid }) {
             </button>
           ))}
         </div>
+        {!picked && left <= 15 && <p class="so-center so-dim rd-auto">Picks {BOONS[raid.offers[hero][0]]?.title} in {Math.max(0, left)}s</p>}
         {picked && raid.picks[mate] === null && !raid.left[mate] && <p class="so-center rd-wait">Waiting for {raid.name(mate)} to pick…</p>}
         {next && (
           <div class="rd-next">
@@ -673,6 +779,9 @@ function Intermission({ rs, hero }: { rs: RaidSession; hero: Pid }) {
             </span>
           </div>
         )}
+        <Btn onClick={onLeave}>
+          Leave the raid
+        </Btn>
       </div>
     </div>
   );
@@ -699,6 +808,12 @@ function RaidOver({ raid, hero, onDone }: { raid: Raid; hero: Pid; onDone: () =>
           </span>
         </div>
         <p class="so-dim so-center">damage dealt · ★ most damage</p>
+        <div class="rd-stats">
+          <span>Biggest hit {raid.best[hero].toLocaleString()}</span>
+          <span>Biggest hit {raid.best[mate].toLocaleString()}</span>
+          <span>Assists {raid.used[hero]}</span>
+          <span>Assists {raid.used[mate]}</span>
+        </div>
         <Btn kind="gold" onClick={onDone}>
           Continue
         </Btn>
