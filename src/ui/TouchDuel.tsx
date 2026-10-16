@@ -131,8 +131,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       // (a breath after the stage has faded away, then a full beat on the red board)
       t = setTimeout(() => {
         setKoOn(true);
-        t = setTimeout(() => setResultUp(true), 1500);
-      }, 250);
+        t = setTimeout(() => setResultUp(true), 1800);
+      }, 450);
     };
     wait();
     return () => clearTimeout(t);
@@ -594,7 +594,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          Tap a glowing monster{canDirect() ? ' or their portrait' : ''} to attack
+          Choose a target: tap a glowing monster{canDirect() ? ' or their portrait' : ''}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>

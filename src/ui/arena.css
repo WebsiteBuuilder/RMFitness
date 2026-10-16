@@ -471,13 +471,13 @@
   inset: 0;
   pointer-events: none;
   z-index: 6;
-  background: radial-gradient(ellipse at 50% 50%, transparent 30%, #3a000ccc 100%);
-  animation: ko-dim 1.4s ease-out both;
+  background: radial-gradient(ellipse at 50% 50%, #ff20300f 20%, #5a0012ee 100%);
+  animation: ko-dim 1.8s ease-out both;
 }
 @keyframes ko-dim {
-  0% { opacity: 0; background-color: #ffffff60; }
-  12% { opacity: 1; background-color: #ff304040; }
-  100% { opacity: 1; background-color: transparent; }
+  0% { opacity: 0; background-color: #ffffff70; }
+  10% { opacity: 1; background-color: #ff304058; }
+  100% { opacity: 1; background-color: #ff20300f; }
 }
 .duel.touch.ko-me .tbar.bottom,
 .duel.touch.ko-opp .tbar.top {
@@ -605,4 +605,27 @@
   .duel.touch .tresult-title {
     animation: none;
   }
+}
+
+/* choosing an attack target: each target wears a pulsing red reticle */
+.duel.touch .tz.pick:not(.empty)::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 10px;
+  border: 2px solid #ff4a5a;
+  box-shadow: 0 0 12px #ff3040aa;
+  pointer-events: none;
+  animation: aim-pulse 0.9s ease-in-out infinite;
+}
+@keyframes aim-pulse {
+  50% {
+    transform: scale(1.06);
+    opacity: 0.55;
+  }
+}
+.duel.touch .ttoast.aim {
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 0 14px #ff304066;
 }
