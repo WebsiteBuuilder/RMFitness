@@ -1232,6 +1232,15 @@ card('Double Summon');
   playSpell(e, 0, 'Double Summon');
   check(e.canNormalSummon(0, grab(e, 0, FILL)), 'activated after the Normal Summon: one more');
 }
+{
+  const e = duel(['Double Summon']);
+  playSpell(e, 0, 'Double Summon');
+  const ps = e.player(0);
+  const c = grab(e, 0, FILL);
+  e.apply({ type: 'SUMMON', player: 0, uid: c.uid, zone: ps.mz.findIndex((z) => z === null), pos: 'def', faceUp: false });
+  settle(e);
+  check(e.monsters(0).length === 1 && e.canNormalSummon(0, grab(e, 0, FILL)), 'activated first, then a Set: one Normal Summon is still left');
+}
 
 card('Draconnection');
 {

@@ -236,6 +236,8 @@ export interface EffectDef {
   lingering?: {
     shields?(e: Engine, owner: Pid, target: FieldCard, how: 'battle' | 'effect' | 'target'): boolean;
     onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
+    /** a monster Normal Set by `controller` this turn */
+    onAnySet?(e: Engine, owner: Pid, m: FieldCard, controller: Pid): Step;
     attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
     afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
     /** audit-10: fewer Tributes for `owner`'s face-up Normal Summon of `monster` this turn (Vampire Sorcerer). */

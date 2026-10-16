@@ -1822,6 +1822,12 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         fx(e).doubleSummonLeft = undefined;
         e.player(owner).normalSummoned = false;
       },
+      // a Set uses the first Normal Summon/Set too: the second one is still there
+      *onAnySet(e, owner, _m, controller) {
+        if (controller !== owner || fx(e).doubleSummonLeft !== owner) return;
+        fx(e).doubleSummonLeft = undefined;
+        e.player(owner).normalSummoned = false;
+      },
     },
   };
 

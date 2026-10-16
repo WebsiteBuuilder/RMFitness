@@ -2456,6 +2456,8 @@ export class Engine {
       if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
     } else {
       this.log(player, `${ps.name} Set a monster`);
+      // "this turn, ..." effects that count a Normal Set (Double Summon's second Normal Summon or Set)
+      if (this.speed) for (const l of this.lingering()) if (l.eff.lingering?.onAnySet) yield* l.eff.lingering.onAnySet(this, l.p, fc, player);
       for (const x of this.liveST()) if (x.eff.onAnySet && this.fieldCard(uid)) yield* this.trig(x.c.uid, x.p, this.as(x.p, x.eff.onAnySet(this, x.c, x.p, fc, player)));
       // audit-00: face-up monsters watch Sets too (Arcana Force III - The Empress).
       if (this.speed)
