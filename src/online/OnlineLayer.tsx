@@ -230,7 +230,7 @@ function FriendsPage() {
   const close = () => o.openPanel(false);
   // Android back closes the page
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (e.preventDefault(), close());
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
