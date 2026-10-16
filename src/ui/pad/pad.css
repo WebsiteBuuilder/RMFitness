@@ -170,7 +170,7 @@
 }
 /* in a duel, controller notes sit mid-board, clear of both life bars */
 .pad-duel .pad-toast {
-  top: 40%;
+  top: calc(env(safe-area-inset-top, 0px) + 132px);
 }
 .pad-duel .pad-hints.show.dim:not(.guide):not(.under) {
   opacity: 0.3;
@@ -261,7 +261,7 @@
 /* aiming with a controller: the target note sits on the turn row, clear of your Life Points */
 .pad-on .duel.touch .ttoast.aim {
   position: fixed;
-  top: 46%;
+  top: calc(env(safe-area-inset-top, 0px) + 96px);
   bottom: auto;
   left: 50%;
   translate: -50% 0;

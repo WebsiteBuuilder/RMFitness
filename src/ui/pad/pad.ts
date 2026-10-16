@@ -153,7 +153,7 @@ function candidates(): Cand[] {
 function scan(): Cand[] {
   const all = scanAll();
   // a result screen, sheet or keyboard over everything: the ring stays on it
-  const modal = [...document.querySelectorAll('.tresult, .csheet-back, .tsheet, .overlay, .pad-kb')].pop();
+  const modal = [...document.querySelectorAll('.tresult, .csheet-back, .tsheet, .overlay, .pad-kb, .duel .tphase-menu')].pop();
   if (modal) {
     const inside = all.filter((x) => modal.contains(x.el));
     // (a sheet asking for a card on the field keeps those cards in reach)
@@ -278,7 +278,8 @@ function validate(force = false) {
     const sig = (layer.firstElementChild?.textContent ?? '').slice(0, 80);
     if (layerSig.get(layer) !== sig) {
       layerSig.set(layer, sig);
-      layerTries.delete(layer);
+      // (a count in its title moved, 1/2 → 2/2, with the ring still in it: not a new question)
+      if (!(focused?.isConnected && layer.contains(focused))) layerTries.delete(layer);
     }
     const tries = layerTries.get(layer) ?? 0;
     // (one that is still sliding in gets a few more looks; then it is left alone)
@@ -365,6 +366,7 @@ function firstStop(c: Cand[]): Cand {
   // (below the top bar: it ends by ~100px)
   const below = (x: Cand) => x.box.bottom > Math.min(innerHeight * 0.12, 100);
   return (
+    order.find((x) => x.el.matches('.rematch-go')) ??
     order.find((x) => x.el.matches(PRIMARY) && plain(x)) ??
     order.find((x) => x.el.matches(CONTENT) && below(x) && plain(x)) ??
     order.find((x) => below(x) && plain(x)) ??
@@ -534,6 +536,20 @@ function press() {
   }
   const before = new Set(candidates().map((x) => x.el));
   tap(el);
+  if (el.matches('.topt')) {
+    const sheet = el.closest('.tsheet, .csheet-back');
+    return void setTimeout(() => {
+      if (!sheet?.isConnected || !el.isConnected) return void validate(true);
+      const ok = [...sheet.querySelectorAll<HTMLButtonElement>('.tbtn.main, .csheet-ok')].find((b) => !b.disabled);
+      const [n, max] = (sheet.querySelector('.tsheet-count')?.textContent ?? '').split('/').map(Number);
+      // all picked (2/2), or a one-pick sheet: on to OK
+      if (ok && el.matches('.on') && (!max || n >= max)) return void setFocus(ok);
+      if (!el.matches('.on')) return;
+      const opts = [...sheet.querySelectorAll<HTMLElement>('.topt')];
+      const next = opts.slice(opts.indexOf(el as HTMLElement) + 1).find((o) => !o.matches('.on')) ?? opts.find((o) => !o.matches('.on'));
+      if (next) setFocus(next);
+    }, 90);
+  }
   if (el.matches('.rv:not(.up)')) {
     return void setTimeout(() => {
       const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up)')][0];
@@ -732,7 +748,7 @@ function onButton(b: Btn) {
             if (ph.isConnected && ph.matches('.tphase-btn:not([disabled])') && !document.querySelector('.duel .tphase-menu')) ph.click();
             setTimeout(() => validate(true), 60);
           }, 140);
-        } else say(document.querySelector('.duel.turn-me') ? 'Finish what the duel is asking first' : "It's the other duelist's turn");
+        } else say(!document.querySelector('.duel.turn-me') ? "It's the other duelist's turn" : document.querySelector('.duel .tsheet, .duel .csheet-back') ? 'Answer the question first' : 'One moment…');
         setTimeout(() => validate(true), 60);
       }, delay);
       return;
@@ -800,6 +816,7 @@ function hintList(): Hint[] {
   if (document.querySelector('.art-skip.on')) return [[['a'], 'Skip (hold: all)']];
   if (kbOpen()) return [[['a'], 'Type'], [['x'], 'Delete'], [['y'], 'Caps'], [['start'], 'Done'], [['b'], 'Close']];
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
+  if (document.querySelector('.duel .tresult')) return [[['a'], 'Select']];
   if (document.querySelector('.duel')) {
     out[0][1] = aLabel();
     if (document.querySelector('.duel .ttoast.aim')) return [out[0], [['b'], 'Cancel'], [['y'], 'Text']];
