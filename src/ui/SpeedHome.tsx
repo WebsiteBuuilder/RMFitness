@@ -192,6 +192,7 @@ export function SpeedHome({
   onControls,
   onSolo,
   onTag,
+  onRaid,
   onExit,
   go,
   cpus,
@@ -212,6 +213,7 @@ export function SpeedHome({
   onControls: () => void;
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends') => void;
   onTag?: () => void;
+  onRaid?: () => void;
   onExit: () => void;
   go: (to: HomeGo) => void;
   /** computer duelists' record names, for the chip help's "still to win today" */
@@ -320,6 +322,7 @@ export function SpeedHome({
               <Tile size="half" art="Dark Magician" fy={22} title="Link Battle" sub="Rooms, friends or one phone" onPick={() => go('link')} />
               <Tile size="half" art="Blue-Eyes White Dragon" title="VS Computer" sub="Counts for your record" onPick={() => go('cpu')} />
             </div>
+            {onRaid && <Tile art="Raviel, Lord of Phantasms" fy={24} title="Boss Raid" sub="Team up with your brother: two boards, one boss" onPick={onRaid} />}
             <FriendsRow />
             {onTag && <Row label="Tag Duel" note="2v2 and the Tag Road" onPick={onTag} />}
           </>

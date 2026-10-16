@@ -1379,6 +1379,26 @@ export class Engine {
     this.log(player, `${ps.name} gains ${amount} LP (${ps.lp} LP)`);
   }
 
+  /**
+   * Boss Raid: a card arrives from outside the duel (a teammate's gift, a raging boss), either
+   * face-up in Attack Position in the first open Monster Zone or into the hand. Null if there is no room.
+   */
+  conjure(p: Pid, name: string, to: 'mz' | 'hand'): Card | null {
+    const ps = this.player(p);
+    if (to === 'hand') {
+      const c = this.newCard(name, p);
+      ps.hand.push(c);
+      this.event('draw', { uid: c.uid, player: p, effect: true });
+      return c;
+    }
+    const z = this.freeMonsterZone(p);
+    if (z < 0 || this.info(name).kind !== 'monster') return null;
+    const fc = this.toField(this.newCard(name, p), 'atk', true);
+    ps.mz[z] = fc;
+    this.event('summon', { uid: fc.uid, player: p, how: 'special' });
+    return fc;
+  }
+
   payLp(player: Pid, amount: number) {
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     const ps = this.player(player);

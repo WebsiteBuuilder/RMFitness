@@ -105,6 +105,7 @@ export function SpeedHub({
   onControls,
   onSolo,
   onTag,
+  onRaid,
   profile,
   save,
   onSave,
@@ -119,6 +120,8 @@ export function SpeedHub({
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends') => void;
   /** 2v2 Tag Duels and the Tag Road */
   onTag?: () => void;
+  /** Boss Raid: you and your brother against the bosses */
+  onRaid?: () => void;
   profile: Profile;
   save: SpeedSave;
   onSave: (s: SpeedSave) => void;
@@ -207,6 +210,7 @@ export function SpeedHub({
         onControls={onControls}
         onSolo={onSolo}
         onTag={onTag}
+        onRaid={onRaid}
         onExit={onExit}
         go={setSub}
         cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))}
