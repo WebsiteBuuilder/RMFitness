@@ -270,7 +270,7 @@ card('A Hero Emerges');
   e.rand = () => 0;
   oppBattle(e);
   attack(e, elf, null, { respond: 'A Hero Emerges' });
-  check(e.monsters(0).some((m) => m.name === FILL), 'when attacked: a random monster from the hand is Special Summoned');
+  check(e.state.log.some((l) => l.text.includes(`Special Summoned ${FILL}`)), 'when attacked: a random monster from the hand is Special Summoned (the attack is then replayed)');
   const e2 = duel(['A Hero Emerges', 'Pot of Greed'], ['Gemini Elf']);
   putST(e2, 0, 'A Hero Emerges');
   clearHand(e2, 0);

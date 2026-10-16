@@ -1490,7 +1490,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
     *resolve(e, _l, p) {
       ((e.state.fx.noOppDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
-      e.log(p, `${e.player(p).name} takes no damage this turn`);
+      e.log(p, `Damage ${e.player(p).name} takes from the opponent's cards becomes 0 this turn`);
     },
   };
 

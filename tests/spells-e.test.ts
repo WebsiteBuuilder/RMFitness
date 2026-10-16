@@ -481,9 +481,10 @@ card("Magician's Circle");
   const mm = place(e, 1, 'Madolche Magileine')!;
   toBattle(e);
   attack(e, mm, null, { respond: "Magician's Circle" });
-  const mine = e.monsters(0).find((m) => m.name === 'Madolche Magileine');
+  // the attack is then replayed into the new monster, so read the Summons from the log
+  const mine = e.state.log.some((l) => l.text === 'A Special Summoned Madolche Magileine in Attack Position');
   const theirs = e.monsters(1).find((m) => m.name === 'Dark Magician Girl');
-  check(!!mine && !!theirs && mine.pos === 'atk' && theirs.pos === 'atk', 'a Spellcaster attacks: each player Special Summons a 2000-or-less ATK Spellcaster from the Deck in Attack Position');
+  check(mine && !!theirs && theirs.pos === 'atk', 'a Spellcaster attacks: each player Special Summons a 2000-or-less ATK Spellcaster from the Deck in Attack Position');
 }
 
 card('Magicians Unite');

@@ -1042,6 +1042,33 @@ section('Premature Return: only a hand card that leaves a monster to bring back'
   check(zone(e, elf) === 'mz', 'the banished monster comes back');
 }
 
+section('Battle replay: a monster Summoned in response changes the attack');
+{
+  const e = duel(['Call of the Haunted', 'Blue-Eyes White Dragon'], ['Battle Ox']);
+  toGY(e, 0, 'Blue-Eyes White Dragon');
+  putST(e, 0, 'Call of the Haunted');
+  theirTurn(e);
+  const ox = place(e, 1, 'Battle Ox')!;
+  toBattle(e);
+  e.apply({ type: 'ATTACK', player: 1, uid: ox.uid, target: null });
+  let replay = '';
+  for (let i = 0; i < 40 && e.state.prompt; i++) {
+    const pr = e.state.prompt;
+    if (pr.kind === 'select' && pr.title.startsWith('Replay:')) {
+      replay = pr.options.map((o) => o.label).join('/');
+      e.apply({ type: 'CANCEL', player: pr.player } as any);
+    } else if (pr.kind === 'response') {
+      const k = pr.player === 0 ? pr.options.findIndex((o) => o.label.startsWith('Call of the Haunted')) : -1;
+      e.apply(k >= 0 ? { type: 'CHOOSE', player: 0, picks: [k] } : { type: 'PASS', player: pr.player });
+    } else if (pr.kind === 'select') {
+      const k = pr.options.findIndex((o) => o.label === 'Blue-Eyes White Dragon');
+      e.apply({ type: 'CHOOSE', player: pr.player, picks: [Math.max(0, k)] });
+    } else e.apply({ type: 'NO', player: pr.player });
+  }
+  check(replay === 'Blue-Eyes White Dragon', `the attacker is asked again and may only attack Blue-Eyes (offered: ${replay})`);
+  check(lp(e, 0) === 4000 && zone(e, ox) === 'mz', 'stopping the replayed attack: no damage');
+}
+
 /** Cards whose script this audit corrected (each has a check above that failed before the fix). */
 const FIXED = ['Book of Moon', 'Breakthrough Skill', 'Dust Tornado', 'Metalmorph', 'Graceful Dice', 'Skull Dice', 'Spellbinding Circle', 'Eternal Rest', 'The Shallow Grave', ...RITUALS.map((r) => r[0])];
 console.log(`\nA: ${checked.size} cards checked, ${FIXED.length} fixed`);

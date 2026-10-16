@@ -388,6 +388,14 @@ function rankOptions(e: Engine, me: Pid, title: string, options: Extract<Prompt,
       const opp = other(me);
       return [...e.player(opp).deck, ...e.player(opp).hand].filter((c) => c.name === name).length * 1000 - [...e.player(me).hand].filter((c) => c.name === name).length;
     }
+    // Battle replay: attack directly if it can, else the target it beats with the least risk; never into a loss.
+    if (/^Replay: /.test(title)) {
+      const a = e.state.battle ? e.fieldCard(e.state.battle.attacker) : null;
+      if (o.value === 'direct') return 1e6;
+      if (!a || !fc) return BAD;
+      const w = fc.faceUp ? (fc.pos === 'atk' ? e.atkOf(fc) : e.defOf(fc)) : 1500;
+      return e.atkOf(a) > w ? 10000 + w : BAD + w;
+    }
     if (/^Ritual:/.test(title)) return (info.level ?? 1) * 1000 - power; // high Level, low value
     if (/Fusion Summon which/i.test(title)) return power;
     // Equip Cards: boosts on our monsters, curses on theirs.
