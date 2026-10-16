@@ -214,11 +214,12 @@ async function build(name: string): Promise<ArtData> {
   let full: HTMLCanvasElement;
   try {
     if (!url) throw new Error('no image');
-    const img = await loadImage(url);
-    await img.decode?.().catch(() => {});
-    full = canvas(img.naturalWidth || 300, img.naturalHeight || 437);
+    // decoded off the page where the browser can (createImageBitmap from the file), so drawing it is a copy
+    const img = await decoded(url);
+    full = canvas(img.width || 300, img.height || 437);
     // CPU-backed (willReadFrequently): the reads of this art below and in artTame never stall on the GPU
     full.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, full.width, full.height);
+    if ('close' in img) img.close();
   } catch {
     full = drawnCard(name);
   }
@@ -261,6 +262,23 @@ function pxOff(url: string, n: number): Promise<Uint8ClampedArray | undefined> {
     pxWaiting.set(id, ok);
     pxWorker!.postMessage({ id, url: new URL(url, location.href).href, n });
   });
+}
+
+/** The picture at `url`, decoded: an ImageBitmap (decoded off the page) or, where that can't be, a decoded <img>. */
+async function decoded(url: string): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await createImageBitmap(await r.blob());
+    } catch {
+      /* the <img> way below */
+    }
+  }
+  const img = await loadImage(url);
+  await img.decode?.().catch(() => {});
+  img.width ||= img.naturalWidth;
+  img.height ||= img.naturalHeight;
+  return img;
 }
 
 /** `src` drawn at n×n on a CPU-backed canvas and read back (undefined if that fails). */

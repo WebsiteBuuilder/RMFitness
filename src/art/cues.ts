@@ -101,11 +101,42 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
  */
 function live(c: CardRef, host: HTMLElement | null): CardRef {
   let last = c.rect;
+  // the stage reads this every frame: the card's element is kept while it stays on the page,
+  // and a read within the same frame gives the same answer without measuring again
+  let el: HTMLElement | null = null;
+  let at = -1;
   return Object.defineProperty(c, 'rect', {
     enumerable: true,
     configurable: true,
-    get: () => (last = rectOf(c.uid, host ?? (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'))) ?? last),
+    get: () => {
+      if (typeof document === 'undefined') return last;
+      const now = performance.now();
+      if (now - at < 12) return last;
+      at = now;
+      if (!el?.isConnected || el.dataset.uid !== String(c.uid)) el = zoneEl(c.uid);
+      const h = host ?? stageHost();
+      if (!el || !h) return last;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0) return last;
+      const hr = hostRect(h, now);
+      return (last = { x: r.left - hr.left + r.width / 2, y: r.top - hr.top + r.height / 2, w: r.width, h: r.height });
+    },
   });
+}
+
+let stageEl: HTMLElement | null = null;
+const stageHost = () => (stageEl?.isConnected ? stageEl : (stageEl = document.querySelector<HTMLElement>('.art-stage')));
+/** The host's place, measured once a frame for every card that asks. */
+let hostAt = -1;
+let hostOf: HTMLElement | null = null;
+let hostBox: DOMRect | null = null;
+function hostRect(h: HTMLElement, now: number): DOMRect {
+  if (hostOf !== h || now - hostAt >= 12 || !hostBox) {
+    hostOf = h;
+    hostAt = now;
+    hostBox = h.getBoundingClientRect();
+  }
+  return hostBox;
 }
 
 /** Cards that leave the field after event `i`, before the next activation (what that effect destroyed). */
