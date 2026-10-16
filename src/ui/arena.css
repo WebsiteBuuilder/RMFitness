@@ -457,13 +457,13 @@
 /* (the shake moves the field with `translate` alone, next to the finished swing-in it keeps in its list:
    swapping the animation list restarted the swing-in, whose first frame hid the whole field) */
 .duel.touch.armed.ko .tmat {
-  animation: tmat-in 0.75s cubic-bezier(.2, .8, .2, 1) backwards, ko-shake 0.5s cubic-bezier(.36, .07, .19, .97);
+  animation: tmat-in 0.75s cubic-bezier(.2, .8, .2, 1) backwards, ko-shake 0.6s cubic-bezier(.36, .07, .19, .97);
 }
 @keyframes ko-shake {
-  10%, 90% { translate: -2px 1px; }
-  20%, 80% { translate: 4px -2px; }
-  30%, 50%, 70% { translate: -7px 3px; }
-  40%, 60% { translate: 7px -3px; }
+  10%, 90% { translate: -3px 1px; }
+  20%, 80% { translate: 6px -2px; }
+  30%, 50%, 70% { translate: -9px 3px; }
+  40%, 60% { translate: 9px -3px; }
 }
 .duel.touch.ko .tboard::after {
   content: '';
@@ -487,6 +487,16 @@
 .duel.touch.ko-opp .tbar.top .tlp {
   color: #ff5a6a;
   text-shadow: 0 0 12px #ff2a40;
+}
+/* ...and on the beat itself, the fallen 0 throbs three times */
+.duel.touch.ko.ko-me .tbar.bottom .tlp,
+.duel.touch.ko.ko-opp .tbar.top .tlp {
+  animation: ko-lp 0.36s ease-in-out 4 alternate;
+}
+@keyframes ko-lp {
+  to {
+    transform: scale(1.25);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .duel.touch.armed.ko .tmat {
@@ -591,14 +601,8 @@
     text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
   }
 }
-.duel.touch .tresult p,
-.duel.touch .tresult .tbtns {
-  animation: field-ui-in 0.35s 0.45s ease-out backwards;
-}
 @media (prefers-reduced-motion: reduce) {
-  .duel.touch .tresult-title,
-  .duel.touch .tresult p,
-  .duel.touch .tresult .tbtns {
+  .duel.touch .tresult-title {
     animation: none;
   }
 }

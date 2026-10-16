@@ -125,8 +125,11 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const t0 = Date.now();
     const wait = () => {
       if (document.body.classList.contains('art-on') && Date.now() - t0 < 20000) return void (t = setTimeout(wait, 100));
-      setKoOn(true);
-      t = setTimeout(() => setResultUp(true), 1300);
+      // (a breath after the stage has faded away, then a full beat on the red board)
+      t = setTimeout(() => {
+        setKoOn(true);
+        t = setTimeout(() => setResultUp(true), 1500);
+      }, 250);
     };
     wait();
     return () => clearTimeout(t);
@@ -147,7 +150,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
   // (a tag duel: while your teammate is in, it's their turn, by name)
-  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.toUpperCase()}'S TURN`;
+  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) showBanner('DUEL!', 'duel', 1300, turnWho);
