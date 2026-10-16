@@ -202,8 +202,9 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   const r = new Raid();
   r.apply({ type: 'RAID_START', plan: planOf('kingdom', 77) });
   const st = r.boards[0]!.engine.state;
-  const len = st.log.length;
-  r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'SURRENDER', player: 0 }, at: len - 1 });
+  void st;
+  r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 }, at: 0 });
+  r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'SURRENDER', player: 0 }, at: 0 });
   ok(r.running(0), 'a move made against an older board is dropped');
   for (const b of [0, 1] as Pid[]) {
     r.boards[b]!.engine.damage(0, 99999);

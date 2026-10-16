@@ -208,6 +208,8 @@ export interface RaidBoard {
   lastFoeLp: number;
   /** the damage the enemy had taken (not paid as a cost) when the pool was last settled */
   lastHurt: number;
+  /** moves applied to this board (a move names the count it was made at; stale ones are dropped) */
+  moves: number;
   /** things waiting to appear on the enemy's side when the board is between moves */
   pending: { name: string; to: 'mz' | 'hand' }[];
 }
@@ -378,7 +380,8 @@ export class Raid {
         const x = this.boards[m.b];
         if (!x || this.phase !== 'duel') return;
         // A move made against an older state of the board (queued while offline, a double tap) is dropped.
-        if (m.at !== undefined && m.at !== x.engine.state.log.length) return;
+        if (m.at !== undefined && m.at !== x.moves) return;
+        x.moves++;
         this.moves++;
         try {
           if (x.engine.state.winner === null) x.engine.apply(m.a);
@@ -463,7 +466,7 @@ export class Raid {
       const first: Pid = boon === 'first' ? 0 : rng(seed ^ 0x51ed)() < 0.5 ? 0 : 1;
       const engine = new Engine(this.db);
       engine.apply({ type: 'START', first, seed, mode: 'speed', names: [hero.name, foe.name], decks: [hero.main, fd.main], fusions: [hero.extra, fd.extra], skills: [hero.skill, foe.skill], setup: [heroSetup, foeSetup] });
-      this.boards[b] = { b, engine, foe, lastFoeLp: engine.state.players[1].lp, lastHurt: 0, pending: [] };
+      this.boards[b] = { b, engine, foe, lastFoeLp: engine.state.players[1].lp, lastHurt: 0, moves: 0, pending: [] };
     }
     this.carry = [null, null];
     this.push('stage', null, st.boss ? `${duelistById(this.def!.boss)!.name} appears!` : `${st.label}: ${st.note ?? ''}`.trim());
@@ -494,6 +497,12 @@ export class Raid {
     }
     this.syncPool();
     this.check();
+  }
+
+  /** Your teammate hit just now: a hit from you lands a combo. */
+  comboReady(hero: Pid): boolean {
+    const mate = (hero === 0 ? 1 : 0) as Pid;
+    return this.phase === 'duel' && this.running(hero) && this.moves - this.lastHit[mate] <= COMBO_WINDOW;
   }
 
   /** Hits from both brothers close together: the second one lands 30% harder. */

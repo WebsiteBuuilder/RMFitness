@@ -469,19 +469,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
-  border-radius: 14px;
+  padding: 5px 11px;
+  border-radius: 12px;
   background: rgba(6, 18, 36, 0.92);
   border: 1px solid rgba(62, 197, 255, 0.6);
   color: #eef2ff;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
   animation: rd-toast 2.6s ease-out forwards;
   text-align: center;
 }
 .rd-toast-n {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: #ff6a6a;
   text-shadow: 0 2px 0 #000;
@@ -778,6 +778,29 @@
 }
 .rd-toast.combo {
   border-color: #f2c14e;
-  font-size: 16px;
+  font-size: 14px;
   box-shadow: 0 0 22px rgba(242, 193, 78, 0.5);
+}
+.rd-combo {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #f2c14e;
+  color: #2a1a00;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  animation: rd-combo 0.9s ease-in-out infinite alternate;
+}
+@keyframes rd-combo {
+  from {
+    box-shadow: 0 0 0 rgba(242, 193, 78, 0);
+  }
+  to {
+    box-shadow: 0 0 12px rgba(242, 193, 78, 0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-combo {
+    animation: none;
+  }
 }

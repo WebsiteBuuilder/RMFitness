@@ -286,7 +286,7 @@ export interface RaidEnd {
 /** A board as the duel screen sees it: moves go into the raid's log for that board. */
 function boardSession(rs: RaidSession, b: Pid): DuelSession {
   const board = rs.raid.boards[b]!;
-  return { engine: board.engine, adapter: { roomCode: null }, send: (a: Action) => rs.send({ type: 'RAID_MOVE', b, a, at: board.engine.state.log.length }) } as unknown as DuelSession;
+  return { engine: board.engine, adapter: { roomCode: null }, send: (a: Action) => rs.send({ type: 'RAID_MOVE', b, a, at: board.moves }) } as unknown as DuelSession;
 }
 
 /** A board's state key: the view only changes when the board does (the duel screen's double-tap guard relies on it). */
@@ -319,7 +319,9 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
   const hero = (raid.heroOf(phone) ?? 0) as Pid;
   const mate = (hero === 0 ? 1 : 0) as Pid;
   /** the fight whose end this phone has seen (Continue on the result) */
-  const [ack, setAck] = useState(-1);
+  const [ack, setAck] = useState('');
+  /** this fight, counting a retry as a new one */
+  const fight = `${raid.stage}:${raid.retries}`;
   const [watchMate, setWatchMate] = useState(false);
   const [askLeave, setAskLeave] = useState(false);
   const [assist, setAssist] = useState(false);
@@ -332,7 +334,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
   useBack(() => setAskLeave((x) => !x));
 
   // Each new fight starts on your own board.
-  useEffect(() => setWatchMate(false), [raid.stage]);
+  useEffect(() => setWatchMate(false), [fight]);
 
   useComputers(rs, phone, shownBoard);
   useAway(rs, hero, phone);
@@ -353,7 +355,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
   const myRunning = !!mine && !myOver;
   let show: Pid | null = null;
   if (myRunning && !watchMate) show = hero;
-  else if (mine && myOver && ack < raid.stage && !watchMate) show = hero;
+  else if (mine && myOver && ack !== fight && !watchMate) show = hero;
   else if (!fightOver && theirs && (watchMate || myOver)) show = mate;
   else if (myRunning) show = hero;
   shownBoard.current = show;
@@ -372,7 +374,7 @@ export function RaidPlay({ rs, phone, controlsFor, onControls, onEnd }: { rs: Ra
     const watching = show !== hero;
     return (
       <div class="rd-play">
-        <BoardDuel key={`${raid.stage}:${show}`} rs={rs} b={show} watching={watching} controlsFor={controlsFor} onControls={onControls} onLeave={() => setAskLeave(true)} onFinished={() => (watching ? setWatchMate(false) : setAck(raid.stage))} />
+        <BoardDuel key={`${fight}:${show}`} rs={rs} b={show} watching={watching} controlsFor={controlsFor} onControls={onControls} onLeave={() => setAskLeave(true)} onFinished={() => (watching ? setWatchMate(false) : setAck(fight))} />
         <RaidHud rs={rs} hero={hero} shown={show} onWatch={(w) => setWatchMate(w)} onAssist={() => setAssist(true)} />
         <Feed raid={raid} hero={hero} />
         <StageBanner raid={raid} />
@@ -466,7 +468,7 @@ function useComputers(rs: RaidSession, phone: Pid, shown: { current: Pid | null 
       const quick = a.type === 'NEXT_PHASE' || a.type === 'PASS' || a.type === 'CHOOSE';
       const pace = stuck ? 250 : onScreen ? cpuDelay(a, { sinceTurn: Date.now() - turnAt.current[b].at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() }) : quick ? 300 : 800;
       const timer: Timer = { key, fired: false, tries: stuck, cancel: () => {} };
-      const at = st.log.length;
+      const at = x.moves;
       const send = () => {
         timer.fired = true;
         rs.send({ type: 'RAID_MOVE', b, a, at });
@@ -573,6 +575,7 @@ function RaidHud({ rs, hero, shown, onWatch, onAssist }: { rs: RaidSession; hero
           <button class={`rd-mate ${ms!.winner !== null && ms!.winner !== 0 ? 'down' : ''} ${watching ? 'on' : ''}`} onClick={() => (playBlip(), onWatch(!watching))}>
             <b>{watching ? `Watching ${raid.name(mate)}` : raid.name(mate)}</b>
             {watching && <span class="rd-mate-st">tap: back to yours</span>}
+            {!watching && raid.comboReady(hero) && <span class="rd-combo">COMBO READY</span>}
             {!watching && (
               <>
                 <span class="rd-mate-lp">{ms!.players[0].lp} LP</span>
@@ -684,7 +687,7 @@ function Feed({ raid, hero }: { raid: Raid; hero: Pid }) {
         if (same) out = out.map((x) => (x === same ? { ...x, times: (x.times ?? 1) + 1, at: now } : x));
         else out.push({ ...f, at: now });
       }
-      return out.slice(-3);
+      return out.slice(-2);
     });
   }, [last]);
   useEffect(() => {
@@ -716,7 +719,7 @@ function Feed({ raid, hero }: { raid: Raid; hero: Pid }) {
 function StageBanner({ raid }: { raid: Raid }) {
   const [show, setShow] = useState<{ k: string; big: string; small: string } | null>(null);
   const st = raid.stageDef()!;
-  const key = `${raid.stage}`;
+  const key = `${raid.stage}:${raid.retries}`;
   useEffect(() => {
     const boss = duelistById(raid.def!.boss)!;
     // after the duel's own "DUEL!" banner
