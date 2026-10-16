@@ -147,6 +147,15 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
   const prev = useRef<{ places: Map<number, Where>; snaps: Map<string, Snap>; key: string } | null>(null);
   const seat = useRef(acting);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /** The screen's layout changed (a resize): measure every card at the next move. */
+  const stale = useRef(true);
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => (stale.current = true));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // The field swings into place as the duel opens (arena.css tmat-in): measure again once it has settled.
   useLayoutEffect(() => {
     const t = setTimeout(() => {
@@ -166,10 +175,24 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     let key = '';
     places.forEach((w, uid) => (key += `${uid}${w}`));
     if (prev.current?.key === key && seat.current === acting) return;
-    const snaps = new Map<string, Snap>();
-    el.querySelectorAll('[data-uid]').forEach((n) => snaps.set(`u${(n as HTMLElement).dataset.uid}`, snapOf(n)));
-    el.querySelectorAll('[data-pile]').forEach((n) => snaps.set((n as HTMLElement).dataset.pile!, snapOf(n)));
     const before = prev.current;
+    const snaps = new Map<string, Snap>();
+    // Measured again: the hands (they shift with every card in or out), the cards that moved
+    // and the piles; a card still in its field zone keeps its place from last time (the zones
+    // are a fixed grid; on a resize, everything again).
+    const all = !before || seat.current !== acting || stale.current;
+    stale.current = false;
+    el.querySelectorAll('[data-uid]').forEach((n) => {
+      const uid = Number((n as HTMLElement).dataset.uid);
+      const k = `u${uid}`;
+      const w = places.get(uid);
+      const kept = all || !w || !onField(w) || w !== before!.places.get(uid) ? null : before!.snaps.get(k);
+      if (!kept) return void snaps.set(k, snapOf(n));
+      // (a card can turn face-up where it stands: its picture is read again, its place is not)
+      const img = n.querySelector('img.cimg') as HTMLImageElement | null;
+      snaps.set(k, { rect: kept.rect, face: img?.src ?? '', def: !!n.querySelector('.fcard.def') });
+    });
+    el.querySelectorAll('[data-pile]').forEach((n) => snaps.set((n as HTMLElement).dataset.pile!, snapOf(n)));
     prev.current = { places, snaps, key };
     // A new duel (or a seat swap on one phone): start fresh, dealing the opening hands.
     const fresh = !before || seat.current !== acting;
