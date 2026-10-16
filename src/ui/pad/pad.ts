@@ -54,6 +54,8 @@ const layerSig = new WeakMap<Element, string>();
 /** the ring has been on your hand since this duel began */
 let handSeen = false;
 let cameFrom: { el: Element; x: number; y: number } | null = null;
+/** the menu the ring was in (its choices can change under it: Flip all → Open another) */
+let inMenu: Element | null = null;
 let artHeld = false;
 let hintsAt = 0;
 
@@ -161,7 +163,8 @@ function scan(): Cand[] {
     // an empty zone on the board is only a stop while it can be picked
     if (el.matches(EMPTY_ZONE)) continue;
     // (greyed-out choices are skipped, like Master Duel's menus)
-    if ((el as HTMLButtonElement).disabled || el.matches('.menu-item.off')) continue;
+    // (a locked chapter or legend is still a stop: you can look at it)
+    if (((el as HTMLButtonElement).disabled && !el.matches('.locked')) || el.matches('.menu-item.off')) continue;
     const box = rectOf(el);
     if (!reachable(el, box)) continue;
     // a whole board or backdrop that takes taps isn't a button (unless it's all there is: "tap to start")
@@ -199,6 +202,7 @@ function setFocus(el: Element | null, scroll = true) {
   focused = el;
   if (!el) return;
   el.classList.add('pad-focus');
+  inMenu = el.closest('.menu');
   if (el.matches(HAND)) handSeen = true;
   if (screenSig && !el.closest(TABS)) {
     placeOn.set(screenSig, labelOf(el));
@@ -271,6 +275,8 @@ function validate(force = false) {
     const ae = document.activeElement;
     const pick =
       inside.find((x) => x.el === ae && !x.el.matches(CLOSE)) ??
+      // the choice the ring was on went away, its menu stayed (Flip all → Open another)
+      (inMenu && layer.contains(inMenu) && !focused?.isConnected ? inside.find((x) => inMenu!.contains(x.el) && !risky(x.el)) : undefined) ??
       // choosing an attack target: straight to the targets
       (picks.length && (layer.matches('.ttoast.aim') || inside.every((x) => /^\W*(cancel|back)\s*$/i.test(x.el.textContent ?? ''))) ? picks[nearest(lastX, lastY, picks.map((x) => x.box))] : undefined) ??
       // a list of cards to choose from: the first card
@@ -291,6 +297,13 @@ function validate(force = false) {
   }
   const c = candidates();
   if (!c.length) return setFocus(null);
+  // the choice went away but its menu is still there: its new first choice
+  if (inMenu?.isConnected && !cameFrom?.el.isConnected && c.filter((x) => known.has(x.el)).length >= c.length * 0.4) {
+    const menu = inMenu;
+    const same = c.filter((x) => menu.contains(x.el));
+    const pick = same.find((x) => !risky(x.el)) ?? same[0];
+    if (pick) return setFocus(pick.el);
+  }
   // back from a sheet or menu: to what was picked before it opened (or where it was)
   if (cameFrom) {
     const back = cameFrom;
@@ -358,8 +371,14 @@ function move(dir: Dir) {
   }
   const all = candidates();
   remember(all);
-  const c = all.filter((x) => x.el !== focused);
   const from = rectOf(focused);
+  const fromBar = !!focused.closest(FLOATING) || !!focused.closest(TABS);
+  const c = all.filter(
+    (x) =>
+      x.el !== focused &&
+      // left/right stays on its own row when the next thing over is a bar or a close ×
+      !((dir === 'left' || dir === 'right') && !fromBar && (x.el.matches(CLOSE) || x.el.closest(FLOATING) || x.el.closest(TABS)) && (x.box.bottom <= from.top || x.box.top >= from.bottom)),
+  );
   const i = pickNext(from, dir, c.map((x) => x.box));
   if (i >= 0) {
     setFocus(c[i].el);
@@ -379,14 +398,27 @@ function page(down: boolean) {
   const sc = (focused && scrollParent(focused)) || (document.scrollingElement as HTMLElement);
   if (!sc) return;
   sc.scrollBy({ top: (down ? 1 : -1) * sc.clientHeight * 0.8, behavior: 'smooth' });
-  setTimeout(() => {
+  // once the list has stopped moving, the ring takes the first thing on the new page
+  let last = NaN;
+  let still = 0;
+  const t0 = performance.now();
+  const settle = () => {
+    const y = sc.scrollTop;
+    still = y === last ? still + 1 : 0;
+    last = y;
+    if (still < 2 && performance.now() - t0 < 1200) return void setTimeout(settle, 50);
+    land();
+  };
+  setTimeout(settle, 120);
+  const land = () => {
     const c = candidates();
     if (!c.length) return;
-    const s = sc === document.scrollingElement ? { top: 0, bottom: innerHeight } : rectOf(sc);
-    const inView = c.filter((x) => x.box.top >= s.top - 1 && x.box.bottom <= s.bottom + 1 && sc.contains(x.el));
+    const r = sc === document.scrollingElement ? { top: 0, bottom: innerHeight } : rectOf(sc);
+    const s = { top: Math.max(r.top, 0), bottom: Math.min(r.bottom, innerHeight, bottomBarTop()) };
+    const inView = c.filter((x) => x.box.top >= s.top - 1 && x.box.bottom <= s.bottom + 1 && sc.contains(x.el) && !x.el.closest(FLOATING));
     const list = inView.length ? inView : c;
-    setFocus(list[nearest(lastX, down ? s.top : s.bottom, list.map((x) => x.box))].el, false);
-  }, 380);
+    setFocus(list[nearest(lastX, down ? s.top : s.bottom, list.map((x) => x.box))].el);
+  };
 }
 
 // ---------- pressing ----------
@@ -430,9 +462,22 @@ function press() {
     (el as HTMLSelectElement).showPicker?.();
     return;
   }
+  if ((el as HTMLButtonElement).disabled) {
+    say('Locked · clear the one before it first');
+    rumble(0.25, 0, 70);
+    return;
+  }
+  const before = new Set(candidates().map((x) => x.el));
   tap(el);
   // let the screen redraw, then put the ring somewhere real
   setTimeout(() => validate(true), 60);
+  setTimeout(() => {
+    // picking one of a list can bring up its confirm ("Take Yami Yugi's deck"): go to it
+    if (focused === el && !inDuel()) {
+      const take = candidates().find((x) => !before.has(x.el) && /^\W*take\b/i.test(x.el.textContent ?? ''));
+      if (take) setFocus(take.el);
+    }
+  }, 160);
   // a card in your hand with nothing to do right now: say so, instead of a silent press
   if (el.matches('.duel.touch .thcard')) {
     setTimeout(() => {
@@ -492,8 +537,18 @@ export function back(viaEscape = true) {
   }
   const skip =
     [...document.querySelectorAll<HTMLElement>('.pack.tearable')].find((b) => reachable(b, rectOf(b))) ??
-    [...document.querySelectorAll<HTMLElement>('.menu-item, button')].reverse().find((b) => /^\W*(flip all|skip|done|cancel)\s*$/i.test(b.textContent ?? '') && !b.closest('.tabs') && reachable(b, rectOf(b)));
-  if (skip) return void (tap(skip), setTimeout(() => validate(true), 60));
+    [...document.querySelectorAll<HTMLElement>('.menu-item, button')].reverse().find((b) => /^\W*(flip all|skip|done|cancel|back)\s*$/i.test(b.textContent ?? '') && !b.closest('.tabs') && reachable(b, rectOf(b)));
+  if (skip) {
+    const menu = skip.closest('.menu');
+    tap(skip);
+    return void setTimeout(() => {
+      // Flip all → its menu now says Open another / Done: the ring goes there
+      const next = menu?.isConnected ? candidates().filter((x) => menu.contains(x.el)) : [];
+      const pick = next.find((x) => !risky(x.el)) ?? next[0];
+      if (pick) setFocus(pick.el);
+      else validate(true);
+    }, 90);
+  }
   const close = visible(CLOSE);
   if (close) return void (tap(close), setTimeout(() => validate(true), 60));
   const ov = visible('.overlay');
@@ -538,6 +593,7 @@ function visibleTabs(): HTMLElement | null {
 }
 
 function cardInfo() {
+  if (focused?.hasAttribute('data-pad-y')) return void focused.dispatchEvent(new CustomEvent('pady', { bubbles: true }));
   const detail = visible('.tdetail');
   if (detail) return tap(detail);
   const classicInfo = [...document.querySelectorAll<HTMLElement>('.msgwin .menu-item, .overlay .menu-item')].find((b) => /card info|skill text/i.test(b.textContent ?? ''));
@@ -564,6 +620,13 @@ function onButton(b: Btn) {
     case 'b':
       return back();
     case 'x': {
+      // a screen's own X action on what the ring is on (deck editor: add or remove a copy)
+      if (focused?.hasAttribute('data-pad-x') && !inDuel()) {
+        if (!focused.getAttribute('data-pad-x')) return void (say("Can't add another copy of this card"), rumble(0.25, 0, 70));
+        focused.dispatchEvent(new CustomEvent('padx', { bubbles: true }));
+        rumble(0.1, 0.25, 25);
+        return void setTimeout(() => renderHints(true), 60);
+      }
       // (a card's command bubble closes first: one menu at a time)
       const duel = document.querySelector<HTMLElement>('.duel.touch');
       const delay = duel?.querySelector('.tactions') ? (duel.click(), 40) : 0;
@@ -622,7 +685,9 @@ function hintList(): Hint[] {
     out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand'], [['rb'], 'Foes'], [['start'], 'Menu'], [['lt', 'rt'], 'Page'], [['select'], 'Hide']);
     return out;
   }
-  if ([...document.querySelectorAll('.msgwin .menu-item, .overlay .menu-item')].some((b) => /card info|skill text/i.test(b.textContent ?? ''))) out.push([['y'], 'Card info']);
+  const xl = focused?.getAttribute('data-pad-x');
+  if (xl) out.push([['x'], xl]);
+  if (focused?.hasAttribute('data-pad-y') || [...document.querySelectorAll('.msgwin .menu-item, .overlay .menu-item')].some((b) => /card info|skill text/i.test(b.textContent ?? ''))) out.push([['y'], 'Card info']);
   if (visibleTabs()) out.push([['lb', 'rb'], 'Tabs']);
   if (guide) out.push([['lt', 'rt'], 'Page'], [['select'], 'Hide']);
   else out.push([['select'], 'Guide']);
@@ -786,6 +851,7 @@ export function installPad() {
   addEventListener('gamepadconnected', (e) => {
     const g = (e as GamepadEvent).gamepad;
     family = familyOf(g.id);
+    document.documentElement.classList.add('pad-here');
     say(`🎮 ${familyName(family)} connected · ${glyph(family, 'a')} select · ${glyph(family, 'b')} back`);
     // (the press that woke it only shows the ring: it never taps something you can't see yet)
     start();
@@ -796,7 +862,7 @@ export function installPad() {
     held = new Set();
     say(connected() ? 'A controller disconnected' : 'Controller disconnected · touch still works');
     renderHints(true);
-    if (!connected()) drawRing();
+    if (!connected()) (drawRing(), document.documentElement.classList.remove('pad-here'));
   });
   // a controller that was already on before the page loaded (some browsers only list it after a press)
   if (connected()) start();

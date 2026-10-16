@@ -499,7 +499,15 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
             const why = unplayableReason(n);
             const ci = card(n);
             return (
-              <button key={n} class={`crow ${sel === n ? 'sel' : ''} k-${ci?.kind ?? 'monster'} ${why ? 'off' : ''}`} onClick={() => setSel(sel === n ? null : n)}>
+              <button
+                key={n}
+                class={`crow ${sel === n ? 'sel' : ''} k-${ci?.kind ?? 'monster'} ${why ? 'off' : ''}`}
+                onClick={() => setSel(sel === n ? null : n)}
+                // a controller's X adds a copy (Owned) or takes one out (your deck), Y shows the card, like Master Duel's deck editor
+                data-pad-x={tab === 'cards' ? (why || !canAdd(n) ? '' : 'Add one') : 'Remove one'}
+                data-pad-y=""
+                {...({ onpadx: () => (tab === 'cards' ? !why && canAdd(n) && addCard(n) : removeCard(n)), onpady: () => setInfo(n) } as object)}
+              >
                 <CardImg name={n} class="crow-img" />
                 <span class="crow-name">{n}</span>
                 <span class="crow-stat">{why ? 'not in game yet' : statLine(n)}</span>
@@ -529,8 +537,10 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
           {unplayableReason(sel) && <p class="hint">Can't be used yet: {unplayableReason(sel)}.</p>}
           <Menu
             items={[
+              // (looking at your deck, Remove comes first)
+              ...(tab !== 'cards' && copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
               ...(!unplayableReason(sel) ? [{ label: isExtraCard(sel) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(sel), note: `${copies(sel)}/${ownedCopies(sel)}`, onPick: () => addCard(sel) }] : []),
-              ...(copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
+              ...(tab === 'cards' && copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
               { label: 'Card Info', onPick: () => setInfo(sel) },
             ]}
           />

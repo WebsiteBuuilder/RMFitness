@@ -151,3 +151,20 @@
 .pad-duel .pad-hints.show.under {
   opacity: 0.08;
 }
+
+/* the floating Friends button covers lists and menus; with a controller, Friends is under Link Battle */
+.pad-on .ol-pill {
+  display: none;
+}
+/* touch words swap for controller words while a pad is in use */
+.pad-txt {
+  display: none;
+}
+.pad-on .pad-txt,
+.pad-here .pad-txt {
+  display: inline;
+}
+.pad-on .touch-txt,
+.pad-here .touch-txt {
+  display: none;
+}

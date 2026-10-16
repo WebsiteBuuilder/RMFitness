@@ -385,7 +385,10 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
             )}
             <span class="pack-logo">SPEED DUEL</span>
             <span class="pack-name">{shortSetName(opened.set ?? '')}</span>
-            <span class="pack-note">tap to tear it open</span>
+            <span class="pack-note">
+              <span class="touch-txt">tap to tear it open</span>
+              <span class="pad-txt">A to tear it open</span>
+            </span>
           </button>
         ) : (
           <>
