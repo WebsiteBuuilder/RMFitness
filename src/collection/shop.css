@@ -798,3 +798,36 @@
 @media (prefers-reduced-motion: reduce) {
   .rv.fin-OF.up { animation: none; }
 }
+
+/* gift packs (see Gift.tsx) */
+.gift-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #f2c14e;
+  background: linear-gradient(135deg, rgba(224, 51, 95, 0.35), rgba(242, 193, 78, 0.18));
+}
+.gift-bar .gift-box {
+  font-size: 30px;
+}
+.gift-bar .gift-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+.gift-bar .gift-txt small {
+  color: var(--sd-dim, #a9b5da);
+}
+.ui-speed .gift-bar .gift-mix,
+.gift-bar .gift-mix {
+  flex: none;
+  min-height: 44px;
+  background: linear-gradient(180deg, #ffd66b, #e0a422);
+  color: #1a1200;
+  font-weight: 700;
+}

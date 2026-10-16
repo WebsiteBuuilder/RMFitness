@@ -41,7 +41,8 @@ import { showProfileLevels } from '../level/view';
 import { CardShop } from '../collection/Shop';
 import { RequestsScreen, StampsScreen } from '../collection/Earn';
 import { boardOf } from '../collection/requests';
-import { bestCrown, collectionProblems, ownedOnly, withStarter } from '../collection/economy';
+import { GIFT, bestCrown, claimGift, collectionProblems, giftFor, ownedOnly, withStarter } from '../collection/economy';
+import { GiftReveal } from '../collection/Gift';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
 import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
@@ -128,6 +129,16 @@ export function SpeedHub({
   const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
   const [editRandom, setEditRandom] = useState(false);
+  const [gift, setGift] = useState<typeof GIFT | null>(null);
+  // A one-time present waiting on this profile: claim it (the save remembers) and unwrap it.
+  useEffect(() => {
+    if (gift || sub !== 'menu' || save.decks.length === 0) return;
+    const g = giftFor(save, profile.created);
+    const next = g && claimGift(save, profile.created, g);
+    if (!next) return;
+    onSave(next);
+    setGift(g);
+  }, [save, sub]);
   // the duel's 3D engine downloads while the player is still here
   useEffect(() => preloadArt3d(), []);
   const deck = activeDeck(save);
@@ -174,27 +185,30 @@ export function SpeedHub({
   if (sub === 'link') return <SpeedLink problems={problems} deckSwitch={deckSwitch} onPick={onLink} onBack={() => setSub('menu')} />;
 
   return (
-    <SpeedHome
-      tab={tab}
-      onTab={setTab}
-      profile={profile}
-      save={save}
-      deck={deck}
-      problems={problems}
-      sealed={sealed}
-      headline={headline}
-      crown={crown}
-      requestsNote={requestsNote(save)}
-      controls={controls}
-      onControls={onControls}
-      onSolo={onSolo}
-      onTag={onTag}
-      onExit={onExit}
-      go={setSub}
-      cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))}
-      onPickDeck={(d) => onSave({ ...save, active: d.id })}
-      problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]}
-    />
+    <>
+      {gift && <GiftReveal gift={gift} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} />}
+      <SpeedHome
+        tab={tab}
+        onTab={setTab}
+        profile={profile}
+        save={save}
+        deck={deck}
+        problems={problems}
+        sealed={sealed}
+        headline={headline}
+        crown={crown}
+        requestsNote={requestsNote(save)}
+        controls={controls}
+        onControls={onControls}
+        onSolo={onSolo}
+        onTag={onTag}
+        onExit={onExit}
+        go={setSub}
+        cpus={speedOpponents().map((o) => (o.name === 'Téa Gardner' ? 'Tea Gardner' : o.name))}
+        onPickDeck={(d) => onSave({ ...save, active: d.id })}
+        problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]}
+      />
+    </>
   );
 }
 
