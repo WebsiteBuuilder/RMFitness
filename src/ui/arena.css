@@ -375,7 +375,7 @@
 }
 /* a duel opens with the field swinging up into place */
 .duel.touch .tmat {
-  animation: tmat-in 0.75s cubic-bezier(.2, .8, .2, 1) both;
+  animation: tmat-in 0.75s cubic-bezier(.2, .8, .2, 1) backwards;
 }
 @keyframes tmat-in {
   from {
@@ -388,10 +388,10 @@
   }
 }
 .duel.touch .tbar.top {
-  animation: tbar-top-in 0.5s 0.15s cubic-bezier(.2, .8, .2, 1) both;
+  animation: tbar-top-in 0.5s 0.15s cubic-bezier(.2, .8, .2, 1) backwards;
 }
 .duel.touch .tbar.bottom {
-  animation: tbar-bot-in 0.5s 0.15s cubic-bezier(.2, .8, .2, 1) both;
+  animation: tbar-bot-in 0.5s 0.15s cubic-bezier(.2, .8, .2, 1) backwards;
 }
 @keyframes tbar-top-in {
   from {
@@ -443,4 +443,13 @@
 /* the opponent's hand: a fan too */
 .duel.touch .thc {
   transform: rotate(calc(180deg - var(--arc, 0) * 4deg)) translateY(calc(var(--arc2, 0) * 1px));
+}
+
+/* ---- smoothness: no box-shadow animations in a duel (each one repaints every frame) ---- */
+.duel .xready {
+  animation: none;
+}
+.duel img.cimg.lvr-RO,
+.duel div.cimg.lvr-RO {
+  animation: none;
 }

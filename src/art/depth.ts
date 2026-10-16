@@ -208,7 +208,8 @@ async function build(name: string): Promise<ArtData> {
     const img = await loadImage(url);
     await img.decode?.().catch(() => {});
     full = canvas(img.naturalWidth || 300, img.naturalHeight || 437);
-    full.getContext('2d')!.drawImage(img, 0, 0, full.width, full.height);
+    // CPU-backed (willReadFrequently): the reads of this art below and in artTame never stall on the GPU
+    full.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, full.width, full.height);
   } catch {
     full = drawnCard(name);
   }
@@ -217,7 +218,7 @@ async function build(name: string): Promise<ArtData> {
   const sw = full.width * ART_BOX.w;
   const sh = full.height * ART_BOX.h;
   const art = canvas(256, 256);
-  art.getContext('2d')!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
+  art.getContext('2d', { willReadFrequently: true })!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
   const id = card(name)?.id;
   if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id };
@@ -253,7 +254,9 @@ const CACHE_MAX = 48;
 export async function preloadArt(names: string[], stop: () => boolean = () => false, each?: (art: ArtData) => void): Promise<void> {
   const list = names.filter((n) => !!card(n)).slice(0, CACHE_MAX - 8);
   let i = 0;
-  const pause = () => new Promise<void>((ok) => setTimeout(ok, 60));
+  // between cards, wait for an idle moment (never mid-animation when the phone is busy)
+  const w = typeof window !== 'undefined' ? (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) : null;
+  const pause = () => new Promise<void>((ok) => (w?.requestIdleCallback ? w.requestIdleCallback(() => ok(), { timeout: 1500 }) : setTimeout(ok, 60)));
   const worker = async () => {
     while (i < list.length && !stop()) {
       const n = list[i++];

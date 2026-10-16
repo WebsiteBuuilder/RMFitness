@@ -67,6 +67,9 @@ const MOTES = (
   </span>
 );
 
+/** the hint line under the turn row comes and goes (it moves the row a little) */
+const hintKey = (s: DuelState) => `${s.turn <= 4}${s.phase}`;
+
 const PHASE_NAMES: Record<string, string> = { DP: 'Draw', SP: 'Standby', M1: 'Main 1', BP: 'Battle', M2: 'Main 2', EP: 'End' };
 
 /** A card being dragged: where it came from and where the finger is. */
@@ -93,7 +96,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   // where the turn / phase row sits on screen (its flat copy over the field figures follows it)
   const midRef = useRef<HTMLDivElement>(null);
   const [midBox, setMidBox] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [, setResized] = useState(0);
+  const [resized, setResized] = useState(0);
   useEffect(() => {
     const on = () => setResized((n) => n + 1);
     window.addEventListener('resize', on);
@@ -101,12 +104,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const t = setTimeout(on, 900);
     return () => (window.removeEventListener('resize', on), clearTimeout(t));
   }, []);
+  // (measured only when the layout can have moved: not after every render, which forced a layout each time)
+  const figuresOn = typeof document !== 'undefined' && document.body.classList.contains('art3d-on');
   useLayoutEffect(() => {
     const el = midRef.current;
-    const b = el && document.body.classList.contains('art3d-on') ? el.getBoundingClientRect() : null;
+    const b = el && figuresOn ? el.getBoundingClientRect() : null;
     const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
     if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
-  });
+  }, [resized, figuresOn, state.winner, hintKey(state)]);
 
   useFlights(root, state, acting);
 
@@ -186,12 +191,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       // A hand card's buttons sit above your Life Points bar, never over it (or your portrait).
       const bar = el.closest('.thand') ? root.current?.querySelector('.tbar.bottom')?.getBoundingClientRect() : null;
       const top = bar ? Math.min(r.top, bar.top) : r.top;
-      setBubble({ x, y: below ? r.bottom + 6 : top - 6, below });
+      const y = below ? r.bottom + 6 : top - 6;
+      // the same spot: no new object, so no second render of the whole duel
+      setBubble((b) => (b && b.x === x && b.y === y && b.below === below ? b : { x, y, below }));
     };
     place();
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
-  }, [sel, actions.length, mode, state]);
+  }, [sel, actions.length, mode, me.hand.length, state.phase, state.turn, resized]);
 
   // ----- what a dragged card may be dropped on -----
   const dropSpots = (uid: number, from: 'hand' | 'mz'): Set<string> => {
