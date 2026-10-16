@@ -19,10 +19,12 @@ const TEXT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not
 const LAYER = '.overlay, .msgwin, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
 const PRIMARY = '[autofocus], .tbtn.main, .taction.main, .csheet-ok, .primary, .main, .ok';
 const CLOSE = '.win-x, [aria-label="Close"], [aria-label="Back"], [data-pad-back]';
-const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick)';
+const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick), .topp-hand [data-uid]:not(.pick)';
 const HAND = '.thcard, .hcard, .hand [data-uid]';
 /** Choices one stray press shouldn't land on first (leaving, deleting, switching controls). */
 const risky = (el: Element) => /controls|leave|surrender|give up|concede|delete|quit|switch profile|log out|open all|^\W*new deck/i.test(el.textContent ?? '');
+/** The things a screen is about (tiles, list rows, cards), before its filters and chips. */
+const CONTENT = '.sdh-tile, .crow, .menu-item, .ptile, .pack, .tile, [data-uid], .rd-raid, .so-card';
 const TABS = '[role=tablist], .sdh-tabs, .tabs, .so-tabs, .rank-tabs, .fr-tabs';
 const ON = /(^|\s)(on|active|sel|selected|cur|current)(\s|$)/;
 
@@ -79,6 +81,20 @@ function findScrollParent(el: Element): HTMLElement | null {
   return d && d.scrollHeight > innerHeight + 2 ? d : null;
 }
 
+/** Bars and buttons pinned to the screen over a scrolling page. */
+const FLOATING = '.sdh-tabs, .ol-pill, .tabs';
+function underBar(hit: Element): boolean {
+  for (let p: Element | null = hit; p && p !== document.body; p = p.parentElement) {
+    const pos = getComputedStyle(p).position;
+    if (pos === 'fixed' || pos === 'sticky') {
+      const r = p.getBoundingClientRect();
+      // (a bar, not a full-screen sheet)
+      return r.height < innerHeight * 0.3;
+    }
+  }
+  return false;
+}
+
 const PTS = [
   [0.5, 0.5],
   [0.2, 0.5],
@@ -102,6 +118,8 @@ function reachable(el: Element, r: ReturnType<typeof rectOf>): boolean {
     anyOn = true;
     const hit = document.elementFromPoint(x, y);
     if (hit && (hit === el || el.contains(hit))) return true;
+    // under a bar pinned to the screen (bottom tabs): the list can scroll it out
+    if (hit && !el.closest(FLOATING) && underBar(hit) && scrollParent(el)) return true;
   }
   if (anyOn) return false;
   // scrolled out of view: fine if the list it is in can be seen
@@ -189,6 +207,13 @@ function setFocus(el: Element | null, scroll = true) {
   if (scroll) {
     const r = el.getBoundingClientRect();
     if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // clear of a bar pinned along the bottom (tabs, the hint bar)
+    if (!el.closest(FLOATING) && !el.closest('.duel')) {
+      const bar = Math.min(bottomBarTop(), hints?.classList.contains('show') ? hints.getBoundingClientRect().top : innerHeight);
+      const r2 = el.getBoundingClientRect();
+      const sc = scrollParent(el);
+      if (sc && r2.bottom > bar - 6) sc.scrollBy({ top: r2.bottom - bar + 14 });
+    }
   }
   const r = el.getBoundingClientRect();
   lastX = r.left + r.width / 2;
@@ -214,6 +239,11 @@ function drawRing() {
   ring.style.width = `${(r.width + 8).toFixed(1)}px`;
   ring.style.height = `${(r.height + 8).toFixed(1)}px`;
   ring.style.borderRadius = `${Math.min(br + 4, 24)}px`;
+  // the hint bar steps aside when the ring is under it
+  if (hints) {
+    const h = hints.getBoundingClientRect();
+    hints.classList.toggle('under', h.width > 0 && r.bottom > h.top && r.top < h.bottom && r.right > h.left && r.left < h.right);
+  }
 }
 
 /** Keep the ring on something real: after a screen change, or when a sheet opens over it. */
@@ -248,7 +278,7 @@ function validate(force = false) {
       inside.find((x) => x.el.matches(PRIMARY)) ??
       inside.find((x) => x.el.matches('.sel, .on, [aria-selected=true], [aria-checked=true]')) ??
       // its first choice (a close × is never where you start)
-      inside.sort((a, b) => Number(a.el.matches(CLOSE)) - Number(b.el.matches(CLOSE)) || Number(risky(a.el)) - Number(risky(b.el)) || a.box.top - b.box.top || a.box.left - b.box.left)[0];
+      inside.sort((a, b) => Number(!!a.el.closest(FLOATING)) - Number(!!b.el.closest(FLOATING)) || Number(a.el.matches(CLOSE)) - Number(b.el.matches(CLOSE)) || Number(risky(a.el)) - Number(risky(b.el)) || a.box.top - b.box.top || a.box.left - b.box.left)[0];
     if (pick) {
       // when it closes, the ring goes back where it was
       if (focused && !layer.contains(focused)) cameFrom = { el: focused, x: lastX, y: lastY };
@@ -301,8 +331,16 @@ function validate(force = false) {
 /** A new screen's first stop: its main button, else the first plain choice under the top bar (never a close ×, a tab or a bulk/destructive action). */
 function firstStop(c: Cand[]): Cand {
   const order = c.slice().sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left);
-  const plain = (x: Cand) => !x.el.matches(CLOSE) && !risky(x.el) && !x.el.closest(TABS);
-  return order.find((x) => x.el.matches(PRIMARY) && plain(x)) ?? order.find((x) => x.box.top >= innerHeight * 0.12 && plain(x)) ?? order.find(plain) ?? order[0];
+  const plain = (x: Cand) => !x.el.matches(CLOSE) && !risky(x.el) && !x.el.closest(TABS) && !x.el.closest(FLOATING);
+  // (below the top bar: it ends by ~100px)
+  const below = (x: Cand) => x.box.bottom > Math.min(innerHeight * 0.12, 100);
+  return (
+    order.find((x) => x.el.matches(PRIMARY) && plain(x)) ??
+    order.find((x) => x.el.matches(CONTENT) && below(x) && plain(x)) ??
+    order.find((x) => below(x) && plain(x)) ??
+    order.find(plain) ??
+    order[0]
+  );
 }
 
 // ---------- moving ----------
@@ -426,8 +464,14 @@ export function back(viaEscape = true) {
     const aim = duel.querySelector<HTMLElement>('.ttoast.aim button');
     if (aim) return void (tap(aim), setTimeout(() => validate(true), 60));
     if (duel.querySelector('.tactions, .tphase-menu, .tdetail') && !document.querySelector('.overlay, .csheet-back')) {
+      // close it, and the ring goes back to the card it came from (else your hand)
+      const from = cameFrom?.el;
+      cameFrom = null;
       duel.click();
-      return void setTimeout(() => validate(true), 60);
+      return void setTimeout(() => {
+        if (from?.isConnected && reachable(from, rectOf(from))) setFocus(from);
+        else if (!focused?.isConnected || !focused.matches(HAND)) duelJump(true);
+      }, 60);
     }
   }
   // the classic board: cancel the attack, or put the picked card down
@@ -446,7 +490,9 @@ export function back(viaEscape = true) {
     setFocus(from);
     return void setTimeout(() => validate(true), 60);
   }
-  const skip = [...document.querySelectorAll<HTMLElement>('.menu-item')].find((b) => /^\W*(flip all|skip|done)\s*$/i.test(b.textContent ?? '') && reachable(b, rectOf(b)));
+  const skip =
+    [...document.querySelectorAll<HTMLElement>('.pack.tearable')].find((b) => reachable(b, rectOf(b))) ??
+    [...document.querySelectorAll<HTMLElement>('.menu-item, button')].reverse().find((b) => /^\W*(flip all|skip|done|cancel)\s*$/i.test(b.textContent ?? '') && !b.closest('.tabs') && reachable(b, rectOf(b)));
   if (skip) return void (tap(skip), setTimeout(() => validate(true), 60));
   const close = visible(CLOSE);
   if (close) return void (tap(close), setTimeout(() => validate(true), 60));
@@ -591,6 +637,7 @@ function aLabel(): string {
   if (f.matches('.pick')) return document.querySelector('.ttoast.aim') ? 'Attack this' : 'Choose';
   if (f.matches('.topt')) return 'Choose';
   if (f.matches('.tbar.top') && document.querySelector('.ttoast.aim')) return 'Direct attack';
+  if (f.matches(HAND)) return document.querySelector('.duel.turn-me .tphase-btn.live') ? 'Play' : 'Card';
   if (f.matches('[data-uid]')) return 'Card';
   if (f.matches('.tpile, .pile')) return 'Look';
   return 'Select';
@@ -601,12 +648,12 @@ function bottomBarTop(): number {
   // (tab bars along the bottom, and the floating Friends button)
   let top = innerHeight;
   for (const fx of [0.5, 0.2, 0.8, 0.9]) {
-    for (const dy of [8, 36]) {
+    for (const dy of [8, 36, 64]) {
       for (let el = document.elementFromPoint(innerWidth * fx, innerHeight - dy); el && el !== document.body; el = el.parentElement) {
         const pos = getComputedStyle(el).position;
         if (pos === 'fixed' || pos === 'sticky') {
           const r = el.getBoundingClientRect();
-          if (r.bottom >= innerHeight - 48 && r.height < innerHeight * 0.3) top = Math.min(top, r.top);
+          if (r.bottom >= innerHeight - 100 && r.height < innerHeight * 0.3) top = Math.min(top, r.top);
           break;
         }
       }
@@ -623,7 +670,8 @@ function renderHints(force = false) {
   const list = hintList();
   const key = family + JSON.stringify(list) + guide;
   // in a duel they show for a moment (and while the guide is open), then get out of the way
-  hints.classList.toggle('show', true);
+  // (out of the way while a command bubble, the phase menu or a sheet is open)
+  hints.classList.toggle('show', !(duel && !guide && document.querySelector('.duel .tactions, .duel .tphase-menu, .overlay, .tsheet, .csheet-back, .tresult')));
   // (in a duel: just over your Life Points, clear of the hand and the other player's side)
   const lp = document.querySelector('.duel.touch .tbar.bottom')?.getBoundingClientRect();
   const bt = lp ? lp.top : duel ? innerHeight : bottomBarTop();

@@ -140,3 +140,14 @@
   opacity: 1;
   translate: 0 0;
 }
+
+/* with a controller the hint bar coaches instead of the touch tips */
+.pad-on .duel.touch .ttoast.hint {
+  display: none;
+}
+
+/* (the ring is on something under the hint bar: let it be seen) */
+.pad-hints.show.under,
+.pad-duel .pad-hints.show.under {
+  opacity: 0.08;
+}
