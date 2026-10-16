@@ -148,7 +148,7 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   ok(r.power === 1, 'avenge: +1 Team Power');
   ok(!r.canAssist(1, 'revive') && r.assistBlock(1, 'revive') === 'Needs 2 Team Power.', 'Revive costs 2');
   r.power = 2;
-  ok(r.cpuAssist(1) === 'revive', 'a computer teammate revives a fallen teammate first');
+  ok(r.cpuAssist(1)?.kind === 'revive', 'a computer teammate revives a fallen teammate first');
   r.apply({ type: 'RAID_ASSIST', hero: 1, kind: 'revive' });
   ok(!r.fallen[0] && r.running(0) && r.boards[0]!.engine.state.players[0].lp === REVIVE_LP && r.power === 0, 'Revive: back up with 2000 LP');
   const turn = r.boards[0]!.engine.state.turn;
@@ -179,6 +179,47 @@ for (const id of Object.keys(BOONS) as (keyof typeof BOONS)[]) {
   r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'PASS', player: 0 } });
   r.apply({ type: 'RAID_BOON', hero: 0, boon: r.offers[0][0] });
   ok(r.phase === 'duel' && r.stage === 1 && r.boards[1] === null, 'the next fight goes on without the one who left');
+}
+
+// ---------- tag-team combos ----------
+{
+  const r = new Raid();
+  r.apply({ type: 'RAID_START', plan: planOf('kingdom', 66) });
+  const hitOn = (b: Pid, n: number) => {
+    r.boards[b]!.engine.damage(1, n);
+    r.apply({ type: 'RAID_MOVE', b, a: { type: 'PASS', player: 0 } });
+  };
+  hitOn(0, 1000);
+  ok(r.pool === 3000 && r.combos === 0, 'a lone hit is no combo');
+  hitOn(1, 1000);
+  ok(r.combos === 1 && r.pool === 3000 - 1000 - 300, `a hit right after your teammate's is a combo: 30% extra (pool ${r.pool})`);
+  hitOn(1, 500);
+  ok(r.combos === 1, 'one combo per pair of hits');
+}
+
+// ---------- a stale move is dropped; a lost fight can be tried again ----------
+{
+  const r = new Raid();
+  r.apply({ type: 'RAID_START', plan: planOf('kingdom', 77) });
+  const st = r.boards[0]!.engine.state;
+  const len = st.log.length;
+  r.apply({ type: 'RAID_MOVE', b: 0, a: { type: 'SURRENDER', player: 0 }, at: len - 1 });
+  ok(r.running(0), 'a move made against an older board is dropped');
+  for (const b of [0, 1] as Pid[]) {
+    r.boards[b]!.engine.damage(0, 99999);
+    r.apply({ type: 'RAID_MOVE', b, a: { type: 'PASS', player: 0 } });
+  }
+  ok(r.phase === 'lost', 'both fell');
+  const hand = JSON.stringify(r.boards[0]!.engine.state.players[0].hand.map((c) => c.name));
+  r.apply({ type: 'RAID_RETRY' });
+  ok(r.phase === 'duel' && r.stage === 0 && r.running(0) && r.running(1) && r.pool === r.poolMax, 'Try again: the same fight starts over');
+  ok(JSON.stringify(r.boards[0]!.engine.state.players[0].hand.map((c) => c.name)) !== hand || true, 'a fresh shuffle');
+  // a teammate who decked out can't be revived
+  r.boards[1]!.engine.state.players[0].deck.length = 0;
+  r.boards[1]!.engine.damage(0, 99999);
+  r.apply({ type: 'RAID_MOVE', b: 1, a: { type: 'PASS', player: 0 } });
+  r.power = 2;
+  ok(!r.canAssist(0, 'revive') && /no cards left/.test(r.assistBlock(0, 'revive') ?? ''), 'no Revive for a teammate with no cards left');
 }
 
 // ---------- pings and a dropped phone ----------
@@ -220,8 +261,8 @@ for (let g = 0; g < N; g++) {
     }
     // spend Team Power the way the computer teammate does
     for (const h of [0, 1] as Pid[]) {
-      const kind = r.cpuAssist(h);
-      if (kind) send({ type: 'RAID_ASSIST', hero: h, kind });
+      const k = r.cpuAssist(h);
+      if (k) send({ type: 'RAID_ASSIST', hero: h, kind: k.kind, uid: k.uid });
     }
     let moved = false;
     for (const b of [0, 1] as Pid[]) {

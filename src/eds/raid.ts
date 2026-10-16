@@ -63,9 +63,9 @@ export const RAIDS: RaidDef[] = [
     blurb: 'The Rare Hunters close in. Yami Marik waits on the blimp.',
     boss: 'yami-marik',
     stages: [
-      { label: 'Wave 1', foes: ['espa', 'bonz'], pool: 4500, note: 'Espa Roba and Bonz work the streets.' },
-      { label: 'Wave 2', foes: ['arkana', 'odion'], pool: 5500, note: 'Arkana and Odion hold the tower.' },
-      { label: 'Boss', foes: ['yami-marik', 'yami-marik'], pool: 9000, boss: true, foeSetup: { openingHand: 1 }, note: 'Yami Marik starts with an extra card on both boards.' },
+      { label: 'Wave 1', foes: ['espa', 'bonz'], pool: 4000, note: 'Espa Roba and Bonz work the streets.' },
+      { label: 'Wave 2', foes: ['arkana', 'odion'], pool: 5000, note: 'Arkana and Odion hold the tower.' },
+      { label: 'Boss', foes: ['yami-marik', 'yami-marik'], pool: 8500, boss: true, foeSetup: { openingHand: 1 }, note: 'Yami Marik starts with an extra card on both boards.' },
     ],
     rage: { text: 'Yami Marik rages! Masked Beast Des Gardius rises on both boards.', monster: 'Masked Beast Des Gardius', card: 'Mask of Brutality' },
   },
@@ -76,9 +76,9 @@ export const RAIDS: RaidDef[] = [
     blurb: 'Duel Academy at night. Kagemaru wants the Sacred Beasts.',
     boss: 'kagemaru',
     stages: [
-      { label: 'Wave 1', foes: ['titan', 'viper'], pool: 5000, note: 'Titan and Viper stalk the dorms.' },
-      { label: 'Wave 2', foes: ['amnael', 'zane'], pool: 6000, note: 'Amnael and a darkened Zane bar the way.' },
-      { label: 'Boss', foes: ['kagemaru', 'kagemaru'], pool: 10000, boss: true, note: 'Kagemaru feeds on both of you at once.' },
+      { label: 'Wave 1', foes: ['titan', 'viper'], pool: 4500, note: 'Titan and Viper stalk the dorms.' },
+      { label: 'Wave 2', foes: ['amnael', 'zane'], pool: 5500, note: 'Amnael and a darkened Zane bar the way.' },
+      { label: 'Boss', foes: ['kagemaru', 'kagemaru'], pool: 9500, boss: true, note: 'Kagemaru feeds on both of you at once.' },
     ],
     rage: { text: 'Kagemaru rages! Uria, Lord of Searing Flames burns onto both boards.', monster: 'Uria, Lord of Searing Flames', card: 'Fallen Paradise' },
   },
@@ -89,9 +89,9 @@ export const RAIDS: RaidDef[] = [
     blurb: 'Ghouls in the Shadow Realm. Yami Bakura holds the Ring.',
     boss: 'yami-bakura',
     stages: [
-      { label: 'Wave 1', foes: ['ghoul-cutpurse', 'ghoul-gravedigger'], pool: 5000, note: 'The ghouls come for your cards.' },
-      { label: 'Wave 2', foes: ['ghoul-lantern', 'abidos'], pool: 6000, note: 'A lantern ghoul and a ghost pharaoh.' },
-      { label: 'Boss', foes: ['yami-bakura', 'yami-bakura'], pool: 9500, boss: true, foeSetup: { field: 'Yami' }, note: 'Yami Bakura starts with Yami on both boards.' },
+      { label: 'Wave 1', foes: ['ghoul-cutpurse', 'ghoul-gravedigger'], pool: 4500, note: 'The ghouls come for your cards.' },
+      { label: 'Wave 2', foes: ['ghoul-lantern', 'abidos'], pool: 5500, note: 'A lantern ghoul and a ghost pharaoh.' },
+      { label: 'Boss', foes: ['yami-bakura', 'yami-bakura'], pool: 9000, boss: true, foeSetup: { field: 'Yami' }, note: 'Yami Bakura starts with Yami on both boards.' },
     ],
     rage: { text: 'Yami Bakura rages! Ryu Kokki crawls onto both boards.', monster: 'Ryu Kokki', card: "Dark Spirit's Mastery" },
   },
@@ -102,9 +102,9 @@ export const RAIDS: RaidDef[] = [
     blurb: 'The best there is, then the King himself.',
     boss: 'yami-yugi',
     stages: [
-      { label: 'Wave 1', foes: ['mai', 'joey'], pool: 5500, note: 'Mai and Joey test you first.' },
-      { label: 'Wave 2', foes: ['kaiba', 'masked-dealer'], pool: 6500, note: 'Kaiba and the Masked Dealer.' },
-      { label: 'Boss', foes: ['yami-yugi', 'yami-yugi'], pool: 10000, boss: true, note: 'The King of Games, on both boards.' },
+      { label: 'Wave 1', foes: ['mai', 'joey'], pool: 5000, note: 'Mai and Joey test you first.' },
+      { label: 'Wave 2', foes: ['kaiba', 'masked-dealer'], pool: 6000, note: 'Kaiba and the Masked Dealer.' },
+      { label: 'Boss', foes: ['yami-yugi', 'yami-yugi'], pool: 9500, boss: true, note: 'The King of Games, on both boards.' },
     ],
     rage: { text: 'The King rages! Dark Magician appears on both boards.', monster: 'Dark Magician', card: 'Dark Magic Attack' },
   },
@@ -138,6 +138,9 @@ export const HEAL = 1000;
 export const HEAL_BELOW = 4000;
 export const STRIKE = 500;
 export const REVIVE_LP = 2000;
+/** A hit landing soon after your teammate's (within this many board moves) is a combo: 30% extra. */
+export const COMBO_WINDOW = 40;
+export const COMBO_PCT = 0.3;
 
 export type AssistKind = 'gift' | 'heal' | 'strike' | 'revive';
 export const ASSISTS: Record<AssistKind, { title: string; text: string; cost: number }> = {
@@ -183,7 +186,9 @@ export interface RaidPlan {
 export type RaidMsg =
   | { type: 'RAID_START'; plan: RaidPlan }
   /** an engine action on duelist `b`'s board */
-  | { type: 'RAID_MOVE'; b: Pid; a: Action }
+  | { type: 'RAID_MOVE'; b: Pid; a: Action; at?: number }
+  /** after a lost raid: fight the same stage again */
+  | { type: 'RAID_RETRY' }
   | { type: 'RAID_ASSIST'; hero: Pid; kind: AssistKind; uid?: number }
   | { type: 'RAID_BOON'; hero: Pid; boon: BoonId }
   | { type: 'RAID_LEAVE'; hero: Pid }
@@ -207,7 +212,7 @@ export interface RaidBoard {
   pending: { name: string; to: 'mz' | 'hand' }[];
 }
 
-export type FeedKind = 'stage' | 'hit' | 'power' | 'gift' | 'heal' | 'strike' | 'rage' | 'fall' | 'clear' | 'boon' | 'revive' | 'ping';
+export type FeedKind = 'stage' | 'hit' | 'power' | 'gift' | 'heal' | 'strike' | 'rage' | 'fall' | 'clear' | 'boon' | 'revive' | 'ping' | 'combo';
 export interface FeedItem {
   n: number;
   kind: FeedKind;
@@ -239,6 +244,13 @@ export class Raid {
   best: [number, number] = [0, 0];
   /** assists each duelist used */
   used: [number, number] = [0, 0];
+  /** times the team tried a lost fight again */
+  retries = 0;
+  /** tag-team combos landed */
+  combos = 0;
+  /** board moves so far, and the move each duelist last hit on (combos) */
+  private moves = 0;
+  private lastHit: [number, number] = [-1e9, -1e9];
   phase: RaidPhase = 'duel';
   rage = false;
   offers: [BoonId[], BoonId[]] = [[], []];
@@ -309,7 +321,8 @@ export class Raid {
     if (kind === 'strike') return true;
     if (kind === 'revive') {
       const w = this.boards[mate]?.engine.state.winner;
-      return !this.left[mate] && this.fallen[mate] && w !== null && w !== 0;
+      const deck = this.boards[mate]?.engine.state.players[0].deck.length ?? 0;
+      return !this.left[mate] && this.fallen[mate] && w !== null && w !== 0 && deck > 0;
     }
     if (!this.running(mate)) return false;
     if (kind === 'heal') return this.boards[mate]!.engine.state.players[0].lp < HEAL_BELOW;
@@ -319,14 +332,22 @@ export class Raid {
   }
 
   /** What a computer teammate spends Team Power on right now, if anything. */
-  cpuAssist(hero: Pid): AssistKind | null {
+  cpuAssist(hero: Pid): { kind: AssistKind; uid?: number } | null {
     const mate = (hero === 0 ? 1 : 0) as Pid;
-    if (this.canAssist(hero, 'revive')) return 'revive';
-    const lp = this.boards[mate]?.engine.state.players[0].lp ?? 99999;
-    if (lp <= 1500 && this.canAssist(hero, 'heal')) return 'heal';
-    // Save 2 for a revive while the teammate is in danger; otherwise spend a full bar on strikes.
-    if (this.power >= POWER_MAX && this.canAssist(hero, 'strike')) return 'strike';
-    if (this.pool > 0 && this.pool <= STRIKE && this.canAssist(hero, 'strike')) return 'strike';
+    if (this.canAssist(hero, 'revive')) return { kind: 'revive' };
+    const ms = this.boards[mate]?.engine.state;
+    const lp = ms?.players[0].lp ?? 99999;
+    if (lp <= 2000 && this.canAssist(hero, 'heal')) return { kind: 'heal' };
+    // A teammate with an empty hand gets a card (keeping 1 Power back), best monster first.
+    if (ms && ms.players[0].hand.length === 0 && this.power >= 2 && this.canAssist(hero, 'gift')) {
+      const hand = this.boards[hero]!.engine.state.players[0].hand;
+      if (hand.length >= 2) {
+        const pick = [...hand].sort((a, b) => (this.db.get(b.name)?.atk ?? -1) - (this.db.get(a.name)?.atk ?? -1))[0];
+        return { kind: 'gift', uid: pick.uid };
+      }
+    }
+    if (this.power >= POWER_MAX && this.canAssist(hero, 'strike')) return { kind: 'strike' };
+    if (this.pool > 0 && this.pool <= STRIKE && this.canAssist(hero, 'strike')) return { kind: 'strike' };
     return null;
   }
 
@@ -336,7 +357,8 @@ export class Raid {
     const mate = (hero === 0 ? 1 : 0) as Pid;
     if (this.phase !== 'duel' || this.pool <= 0) return 'Not between fights.';
     if (this.power < ASSISTS[kind].cost) return `Needs ${ASSISTS[kind].cost} Team Power.`;
-    if (kind === 'revive') return this.left[mate] ? `${this.name(mate)} left the raid.` : `Only when ${this.name(mate)} has fallen.`;
+    if (kind === 'revive') return this.left[mate] ? `${this.name(mate)} left the raid.` : !this.fallen[mate] ? `Only when ${this.name(mate)} has fallen.` : `${this.name(mate)} has no cards left to draw.`;
+    if (kind === 'gift' && !this.running(hero)) return "You're out of this fight.";
     if (!this.running(mate)) return `${this.name(mate)} isn't dueling.`;
     if (kind === 'heal') return `${this.name(mate)} has ${HEAL_BELOW} LP or more.`;
     if (kind === 'gift') return this.running(hero) && this.idle(hero) ? 'No cards in your hand.' : 'Only between your moves.';
@@ -355,6 +377,9 @@ export class Raid {
       case 'RAID_MOVE': {
         const x = this.boards[m.b];
         if (!x || this.phase !== 'duel') return;
+        // A move made against an older state of the board (queued while offline, a double tap) is dropped.
+        if (m.at !== undefined && m.at !== x.engine.state.log.length) return;
+        this.moves++;
         try {
           if (x.engine.state.winner === null) x.engine.apply(m.a);
         } catch (err) {
@@ -376,6 +401,12 @@ export class Raid {
       case 'RAID_PING':
         if (!this.plan || this.left[m.hero] || !PINGS[m.ping]) return;
         this.push('ping', m.hero, `${this.name(m.hero)}: ${PINGS[m.ping]}`);
+        break;
+      case 'RAID_RETRY':
+        if (this.phase !== 'lost' || !this.plan || this.left.every(Boolean)) return;
+        this.retries++;
+        this.rage = false;
+        this.startStage(this.stage);
         break;
       case 'RAID_AWAY':
         if (!this.plan || this.left[m.hero] || this.away[m.hero] === m.away || this.plan.heroes[m.hero].ctl === 'cpu') return;
@@ -425,7 +456,7 @@ export class Raid {
       const foe = duelistById(st.foes[b])!;
       const fd = deckOf(foe);
       const boon = this.carry[b];
-      const seed = mix(plan.seed, i, b);
+      const seed = mix(plan.seed + this.retries * 7919, i, b);
       const heroSetup: SeatSetup = boon === 'lp' ? { lp: 5000 } : boon === 'draw' ? { openingHand: 1 } : {};
       const foeSetup: SeatSetup = { ...st.foeSetup, lp: this.pool };
       if (boon === 'ambush') foeSetup.openingHand = (foeSetup.openingHand ?? 0) - 1;
@@ -458,10 +489,25 @@ export class Raid {
       if (dealt > 0) {
         this.credit(b, dealt);
         this.push('hit', b, `${this.name(b)} hit ${x.foe.name} for ${dealt}`, dealt);
+        this.combo(b, dealt);
       }
     }
     this.syncPool();
     this.check();
+  }
+
+  /** Hits from both brothers close together: the second one lands 30% harder. */
+  private combo(b: Pid, dealt: number) {
+    const mate = (b === 0 ? 1 : 0) as Pid;
+    const near = this.moves - this.lastHit[mate] <= COMBO_WINDOW;
+    this.lastHit[b] = this.moves;
+    if (!near || this.pool <= 0) return;
+    this.lastHit[mate] = -1e9; // one combo per pair of hits
+    const extra = Math.min(this.pool, Math.max(100, Math.round((dealt * COMBO_PCT) / 50) * 50));
+    this.pool -= extra;
+    this.total[b] += extra;
+    this.combos++;
+    this.push('combo', b, `Tag-team combo from ${this.name(b)}!`, extra);
   }
 
   /** Every running board's enemy has the pool's Life Points. */

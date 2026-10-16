@@ -772,3 +772,12 @@
 .rd-auto {
   font-size: 12px;
 }
+.rd-toast-x {
+  color: #f2c14e;
+  font-weight: 900;
+}
+.rd-toast.combo {
+  border-color: #f2c14e;
+  font-size: 16px;
+  box-shadow: 0 0 22px rgba(242, 193, 78, 0.5);
+}
