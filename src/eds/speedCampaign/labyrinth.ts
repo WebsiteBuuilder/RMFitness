@@ -41,7 +41,12 @@ export interface Run {
   seed: number;
   /** YYYY-MM-DD for a Daily Labyrinth */
   daily?: string;
+  /** the Starter Deck's character, or the name of your own deck the run began with */
   starter: string;
+  /** the run began with one of your own decks instead of a Starter Deck */
+  ownDeck?: boolean;
+  /** that deck was an Anything goes deck: the run counts, but pays no chips or Soul Fragments */
+  open?: boolean;
   main: string[];
   extra: string[];
   skill: string | null;
@@ -92,6 +97,8 @@ export interface RunSummary {
   won: boolean;
   curse: number;
   fragments: number;
+  /** played with an Anything goes deck (paid nothing) */
+  open?: boolean;
 }
 
 // ---------- who you meet on each floor ----------
@@ -261,14 +268,16 @@ export interface NewRunOptions {
   daily?: string;
   /** a Millennium Item earned on the Road, carried in as a starting relic */
   bring?: string;
+  /** start from one of your own decks instead of a Starter Deck (not in the Daily) */
+  deck?: { name: string; main: string[]; extra: string[]; skill: string | null; open?: boolean };
 }
 
 export function newRun(o: NewRunOptions): Run {
   // The Daily is the same run for everyone: no upgrades, no carried Item, Curse 0.
-  if (o.daily) o = { ...o, upgrades: [], curse: 0, bring: undefined };
+  if (o.daily) o = { ...o, upgrades: [], curse: 0, bring: undefined, deck: undefined };
   const next = rng(o.seed);
   const st = STARTERS.find((s) => s.character === o.starter) ?? STARTERS[0];
-  const d = deckFromStarter(st);
+  const d = o.deck ? { main: [...o.deck.main], extra: [...o.deck.extra], skill: o.deck.skill } : deckFromStarter(st);
   const floors = [0, 1, 2].map((f) => makeFloor(next, f, o.curse));
   let hearts = 3 + (o.upgrades.includes('heart') ? 1 : 0);
   if (o.curse >= 6) hearts -= 1;
@@ -285,8 +294,10 @@ export function newRun(o: NewRunOptions): Run {
     id: `run${o.seed.toString(36)}${Date.now().toString(36)}`,
     seed: o.seed,
     daily: o.daily,
-    starter: st.character,
-    main: scouted ? [...d.main, scouted] : d.main,
+    starter: o.deck ? o.deck.name : st.character,
+    ...(o.deck ? { ownDeck: true } : {}),
+    ...(o.deck?.open ? { open: true } : {}),
+    main: scouted && d.main.length < MAIN_MAX ? [...d.main, scouted] : d.main,
     extra: d.extra,
     skill: d.skill,
     hearts,
@@ -634,12 +645,13 @@ export function choose(r: Run, c: Choice, upgrades: string[]): Run {
 
 /** Soul Fragments a finished run pays. */
 export function fragmentsFor(r: Run): number {
+  if (r.open) return 0;
   const floorsDone = r.over === 'won' ? 3 : r.floor;
   return r.wins * 3 + floorsDone * 15 + (r.over === 'won' ? 40 + r.curse * 10 : 0);
 }
 
 export function summaryOf(r: Run): RunSummary {
-  return { date: Date.now(), daily: r.daily, starter: r.starter, floor: r.over === 'won' ? 3 : r.floor + 1, wins: r.wins, won: r.over === 'won', curse: r.curse, fragments: fragmentsFor(r) };
+  return { date: Date.now(), daily: r.daily, starter: r.starter, floor: r.over === 'won' ? 3 : r.floor + 1, wins: r.wins, won: r.over === 'won', curse: r.curse, fragments: fragmentsFor(r), ...(r.open ? { open: true } : {}) };
 }
 
 /** A run better than another: further, then more wins. */

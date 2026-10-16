@@ -26,6 +26,11 @@ export interface CampaignProgress {
   cleared?: string;
   /** one of the profile's own decks to walk the road with instead of the road deck (null or unset: the road deck) */
   deckId?: string | null;
+  /** node id -> wins with an Anything goes deck: they open the road ahead but pay nothing,
+   * so the duel's prizes still wait for a win with a deck built from cards you own */
+  openWins?: Record<string, number>;
+  /** story duels: bring your own deck instead of the borrowed one (remembered) */
+  storyOwn?: boolean;
 }
 
 export interface LabyrinthProgress {
@@ -39,6 +44,8 @@ export interface LabyrinthProgress {
   best: RunSummary | null;
   /** the last day a Labyrinth boss paid a Duel Chip (one a day) */
   chipDay?: string;
+  /** the deck a new run last started from (null: a Starter Deck) */
+  deckId?: string | null;
 }
 
 export interface PracticePrefs {
@@ -69,7 +76,7 @@ export interface SoloSave {
   labyrinth: LabyrinthProgress;
   practice: PracticePrefs;
   /** the Tag Road (2v2 campaign): which tag pairs were beaten */
-  tagRoad?: { wins: Record<string, number>; losses: number };
+  tagRoad?: { wins: Record<string, number>; losses: number; openWins?: Record<string, number> };
   /** Card Legends: the story duels won and the daily rematch */
   legends?: LegendsProgress;
 }

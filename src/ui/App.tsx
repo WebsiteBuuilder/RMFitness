@@ -428,11 +428,14 @@ export function App() {
     soloDuel.current = null;
     const o = !left && session ? outcomeOf(session.engine.state, 0, sd.startLp) : forfeit(sd.startLp);
     const speedNow = speedSave ?? loadSpeedSave(profile.id);
-    const r = settleSolo(sd.ctx, o, speedNow, loadSolo(profile.id));
+    const soloBefore = loadSolo(profile.id);
+    // An Anything goes deck moves the solo modes on but earns nothing, Duelist Requests included.
+    const anyGoes = sd.ctx.kind === 'labyrinth' ? !!soloBefore.labyrinth.run?.open : sd.ctx.kind !== 'practice' && !!sd.ctx.open;
+    const r = settleSolo(sd.ctx, o, speedNow, soloBefore);
     writeSolo(profile.id, r.solo);
     // Duelist Requests: Road and Labyrinth duels count (Practice and watching never do).
     const st = session?.engine.state;
-    const req = !left && st && sd.ctx.kind !== 'practice' && !sd.spec.watch ? noteRequests(r.speed, summaryOf(st, 0), true) : null;
+    const req = !left && st && sd.ctx.kind !== 'practice' && !sd.spec.watch && !anyGoes ? noteRequests(r.speed, summaryOf(st, 0), true) : null;
     if (req?.lines.length) {
       setSpeedNews(req.lines);
       setNewsCards([{ who: '', won: req.cards, lost: [] }]);
@@ -525,12 +528,12 @@ export function App() {
     if (ctx.startsWith('road:')) {
       const speedNow = speedSave ?? loadSpeedSave(profile.id);
       const solo = loadSolo(profile.id);
-      const r = settleTagRoad(speedNow, solo, ctx.slice(5), winner === null ? forfeit(TAG_LP) : outcomeOf(st, side, TAG_LP));
-      // An Anything goes deck moves you along the road but earns nothing.
+      // An Anything goes deck moves you along the road but earns nothing; the prizes wait for a win with your own cards.
       const noEarn = !!activeDeck(speedNow)?.open;
-      writeSolo(profile.id, noEarn ? { ...solo, tagRoad: r.solo.tagRoad } : r.solo);
-      if (!noEarn && r.speed !== speedNow) setSpeedSave(r.speed);
-      report = { ctx, result, settled: noEarn ? { ...r, lines: [], cards: [] } : r, noEarn };
+      const r = settleTagRoad(speedNow, solo, ctx.slice(5), winner === null ? forfeit(TAG_LP) : outcomeOf(st, side, TAG_LP), Date.now(), noEarn);
+      writeSolo(profile.id, r.solo);
+      if (r.speed !== speedNow) setSpeedSave(r.speed);
+      report = { ctx, result, settled: r, noEarn };
     }
     tagHost.current = null;
     setTagReport(report);

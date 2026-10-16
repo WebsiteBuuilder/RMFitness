@@ -3,7 +3,7 @@
 // Legend Rematch; Duel Chips for firsts. Rules and content live in speedCampaign/legends.ts.
 import { useState } from 'preact/hooks';
 import { owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
-import { roadDeckProblems } from '../eds/speedCampaign/campaign';
+import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import {
   LEGENDS,
   LEGEND_CHIPS_TOTAL,
@@ -14,6 +14,7 @@ import {
   legendBorrowed,
   legendById,
   legendDuelOpen,
+  legendDuelPassed,
   legendDuelWon,
   legendFinished,
   legendFoe,
@@ -29,31 +30,23 @@ import {
   type Line,
 } from '../eds/speedCampaign/legends';
 import { CardImg } from './CardImg';
-import { Btn, CardRow, Portrait, ResultBanner, Sheet, Top, ace, skillName, type Ctx } from './Solo';
+import { ANY_GOES_NOTE, ANY_GOES_PICK_NOTE, Btn, CardRow, Portrait, ResultBanner, Sheet, SoloDeckPick, Top, ace, skillName, soloDecks, type Ctx } from './Solo';
 import './legends.css';
-
-/** Decks that can enter: built from cards you own (the road deck counts; "Anything goes" decks don't). */
-function eligibleDecks(p: Ctx): SpeedDeck[] {
-  const out: SpeedDeck[] = [];
-  const seen = new Set<string>();
-  for (const d of [...(p.speed.road ? [p.speed.road] : []), ...p.speed.decks]) {
-    if (d.open || seen.has(d.id)) continue;
-    seen.add(d.id);
-    out.push(d);
-  }
-  return out;
-}
 
 export function Legends(p: Ctx) {
   const { solo, setSolo, speed } = p;
   const lp = legendsProgress(solo);
-  const decks = eligibleDecks(p);
-  const deck = decks.find((d) => d.id === lp.deckId) ?? decks.find((d) => roadDeckProblems(speed, d).length === 0) ?? decks[0] ?? null;
-  const problems = deck ? roadDeckProblems(speed, deck) : ['Build a deck from cards you own first (Speed Duel menu → Decks), or start the Millennium Road.'];
+  // Any deck can enter (Anything goes too; those wins move the story on but pay nothing).
+  const decks = soloDecks(speed);
+  const deck = decks.find((d) => d.id === lp.deckId) ?? decks.find((d) => !d.open && soloDeckProblems(speed, d).length === 0) ?? decks[0] ?? null;
+  const problems = deck ? soloDeckProblems(speed, deck) : ['Build a deck first (Speed Duel menu → Decks), or start the Millennium Road.'];
   const rep = p.report?.kind === 'legend' ? p.report : null;
   const repFound = rep ? findLegendDuel(rep.duelId) : null;
   const [openId, setOpenId] = useState<string | null>(() => repFound?.legend.id ?? null);
   const [scene, setScene] = useState<{ duel: LegendDuel; rematch: boolean } | null>(null);
+  /** a story duel played with your own deck instead of the borrowed one */
+  const storyOwn = !!lp.storyOwn;
+  const setStoryOwn = (b: boolean) => setSolo({ ...solo, legends: { ...lp, storyOwn: b } });
   const [help, setHelp] = useState(false);
   const [deckPick, setDeckPick] = useState(false);
   const next = nextLegendDuel(solo);
@@ -66,20 +59,21 @@ export function Legends(p: Ctx) {
   const duel = (d: LegendDuel, isRematch: boolean) => {
     const found = findLegendDuel(d.id)!;
     const foe = legendFoe(d);
-    const borrowed = legendBorrowed(d);
+    const borrowed = storyOwn ? null : legendBorrowed(d);
+    const open = !borrowed && !!deck?.open;
     const mine = borrowed ?? (deck && !problems.length ? { name: p.name, main: deck.main, extra: deck.extra, skill: deck.skill } : null);
     if (!mine) return;
     const deckOfFoe = { main: foe.main.flatMap((e) => (/\*\d$/.test(e) ? Array<string>(Number(e.slice(-1))).fill(e.slice(0, -2)) : [e])), extra: foe.extra.flatMap((e) => (/\*\d$/.test(e) ? Array<string>(Number(e.slice(-1))).fill(e.slice(0, -2)) : [e])) };
     const first = !legendDuelWon(solo, d.id);
     const notes = [
       ...(d.condition ? [d.condition.text] : []),
-      ...(first ? [`First win: ${LEGEND_DUEL_CHIPS} Duel Chip${found.index === found.legend.duels.length - 1 ? `, plus ${found.legend.card}, ${LEGEND_FINISH_CHIPS} more chips, a pack and a title` : ''}.`] : isRematch && pays ? [`Legend Rematch: a win pays ${REMATCH_CHIPS} Duel Chip today.`] : ['Already won: this replay pays nothing.']),
+      ...(open ? [ANY_GOES_NOTE] : first ? [`First win: ${LEGEND_DUEL_CHIPS} Duel Chip${found.index === found.legend.duels.length - 1 ? `, plus ${found.legend.card}, ${LEGEND_FINISH_CHIPS} more chips, a pack and a title` : ''}.`] : isRematch && pays ? [`Legend Rematch: a win pays ${REMATCH_CHIPS} Duel Chip today.`] : ['Already won: this replay pays nothing.']),
     ];
     p.onDuel({
       me: { name: mine.name, main: mine.main, extra: mine.extra, skill: mine.skill, setup: d.condition?.player },
       cpu: { name: foe.name, main: deckOfFoe.main, extra: deckOfFoe.extra, skill: foe.skill, setup: d.condition?.cpu },
       first: d.condition?.cpuFirst ? 'cpu' : 'coin',
-      context: { kind: 'legend', duelId: d.id, ...(isRematch ? { rematch: true } : {}) },
+      context: { kind: 'legend', duelId: d.id, ...(isRematch ? { rematch: true } : {}), ...(open ? { open: true } : {}) },
       level: legendLevel(found.legend, found.index),
       vs: {
         label: isRematch ? 'LEGEND REMATCH' : borrowed ? `STORY DUEL · YOU ARE ${borrowed.name.toUpperCase()}` : `LEGEND ${found.legend.n} · ${found.legend.title.toUpperCase()}`,
@@ -112,7 +106,7 @@ export function Legends(p: Ctx) {
         <div class="so-body">
           <p class="so-blurb">Every famous card has a story. Duel through it, hear it from the card itself, and earn Duel Chips along the way.</p>
           {rematch && (
-            <button class={`lg-rematch ${pays ? '' : 'spent'}`} disabled={!pays || (!legendBorrowed(rematch) && problems.length > 0)} onClick={() => setScene({ duel: rematch, rematch: true })}>
+            <button class={`lg-rematch ${pays ? '' : 'spent'}`} disabled={!pays} onClick={() => setScene({ duel: rematch, rematch: true })}>
               <Portrait d={legendFoe(rematch)} size="s" />
               <div>
                 <span class="so-label">TODAY'S LEGEND REMATCH</span>
@@ -124,7 +118,7 @@ export function Legends(p: Ctx) {
             </button>
           )}
           {next && (
-            <Btn kind="gold" disabled={!legendBorrowed(next.duel) && problems.length > 0} onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
+            <Btn kind="gold" onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
               Continue: {next.legend.card}, duel {next.index + 1}
             </Btn>
           )}
@@ -150,21 +144,31 @@ export function Legends(p: Ctx) {
         <LegendView {...p} legend={sel} deckProblems={problems} onScene={(d) => setScene({ duel: d, rematch: false })} deck={deck} onPickDeck={() => setDeckPick(true)} />
       )}
 
-      {scene && <SceneSheet legend={findLegendDuel(scene.duel.id)!.legend} lines={scene.duel.scene} title={scene.duel.title} borrowed={legendBorrowed(scene.duel)?.name ?? null} onClose={() => setScene(null)} onGo={() => (setScene(null), duel(scene.duel, scene.rematch))} />}
+      {scene && (
+        <SceneSheet
+          legend={findLegendDuel(scene.duel.id)!.legend}
+          lines={scene.duel.scene}
+          title={scene.duel.title}
+          borrowed={legendBorrowed(scene.duel)?.name ?? null}
+          own={storyOwn}
+          setOwn={setStoryOwn}
+          deck={deck}
+          problems={problems}
+          onPickDeck={() => setDeckPick(true)}
+          onClose={() => setScene(null)}
+          onGo={() => (setScene(null), duel(scene.duel, scene.rematch))}
+        />
+      )}
       {deckPick && (
-        <Sheet title="Deck for Card Legends" onClose={() => setDeckPick(false)}>
-          {decks.length === 0 && <p class="so-dim">No decks built from owned cards yet. Start the Millennium Road or build a deck from your collection.</p>}
-          {decks.map((d) => {
-            const pr = roadDeckProblems(speed, d);
-            return (
-              <button key={d.id} class={`lg-deck ${deck?.id === d.id ? 'on' : ''}`} onClick={() => (setSolo({ ...solo, legends: { ...lp, deckId: d.id } }), setDeckPick(false))}>
-                <b>{d.name}</b>
-                <span class={pr.length ? 'so-bad' : 'so-good'}>{pr.length ? pr[0] : `${d.main.length} cards · ${skillName(d.skill)}`}</span>
-              </button>
-            );
-          })}
-          <p class="so-dim">"Anything goes" decks can't enter: Card Legends pays chips, so it only takes decks made from cards you own.</p>
-        </Sheet>
+        <SoloDeckPick
+          title="Deck for Card Legends"
+          decks={decks}
+          current={deck}
+          problemsOf={(d) => soloDeckProblems(speed, d)}
+          note={decks.length ? ANY_GOES_PICK_NOTE : 'No decks yet. Start the Millennium Road or build a deck (Speed Duel menu → Decks).'}
+          onPick={(d) => (setSolo({ ...solo, legends: { ...lp, deckId: d.id } }), setDeckPick(false))}
+          onClose={() => setDeckPick(false)}
+        />
       )}
       {help && (
         <Sheet title="What Card Legends pays" onClose={() => setHelp(false)}>
@@ -199,7 +203,10 @@ function DeckBar({ deck, problems, onPick }: { deck: SpeedDeck | null; problems:
   return (
     <div class="so-deckbar">
       <div>
-        <b>Your deck{deck ? `: ${deck.name}` : ''}</b>
+        <b>
+          Your deck{deck ? `: ${deck.name}` : ''}
+          {deck?.open && <span class="so-anygoes">Anything goes</span>}
+        </b>
         <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
       </div>
       <Btn kind="blue" onClick={onPick}>
@@ -227,16 +234,18 @@ function LegendView(p: Ctx & { legend: Legend; deck: SpeedDeck | null; deckProbl
         {l.duels.map((d, i) => {
           const open = legendDuelOpen(solo, l, i);
           const won = legendDuelWon(solo, d.id);
+          const waiting = !won && legendDuelPassed(solo, d.id);
           const foe = legendFoe(d);
           const last = i === l.duels.length - 1;
           return (
-            <button key={d.id} class={`so-node ${last ? 'boss' : ''} ${open ? '' : 'locked'} ${won ? 'won' : ''}`} disabled={!open} onClick={() => p.onScene(d)}>
+            <button key={d.id} class={`so-node ${last ? 'boss' : ''} ${open ? '' : 'locked'} ${won || waiting ? 'won' : ''}`} disabled={!open} onClick={() => p.onScene(d)}>
               <Portrait d={foe} size={last ? 'm' : 's'} />
               <div class="so-node-t">
                 <b>{open ? d.title : '???'}</b>
                 <span>{open ? `vs ${foe.name}` : 'Win the duel before this one'}</span>
                 {open && d.as && <em>Story duel: you play as {d.as.name}</em>}
                 {open && last && <em>Finale · {l.card}</em>}
+                {waiting && <em class="so-waiting">Chips waiting</em>}
               </div>
               <span class={`lg-pay ${won ? 'won' : ''}`}>{won ? '✓' : `+${LEGEND_DUEL_CHIPS + (last ? LEGEND_FINISH_CHIPS : 0)}`}</span>
             </button>
@@ -262,7 +271,21 @@ function Scene({ legend, lines }: { legend: Legend; lines: Line[] }) {
   );
 }
 
-function SceneSheet({ legend, lines, title, borrowed, onClose, onGo }: { legend: Legend; lines: Line[]; title: string; borrowed: string | null; onClose: () => void; onGo: () => void }) {
+function SceneSheet(p: {
+  legend: Legend;
+  lines: Line[];
+  title: string;
+  borrowed: string | null;
+  own: boolean;
+  setOwn: (b: boolean) => void;
+  deck: SpeedDeck | null;
+  problems: string[];
+  onPickDeck: () => void;
+  onClose: () => void;
+  onGo: () => void;
+}) {
+  const { legend, lines, title, borrowed, own, onClose, onGo } = p;
+  const mine = !borrowed || own;
   return (
     <Sheet onClose={onClose}>
       <div class="so-intro">
@@ -275,8 +298,21 @@ function SceneSheet({ legend, lines, title, borrowed, onClose, onGo }: { legend:
         </div>
       </div>
       <Scene legend={legend} lines={lines} />
-      {borrowed && <div class="so-cond blue">You duel as {borrowed}, with their deck. Your own deck sits this one out.</div>}
-      <Btn kind="gold" onClick={onGo}>
+      {borrowed && (
+        <div class="so-cond blue so-storypick">
+          <span>{own ? `Story duel, but you bring your own deck instead of ${borrowed}'s.` : `You duel as ${borrowed}, with their deck.`}</span>
+          <div class="so-seg">
+            <button class={own ? '' : 'on'} onClick={() => p.setOwn(false)}>
+              Story deck
+            </button>
+            <button class={own ? 'on' : ''} onClick={() => p.setOwn(true)}>
+              My deck
+            </button>
+          </div>
+        </div>
+      )}
+      {mine && <DeckBar deck={p.deck} problems={p.problems} onPick={p.onPickDeck} />}
+      <Btn kind="gold" disabled={mine && p.problems.length > 0} onClick={onGo}>
         Duel!
       </Btn>
     </Sheet>
@@ -311,7 +347,8 @@ function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind:
           </div>
         ))}
       {s.capped && <div class="so-warn">Your Duel Chips are full (30). Spend some in the Card Shop so the next ones aren't lost.</div>}
-      {won && !s.firstWin && !s.rematchPaid && <p class="so-center so-dim">A replay: no chips this time.{rep.rematch ? ' The rematch already paid today.' : ''}</p>}
+      {won && s.noEarn && <p class="so-center so-dim">The story moves on. Anything goes decks don't earn chips, so this duel's chips wait for a win with your own cards.</p>}
+      {won && !s.noEarn && !s.firstWin && !s.rematchPaid && <p class="so-center so-dim">A replay: no chips this time.{rep.rematch ? ' The rematch already paid today.' : ''}</p>}
       {!won && <p class="so-center">A loss costs nothing. Tune your deck and try again.</p>}
       <Btn kind="gold" onClick={p.onDone}>
         Continue

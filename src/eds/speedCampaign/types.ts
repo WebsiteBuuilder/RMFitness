@@ -68,9 +68,9 @@ export interface DuelOutcome {
 /** Which solo mode a duel belongs to, so its result goes to the right place. */
 export type DuelContext =
   | { kind: 'practice'; oppId: string; deckId: string | null; first: 'me' | 'cpu' | 'coin'; conditions: boolean; watch?: boolean }
-  | { kind: 'campaign'; nodeId: string }
+  | { kind: 'campaign'; nodeId: string; open?: boolean }
   | { kind: 'labyrinth'; runId: string; stopId: string }
-  | { kind: 'legend'; duelId: string; rematch?: boolean };
+  | { kind: 'legend'; duelId: string; rematch?: boolean; open?: boolean };
 
 /** Everything needed to start one duel against the computer. */
 export interface CpuDuelSpec {
