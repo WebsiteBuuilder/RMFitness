@@ -43,6 +43,9 @@ export function pickNext(from: Box, dir: Dir, boxes: Box[]): number {
       off = Math.abs(cx - fx);
       along += d * 0.1;
     }
+    // only things roughly ahead (a cone): left from the end of a row stops there instead of dropping to another row
+    const span = dir === 'left' || dir === 'right' ? from.bottom - from.top : from.right - from.left;
+    if (side > 0 && side > Math.abs(dir === 'left' || dir === 'right' ? cx - fx : cy - fy) * 1.2 + span * 0.5) return;
     const score = along + side * 3 + off * 0.15;
     if (score < bestScore) {
       bestScore = score;

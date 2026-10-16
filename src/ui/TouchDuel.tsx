@@ -608,8 +608,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
-    if (state.phase === 'BP') return state.firstTurn ? null : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it';
+    // (with a controller: the buttons, not the finger moves)
+    const pad = document.documentElement.classList.contains('pad-on');
+    if (state.phase === 'BP') return state.firstTurn ? null : pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
+    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, or tap it';
     return null;
   };
 
@@ -717,7 +719,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
               <DetailLine name={selCard.name} />
               <p>{cardInfo(selCard.name)?.desc}</p>
-              <span class="tdetail-more">Tap for full text</span>
+              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
             </div>
           </div>
         )}

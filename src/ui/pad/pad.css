@@ -73,7 +73,12 @@
   opacity: 0;
 }
 .pad-duel .pad-hints.show {
-  opacity: 0.82;
+  opacity: 0.9;
+}
+.pad-duel .pad-hints:not(.guide) {
+  padding: 2px 8px;
+  gap: 2px 8px;
+  font-size: 10px;
 }
 .pad-hint {
   display: inline-flex;

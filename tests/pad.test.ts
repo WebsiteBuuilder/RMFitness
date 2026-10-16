@@ -101,6 +101,9 @@ ok(pickNext(hand[2], 'up', field) === 1, 'up from the middle card goes to the mi
   ok(pickNext(raised, 'down', [...row, menu]) === 2, 'down from a raised hand card goes to the menu below');
   ok(pickNext(raised, 'left', [...row, menu]) === 0, 'left from a raised hand card is its neighbour');
 }
+// the end of a row: left goes nowhere rather than down to the hand far below
+ok(pickNext(b(20, 100, 70, 90), 'left', [b(200, 600, 70, 100)]) === -1, 'no wild jumps off the end of a row');
+ok(pickNext(b(20, 100, 70, 90), 'down', [b(200, 600, 70, 100)]) === 0, 'but down still reaches a row further down');
 ok(nearest(150, 40, grid) === 1, 'nearest box to a point');
 ok(nearest(0, 0, []) === -1, 'nothing to land on');
 

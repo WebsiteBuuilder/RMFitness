@@ -21,6 +21,8 @@ const PRIMARY = '[autofocus], .tbtn.main, .taction.main, .csheet-ok, .primary, .
 const CLOSE = '.win-x, [aria-label="Close"], [aria-label="Back"], [data-pad-back]';
 const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick)';
 const HAND = '.thcard, .hcard, .hand [data-uid]';
+/** Choices one stray press shouldn't land on first (leaving, deleting, switching controls). */
+const risky = (el: Element) => /controls|leave|surrender|give up|concede|delete|quit|switch profile|log out|open all|^\W*new deck/i.test(el.textContent ?? '');
 const TABS = '[role=tablist], .sdh-tabs, .tabs, .so-tabs, .rank-tabs, .fr-tabs';
 const ON = /(^|\s)(on|active|sel|selected|cur|current)(\s|$)/;
 
@@ -52,7 +54,6 @@ let handSeen = false;
 let cameFrom: { el: Element; x: number; y: number } | null = null;
 let artHeld = false;
 let hintsAt = 0;
-let hintsFrom = 0;
 
 // ---------- what can be reached ----------
 
@@ -61,7 +62,15 @@ function rectOf(el: Element): Box & { width: number; height: number } {
   return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
 }
 
+let spCache: Map<Element, HTMLElement | null> | null = null;
 function scrollParent(el: Element): HTMLElement | null {
+  const hit = spCache?.get(el.parentElement as Element);
+  if (hit !== undefined) return hit;
+  const found = findScrollParent(el);
+  spCache?.set(el.parentElement as Element, found);
+  return found;
+}
+function findScrollParent(el: Element): HTMLElement | null {
   for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
     const s = getComputedStyle(p);
     if ((/(auto|scroll)/.test(s.overflowY) && p.scrollHeight > p.clientHeight + 2) || (/(auto|scroll)/.test(s.overflowX) && p.scrollWidth > p.clientWidth + 2)) return p;
@@ -113,6 +122,14 @@ interface Cand {
 
 /** Everything the ring can land on right now. */
 function candidates(): Cand[] {
+  spCache = new Map();
+  try {
+    return scan();
+  } finally {
+    spCache = null;
+  }
+}
+function scan(): Cand[] {
   const all = new Set<Element>(document.querySelectorAll(NATIVE));
   for (const el of tappable()) all.add(el);
   all.delete(document.body);
@@ -144,8 +161,17 @@ function candidates(): Cand[] {
 
 /** What the ring could reach at the last look (to tell a redrawn list from a new screen). */
 let known = new WeakSet<Element>();
+/** which screen this is (its first few stops), and where the ring last was on each screen */
+let screenSig = '';
+const placeOn = new Map<string, string>();
+const labelOf = (el: Element) => ((el.getAttribute('aria-label') ?? '') + (el.textContent ?? '')).replace(/\s+/g, ' ').trim().slice(0, 40);
 function remember(c: Cand[]) {
   known = new WeakSet(c.map((x) => x.el));
+  screenSig = c
+    .filter((x) => !x.el.closest(TABS))
+    .slice(0, 6)
+    .map((x) => labelOf(x.el).replace(/\d+/g, '#'))
+    .join('|');
 }
 
 // ---------- the ring ----------
@@ -156,6 +182,10 @@ function setFocus(el: Element | null, scroll = true) {
   if (!el) return;
   el.classList.add('pad-focus');
   if (el.matches(HAND)) handSeen = true;
+  if (screenSig && !el.closest(TABS)) {
+    placeOn.set(screenSig, labelOf(el));
+    if (placeOn.size > 200) placeOn.delete(placeOn.keys().next().value as string);
+  }
   if (scroll) {
     const r = el.getBoundingClientRect();
     if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -210,7 +240,7 @@ function validate(force = false) {
     layerTries.set(layer, -1);
     const ae = document.activeElement;
     const pick =
-      inside.find((x) => x.el === ae) ??
+      inside.find((x) => x.el === ae && !x.el.matches(CLOSE)) ??
       // choosing an attack target: straight to the targets
       (picks.length && (layer.matches('.ttoast.aim') || inside.every((x) => /^\W*(cancel|back)\s*$/i.test(x.el.textContent ?? ''))) ? picks[nearest(lastX, lastY, picks.map((x) => x.box))] : undefined) ??
       // a list of cards to choose from: the first card
@@ -218,7 +248,7 @@ function validate(force = false) {
       inside.find((x) => x.el.matches(PRIMARY)) ??
       inside.find((x) => x.el.matches('.sel, .on, [aria-selected=true], [aria-checked=true]')) ??
       // its first choice (a close × is never where you start)
-      inside.sort((a, b) => Number(a.el.matches(CLOSE)) - Number(b.el.matches(CLOSE)) || a.box.top - b.box.top || a.box.left - b.box.left)[0];
+      inside.sort((a, b) => Number(a.el.matches(CLOSE)) - Number(b.el.matches(CLOSE)) || Number(risky(a.el)) - Number(risky(b.el)) || a.box.top - b.box.top || a.box.left - b.box.left)[0];
     if (pick) {
       // when it closes, the ring goes back where it was
       if (focused && !layer.contains(focused)) cameFrom = { el: focused, x: lastX, y: lastY };
@@ -261,9 +291,18 @@ function validate(force = false) {
     return setFocus(n.el);
   }
   // a new screen: its main button, else the first thing under the top bar
+  // (back on a screen you were on before: where you were on it)
+  const memo = placeOn.get(screenSig);
+  const again = memo ? c.find((x) => labelOf(x.el) === memo) : undefined;
+  if (again) return setFocus(again.el);
+  setFocus(firstStop(c).el);
+}
+
+/** A new screen's first stop: its main button, else the first plain choice under the top bar (never a close ×, a tab or a bulk/destructive action). */
+function firstStop(c: Cand[]): Cand {
   const order = c.slice().sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left);
-  const pick = order.find((x) => x.el.matches(PRIMARY)) ?? order.find((x) => x.box.top >= innerHeight * 0.12) ?? order[0];
-  setFocus(pick.el);
+  const plain = (x: Cand) => !x.el.matches(CLOSE) && !risky(x.el) && !x.el.closest(TABS);
+  return order.find((x) => x.el.matches(PRIMARY) && plain(x)) ?? order.find((x) => x.box.top >= innerHeight * 0.12 && plain(x)) ?? order.find(plain) ?? order[0];
 }
 
 // ---------- moving ----------
@@ -356,6 +395,15 @@ function press() {
   tap(el);
   // let the screen redraw, then put the ring somewhere real
   setTimeout(() => validate(true), 60);
+  // a card in your hand with nothing to do right now: say so, instead of a silent press
+  if (el.matches('.duel.touch .thcard')) {
+    setTimeout(() => {
+      if (!el.isConnected || document.querySelector('.tactions, .tsheet, .ttoast.aim, .overlay')) return;
+      const mine = !!document.querySelector('.duel.turn-me .tphase-btn.live');
+      say(mine ? 'No moves for this card right now · Y: card text' : "Wait for your turn · Y: card text");
+      rumble(0.25, 0, 70);
+    }, 160);
+  }
 }
 
 function release() {
@@ -398,10 +446,18 @@ export function back(viaEscape = true) {
     setFocus(from);
     return void setTimeout(() => validate(true), 60);
   }
+  const skip = [...document.querySelectorAll<HTMLElement>('.menu-item')].find((b) => /^\W*(flip all|skip|done)\s*$/i.test(b.textContent ?? '') && reachable(b, rectOf(b)));
+  if (skip) return void (tap(skip), setTimeout(() => validate(true), 60));
   const close = visible(CLOSE);
   if (close) return void (tap(close), setTimeout(() => validate(true), 60));
   const ov = visible('.overlay');
   if (ov) return void (ov.click(), setTimeout(() => validate(true), 60));
+  // a duel with nothing open: B never asks to leave (Start's menu does); it brings the ring home to your hand
+  if (document.querySelector('.duel') && !document.querySelector('.csheet-back, .tresult, .tsheet, .duel .msgwin .menu-item')) {
+    if (!focused?.matches(HAND)) duelJump(true);
+    renderHints(true);
+    return;
+  }
   pressBack();
   setTimeout(() => validate(true), 60);
 }
@@ -413,16 +469,22 @@ function inDuel() {
 function tabStep(d: 1 | -1) {
   const list = visibleTabs();
   if (!list) return;
-  const tabs = [...list.querySelectorAll<HTMLElement>('button, [role=tab]')].filter((t) => !(t as HTMLButtonElement).disabled);
+  // (a Done or × at the end of the row is not a tab)
+  const tabs = [...list.querySelectorAll<HTMLElement>('button, [role=tab]')].filter((t) => !(t as HTMLButtonElement).disabled && !t.matches('.x, .done, [data-pad-skip]') && !t.matches(CLOSE) && !/^\s*(done|close|back)\s*$/i.test(t.textContent ?? ''));
   if (tabs.length < 2) return;
   const i = Math.max(0, tabs.findIndex((t) => ON.test(t.className) || t.getAttribute('aria-selected') === 'true'));
   const next = tabs[(i + d + tabs.length) % tabs.length];
   tap(next);
   rumble(0, 0.2, 25);
   setTimeout(() => {
-    if (focused && list.contains(focused)) setFocus(next, false);
-    validate(true);
-  }, 60);
+    if (focused && list.contains(focused)) return setFocus(next, false);
+    const c = candidates();
+    remember(c);
+    const body = c.filter((x) => !x.el.closest(TABS));
+    if (!body.length) return validate(true);
+    const memo = placeOn.get(screenSig);
+    setFocus(((memo && body.find((x) => labelOf(x.el) === memo)) || firstStop(body)).el);
+  }, 80);
 }
 
 function visibleTabs(): HTMLElement | null {
@@ -432,7 +494,7 @@ function visibleTabs(): HTMLElement | null {
 function cardInfo() {
   const detail = visible('.tdetail');
   if (detail) return tap(detail);
-  const classicInfo = [...document.querySelectorAll<HTMLElement>('.duel .msgwin .menu-item')].find((b) => /card info/i.test(b.textContent ?? ''));
+  const classicInfo = [...document.querySelectorAll<HTMLElement>('.msgwin .menu-item, .overlay .menu-item')].find((b) => /card info|skill text/i.test(b.textContent ?? ''));
   if (classicInfo) return tap(classicInfo);
   // the classic board's card window, or select the card first and then open its text
   if (focused?.matches('[data-uid]')) {
@@ -456,8 +518,15 @@ function onButton(b: Btn) {
     case 'b':
       return back();
     case 'x': {
-      const ph = visible('.tphase-btn:not([disabled]), .phasebtns .gbtn:not(.end)');
-      if (ph) return (tap(ph), setTimeout(() => validate(true), 60));
+      // (a card's command bubble closes first: one menu at a time)
+      const duel = document.querySelector<HTMLElement>('.duel.touch');
+      const delay = duel?.querySelector('.tactions') ? (duel.click(), 40) : 0;
+      setTimeout(() => {
+        const ph = visible('.tphase-btn:not([disabled]), .phasebtns .gbtn:not(.end)');
+        if (ph) tap(ph);
+        else say('No phase to change to right now');
+        setTimeout(() => validate(true), 60);
+      }, delay);
       return;
     }
     case 'y':
@@ -484,8 +553,13 @@ function onButton(b: Btn) {
 function duelJump(hand: boolean) {
   const c = candidates();
   const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top < innerHeight / 2);
-  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && x.box.top < innerHeight / 2);
-  if (!list.length) return;
+  // (no monsters over there: their other cards, then their portrait)
+  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('[data-uid], .tpile, .pile') && x.box.top < innerHeight / 2);
+  if (!list.length) {
+    const top = c.find((x) => x.el.matches('.tbar.top'));
+    if (top) setFocus(top.el);
+    return;
+  }
   const mid = list.sort((a, b) => a.box.left - b.box.left)[Math.floor((list.length - 1) / 2)];
   setFocus(mid.el);
 }
@@ -497,15 +571,29 @@ function hintList(): Hint[] {
   if (document.querySelector('.art-skip.on')) return [[['a'], 'Skip (hold: all)']];
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
   if (document.querySelector('.duel')) {
-    out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand'], [['rb'], 'Foes']);
-    out.push(guide ? [['start'], 'Menu'] : [['select'], 'More']);
-    if (guide) out.push([['select'], 'Hide']);
+    out[0][1] = aLabel();
+    if (!guide) return [...out, [['x'], 'Phase'], [['y'], 'Text'], [['select'], 'More']];
+    out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand'], [['rb'], 'Foes'], [['start'], 'Menu'], [['lt', 'rt'], 'Page'], [['select'], 'Hide']);
     return out;
   }
+  if ([...document.querySelectorAll('.msgwin .menu-item, .overlay .menu-item')].some((b) => /card info|skill text/i.test(b.textContent ?? ''))) out.push([['y'], 'Card info']);
   if (visibleTabs()) out.push([['lb', 'rb'], 'Tabs']);
   if (guide) out.push([['lt', 'rt'], 'Page'], [['select'], 'Hide']);
   else out.push([['select'], 'Guide']);
   return out;
+}
+
+/** What A does on the focused thing in a duel: its command's name, or picking the card. */
+function aLabel(): string {
+  const f = focused;
+  if (!f || !f.isConnected) return 'Select';
+  if (f.matches('.taction, .tphase-item, .tbtn, .menu-item, .tlink')) return (f.textContent ?? '').replace(/^\W+/, '').trim().slice(0, 16) || 'Select';
+  if (f.matches('.pick')) return document.querySelector('.ttoast.aim') ? 'Attack this' : 'Choose';
+  if (f.matches('.topt')) return 'Choose';
+  if (f.matches('.tbar.top') && document.querySelector('.ttoast.aim')) return 'Direct attack';
+  if (f.matches('[data-uid]')) return 'Card';
+  if (f.matches('.tpile, .pile')) return 'Look';
+  return 'Select';
 }
 
 /** A bar fixed along the bottom of the screen (tabs, a hand): the hints sit just above it. */
@@ -534,11 +622,13 @@ function renderHints(force = false) {
   if (!on || connected() === 0) return void hints.classList.remove('show');
   const list = hintList();
   const key = family + JSON.stringify(list) + guide;
-  if (force || key !== hintKey) hintsFrom = performance.now();
   // in a duel they show for a moment (and while the guide is open), then get out of the way
-  hints.classList.toggle('show', !duel || guide || performance.now() - hintsFrom < 4000);
-  const bt = document.querySelector('.duel') ? innerHeight : bottomBarTop();
-  hints.style.bottom = bt < innerHeight ? `${Math.round(innerHeight - bt) + 6}px` : '';
+  hints.classList.toggle('show', true);
+  // (in a duel: just over your Life Points, clear of the hand and the other player's side)
+  const lp = document.querySelector('.duel.touch .tbar.bottom')?.getBoundingClientRect();
+  const bt = lp ? lp.top : duel ? innerHeight : bottomBarTop();
+  hints.style.bottom = bt < innerHeight ? `${Math.round(innerHeight - bt) + 4}px` : '';
+  hints.style.top = lp ? 'auto' : '';
   if (!force && key === hintKey) return;
   hintKey = key;
   hints.innerHTML = list
