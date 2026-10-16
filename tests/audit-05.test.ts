@@ -1056,7 +1056,7 @@ section('Fog Control');
   const cl = place(e, 0, 'Cloudian - Smoke Ball')!;
   const foe = place(e, 1, FILL)!;
   playSpell(e, 0, 'Fog Control', { pick: ['Cloudian - Smoke Ball'] }, { pick: [FILL] });
-  check(zone(e, cl) === 'gy' && foe.counters === 3, 'Tributes a "Cloudian": places 3 Fog Counters on a face-up monster');
+  check(zone(e, cl) === 'gy' && foe.tags?.fog === 3, 'Tributes a "Cloudian": places 3 Fog Counters on a face-up monster'); // spells-d: Fog Counters live in tags.fog
 }
 
 section('Fossil Dig');

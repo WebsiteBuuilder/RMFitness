@@ -882,7 +882,9 @@ section("Magician's Circle");
   toBattle(e);
   e.apply({ type: 'ATTACK', player: 1, uid: mm.uid, target: null });
   settle(e, { respond: "Magician's Circle" });
-  check(e.monsters(0).some((m) => m.name === 'Madolche Magileine') && e.monsters(1).some((m) => m.name === 'Dark Magician Girl'), 'a Spellcaster attacks: each player Special Summons a Spellcaster with 2000 or less ATK from the Deck');
+  // (the attack is then replayed into the new monster, which can leave the field again)
+  const left = (_p: Pid, n: string) => e.state.log.some((l) => l.text === `A Special Summoned ${n} in Attack Position`);
+  check(left(0, 'Madolche Magileine') && e.monsters(1).some((m) => m.name === 'Dark Magician Girl'), 'a Spellcaster attacks: each player Special Summons a Spellcaster with 2000 or less ATK from the Deck');
 }
 
 section('Magicians Unite');

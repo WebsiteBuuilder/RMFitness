@@ -625,7 +625,7 @@ section('Gotterdammerung / Solemn Authority');
   check(!e.canActivateMain(0, g.uid), 'needs an "Aesir" monster');
   const axe = place(e, 0, 'Axe Raider')!;
   run(e, eff('Gotterdammerung').resolve!(e, { card: g, targetUid: axe.uid, player: 0 } as any, 0));
-  check(e.controller(axe.uid) === 1 && axe.doomAt === 2, "the monster goes to the opponent and is destroyed in their next End Phase");
+  check(e.controller(axe.uid) === 1 && (e.state.fx.gotterdammerung as any)?.[g.uid]?.turn === 2, "the monster goes to the opponent and is destroyed in their next End Phase");
   check(!!getEffect('Solemn Authority') && !eff('Solemn Authority').canActivate!(e, g, 0, 'main', {}), 'Solemn Authority needs an "Aesir" monster too');
 }
 

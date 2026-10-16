@@ -112,6 +112,7 @@ function equipTrap(test: (e: Engine, m: FieldCard, p: Pid) => boolean, extra: Pa
       host.equips.push(eq.uid);
       eq.active = true;
       e.log(p, `${eq.name} is equipped to ${host.name}`);
+      (eq.tags ??= {}).csLog = e.state.log.length;
     },
     ...extra,
   };
@@ -131,8 +132,8 @@ const banishIfMarked: EffectDef['onLeaveField'] = function* (e, fc) {
 };
 const pandemonium = (e: Engine) => !!e.anyActive('Pandemonium') && !e.spellsNegated();
 const wasFusionSummoned = (m: FieldCard) => m.tags?.ss === 5;
-/** "Tribute Summoned": a face-up Level 5+ monster that was Normal Summoned (not Special Summoned). */
-const tributeSummoned = (e: Engine, m: FieldCard) => m.faceUp && !m.tags?.ss && (info(e, m).level ?? 0) >= 5 && info(e, m).kind === 'monster';
+/** "Tribute Summoned": the engine tags a face-up Tribute Summon with tags.tribS (a Level 5+ monster Summoned without Tributes is not one). */
+const tributeSummoned = (_e: Engine, m: FieldCard) => m.faceUp && !!m.tags?.tribS && !m.tags?.ss;
 const RACES_ATTR_ELECTRUM = ['WIND', 'WATER', 'FIRE', 'EARTH', 'LIGHT'];
 
 export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
@@ -643,7 +644,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ======================= Spells =======================
-  // "Cannot be used as Fusion Material" is not scripted.
+  // needs-engine: "cannot be used as a Fusion, Synchro, or Xyz Material" is not scripted (no engine hook for it).
   const dustons = (e: Engine, c: Card) => isMonster(e, c) && named(e, c, 'Duston');
   E['Magicalized Duston Mop'] = h.equip(undefined, {
     canActivate: (e, _c, p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp) && !e.anyActive('Magicalized Duston Mop', p),
@@ -670,8 +671,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve() {},
     ignition: {
       can: (e, _fc, p) => e.player(p).hand.length > 0 && polys(e, p).length > 0,
+      // "You can discard 1 card" is the cost.
+      *cost(e, _fc, p) {
+        if (!(yield* discardCost(e, p, 1))) return false;
+      },
       *run(e, _fc, p) {
-        if (!(yield* discardCost(e, p, 1))) return;
         const c = yield* pickOne(e, p, 'Fusion Recycling Plant: add which "Polymerization"?', polys(e, p));
         if (!c) return;
         const fromDeck = inZone(e, c.uid, 'deck');
@@ -783,7 +787,6 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Xyz Monsters are not part of Speed Duel, so there is never a target.
   const xyzOnField = (e: Engine) => targetable(e, faceUpMonsters(e)).filter((m) => info(e, m).sub === 'Xyz');
   E['Overlay Regen'] = {
     canActivate: (e, _c, _p, t) => isMain(t) && xyzOnField(e).length > 0,
@@ -793,11 +796,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       link.targetUid = m.uid;
     },
     *resolve(e, link, p) {
-      if (link.targetUid !== undefined && e.fieldCard(link.targetUid)) e.log(p, `Overlay Regen is attached to ${e.fieldCard(link.targetUid)!.name} as an Xyz Material`);
+      const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
+      if (!m || !m.faceUp || !e.fieldCard(link.card.uid)) return;
+      if (e.attachMat(m, link.card.uid)) e.log(p, `Overlay Regen is attached to ${m.name} as an Xyz Material`);
     },
   };
 
-  // Your opponent's face-up Trap effects already on the field are not negated (only new activations are stopped).
+  // needs-engine: your opponent's face-up Trap effects already on the field are not negated (Engine.trapsNegated has no per-player
+  // check); new Trap activations and Trap effect activations are stopped (fx.noTrapTurn).
   E['Triangle Ecstasy Spark'] = {
     canActivate: (_e, _c, _p, t) => isMain(t),
     *resolve(e, _link, p) {
@@ -880,7 +886,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // "Each time your opponent activates a card or effect" is offered as a response to each activation.
+  // Mandatory: "each time your opponent activates a card or effect" is counted from the log lines "<opponent> activates ..." once
+  // the action is over (stateCheck; tags.csLog is the first log line not yet read); Summons are seen by onAnySummon.
   function addScale(e: Engine, q: Pid) {
     const list = faceUpMonsters(e, q);
     for (const m of list) tag(m).scale = (m.tags?.scale ?? 0) + 1;
@@ -900,16 +907,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (mp !== other(p) || kind === 'flip' || fc.equippedTo === undefined) return;
       addScale(e, other(p));
     },
-    quick: {
-      repeat: true,
-      label: 'place Scale Counters',
-      can: (e, c, p, t, ctx) => {
-        const fc = e.fieldCard(c.uid);
-        return !!fc && fc.equippedTo !== undefined && (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && !ctx.link.negated;
-      },
-      *run(e, _c, p) {
-        addScale(e, other(p));
-      },
+    *stateCheck(e, fc, p) {
+      const log = e.state.log;
+      const from = fc.tags?.csLog ?? log.length;
+      tag(fc).csLog = log.length;
+      if (fc.equippedTo === undefined) return;
+      const head = `${e.player(other(p)).name} activates `;
+      let n = 0;
+      for (let i = from; i < log.length; i++) if (log[i].player === other(p) && (log[i].text.startsWith(head) || /'s effect activates( from the Graveyard)?$/.test(log[i].text))) n++;
+      for (let i = 0; i < n; i++) addScale(e, other(p));
+      tag(fc).csLog = e.state.log.length;
     },
     aura: (e, _src, m, sc) => (ctrl(e, m) === other(sc) && (m.tags?.scale ?? 0) > 0 ? { atk: -100 * m.tags!.scale, def: -100 * m.tags!.scale } : undefined),
   });

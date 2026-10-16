@@ -122,8 +122,13 @@ function isBig(c: Cue): boolean {
       // a Glossy, Royal or Overframe card always gets its entrance: the finish is the show
       return bigCard(c.card.name) || finishOf(c.card) >= FIN.GL;
     case 'activate':
-    case 'target':
-      return SIGNATURES.has(c.card.name);
+      // every Spell and Trap the moment it is activated (Dark Hole, Mirror Force, Waboku...);
+      // monster effects and continuous effects at work only for the signature cards
+      return (c.what !== 'monster' && !c.lazy) || SIGNATURES.has(c.card.name);
+    case 'target': {
+      const k = card(c.card.name)?.kind;
+      return k === 'spell' || k === 'trap' || SIGNATURES.has(c.card.name);
+    }
     case 'damage':
       return c.amount >= 1000;
     case 'set':
@@ -185,6 +190,10 @@ export class Flow {
   private track: CueTrack = { battle: null };
   /** card names already summoned with a cinematic this duel (a repeat plays a short version) */
   private summoned = new Set<string>();
+  /** Spells/Traps that already played their activation (a face-up card using its effect again stays quiet under Big moments) */
+  private activated = new Set<number>();
+  /** Spell/Trap names already seen activated this duel (a repeat plays faster) */
+  private stSeen = new Set<string>();
   /** hold to skip all: no cinematics until this opponent turn is over */
   private skipTurn: number | null = null;
   private watchdog = 0;
@@ -251,7 +260,15 @@ export class Flow {
     let cues: Cue[] = [];
     if (fresh.length && real.rules?.mode === 'speed' && this.skipTurn === null) {
       const all = coalesce(toCues(fresh, real, viewer, host, this.memo, this.track));
-      cues = sink?.ready() ? pickCues(all, getCinematics(), viewer) : [];
+      const mode = getCinematics();
+      cues = sink?.ready() ? pickCues(all, mode, viewer) : [];
+      // Big moments: a Spell/Trap plays when it is activated, not each time a face-up one uses its effect again
+      if (mode === 'big') cues = cues.filter((c) => !(c.kind === 'activate' && c.what !== 'monster' && !SIGNATURES.has(c.card.name) && this.activated.has(c.card.uid)));
+      for (const c of all) {
+        if (c.kind === 'activate' && c.what !== 'monster') this.activated.add(c.card.uid);
+        // a card that leaves the field or is Set again starts over: its next activation plays
+        else if (c.kind === 'leave' || c.kind === 'destroy' || c.kind === 'set') this.activated.delete(c.card.uid);
+      }
       // what gets no cinematic still makes its sound, a beat apart
       all.filter((c) => !cues.includes(c)).forEach((c, i) => cueSound(c, i * 0.12));
     }
@@ -259,6 +276,14 @@ export class Flow {
     if (cues.length) {
       const batch = this.nextId++;
       const scales = cues.map((c) => {
+        if (c.kind === 'activate' && c.what !== 'monster') {
+          const again = this.stSeen.has(c.card.name);
+          this.stSeen.add(c.card.name);
+          // the opponent's everyday Spell/Trap (a Continuous, Field or Equip card that strikes nothing): a short version
+          const strikes = !!c.targets?.length || !!c.field?.some((f) => f.dies);
+          if (c.card.controller !== viewer && !strikes && !SIGNATURES.has(c.card.name)) return OPP_SUMMON_SCALE;
+          return again ? 1.6 : 1;
+        }
         if (c.kind !== 'summon' && c.kind !== 'flip') return 1;
         if (!c.card.name) return 1;
         const again = this.summoned.has(c.card.name);

@@ -37,6 +37,7 @@ import {
   tributeCost,
 } from './helpers';
 import type { Card, ChainCtx, ChainLink, Engine, FieldCard, Pid, Step } from './helpers';
+import { extraReq, fits } from './extra';
 
 // ---------- local helpers ----------
 const zoneOf = (e: Engine, uid: number) => e.find(uid)?.loc.zone;
@@ -734,8 +735,15 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // The Xyz Summon cannot happen (no Xyz Monsters): both Heraldic Beasts are Special Summoned.
+  // Both Heraldic Beasts are Special Summoned, then an Xyz Monster is Xyz Summoned with exactly those 2 (when one fits them).
   const heraldic = (e: Engine, p: Pid) => e.player(p).gy.filter((c) => canSS(e, c) && named(e, c, 'Heraldic Beast'));
+  /** Xyz Monsters in the Extra Deck that 2 given face-up monsters can be the only materials of. */
+  const xyzFor = (e: Engine, p: Pid, mats: FieldCard[]) =>
+    e.player(p).fusion.filter((x) => {
+      const req = extraReq(e, x.name);
+      if (!req || req.kind !== 'Xyz' || req.min > mats.length || req.max < mats.length || e.summonBlocked(p, x, 'special', 'fusion')) return false;
+      return mats.every((m) => m.faceUp && !m.token && levelOf(e, m) === req.level && fits(e, m, req.qual));
+    });
   E['Advanced Heraldry Art'] = {
     canActivate: (e, _c, p, t) => isMain(t) && heraldic(e, p).length >= 2 && e.player(p).mz.filter((z) => z === null).length >= 2,
     *activate(e, link, p) {
@@ -747,6 +755,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const uids = (link.payload as number[]).filter((u) => zoneOf(e, u) === 'gy');
       if (uids.length < 2 || e.player(p).mz.filter((z) => z === null).length < 2) return;
       for (const u of uids) yield* e.specialSummon(u, p, 'atk');
+      // "Immediately after this card resolves, Xyz Summon 1 Xyz Monster using those 2 monsters only."
+      const mats = uids.map((u) => e.fieldCard(u)).filter((m): m is FieldCard => !!m && e.controller(m.uid) === p);
+      if (mats.length < 2) return;
+      const xyz = yield* pickOne(e, p, 'Advanced Heraldry Art: Xyz Summon which monster using those 2?', xyzFor(e, p, mats));
+      if (xyz) yield* e.extraSummon(p, xyz.uid, mats.map((m) => m.uid), 'Xyz');
     },
   };
 
@@ -793,6 +806,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const m = yield* pickOne(e, p, 'Soul Exchange: target which monster?', targetable(e, e.monsters(other(p))), true);
       if (!m) return false;
       link.targetUid = m.uid;
+      // "You cannot conduct your Battle Phase the turn you activate this card" (even if it is negated).
+      ((e.state.fx.noDeclare ??= [-1, -1]) as number[])[p] = e.state.turn;
     },
     *resolve(e, link, p) {
       ((e.state.fx.noDeclare ??= [-1, -1]) as number[])[p] = e.state.turn;
@@ -805,16 +820,36 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // "At the start of the Battle Phase": usable at the end of Main Phase 1 or when the first attack is declared.
-  // Spells/Traps are locked from its activation on, so none can be activated in response to it.
+  // "At the start of the Battle Phase": usable at the end of your Main Phase 1, or (either player's turn) when the first attack
+  // of the Battle Phase is declared. Nothing can be activated in response to it; once it resolves, no Spell/Trap Card can be
+  // activated this turn, and neither can the Quick Effects of Spells/Traps (fx.noTrapTurn, plus a name lock on every Spell).
   E['Anti-Magic Arrows'] = {
-    canActivate: (e, _c, p, t) => e.state.turnPlayer === p && ((isMain(t) && e.state.phase === 'M1' && !e.state.firstTurn) || (t === 'attack' && e.state.attackedThisTurn.length === 1)),
-    *activate(e, _l, p) {
-      e.state.fx.stLockTurn = e.state.turn;
-      e.log(p, 'Anti-Magic Arrows: Spell/Trap Cards cannot be activated for the rest of this turn');
+    canActivate: (e, _c, p, t) => (isMain(t) && e.state.turnPlayer === p && e.state.phase === 'M1' && !e.state.firstTurn) || (t === 'attack' && e.state.phase === 'BP' && e.state.attackedThisTurn.length === 1),
+    *activate(e, link, p) {
+      link.payload = { noResponse: true };
+      // engine.responseWindow only checks noResponse when a window opens: when this card is itself activated as a response (at the
+      // first attack), the window it was activated in stays open. Nothing can stop it from resolving, so the Spell/Trap lock it
+      // applies is put in place now, which keeps Spells/Traps from being activated in response to it.
+      arrowsLock(e, p, false);
     },
-    *resolve() {},
+    *resolve(e, _l, p) {
+      arrowsLock(e, p, true);
+    },
   };
+  function arrowsLock(e: Engine, p: Pid, say: boolean) {
+      const turn = e.state.turn;
+      e.state.fx.stLockTurn = turn;
+      e.state.fx.noTrapTurn = [turn, turn];
+      const locks = ((e.state.fx.turnNameLocks ??= []) as { p: Pid; name: string; turn: number }[]).filter((x) => x.turn === turn);
+      const spells = new Set<string>();
+      for (const q of [0, 1] as Pid[]) {
+        const ps = e.player(q);
+        for (const c of [...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...stOf(e, q)]) if (isSpell(e, c)) spells.add(c.name);
+      }
+      for (const q of [0, 1] as Pid[]) for (const name of spells) locks.push({ p: q, name, turn });
+      e.state.fx.turnNameLocks = locks;
+      if (say) e.log(p, 'Anti-Magic Arrows: Spell/Trap Cards and their effects cannot be activated for the rest of this turn');
+  }
 
   E['Half Shut'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && targetable(e, faceUpMonsters(e)).length > 0,
@@ -853,7 +888,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   const upsetTargets = (e: Engine) => [...e.monsters(0), ...e.monsters(1)].filter((m) => ssTagged(m) && levelOf(e, m) >= 7);
-  const upsetCost = (m: FieldCard, e: Engine) => m.faceUp && m.pos === 'atk' && levelOf(e, m) <= 2 && !m.token;
+  const upsetCost = (m: FieldCard, e: Engine) => m.faceUp && m.pos === 'atk' && levelOf(e, m) > 0 && levelOf(e, m) <= 2;
   E['A Major Upset'] = {
     canActivate: (e, _c, p, t) => anyTime(t) && e.monsters(p).some((m) => upsetCost(m, e)) && upsetTargets(e).length > 0,
     *activate(e, _l, p) {
@@ -886,12 +921,20 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Ritual Summons do not record their Tributes, so only Fusion Summons count.
+  // The materials the engine records: Fusion (fx.fusionMatList), Ritual (fx.ritualMats), Synchro/Link (fx.extraMats, by name),
+  // Xyz (the Xyz Materials still attached to it).
+  const derbyNormal = (e: Engine, c: Card | string) => isMonster(e, typeof c === 'string' ? { uid: -1, name: c, owner: 0 } : c) && info(e, c).sub === 'Normal';
   const derbyReady = (e: Engine, p: Pid) =>
-    faceUpMonsters(e, p).some((m) => (fusionMats(e)[m.uid] ?? []).some((u) => {
-      const f = e.find(u);
-      return !!f && isNormalMonster(e, f.card);
-    }) && !!m.tags?.ssExtra);
+    faceUpMonsters(e, p).some((m) => {
+      const fx = e.state.fx;
+      const ids = [...(m.tags?.ssExtra ? fusionMats(e)[m.uid] ?? [] : []), ...((fx.ritualMats as Record<number, { mats: number[] }> | undefined)?.[m.uid]?.mats ?? [])];
+      if (ids.some((u) => {
+        const f = e.find(u);
+        return !!f && derbyNormal(e, f.card);
+      })) return true;
+      if ((m.tags?.synS || m.tags?.linkS) && ((fx.extraMats as Record<number, string[]> | undefined)?.[m.uid] ?? []).some((n) => derbyNormal(e, n))) return true;
+      return !!m.tags?.xyzS && e.matsOf(m).some((c) => derbyNormal(e, c));
+    });
   const derbyTargets = (e: Engine) => [...targetable(e, [...e.monsters(0), ...e.monsters(1)]), ...stOf(e, 0), ...stOf(e, 1)];
   E['D.D.D. - Different Dimension Derby'] = {
     canActivate: (e, c, p, t) => anyTime(t) && derbyReady(e, p) && derbyTargets(e).some((x) => x.uid !== c.uid),

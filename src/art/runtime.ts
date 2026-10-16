@@ -4970,12 +4970,172 @@ const PRESET_ALIASES: Record<string, string> = {
   'Jar of Greed': 'Pot of Greed',
   'Monster Rebirth': 'Monster Reborn',
   'Super Polymerization': 'Polymerization',
+  // the Speed Duel decks' most played Spells and Traps share the classic that looks like them
+  'Seven Tools of the Bandit': 'Magic Jammer',
+  'Trap Jammer': 'Magic Jammer',
+  'Dust Tornado': 'Mystical Space Typhoon',
+  'Cosmic Cyclone': 'Mystical Space Typhoon',
+  'Galaxy Cyclone': 'Mystical Space Typhoon',
+  'Double Cyclone': 'Wild Tornado',
+  'Diamond-Dust Cyclone': 'Wild Tornado',
+  'Rope of Life': 'Monster Reborn',
+  "Dragon's Rebirth": 'Monster Reborn',
+  'Tornado Wall': 'Negate Attack',
 };
 const EXTRA_PRESETS: Record<string, Preset> = {
   'Chaos Trap Hole': trapHole(0x9a3cff, 0xfff1a8),
   'Adhesion Trap Hole': trapHole(0xffb030, 0xffe9a0),
   'Floodgate Trap Hole': trapHole(0x2a8aff, 0xbfefff),
+  'Mirror Wall': {
+    dur: 0.7,
+    accent: 0xcff4ff,
+    scope: 'oppAtk',
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // a wall of mirror panes rises in front of the attackers (inside the shot that frames them); they see themselves and weaken
+      const y = c.hits.length ? Math.min(...c.hits.map((a) => c.d['center'](a).y * Math.sign(c.opp))) * Math.sign(c.opp) - Math.sign(c.opp) * 0.9 * U : c.opp * 0.4;
+      for (let i = 0; i < 5; i++) {
+        const pane = tl.own(new Glow(1.3 * U, 1.9 * U, 'dome', 0x8fe3ff, 0xffffff));
+        const x = (i - 2) * 0.95 * U;
+        const t = t0 + Math.abs(i - 2) * 0.06;
+        tl.span(t, t + 0.25, (k) => {
+          pane.mesh.position.set(x, y - (1 - backOut(k)) * 1.2 * U, 0.9);
+          pane.u.uOpacity.value = easeOut(k);
+        });
+        tl.span(t1 - 0.25, t1, (k) => (pane.u.uOpacity.value = 1 - k));
+        tl.at(t + 0.2, () => (chime(0.6 + i * 0.05), st.particles.emit({ x, y, z: 1, burst: 1.2 * U, life: 0.5, size: 0.06 * U, color: 0xffffff, drag: 3 }, Math.round(16 * c.d['q']))));
+      }
+      // the glare bounces back onto every attacker: they darken and shrink a little (ATK halved)
+      const hitT = t0 + 0.42;
+      for (const a of c.hits) {
+        const p = c.d['center'](a);
+        sweep(c, { x: p.x * 0.6, y, z: 1 }, p, hitT, 0.12, 0x8fe3ff, 0xffffff, 0.5);
+        tl.span(hitT + 0.1, t1, (k) => void (a.fig && (a.fig.u.uDark.value = 0.55 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5))));
+      }
+      tl.at(hitT, () => (zap(0.35), st.pulse('chroma', 0.35), c.d['flash'](0xcff4ff, 0.15)));
+    },
+  },
+  'Spellbinding Circle': {
+    dur: 0.65,
+    accent: 0xc89aff,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // a rune circle opens under its target, then closes on it as a cage of light
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      const a = figAt(c, p);
+      const foot = a ? a.y - a.size * 0.42 : p.y - 0.4 * U;
+      const ring = tl.own(new Ring(2.4 * U, 0xc89aff, 7171, { inner: 0.7, outer: 0.93, star: 6 }));
+      ring.mesh.position.set(p.x, foot, p.z);
+      ring.mesh.rotation.x = -1.2;
+      ring.spinSpeed = 2.4;
+      ring.u.uOpacity.value = 0;
+      tl.span(t0, t0 + 0.3, (k) => ((ring.u.uOpacity.value = easeOut(k)), ring.mesh.scale.setScalar(lerp(0.2, 1, backOut(k)))));
+      tl.span(t1 - 0.25, t1, (k) => (ring.u.uOpacity.value = 1 - k));
+      c.d['shafts'](tl, { x: p.x, y: foot, z: p.z }, 2.6 * U, 0xc89aff, t0 + 0.2, t1, 3, 0.5);
+      const lock = tl.own(new Glow(1.2 * U, 1.2 * U, 'lock', 0xe6d4ff, 0xffffff));
+      lock.u.uOpacity.value = 0;
+      tl.span(t0 + 0.3, t0 + 0.5, (k) => {
+        lock.mesh.position.set(p.x, p.y + lerp(0.9, 0.2, easeOut(k)) * U, p.z + 0.8);
+        lock.u.uOpacity.value = easeOut(k);
+      });
+      tl.span(t1 - 0.2, t1, (k) => (lock.u.uOpacity.value = 1 - k));
+      if (a) tl.span(t0 + 0.3, t1, (k) => void (a.fig && (a.fig.u.uDark.value = 0.4 * Math.min(1, k * 3))));
+      tl.at(t0 + 0.45, () => (chime(0.55), zap(0.25), st.shake(0.3)));
+    },
+  },
+  'Kunai with Chain': {
+    dur: 0.55,
+    accent: 0xdfe8ff,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      // the kunai flies out trailing its chain and wraps the attacker
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      const chain = tl.own(new Ribbon(24, 0xb8c4d8, 1));
+      const blade = tl.own(new Glow(0.6 * U, 0.6 * U, 'arrow', 0xdfe8ff, 0xffffff));
+      tl.span(t0, t0 + 0.25, (k) => {
+        const e = easeIn(k);
+        const pts = Array.from({ length: 16 }, (_, j) => {
+          const q = (j / 15) * e;
+          const b = P3lerp(c.card, p, q);
+          return { x: b.x + Math.sin(q * 14) * 0.08 * U, y: b.y + Math.sin(q * Math.PI) * 0.6 * U, z: b.z + 0.4 };
+        });
+        chain.set(pts, 0.05 * U);
+        const h = pts[pts.length - 1];
+        blade.mesh.position.set(h.x, h.y, h.z + 0.1);
+        blade.u.uOpacity.value = 1;
+      });
+      // the chain coils around it
+      tl.span(t0 + 0.25, c.t1 - 0.1, (k) => {
+        const pts = Array.from({ length: 22 }, (_, j) => {
+          const q = j / 21;
+          const ang = q * 12 + k * 4;
+          return { x: p.x + Math.cos(ang) * 0.45 * U, y: p.y - 0.5 * U + q * 1 * U, z: p.z + 0.4 + Math.sin(ang) * 0.25 * U };
+        });
+        chain.set(pts, 0.05 * U);
+        blade.u.uOpacity.value = 1 - k;
+      });
+      tl.span(c.t1 - 0.15, c.t1, (k) => (chain.u.uOpacity.value = 1 - k));
+      tl.at(t0, () => whoosh(0.25, 2800, 900, 0.2));
+      tl.at(t0 + 0.25, () => (zap(0.3), st.shake(0.4), st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.4, burst: 2.5 * U, life: 0.4, size: 0.06 * U, color: 0xffffff, drag: 3 }, Math.round(40 * c.d['q']))));
+      const a = figAt(c, p);
+      if (a) strike(c, a, t0 + 0.25, 0.6);
+    },
+  },
+  'Widespread Ruin': {
+    dur: 0.6,
+    accent: 0xffb050,
+    play(c) {
+      const { tl, U, t0, st } = c;
+      // the ground under the strongest attacker erupts
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      const a = figAt(c, p);
+      const foot = a ? a.y - a.size * 0.42 : p.y - 0.4 * U;
+      for (let i = 0; i < 3; i++) shockAtP(c, { x: p.x, y: foot, z: p.z }, (1.6 + i * 0.8) * U, t0 + i * 0.07, 0xff7a2a, 0xffe0a0);
+      const blast = tl.own(new Glow(2.6 * U, 3.2 * U, 'flame', 0xff5a1a, 0xffd070));
+      blast.mesh.position.set(p.x, p.y, p.z + 0.5);
+      blast.u.uOpacity.value = 0;
+      tl.span(t0 + 0.12, t0 + 0.6, (k) => ((blast.u.uOpacity.value = Math.sin(k * Math.PI)), blast.mesh.scale.setScalar(lerp(0.4, 1.2, easeOut(k)))));
+      tl.at(t0 + 0.12, () => (boom(0.7), st.shake(0.7), st.hitStop(0.05), c.d['flash'](0xff9a3a, 0.2), st.particles.emit({ x: p.x, y: foot, z: p.z + 0.2, r: 0.4 * U, vy: 5 * U, burst: 2 * U, gravity: 10 * U, life: 0.9, size: 0.12 * U, color: 0xffa040, drag: 0.4 }, Math.round(80 * c.d['q']))));
+      if (a) strike(c, a, t0 + 0.15);
+    },
+  },
+  Michizure: {
+    dur: 0.6,
+    accent: 0xb0ffd8,
+    play(c) {
+      const { tl, U, t0, t1, st } = c;
+      // the fallen monster's ghost drags its killer down with it
+      const p = aims(c, [{ x: 0, y: c.opp, z: 0.4 }])[0];
+      const ghost = tl.own(new Glow(1.4 * U, 1.8 * U, 'flare', 0x6affc0, 0xe0fff0));
+      ghost.u.uOpacity.value = 0;
+      const from = { x: p.x * 0.3, y: c.own * 0.8, z: 0.8 };
+      tl.span(t0, t0 + 0.35, (k) => {
+        const q = bez3([from, { x: (from.x + p.x) / 2, y: (from.y + p.y) / 2 + 0.9 * U, z: 1.4 }, p], easeInOut(k));
+        ghost.mesh.position.set(q.x, q.y, q.z + 0.3);
+        ghost.u.uOpacity.value = 0.8 * Math.min(1, k * 3);
+      });
+      tl.span(t0 + 0.35, t1, (k) => (ghost.u.uOpacity.value = 0.8 * (1 - k)));
+      const rift = tl.own(new Glow(2.2 * U, 2.2 * U, 'rift', 0x2aa070, 0xb0ffd8));
+      rift.mesh.position.set(p.x, p.y - 0.45 * U, p.z);
+      rift.mesh.rotation.x = -1.15;
+      rift.u.uOpacity.value = 0;
+      tl.span(t0 + 0.3, t1, (k) => (rift.u.uOpacity.value = Math.sin(k * Math.PI)));
+      tl.at(t0, () => drone(0.7));
+      tl.at(t0 + 0.35, () => (boom(0.45), st.shake(0.45), st.pulse('chroma', 0.4)));
+      const a = figAt(c, p);
+      if (a) strike(c, a, t0 + 0.35);
+    },
+  },
 };
+
+/** A flat ring on the ground at `p` that spreads out and fades (presets' version of shockAt). */
+function shockAtP(c: PresetCtx, p: P3, size: number, t: number, color: number, light: number, dur = 0.45) {
+  const g = c.tl.own(new Glow(size, size, 'shock', color, light));
+  g.mesh.position.set(p.x, p.y, p.z);
+  g.mesh.rotation.x = -1.15;
+  c.tl.span(t, t + dur, (k) => ((g.u.uK.value = easeOut(k)), (g.u.uOpacity.value = 1 - k * 0.4)));
+  c.tl.at(t + dur, () => (g.u.uOpacity.value = 0));
+}
 
 // ---------------------------------------------------------------- effect families
 // A card with no preset of its own plays its effect family's cinematic (families.ts

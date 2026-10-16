@@ -57,7 +57,9 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         if (power < 1800 && power < my.lp && !kills) return { type: 'PASS', player: me };
       }
       // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
-      return prompt.options.length ? { type: 'CHOOSE', player: me, picks: [0] } : { type: 'PASS', player: me };
+      // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
+      const k = prompt.options.findIndex((o) => o.value !== 'hand');
+      return k >= 0 ? { type: 'CHOOSE', player: me, picks: [k] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.
     const { order: ranked, val } = rankOptions(e, me, prompt.title, prompt.options);
@@ -110,10 +112,12 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
   const theirMonsters = e.monsters(opp);
   const theirBest = Math.max(0, ...theirMonsters.map((m) => (m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1200)));
 
+  // A card the computer backed out of this turn (no fitting target or Ritual materials) stays where it is.
+  const canAct = (uid: number) => e.canActivateMain(me, uid) && !e.takenBackThisTurn(uid) && !(e.find(uid)?.card.name === 'Mind Crush' && e.player(opp).hand.length === 0);
   if (e.inMainPhase()) {
     // 1. Draw / heal / burn spells.
     for (const c of my.hand) {
-      if (GOOD_ANYTIME.has(c.name) && e.canActivateMain(me, c.uid)) {
+      if (GOOD_ANYTIME.has(c.name) && canAct(c.uid)) {
         if (c.name === 'Swords of Revealing Light' && theirMonsters.length === 0) continue;
         if (DRAWS[c.name] && my.deck.length <= DRAWS[c.name] + 1) continue;
         return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
@@ -121,7 +125,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     }
     // 2. Board wipes when behind on the board.
     for (const c of my.hand) {
-      if ((c.name === 'Raigeki' || c.name === 'Dark Hole' || c.name === "Harpie's Feather Duster" || c.name === 'Heavy Storm') && e.canActivateMain(me, c.uid)) {
+      if ((c.name === 'Raigeki' || c.name === 'Dark Hole' || c.name === "Harpie's Feather Duster" || c.name === 'Heavy Storm') && canAct(c.uid)) {
         const myBest = Math.max(0, ...myMonsters.map((m) => e.atkOf(m)));
         if (c.name === 'Raigeki' && theirMonsters.length >= 1 && theirBest >= myBest) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
         if (c.name === 'Dark Hole' && theirMonsters.length > myMonsters.length && theirBest >= myBest) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
@@ -130,7 +134,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     }
     // 3. Revive the best monster in a graveyard.
     for (const c of my.hand) {
-      if ((c.name === 'Monster Reborn' || c.name === 'Premature Burial' || c.name === 'Change of Heart' || c.name === 'Snatch Steal') && e.canActivateMain(me, c.uid)) {
+      if ((c.name === 'Monster Reborn' || c.name === 'Premature Burial' || c.name === 'Change of Heart' || c.name === 'Snatch Steal') && canAct(c.uid)) {
         if (c.name === 'Change of Heart' || c.name === 'Snatch Steal') {
           if (theirMonsters.some((m) => m.faceUp && e.atkOf(m) >= 1500)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
           continue;
@@ -142,7 +146,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     // 3b. Ritual Summons, type wipes, Field Spells and monster effects.
     for (const c of my.hand) {
       const info = e.info(c.name);
-      if (!e.canActivateMain(me, c.uid)) continue;
+      if (!canAct(c.uid)) continue;
       if (info.sub === 'Ritual' && info.kind === 'spell') return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
       const wipe = WIPES[c.name];
       if (wipe && theirMonsters.filter((m) => wipe(e, m)).length > myMonsters.filter((m) => wipe(e, m)).length) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
@@ -205,7 +209,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
       }
       for (const c of my.hand) {
         const info = e.info(c.name);
-        if (info.kind === 'spell' && info.sub !== 'Equip' && e.canActivateMain(me, c.uid)) cands.push({ key: `act${c.uid}`, act: { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) }, min: -350 });
+        if (info.kind === 'spell' && info.sub !== 'Equip' && !(info.sub === 'Field' && my.field) && canAct(c.uid)) cands.push({ key: `act${c.uid}`, act: { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) }, min: -350 });
       }
       for (const m of myMonsters) if (e.canUseMonsterEffect(me, m)) cands.push({ key: `eff${m.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: m.uid }, min: -100 });
       for (const c of my.hand) if (e.canUseMonsterEffect(me, c)) cands.push({ key: `heff${c.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: c.uid }, min: -350 });
@@ -272,7 +276,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     // 6. Equip cards: boosts go on our own monsters, curses on theirs (and only when there is one to take them).
     for (const c of my.hand) {
       const info = e.info(c.name);
-      if (info.kind === 'spell' && info.sub === 'Equip' && e.canActivateMain(me, c.uid) && equipTarget(e, me, c.name) && tryOnce(`eq${c.uid}`)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      if (info.kind === 'spell' && info.sub === 'Equip' && canAct(c.uid) && equipTarget(e, me, c.name) && tryOnce(`eq${c.uid}`)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
     }
     // 7. Set traps and quick-plays face-down.
     for (const c of my.hand) {
@@ -379,6 +383,19 @@ function rankOptions(e: Engine, me: Pid, title: string, options: Extract<Prompt,
     const owner = fc ? e.controller(fc.uid) : o.loc?.player;
     const mine = owner === me;
     const power = fc ? Math.max(e.atkOf(fc), e.defOf(fc)) : atk;
+    // Mind Crush: name a card from their deck list, not the alphabet's first.
+    if (/^Mind Crush: declare/.test(title)) {
+      const opp = other(me);
+      return [...e.player(opp).deck, ...e.player(opp).hand].filter((c) => c.name === name).length * 1000 - [...e.player(me).hand].filter((c) => c.name === name).length;
+    }
+    // Battle replay: attack directly if it can, else the target it beats with the least risk; never into a loss.
+    if (/^Replay: /.test(title)) {
+      const a = e.state.battle ? e.fieldCard(e.state.battle.attacker) : null;
+      if (o.value === 'direct') return 1e6;
+      if (!a || !fc) return BAD;
+      const w = fc.faceUp ? (fc.pos === 'atk' ? e.atkOf(fc) : e.defOf(fc)) : 1500;
+      return e.atkOf(a) > w ? 10000 + w : BAD + w;
+    }
     if (/^Ritual:/.test(title)) return (info.level ?? 1) * 1000 - power; // high Level, low value
     if (/Fusion Summon which/i.test(title)) return power;
     // Equip Cards: boosts on our monsters, curses on theirs.

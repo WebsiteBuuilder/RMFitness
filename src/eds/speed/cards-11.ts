@@ -152,6 +152,12 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
   };
 
+  const skyfireNoDamage = (e: Engine, p: Pid) => {
+    const nd = (e.state.fx.noDamage ??= [-1, -1]) as number[];
+    if (nd[p] === e.state.turn) return;
+    nd[p] = e.state.turn;
+    e.log(p, `Cerulean Skyfire: ${e.player(p).name} takes no damage this turn`);
+  };
   E['Cerulean Skyfire'] = {
     ...continuousSpell(),
     quick: {
@@ -168,11 +174,16 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
         }
       },
     },
-    // Approximated: a Sacred Beast leaving the field is seen when it goes to the GY (not when it is banished or returned).
+    // A face-up Sacred Beast you control leaving the field: seen at once when it goes to the GY, and after the action
+    // when it was banished or returned to the hand/Deck (stateCheck compares with the Sacred Beasts it saw before).
     *onAnyToGrave(e, _fc, p, events) {
       if (!events.some((v) => v.from === 'mz' && v.faceUp && v.controller === p && e.namesOf(v.card).some((nm) => LORDS.includes(nm)))) return;
-      ((e.state.fx.noDamage ??= [-1, -1]) as number[])[p] = e.state.turn;
-      e.log(p, `Cerulean Skyfire: ${e.player(p).name} takes no damage this turn`);
+      skyfireNoDamage(e, p);
+    },
+    *stateCheck(e, fc, p) {
+      const all = (e.state.fx.skyLords ??= {}) as Record<number, number[]>;
+      if ((all[fc.uid] ?? []).some((u) => !['mz', 'gy'].includes(e.find(u)?.loc.zone ?? ''))) skyfireNoDamage(e, p);
+      all[fc.uid] = faceUpMonsters(e, p).filter((m) => e.namesOf(m).some((nm) => LORDS.includes(nm))).map((m) => m.uid);
     },
   };
 
@@ -298,8 +309,11 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
   E['Veil of Darkness'] = {
     ...continuousSpell(),
     *onDrawPhase(e, _fc, p, drawn) {
-      const dark = drawn.filter((c) => e.find(c.uid)?.loc.zone === 'hand' && isMonster(e, c) && attrOf(e, c) === 'DARK');
-      if (!dark.length || !(yield* e.yesno(p, `Veil of Darkness: reveal ${dark.map((c) => c.name).join(', ')} and send ${dark.length > 1 ? 'them' : 'it'} to the GY?`))) return;
+      const drawnDark = drawn.filter((c) => e.find(c.uid)?.loc.zone === 'hand' && isMonster(e, c) && attrOf(e, c) === 'DARK');
+      if (!drawnDark.length || !(yield* e.yesno(p, `Veil of Darkness: reveal DARK monsters you drew and send them to the GY?`))) return;
+      // "You can reveal any number of them".
+      const dark = drawnDark.length === 1 ? drawnDark : yield* pick(e, p, 'Veil of Darkness: reveal which DARK monsters?', drawnDark, 1, drawnDark.length, true);
+      if (!dark?.length) return;
       e.log(p, `${e.player(p).name} reveals ${dark.map((c) => c.name).join(', ')}`);
       for (const c of dark) yield* e.sendToGrave(c.uid, 'used');
       if (e.player(p).deck.length && (yield* e.yesno(p, 'Veil of Darkness: draw 1 more card?'))) e.draw(p, 1);
@@ -483,24 +497,30 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
     },
   };
 
+  const kingFodder = (e: Engine, m: FieldCard, p: Pid) => e.monsters(p).filter((x) => x.uid !== m.uid && raceOf(e, x) === 'Machine' && !e.untributable(x));
   E['Machine King - 3000 B.C.'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p),
+    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && !e.monsters(p).some((m) => m.faceUp && m.placedTurn === e.state.turn && m.uid !== _c.uid),
+    // "You cannot Normal or Special Summon other monsters the turn you activate this card": from the activation on (even if it is negated).
+    *activate(e, link, p) {
+      ((e.state.fx.summonLocks ??= []) as { p: Pid; turn: number; normal: boolean; special: boolean; only?: string[]; except?: number }[]).push({ p, turn: e.state.turn, normal: true, special: true, only: [], except: link.card.uid });
+      e.log(p, `${e.player(p).name} cannot Normal or Special Summon other monsters this turn`);
+    },
     *resolve(e, link, p) {
       yield* trapMonster(e, link.card, p, 4, 'Machine', 'EARTH');
-      if (e.find(link.card.uid)?.loc.zone !== 'mz') return;
-      ((e.state.fx.summonLock ??= [-1, -1]) as number[])[p] = e.state.turn;
-      e.state.fx.summonLockExcept = link.card.uid;
-      e.log(p, `${e.player(p).name} cannot Normal or Special Summon other monsters this turn`);
     },
     baseStats: () => ({ atk: 1000, def: 1000 }),
     ignition: {
-      can: (e, m, p) => e.monsters(p).some((x) => x.uid !== m.uid && raceOf(e, x) === 'Machine'),
-      *run(e, m, p) {
-        const t = yield* pickOne(e, p, 'Machine King - 3000 B.C.: Tribute which Machine?', e.monsters(p).filter((x) => x.uid !== m.uid && raceOf(e, x) === 'Machine'));
-        if (!t) return;
-        const atk = t.faceUp ? e.atkOf(t) : 0;
+      can: (e, m, p) => kingFodder(e, m, p).length > 0,
+      // The Tribute is the cost, paid when the effect is activated; the ATK it had on the field is remembered.
+      *cost(e, m, p) {
+        const t = yield* pickOne(e, p, 'Machine King - 3000 B.C.: Tribute which Machine?', kingFodder(e, m, p), true);
+        if (!t) return false;
+        tag(m).kingAtk = t.faceUp ? e.atkOf(t) : 0;
         e.log(p, `${e.player(p).name} Tributes ${t.name}`);
         yield* e.sendToGrave(t.uid, 'tribute');
+      },
+      *run(e, m, p) {
+        const atk = m.tags?.kingAtk ?? 0;
         const me = e.fieldCard(m.uid);
         if (!me || !me.faceUp) return;
         me.atkMod += atk;

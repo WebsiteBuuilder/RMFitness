@@ -236,6 +236,8 @@ export interface EffectDef {
   lingering?: {
     shields?(e: Engine, owner: Pid, target: FieldCard, how: 'battle' | 'effect' | 'target'): boolean;
     onAnySummon?(e: Engine, owner: Pid, m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step;
+    /** a monster Normal Set by `controller` this turn */
+    onAnySet?(e: Engine, owner: Pid, m: FieldCard, controller: Pid): Step;
     attackGuard?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): boolean;
     afterAnyBattle?(e: Engine, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
     /** audit-10: fewer Tributes for `owner`'s face-up Normal Summon of `monster` this turn (Vampire Sorcerer). */
@@ -421,14 +423,16 @@ const hasFreeZone = (e: Engine, p: Pid) => e.freeMonsterZone(p) >= 0; // b20: sk
 const isMonster = (e: Engine, c: Card) => e.info(c.name).kind === 'monster';
 const isSpell = (e: Engine, c: Card) => e.info(c.name).kind === 'spell';
 const isMain = (t: Trigger) => t === 'main';
+/** spells-a: a Normal Trap / Quick-Play Spell moment: Main Phase, an attack or a Summon; in Speed Duel any open moment (in response to a Spell/Trap/effect activation too). */
+const trapMoment = (e: Engine, t: Trigger) => isMain(t) || t === 'attack' || t === 'summon' || (e.speed && (t === 'special' || t === 'spell' || t === 'trap' || t === 'effect'));
 const notThisCard = (card: Card) => (c: Card) => c.uid !== card.uid;
 
 /** Equip helper: pick a face-up monster at activation, attach on resolve. */
 function equip(bonus?: EffectDef['equipBonus'], extra: Partial<EffectDef> = {}): EffectDef {
   return {
-    canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp),
+    canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp && !e.untargetable(m)), // spells-a: equipping targets
     *activate(e, link, player) {
-      const targets = allMonsters(e).filter((m) => m.faceUp);
+      const targets = allMonsters(e).filter((m) => m.faceUp && !e.untargetable(m));
       const picks = yield* e.select(player, `Equip ${link.card.name} to which monster?`, e.optionsFor(targets), 1, 1, true);
       if (!picks) return false;
       link.targetUid = targets[picks[0]].uid;
@@ -1112,9 +1116,9 @@ function returnSpell(e: Engine, fc: FieldCard) {
 function equipFor(test: (e: Engine, m: FieldCard) => boolean, bonus: EffectDef['equipBonus'], extra: Partial<EffectDef> = {}): EffectDef {
   return {
     ...equip(bonus, extra),
-    canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp && test(e, m)),
+    canActivate: (e, _c, _p, t) => isMain(t) && allMonsters(e).some((m) => m.faceUp && test(e, m) && !e.untargetable(m)), // spells-a: equipping targets
     *activate(e, link, player) {
-      const targets = allMonsters(e).filter((m) => m.faceUp && test(e, m));
+      const targets = allMonsters(e).filter((m) => m.faceUp && test(e, m) && !e.untargetable(m));
       const picks = yield* e.select(player, `Equip ${link.card.name} to which monster?`, e.optionsFor(targets), 1, 1, true);
       if (!picks) return false;
       link.targetUid = targets[picks[0]].uid;
@@ -1681,7 +1685,17 @@ E['Warrior Elimination'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Warrior',
 E['Eradicating Aerosol'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Insect', 'Insects'); // audit-eds
 E['Acid Rain'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Machine', 'Machines');
 E['Breath of Light'] = wipe((e, m) => m.faceUp && e.raceOf(m) === 'Rock', 'Rock monsters');
-E['Eternal Rest'] = wipe((_e, m) => m.equips.length > 0, 'equipped monsters');
+/**
+ * spells-a: an Equip Card: an Equip Spell, a Trap that equips itself (Kunai with Chain, Metalmorph) or a monster equipped as one.
+ * A Continuous Trap that only stays attached to the monster it affects (Call of the Haunted, Spellbinding Circle) is not one.
+ */
+const isEquipCard = (e: Engine, uid: number) => {
+  const c = e.fieldCard(uid);
+  if (!c) return false;
+  const i = e.info(c.name);
+  return i.kind === 'monster' || i.sub === 'Equip' || (i.kind === 'trap' && i.sub !== 'Continuous');
+};
+E['Eternal Rest'] = wipe((e, m) => m.equips.some((u) => isEquipCard(e, u)), 'equipped monsters');
 E['Tribute to the Doomed'] = {
   canActivate: (e, c, p, t) => isMain(t) && e.player(p).hand.some(notThisCard(c)) && allMonsters(e).some((m) => !e.untargetable(m)), // audit-eds
   *activate(e, link, p) {
@@ -1734,7 +1748,7 @@ E['Rush Recklessly'] = boost('Rush Recklessly: +700 ATK to which monster?', 'atk
 E['The Reliable Guardian'] = boost('The Reliable Guardian: +700 DEF to which monster?', 'def', 700);
 E['Snake Fang'] = boost('Snake Fang: -500 DEF to which monster?', 'def', -500);
 E['Graceful Dice'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'attack') && e.monsters(p).some((m) => m.faceUp),
+  canActivate: (e, _c, p, t) => (isMain(t) || t === 'attack' || (e.speed && trapMoment(e, t))) && e.monsters(p).some((m) => m.faceUp), // spells-a: a Quick-Play Spell
   *resolve(e, _l, p) {
     const r = e.roll(6);
     e.log(p, `Graceful Dice rolls a ${r}`);
@@ -1742,7 +1756,7 @@ E['Graceful Dice'] = {
   },
 };
 E['Skull Dice'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'attack') && e.monsters(other(p)).some((m) => m.faceUp),
+  canActivate: (e, _c, p, t) => (isMain(t) || t === 'attack' || (e.speed && trapMoment(e, t))) && e.monsters(other(p)).some((m) => m.faceUp), // spells-a: a Normal Trap
   *resolve(e, _l, p) {
     const r = e.roll(6);
     e.log(p, `Skull Dice rolls a ${r}`);
@@ -1779,10 +1793,11 @@ E['Share the Pain'] = {
   },
 };
 E['The Shallow Grave'] = {
-  canActivate: (e, _c, _p, t) => isMain(t) && ([0, 1] as Pid[]).every((p) => hasFreeZone(e, p) && e.player(p).gy.some((c) => isMonster(e, c))),
+  canActivate: (e, _c, _p, t) => isMain(t) && ([0, 1] as Pid[]).every((p) => hasFreeZone(e, p) && e.player(p).gy.some((c) => (e.speed ? revivable(e, c, p) : isMonster(e, c)))),
   *resolve(e) {
     for (const p of [0, 1] as Pid[]) {
-      const targets = e.player(p).gy.filter((c) => isMonster(e, c) && e.info(c.name).sub !== 'Fusion' && e.info(c.name).sub !== 'Ritual');
+      // spells-a: Speed Duel: properly Summoned Fusion/Ritual Monsters can come back (and Summoning conditions apply).
+      const targets = e.player(p).gy.filter((c) => (e.speed ? revivable(e, c, p) : isMonster(e, c) && e.info(c.name).sub !== 'Fusion' && e.info(c.name).sub !== 'Ritual'));
       const picks = yield* e.select(p, 'The Shallow Grave: Set which monster from your Graveyard?', e.optionsFor(targets), 1, 1);
       if (picks && targets[picks[0]] && hasFreeZone(e, p)) yield* e.specialSummon(targets[picks[0]].uid, p, 'def', false);
     }
@@ -1976,7 +1991,9 @@ function ritualSpell(): EffectDef {
       if (!hasFreeZone(e, p)) return;
       // Speed Duel: what it was Ritual Summoned with (Djinn Prognosticator of Rituals, Oracle of Zefra read it).
       if (e.speed) ((e.state.fx.ritualMats ??= {}) as Record<number, { mats: number[]; turn: number }>)[monster] = { mats: tributes.slice(), turn: e.state.turn };
-      yield* e.specialSummon(monster, p, 'atk');
+      // spells-a: a Ritual Summon is face-up in Attack or Defense Position, the player's choice.
+      const pos = e.speed ? yield* e.select(p, `Ritual Summon ${e.find(monster)?.card.name ?? 'the monster'} in which position?`, [{ label: 'Attack Position' }, { label: 'Defense Position' }], 1, 1) : null;
+      yield* e.specialSummon(monster, p, pos?.[0] === 1 ? 'def' : 'atk');
       const rm = e.fieldCard(monster);
       if (rm && fromGy.some((u) => getEffect(e.find(u)?.card.name ?? '')?.ritualFromGy)) (rm.tags ??= {}).trapImmune = 1;
       e.log(p, `${e.player(p).name} Ritual Summons ${e.find(monster)?.card.name ?? 'a monster'}!`);
@@ -2039,6 +2056,7 @@ E['Spellbinding Circle'] = {
     attachTo(e, fc, m.uid);
     m.cannotAttack = true;
     m.cannotChangePos = true;
+    if (e.speed && !m.tags?.noFlip) Object.assign((m.tags ??= {}), { noFlip: 1, boundBy: fc.uid }); // spells-a: "cannot change its battle position" stops a Flip Summon too
     if (e.state.battle?.attacker === m.uid) e.endBattle();
     e.log(p, `${m.faceUp ? m.name : 'A face-down monster'} is bound by Spellbinding Circle`);
   },
@@ -2048,6 +2066,10 @@ E['Spellbinding Circle'] = {
       if (host) {
         host.cannotAttack = false;
         host.cannotChangePos = false;
+        if (host.tags?.boundBy === fc.uid) {
+          delete host.tags.noFlip;
+          delete host.tags.boundBy;
+        }
       }
     }
   },
@@ -2105,7 +2127,7 @@ E['Kunai with Chain'] = {
 };
 E['Metalmorph'] = {
   ...equip(() => ({ atk: 300, def: 300 })),
-  canActivate: (e, _c, _p, t) => (isMain(t) || t === 'attack' || t === 'summon') && allMonsters(e).some((m) => m.faceUp),
+  canActivate: (e, _c, _p, t) => trapMoment(e, t) && allMonsters(e).some((m) => m.faceUp && !e.untargetable(m)), // spells-a
 };
 E['Enchanted Javelin'] = {
   canActivate: (e, _c, p, t, ctx) => attackingOpp(e, p, t, ctx),
@@ -2121,7 +2143,7 @@ E['Gift of The Mystical Elf'] = {
   },
 };
 E['Dust Tornado'] = {
-  canActivate: (e, _c, p, t) => (isMain(t) || t === 'attack' || t === 'summon') && spellsOnField(e, other(p)).length > 0,
+  canActivate: (e, _c, p, t) => trapMoment(e, t) && spellsOnField(e, other(p)).length > 0,
   *activate(e, link, p) {
     const targets = spellsOnField(e, other(p));
     const picks = yield* e.select(p, 'Dust Tornado: destroy which Spell or Trap?', e.optionsFor(targets, true), 1, 1, true);

@@ -70,6 +70,27 @@ function normalDraw(e: Engine, p: Pid): Card | null {
 /** Was this card drawn by `p` this turn? */
 const drawnThisTurn = (e: Engine, p: Pid, uid: number) => !!eventsThisTurn(e)?.some((x) => x.kind === 'draw' && x.player === p && x.uid === uid);
 
+/** Names of the Spell/Trap Cards (and effects) `p` activated this turn, read from the log ("A activates X", "A activates X's effect"). */
+function stActivatedThisTurn(e: Engine, p: Pid): string[] {
+  const head = `${e.player(p).name} activates `;
+  return e.state.log
+    .filter((l) => l.turn === e.state.turn && l.player === p && l.text.startsWith(head))
+    .map((l) => l.text.slice(head.length).replace(/'s effect$/, ''))
+    .filter((n) => ['spell', 'trap'].includes(info(e, n).kind));
+}
+/** "You cannot activate ... this turn": locks every Spell/Trap name in the Duel for `p` (Engine.activationBlocked reads fx.turnNameLocks). */
+function lockSpellTraps(e: Engine, p: Pid, keep?: (name: string) => boolean) {
+  const turn = e.state.turn;
+  const locks = ((e.state.fx.turnNameLocks ??= []) as { p: Pid; name: string; turn: number }[]).filter((x) => x.turn === turn);
+  const names = new Set<string>();
+  for (const q of [0, 1] as Pid[]) {
+    const ps = e.player(q);
+    for (const c of [...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...stOf(e, q)]) if (['spell', 'trap'].includes(info(e, c).kind) && !keep?.(c.name)) names.add(c.name);
+  }
+  for (const name of names) locks.push({ p, name, turn });
+  e.state.fx.turnNameLocks = locks;
+}
+
 /** Moves a card into its owner's Extra Deck (it leaves the field like a card returned to the hand). */
 function toExtra(e: Engine, uid: number) {
   const f = e.find(uid);
@@ -721,8 +742,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   // ===================== Spells =====================
-  // "Normal Summoned/Set" cannot be told apart from Special Summons: any monster that is not a Fusion or Ritual Monster can take it.
-  E['Bashing Shield'] = h.equipFor((e, m) => !isExtraOrRitual(e, m), () => ({ atk: 1000, def: 0 }), { hostNoBattleDamage: () => true });
+  // "Equip only to a Normal Summoned/Set monster": a monster the engine did not tag as Special Summoned (tags.ss).
+  E['Bashing Shield'] = h.equipFor((e, m) => !isExtraOrRitual(e, m) && !m.tags?.ss && !m.token, () => ({ atk: 1000, def: 0 }), { hostNoBattleDamage: () => true });
 
   // 2+: the halving is offered when an attack is declared and applies to that battle.
   const cbInST = (e: Engine, p: Pid) => e.spells(p).filter((c) => c.faceUp && named(e, c, 'Crystal Beast') && info(e, c).kind === 'monster');
@@ -754,6 +775,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       },
       *run(e, _card, p, link) {
         const { trigger, ctx } = link.payload as { trigger?: string; ctx?: ChainCtx };
+        // "You must have this many "Crystal Beast" cards ... to activate and to resolve these effects."
+        if (cbCount(e, p) < (trigger === 'attack' ? 2 : 3)) return;
         if (trigger === 'attack') {
           ((e.state.fx.rainbowHalf ??= [-1, -1]) as number[])[p] = e.state.fx.battleNo ?? 0;
           e.log(p, `${e.player(p).name} will take half the battle damage from this battle`);
@@ -844,8 +867,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     }
     return out;
   };
+  // "You cannot Special Summon from the Extra Deck, except Fusion Monsters, the turn you activate this card" (fx.extraLocks).
+  const extraNonFusionThisTurn = (e: Engine, p: Pid) =>
+    e.state.log.some((l) => l.turn === e.state.turn && l.player === p && ['Xyz', 'Synchro', 'Link'].some((k) => l.text.startsWith(`${e.player(p).name} ${k} Summons `)));
   E['Branded Fusion'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && e.oncePerTurn('Branded Fusion', p) && brandedPlans(e, p).length > 0,
+    canActivate: (e, _c, p, t) => isMain(t) && e.oncePerTurn('Branded Fusion', p) && !extraNonFusionThisTurn(e, p) && brandedPlans(e, p).length > 0,
     *activate(e, link, p) {
       const plans = brandedPlans(e, p);
       const f = yield* pickOne(e, p, 'Branded Fusion: Fusion Summon which monster?', plans.map((x) => x.fusion), true);
@@ -857,6 +883,8 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const b = yield* pickOne(e, p, 'Branded Fusion: use which other material?', pool.filter((y) => y.uid !== a.uid && plan.b(y)), true);
       if (!b) return false;
       e.useOnce('Branded Fusion', p);
+      ((e.state.fx.extraLocks ??= []) as { p: Pid; turn: number; subs?: string[] }[]).push({ p, turn: e.state.turn, subs: ['Fusion'] });
+      e.log(p, `${e.player(p).name} cannot Special Summon from the Extra Deck this turn, except Fusion Monsters`);
       link.payload = { fusion: f.uid, mats: [a.uid, b.uid] };
     },
     *resolve(e, link, p) {
@@ -867,13 +895,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       if (fromDeck) e.player(p).deck = e.shuffle(e.player(p).deck);
       if (!freeMZ(e, p)) return;
       ((e.state.fx.fusionMatList ??= {}) as Record<number, number[]>)[fusion] = mats.slice();
-      yield* e.specialSummon(fusion, p, 'atk');
+      yield* e.specialSummon(fusion, p, 'atk', true, (fc) => void ((fc.tags ??= {}).fusS = 1));
       e.log(p, `${e.player(p).name} Fusion Summons ${e.find(fusion)?.card.name ?? 'a monster'}!`);
     },
   };
 
-  // It attacks once for each monster the opponent controls (the same one may be attacked again), and cannot attack directly.
-  // The negation of the destroyed monsters' effects is not applied.
+  // It attacks once for each monster the opponent controls (each of them once: a lingering attackGuard), and cannot attack directly.
+  // needs-engine: "the effects of monsters destroyed by these attacks are negated" is not applied (no lingering negatesBattleVictims hook).
+  const waveRec = (e: Engine) => fxm(e, 'waveMotion', {} as Record<number, { turn: number; hit: number[] }>);
   const waveCasters = (e: Engine, p: Pid) => targetable(e, faceUpMonsters(e, p).filter((m) => raceOf(e, m) === 'Spellcaster' && levelOf(e, m) >= 7));
   E['Diffusion Wave-Motion'] = {
     canActivate: (e, _c, p, t) => isMain(t) && e.monsters(other(p)).length > 0 && e.player(p).lp > 1000 && waveCasters(e, p).length > 0,
@@ -892,33 +921,64 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       t.extraAttacksN = Math.max(0, n - 1);
       t.noDirectTurn = e.state.turn;
       for (const o of e.monsters(p)) if (o.uid !== m.uid) tag(o).noAttackTurn = e.state.turn;
+      waveRec(e)[m.uid] = { turn: e.state.turn, hit: [] };
+      e.linger('Diffusion Wave-Motion', p);
       e.log(p, `${m.name} must attack each of the opponent's monsters; other monsters cannot attack`);
+    },
+    lingering: {
+      attackGuard: (e, _owner, attacker, target) => {
+        const r = waveRec(e)[attacker.uid];
+        return !!r && r.turn === e.state.turn && r.hit.includes(target.uid);
+      },
+      *afterAnyBattle(e, _owner, attacker, target) {
+        const r = waveRec(e)[attacker.uid];
+        if (r && r.turn === e.state.turn && !r.hit.includes(target.uid)) r.hit.push(target.uid);
+      },
     },
   };
 
-  // It stays on the field until its controller's next Standby Phase as a reminder (destroying it ends the effect early).
+  // A Normal Spell: it goes to the GY. Its lock is a summon lock (fx.summonLocks, by name: every Effect Monster in the Duel) for both
+  // players this turn, renewed from the GY at the opponent's next Standby Phase (fx.heatWave) so it lasts until your next Draw Phase.
+  // Approximation: "at the start of your Main Phase 1" is any time in your Main Phase 1.
+  const heatWave = (e: Engine) => fxm(e, 'heatWave', {} as Record<number, { p: Pid; until: number }>);
+  function* heatLock(e: Engine): Step {
+    const names = new Set<string>();
+    for (const q of [0, 1] as Pid[]) {
+      const ps = e.player(q);
+      for (const c of [...ps.deck, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.fusion, ...e.monsters(q)]) if (isEffectMonster(e, c)) names.add(c.name);
+    }
+    const locks = ((e.state.fx.summonLocks ??= []) as { p: Pid; turn: number; normal: boolean; special: boolean; names?: string[] }[]).filter((l) => l.turn === e.state.turn);
+    for (const q of [0, 1] as Pid[]) locks.push({ p: q, turn: e.state.turn, normal: true, special: true, names: [...names] });
+    e.state.fx.summonLocks = locks;
+  }
   E['Heat Wave'] = {
     canActivate: (e, _c, p, t) => isMain(t) && e.state.phase === 'M1' && e.state.turnPlayer === p,
     *resolve(e, link, p) {
-      const fc = e.fieldCard(link.card.uid);
-      if (!fc) return;
-      fc.turns = 1;
-      fc.active = true;
+      yield* heatLock(e);
+      heatWave(e)[link.card.uid] = { p, until: e.state.turn + 1 };
       e.log(p, 'Heat Wave: neither player can Normal or Special Summon Effect Monsters until the next Draw Phase');
     },
-    forbidsSummon: (e, _fc, _p, monster, _who, how) => (how === 'normal' || how === 'special') && isEffectMonster(e, monster),
-    *onStandby(e, fc, p) {
-      if (e.state.turnPlayer !== p || fc.placedTurn === e.state.turn) return;
-      e.log(p, 'Heat Wave wears off');
-      yield* e.sendToGrave(fc.uid, 'used');
+    *onStandbyInGraveAny(e, card) {
+      const hw = heatWave(e)[card.uid];
+      if (!hw) return;
+      if (e.state.turn > hw.until) {
+        delete heatWave(e)[card.uid];
+        return;
+      }
+      yield* heatLock(e);
     },
   };
 
-  // The "no other Spells/Traps or effects this turn" restriction is not applied.
+  // "You cannot activate other Spell/Trap Cards or effects during the turn you activate this card": it cannot be activated after you
+  // activated another Spell/Trap this turn, and once activated every other Spell/Trap name is locked for you this turn (fx.turnNameLocks).
   const CATTLE = ['Beast', 'Beast-Warrior', 'Winged Beast'];
   const cattleTypes = (e: Engine, p: Pid) => new Set(faceUpMonsters(e, p).map((m) => raceOf(e, m)).filter((r) => CATTLE.includes(r))).size;
   E['The Big Cattle Drive'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && cattleTypes(e, p) > 0 && e.player(p).deck.length >= cattleTypes(e, p),
+    canActivate: (e, _c, p, t) => isMain(t) && cattleTypes(e, p) > 0 && e.player(p).deck.length >= cattleTypes(e, p) && stActivatedThisTurn(e, p).length === 0,
+    *activate(e, _l, p) {
+      lockSpellTraps(e, p);
+      e.log(p, `${e.player(p).name} cannot activate other Spell/Trap Cards or effects this turn`);
+    },
     *resolve(e, _l, p) {
       const n = cattleTypes(e, p);
       if (n > 0) e.draw(p, n);
@@ -968,9 +1028,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Answers an opponent's card or effect whose text deals damage; the damage that card deals to you as it resolves goes to them instead.
+  // Answers a card or effect (either player's) whose text inflicts effect damage that would hit you; the damage that card deals to
+  // you as it resolves goes to your opponent instead.
+  const hurtsYou = (e: Engine, link: ChainLink, p: Pid) => {
+    const d = info(e, link.card).desc.replace(/battle damage/gi, '');
+    if (!/damage/i.test(d)) return false;
+    if (/(each player|both players)/i.test(d)) return true;
+    return link.player === other(p) ? /inflict[^.]*damage|damage to your opponent/i.test(d) : /you take[^.]*damage|damage to you\b|damage to your (life points|lp)\b/i.test(d);
+  };
   E['Barrel Behind the Door'] = {
-    canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && ctx.link.player === other(p) && !ctx.link.negated && /damage/i.test(info(e, ctx.link.card).desc),
+    canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && !ctx.link.negated && ctx.link.card.uid !== _c.uid && hurtsYou(e, ctx.link, p),
     *activate(_e, link, _p, ctx) {
       link.payload = ctx.link;
     },

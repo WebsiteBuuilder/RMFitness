@@ -545,8 +545,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   const roidFusion = (e: Engine, p: Pid) => faceUpMonsters(e, p).some((m) => named(e, m, 'roid') && isFusion(e, m));
+  // spells-d: "a Spell/Trap Card, or monster effect": a Spell/Trap card's activation, or the effect of a monster (not a Spell/Trap's later effect).
+  const cardOrMonsterEffect = (e: Engine, link: { card: Card; payload?: unknown }) => !(link.payload as { effect?: string } | undefined)?.effect || isMon(e, link.card);
   E['Emergeroid Call'] = {
-    canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && !ctx.link.negated && roidFusion(e, p),
+    canActivate: (e, _c, p, t, ctx) => (t === 'spell' || t === 'trap' || t === 'effect') && !!ctx.link && !ctx.link.negated && cardOrMonsterEffect(e, ctx.link) && roidFusion(e, p),
     *activate(_e, link, _p, ctx) {
       link.payload = ctx.link;
     },
@@ -726,8 +728,9 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Counters are one number per card here, so every kind of counter on the field is removed (Fog Counters too).
-  const countered = (e: Engine) => [...allMonsters(e), ...allST(e)].filter((c) => c.counters > 0);
+  // spells-d: only Spell Counters. They live in FieldCard.counters on cards whose text uses Spell Counters; other counters
+  // kept there (Dark Catapulter, Ancient Gear Castle, Crystal Tree) and Fog Counters (tags.fog) stay.
+  const countered = (e: Engine) => [...allMonsters(e), ...allST(e)].filter((c) => c.counters > 0 && /Spell Counter/.test(info(e, c).desc));
   E['Exhausting Spell'] = {
     canActivate: (e, _c, _p, t) => anyTime(t) && countered(e).length > 0,
     *resolve(e, link) {
@@ -1174,8 +1177,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (!m || !m.faceUp) return;
+      // turned face-down like Book of Moon: its Equip Cards and the changes applied to it while face-up end
+      for (const u of m.equips.slice()) if (e.fieldCard(u)) yield* e.sendToGrave(u, 'destroyed');
       m.faceUp = false;
       m.pos = 'def';
+      m.atkMod = 0;
+      m.defMod = 0;
+      const keep = ['ss', 'ssAt', 'ssFrom', 'ssExtra', 'fusS', 'boundBy'];
+      m.tags = Object.fromEntries(Object.entries(m.tags ?? {}).filter(([k]) => keep.includes(k)));
       m.cannotChangePos = true;
       tag(m).noFlip = 1;
       e.event('position', { uid: m.uid });
@@ -1325,18 +1334,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
+  // spells-d: Fog Counters live in tags.fog (where the Cloudian scripts read them); the monster is not targeted, so it is chosen on resolution.
   E['Fog Control'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && faceUpMonsters(e, p).some((m) => named(e, m, 'Cloudian')) && faceUpMonsters(e).length > 1,
-    *activate(e, link, p) {
+    canActivate: (e, _c, p, t) => anyTime(t) && faceUpMonsters(e, p).some((m) => named(e, m, 'Cloudian') && !e.untributable(m)) && faceUpMonsters(e).length > 1,
+    *activate(e, _l, p) {
       if (!(yield* tributeCost(e, p, 1, (m) => m.faceUp && named(e, m, 'Cloudian')))) return false;
-      const m = yield* pickOne(e, p, 'Fog Control: place 3 Fog Counters on which monster?', faceUpMonsters(e));
-      if (!m) return false;
-      link.targetUid = m.uid;
     },
-    *resolve(e, link) {
-      const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
-      if (!m || !m.faceUp) return;
-      m.counters += 3;
+    *resolve(e, link, p) {
+      const m = yield* pickOne(e, p, 'Fog Control: place 3 Fog Counters on which monster?', faceUpMonsters(e));
+      if (!m || !e.fieldCard(m.uid)) return;
+      tag(m).fog = (m.tags?.fog ?? 0) + 3;
       e.log(link.player, `3 Fog Counters are placed on ${m.name}`);
     },
   };

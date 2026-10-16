@@ -8,6 +8,7 @@ import { attachArtSink, Flow, LP_TICK_MS, pickCues, START_GRACE_MS, WATCHDOG_SLA
 import { SKIP_W, skipSpot } from '../src/art/skipspot';
 import { cueOwner, flowRate, OPP_BACKLOG_RATE, Timeline } from '../src/art/runtime';
 import { DB, SPEED } from './speedkit';
+import { SIGNATURE_CARDS } from '../src/art/profile';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
 
@@ -55,7 +56,18 @@ const sample: Cue[] = [
   { kind: 'destroy', card: ref(lowMon.name, 0) },
 ];
 const kinds = (c: Cue[]) => c.map((x) => (x.kind === 'summon' ? `summon:${x.card.name === bigMon.name ? 'big' : 'small'}` : x.kind === 'damage' ? `damage:${x.amount}` : x.kind)).join();
-ok(kinds(pickCues(sample, 'big', 0)) === 'summon:big,attack,damage:1500,destroy', `Big moments: level 7+ summons, attacks, big damage, destruction (${kinds(pickCues(sample, 'big', 0))})`);
+ok(kinds(pickCues(sample, 'big', 0)) === 'summon:big,activate,attack,damage:1500,destroy', `Big moments: level 7+ summons, every Spell/Trap activation, attacks, big damage, destruction (${kinds(pickCues(sample, 'big', 0))})`);
+{
+  const trap = SPEED.find((c) => c.kind === 'trap')!;
+  const plainMon = SPEED.find((c) => c.kind === 'monster' && c.sub === 'Effect' && !SIGNATURE_CARDS.includes(c.name))!;
+  const more: Cue[] = [
+    { kind: 'activate', card: ref(trap.name, 1), what: 'trap' },
+    { kind: 'target', card: ref(spell.name, 0), targets: [] },
+    { kind: 'activate', card: ref(spell.name, 1), what: 'spell', lazy: true },
+    { kind: 'activate', card: ref(plainMon.name, 1), what: 'monster' },
+  ];
+  ok(kinds(pickCues(more, 'big', 0)) === 'activate,target', `Big moments: Traps and a Spell's late target play; a continuous effect at work and a plain monster effect do not (${kinds(pickCues(more, 'big', 0))})`);
+}
 ok(pickCues(sample, 'all', 0).length === sample.length, 'All: everything');
 ok(pickCues(sample, 'off', 0).length === 0, 'Off: nothing');
 ok(pickCues(sample, 'mine', 0).length === 0, "My actions only: the opponent's moves play none");
