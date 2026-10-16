@@ -1,0 +1,257 @@
+/* The one-time present: wrapped box, tear, confetti, a fan of packs. */
+.gift-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(242, 193, 78, 0.3), transparent 60%),
+    rgba(6, 10, 26, 0.97);
+  animation: gift-fade 0.3s ease-out;
+  overflow: hidden;
+}
+.gift-card {
+  position: relative;
+  width: min(380px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  text-align: center;
+  color: var(--sd-ink, #eef2ff);
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.gift-kicker {
+  margin: 0;
+  color: var(--sd-gold, #f2c14e);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+.gift-card h2 {
+  margin: 6px 0 4px;
+  font-size: 26px;
+}
+.gift-sub {
+  margin: 6px auto 12px;
+  color: var(--sd-dim, #a9b5da);
+  font-size: 14px;
+  line-height: 1.4;
+  max-width: 320px;
+}
+.gift-tap {
+  color: var(--sd-dim, #a9b5da);
+  font-size: 13px;
+  animation: gift-pulse 1.4s ease-in-out infinite;
+}
+.gift-wrap {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  margin: 14px auto 6px;
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  animation:
+    gift-drop 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both,
+    gift-shake 1.6s 0.9s ease-in-out infinite;
+  filter: drop-shadow(0 10px 24px rgba(242, 193, 78, 0.45));
+}
+.gift-body {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 110px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e0335f, #a3134a);
+}
+.gift-lid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ff5d8f, #d0225a);
+  z-index: 1;
+}
+.gift-ribbon,
+.gift-ribbon::before,
+.gift-ribbon::after {
+  position: absolute;
+  background: linear-gradient(180deg, #ffe08a, #f2c14e);
+}
+.gift-ribbon {
+  left: 50%;
+  top: 34px;
+  bottom: 0;
+  width: 22px;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+.gift-ribbon::before,
+.gift-ribbon::after {
+  content: '';
+  top: -30px;
+  width: 44px;
+  height: 32px;
+  border-radius: 50% 50% 4px 50%;
+  background: none;
+  border: 8px solid #f2c14e;
+}
+.gift-ribbon::before {
+  right: 10px;
+  transform: rotate(-20deg);
+}
+.gift-ribbon::after {
+  left: 10px;
+  transform: scaleX(-1) rotate(-20deg);
+}
+.gift-fan {
+  position: relative;
+  height: 170px;
+  margin: 12px 0 4px;
+}
+.gift-pack {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 92px;
+  height: 140px;
+  margin-left: -46px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--sd-gold, #f2c14e);
+  background: #1b2a52;
+  transform-origin: 50% 120%;
+  animation: gift-fan 0.6s calc(0.08s * (var(--i) + 2)) cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.gift-pack img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.gift-pack b {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--sd-gold, #f2c14e);
+}
+.gift-count {
+  margin: 4px 0 0;
+  font-size: 18px;
+  color: var(--sd-dim, #a9b5da);
+}
+.gift-count b {
+  display: block;
+  font-size: 56px;
+  line-height: 1;
+  color: var(--sd-gold, #f2c14e);
+  text-shadow: 0 0 24px rgba(242, 193, 78, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.ui-speed .gift-card .gbtn,
+.gift-card .gbtn {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0;
+  min-height: 48px;
+  font-size: 17px;
+}
+.ui-speed .gift-card .gift-go,
+.gift-card .gift-go {
+  background: linear-gradient(180deg, #ffd66b, #e0a422);
+  color: #1a1200;
+  border-color: #ffe9a8;
+  font-weight: 700;
+}
+.ui-speed .gift-card .gift-later,
+.gift-card .gift-later {
+  background: transparent;
+  color: var(--sd-dim, #a9b5da);
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.gift-card {
+  z-index: 1;
+}
+.confetti i {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  animation-name: gift-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: 2;
+  animation-fill-mode: both;
+}
+@keyframes gift-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes gift-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes gift-drop {
+  from {
+    transform: translateY(-120vh) rotate(-12deg);
+  }
+}
+@keyframes gift-shake {
+  0%,
+  70%,
+  100% {
+    transform: rotate(0);
+  }
+  76% {
+    transform: rotate(-6deg) scale(1.03);
+  }
+  84% {
+    transform: rotate(6deg) scale(1.03);
+  }
+  92% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes gift-fan {
+  from {
+    transform: translateY(60px) rotate(0) scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(calc(var(--i) * 46px)) rotate(calc(var(--i) * 11deg));
+  }
+}
+@keyframes gift-fall {
+  to {
+    top: 105%;
+    transform: rotate(720deg) translateX(30px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gift-wrap,
+  .gift-pack,
+  .confetti i,
+  .gift-tap {
+    animation: none;
+  }
+}

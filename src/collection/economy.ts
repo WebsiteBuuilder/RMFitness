@@ -15,7 +15,7 @@ import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { rollFinishes, withFinishes } from './finish';
-import { openPack, rarityIn, rarityOf, unlockedSets, type Rarity } from './sets';
+import { openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
 /** an Ultra Rare or better is guaranteed at least once every PITY packs */
@@ -60,12 +60,19 @@ export type EconSave = SpeedSave & {
   levels?: Record<string, number>;
   /** packs opened since the last Ultra Rare or better */
   dry?: number;
+  /** unopened gift packs: they open from any booster set, locked ones too */
+  giftPacks?: number;
+  /** the one-time gifts this profile already got (see GIFT) */
+  gifts?: string[];
 };
 
 const E = (s: SpeedSave) => s as EconSave;
 export const chipsOf = (s: SpeedSave) => s.chips ?? 0;
 export const shardsOf = (s: SpeedSave) => E(s).shards ?? 0;
-export const packsOf = (s: SpeedSave) => E(s).packs ?? 0;
+/** every unopened pack the profile has, gift packs included */
+export const packsOf = (s: SpeedSave) => ownPacks(s) + giftPacksOf(s);
+const ownPacks = (s: SpeedSave) => E(s).packs ?? 0;
+export const giftPacksOf = (s: SpeedSave) => E(s).giftPacks ?? 0;
 export const rivalsOf = (s: SpeedSave): Record<string, Rival> => E(s).rivals ?? {};
 
 export const dayKey = (now = Date.now()) => {
@@ -101,7 +108,7 @@ export function migrate(s: SpeedSave): SpeedSave {
     if (d.open) continue;
     for (const [n, c] of Object.entries(countsOf(deckCards(d)))) collection[n] = Math.max(collection[n] ?? 0, Math.min(c, COPIES));
   }
-  return { ...s, collection, econ: 1, packs: packsOf(s) + (claimWelcome() ? WELCOME_PACKS : 0) } as EconSave;
+  return { ...s, collection, econ: 1, packs: ownPacks(s) + (claimWelcome() ? WELCOME_PACKS : 0) } as EconSave;
 }
 
 /** Welcome packs go to the first 2 profiles on a phone, so new profiles aren't a pack farm. */
@@ -251,21 +258,77 @@ export interface Opened {
   finishes: number[];
 }
 
-/** Opens one of the profile's unopened packs from a set it has unlocked. */
 /** Packs left until an Ultra Rare or better is guaranteed. */
 export const pityLeft = (s: SpeedSave) => PITY - (E(s).dry ?? 0);
 
+/** How many of the profile's packs can open as this set: gift packs open any set, the rest only unlocked ones. */
+export function packsFor(s: SpeedSave, setName: string): number {
+  return giftPacksOf(s) + (unlockedSets(s.wins).some((x) => x.name === setName) ? ownPacks(s) : 0);
+}
+
+/** Opens one of the profile's unopened packs (a gift pack first) from a set it can open. */
 export function openOwnedPack(s: SpeedSave, setName: string, seed = Date.now()): Opened | null {
-  if (packsOf(s) < 1 || !unlockedSets(s.wins).some((x) => x.name === setName)) return null;
+  if (packsFor(s, setName) < 1 || !setByName(setName)) return null;
+  const gift = giftPacksOf(s) > 0;
   const cards = openPack(setName, [], seed, pityLeft(s) <= 1 ? 'Ultra Rare' : 'Rare');
   const big = cards.some((n) => ['Ultra Rare', 'Secret Rare'].includes(rarityIn(setName, n)));
   const fresh = [...new Set(cards.filter((n) => owned(s, n) === 0))];
   const finishes = rollFinishes(setName, cards, seed);
-  const { save, shards } = breakExtras(withCards({ ...s, packs: packsOf(s) - 1, dry: big ? 0 : (E(s).dry ?? 0) + 1 } as EconSave, cards));
+  const { save, shards } = breakExtras(withCards({ ...s, ...(gift ? { giftPacks: giftPacksOf(s) - 1 } : { packs: ownPacks(s) - 1 }), dry: big ? 0 : (E(s).dry ?? 0) + 1 } as EconSave, cards));
   return { save: withFinishes(save, cards, finishes), set: setName, cards, fresh, shards, finishes };
 }
 
-export const withPacks = (s: SpeedSave, n: number): SpeedSave => ({ ...s, packs: packsOf(s) + n }) as EconSave;
+export const withPacks = (s: SpeedSave, n: number): SpeedSave => ({ ...s, packs: ownPacks(s) + n }) as EconSave;
+
+/**
+ * One-time presents from the game's owner, the first being 250 packs to celebrate Find a
+ * Match going live. Each profile gets a gift once (the save remembers it, and the save backs
+ * up with the shared account, so logging in on another phone can't claim it again), and only
+ * profiles made before `madeBefore`, so a new spare profile isn't a pack farm.
+ */
+export const GIFT = {
+  id: 'matchmaking-live',
+  /** change this to give a different number of packs */
+  packs: 250,
+  title: 'Find a Match is live!',
+  madeBefore: Date.UTC(2026, 9, 18),
+};
+/** A phone hands each gift to at most this many profiles (like the welcome packs). */
+export const GIFT_PROFILES = 2;
+
+/** The profiles this phone already gave a gift to (only these can claim it here once the phone's share is used). */
+const giftedKey = (id: string) => `eds.speed.gifted.${id}`;
+function giftedHere(gift: typeof GIFT): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(giftedKey(gift.id)) ?? '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return []; // storage blocked (tests): no limit
+  }
+}
+
+/** The gift this profile can still claim (null: already claimed, made too late, or this phone gave out its share). */
+export function giftFor(s: SpeedSave, created: number, gift = GIFT, profileId?: string) {
+  if ((E(s).gifts ?? []).includes(gift.id) || created >= gift.madeBefore) return null;
+  if (profileId) {
+    const here = giftedHere(gift);
+    // A profile on the list may claim again only if its save lost the gift (an account sync kept another phone's copy).
+    if (!here.includes(profileId) && here.length >= GIFT_PROFILES) return null;
+  }
+  return gift;
+}
+
+/** Claims the gift: its packs go in as gift packs, and the profile can never claim it again. */
+export function claimGift(s: SpeedSave, created: number, gift = GIFT, profileId?: string): SpeedSave | null {
+  if (!giftFor(s, created, gift, profileId)) return null;
+  if (profileId)
+    try {
+      localStorage.setItem(giftedKey(gift.id), JSON.stringify([...new Set([...giftedHere(gift), profileId])]));
+    } catch {
+      /* storage blocked */
+    }
+  return { ...s, giftPacks: giftPacksOf(s) + gift.packs, gifts: [...(E(s).gifts ?? []), gift.id] } as EconSave;
+}
 
 /** Duel the Computer: the first win against each duelist each day pays a pack. */
 export function cpuWinPrize(s: SpeedSave, opp: string, deck: SpeedDeck | null, now = Date.now()): { save: SpeedSave; lines: string[] } {

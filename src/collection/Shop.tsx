@@ -1,6 +1,6 @@
 // The Card Shop: open packs from the real Speed Duel sets, browse the cards you own,
 // craft cards with Duel Chips, lift a card's look one rarity step, break spare copies.
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { card, speedCards, skillCards } from '../eds/db';
 import { CHIP_CAP, COPIES, owned, unplayableReason, type SpeedSave } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from '../ui/CardImg';
@@ -21,8 +21,10 @@ import {
   copiesInDecks,
   craft,
   craftCost,
+  giftPacksOf,
   lookUp,
   openOwnedPack,
+  packsFor,
   packsOf,
   pityLeft,
   shardsOf,
@@ -101,21 +103,34 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
   const [opened, setOpened] = useState<Opened[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [n, setN] = useState(0);
+  const [busy, setBusy] = useState(0);
   const show = (o: Opened[]) => (setN(n + 1), setOpened(o));
 
-  /** Opens up to `count` packs of a set in a row. */
-  const openSome = (from: SpeedSave, set: string, count: number) => {
+  /** Opens up to `count` packs of a set in a row (no set: gift packs spread over every set in turn, from a random start). */
+  const openNow = (from: SpeedSave, set: string | null, count: number) => {
     const out: Opened[] = [];
     let cur = from;
-    for (let i = 0; i < count; i++) {
-      const o = openOwnedPack(cur, set, Date.now() + i * 7919);
-      if (!o) break;
-      out.push(o);
-      cur = o.save;
+    const sets = boosterSets().map((x) => x.name);
+    const start = Math.floor(Math.random() * sets.length);
+    try {
+      for (let i = 0; i < count; i++) {
+        const o = openOwnedPack(cur, set ?? sets[(start + i) % sets.length], Date.now() + i * 7919);
+        if (!o) break;
+        out.push(o);
+        cur = o.save;
+      }
+    } finally {
+      setBusy(0);
     }
     if (!out.length) return;
     onSave(cur);
     show(out);
+  };
+  // A big batch shows "Opening…" for a frame first, so the tap answers at once.
+  const openSome = (from: SpeedSave, set: string | null, count: number) => {
+    if (count <= MIX) return openNow(from, set, count);
+    setBusy(count);
+    window.setTimeout(() => openNow(from, set, count), 60);
   };
 
   return (
@@ -131,17 +146,25 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
         </button>
       </div>
       <ChipBar save={save} />
-      {tab === 'packs' && <Packs save={save} onOpen={(set, all) => openSome(save, set, all ? packsOf(save) : 1)} />}
+      {tab === 'packs' && <Packs save={save} onOpen={(set, n) => openSome(save, set, n)} />}
       {tab === 'binder' && <MyCards save={save} onSave={onSave} onPick={setSel} />}
       {tab === 'craft' && <CraftList save={save} onPick={setSel} />}
       {sel && <CardSheet save={save} name={sel} onSave={onSave} onClose={() => setSel(null)} />}
+      {busy > 0 && (
+        <Overlay>
+          <div class="reveal opening">
+            <span class="pack big tearable" aria-hidden="true" />
+            <p>Opening {busy} packs…</p>
+          </div>
+        </Overlay>
+      )}
       {opened &&
         (opened.length === 1 ? (
           <PackReveal
             key={n}
             opened={opened[0]}
-            left={packsOf(opened[0].save)}
-            onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? packsOf(opened[0].save) : 1)}
+            left={oneSetMax(opened[0].save, opened[0].set!)}
+            onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? oneSetMax(opened[0].save, opened[0].set!) : 1)}
             onDone={() => setOpened(null)}
           />
         ) : (
@@ -162,17 +185,46 @@ const completion = (save: SpeedSave, cards: [string, Rarity][]) => {
   return { have: names.filter((n) => owned(save, n) > 0).length, of: names.length };
 };
 
-function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: boolean) => void }) {
+/** Opening this many gift packs at once from mixed sets. */
+const MIX = 10;
+/** The most packs one set opens in a go: gift packs are better spread over every set, so 10 at a time while any are left. */
+const oneSetMax = (save: SpeedSave, set: string) => (giftPacksOf(save) > 0 ? Math.min(MIX, packsFor(save, set)) : packsFor(save, set));
+
+function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null, count: number) => void }) {
   const all = boosterSets();
   const open = unlockedSets(save.wins);
+  const gifts = giftPacksOf(save);
   const toNext = WINS_PER_SET - (save.wins % WINS_PER_SET);
   const [pick, setPick] = useState<string | null>(null);
+  const shown = gifts > 0 ? all : all.slice(0, open.length + 1);
+  const pickN = pick ? packsFor(save, pick) : 0;
   return (
     <div class="cardlist">
+      {gifts > 0 && (
+        <div class="gift-bar">
+          <span class="gift-box" aria-hidden="true">
+            🎁
+          </span>
+          <span class="gift-txt">
+            <b>{plural(gifts, 'gift pack')}</b>
+            <small>Any set, even locked ones. Mixed spreads them over every set.</small>
+          </span>
+          <span class="gift-btns">
+            <button class="gbtn gift-mix" onClick={() => (playSummon(), onOpen(null, Math.min(MIX, gifts)))}>
+              Open {Math.min(MIX, gifts)} mixed
+            </button>
+            {gifts > MIX && (
+              <button class="gbtn gift-all" onClick={() => (playSummon(), onOpen(null, gifts))}>
+                Open all {gifts}
+              </button>
+            )}
+          </span>
+        </div>
+      )}
       <p class="hint">
         {packsOf(save) > 0 ? `You have ${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open. Pick a set:` : 'No packs to open. Win them in duels (tap the bar above to see how).'}
       </p>
-      {open.length < all.length && (
+      {!gifts && open.length < all.length && (
         <div class="next-set">
           <span>
             Next set: <b>{shortSetName(all[open.length].name)}</b> in {toNext} win{toNext === 1 ? '' : 's'}
@@ -185,16 +237,12 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
         </div>
       )}
       <div class="pack-grid">
-        {all.slice(0, open.length + 1).map((s, i) => {
+        {shown.map((s, i) => {
           const unlocked = i < open.length;
           const c = completion(save, s.cards);
+          const n = packsFor(save, s.name);
           return (
-            <button
-              key={s.name}
-              class={`pack ${unlocked ? '' : 'locked'} p${i % 6}`}
-              disabled={!unlocked || packsOf(save) < 1}
-              onClick={() => (playBlip(), packsOf(save) > 1 ? setPick(s.name) : onOpen(s.name, false))}
-            >
+            <button key={s.name} class={`pack ${unlocked || gifts ? '' : 'locked'} p${i % 6}`} disabled={n < 1} onClick={() => (playBlip(), n > 1 ? setPick(s.name) : onOpen(s.name, 1))}>
               {coverOf(s.cards) && (
                 <span class="pack-art">
                   <CardImg name={coverOf(s.cards)!} />
@@ -202,13 +250,13 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
               )}
               <span class="pack-logo">SPEED DUEL</span>
               <span class="pack-name">{shortSetName(s.name)}</span>
-              <span class="pack-note">{unlocked ? `${c.have}/${c.of} owned` : i === open.length ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
+              <span class="pack-note">{unlocked || gifts ? `${c.have}/${c.of} owned` : i === open.length ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
               <span class="pack-odds">OVER 1 in {OVER_ONE_IN}</span>
             </button>
           );
         })}
       </div>
-      {all.length > open.length + 1 && (
+      {!gifts && all.length > open.length + 1 && (
         <p class="later-sets">
           🔒 Still to unlock: {all.slice(open.length + 1).map((s) => shortSetName(s.name)).join(' · ')}
         </p>
@@ -223,8 +271,10 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string, all: b
           <Win title={shortSetName(pick)} onClose={() => setPick(null)}>
             <Menu
               items={[
-                { label: 'Open 1 pack', onPick: () => (setPick(null), onOpen(pick, false)) },
-                { label: `Open all ${packsOf(save)}`, note: 'see every card at once', onPick: () => (setPick(null), onOpen(pick, true)) },
+                { label: 'Open 1 pack', onPick: () => (setPick(null), onOpen(pick, 1)) },
+                ...(pickN > MIX ? [{ label: `Open ${MIX}`, note: 'see them all at once', onPick: () => (setPick(null), onOpen(pick, MIX)) }] : []),
+                // Gift packs are better spread over every set (the banner above), so one set offers its own packs or 10 at a time.
+                ...(gifts > 0 && pickN > MIX ? [] : [{ label: `Open all ${pickN}`, note: 'see every card at once', onPick: () => (setPick(null), onOpen(pick, pickN)) }]),
               ]}
             />
           </Win>
@@ -388,31 +438,53 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
 
 /** Several packs opened at once: every card in one grid, best first. */
 function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void }) {
-  const set = opened[0].set;
+  const sets = [...new Set(opened.map((o) => o.set))];
   const fresh = new Set(opened.flatMap((o) => o.fresh));
-  const cards = opened
-    .flatMap((o) => o.cards.map((n, i) => ({ n, f: o.finishes?.[i] ?? 0 })))
-    .sort((a, b) => b.f - a.f || RARITIES.indexOf(rarityIn(set, b.n)) - RARITIES.indexOf(rarityIn(set, a.n)));
+  // One tile per card (×copies, the best rarity it came out at), so a big gift stays quick to scroll.
+  const byName = new Map<string, { n: string; set: string | undefined; f: number; x: number }>();
+  for (const o of opened)
+    o.cards.forEach((n, i) => {
+      const f = o.finishes?.[i] ?? 0;
+      const had = byName.get(n);
+      if (!had) return void byName.set(n, { n, set: o.set, f, x: 1 });
+      had.x++;
+      had.f = Math.max(had.f, f);
+      // a card printed in several sets shows its best printing
+      if (RARITIES.indexOf(rarityIn(o.set, n)) > RARITIES.indexOf(rarityIn(had.set, n))) had.set = o.set;
+    });
+  const cards = [...byName.values()].sort((a, b) => Number(fresh.has(b.n)) - Number(fresh.has(a.n)) || b.f - a.f || RARITIES.indexOf(rarityIn(b.set, b.n)) - RARITIES.indexOf(rarityIn(a.set, a.n)));
   const top = best(cards.map((c) => c.f));
   const shards = opened.reduce((t, o) => t + o.shards, 0);
+  const [limit, setLimit] = useState(PAGE);
+  // Keep the floating Friends button off the cards while the summary is up.
+  useEffect(() => {
+    document.documentElement.classList.add('no-pill');
+    return () => document.documentElement.classList.remove('no-pill');
+  }, []);
   return (
     <Overlay>
       <div class="reveal summary">
         <p>
-          <b>{opened.length} packs</b> of {shortSetName(set ?? '')}: {fresh.size} new card{fresh.size === 1 ? '' : 's'}
+          <b>{opened.length} packs</b> {sets.length === 1 ? `of ${shortSetName(sets[0] ?? '')}` : `from ${sets.length} sets`}: {fresh.size} new card{fresh.size === 1 ? '' : 's'}
           {shards ? `, ${shards} shards from extra copies` : ''}.
           {top >= 3 && ` Best pull: ${TIERS[top].name}!`}
         </p>
         <div class="binder">
-          {cards.map(({ n, f }, i) => (
-            <span key={i} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`}>
+          {cards.slice(0, limit).map(({ n, set, f, x }) => (
+            <span key={n} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`}>
               <CardImg name={n} />
               <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
               {f > 0 && <span class={`rv-fin lv-chip lv-${TIERS[f].id}`}>{chipText(TIERS[f].id)}</span>}
               {fresh.has(n) && <span class="bnew">NEW</span>}
+              {x > 1 && <span class="bcount">×{x}</span>}
             </span>
           ))}
         </div>
+        {cards.length > limit && (
+          <button class="gbtn more" onClick={() => setLimit(limit + PAGE * 2)}>
+            Show more ({cards.length - limit} left)
+          </button>
+        )}
         <Menu items={[{ label: 'Done', onPick: onDone }]} />
       </div>
     </Overlay>
