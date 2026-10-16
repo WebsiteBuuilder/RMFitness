@@ -1,11 +1,11 @@
-// The one-time present (see GIFT in economy.ts): a wrapped box drops in, a tap tears it
+// A one-time present (see GIFTS in economy.ts): a wrapped box drops in, a tap tears it
 // open, confetti flies and the gift packs count up before heading to the Card Shop.
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { CardImg } from '../ui/CardImg';
 import { buzz, playFanfare, playStar, playSummon } from '../ui/sound';
 import { boosterSets } from './sets';
 import { card } from '../eds/db';
-import type { GIFT } from './economy';
+import type { Gift } from './economy';
 import './gift.css';
 
 const COLORS = ['#f2c14e', '#ff5d8f', '#4fd1ff', '#7cf29a', '#b78cff', '#ffffff'];
@@ -28,7 +28,21 @@ const fanCards = () => {
   return out;
 };
 
-export function GiftReveal({ gift, onClaim, onOpen, onLater }: { gift: typeof GIFT; /** claims the gift; false when it can't be (already claimed) */ onClaim: () => boolean; onOpen: () => void; onLater: () => void }) {
+export function GiftReveal({
+  gift,
+  onClaim,
+  onOpen,
+  onLater,
+  onNotNow,
+}: {
+  gift: Gift;
+  /** claims the gift; false when it can't be (already claimed) */
+  onClaim: () => boolean;
+  onOpen: () => void;
+  onLater: () => void;
+  /** closes the wrapped present unopened (it comes back next time the game opens) */
+  onNotNow: () => void;
+}) {
   const [torn, setTorn] = useState(false);
   const [count, setCount] = useState(0);
   const fan = useMemo(fanCards, []);
@@ -83,14 +97,17 @@ export function GiftReveal({ gift, onClaim, onOpen, onLater }: { gift: typeof GI
         <p class="gift-kicker">🎉 {gift.title}</p>
         {!torn ? (
           <>
-            <h2>A present for you</h2>
-            <p class="gift-sub">To celebrate online matchmaking, every duelist gets a surprise.</p>
+            <h2>{gift.heading ?? 'A present for you'}</h2>
+            <p class="gift-sub">{gift.note}</p>
             <button class="gift-wrap" onClick={tear} aria-label="Open the present">
               <span class="gift-lid" />
               <span class="gift-body" />
               <span class="gift-ribbon" />
             </button>
             <p class="gift-tap">Tap the present to open it</p>
+            <button class="gbtn gift-later" onClick={onNotNow}>
+              Not now
+            </button>
           </>
         ) : (
           <>

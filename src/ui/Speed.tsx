@@ -41,7 +41,7 @@ import { showProfileLevels } from '../level/view';
 import { CardShop } from '../collection/Shop';
 import { RequestsScreen, StampsScreen } from '../collection/Earn';
 import { boardOf } from '../collection/requests';
-import { GIFT, bestCrown, claimGift, collectionProblems, giftFor, ownedOnly, withStarter } from '../collection/economy';
+import { bestCrown, claimGift, collectionProblems, nextGift, ownedOnly, withStarter, type Gift } from '../collection/economy';
 import { GiftReveal } from '../collection/Gift';
 import { accounts } from '../accounts';
 import { preloadArt3d } from '../art/preload';
@@ -100,6 +100,9 @@ export function speedHubBack(): boolean {
 
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
 
+/** gifts put off with "Not now" until the game is next opened */
+const notNow: string[] = [];
+
 export function SpeedHub({
   controls,
   onControls,
@@ -133,12 +136,16 @@ export function SpeedHub({
   const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
   const [editRandom, setEditRandom] = useState(false);
-  const [gift, setGift] = useState<typeof GIFT | null>(null);
-  // A one-time present waiting on this profile: it is claimed when the box is torn open.
+  const [gift, setGift] = useState<Gift | null>(null);
+  // A one-time present waiting on this profile (the next one follows when it's opened): claimed when the box is torn.
   useEffect(() => {
     if (gift || sub !== 'menu' || save.decks.length === 0) return;
-    setGift(giftFor(save, profile.created, GIFT, profile.id));
-  }, [save, sub]);
+    setGift(nextGift(save, profile.created, profile.id, notNow));
+  }, [save, sub, gift]);
+  const putOff = () => {
+    if (gift) notNow.push(gift.id);
+    setGift(null);
+  };
   const claim = () => {
     const next = gift && claimGift(save, profile.created, gift, profile.id);
     if (!next) return false;
@@ -194,7 +201,7 @@ export function SpeedHub({
 
   return (
     <>
-      {gift && <GiftReveal gift={gift} onClaim={claim} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} />}
+      {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} onNotNow={putOff} />}
       <SpeedHome
         tab={tab}
         onTab={setTab}

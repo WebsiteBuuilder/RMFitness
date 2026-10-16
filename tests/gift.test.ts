@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../src/eds/speedSave';
-import { GIFT, GIFT_PROFILES, claimGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
+import { BONUS_GIFT, GIFT, GIFTS, GIFT_PROFILES, claimGift, nextGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
 import { boosterSets, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
 import { randomSpeedDeck } from '../src/eds/speedRandom';
 import { DB } from './speedkit';
@@ -32,6 +32,22 @@ const before = GIFT.madeBefore - 86_400_000;
   ok(claimGift(s, GIFT.madeBefore) === null && claimGift(s, Date.now() + 1e12) === null, 'a profile made after the cutoff gets nothing (no spare-profile farm)');
   ok(!!claimGift(s, 0), 'an old profile with no creation date still gets it');
   ok(giftFor(s, before, { ...GIFT, id: 'next' }) !== null && !!claimGift(g, before, { ...GIFT, id: 'next', packs: 5 }), 'a later gift with a new id can be given on top');
+}
+
+// ---------- the bonus drop: a second present on top ----------
+{
+  const s = migrate(newSpeedSave());
+  ok(BONUS_GIFT.packs === 145 && GIFTS.length === 2 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'a second gift of 145 packs, with its own id');
+  ok(nextGift(s, before)?.id === GIFT.id, 'the welcome present comes first');
+  const one = claimGift(s, before, GIFT)!;
+  ok(nextGift(one, before)?.id === BONUS_GIFT.id, 'then the bonus drop');
+  const both = claimGift(one, before, BONUS_GIFT)!;
+  ok(giftPacksOf(both) === GIFT.packs + BONUS_GIFT.packs && nextGift(both, before) === null, `both gifts give ${GIFT.packs + BONUS_GIFT.packs} packs, then nothing more`);
+  ok(claimGift(both, before, BONUS_GIFT) === null, 'the bonus can be claimed only once');
+  const late = Date.UTC(2026, 9, 19);
+  ok(nextGift(s, late)?.id === BONUS_GIFT.id, 'a profile made after the welcome cutoff still gets the bonus');
+  ok(nextGift(s, BONUS_GIFT.madeBefore) === null, 'a profile made after the bonus cutoff gets nothing');
+  ok(nextGift(s, before, undefined, [GIFT.id])?.id === BONUS_GIFT.id && nextGift(s, before, undefined, [GIFT.id, BONUS_GIFT.id]) === null, '"Not now" skips a gift for now');
 }
 
 // ---------- one phone hands it to at most GIFT_PROFILES profiles, each once ----------

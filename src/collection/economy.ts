@@ -281,24 +281,45 @@ export function openOwnedPack(s: SpeedSave, setName: string, seed = Date.now()):
 export const withPacks = (s: SpeedSave, n: number): SpeedSave => ({ ...s, packs: ownPacks(s) + n }) as EconSave;
 
 /**
- * One-time presents from the game's owner, the first being 250 packs to celebrate Find a
- * Match going live. Each profile gets a gift once (the save remembers it, and the save backs
- * up with the shared account, so logging in on another phone can't claim it again), and only
- * profiles made before `madeBefore`, so a new spare profile isn't a pack farm.
+ * One-time presents from the game's owner. Each profile gets each gift once (the save
+ * remembers it, and the save backs up with the shared account, so logging in on another
+ * phone can't claim it again), and only profiles made before its `madeBefore`, so a new
+ * spare profile isn't a pack farm. A new gift is a new entry in GIFTS with a new id.
  */
-export const GIFT = {
-  id: 'matchmaking-live',
+export interface Gift {
+  id: string;
   /** change this to give a different number of packs */
+  packs: number;
+  title: string;
+  /** the big line over the wrapped box (default "A present for you") */
+  heading?: string;
+  /** the line under the heading */
+  note: string;
+  madeBefore: number;
+}
+export const GIFT: Gift = {
+  id: 'matchmaking-live',
   packs: 250,
   title: 'Find a Match is live!',
+  note: 'To celebrate online matchmaking, every duelist gets a surprise.',
   madeBefore: Date.UTC(2026, 9, 18),
 };
+export const BONUS_GIFT: Gift = {
+  id: 'bonus-drop-1',
+  packs: 145,
+  title: 'Bonus drop!',
+  heading: 'Another present!',
+  note: 'More cards for your decks: a second present for every duelist.',
+  madeBefore: Date.UTC(2026, 9, 21),
+};
+/** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
+export const GIFTS: Gift[] = [GIFT, BONUS_GIFT];
 /** A phone hands each gift to at most this many profiles (like the welcome packs). */
 export const GIFT_PROFILES = 2;
 
 /** The profiles this phone already gave a gift to (only these can claim it here once the phone's share is used). */
 const giftedKey = (id: string) => `eds.speed.gifted.${id}`;
-function giftedHere(gift: typeof GIFT): string[] {
+function giftedHere(gift: Gift): string[] {
   try {
     const list = JSON.parse(localStorage.getItem(giftedKey(gift.id)) ?? '[]');
     return Array.isArray(list) ? list : [];
@@ -308,7 +329,7 @@ function giftedHere(gift: typeof GIFT): string[] {
 }
 
 /** The gift this profile can still claim (null: already claimed, made too late, or this phone gave out its share). */
-export function giftFor(s: SpeedSave, created: number, gift = GIFT, profileId?: string) {
+export function giftFor(s: SpeedSave, created: number, gift: Gift = GIFT, profileId?: string): Gift | null {
   if ((E(s).gifts ?? []).includes(gift.id) || created >= gift.madeBefore) return null;
   if (profileId) {
     const here = giftedHere(gift);
@@ -319,7 +340,7 @@ export function giftFor(s: SpeedSave, created: number, gift = GIFT, profileId?: 
 }
 
 /** Claims the gift: its packs go in as gift packs, and the profile can never claim it again. */
-export function claimGift(s: SpeedSave, created: number, gift = GIFT, profileId?: string): SpeedSave | null {
+export function claimGift(s: SpeedSave, created: number, gift: Gift = GIFT, profileId?: string): SpeedSave | null {
   if (!giftFor(s, created, gift, profileId)) return null;
   if (profileId)
     try {
@@ -328,6 +349,12 @@ export function claimGift(s: SpeedSave, created: number, gift = GIFT, profileId?
       /* storage blocked */
     }
   return { ...s, giftPacks: giftPacksOf(s) + gift.packs, gifts: [...(E(s).gifts ?? []), gift.id] } as EconSave;
+}
+
+/** The oldest gift this profile can still claim, skipping any in `skip` (put off with "Not now"). */
+export function nextGift(s: SpeedSave, created: number, profileId?: string, skip: string[] = []): Gift | null {
+  for (const g of GIFTS) if (!skip.includes(g.id) && giftFor(s, created, g, profileId)) return g;
+  return null;
 }
 
 /** Duel the Computer: the first win against each duelist each day pays a pack. */
