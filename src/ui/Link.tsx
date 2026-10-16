@@ -128,7 +128,7 @@ export function Lobby({
   /** Speed Duel: the save behind a seat this phone controls, for placing bets */
   betSave?: (seat: Pid) => SpeedSave | null;
   /** a 2v2 Tag Duel room (host): what it is, and the START that seats all four duelists */
-  tag?: { note: string; start: (seats: SessionView['seats']) => Action };
+  tag?: { note: string; title?: string; start: (seats: SessionView['seats']) => Action };
   /** a rematch on one phone: the profile in Player 2's seat last duel (null: a guest) */
   rematchP2?: string | null;
 }) {
@@ -291,7 +291,7 @@ export function Lobby({
     <div class="screen">
       <Win title={code ? `Room ${code} · ${GAME_NAME[roomMode]}` : `Play on this phone · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
         {code && <p class={`status s-${status}`}>{detail || status}</p>}
-        {tag && <p class="tag-room">2v2 Tag Duel · {tag.note}</p>}
+        {tag && <p class="tag-room">{tag.title ?? '2v2 Tag Duel'} · {tag.note}</p>}
         {matched && <p class="hint">Find a Match: you're dueling {matched.opponent}. {session.adapter.isHost ? 'Start when you are both ready.' : ''}</p>}
         {code && session.adapter.isHost && status === 'waiting' && !matched && (
           <p>

@@ -49,6 +49,10 @@ import { DuelPot } from '../collection/StakesPanel';
 import { rescueFirst, settleStakes, settleTicket, staked, stakesFor, ticketOf, withTicket, type DuelTicket, type StakeSeat } from '../collection/stakes';
 import { other } from '../eds/engine';
 import { TagBar, TagHub, type TagPlan, type TagReport } from './Tag';
+import { RaidHub, RaidPlay, RaidRoom, raidActive, type RaidEnd, type RaidReport } from './Raid';
+import { RaidSession } from '../eds/raidSession';
+import { CLEAR_REWARDS, loadRaidProgress, raidPool, settleRaid, writeRaidProgress, type RaidDef, type RaidMsg } from '../eds/raid';
+import { grant } from '../eds/speedCampaign/rewards';
 import { ctlOf, runsComputers, sideOfPhone, tagStart, whoMoves, type TagDuelist, type TagTeams } from '../eds/tagDuel';
 import { TAG_LP, activeMember, sideName } from '../eds/tag';
 import { settleTagRoad } from '../eds/speedCampaign/tagRoad';
@@ -110,6 +114,11 @@ export function App() {
   const [tagOpen, setTagOpen] = useState(false);
   const [tagReport, setTagReport] = useState<TagReport | null>(null);
   const tagHost = useRef<TagPlan | null>(null);
+  /** Boss Raid: the menu is open, the last raid's result, the raid this phone hosts, a raid with a computer partner */
+  const [raidOpen, setRaidOpen] = useState(false);
+  const [raidReport, setRaidReport] = useState<RaidReport | null>(null);
+  const raidHost = useRef<{ def: RaidDef; level: Difficulty } | null>(null);
+  const [raidLocal, setRaidLocal] = useState<RaidSession | null>(null);
   /** watching the computer duel itself: speed and pause */
   const [watchSpeed, setWatchSpeed] = useState(1);
   const [watchPaused, setWatchPaused] = useState(false);
@@ -508,6 +517,62 @@ export function App() {
     setTagReport(null);
     openSession({ mode: 'join', code }, 'speed');
   };
+  /** Starts a raid on this phone with a computer partner, or opens a room for the brother. */
+  const playRaid = (def: RaidDef, level: Difficulty, how: 'here' | 'host', partner: CpuDuelist | null) => {
+    if (!save || !myDeckNow()) return;
+    const d = myDeckNow()!;
+    setRaidReport(null);
+    tagHost.current = null;
+    if (how === 'host') {
+      raidHost.current = { def, level };
+      openSession({ mode: 'host' }, 'speed');
+      return;
+    }
+    raidHost.current = null;
+    session?.close();
+    setSession(null);
+    const rs = new RaidSession(new MemoryAdapter());
+    const pd = deckOf(partner!);
+    rs.send({ type: 'RAID_START', plan: { raid: def.id, seed: randomSeed(), level, heroes: [{ name: save.name, main: d.main, extra: d.extra, skill: d.skill, ctl: 0 }, { name: partner!.name, main: pd.main, extra: pd.extra, skill: pd.skill, ctl: 'cpu' }] } });
+    setDuelMode('speed');
+    setMySeat(0);
+    setRaidLocal(rs);
+    setScreen('duel');
+  };
+  const joinRaid = (code: string) => {
+    raidHost.current = null;
+    tagHost.current = null;
+    setRaidReport(null);
+    openSession({ mode: 'join', code }, 'speed');
+  };
+  /** Files a finished (or abandoned) raid on this phone: progress, first-clear rewards, then the raid menu. */
+  const endRaid = (r: RaidEnd) => {
+    if (!profile) return;
+    const raid = r.raid;
+    const id = raid.def?.id ?? raidHost.current?.def.id ?? '';
+    const speedNow = speedSave ?? loadSpeedSave(profile.id);
+    const noEarn = !!activeDeck(speedNow)?.open;
+    const dealt = raid.total[r.hero];
+    const s = settleRaid(loadRaidProgress(profile.id), id, r.won && !r.left, dealt);
+    writeRaidProgress(profile.id, s.progress);
+    let lines: string[] = [];
+    let cards: string[] = [];
+    if (s.firstClear && !noEarn && raid.def) {
+      const g = grant(speedNow, loadSolo(profile.id), CLEAR_REWARDS, raidPool(raid.def));
+      setSpeedSave(g.speed);
+      lines = g.lines;
+      cards = g.cards;
+    }
+    setRaidReport({ raid: id, won: r.won && !r.left, left: r.left, stage: raid.stage, dealt, firstClear: s.firstClear, lines, cards, noEarn });
+    raidHost.current = null;
+    raidLocal?.close();
+    setRaidLocal(null);
+    session?.close();
+    setSession(null);
+    setP2Profile(null);
+    setRaidOpen(true);
+    setScreen('speed');
+  };
   /** This profile's Speed Duel deck as it plays (Shadow Realm cards sit out). */
   const myDeckNow = () => {
     const full = speedSave ? activeDeck(speedSave) : null;
@@ -542,8 +607,8 @@ export function App() {
   };
   // Friends: invites open or join rooms through here; friends see what this player is doing.
   online.bindApp({
-    host: (room, game) => ((tagHost.current = null), openSession({ mode: 'host' }, game, room)),
-    join: (room, game) => ((tagHost.current = null), openSession({ mode: 'join', code: room }, game)),
+    host: (room, game) => ((tagHost.current = null), (raidHost.current = null), openSession({ mode: 'host' }, game, room)),
+    join: (room, game) => ((tagHost.current = null), (raidHost.current = null), openSession({ mode: 'join', code: room }, game)),
     deckProblem: (game) => {
       if (!save || !dbReady) return 'Your game is still loading';
       if (game === 'eds') return deckProblems(save)[0] ?? null;
@@ -580,6 +645,7 @@ export function App() {
       return endTagDuel(tst.winner);
     }
     tagHost.current = null;
+    raidHost.current = null;
     const mode = gameOf();
     // Leaving a Speed Duel against another player counts as a loss: surrender first, so
     // bets and prizes settle on both phones.
@@ -729,6 +795,8 @@ export function App() {
       online.openPanel(false);
       return true;
     }
+    // A raid asks before leaving (its own sheet).
+    if (raidActive()) return soloBack();
     if (screen === 'duel' && session) {
       const st = session.engine.state;
       if (st.winner !== null) {
@@ -751,7 +819,7 @@ export function App() {
     // Speed Duel's own screens step back to the Speed Duel menu first.
     if (screen === 'speed' && !soloMode && speedHubBack()) return true;
     // The solo modes step back through their own sheets and screens.
-    if (screen === 'speed' && (soloMode || tagOpen)) return soloBack();
+    if (screen === 'speed' && (soloMode || tagOpen || raidOpen)) return soloBack();
     if (screen !== 'title' && screen !== 'profiles' && screen !== 'intro' && screen !== 'menu' && screen !== 'duel') {
       setScreen('menu');
       return true;
@@ -935,6 +1003,20 @@ export function App() {
             </Overlay>
           );
       if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
+      if (raidOpen)
+        return (
+          <RaidHub
+            speed={speedSave ?? speedSaveOf(profile.id)}
+            solo={loadSolo(profile.id)}
+            progress={loadRaidProgress(profile.id)}
+            report={raidReport}
+            onReportSeen={() => setRaidReport(null)}
+            onPlay={playRaid}
+            onJoin={joinRaid}
+            onSpeed={setSpeedSave}
+            onBack={() => (setRaidReport(null), setRaidOpen(false))}
+          />
+        );
       if (tagOpen)
         return (
           <TagHub
@@ -969,7 +1051,7 @@ export function App() {
         );
       return (
         <>
-          <SpeedHub onTag={() => setTagOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">
@@ -985,6 +1067,7 @@ export function App() {
       );
     case 'duel': {
       const watching = soloDuel.current?.spec.watch;
+      if (raidLocal) return <RaidPlay rs={raidLocal} phone={0} controlsFor={controlsFor} onControls={setControls} onEnd={endRaid} />;
       if (!session) return menu;
       if (offlineLeave)
         return (
@@ -1018,7 +1101,7 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current ? noStakes(entries) : entries} tag={tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
@@ -1032,6 +1115,19 @@ export function App() {
     default:
       return menu;
   }
+}
+
+/** The room a Boss Raid host opens: Start sends the raid with both seats' decks. */
+function raidRoom(def: RaidDef, level: Difficulty): { note: string; title: string; start: (seats: SessionView['seats']) => Action } {
+  return {
+    title: 'Boss Raid',
+    note: `you and your brother vs ${def.title}`,
+    start: (seats) => {
+      const hero = (i: Pid) => ({ name: seats[i].name, main: seats[i].deck, extra: seats[i].fusion, skill: seats[i].skill ?? null, ctl: i });
+      const m: RaidMsg = { type: 'RAID_START', plan: { raid: def.id, seed: randomSeed(), level, heroes: [hero(0), hero(1)] } };
+      return m as unknown as Action;
+    },
+  };
 }
 
 /** A tag room's seats carry no bets. */
@@ -1104,6 +1200,7 @@ function Running({
   watch,
   tag,
   rematchP2,
+  onRaidEnd,
 }: {
   session: DuelSession;
   hotseat: boolean;
@@ -1124,8 +1221,10 @@ function Running({
   onStarted?: (seats: SessionView['seats'], key: string) => void;
   /** the computer plays both seats (Practice: watch a duel), at the viewer's speed */
   watch?: { tactics: [Tactics, Tactics]; speed: number; paused: boolean };
-  /** this phone hosts a 2v2 Tag Duel room */
-  tag?: { note: string; start: (seats: SessionView['seats']) => Action };
+  /** this phone hosts a 2v2 Tag Duel room (or a Boss Raid: `title`) */
+  tag?: { note: string; title?: string; start: (seats: SessionView['seats']) => Action };
+  /** a Boss Raid played in this room ended */
+  onRaidEnd?: (r: RaidEnd) => void;
   /** a rematch on one phone: who sat in Player 2's seat */
   rematchP2?: string | null;
 }) {
@@ -1200,6 +1299,8 @@ function Running({
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
   useEffect(() => () => showDuelRarity(null), []);
+  // A Boss Raid: the host started it in the room; both phones play it from the room's log.
+  if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {
     const game = view.seats[0].mode ?? mode;
     return <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />;
