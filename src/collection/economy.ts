@@ -310,9 +310,9 @@ export const BONUS_GIFT: Gift = {
   id: 'bonus-drop-1',
   packs: 145,
   title: 'Bonus drop!',
-  heading: 'Another present!',
-  opened: 'On top of the first 250. Any set, any rarity, Overframe included. Hit Random deck after for fresh builds.',
-  note: 'More cards for your decks: a second present for every duelist.',
+  heading: 'A bonus present',
+  opened: 'Any set, any rarity, Overframe included. Hit Random deck after for fresh builds.',
+  note: 'More cards for your decks: a bonus present for every duelist.',
   madeBefore: Date.UTC(2026, 9, 21),
 };
 /** every gift, oldest first: a profile opens the ones it hasn't had, one after another */

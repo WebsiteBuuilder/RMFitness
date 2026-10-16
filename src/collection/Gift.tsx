@@ -40,7 +40,7 @@ export function GiftReveal({
   onClaim: () => boolean;
   onOpen: () => void;
   onLater: () => void;
-  /** closes the wrapped present unopened (it comes back next time the game opens) */
+  /** closes the wrapped present unopened (this profile's presents come back once the game is reopened) */
   onNotNow: () => void;
 }) {
   const [torn, setTorn] = useState(false);
