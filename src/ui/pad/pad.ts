@@ -719,6 +719,9 @@ function visibleTabs(): HTMLElement | null {
 }
 
 function cardInfo() {
+  // a second Y closes the card's text again
+  const open = [...document.querySelectorAll('.overlay')].pop();
+  if (open && /card info|skill text/i.test(open.textContent?.slice(0, 120) ?? '')) return back(false);
   if (focused?.matches('.duel.touch [data-uid]')) {
     if (!focused.dispatchEvent(new CustomEvent('pady', { bubbles: true, cancelable: true }))) return;
     yToastAt = performance.now();
