@@ -4980,7 +4980,6 @@ const PRESET_ALIASES: Record<string, string> = {
   'Diamond-Dust Cyclone': 'Wild Tornado',
   'Rope of Life': 'Monster Reborn',
   "Dragon's Rebirth": 'Monster Reborn',
-  'Hallowed Life Barrier': 'Negate Attack',
   'Tornado Wall': 'Negate Attack',
 };
 const EXTRA_PRESETS: Record<string, Preset> = {

@@ -1720,13 +1720,24 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   };
 
   E['Stray Lambs'] = {
-    canActivate: (e, _c, p, t) => isMain(t) && e.player(p).mz.filter((z) => z === null).length >= 2,
-    *resolve(e, _l, p) {
-      for (let i = 0; i < 2; i++) e.createToken('Lamb Token', p, 'def', true, { atk: 0, def: 0, level: 1, attribute: 'EARTH', race: 'Beast' });
-      // audit-09: "You cannot Summon other monsters the turn you activate this card (but you can Set)".
+    // not after you already Summoned this turn (a face-up monster placed this turn; Sets are fine)
+    canActivate: (e, _c, p, t) => isMain(t) && e.player(p).mz.filter((z) => z === null).length >= 2 && !e.monsters(p).some((m) => m.faceUp && m.placedTurn === e.state.turn),
+    // audit-09: "You cannot Summon other monsters the turn you activate this card (but you can Set)": from the activation on.
+    *activate(e, _l, p) {
       ((e.state.fx.summonLocks ??= []) as SummonLock[]).push({ p, turn: e.state.turn, normal: true, special: true, only: [] });
       // group-F: Flip Summons are Summons too (fx.summonLock stops Normal, Flip and Special Summons, not Sets).
       ((e.state.fx.summonLock ??= [-1, -1]) as number[])[p] = e.state.turn;
+    },
+    *resolve(e, _l, p) {
+      // its own lock does not stop its own Tokens: lifted while they arrive, then back on
+      const locks = (e.state.fx.summonLocks ?? []) as SummonLock[];
+      const mine = locks.filter((l) => l.p === p && l.turn === e.state.turn);
+      e.state.fx.summonLocks = locks.filter((l) => !mine.includes(l));
+      const one = ((e.state.fx.summonLock ??= [-1, -1]) as number[])[p];
+      (e.state.fx.summonLock as number[])[p] = -1;
+      for (let i = 0; i < 2; i++) e.createToken('Lamb Token', p, 'def', true, { atk: 0, def: 0, level: 1, attribute: 'EARTH', race: 'Beast' });
+      ((e.state.fx.summonLocks ??= []) as SummonLock[]).push(...mine);
+      (e.state.fx.summonLock as number[])[p] = Math.max(one, e.state.turn);
     },
   };
 

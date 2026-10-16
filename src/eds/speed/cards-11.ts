@@ -499,7 +499,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
 
   const kingFodder = (e: Engine, m: FieldCard, p: Pid) => e.monsters(p).filter((x) => x.uid !== m.uid && raceOf(e, x) === 'Machine' && !e.untributable(x));
   E['Machine King - 3000 B.C.'] = {
-    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p),
+    canActivate: (e, _c, p, t) => anyTime(t) && freeMZ(e, p) && !e.monsters(p).some((m) => m.faceUp && m.placedTurn === e.state.turn && m.uid !== _c.uid),
     // "You cannot Normal or Special Summon other monsters the turn you activate this card": from the activation on (even if it is negated).
     *activate(e, link, p) {
       ((e.state.fx.summonLocks ??= []) as { p: Pid; turn: number; normal: boolean; special: boolean; only?: string[]; except?: number }[]).push({ p, turn: e.state.turn, normal: true, special: true, only: [], except: link.card.uid });

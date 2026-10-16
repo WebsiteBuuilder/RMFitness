@@ -2787,7 +2787,8 @@ export class Engine {
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card)) return false;
     if (this.chainEnergyBlocks(player)) return false;
     if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
-    if (info.sub === 'Field') return !this.player(player).field;
+    // Speed Duel: a Set Field Spell replaces the one already there too
+    if (info.sub === 'Field') return !this.player(player).field || this.speed;
     return this.freeZone(this.player(player), 'sz') >= 0;
   }
 
@@ -2797,6 +2798,11 @@ export class Engine {
     const ps = this.player(player);
     const info = this.info(f.card.name);
     if (info.sub === 'Field') {
+      if (ps.field && this.speed) {
+        const prev = ps.field;
+        this.log(player, `${prev.faceUp ? prev.name : 'The Set Field Spell'} is replaced and sent to the GY`);
+        this.run(this.sendToGrave(prev.uid, 'used'));
+      }
       if (ps.field) return;
       const card = this.detach(uid)!;
       ps.field = this.toField(card, 'atk', false);
@@ -2829,7 +2835,8 @@ export class Engine {
       }
       if (f.loc.zone === 'hand' && this.freeZone(this.player(player), 'sz') < 0 && info.sub !== 'Field') return false;
       // a new Field Spell replaces the one already there (that one goes to the GY)
-      if (f.loc.zone === 'hand' && info.sub === 'Field' && this.player(player).field && !this.speed) return false;
+      const curField = this.player(player).field;
+      if (f.loc.zone === 'hand' && info.sub === 'Field' && curField && (!this.speed || (curField.faceUp && curField.name === f.card.name))) return false;
       if (f.loc.zone === 'sz' || f.loc.zone === 'field') {
         const fc = f.card as FieldCard;
         if (fc.faceUp) return false;
@@ -2889,12 +2896,33 @@ export class Engine {
       fc.faceUp = true;
     }
     if (fromHand) yield* this.chainEnergy(player);
-    yield* this.startChain(player, fc, 'main', {});
+    // backing out of its target pick (nothing paid yet) puts it back where it was, as in Master Duel
+    yield* this.startChain(player, fc, 'main', {}, cost ? undefined : fromHand ? 'hand' : 'set');
+  }
+
+  /** Its activation was already backed out of once this turn (a second time it fizzles, so nothing can loop). */
+  takenBackThisTurn(uid: number): boolean {
+    return ((this.state.fx.takenBack ?? {}) as Record<number, number>)[uid] === this.state.turn;
+  }
+
+  /** A Spell/Trap whose activation was backed out of (its target pick cancelled): back to the hand, or face-down again. */
+  private undoActivation(fc: FieldCard, back: 'hand' | 'set', player: Pid) {
+    const tb = ((this.state.fx.takenBack ??= {}) as Record<number, number>);
+    tb[fc.uid] = this.state.turn;
+    if (back === 'set') {
+      fc.faceUp = false;
+      fc.active = false;
+    } else {
+      const card = this.detach(fc.uid);
+      if (card) this.player(player).hand.push(card);
+    }
+    this.event('set', { uid: fc.uid, player });
+    this.log(player, `${this.player(player).name} takes back ${fc.name}`);
   }
 
   // ---------- chains ----------
   /** Activates a card as a new chain link, lets the opponent respond, then resolves. */
-  *startChain(player: Pid, fc: FieldCard, trigger: Trigger, ctx: ChainCtx): Step {
+  *startChain(player: Pid, fc: FieldCard, trigger: Trigger, ctx: ChainCtx, back?: 'hand' | 'set'): Step {
     const eff = getEffect(fc.name)!;
     const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player, label: fc.name, negated: false };
     this.event('activate', { uid: fc.uid, player });
@@ -2905,6 +2933,7 @@ export class Engine {
       const ok = yield* eff.activate(this, link, player, ctx);
       this.actor = prev;
       if (ok === false) {
+        if (back && this.fieldCard(fc.uid) && !this.takenBackThisTurn(fc.uid)) return this.undoActivation(fc, back, player);
         // No legal target after all: the card fizzles and goes to the GY.
         yield* this.afterResolve(link);
         return;
@@ -3018,7 +3047,7 @@ export class Engine {
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
     let depth = 0;
-    while (passes < 2 && depth < 3 && this.state.winner === null) {
+    while (passes < 2 && depth < 10 && this.state.winner === null) {
       const options = this.responsesFor(responder, trigger, ctx);
       if (options.length === 0) {
         passes++;
@@ -3043,6 +3072,7 @@ export class Engine {
           continue;
         }
         let fc = opt ? this.fieldCard(opt.uid!) : null;
+        const fromHand = !fc && !!opt && opt.value === 'hand';
         // a Quick-Play Spell from the hand: it is placed face-up in a Spell & Trap Zone first
         if (!fc && opt && opt.value === 'hand') {
           const ps = this.player(responder);
@@ -3057,10 +3087,18 @@ export class Engine {
               paid = (yield* cost.pay(this, f.card, responder)) !== false;
               this.actor = prev;
             }
-            if (paid && this.find(opt.uid!)?.loc.zone === 'hand') {
+            if (paid && this.find(opt.uid!)?.loc.zone === 'hand' && ps.sz[z] === null) {
+              // the same bookkeeping as an activation in the Main Phase (Graverobber's borrowed card, Chain Energy)
+              if (((this.state.fx.borrowed ?? []) as number[]).includes(opt.uid!)) {
+                this.log(responder, `Graverobber: ${ps.name} takes 2000 damage for using ${f.card.name}`);
+                this.damage(responder, 2000);
+                this.state.fx.borrowed = (this.state.fx.borrowed as number[]).filter((u) => u !== opt.uid);
+              }
               const card = this.detach(opt.uid!)!;
               fc = ps.sz[z] = this.toField(card, 'atk', true);
               fc.placedTurn = this.state.turn;
+              if (this.state.winner === null) yield* this.chainEnergy(responder);
+              if (this.state.winner !== null || !this.fieldCard(fc.uid)) fc = null;
             }
           }
         }
@@ -3074,7 +3112,10 @@ export class Engine {
           this.actor = responder;
           const ok = eff.activate ? yield* eff.activate(this, link, responder, ctx) : true;
           this.actor = prev;
-          if (ok === false) {
+          if (ok === false && this.fieldCard(fc.uid) && !(fromHand && getEffect(fc.name)?.activateCost) && !this.takenBackThisTurn(fc.uid)) {
+            // backed out of its target pick: back to the hand / face-down, and this player passes
+            this.undoActivation(fc, fromHand ? 'hand' : 'set', responder);
+          } else if (ok === false) {
             yield* this.afterResolve(link);
           } else {
             this.targetEvent(link);
@@ -3186,11 +3227,14 @@ export class Engine {
     }
     // Speed Duel: on your own turn a Quick-Play Spell can be activated straight from the hand in response to
     // your opponent's card or effect (not offered after your own moves, so it never nags).
-    if (this.speed && player === this.state.turnPlayer && ctx.link && ctx.link.player !== player && !sealed && !this.spellsSealed() && !this.activationLocked(player, 'spell') && this.freeZone(this.player(player), 'sz') >= 0 && !this.trapActive('Anti-Spell Fragrance') && !this.chainEnergyBlocks(player)) {
+    // Also when your own monster attacks, for the cards that change a battle (Shrink, Rising Energy...).
+    const myAttack = trigger === 'attack' && !ctx.link && !!this.state.battle && this.controller(this.state.battle.attacker) === player;
+    if (this.speed && player === this.state.turnPlayer && ((ctx.link && ctx.link.player !== player) || myAttack) && !sealed && !this.spellsSealed() && !this.activationLocked(player, 'spell') && this.freeZone(this.player(player), 'sz') >= 0 && !this.trapActive('Anti-Spell Fragrance') && !this.chainEnergyBlocks(player)) {
       for (const c of this.player(player).hand) {
         const info = this.info(c.name);
         const eff = getEffect(c.name);
         if (info.kind !== 'spell' || info.sub !== 'Quick-Play' || out.some((o) => o.uid === c.uid)) continue;
+        if (myAttack && !(ctx.link && ctx.link.player !== player) && !/\bATK\b|\bDEF\b|battle|attack/i.test(info.desc ?? '')) continue;
         if (!eff?.resolve || !eff.canActivate || this.prohibited(c, c.uid) || this.activationBlocked(player, c) || this.cardActivationLocked(player, c)) continue;
         if (eff.activateCost && !eff.activateCost.can(this, c, player)) continue;
         if (this.withActor(player, () => eff.canActivate!(this, c, player, trigger, ctx))) out.push({ label: c.name, uid: c.uid, loc: this.find(c.uid)!.loc, value: 'hand' });

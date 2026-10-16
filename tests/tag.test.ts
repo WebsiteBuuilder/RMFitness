@@ -236,7 +236,7 @@ for (let g = 0; g < N; g++) {
     else if (cards.length !== start) fail = `card count ${start} -> ${cards.length} after ${JSON.stringify(act)}; ${e.state.log.slice(-4).map((l) => l.text).join(' / ')}`;
     if (fail) break;
   }
-  if (!fail && e.state.winner === null) fail = `no result after ${n} actions (turn ${e.state.turn})`;
+  if (!fail && e.state.winner === null) fail = `no result after ${n} actions (turn ${e.state.turn})${process.env.DBG ? ' ' + e.state.log.slice(-6).map((l) => l.text).join(' / ') : ''}`;
   ok(!fail, `tag duel ${g} (${pick.map((i) => D(i).name).join(', ')}): ${fail}`);
   if (fail) continue;
   wins[e.state.winner === 'draw' ? 2 : e.state.winner]++;

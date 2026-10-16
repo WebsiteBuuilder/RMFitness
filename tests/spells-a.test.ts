@@ -854,6 +854,81 @@ section('Quick-Play Spells from the hand on your own turn');
   check(e.player(0).hand.length === before - 1 && logHas(e, 'Mystical Space Typhoon destroys') && e.player(1).gy.length >= 1, "in response to the opponent's Trap, Mystical Space Typhoon is activated straight from the hand");
 }
 
+section('Backing out of a target pick takes the card back');
+{
+  const e = duel(['Mystical Space Typhoon'], ['Waboku']);
+  putST(e, 1, 'Waboku');
+  const mst = grab(e, 0, 'Mystical Space Typhoon');
+  e.apply({ type: 'ACTIVATE', player: 0, uid: mst.uid, zone: 0 });
+  if (e.state.prompt?.kind === 'select') e.apply({ type: 'CANCEL', player: 0 } as any);
+  settle(e);
+  check(zone(e, mst) === 'hand' && e.player(1).sz.some((z) => z?.name === 'Waboku'), 'cancelled from the hand: Mystical Space Typhoon goes back to the hand, nothing is destroyed');
+  e.apply({ type: 'ACTIVATE', player: 0, uid: mst.uid, zone: 0 });
+  if (e.state.prompt?.kind === 'select') e.apply({ type: 'CANCEL', player: 0 } as any);
+  settle(e);
+  check(zone(e, mst) === 'gy', 'backed out a second time in the same turn: it is used up (so nothing can loop)');
+  const e2 = duel(['Mystical Space Typhoon'], ['Waboku']);
+  putST(e2, 1, 'Waboku');
+  const set = putST(e2, 0, 'Mystical Space Typhoon');
+  e2.apply({ type: 'ACTIVATE', player: 0, uid: set.uid, zone: 0 });
+  if (e2.state.prompt?.kind === 'select') e2.apply({ type: 'CANCEL', player: 0 } as any);
+  settle(e2);
+  check(zone(e2, set) === 'sz' && !e2.fieldCard(set.uid)!.faceUp, 'cancelled from a Set: it goes back face-down');
+}
+
+section('Field Spells: a Set replaces the old one, the same one is not played over itself');
+{
+  const e = duel(['Umi', 'Umi', 'Forest']);
+  const umi = playSpell(e, 0, 'Umi')!;
+  const umi2 = e.player(0).deck.concat(e.player(0).hand).find((c) => c.name === 'Umi' && c.uid !== umi.uid)!;
+  grab(e, 0, 'Umi');
+  check(!e.canActivateMain(0, umi2.uid), 'a second copy of the face-up Field Spell is not activated over it');
+  const forest = grab(e, 0, 'Forest');
+  check(e.canSet(0, forest), 'a different Field Spell can be Set over it');
+  e.apply({ type: 'SET_ST', player: 0, uid: forest.uid, zone: 0 });
+  settle(e);
+  check(zone(e, umi) === 'gy' && e.player(0).field?.uid === forest.uid && !e.player(0).field!.faceUp, 'the Set one replaces it and the old one goes to the GY');
+}
+
+section('Quick-Play Spells from the hand when your own monster attacks');
+{
+  const e = duel(['Shrink', 'Mystical Space Typhoon'], ['Battle Ox']);
+  const a = place(e, 0, FILL)!;
+  const ox = place(e, 1, 'Battle Ox')!;
+  grab(e, 0, 'Shrink');
+  grab(e, 0, 'Mystical Space Typhoon');
+  endTurn(e);
+  endTurn(e);
+  toBattle(e);
+  e.apply({ type: 'ATTACK', player: 0, uid: a.uid, target: ox.uid });
+  let offered: string[] = [];
+  for (let i = 0; i < 5 && e.state.prompt; i++) {
+    const pr = e.state.prompt;
+    if (pr.kind === 'response' && pr.player === 0) {
+      offered = pr.options.map((o) => o.label);
+      const k = pr.options.findIndex((o) => o.label === 'Shrink');
+      if (k >= 0) {
+        e.apply({ type: 'CHOOSE', player: 0, picks: [k] });
+        break;
+      }
+    }
+    e.apply({ type: 'PASS', player: pr.player });
+  }
+  settle(e, { pick: ['Battle Ox'] });
+  check(offered.includes('Shrink') && !offered.includes('Mystical Space Typhoon'), `Shrink is offered on your own attack, Mystical Space Typhoon is not (offered: ${offered.join(', ')})`);
+  check(zone(e, ox) === 'gy' && zone(e, a) === 'mz', 'Shrink halves Battle Ox and your monster wins the battle');
+}
+
+section('Stray Lambs: not after you already Summoned this turn');
+{
+  const e = duel(['Stray Lambs']);
+  summon(e, 0, FILL);
+  check(!canAct(e, 0, 'Stray Lambs'), 'after a Normal Summon it cannot be activated');
+  const e2 = duel(['Stray Lambs']);
+  playSpell(e2, 0, 'Stray Lambs');
+  check(e2.monsters(0).filter((m) => m.name === 'Lamb Token').length === 2, 'activated first: 2 Lamb Tokens');
+}
+
 /** Cards whose script this audit corrected (each has a check above that failed before the fix). */
 const FIXED = ['Book of Moon', 'Breakthrough Skill', 'Dust Tornado', 'Metalmorph', 'Graceful Dice', 'Skull Dice', 'Spellbinding Circle', 'Eternal Rest', 'The Shallow Grave', ...RITUALS.map((r) => r[0])];
 console.log(`\nA: ${checked.size} cards checked, ${FIXED.length} fixed`);

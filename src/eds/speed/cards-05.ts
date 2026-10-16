@@ -1177,8 +1177,14 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, link) {
       const m = link.targetUid !== undefined ? e.fieldCard(link.targetUid) : null;
       if (!m || !m.faceUp) return;
+      // turned face-down like Book of Moon: its Equip Cards and the changes applied to it while face-up end
+      for (const u of m.equips.slice()) if (e.fieldCard(u)) yield* e.sendToGrave(u, 'destroyed');
       m.faceUp = false;
       m.pos = 'def';
+      m.atkMod = 0;
+      m.defMod = 0;
+      const keep = ['ss', 'ssAt', 'ssFrom', 'ssExtra', 'fusS', 'boundBy'];
+      m.tags = Object.fromEntries(Object.entries(m.tags ?? {}).filter(([k]) => keep.includes(k)));
       m.cannotChangePos = true;
       tag(m).noFlip = 1;
       e.event('position', { uid: m.uid });
