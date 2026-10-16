@@ -215,7 +215,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // The opening deal waits for the field to swing into place (arena.css tmat-in), the
     // hands hidden meanwhile; then every rect is measured again and the cards fly.
     flights.forEach((f) => f.target && (f.target.style.opacity = '0'));
-    const deal = setTimeout(() => {
+    const go = () => {
       const now = root.current;
       for (const f of flights) {
         const uid = f.target?.dataset.uid;
@@ -227,8 +227,19 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         }
         fly({ ...f, from: pile.getBoundingClientRect(), to: t.getBoundingClientRect(), target: t });
       }
-    }, 700);
-    timers.current.push(deal);
+    };
+    // after the field's swing-in has ended (its animationend), or 1.5 s at the latest
+    const mat = el.querySelector('.tmat');
+    let done = false;
+    const once = () => {
+      if (done) return;
+      done = true;
+      mat?.removeEventListener('animationend', once);
+      go();
+    };
+    if (mat && mat.getAnimations?.().some((a) => a.playState === 'running')) mat.addEventListener('animationend', once);
+    else timers.current.push(setTimeout(once, 50));
+    timers.current.push(setTimeout(once, 1500));
   });
   useLayoutEffect(() => () => timers.current.forEach(clearTimeout), []);
 }

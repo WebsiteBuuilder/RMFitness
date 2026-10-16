@@ -108,10 +108,20 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   // The finishing blow: the field shakes and darkens and the loser's Life Points flash red
   // for a beat, after their count reaches 0, before the result slides in.
+  // (it waits for the finishing cinematic to leave the stage, so it plays on the visible board)
   const [resultUp, setResultUp] = useState(state.winner !== null);
+  const [koOn, setKoOn] = useState(false);
   useEffect(() => {
+    setKoOn(false);
     if (state.winner === null) return setResultUp(false);
-    const t = setTimeout(() => setResultUp(true), 1400);
+    let t: ReturnType<typeof setTimeout>;
+    const t0 = Date.now();
+    const wait = () => {
+      if (document.body.classList.contains('art-on') && Date.now() - t0 < 8000) return void (t = setTimeout(wait, 100));
+      setKoOn(true);
+      t = setTimeout(() => setResultUp(true), 1300);
+    };
+    wait();
     return () => clearTimeout(t);
   }, [state.winner]);
   const loser: Pid | null = state.winner === null || state.winner === 'draw' ? null : other(state.winner);
@@ -188,7 +198,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const w = window.innerWidth;
       const x = Math.min(Math.max(r.left + r.width / 2, 80), w - 80);
       // Cards near the top get their buttons underneath instead.
-      const below = r.top < 150;
+      // (a card on the field gets them underneath: above, they'd cover the turn row and the targets)
+      const below = r.top < 150 || !el.closest('.thand');
       // A hand card's buttons sit above your Life Points bar, never over it (or your portrait).
       const bar = el.closest('.thand') ? root.current?.querySelector('.tbar.bottom')?.getBoundingClientRect() : null;
       const top = bar ? Math.min(r.top, bar.top) : r.top;
@@ -599,7 +610,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${state.winner !== null && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
+      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
