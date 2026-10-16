@@ -105,7 +105,7 @@ export function GiftReveal({
               <span class="gift-ribbon" />
             </button>
             <p class="gift-tap">Tap the present to open it</p>
-            <button class="gbtn gift-later" onClick={onNotNow}>
+            <button class="gift-notnow" onClick={onNotNow}>
               Not now
             </button>
           </>
@@ -122,7 +122,7 @@ export function GiftReveal({
             <p class="gift-count">
               <b>{count}</b> packs
             </p>
-            <p class="gift-sub">Any set, even locked ones. Any rarity can drop, Overframe included. Open them, then hit Random deck to build with your new cards.</p>
+            <p class="gift-sub">{gift.opened ?? 'Any set, even locked ones. Any rarity can drop, Overframe included. Open them, then hit Random deck to build with your new cards.'}</p>
             <button class="gbtn gift-go" onClick={onOpen}>
               Open packs now
             </button>

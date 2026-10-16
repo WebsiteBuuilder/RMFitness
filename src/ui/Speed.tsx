@@ -100,8 +100,8 @@ export function speedHubBack(): boolean {
 
 type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
 
-/** gifts put off with "Not now" until the game is next opened */
-const notNow: string[] = [];
+/** profiles whose presents were put off with "Not now": none show again until the game is next opened */
+const notNow = new Set<string>();
 
 export function SpeedHub({
   controls,
@@ -137,15 +137,18 @@ export function SpeedHub({
   const [editing, setEditing] = useState<string | null>(null);
   const [editRandom, setEditRandom] = useState(false);
   const [gift, setGift] = useState<Gift | null>(null);
-  // A one-time present waiting on this profile (the next one follows when it's opened): claimed when the box is torn.
+  /** a present was just closed: the next one waits until the player leaves the menu and comes back */
+  const [held, setHeld] = useState(false);
   useEffect(() => {
-    if (gift || sub !== 'menu' || save.decks.length === 0) return;
-    setGift(nextGift(save, profile.created, profile.id, notNow));
-  }, [save, sub, gift]);
-  const putOff = () => {
-    if (gift) notNow.push(gift.id);
-    setGift(null);
-  };
+    if (sub !== 'menu') setHeld(false);
+  }, [sub]);
+  // A one-time present waiting on this profile (claimed when the box is torn); a second one waits for the next visit.
+  useEffect(() => {
+    if (gift || held || notNow.has(profile.id) || sub !== 'menu' || save.decks.length === 0) return;
+    setGift(nextGift(save, profile.created, profile.id));
+  }, [save, sub, gift, held]);
+  const closeGift = () => (setGift(null), setHeld(true));
+  const putOff = () => (notNow.add(profile.id), closeGift());
   const claim = () => {
     const next = gift && claimGift(save, profile.created, gift, profile.id);
     if (!next) return false;
@@ -164,6 +167,7 @@ export function SpeedHub({
   useEffect(() => {
     hubBack = () => {
       if (save.decks.length === 0) return false;
+      if (gift) return (closeGift(), true); // Back closes a present (an unopened one comes back next visit)
       if (sub === 'menu') {
         if (tab === 'duel') return false;
         setTab('duel');
@@ -201,7 +205,7 @@ export function SpeedHub({
 
   return (
     <>
-      {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (setGift(null), setSub('shop'))} onLater={() => setGift(null)} onNotNow={putOff} />}
+      {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (closeGift(), setSub('shop'))} onLater={closeGift} onNotNow={putOff} />}
       <SpeedHome
         tab={tab}
         onTab={setTab}

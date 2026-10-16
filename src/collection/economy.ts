@@ -295,6 +295,8 @@ export interface Gift {
   heading?: string;
   /** the line under the heading */
   note: string;
+  /** the line under the pack count once opened */
+  opened?: string;
   madeBefore: number;
 }
 export const GIFT: Gift = {
@@ -309,6 +311,7 @@ export const BONUS_GIFT: Gift = {
   packs: 145,
   title: 'Bonus drop!',
   heading: 'Another present!',
+  opened: 'On top of the first 250. Any set, any rarity, Overframe included. Hit Random deck after for fresh builds.',
   note: 'More cards for your decks: a second present for every duelist.',
   madeBefore: Date.UTC(2026, 9, 21),
 };
