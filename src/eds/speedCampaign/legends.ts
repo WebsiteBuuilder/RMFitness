@@ -81,6 +81,8 @@ export interface LegendsProgress {
   finished?: string;
   /** duel id -> wins with an Anything goes deck: the story moves on, the chips wait */
   openWins?: Record<string, number>;
+  /** story duels: bring your own deck instead of the borrowed one (remembered) */
+  storyOwn?: boolean;
 }
 
 export const LEGEND_DUEL_CHIPS = 1;

@@ -29,6 +29,8 @@ export interface CampaignProgress {
   /** node id -> wins with an Anything goes deck: they open the road ahead but pay nothing,
    * so the duel's prizes still wait for a win with a deck built from cards you own */
   openWins?: Record<string, number>;
+  /** story duels: bring your own deck instead of the borrowed one (remembered) */
+  storyOwn?: boolean;
 }
 
 export interface LabyrinthProgress {
@@ -42,6 +44,8 @@ export interface LabyrinthProgress {
   best: RunSummary | null;
   /** the last day a Labyrinth boss paid a Duel Chip (one a day) */
   chipDay?: string;
+  /** the deck a new run last started from (null: a Starter Deck) */
+  deckId?: string | null;
 }
 
 export interface PracticePrefs {

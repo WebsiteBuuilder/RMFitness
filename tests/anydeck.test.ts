@@ -6,7 +6,7 @@ import { DB as KIT } from './speedkit';
 import { DB } from '../src/eds/db';
 import { newSpeedSave } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
-import { settleSolo } from '../src/eds/speedCampaign/settle';
+import { endRun, settleSolo } from '../src/eds/speedCampaign/settle';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { chapterOpen, nodeOpen, nodePassed, soloDeckProblems, startRoad } from '../src/eds/speedCampaign/campaign';
 import { LEGENDS, legendDuelOpen, legendDuelPassed, legendDuelWon, legendOpen, nextLegendDuel } from '../src/eds/speedCampaign/legends';
@@ -74,6 +74,13 @@ const daily = newRun({ starter: 'Yugi Muto', seed: 7, curse: 0, upgrades: [], da
 ok(!daily.ownDeck && !daily.open, 'labyrinth: the Daily keeps everyone on the same Starter Deck');
 const own = newRun({ starter: 'Yugi Muto', seed: 7, curse: 0, upgrades: [], deck: { ...anyDeck, open: false } });
 ok(own.ownDeck === true && !own.open && fragmentsFor({ ...own, wins: 5, floor: 2 }) > 0, 'labyrinth: a deck from your own cards pays as usual');
+
+{
+  const s0 = newSoloSave();
+  const ended = endRun(s0, { ...run, over: 'won', wins: 9 });
+  ok(ended.solo.labyrinth.best === null && ended.solo.labyrinth.fragments === 0, 'labyrinth: an Anything goes run never sets the best run or pays fragments');
+  ok(ended.solo.labyrinth.history[0]?.open === true, 'labyrinth: the run history marks it Anything goes');
+}
 
 // ---------- Tag Road ----------
 speed = newSpeedSave();

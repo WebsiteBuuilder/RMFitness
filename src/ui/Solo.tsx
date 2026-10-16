@@ -758,7 +758,8 @@ function Road(p: Ctx) {
   const ownDecks = speed.decks;
   const chosen = c.deckId ? (ownDecks.find((d) => d.id === c.deckId) ?? null) : null;
   const deck = chosen ?? c.deck;
-  const [storyOwn, setStoryOwn] = useState(false);
+  const storyOwn = !!c.storyOwn;
+  const setStoryOwn = (b: boolean) => setSolo({ ...solo, campaign: { ...c, storyOwn: b } });
   if (!c.starter) return <RoadStart {...p} />;
   if (editing && deck)
     return (
@@ -800,7 +801,7 @@ function Road(p: Ctx) {
       first: n.condition?.cpuFirst ? 'cpu' : 'coin',
       context: { kind: 'campaign', nodeId: n.id, ...(!useStory && deck?.open ? { open: true } : {}) },
       level: campaignDifficulty((findNode(n.id)?.chapter ?? ch).n, n.boss),
-      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : useStory && n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : []), ...(!useStory && deck?.open ? [ANY_GOES_NOTE] : [])], goals: !useStory && deck?.open ? [] : STAR_TEXT(n.goal) },
+      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : useStory && n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: !useStory && deck?.open ? [] : STAR_TEXT(n.goal) },
     });
   };
 
@@ -862,7 +863,7 @@ function Road(p: Ctx) {
             {CHAPTERS.map((x) => {
               const open = chapterOpen(solo, x);
               return (
-                <button key={x.id} class={`so-chap ${x.id === ch.id ? 'on' : ''} ${chapterCleared(solo, x) ? 'done' : ''}`} disabled={!open} onClick={() => setChId(x.id)}>
+                <button key={x.id} class={`so-chap ${x.id === ch.id ? 'on' : ''} ${chapterCleared(solo, x) || nodePassed(solo, x.nodes[x.nodes.length - 1].id) ? 'done' : ''}`} disabled={!open} onClick={() => setChId(x.id)}>
                   {open ? (x.postgame ? '★' : x.n) : '🔒'}
                 </button>
               );
@@ -895,7 +896,7 @@ function Road(p: Ctx) {
                     <span>{open ? n.duelist.title : 'Win the duel before this one'}</span>
                     {n.story && open && <em>Story duel: you play as {n.story.as}</em>}
                     {n.boss && open && <em>Boss · {ch.item}</em>}
-                    {waiting && <em class="so-waiting">Prizes waiting: win with your own cards</em>}
+                    {waiting && <em class="so-waiting">Prizes waiting</em>}
                   </div>
                   <Stars s={c.stars[n.id]} />
                 </button>
@@ -908,6 +909,7 @@ function Road(p: Ctx) {
               <div class="so-node-t">
                 <b>{ch.item}</b>
                 <span>{relic(ch.item)?.text ?? ch.itemText}</span>
+                {!chapterCleared(solo, ch) && nodePassed(solo, ch.nodes[ch.nodes.length - 1].id) && <em class="so-waiting">Item waiting: beat the boss with your own cards</em>}
               </div>
             </div>
           </div>
@@ -933,7 +935,7 @@ function Road(p: Ctx) {
       )}
 
       {sel && (
-        <Sheet onClose={() => (setSel(null), setStoryOwn(false))}>
+        <Sheet onClose={() => setSel(null)}>
           <div class="so-intro">
             <Portrait d={sel.duelist} size="l" />
             <div>
@@ -966,7 +968,7 @@ function Road(p: Ctx) {
               </div>
             </div>
           )}
-          {(sel.story && !storyOwn) || !deck?.open ? (
+          {(sel.story && !storyOwn) || !deck?.open || problems.length ? (
             <div class="so-goals">
               {STAR_TEXT(sel.goal).map((t, i) => (
                 <div key={t} class={c.stars[sel.id]?.[i] ? 'on' : ''}>
@@ -975,7 +977,7 @@ function Road(p: Ctx) {
               ))}
             </div>
           ) : (
-            <p class="so-dim">No stars with an Anything goes deck. A win still opens the next duel.</p>
+            <p class="so-dim">Anything goes deck: no stars or prizes, but a win still opens the next duel.</p>
           )}
           <div class="so-dim">Their deck: {deckOf(sel.duelist).main.length} cards{sel.duelist.skill ? ` · Skill: ${skillName(sel.duelist.skill)}` : ''}</div>
           {(!sel.story || storyOwn) && deck && (
@@ -986,7 +988,6 @@ function Road(p: Ctx) {
                   {deck.open && <span class="so-anygoes">Anything goes</span>}
                 </b>
                 <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck.main.length} cards · ${skillName(deck.skill)}`}</span>
-                {deck.open && !problems.length && <span class="so-dim">{ANY_GOES_NOTE}</span>}
               </div>
               {ownDecks.length > 0 && (
                 <Btn kind="blue" onClick={() => setPicking(true)}>
@@ -995,7 +996,7 @@ function Road(p: Ctx) {
               )}
             </div>
           )}
-          <Btn kind="gold" disabled={(!sel.story || storyOwn) && problems.length > 0} onClick={() => (setSel(null), setStoryOwn(false), duel(sel))}>
+          <Btn kind="gold" disabled={(!sel.story || storyOwn) && problems.length > 0} onClick={() => (setSel(null), duel(sel))}>
             Duel!
           </Btn>
         </Sheet>
@@ -1260,7 +1261,7 @@ function LabyrinthStart(p: Ctx) {
   const [starter, setStarter] = useState(STARTERS[0].character);
   // Or one of your own decks (any of them, Anything goes too) instead of a Starter Deck.
   const myDecks = soloDecks(p.speed);
-  const [myDeckId, setMyDeckId] = useState<string | null>(null);
+  const [myDeckId, setMyDeckId] = useState<string | null>(lab.deckId ?? null);
   const myDeck = myDecks.find((d) => d.id === myDeckId) ?? null;
   const myProblems = myDeck ? soloDeckProblems(p.speed, myDeck) : [];
   const [curse, setCurse] = useState(0);
@@ -1271,7 +1272,7 @@ function LabyrinthStart(p: Ctx) {
   const doneToday = lab.history.find((h) => h.daily === today);
   const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string; deck?: SpeedDeck }) => {
     const run = newRun({ ...o, upgrades: lab.upgrades });
-    setSolo({ ...solo, labyrinth: { ...lab, run } });
+    setSolo({ ...solo, labyrinth: { ...lab, run, ...(o.daily ? {} : { deckId: o.deck?.id ?? null }) } });
   };
   const theirs = readResultCode(code);
   return (
@@ -1376,7 +1377,7 @@ function LabyrinthStart(p: Ctx) {
       )}
       {sheet === 'daily' && (
         <Sheet title={`Daily Labyrinth · ${today}`} onClose={() => setSheet(null)}>
-          <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Upgrades, Items and Curses stay home, so it's a fair race. Play it, then text your result code to your brother.</p>
+          <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Upgrades, Items, Curses and your own decks stay home, so it's a fair race. Play it, then text your result code to your brother.</p>
           {doneToday ? (
             <>
               <p>
@@ -1421,10 +1422,11 @@ function LabyrinthStart(p: Ctx) {
               <div>
                 <b>
                   {h.won ? 'Cleared' : `Floor ${h.floor}`} · {h.starter}
+                  {h.open && <span class="so-anygoes">Anything goes</span>}
                 </b>
                 <span>
                   {h.daily ? `Daily ${h.daily} · ` : ''}
-                  {h.wins} wins{h.curse ? ` · Curse ${h.curse}` : ''} · +{h.fragments} fragments
+                  {h.wins} wins{h.curse ? ` · Curse ${h.curse}` : ''}{h.open ? '' : ` · +${h.fragments} fragments`}
                 </span>
               </div>
             </div>
@@ -1493,7 +1495,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
       level: labyrinthDifficulty(at.floor, kind === 'boss', at.curse),
       // The Daily deals every duel the same way for both brothers.
       seed: at.daily ? (at.seed + at.step * 7919) >>> 0 : undefined,
-      vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : []), ...(at.open ? [ANY_GOES_NOTE] : [])], goals: [] },
+      vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : [])], goals: [] },
     }, at !== before ? () => setRun(before) : undefined);
   };
 

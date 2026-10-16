@@ -45,7 +45,8 @@ export function Legends(p: Ctx) {
   const [openId, setOpenId] = useState<string | null>(() => repFound?.legend.id ?? null);
   const [scene, setScene] = useState<{ duel: LegendDuel; rematch: boolean } | null>(null);
   /** a story duel played with your own deck instead of the borrowed one */
-  const [storyOwn, setStoryOwn] = useState(false);
+  const storyOwn = !!lp.storyOwn;
+  const setStoryOwn = (b: boolean) => setSolo({ ...solo, legends: { ...lp, storyOwn: b } });
   const [help, setHelp] = useState(false);
   const [deckPick, setDeckPick] = useState(false);
   const next = nextLegendDuel(solo);
@@ -154,8 +155,8 @@ export function Legends(p: Ctx) {
           deck={deck}
           problems={problems}
           onPickDeck={() => setDeckPick(true)}
-          onClose={() => (setScene(null), setStoryOwn(false))}
-          onGo={() => (setScene(null), setStoryOwn(false), duel(scene.duel, scene.rematch))}
+          onClose={() => setScene(null)}
+          onGo={() => (setScene(null), duel(scene.duel, scene.rematch))}
         />
       )}
       {deckPick && (
@@ -245,7 +246,7 @@ function LegendView(p: Ctx & { legend: Legend; deck: SpeedDeck | null; deckProbl
                 <span>{open ? `vs ${foe.name}` : 'Win the duel before this one'}</span>
                 {open && d.as && <em>Story duel: you play as {d.as.name}</em>}
                 {open && last && <em>Finale · {l.card}</em>}
-                {waiting && <em class="so-waiting">Chips waiting: win with your own cards</em>}
+                {waiting && <em class="so-waiting">Chips waiting</em>}
               </div>
               <span class={`lg-pay ${won ? 'won' : ''}`}>{won ? '✓' : `+${LEGEND_DUEL_CHIPS + (last ? LEGEND_FINISH_CHIPS : 0)}`}</span>
             </button>

@@ -26,7 +26,8 @@ export function endRun(solo: SoloSave, run: Run): { solo: SoloSave; summary: Run
         run: null,
         fragments: lab.fragments + summary.fragments,
         history: [summary, ...lab.history].slice(0, 30),
-        best: better(summary, lab.best) ? summary : lab.best,
+        // An Anything goes run (every card unlocked) never sets the best-run record.
+        best: !run.open && better(summary, lab.best) ? summary : lab.best,
         curseUnlocked: run.over === 'won' ? Math.min(10, Math.max(lab.curseUnlocked, run.curse + 1)) : lab.curseUnlocked,
       },
     },
