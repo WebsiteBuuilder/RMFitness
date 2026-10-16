@@ -79,6 +79,8 @@ const MAX_ZONE_W = 0.95;
 const MIN_ZONE_H = 1.15;
 /** (the minimum size still keeps a wide subject within this share of its zone's width, so neighbours only touch) */
 const MIN_GROW_W = 1.2;
+/** A standing figure is never taller than this share of its card's long side: it stays on its own row, clear of the turn row and the row beyond. */
+const MAX_FIG_H = 0.8;
 /** Relief cap for figures on the far (opponent's) side, seen from above: deep relief turned them into lumps. */
 const FAR_RELIEF = 0.7;
 
@@ -91,8 +93,9 @@ function poseInto(out: FieldPose, r: RectLike, def: boolean, f: Footprint) {
   // per-card size (overrides.ts), then no wider than its zone
   const subjW = Math.max(0.2, f.right - f.left);
   const fit = Math.min(((cw * (def ? 1.0 : 1.2)) / subjH) * (f.scale ?? 1), (r.width * MAX_ZONE_W) / subjW);
-  const size = Math.max(fit, Math.min(Math.max(r.width, r.height) * MIN_ZONE_H, (r.width * MIN_GROW_W) / subjW));
   const scaleY = def ? 0.85 : 1;
+  const grown = Math.max(fit, Math.min(Math.max(r.width, r.height) * MIN_ZONE_H, (r.width * MIN_GROW_W) / subjW));
+  const size = Math.min(grown, (Math.max(r.width, r.height) * MAX_FIG_H) / (Math.max(0.3, f.top - f.v) * scaleY));
   out.cx = r.left + r.width / 2;
   // feet a little above the card's middle-low, clear of the ATK label at its bottom edge
   out.foot = r.top + r.height * (def ? 0.6 : 0.56);

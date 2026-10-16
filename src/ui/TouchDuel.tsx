@@ -106,6 +106,13 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   useFlights(root, state, acting);
 
+  // The opening swing starts two frames after the screen opens, once its first heavy frame is painted.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    let a = requestAnimationFrame(() => (a = requestAnimationFrame(() => setArmed(true))));
+    return () => cancelAnimationFrame(a);
+  }, []);
+
   // The finishing blow: the field shakes and darkens and the loser's Life Points flash red
   // for a beat, after their count reaches 0, before the result slides in.
   // (it waits for the finishing cinematic to leave the stage, so it plays on the visible board)
@@ -117,7 +124,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     let t: ReturnType<typeof setTimeout>;
     const t0 = Date.now();
     const wait = () => {
-      if (document.body.classList.contains('art-on') && Date.now() - t0 < 8000) return void (t = setTimeout(wait, 100));
+      if (document.body.classList.contains('art-on') && Date.now() - t0 < 20000) return void (t = setTimeout(wait, 100));
       setKoOn(true);
       t = setTimeout(() => setResultUp(true), 1300);
     };
@@ -610,7 +617,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
+      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);

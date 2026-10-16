@@ -16,7 +16,7 @@ const LABEL: Record<Hand, string> = { rock: 'Rock', paper: 'Paper', scissors: 'S
 const THROW_SECS = 10;
 /** how long a throw's reveal stays up, and the "X goes first" banner before the duel starts */
 const REVEAL_MS = 1700;
-const GO_MS = 1000;
+const GO_MS = 800;
 
 export function TossScreen({
   session,

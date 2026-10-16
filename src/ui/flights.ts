@@ -155,7 +155,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
       if (!el || !cur) return;
       el.querySelectorAll('[data-uid]').forEach((n) => cur.snaps.set(`u${(n as HTMLElement).dataset.uid}`, snapOf(n)));
       el.querySelectorAll('[data-pile]').forEach((n) => cur.snaps.set((n as HTMLElement).dataset.pile!, snapOf(n)));
-    }, 900);
+    }, 1100);
     return () => clearTimeout(t);
   }, []);
   useLayoutEffect(() => {
@@ -231,15 +231,17 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // after the field's swing-in has ended (its animationend), or 1.5 s at the latest
     const mat = el.querySelector('.tmat');
     let done = false;
-    const once = () => {
-      if (done) return;
+    const once = (ev?: Event) => {
+      if (done || (ev && ev.target !== mat)) return;
       done = true;
       mat?.removeEventListener('animationend', once);
       go();
     };
-    if (mat && mat.getAnimations?.().some((a) => a.playState === 'running')) mat.addEventListener('animationend', once);
+    // (the swing starts once the screen is armed, a couple of frames after it opens)
+    const armed = el.classList.contains('armed');
+    if (mat && (!armed || mat.getAnimations?.().some((a) => a.playState === 'running'))) mat.addEventListener('animationend', once);
     else timers.current.push(setTimeout(once, 50));
-    timers.current.push(setTimeout(once, 1500));
+    timers.current.push(setTimeout(once, armed ? 1500 : 2500));
   });
   useLayoutEffect(() => () => timers.current.forEach(clearTimeout), []);
 }
