@@ -208,7 +208,6 @@ function DeckBar({ deck, problems, onPick }: { deck: SpeedDeck | null; problems:
           {deck?.open && <span class="so-anygoes">Anything goes</span>}
         </b>
         <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
-        {deck?.open && !problems.length && <span class="so-dim">{ANY_GOES_NOTE}</span>}
       </div>
       <Btn kind="blue" onClick={onPick}>
         Change
