@@ -269,3 +269,7 @@
   max-width: calc(100vw - 24px);
   z-index: 9;
 }
+/* aiming: the attacker's preview steps aside so the targets and the note are clear (Y still shows any card's text) */
+.pad-on .duel.touch:has(.ttoast.aim) .tdetail {
+  display: none;
+}

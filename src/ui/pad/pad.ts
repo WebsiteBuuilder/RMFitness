@@ -57,6 +57,8 @@ let handSeen = false;
 let cameFrom: { el: Element; x: number; y: number } | null = null;
 /** the menu the ring was in (its choices can change under it: Flip all → Open another) */
 let inMenu: Element | null = null;
+/** when Y last said a card's text is hidden (B right after only clears that note) */
+let yToastAt = -1e9;
 const rematchSeen = new WeakSet<Element>();
 let artHeld = false;
 let hintsAt = 0;
@@ -299,7 +301,8 @@ function validate(force = false) {
       // choosing an attack target: straight to the targets
       (picks.length && (layer.matches('.ttoast.aim') || inside.every((x) => /^\W*(cancel|back)\s*$/i.test(x.el.textContent ?? ''))) ? picks[nearest(lastX, lastY, picks.map((x) => x.box))] : undefined) ??
       // a list of cards to choose from: the first card
-      inside.find((x) => x.el.matches('.topt')) ??
+      // (not a sheet that only shows cards: 0/0 to pick)
+      (/(^|\D)0\s*\/\s*0\b/.test(layer.querySelector('.tsheet-count')?.textContent ?? '') ? undefined : inside.find((x) => x.el.matches('.topt'))) ??
       inside.find((x) => x.el.matches(PRIMARY)) ??
       inside.find((x) => x.el.matches('.sel, .on, [aria-selected=true], [aria-checked=true]')) ??
       // its first choice (a close × is never where you start)
@@ -606,6 +609,10 @@ function release() {
 /** Back: close what is open, step back a screen; never leaves the game. */
 export function back(viaEscape = true) {
   if (kbOpen()) return void closeKb();
+  if (performance.now() - yToastAt < 2600) {
+    yToastAt = -1e9;
+    return void toast.classList.remove('show');
+  }
   // the result screen: B never presses anything on it; the ring stays on its buttons
   if (document.querySelector('.duel .tresult')) return void validate(true);
   // a duel question with no Cancel (Yes/No): B goes to No, it never asks to leave the duel
@@ -714,6 +721,7 @@ function visibleTabs(): HTMLElement | null {
 function cardInfo() {
   if (focused?.matches('.duel.touch [data-uid]')) {
     if (!focused.dispatchEvent(new CustomEvent('pady', { bubbles: true, cancelable: true }))) return;
+    yToastAt = performance.now();
     return void say('A face-down card: its text is hidden');
   }
   if (focused?.hasAttribute('data-pad-y')) return void focused.dispatchEvent(new CustomEvent('pady', { bubbles: true }));
