@@ -21,6 +21,7 @@ import { FirebaseAdapter } from '../sync/firebase';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
 import { useBackButton } from './backButton';
+import { DeckSwitch } from './DeckPick';
 import { LinkMenu, Lobby, startFromSeats, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { TossScreen } from './Toss';
 import { boardStatsOf } from './Rankings';
@@ -1104,7 +1105,7 @@ export function App() {
       }
       return (
         <>
-          <Running session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running deckSwitch={speedSave && speedSave.decks.length > 1 ? <DeckSwitch decks={speedSave.decks} current={activeDeck(speedSave)} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(speedSave, d)]} onPick={(d) => setSpeedSave({ ...speedSave, active: d.id })} /> : undefined} session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
@@ -1204,7 +1205,10 @@ function Running({
   tag,
   rematchP2,
   onRaidEnd,
+  deckSwitch,
 }: {
+  /** the room's "Duel with … Change" line (Speed Duel decks), before the duel starts */
+  deckSwitch?: preact.ComponentChildren;
   session: DuelSession;
   hotseat: boolean;
   cpu: boolean;
@@ -1308,7 +1312,7 @@ function Running({
     const game = view.seats[0].mode ?? mode;
     return <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />;
   }
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} />;
+  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} deckSwitch={deckSwitch} />;
   if (view.state.tag) {
     // A tag duel: this phone sees the board from its team's side and moves only when its duelist is in.
     const st = view.state;
