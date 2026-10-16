@@ -113,7 +113,10 @@ export function Lobby({
   betSave = () => null,
   tag,
   rematchP2,
+  deckSwitch,
 }: {
+  /** "Duel with … Change": pick the Speed Duel deck for this room before it starts */
+  deckSwitch?: preact.ComponentChildren;
   session: DuelSession;
   view: SessionView;
   mySeat: Pid;
@@ -240,6 +243,14 @@ export function Lobby({
     if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready)) ready();
   }, [matched?.room, status, view.log.length]);
 
+  // A deck changed in the room after sitting down: sit back down with the new one (bets get accepted again).
+  const myKey = mine ? `${mine.deck.join('|')}#${mine.fusion.join('|')}#${mine.skill ?? ''}` : '';
+  const seatKey = `${seats[mySeat].deck.join('|')}#${seats[mySeat].fusion.join('|')}#${seats[mySeat].skill ?? ''}`;
+  useEffect(() => {
+    if (roomMode !== 'speed' || tag || view.toss || !iAmReady || !mine || mine.problems.length > 0 || myKey === seatKey) return;
+    join(mySeat, mine);
+  }, [myKey]);
+
   // The room couldn't open (no connection, or no room with that code): say so, with Retry and Back.
   if (code && status === 'error')
     return (
@@ -301,10 +312,11 @@ export function Lobby({
             </button>
           </p>
         )}
+        {deckSwitch && roomMode === 'speed' && !tag && !view.toss && (!code || status === 'connected' || status === 'waiting') && deckSwitch}
         <div class="seats">
           {([0, 1] as Pid[]).map((s) => (
             <div key={s} class={`seat ${seats[s].ready ? 'on' : ''}`}>
-              {seats[s].ready ? `${seats[s].name} · ${seats[s].deck.length} cards${seats[s].mode === 'speed' ? ' · Speed Duel' : ''} ✓` : `Player ${s + 1}: not ready`}
+              {seats[s].ready ? `${seats[s].name} · ${seats[s].deck.length} cards${seats[s].mode === 'speed' ? ` · ${seats[s].skill ? seats[s].skill!.replace(/ \(Skill Card\)$/, '') : 'Speed Duel'}` : ''} ✓` : `Player ${s + 1}: not ready`}
             </div>
           ))}
         </div>
