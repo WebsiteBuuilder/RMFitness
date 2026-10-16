@@ -570,6 +570,16 @@ function release() {
 /** Back: close what is open, step back a screen; never leaves the game. */
 export function back(viaEscape = true) {
   if (kbOpen()) return void closeKb();
+  // the result screen: B never presses anything on it; the ring stays on its buttons
+  if (document.querySelector('.duel .tresult')) return void validate(true);
+  // a duel question with no Cancel (Yes/No): B goes to No, it never asks to leave the duel
+  const ask = document.querySelector('.duel .tsheet, .duel .csheet-back');
+  if (ask && ![...ask.querySelectorAll('button')].some((b) => /^\W*(cancel|back)\s*$/i.test(b.textContent ?? ''))) {
+    const no = [...ask.querySelectorAll<HTMLElement>('button')].find((b) => /^\W*no\b/i.test(b.textContent ?? ''));
+    if (no && focused !== no) setFocus(no);
+    else say('Answer this one first');
+    return;
+  }
   const ae = document.activeElement as HTMLElement | null;
   if (ae && ae.matches?.(TEXT)) return void ae.blur();
   if (viaEscape) {
@@ -792,6 +802,7 @@ function hintList(): Hint[] {
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
   if (document.querySelector('.duel')) {
     out[0][1] = aLabel();
+    if (document.querySelector('.duel .ttoast.aim')) return [out[0], [['b'], 'Cancel'], [['y'], 'Text']];
     if (!guide) return [...out, [['x'], 'Phase'], [['y'], 'Text'], [['select'], 'More']];
     out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand ⇄ Field'], [['rb'], 'Foes'], [['start'], 'Menu'], [['lt', 'rt'], 'Page'], [['select'], 'Hide']);
     return out;

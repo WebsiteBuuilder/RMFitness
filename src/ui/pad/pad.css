@@ -260,6 +260,12 @@
 
 /* aiming with a controller: the target note sits on the turn row, clear of your Life Points */
 .pad-on .duel.touch .ttoast.aim {
-  top: 47%;
+  position: fixed;
+  top: 46%;
   bottom: auto;
+  left: 50%;
+  translate: -50% 0;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  z-index: 9;
 }
