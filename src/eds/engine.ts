@@ -83,6 +83,8 @@ export class Engine {
   state: DuelState = emptyState();
   private gen: Step | null = null;
   private seq = 0;
+  /** Where a card activated from the hand sat in it, so a take-back puts it back in the same spot. */
+  private handSpot = new Map<number, number>();
   /** the player whose card effect is resolving right now (null for game actions) */
   actor: Pid | null = null;
   /** chain links being resolved right now (Speed Duel queues Special Summon responses until they finish) */
@@ -2885,6 +2887,7 @@ export class Engine {
       if (ps.field) return;
     }
     if (f.loc.zone === 'hand') {
+      this.handSpot.set(uid, ps.hand.findIndex((c) => c.uid === uid));
       const card = this.detach(uid)!;
       if (info.sub === 'Field') {
         fc = this.toField(card, 'atk', true);
@@ -2919,10 +2922,14 @@ export class Engine {
       fc.active = false;
     } else {
       const card = this.detach(fc.uid);
-      if (card) this.player(player).hand.push(card);
+      const hand = this.player(player).hand;
+      const at = this.handSpot.get(fc.uid) ?? -1;
+      if (card) hand.splice(at >= 0 && at <= hand.length ? at : hand.length, 0, card);
     }
+    this.handSpot.delete(fc.uid);
     this.event('set', { uid: fc.uid, player });
-    this.log(player, `${this.player(player).name} takes back ${fc.name}`);
+    // nothing was activated, so nothing is revealed (as in Master Duel)
+    this.log(player, `${this.player(player).name} takes a card back`);
   }
 
   // ---------- chains ----------
@@ -2930,14 +2937,17 @@ export class Engine {
   *startChain(player: Pid, fc: FieldCard, trigger: Trigger, ctx: ChainCtx, back?: 'hand' | 'set'): Step {
     const eff = getEffect(fc.name)!;
     const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player, label: fc.name, negated: false };
-    this.log(player, `${this.player(player).name} activates ${fc.name}`);
+    // announced once its targets are picked, so backing out reveals nothing
+    const announce = () => this.log(player, `${this.player(player).name} activates ${fc.name}`);
+    if (!eff.activate) announce();
     if (eff.activate) {
       const prev = this.actor;
       this.actor = player;
       const ok = yield* eff.activate(this, link, player, ctx);
       this.actor = prev;
+      if (ok === false && back && this.fieldCard(fc.uid)) return this.undoActivation(fc, back, player);
+      announce();
       if (ok === false) {
-        if (back && this.fieldCard(fc.uid)) return this.undoActivation(fc, back, player);
         // No legal target after all: the card fizzles and goes to the GY.
         this.event('activate', { uid: fc.uid, player });
         yield* this.afterResolve(link);
@@ -3066,7 +3076,8 @@ export class Engine {
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
     let depth = 0;
-    const dropped = new Set<number>(); // cards taken back in this window
+    const cancels = new Map<number, number>(); // take-backs per card in this window
+    const dropped = new Set<number>(); // cards taken back twice in this window
     while (passes < 2 && depth < 10 && this.state.winner === null) {
       const options = this.responsesFor(responder, trigger, ctx).filter((o) => o.uid === undefined || !dropped.has(o.uid));
       if (options.length === 0) {
@@ -3117,6 +3128,7 @@ export class Engine {
                 this.damage(responder, 2000);
                 this.state.fx.borrowed = (this.state.fx.borrowed as number[]).filter((u) => u !== opt.uid);
               }
+              this.handSpot.set(opt.uid!, ps.hand.findIndex((c) => c.uid === opt.uid));
               const card = this.detach(opt.uid!)!;
               fc = ps.sz[z] = this.toField(card, 'atk', true);
               fc.placedTurn = this.state.turn;
@@ -3129,16 +3141,19 @@ export class Engine {
           fc.faceUp = true;
           const eff = getEffect(fc.name)!;
           const link: ChainLink = { card: fc, loc: this.find(fc.uid)!.loc, player: responder, label: fc.name, negated: false };
-          this.log(responder, `${this.player(responder).name} activates ${fc.name}`);
           const prev = this.actor;
           this.actor = responder;
           const ok = eff.activate ? yield* eff.activate(this, link, responder, ctx) : true;
           this.actor = prev;
-          if (ok === false && this.fieldCard(fc.uid) && !(fromHand && (handPaid || getEffect(fc.name)?.activateCost))) {
+          const takeBack = ok === false && !!this.fieldCard(fc.uid) && !(fromHand && (handPaid || getEffect(fc.name)?.activateCost));
+          if (!takeBack) this.log(responder, `${this.player(responder).name} activates ${fc.name}`);
+          if (takeBack) {
             // backed out of its target pick: back to the hand / face-down, and the same window is offered
-            // again without that card (so nothing can loop, and another card can still answer)
+            // again (a card backed out of twice here drops out of it, so nothing can loop)
             this.undoActivation(fc, fromHand ? 'hand' : 'set', responder);
-            dropped.add(fc.uid);
+            const n = (cancels.get(fc.uid) ?? 0) + 1;
+            cancels.set(fc.uid, n);
+            if (n >= 2) dropped.add(fc.uid);
             continue;
           } else if (ok === false) {
             this.event('activate', { uid: fc.uid, player: responder });

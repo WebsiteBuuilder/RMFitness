@@ -877,6 +877,56 @@ section('Backing out of a target pick takes the card back');
   check(zone(e2, set) === 'sz' && !e2.fieldCard(set.uid)!.faceUp, 'cancelled from a Set: it goes back face-down');
 }
 
+section('Backing out: same hand spot, nothing revealed, later windows still open');
+{
+  const e = duel(['Mystical Space Typhoon', FILL, 'Pot of Greed'], ['Waboku']);
+  putST(e, 1, 'Waboku');
+  const mst = grab(e, 0, 'Mystical Space Typhoon');
+  const before = e.player(0).hand.map((c) => c.uid);
+  const since = e.state.log.length;
+  e.apply({ type: 'ACTIVATE', player: 0, uid: mst.uid, zone: 0 });
+  if (e.state.prompt?.kind === 'select') e.apply({ type: 'CANCEL', player: 0 } as any);
+  settle(e);
+  check(e.player(0).hand.map((c) => c.uid).join() === before.join(), 'the card goes back to the same spot in the hand');
+  check(!logHas(e, 'Mystical Space Typhoon', since), 'the log never names the card that was taken back');
+}
+{
+  // a Set Book of Moon backed out of on the first attack; on the second attack Waboku is still offered
+  const e = duel(['Book of Moon', 'Waboku', FILL], ['Battle Ox', 'Battle Ox']);
+  const m = place(e, 0, FILL)!;
+  const bom = putST(e, 0, 'Book of Moon');
+  putST(e, 0, 'Waboku');
+  theirTurn(e);
+  const o1 = place(e, 1, 'Battle Ox')!;
+  const o2 = place(e, 1, 'Battle Ox')!;
+  toBattle(e);
+  const offered: string[][] = [];
+  const hit = (a: FieldCard) => {
+    e.apply({ type: 'ATTACK', player: 1, uid: a.uid, target: zone(e, m) === 'mz' ? m.uid : null });
+    let cancelled = false;
+    for (let i = 0; i < 60 && e.state.prompt; i++) {
+      const pr = e.state.prompt;
+      if (pr.kind === 'response' && pr.player === 0) {
+        offered.push(pr.options.map((o) => o.label));
+        const k = pr.options.findIndex((o) => o.uid === bom.uid);
+        if (!cancelled && k >= 0) {
+          e.apply({ type: 'CHOOSE', player: 0, picks: [k] });
+          continue;
+        }
+        e.apply({ type: 'PASS', player: 0 });
+      } else if (pr.kind === 'select' && pr.player === 0 && !cancelled && pr.cancel) {
+        cancelled = true;
+        e.apply({ type: 'CANCEL', player: 0 } as any);
+      } else settle(e);
+    }
+  };
+  hit(o1);
+  const n1 = offered.length;
+  hit(o2);
+  check(zone(e, bom) === 'sz' && !e.fieldCard(bom.uid)!.faceUp, 'Book of Moon is still Set after both take-backs');
+  check(offered.slice(n1).some((l) => l.includes('Waboku')), `on the second attack the window is offered again after the take-back (offered: ${offered.slice(n1).map((l) => l.join('/')).join(' | ')})`);
+}
+
 section('A Normal Trap destroyed in the chain still resolves');
 {
   const e = duel(['Mystical Space Typhoon', 'Battle Ox'], ['Trap Hole']);
