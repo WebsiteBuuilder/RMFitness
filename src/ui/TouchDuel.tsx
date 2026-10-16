@@ -1,7 +1,8 @@
 // Touch controls: a Master Duel-style duel screen. Tap a card to see it and what it can do,
 // drag a card from your hand onto the field to play it, drag a monster onto a target to attack.
 // The rules and every move go through the same engine actions as the Classic screen.
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren, VNode } from 'preact';
+import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession } from '../eds/session';
 import type { Engine } from '../eds/engine';
@@ -314,18 +315,22 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     press.current = null;
     setDrag(null);
   };
-  const dragProps = (c: Card, from: 'hand' | 'mz') => ({
-    onPointerDown: (ev: PointerEvent) => onDown(ev, c, from),
-    onPointerMove: onMove,
-    onPointerUp: onUp,
-    onPointerCancel: onCancel,
-  });
 
   const tapCard = (uid: number) => {
     if (dragged.current) return;
     setPhaseOpen(false);
     tap(uid);
   };
+
+  // (what a memoized Piece's handlers call: always this render's)
+  const live = useRef({ tapCard, setSel, onDown, onMove, onUp, onCancel });
+  live.current = { tapCard, setSel, onDown, onMove, onUp, onCancel };
+  const liveDrag = (c: Card, from: 'hand' | 'mz') => ({
+    onPointerDown: (ev: PointerEvent) => live.current.onDown(ev, c, from),
+    onPointerMove: (ev: PointerEvent) => live.current.onMove(ev),
+    onPointerUp: (ev: PointerEvent) => live.current.onUp(ev),
+    onPointerCancel: () => live.current.onCancel(),
+  });
 
   const spotCls = (id: string) => (spots ? (spots.has(id) ? (drag?.over === id ? ' drop-on' : ' drop-ok') : '') : '');
 
@@ -335,35 +340,38 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const mine = owner === acting;
     const dropId = mine ? `${kind}z${i}` : c && kind === 'm' ? `t${c.uid}` : undefined;
     const draggable = mine && kind === 'm' && c && state.phase === 'BP';
-    return (
+    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
+    const named = c && c.faceUp ? e.nameOf(c) : '';
+    const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
+    const sig = c ? `${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
-        key={`${owner}${kind}${i}`}
-        class={`tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`}
+        class={cls}
         data-uid={c?.uid}
         data-drop={dropId}
         onClick={(ev) => {
           ev.stopPropagation();
-          if (c) tapCard(c.uid);
-          else setSel(null);
+          if (c) live.current.tapCard(c.uid);
+          else live.current.setSel(null);
         }}
-        {...(draggable ? dragProps(c, 'mz') : {})}
+        {...(draggable ? liveDrag(c, 'mz') : {})}
       >
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
-            {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
+            {c.faceUp && named !== c.name && <span class="namechg">{named}</span>}
           </div>
         )}
         {c && c.faceUp && kind === 'm' && (
           <div class={`tstat ${c.pos === 'def' ? 'def' : ''}`}>
-            {c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)}
+            {stat}
           </div>
         )}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
-    );
+    )} />;
   };
 
   const fieldZone = (p: Pid) => {
@@ -722,19 +730,29 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       )}
       {lpBar(acting, false)}
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
-        {me.hand.map((c, i) => (
-          <div
-            key={c.uid}
-            data-uid={c.uid}
-            style={{ '--arc': (i - (handCount - 1) / 2).toFixed(2), '--arc2': ((i - (handCount - 1) / 2) ** 2).toFixed(2) } as Record<string, string>}
-            class={`thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`}
-            onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
-            {...dragProps(c, 'hand')}
-          >
-            <CardImg name={c.name} back={!canAct && !ctl.spectator && !ctl.locked} owner={c.owner} />
-            {(canAct || ctl.spectator || ctl.locked) && <span class="hname">{c.name}</span>}
-          </div>
-        ))}
+        {me.hand.map((c, i) => {
+          const arc = (i - (handCount - 1) / 2).toFixed(2);
+          const cls = `thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
+          const shown = canAct || !!ctl.spectator || !!ctl.locked;
+          return (
+            <Piece
+              key={c.uid}
+              sig={`${cls}|${c.name}|${arc}|${shown}`}
+              render={() => (
+                <div
+                  data-uid={c.uid}
+                  style={{ '--arc': arc, '--arc2': ((i - (handCount - 1) / 2) ** 2).toFixed(2) } as Record<string, string>}
+                  class={cls}
+                  onClick={(ev) => (ev.stopPropagation(), live.current.tapCard(c.uid))}
+                  {...liveDrag(c, 'hand')}
+                >
+                  <CardImg name={c.name} back={!shown} owner={c.owner} />
+                  {shown && <span class="hname">{c.name}</span>}
+                </div>
+              )}
+            />
+          );
+        })}
         {handCount === 0 && <div class="thint">No cards in hand</div>}
       </div>
 
@@ -802,3 +820,13 @@ function DetailLine({ name }: { name: string }) {
     );
   return <span class="tdetail-type">{`${info.sub} ${info.kind === 'spell' ? spellWord() : 'Trap'}`}</span>;
 }
+
+/**
+ * A piece of the board drawn again only when its `sig` (what it shows) changes: the engine
+ * reports every step of a turn and the screen renders for each, but most zones are unchanged.
+ * Its handlers must read through a ref (they are kept from the render that drew it).
+ */
+const Piece = memo(
+  ({ render }: { sig: string; render: () => VNode }) => render(),
+  (a, b) => a.sig === b.sig,
+);
