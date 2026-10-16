@@ -1462,7 +1462,11 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Premature Return'] = {
     canActivate: (e, c, p, t) => anyTime(t) && freeMZ(e, p) && e.player(p).hand.length > 0 && [...e.player(p).removed, ...e.player(p).hand].some((x) => isMonster(e, x) && !isExtraOrRitual(e, x)),
     *activate(e, link, p) {
-      const c = yield* pickOne(e, p, 'Premature Return: banish which card from your hand?', e.player(p).hand, true);
+      // only offer a hand card that still leaves a monster to bring back, so the banish can't be stranded
+      const ok = (x: Card) => isMonster(e, x) && !isExtraOrRitual(e, x);
+      const bannedOk = e.player(p).removed.some(ok);
+      const hand = e.player(p).hand.filter((h) => bannedOk || ok(h));
+      const c = yield* pickOne(e, p, 'Premature Return: banish which card from your hand?', hand, true);
       if (!c) return false;
       e.banish(c.uid);
       const t = yield* pickOne(e, p, 'Premature Return: Special Summon which banished monster?', e.player(p).removed.filter((x) => isMonster(e, x) && !isExtraOrRitual(e, x)));
@@ -1603,9 +1607,16 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     *resolve(e, _l, p) {
       for (const m of e.monsters(other(p))) {
         if (m.pos !== 'atk') continue;
+        // turned face-down like Book of Moon: Equip Cards and changes applied while face-up end
+        for (const u of m.equips.slice()) if (e.fieldCard(u)) yield* e.sendToGrave(u, 'destroyed');
         m.faceUp = false;
         m.pos = 'def';
+        m.atkMod = 0;
+        m.defMod = 0;
+        const keep = ['ss', 'ssAt', 'ssFrom', 'ssExtra', 'fusS', 'boundBy'];
+        m.tags = Object.fromEntries(Object.entries(m.tags ?? {}).filter(([k]) => keep.includes(k)));
         m.cannotChangePos = true;
+        tag(m).noFlip = 1;
         e.event('position', { uid: m.uid });
       }
       e.log(p, "Quaking Mirror Force turns the opponent's Attack Position monsters face-down");

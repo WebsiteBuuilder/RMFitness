@@ -113,7 +113,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
   const theirBest = Math.max(0, ...theirMonsters.map((m) => (m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1200)));
 
   // A card the computer backed out of this turn (no fitting target or Ritual materials) stays where it is.
-  const canAct = (uid: number) => e.canActivateMain(me, uid) && !e.takenBackThisTurn(uid);
+  const canAct = (uid: number) => e.canActivateMain(me, uid) && !e.takenBackThisTurn(uid) && !(e.find(uid)?.card.name === 'Mind Crush' && e.player(opp).hand.length === 0);
   if (e.inMainPhase()) {
     // 1. Draw / heal / burn spells.
     for (const c of my.hand) {
@@ -383,6 +383,11 @@ function rankOptions(e: Engine, me: Pid, title: string, options: Extract<Prompt,
     const owner = fc ? e.controller(fc.uid) : o.loc?.player;
     const mine = owner === me;
     const power = fc ? Math.max(e.atkOf(fc), e.defOf(fc)) : atk;
+    // Mind Crush: name a card from their deck list, not the alphabet's first.
+    if (/^Mind Crush: declare/.test(title)) {
+      const opp = other(me);
+      return [...e.player(opp).deck, ...e.player(opp).hand].filter((c) => c.name === name).length * 1000 - [...e.player(me).hand].filter((c) => c.name === name).length;
+    }
     if (/^Ritual:/.test(title)) return (info.level ?? 1) * 1000 - power; // high Level, low value
     if (/Fusion Summon which/i.test(title)) return power;
     // Equip Cards: boosts on our monsters, curses on theirs.

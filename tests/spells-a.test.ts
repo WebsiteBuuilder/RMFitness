@@ -2,6 +2,7 @@
 import { Engine } from '../src/eds/engine';
 import type { Card, FieldCard, Pid, Pos } from '../src/eds/types';
 import { DB } from './speedkit';
+import { aiAction } from '../src/eds/ai';
 import { attrOf } from '../src/eds/speed/helpers';
 import type { CardInfo } from '../src/eds/types';
 
@@ -939,6 +940,56 @@ section('Stray Lambs: not after you already Summoned this turn');
   const e2 = duel(['Stray Lambs']);
   playSpell(e2, 0, 'Stray Lambs');
   check(e2.monsters(0).filter((m) => m.name === 'Lamb Token').length === 2, 'activated first: 2 Lamb Tokens');
+}
+
+section('Quaking Mirror Force: the face-down monsters stay face-down');
+{
+  const e = duel(['Quaking Mirror Force', FILL], ['Battle Ox']);
+  const m = place(e, 0, FILL)!;
+  putST(e, 0, 'Quaking Mirror Force');
+  theirTurn(e);
+  const ox = place(e, 1, 'Battle Ox')!;
+  ox.atkMod = 500;
+  toBattle(e);
+  attack(e, ox, m, { respond: 'Quaking Mirror Force' });
+  check(!ox.faceUp && ox.pos === 'def' && ox.atkMod === 0, 'the attacker is turned face-down and loses its ATK changes');
+  endTurn(e);
+  endTurn(e);
+  e.apply({ type: 'FLIP_SUMMON', player: 1, uid: ox.uid });
+  settle(e);
+  check(!ox.faceUp, 'it cannot be Flip Summoned afterwards');
+}
+
+section('Mind Crush: the computer names a card from your deck');
+{
+  const e = duel(['Mind Crush'], ['Jinzo', 'Jinzo', 'Jinzo']);
+  const ps = e.player(1);
+  ps.deck.push(...ps.hand.splice(0));
+  for (const c of ps.deck.filter((x) => x.name === 'Jinzo')) e.toHandOf(c.uid, 1);
+  const mc = putST(e, 0, 'Mind Crush');
+  e.apply({ type: 'ACTIVATE', player: 0, uid: mc.uid, zone: 0 });
+  // answer the declare prompt the way the computer would
+  for (let i = 0; i < 20 && e.state.prompt; i++) {
+    const a = aiAction(e, e.state.prompt.player);
+    if (!a) break;
+    e.apply(a);
+  }
+  check(!logHas(e, 'Mind Crush declares Battle Ox') && logHas(e, 'Mind Crush declares'), 'the computer declares a name from your deck list, not the first one alphabetically');
+}
+
+section('Premature Return: only a hand card that leaves a monster to bring back');
+{
+  const e = duel(['Premature Return', 'Pot of Greed', 'Gemini Elf']);
+  clearHand(e, 0);
+  grab(e, 0, 'Pot of Greed');
+  const elf = grab(e, 0, 'Gemini Elf');
+  const pr = putST(e, 0, 'Premature Return');
+  e.apply({ type: 'ACTIVATE', player: 0, uid: pr.uid, zone: 0 });
+  const pp = e.state.prompt;
+  const labels = pp && pp.kind === 'select' ? pp.options.map((o) => o.label) : [];
+  check(labels.length === 1 && labels[0] === 'Gemini Elf', `with nothing banished, only a monster can be banished (offered: ${labels.join(', ')})`);
+  settle(e, { pick: ['Gemini Elf'] }, { pick: ['Gemini Elf'] });
+  check(zone(e, elf) === 'mz', 'the banished monster comes back');
 }
 
 /** Cards whose script this audit corrected (each has a check above that failed before the fix). */

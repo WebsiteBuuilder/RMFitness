@@ -2905,7 +2905,7 @@ export class Engine {
     yield* this.startChain(player, fc, 'main', {}, cost || paidOnWay ? undefined : fromHand ? 'hand' : 'set');
   }
 
-  /** Its activation was already backed out of once this turn (a second time it fizzles, so nothing can loop). */
+  /** Its activation was backed out of this turn (the computer then leaves it alone for the rest of the turn). */
   takenBackThisTurn(uid: number): boolean {
     return ((this.state.fx.takenBack ?? {}) as Record<number, number>)[uid] === this.state.turn;
   }
@@ -3066,8 +3066,9 @@ export class Engine {
     if (ctx.link) responder = other(ctx.link.player);
     let passes = 0;
     let depth = 0;
+    const dropped = new Set<number>(); // cards taken back in this window
     while (passes < 2 && depth < 10 && this.state.winner === null) {
-      const options = this.responsesFor(responder, trigger, ctx);
+      const options = this.responsesFor(responder, trigger, ctx).filter((o) => o.uid === undefined || !dropped.has(o.uid));
       if (options.length === 0) {
         passes++;
         responder = other(responder);
@@ -3135,10 +3136,10 @@ export class Engine {
           this.actor = prev;
           if (ok === false && this.fieldCard(fc.uid) && !(fromHand && (handPaid || getEffect(fc.name)?.activateCost))) {
             // backed out of its target pick: back to the hand / face-down, and the same window is offered
-            // again (once per card per turn, so nothing can loop)
-            const again = !this.takenBackThisTurn(fc.uid);
+            // again without that card (so nothing can loop, and another card can still answer)
             this.undoActivation(fc, fromHand ? 'hand' : 'set', responder);
-            if (again) continue;
+            dropped.add(fc.uid);
+            continue;
           } else if (ok === false) {
             this.event('activate', { uid: fc.uid, player: responder });
             yield* this.afterResolve(link);
