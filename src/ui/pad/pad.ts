@@ -16,11 +16,11 @@ import './pad.css';
 const NATIVE = 'button:not([disabled]), a[href], input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role=button], [role=tab], [tabindex]:not([tabindex="-1"]), summary';
 const TEXT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select';
 /** A sheet, menu or window that opens over the screen: focus jumps into it. */
-const LAYER = '.overlay, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
+const LAYER = '.overlay, .duel .msgwin, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
 const PRIMARY = '[autofocus], .tbtn.main, .taction.main, .csheet-ok, .primary, .main, .ok';
 const CLOSE = '.win-x, [aria-label="Close"], [aria-label="Back"], [data-pad-back]';
 const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick)';
-const HAND = '.thcard, .hand .card, .hand [data-uid]';
+const HAND = '.thcard, .hcard, .hand [data-uid]';
 const TABS = '[role=tablist], .sdh-tabs, .tabs, .so-tabs, .rank-tabs, .fr-tabs';
 const ON = /(^|\s)(on|active|sel|selected|cur|current)(\s|$)/;
 
@@ -140,6 +140,12 @@ function candidates(): Cand[] {
   return out;
 }
 
+/** What the ring could reach at the last look (to tell a redrawn list from a new screen). */
+let known = new WeakSet<Element>();
+function remember(c: Cand[]) {
+  known = new WeakSet(c.map((x) => x.el));
+}
+
 // ---------- the ring ----------
 
 function setFocus(el: Element | null, scroll = true) {
@@ -204,7 +210,7 @@ function validate(force = false) {
     const pick =
       inside.find((x) => x.el === ae) ??
       // choosing an attack target: straight to the targets
-      (picks.length && (layer.matches('.ttoast.aim') || !inside.length) ? picks[nearest(lastX, lastY, picks.map((x) => x.box))] : undefined) ??
+      (picks.length && (layer.matches('.ttoast.aim') || inside.every((x) => /^\W*(cancel|back)\s*$/i.test(x.el.textContent ?? ''))) ? picks[nearest(lastX, lastY, picks.map((x) => x.box))] : undefined) ??
       // a list of cards to choose from: the first card
       inside.find((x) => x.el.matches('.topt')) ??
       inside.find((x) => x.el.matches(PRIMARY)) ??
@@ -240,8 +246,12 @@ function validate(force = false) {
   }
   const n = c[nearest(lastX, lastY, c.map((x) => x.box))];
   const d = Math.hypot(Math.max(n.box.left - lastX, 0, lastX - n.box.right), Math.max(n.box.top - lastY, 0, lastY - n.box.bottom));
+  // a whole new screen (hardly anything from the last one is left)?
+  const kept = c.filter((x) => known.has(x.el)).length;
+  const newScreen = kept < c.length * 0.4;
+  remember(c);
   // something where the ring was (a list that redrew): stay there
-  if (d < 48 || (focused && focused.isConnected)) return setFocus(n.el);
+  if (!newScreen && (d < 48 || (focused && focused.isConnected))) return setFocus(n.el);
   // a duel: your hand
   if (document.querySelector('.duel')) {
     const hand = c.filter((x) => x.el.matches(HAND));
@@ -267,7 +277,9 @@ function move(dir: Dir) {
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return;
   }
-  const c = candidates().filter((x) => x.el !== focused);
+  const all = candidates();
+  remember(all);
+  const c = all.filter((x) => x.el !== focused);
   const from = rectOf(focused);
   const i = pickNext(from, dir, c.map((x) => x.box));
   if (i >= 0) {
@@ -368,6 +380,14 @@ export function back(viaEscape = true) {
       return void setTimeout(() => validate(true), 60);
     }
   }
+  // the classic board: cancel the attack, or put the picked card down
+  const classic = document.querySelector<HTMLElement>('.duel:not(.touch)');
+  if (classic && !document.querySelector('.overlay')) {
+    const cancel = [...classic.querySelectorAll<HTMLElement>('.msgwin .menu-item')].find((b) => /^\W*cancel\s*$/i.test(b.textContent ?? ''));
+    if (cancel) return void (tap(cancel), setTimeout(() => validate(true), 60));
+    const picked = classic.querySelector<HTMLElement>('[data-uid].sel');
+    if (picked) return void (tap(picked), setTimeout(() => validate(true), 60));
+  }
   const close = visible(CLOSE);
   if (close) return void (tap(close), setTimeout(() => validate(true), 60));
   const ov = visible('.overlay');
@@ -402,11 +422,13 @@ function visibleTabs(): HTMLElement | null {
 function cardInfo() {
   const detail = visible('.tdetail');
   if (detail) return tap(detail);
+  const classicInfo = [...document.querySelectorAll<HTMLElement>('.duel .msgwin .menu-item')].find((b) => /card info/i.test(b.textContent ?? ''));
+  if (classicInfo) return tap(classicInfo);
   // the classic board's card window, or select the card first and then open its text
   if (focused?.matches('[data-uid]')) {
     tap(focused);
     setTimeout(() => {
-      const d = visible('.tdetail');
+      const d = visible('.tdetail') ?? [...document.querySelectorAll<HTMLElement>('.duel .msgwin .menu-item')].find((b) => /card info/i.test(b.textContent ?? ''));
       if (d) tap(d);
     }, 90);
   }
@@ -424,14 +446,14 @@ function onButton(b: Btn) {
     case 'b':
       return back();
     case 'x': {
-      const ph = visible('.tphase-btn:not([disabled])');
+      const ph = visible('.tphase-btn:not([disabled]), .phasebtns .gbtn:not(.end)');
       if (ph) return (tap(ph), setTimeout(() => validate(true), 60));
       return;
     }
     case 'y':
       return cardInfo();
     case 'start': {
-      const m = visible('.tgear, [aria-label="Menu"], [aria-label="Settings"]');
+      const m = visible('.tgear, .duel .menu-btn, [aria-label="Menu"], [aria-label="Settings"]');
       if (m) return (tap(m), setTimeout(() => validate(true), 60));
       return;
     }
@@ -451,8 +473,8 @@ function onButton(b: Btn) {
 /** In a duel: LB to your hand, RB to the opponent's monsters. */
 function duelJump(hand: boolean) {
   const c = candidates();
-  const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m') && (x.el as HTMLElement).dataset.uid && x.box.top < innerHeight / 2);
-  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('.tz-m') && x.box.top < innerHeight / 2);
+  const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top < innerHeight / 2);
+  const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && x.box.top < innerHeight / 2);
   if (!list.length) return;
   const mid = list.sort((a, b) => a.box.left - b.box.left)[Math.floor((list.length - 1) / 2)];
   setFocus(mid.el);
@@ -464,7 +486,7 @@ type Hint = [Btn[], string];
 function hintList(): Hint[] {
   if (document.querySelector('.art-skip.on')) return [[['a'], 'Skip (hold: all)']];
   const out: Hint[] = [[['a'], 'Select'], [['b'], 'Back']];
-  if (document.querySelector('.duel.touch')) {
+  if (document.querySelector('.duel')) {
     out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand'], [['rb'], 'Foes']);
     out.push(guide ? [['start'], 'Menu'] : [['select'], 'More']);
     if (guide) out.push([['select'], 'Hide']);

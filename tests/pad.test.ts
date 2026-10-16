@@ -93,6 +93,14 @@ ok(pickNext(b(100, 100), 'down', [b(260, 150), b(100, 260)]) === 1, 'straight do
 // up from the hand reaches the field row above it
 const field = [b(60, 420, 70, 90), b(150, 420, 70, 90), b(240, 420, 70, 90)];
 ok(pickNext(hand[2], 'up', field) === 1, 'up from the middle card goes to the middle zone');
+// the picked card sits 8px above the rest of the hand: down still goes below the hand, not sideways
+{
+  const raised = b(122, 656, 52, 76);
+  const row = [b(65, 664, 52, 76), b(179, 664, 52, 76)];
+  const menu = b(20, 742, 370, 30);
+  ok(pickNext(raised, 'down', [...row, menu]) === 2, 'down from a raised hand card goes to the menu below');
+  ok(pickNext(raised, 'left', [...row, menu]) === 0, 'left from a raised hand card is its neighbour');
+}
 ok(nearest(150, 40, grid) === 1, 'nearest box to a point');
 ok(nearest(0, 0, []) === -1, 'nothing to land on');
 

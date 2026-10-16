@@ -29,14 +29,15 @@ export function pickNext(from: Box, dir: Dir, boxes: Box[]): number {
     if (dir === 'right' || dir === 'left') {
       const d = dir === 'right' ? cx - fx : fx - cx;
       // ahead: its center past ours, and its far edge past our far edge
-      if (d <= 2 || (dir === 'right' ? b.right <= from.right : b.left >= from.left)) return;
+      // (ahead by a real step: a card raised a few pixels out of a row isn't "down" from its neighbours)
+      if (d <= Math.max(2, Math.min(from.right - from.left, b.right - b.left) * 0.25) || (dir === 'right' ? b.right <= from.right : b.left >= from.left)) return;
       along = dir === 'right' ? Math.max(0, b.left - from.right) : Math.max(0, from.left - b.right);
       side = gap(from.top, from.bottom, b.top, b.bottom);
       off = Math.abs(cy - fy);
       along += d * 0.1;
     } else {
       const d = dir === 'down' ? cy - fy : fy - cy;
-      if (d <= 2 || (dir === 'down' ? b.bottom <= from.bottom : b.top >= from.top)) return;
+      if (d <= Math.max(2, Math.min(from.bottom - from.top, b.bottom - b.top) * 0.25) || (dir === 'down' ? b.bottom <= from.bottom : b.top >= from.top)) return;
       along = dir === 'down' ? Math.max(0, b.top - from.bottom) : Math.max(0, from.top - b.bottom);
       side = gap(from.left, from.right, b.left, b.right);
       off = Math.abs(cx - fx);
