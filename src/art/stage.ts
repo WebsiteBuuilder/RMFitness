@@ -630,6 +630,47 @@ export function artTextures(art: ArtData): ArtTextures {
   return t;
 }
 
+/**
+ * A Figure's mesh: a non-indexed segs×segs grid with each triangle's centre and a random
+ * shatter direction per triangle. Built once per detail level (two shatter patterns each)
+ * and shared by every figure: building it per summon was most of a cinematic's garbage.
+ * Shared, so it is never disposed (a dispose() from a figure or crack is a no-op).
+ */
+const figGeos = new Map<number, BufferGeometry[]>();
+function figureGeometry(segs: number): BufferGeometry {
+  let list = figGeos.get(segs);
+  if (!list) figGeos.set(segs, (list = []));
+  if (list.length < 2) {
+    const geo = new PlaneGeometry(1, 1, segs, segs).toNonIndexed();
+    const pos = geo.getAttribute('position');
+    const n = pos.count;
+    const centroid = new Float32Array(n * 3);
+    const rnd = new Float32Array(n * 3);
+    for (let t = 0; t < n; t += 3) {
+      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+      const r0 = Math.random();
+      const r1 = Math.random();
+      const r2 = Math.random();
+      for (let k = 0; k < 3; k++) {
+        const i = (t + k) * 3;
+        centroid[i] = cx;
+        centroid[i + 1] = cy;
+        rnd[i] = r0;
+        rnd[i + 1] = r1;
+        rnd[i + 2] = r2;
+      }
+    }
+    geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
+    geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
+    geo.computeBoundingSphere();
+    geo.dispose = () => {};
+    list.push(geo);
+    return geo;
+  }
+  return list[Math.random() < 0.5 ? 0 : 1];
+}
+
 /** A figure is done with its textures: the GPU copies go once no figure uses them (they upload again if needed). */
 function releaseArtTextures(t: ArtTextures) {
   if (--t.users > 0) return;
@@ -660,28 +701,7 @@ export class Figure implements Fx {
   time = Math.random() * 10;
 
   constructor(art: ArtData, size: number, segs: number, glow: number, depthAmt: number, opts: FigureOptions = {}) {
-    const geo = new PlaneGeometry(1, 1, segs, segs).toNonIndexed();
-    const pos = geo.getAttribute('position');
-    const n = pos.count;
-    const centroid = new Float32Array(n * 3);
-    const rnd = new Float32Array(n * 3);
-    for (let t = 0; t < n; t += 3) {
-      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
-      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
-      const r0 = Math.random();
-      const r1 = Math.random();
-      const r2 = Math.random();
-      for (let k = 0; k < 3; k++) {
-        const i = (t + k) * 3;
-        centroid[i] = cx;
-        centroid[i + 1] = cy;
-        rnd[i] = r0;
-        rnd[i + 1] = r1;
-        rnd[i + 2] = r2;
-      }
-    }
-    geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
-    geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
+    const geo = figureGeometry(segs);
     // shared per card picture: uploaded once (ahead of time, see Stage.upload), not per figure
     this.texs = artTextures(art);
     this.texs.users++;
@@ -2614,6 +2634,8 @@ export class Stage {
   upload(art: ArtData) {
     if (this.lost || this.disposed) return;
     const t = artTextures(art);
+    // (and the figure's colour taming worked out now, in loading time, not at the start of its shot)
+    artTame(art);
     for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
     this.uploadRaf ||= nextQuiet(this.onUpload);
   }
