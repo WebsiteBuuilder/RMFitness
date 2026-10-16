@@ -395,7 +395,7 @@
   inset: -7px;
   border-radius: 50%;
   box-shadow: 0 0 16px 4px #f7c948aa;
-  animation: torb 1.6s ease-in-out infinite;
+  animation: torb 1.6s ease-in-out 4;
   pointer-events: none;
   will-change: opacity;
 }
@@ -567,3 +567,4 @@
     letter-spacing: -0.2px;
   }
 }
+.duel.touch .tz:active { filter: brightness(1.25); }

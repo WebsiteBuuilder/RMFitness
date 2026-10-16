@@ -394,9 +394,10 @@ export class BoardLayer {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
     // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
-    // (and 30 for the slow idle sway once every figure has settled: half the GPU work and heat)
+    // (and 15 for the slow idle sway once every figure has settled: a quarter of the GPU work and heat;
+    // the sway is slow enough that it still reads as smooth)
     const settling = this.dirty || now < this.settleUntil;
-    const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 3) : settling ? 1 : 2;
+    const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 6) : settling ? 1 : 4;
     if (++this.frame % every === 0 || dt > 0.055) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);

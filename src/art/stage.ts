@@ -405,11 +405,14 @@ export function footprint(art: ArtData): Footprint {
   let rel: Float32Array;
   try {
     if (art.relief) {
-      const c = document.createElement('canvas');
-      c.width = c.height = n;
-      const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.drawImage(art.relief, 0, 0, n, n);
-      const px = g.getImageData(0, 0, n, n).data;
+      let px = art.reliefPx && n === 64 ? art.reliefPx : null;
+      if (!px) {
+        const c = document.createElement('canvas');
+        c.width = c.height = n;
+        const g = c.getContext('2d', { willReadFrequently: true })!;
+        g.drawImage(art.relief, 0, 0, n, n);
+        px = g.getImageData(0, 0, n, n).data;
+      }
       mask = new Float32Array(n * n);
       rel = new Float32Array(n * n);
       for (let i = 0; i < n * n; i++) {
@@ -519,17 +522,27 @@ export function artTame(art: ArtData): number {
   let tame = 0;
   try {
     const n = 32;
-    const c = document.createElement('canvas');
-    c.width = c.height = n;
-    const g = c.getContext('2d', { willReadFrequently: true })!;
-    g.drawImage(art.art, 0, 0, n, n);
-    const px = g.getImageData(0, 0, n, n).data;
+    // (the pixels read while the art loaded, when there are; drawn and read here otherwise)
+    let g: CanvasRenderingContext2D | null = null;
+    const ctx = () => {
+      if (g) return g;
+      const c = document.createElement('canvas');
+      c.width = c.height = n;
+      return (g = c.getContext('2d', { willReadFrequently: true })!);
+    };
+    const read = (src: CanvasImageSource) => {
+      const k = ctx();
+      k.clearRect(0, 0, n, n);
+      k.drawImage(src, 0, 0, n, n);
+      return k.getImageData(0, 0, n, n).data;
+    };
+    const px = art.artPx ?? read(art.art);
     let ma: Uint8ClampedArray | null = null;
-    if (art.relief) {
-      g.clearRect(0, 0, n, n);
-      g.drawImage(art.relief, 0, 0, n, n);
-      ma = g.getImageData(0, 0, n, n).data;
-    }
+    if (art.reliefPx) {
+      // every other pixel of the 64×64 copy
+      ma = new Uint8ClampedArray(n * n * 4);
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) ma.set(art.reliefPx.subarray(((y * 2) * 64 + x * 2) * 4, ((y * 2) * 64 + x * 2) * 4 + 4), (y * n + x) * 4);
+    } else if (art.relief) ma = read(art.relief);
     let w = 0;
     let lum = 0;
     let sat = 0;

@@ -20,6 +20,13 @@ export interface ArtData {
    * background. Much cleaner than the guessed depth.
    */
   relief: HTMLImageElement | null;
+  /**
+   * Small pixel copies read once while the art loads (in the background), so measuring a
+   * figure later never draws and reads an image mid-duel (that can stall a frame for seconds
+   * while the GPU is busy): the relief at 64×64 and the art at 32×32, RGBA.
+   */
+  reliefPx?: Uint8ClampedArray;
+  artPx?: Uint8ClampedArray;
   /** three main colors of the art, most striking first (0xRRGGBB) */
   palette: number[];
   /** the card's id when known (per-card figure tunes, src/art/overrides.ts) */
@@ -221,12 +228,24 @@ async function build(name: string): Promise<ArtData> {
   art.getContext('2d', { willReadFrequently: true })!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
   const id = card(name)?.id;
-  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id };
+  const artPx = readPx(art, 32);
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id, reliefPx: readPx(pre.img, 64), artPx };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
-  return { art, full, depth, relief: null, palette, id };
+  return { art, full, depth, relief: null, palette, id, artPx };
+}
+
+/** `src` drawn at n×n on a CPU-backed canvas and read back (undefined if that fails). */
+function readPx(src: CanvasImageSource, n: number): Uint8ClampedArray | undefined {
+  try {
+    const g = canvas(n, n).getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(src, 0, 0, n, n);
+    return g.getImageData(0, 0, n, n).data;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Art data for a card, built once and cached (the last 40 cards). */
