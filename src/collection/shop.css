@@ -798,3 +798,76 @@
 @media (prefers-reduced-motion: reduce) {
   .rv.fin-OF.up { animation: none; }
 }
+
+/* gift packs (see Gift.tsx) */
+.gift-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #f2c14e;
+  background: linear-gradient(135deg, rgba(224, 51, 95, 0.35), rgba(242, 193, 78, 0.18));
+}
+.gift-bar .gift-box {
+  font-size: 30px;
+}
+.gift-bar .gift-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+.gift-bar .gift-txt small {
+  color: var(--sd-dim, #a9b5da);
+}
+.ui-speed .gift-bar .gift-mix,
+.gift-bar .gift-mix {
+  flex: none;
+  min-height: 44px;
+  background: linear-gradient(180deg, #ffd66b, #e0a422);
+  color: #1a1200;
+  font-weight: 700;
+}
+.gift-bar .gift-btns {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ui-speed .gift-bar .gift-all,
+.gift-bar .gift-all {
+  min-height: 36px;
+  font-size: 13px;
+  background: transparent;
+  border-color: #f2c14e;
+  color: #f2c14e;
+}
+.reveal.opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--sd-gold, #f2c14e);
+  font-weight: 700;
+}
+.reveal.opening .pack {
+  animation: gift-shake 0.6s ease-in-out infinite;
+}
+/* in the summary a rarity chip sits top left, so NEW drops below the corner */
+.summary .rv-fin ~ .bnew {
+  top: 24px;
+}
+.no-pill .ol-pill {
+  display: none;
+}
+/* the summary's Done stays in reach below a long list */
+.reveal.summary > .menu {
+  position: sticky;
+  bottom: -1px;
+  background: var(--sd-card, #141f3d);
+  padding-top: 6px;
+}

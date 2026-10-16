@@ -79,6 +79,10 @@ export interface LegendsProgress {
   rematchDay?: string;
   /** a legend-complete screen still to show */
   finished?: string;
+  /** duel id -> wins with an Anything goes deck: the story moves on, the chips wait */
+  openWins?: Record<string, number>;
+  /** story duels: bring your own deck instead of the borrowed one (remembered) */
+  storyOwn?: boolean;
 }
 
 export const LEGEND_DUEL_CHIPS = 1;
@@ -459,8 +463,10 @@ export const legendLevel = (l: Legend, index: number): Difficulty => campaignDif
 
 export const legendsProgress = (solo: SoloSave): LegendsProgress => solo.legends ?? { wins: {}, losses: 0 };
 export const legendDuelWon = (solo: SoloSave, id: string) => (legendsProgress(solo).wins[id] ?? 0) > 0;
-export const legendFinished = (solo: SoloSave, l: Legend) => legendDuelWon(solo, l.duels[l.duels.length - 1].id);
-export const legendWins = (solo: SoloSave, l: Legend) => l.duels.filter((d) => legendDuelWon(solo, d.id)).length;
+/** Beaten with any deck, Anything goes included: enough to open the next duel. */
+export const legendDuelPassed = (solo: SoloSave, id: string) => legendDuelWon(solo, id) || (legendsProgress(solo).openWins?.[id] ?? 0) > 0;
+export const legendFinished = (solo: SoloSave, l: Legend) => legendDuelPassed(solo, l.duels[l.duels.length - 1].id);
+export const legendWins = (solo: SoloSave, l: Legend) => l.duels.filter((d) => legendDuelPassed(solo, d.id)).length;
 
 /** The first legend is open from the start; each next one opens when the one before is finished. */
 export function legendOpen(solo: SoloSave, l: Legend): boolean {
@@ -468,12 +474,12 @@ export function legendOpen(solo: SoloSave, l: Legend): boolean {
   return i <= 0 || legendFinished(solo, LEGENDS[i - 1]);
 }
 export function legendDuelOpen(solo: SoloSave, l: Legend, index: number): boolean {
-  return legendOpen(solo, l) && (index === 0 || legendDuelWon(solo, l.duels[index - 1].id));
+  return legendOpen(solo, l) && (index === 0 || legendDuelPassed(solo, l.duels[index - 1].id));
 }
 
 /** The next duel to play: the first open one you haven't won. */
 export function nextLegendDuel(solo: SoloSave): { legend: Legend; duel: LegendDuel; index: number } | null {
-  for (const l of LEGENDS) for (let i = 0; i < l.duels.length; i++) if (legendDuelOpen(solo, l, i) && !legendDuelWon(solo, l.duels[i].id)) return { legend: l, duel: l.duels[i], index: i };
+  for (const l of LEGENDS) for (let i = 0; i < l.duels.length; i++) if (legendDuelOpen(solo, l, i) && !legendDuelPassed(solo, l.duels[i].id)) return { legend: l, duel: l.duels[i], index: i };
   return null;
 }
 
@@ -510,10 +516,12 @@ export interface LegendSettled {
   finished: Legend | null;
   /** chips that would have come but the 30 cap was full */
   capped: boolean;
+  /** won with an Anything goes deck: the story moves on, nothing is paid */
+  noEarn?: boolean;
 }
 
 /** Files a Card Legends duel: the record, and chips and cards for firsts (and the daily rematch). */
-export function settleLegend(speed: SpeedSave, solo: SoloSave, duelId: string, o: DuelOutcome, rematch = false, seed = Date.now()): LegendSettled {
+export function settleLegend(speed: SpeedSave, solo: SoloSave, duelId: string, o: DuelOutcome, rematch = false, seed = Date.now(), open = false): LegendSettled {
   const found = findLegendDuel(duelId);
   const p = legendsProgress(solo);
   const none: LegendSettled = { speed, solo, lines: [], cards: [], firstWin: false, rematchPaid: false, finished: null, capped: false };
@@ -521,6 +529,8 @@ export function settleLegend(speed: SpeedSave, solo: SoloSave, duelId: string, o
   if (o.forfeit) return none;
   if (o.result !== 'w') return { ...none, solo: { ...solo, legends: { ...p, losses: p.losses + 1 } } };
   const { duel, legend, index } = found;
+  // An Anything goes deck: the story moves on (and its scene plays the first time), but no chips or cards.
+  if (open) return { ...none, noEarn: true, firstWin: !legendDuelPassed(solo, duelId), solo: { ...solo, legends: { ...p, openWins: { ...p.openWins, [duelId]: (p.openWins?.[duelId] ?? 0) + 1 } } } };
   const firstWin = !legendDuelWon(solo, duelId);
   const today = todayString();
   const rewards: Reward[] = [];
