@@ -27,7 +27,10 @@ export function Title({ onStart, hasSave }: { onStart: () => void; hasSave: bool
         <span class="t2">DUELIST SOUL</span>
         <span class="t3">fan remake</span>
       </div>
-      <div class="press">{hasSave ? 'TAP TO CONTINUE' : 'TAP TO START'}</div>
+      <div class="press">
+        <span class="touch-txt">{hasSave ? 'TAP TO CONTINUE' : 'TAP TO START'}</span>
+        <span class="pad-txt">{hasSave ? 'PRESS A TO CONTINUE' : 'PRESS A TO START'}</span>
+      </div>
       <div class="title-foot">A fan project. Yu-Gi-Oh! is © Kazuki Takahashi / Konami.</div>
     </div>
   );
@@ -303,7 +306,10 @@ export function PackOpen({ save, onSave, onDone }: { save: SaveFile; onSave: (s:
         </div>
         {shown < cards.length ? (
           <>
-            <p class="hint">Tap to reveal</p>
+            <p class="hint">
+              <span class="touch-txt">Tap to reveal</span>
+              <span class="pad-txt">A to reveal</span>
+            </p>
             <button class="gbtn reveal-all" onClick={(ev) => (ev.stopPropagation(), playWin(), setShown(cards.length))}>
               Reveal all
             </button>

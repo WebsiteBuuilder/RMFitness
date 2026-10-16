@@ -1,0 +1,275 @@
+/* Controller focus ring, button hints and connect toast (pad.ts). */
+.pad-ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  opacity: 0;
+  border: 3px solid var(--gold, #f7c948);
+  box-shadow: 0 0 0 1px #000000a0, 0 0 14px #f7c948b0, inset 0 0 10px #f7c94860;
+  transition: transform 0.11s cubic-bezier(.2, .8, .3, 1), width 0.11s cubic-bezier(.2, .8, .3, 1), height 0.11s cubic-bezier(.2, .8, .3, 1), opacity 0.15s;
+  will-change: transform;
+  animation: pad-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pad-pulse {
+  50% {
+    box-shadow: 0 0 0 1px #000000a0, 0 0 22px #f7c948e0, inset 0 0 14px #f7c94890;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pad-ring {
+    transition: opacity 0.15s;
+    animation: none;
+  }
+}
+
+/* the focused card in your hand rises out of the fan, like a finger on it */
+.pad-on .duel.touch .thcard.pad-focus:not(.sel) {
+  translate: 0 -10px;
+  scale: 1.06;
+  z-index: 4;
+}
+.pad-on .pad-focus {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pad-hints {
+  position: fixed;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  z-index: 2147483001;
+  translate: 0 12px;
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  max-width: calc(100vw - 16px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0b0d18d8;
+  border: 1px solid #ffffff22;
+  color: #e9ecf8;
+  font: 600 11px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  transition: opacity 0.2s, translate 0.2s;
+}
+.pad-hints.show {
+  opacity: 1;
+  translate: 0 0;
+}
+.pad-hints.guide {
+  border-radius: 12px;
+}
+/* in a duel the hints sit up top, clear of your hand */
+.pad-duel .pad-hints {
+  bottom: auto;
+  top: calc(env(safe-area-inset-top, 0px) + 58px);
+  opacity: 0;
+}
+.pad-duel .pad-hints.show {
+  opacity: 0.9;
+}
+.pad-duel .pad-hints:not(.guide) {
+  padding: 2px 8px;
+  gap: 2px 8px;
+  font-size: 10px;
+}
+.pad-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pad-k {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ffffff1c;
+  border: 1px solid #ffffff40;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+}
+.pad-k.pad-lb,
+.pad-k.pad-rb,
+.pad-k.pad-lt,
+.pad-k.pad-rt,
+.pad-k.pad-start,
+.pad-k.pad-select {
+  border-radius: 5px;
+}
+.pad-xbox.pad-a { background: #2f9e44; border-color: #51cf66; }
+.pad-xbox.pad-b { background: #c92a2a; border-color: #ff6b6b; }
+.pad-xbox.pad-x { background: #1864ab; border-color: #4dabf7; }
+.pad-xbox.pad-y { background: #e8a200; border-color: #ffd43b; color: #1a1a1a; }
+.pad-ps.pad-a { color: #74c0fc; }
+.pad-ps.pad-b { color: #ff8787; }
+.pad-ps.pad-x { color: #f783ac; }
+.pad-ps.pad-y { color: #63e6be; }
+
+.pad-toast {
+  position: fixed;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  z-index: 2147483002;
+  translate: 0 -20px;
+  opacity: 0;
+  pointer-events: none;
+  max-width: calc(100vw - 24px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #11142bee;
+  border: 1px solid var(--gold, #f7c948);
+  color: #fff;
+  font: 600 12px/1.3 system-ui, sans-serif;
+  text-align: center;
+  transition: opacity 0.2s, translate 0.25s cubic-bezier(.2, .8, .3, 1.2);
+}
+.pad-toast.show {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* with a controller the hint bar coaches instead of the touch tips */
+.pad-on .duel.touch .ttoast.hint {
+  display: none;
+}
+
+/* (the ring is on something under the hint bar: let it be seen) */
+.pad-hints.show.under,
+.pad-duel .pad-hints.show.under {
+  opacity: 0.08;
+}
+
+/* the floating Friends button covers lists and menus; with a controller, Friends is under Link Battle */
+.pad-on .ol-pill {
+  display: none;
+}
+/* touch words swap for controller words while a pad is in use */
+.pad-txt {
+  display: none;
+}
+.pad-on .pad-txt,
+.pad-here .pad-txt {
+  display: inline;
+}
+.pad-on .touch-txt,
+.pad-here .touch-txt {
+  display: none;
+}
+/* in a duel, controller notes sit mid-board, clear of both life bars */
+.pad-duel .pad-toast {
+  top: calc(env(safe-area-inset-top, 0px) + 132px);
+}
+.pad-duel .pad-hints.show.dim:not(.guide):not(.under) {
+  opacity: 0.3;
+}
+
+/* scrolled to: with room above, clear of a screen's title bar */
+.pad-on .pad-focus {
+  scroll-margin: 56px 0 72px;
+}
+.pad-on .duel .pad-focus {
+  scroll-margin: 0;
+}
+
+/* the controller's on-screen keyboard */
+.pad-kb {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-inline: auto;
+  max-width: 560px;
+  z-index: 2147482990;
+  padding: 10px 8px calc(48px + env(safe-area-inset-bottom, 0px));
+  background: #0b0d18f2;
+  border-top: 2px solid var(--gold, #f7c948);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 30px #000a;
+  display: grid;
+  gap: 6px;
+  animation: pad-kb-in 0.18s ease-out;
+}
+@keyframes pad-kb-in {
+  from {
+    translate: 0 40px;
+    opacity: 0;
+  }
+}
+.pad-kb-val {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #ffffff14;
+  border: 1px solid #ffffff30;
+  color: #fff;
+  font: 600 17px/1.3 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+.pad-kb-val.empty {
+  color: #ffffff70;
+}
+.pad-kb-row {
+  display: flex;
+  gap: 4px;
+}
+.pad-kb-key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  border-radius: 7px;
+  background: #1d2240;
+  border: 1px solid #ffffff2a;
+  color: #fff;
+  font: 700 16px system-ui, sans-serif;
+  padding: 0;
+}
+.pad-kb-key.wide {
+  flex: 1.6 1 0;
+  font-size: 13px;
+}
+.pad-kb-key.wide2 {
+  flex: 3 1 0;
+  font-size: 13px;
+}
+.pad-kb-shift.on {
+  background: #f7c94840;
+}
+.pad-kb-done {
+  background: linear-gradient(180deg, #f7c948, #c99a1c);
+  color: #1a1400;
+}
+.pad-kb-head {
+  color: var(--gold, #f7c948);
+  font: 700 12px system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* aiming with a controller: the target note sits on the turn row, clear of your Life Points */
+.pad-on .duel.touch .ttoast.aim {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 96px);
+  bottom: auto;
+  left: 50%;
+  translate: -50% 0;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  z-index: 9;
+}
+/* aiming: the attacker's preview steps aside so the targets and the note are clear (Y still shows any card's text) */
+.pad-on .duel.touch:has(.ttoast.aim) .tdetail {
+  display: none;
+}

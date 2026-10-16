@@ -9,6 +9,7 @@ import type { Engine } from '../eds/engine';
 import { other } from '../eds/engine';
 import type { Card, DuelState, FieldCard, Pid, PlayerState, Prompt, SelectOption } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
+import { getEffect } from '../eds/effects';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
@@ -594,7 +595,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          Choose a target: tap a glowing monster{canDirect() ? ' or their portrait' : ''}
+          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Choose a target: tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>
@@ -608,8 +609,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
-    if (state.phase === 'BP') return state.firstTurn ? null : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it';
+    // (with a controller: the buttons, not the finger moves)
+    const pad = document.documentElement.classList.contains('pad-on');
+    if (state.phase === 'BP') return state.firstTurn ? null : pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
+    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, or tap it';
     return null;
   };
 
@@ -628,8 +631,33 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     </>
   );
 
+  /** a card in your hand that has something to do right now (a controller's hints say Play only on those) */
+  const playable = canAct && myTurn && !prompt && state.winner === null && e.inMainPhase();
+  const canPlayNow = (c: Card) => {
+    if (!playable) return false;
+    const info = cardInfo(c.name);
+    if (info?.kind === 'monster') {
+      const eff = getEffect(c.name);
+      return e.canNormalSummon(acting, c) || (!!eff?.summonProc && e.canSpecialProc(acting, c)) || (!!eff?.handIgnition && e.canUseMonsterEffect(acting, c));
+    }
+    return (info?.kind === 'spell' && e.canActivateMain(acting, c.uid)) || e.canSet(acting, c);
+  };
+  /** a controller's Y: the full text of the card the ring is on (never a face-down card that isn't yours) */
+  const padCardText = (ev: Event) => {
+    const uid = Number((ev.target as HTMLElement).closest?.('[data-uid]')?.getAttribute('data-uid'));
+    const found = Number.isFinite(uid) ? e.find(uid) : null;
+    if (!found) return;
+    const mine = found.loc.player === acting || !!ctl.spectator;
+    const z = found.loc.zone;
+    const open = z === 'hand' ? mine || ctl.oppHandShown : z === 'mz' || z === 'sz' || z === 'field' ? (found.card as FieldCard).faceUp || mine : z !== 'deck';
+    if (!open) return;
+    ev.preventDefault();
+    ctl.setInfo(found.card.name, found.card.owner);
+  };
+
   return (
     <div
+      {...({ onpady: padCardText } as object)}
       class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
@@ -699,7 +727,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={() => {
               unlockAudio();
               playBlip();
-              setPhaseOpen(!phaseOpen);
+              setPhaseOpen((o) => !o);
             }}
           >
             <span>{state.phase}</span>
@@ -717,7 +745,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
               <DetailLine name={selCard.name} />
               <p>{cardInfo(selCard.name)?.desc}</p>
-              <span class="tdetail-more">Tap for full text</span>
+              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
             </div>
           </div>
         )}
@@ -734,7 +762,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
         {me.hand.map((c, i) => {
           const arc = (i - (handCount - 1) / 2).toFixed(2);
-          const cls = `thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
+          const cls = `thcard${canPlayNow(c) ? ' can' : ''} ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
           const shown = canAct || !!ctl.spectator || !!ctl.locked;
           return (
             <Piece

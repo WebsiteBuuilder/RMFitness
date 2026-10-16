@@ -3,6 +3,7 @@
 // clashes, cards shattering, a sting per Summon method, Spells, Traps, Skills.
 // Silent until the player's first tap (phones) and while Sound is Off.
 import { audioContext } from './sound';
+import { rumble } from './pad/rumble';
 
 let noiseBuf: AudioBuffer | null = null;
 function noise(ctx: AudioContext) {
@@ -82,6 +83,8 @@ const thud = (size = 0.5, when = 0) => tone(95 + size * 30, 0.3 + size * 0.3, 0.
  * `delta` is the change (negative for damage), `left` the Life Points after it.
  */
 export function lpCount(delta: number, left: number, ms = 600) {
+  // (a controller feels the hit: harder for more damage)
+  if (delta < 0) rumble(Math.min(1, 0.25 + -delta / 3000), 0.5, Math.min(ms, 500));
   const ctx = audioContext();
   if (!ctx || delta === 0) return;
   const amt = Math.abs(delta);
@@ -109,6 +112,7 @@ export function lpCount(delta: number, left: number, ms = 600) {
 
 /** Life Points hit 0: a long falling wail and a flat buzz. */
 export function lpZero(when = 0) {
+  rumble(1, 1, 900, when * 1000);
   tone(520, 1.3, 0.12, when, { type: 'sawtooth', to: 45, lp: 1400 });
   tone(523, 1.1, 0.06, when + 0.05, { type: 'square', to: 60, detune: 18 });
   hiss(1.2, 1600, 120, 0.08, when, 'lowpass');
@@ -126,6 +130,7 @@ export function attack(direct = false) {
 
 /** Two monsters collide (no Life Points lost): a metal crash. */
 export function clash() {
+  rumble(0.55, 0.45, 160);
   thud(0.6);
   hiss(0.35, 3800, 900, 0.22, 0, 'bandpass', 0.002);
   tone(310, 0.5, 0.05, 0, { type: 'square', to: 290 });
@@ -134,12 +139,14 @@ export function clash() {
 
 /** A blow lands on a player: a heavy impact (the counter follows). */
 export function impact() {
+  rumble(0.9, 0.7, 240);
   thud(0.9);
   hiss(0.3, 2400, 300, 0.2, 0, 'bandpass', 0.002);
 }
 
 /** A card is destroyed: it shatters like glass. */
 export function shatter(when = 0) {
+  rumble(0.3, 0.6, 140, when * 1000);
   thud(0.35, when);
   hiss(0.45, 6000, 2500, 0.18, when, 'highpass', 0.002);
   for (let i = 0; i < 6; i++) tone(2400 + Math.random() * 2600, 0.12 + Math.random() * 0.15, 0.025, when + 0.02 + i * 0.035, { type: 'triangle' });

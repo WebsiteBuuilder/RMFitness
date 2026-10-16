@@ -385,7 +385,10 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
             )}
             <span class="pack-logo">SPEED DUEL</span>
             <span class="pack-name">{shortSetName(opened.set ?? '')}</span>
-            <span class="pack-note">tap to tear it open</span>
+            <span class="pack-note">
+              <span class="touch-txt">tap to tear it open</span>
+              <span class="pad-txt">A to tear it open</span>
+            </span>
           </button>
         ) : (
           <>
@@ -456,6 +459,7 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
   const top = best(cards.map((c) => c.f));
   const shards = opened.reduce((t, o) => t + o.shards, 0);
   const [limit, setLimit] = useState(PAGE);
+  const [info, setInfo] = useState<string | null>(null);
   // Keep the floating Friends button off the cards while the summary is up.
   useEffect(() => {
     document.documentElement.classList.add('no-pill');
@@ -471,13 +475,13 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
         </p>
         <div class="binder">
           {cards.slice(0, limit).map(({ n, set, f, x }) => (
-            <span key={n} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`}>
+            <button key={n} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`} onClick={() => setInfo(n)}>
               <CardImg name={n} />
               <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
               {f > 0 && <span class={`rv-fin lv-chip lv-${TIERS[f].id}`}>{chipText(TIERS[f].id)}</span>}
               {fresh.has(n) && <span class="bnew">NEW</span>}
               {x > 1 && <span class="bcount">×{x}</span>}
-            </span>
+            </button>
           ))}
         </div>
         {cards.length > limit && (
@@ -487,6 +491,13 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
         )}
         <Menu items={[{ label: 'Done', onPick: onDone }]} />
       </div>
+      {info && (
+        <Overlay onClose={() => setInfo(null)}>
+          <Win title="Card Info" onClose={() => setInfo(null)}>
+            <CardInfoPanel name={info} />
+          </Win>
+        </Overlay>
+      )}
     </Overlay>
   );
 }
