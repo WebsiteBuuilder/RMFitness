@@ -921,7 +921,8 @@ function renderHints(force = false) {
   const key = family + JSON.stringify(list) + guide;
   // in a duel they show for a moment (and while the guide is open), then get out of the way
   // (out of the way while a command bubble, the phase menu or a sheet is open)
-  hints.classList.toggle('show', !(duel && !guide && document.querySelector('.duel .tactions, .duel .tphase-menu, .overlay, .tsheet, .csheet-back, .tresult')));
+  // (a question sheet hides them even with the guide open: they'd sit on its choices)
+  hints.classList.toggle('show', !(duel && (document.querySelector('.overlay, .tsheet, .csheet-back, .tresult') || (!guide && document.querySelector('.duel .tactions, .duel .tphase-menu')))));
   // (in a duel: just over your Life Points, clear of the hand and the other player's side)
   const lp = document.querySelector('.duel.touch .tbar.bottom')?.getBoundingClientRect();
   const bt = lp ? lp.top : duel ? innerHeight : bottomBarTop();
