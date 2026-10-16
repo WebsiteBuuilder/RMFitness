@@ -671,6 +671,18 @@ function figureGeometry(segs: number): BufferGeometry {
   return list[Math.random() < 0.5 ? 0 : 1];
 }
 
+/** Builds the figure meshes for these detail levels ahead of time, one pattern per quiet moment (never mid-shot). */
+export function warmFigureGeometry(segsList: number[]): void {
+  const todo = segsList.flatMap((n) => [n, n]);
+  const next = () => {
+    const n = todo.shift();
+    if (n === undefined) return;
+    if ((figGeos.get(n)?.length ?? 0) < 2) figureGeometry(n);
+    if (todo.length) nextQuiet(next);
+  };
+  nextQuiet(next);
+}
+
 /** A figure is done with its textures: the GPU copies go once no figure uses them (they upload again if needed). */
 function releaseArtTextures(t: ArtTextures) {
   if (--t.users > 0) return;
@@ -2620,7 +2632,10 @@ export class Stage {
   /** Compiles every material's program ahead of time (resolves when ready to draw without stalls). */
   prewarm(): Promise<void> {
     if (this.lost || this.disposed) return Promise.resolve();
-    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed));
+    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed).then(() =>
+      // the field figures (40) and this stage's own (see runtime.ts)
+      warmFigureGeometry([40, this.quality === 'full' ? 56 : 32]),
+    ));
   }
 
   private uploads: Texture[] = [];
