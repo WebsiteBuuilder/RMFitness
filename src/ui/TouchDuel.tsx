@@ -727,7 +727,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={() => {
               unlockAudio();
               playBlip();
-              setPhaseOpen(!phaseOpen);
+              setPhaseOpen((o) => !o);
             }}
           >
             <span>{state.phase}</span>

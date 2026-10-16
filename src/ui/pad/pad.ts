@@ -151,6 +151,22 @@ function candidates(): Cand[] {
   }
 }
 function scan(): Cand[] {
+  const all = scanAll();
+  // a result screen, sheet or keyboard over everything: the ring stays on it
+  const modal = [...document.querySelectorAll('.tresult, .csheet-back, .tsheet, .overlay, .pad-kb')].pop();
+  if (modal) {
+    const inside = all.filter((x) => modal.contains(x.el));
+    // (a sheet asking for a card on the field keeps those cards in reach)
+    if (inside.length) return modal.matches('.tsheet, .csheet-back') ? [...inside, ...all.filter((x) => x.el.matches('.pick') && !modal.contains(x.el))] : inside;
+  }
+  // aiming an attack: only the targets (and the portrait for a direct attack, and Cancel)
+  if (document.querySelector('.duel .ttoast.aim')) {
+    const t = all.filter((x) => x.el.matches('.pick, .tbar.top, .ttoast.aim button'));
+    if (t.length) return t;
+  }
+  return all;
+}
+function scanAll(): Cand[] {
   const all = new Set<Element>(document.querySelectorAll(NATIVE));
   for (const el of tappable()) all.add(el);
   all.delete(document.body);
@@ -498,7 +514,13 @@ function press() {
       // back on the box; Done on a box with a button after it (Log in, Join) goes on to that button
       if (!box.isConnected) return void validate(true);
       setFocus(box);
-      if (box.value) move('down');
+      if (!box.value) return;
+      // on to the box's own button (Log in, Join, Add), else the next thing down
+      const c = candidates();
+      const r = rectOf(box);
+      const go = c.filter((x) => /^\W*(join|log ?in|go|ok|add|create|save|send|search|rename)\b/i.test(x.el.textContent ?? '') && Math.abs(center(x.box) - center(r)) < 140);
+      if (go.length) setFocus(go[nearest(r.right, center(r), go.map((x) => x.box))].el);
+      else move('down');
     });
     cameFrom = null;
     setTimeout(() => validate(true), 30);
@@ -664,6 +686,8 @@ function cardInfo() {
 }
 
 function onButton(b: Btn) {
+  // the result screen: only its own buttons
+  if (document.querySelector('.tresult') && (b === 'x' || b === 'y' || b === 'lb' || b === 'rb')) return;
   switch (b) {
     case 'up':
     case 'down':
@@ -687,9 +711,18 @@ function onButton(b: Btn) {
       const duel = document.querySelector<HTMLElement>('.duel.touch');
       const delay = duel?.querySelector('.tactions') ? (duel.click(), 40) : 0;
       setTimeout(() => {
+        if (document.querySelector('.duel .ttoast.aim')) return void say('Choose a target first · B cancels the attack');
+        // (open already: X closes it)
+        if (document.querySelector('.duel .tphase-menu')) return void (duel?.click(), setTimeout(() => validate(true), 60));
         const ph = visible('.tphase-btn:not([disabled]), .phasebtns .gbtn:not(.end)');
-        if (ph) tap(ph);
-        else say('No phase to change to right now');
+        if (ph) {
+          tap(ph);
+          // (it didn't open: once more)
+          setTimeout(() => {
+            if (ph.isConnected && ph.matches('.tphase-btn:not([disabled])') && !document.querySelector('.duel .tphase-menu')) ph.click();
+            setTimeout(() => validate(true), 60);
+          }, 140);
+        } else say(document.querySelector('.duel.turn-me') ? 'Finish what the duel is asking first' : "It's the other duelist's turn");
         setTimeout(() => validate(true), 60);
       }, delay);
       return;

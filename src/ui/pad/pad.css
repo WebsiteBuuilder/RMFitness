@@ -257,3 +257,9 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* aiming with a controller: the target note sits on the turn row, clear of your Life Points */
+.pad-on .duel.touch .ttoast.aim {
+  top: 47%;
+  bottom: auto;
+}
