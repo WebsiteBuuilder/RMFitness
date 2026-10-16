@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { memo } from 'preact/compat';
 import { card, imageUrl } from '../eds/db';
 import type { Pid } from '../eds/types';
 import { TIERS, meterOf, tierIndex } from '../level/leveling';
@@ -17,7 +18,10 @@ const GLINTS = (
 );
 
 /** Card picture with a drawn fallback when the image is missing. `owner` picks whose rarity a duel card shows. */
-export function CardImg({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
+// Memoized: a duel re-renders on every move, and an unchanged card needn't be diffed again.
+export const CardImg = memo(CardImgView);
+
+function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
   const [broken, setBroken] = useState<string | null>(null);
   if (back) return <div class={`cimg cback ${cls}`} />;

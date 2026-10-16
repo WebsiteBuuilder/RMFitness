@@ -65,7 +65,7 @@ export function rectOf(uid: number, host: HTMLElement | null): Rect | null {
   const el = zoneEl(uid);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  const h = host.getBoundingClientRect();
+  const h = hostRect(host, performance.now());
   if (r.width === 0) return null;
   return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2, w: r.width, h: r.height };
 }
@@ -101,11 +101,42 @@ function ref(state: DuelState, uid: number, viewer: Pid, host: HTMLElement | nul
  */
 function live(c: CardRef, host: HTMLElement | null): CardRef {
   let last = c.rect;
+  // the stage reads this every frame: the card's element is kept while it stays on the page,
+  // and a read within the same frame gives the same answer without measuring again
+  let el: HTMLElement | null = null;
+  let at = -1;
   return Object.defineProperty(c, 'rect', {
     enumerable: true,
     configurable: true,
-    get: () => (last = rectOf(c.uid, host ?? (typeof document === 'undefined' ? null : document.querySelector<HTMLElement>('.art-stage'))) ?? last),
+    get: () => {
+      if (typeof document === 'undefined') return last;
+      const now = performance.now();
+      if (now - at < 12) return last;
+      at = now;
+      if (!el?.isConnected || el.dataset.uid !== String(c.uid)) el = zoneEl(c.uid);
+      const h = host ?? stageHost();
+      if (!el || !h) return last;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0) return last;
+      const hr = hostRect(h, now);
+      return (last = { x: r.left - hr.left + r.width / 2, y: r.top - hr.top + r.height / 2, w: r.width, h: r.height });
+    },
   });
+}
+
+let stageEl: HTMLElement | null = null;
+const stageHost = () => (stageEl?.isConnected ? stageEl : (stageEl = document.querySelector<HTMLElement>('.art-stage')));
+/** The host's place, measured once a frame for every card that asks. */
+let hostAt = -1;
+let hostOf: HTMLElement | null = null;
+let hostBox: DOMRect | null = null;
+function hostRect(h: HTMLElement, now: number): DOMRect {
+  if (hostOf !== h || now - hostAt >= 12 || !hostBox) {
+    hostOf = h;
+    hostAt = now;
+    hostBox = h.getBoundingClientRect();
+  }
+  return hostBox;
 }
 
 /** Cards that leave the field after event `i`, before the next activation (what that effect destroyed). */
@@ -134,12 +165,21 @@ export function coalesce(cues: Cue[]): Cue[] {
 export function memoField(state: DuelState, viewer: Pid, host: HTMLElement | null, prev?: FieldMemo): FieldMemo {
   const m: FieldMemo = new Map();
   for (const p of [0, 1] as Pid[])
-    for (const c of state.players[p].mz) {
-      if (!c) continue;
-      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, owner: c.owner, rect: rectOf(c.uid, host) ?? prev?.get(c.uid)?.rect ?? null, def: c.pos === 'def' });
-    }
+    state.players[p].mz.forEach((c, i) => {
+      if (!c) return;
+      // a monster still in the zone and position it was last measured in keeps that place
+      // (this runs on every step of a turn: measuring each time forced a layout per step)
+      const at = `${p}${i}${c.pos}`;
+      const old = prev?.get(c.uid)?.rect ?? null;
+      const rect = old && placedAt.get(c.uid) === at ? old : rectOf(c.uid, host) ?? old;
+      if (rect) placedAt.set(c.uid, at);
+      m.set(c.uid, { uid: c.uid, name: c.faceUp || p === viewer ? c.name : '', faceUp: c.faceUp, controller: p, owner: c.owner, rect, def: c.pos === 'def' });
+    });
   return m;
 }
+/** Where each monster's remembered place was measured (player, zone, position); forgotten on a resize. */
+const placedAt = new Map<number, string>();
+if (typeof window !== 'undefined') window.addEventListener('resize', () => placedAt.clear());
 
 export type SummonHow = 'normal' | 'tribute' | 'special' | 'fusion' | 'ritual' | 'xyz' | 'synchro' | 'link';
 const HOWS = new Set<SummonHow>(['normal', 'tribute', 'special', 'fusion', 'ritual', 'xyz', 'synchro', 'link']);

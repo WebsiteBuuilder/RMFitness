@@ -369,6 +369,12 @@ void main(){
   gl_FragColor = vec4(c * alpha, alpha);
 }`;
 
+/** Runs `f` at the next quiet moment (an idle callback, at most ~0.8 s away), else the next frame. */
+function nextQuiet(f: () => void): number {
+  const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+  return w.requestIdleCallback ? w.requestIdleCallback(f, { timeout: 800 }) : requestAnimationFrame(f);
+}
+
 /** Where a figure's subject stands in its art (uv: 0..1, v up), measured once per art. */
 export interface Footprint {
   /** horizontal center of the feet */
@@ -399,11 +405,14 @@ export function footprint(art: ArtData): Footprint {
   let rel: Float32Array;
   try {
     if (art.relief) {
-      const c = document.createElement('canvas');
-      c.width = c.height = n;
-      const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.drawImage(art.relief, 0, 0, n, n);
-      const px = g.getImageData(0, 0, n, n).data;
+      let px = art.reliefPx && n === 64 ? art.reliefPx : null;
+      if (!px) {
+        const c = document.createElement('canvas');
+        c.width = c.height = n;
+        const g = c.getContext('2d', { willReadFrequently: true })!;
+        g.drawImage(art.relief, 0, 0, n, n);
+        px = g.getImageData(0, 0, n, n).data;
+      }
       mask = new Float32Array(n * n);
       rel = new Float32Array(n * n);
       for (let i = 0; i < n * n; i++) {
@@ -513,17 +522,27 @@ export function artTame(art: ArtData): number {
   let tame = 0;
   try {
     const n = 32;
-    const c = document.createElement('canvas');
-    c.width = c.height = n;
-    const g = c.getContext('2d', { willReadFrequently: true })!;
-    g.drawImage(art.art, 0, 0, n, n);
-    const px = g.getImageData(0, 0, n, n).data;
+    // (the pixels read while the art loaded, when there are; drawn and read here otherwise)
+    let g: CanvasRenderingContext2D | null = null;
+    const ctx = () => {
+      if (g) return g;
+      const c = document.createElement('canvas');
+      c.width = c.height = n;
+      return (g = c.getContext('2d', { willReadFrequently: true })!);
+    };
+    const read = (src: CanvasImageSource) => {
+      const k = ctx();
+      k.clearRect(0, 0, n, n);
+      k.drawImage(src, 0, 0, n, n);
+      return k.getImageData(0, 0, n, n).data;
+    };
+    const px = art.artPx ?? read(art.art);
     let ma: Uint8ClampedArray | null = null;
-    if (art.relief) {
-      g.clearRect(0, 0, n, n);
-      g.drawImage(art.relief, 0, 0, n, n);
-      ma = g.getImageData(0, 0, n, n).data;
-    }
+    if (art.reliefPx) {
+      // every other pixel of the 64×64 copy
+      ma = new Uint8ClampedArray(n * n * 4);
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) ma.set(art.reliefPx.subarray(((y * 2) * 64 + x * 2) * 4, ((y * 2) * 64 + x * 2) * 4 + 4), (y * n + x) * 4);
+    } else if (art.relief) ma = read(art.relief);
     let w = 0;
     let lum = 0;
     let sat = 0;
@@ -611,6 +630,59 @@ export function artTextures(art: ArtData): ArtTextures {
   return t;
 }
 
+/**
+ * A Figure's mesh: a non-indexed segs×segs grid with each triangle's centre and a random
+ * shatter direction per triangle. Built once per detail level (two shatter patterns each)
+ * and shared by every figure: building it per summon was most of a cinematic's garbage.
+ * Shared, so it is never disposed (a dispose() from a figure or crack is a no-op).
+ */
+const figGeos = new Map<number, BufferGeometry[]>();
+function figureGeometry(segs: number): BufferGeometry {
+  let list = figGeos.get(segs);
+  if (!list) figGeos.set(segs, (list = []));
+  if (list.length < 2) {
+    const geo = new PlaneGeometry(1, 1, segs, segs).toNonIndexed();
+    const pos = geo.getAttribute('position');
+    const n = pos.count;
+    const centroid = new Float32Array(n * 3);
+    const rnd = new Float32Array(n * 3);
+    for (let t = 0; t < n; t += 3) {
+      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
+      const r0 = Math.random();
+      const r1 = Math.random();
+      const r2 = Math.random();
+      for (let k = 0; k < 3; k++) {
+        const i = (t + k) * 3;
+        centroid[i] = cx;
+        centroid[i + 1] = cy;
+        rnd[i] = r0;
+        rnd[i + 1] = r1;
+        rnd[i + 2] = r2;
+      }
+    }
+    geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
+    geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
+    geo.computeBoundingSphere();
+    geo.dispose = () => {};
+    list.push(geo);
+    return geo;
+  }
+  return list[Math.random() < 0.5 ? 0 : 1];
+}
+
+/** Builds the figure meshes for these detail levels ahead of time, one pattern per quiet moment (never mid-shot). */
+export function warmFigureGeometry(segsList: number[]): void {
+  const todo = segsList.flatMap((n) => [n, n]);
+  const next = () => {
+    const n = todo.shift();
+    if (n === undefined) return;
+    if ((figGeos.get(n)?.length ?? 0) < 2) figureGeometry(n);
+    if (todo.length) nextQuiet(next);
+  };
+  nextQuiet(next);
+}
+
 /** A figure is done with its textures: the GPU copies go once no figure uses them (they upload again if needed). */
 function releaseArtTextures(t: ArtTextures) {
   if (--t.users > 0) return;
@@ -641,28 +713,7 @@ export class Figure implements Fx {
   time = Math.random() * 10;
 
   constructor(art: ArtData, size: number, segs: number, glow: number, depthAmt: number, opts: FigureOptions = {}) {
-    const geo = new PlaneGeometry(1, 1, segs, segs).toNonIndexed();
-    const pos = geo.getAttribute('position');
-    const n = pos.count;
-    const centroid = new Float32Array(n * 3);
-    const rnd = new Float32Array(n * 3);
-    for (let t = 0; t < n; t += 3) {
-      const cx = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
-      const cy = (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3;
-      const r0 = Math.random();
-      const r1 = Math.random();
-      const r2 = Math.random();
-      for (let k = 0; k < 3; k++) {
-        const i = (t + k) * 3;
-        centroid[i] = cx;
-        centroid[i + 1] = cy;
-        rnd[i] = r0;
-        rnd[i + 1] = r1;
-        rnd[i + 2] = r2;
-      }
-    }
-    geo.setAttribute('aCenter', new BufferAttribute(centroid, 3));
-    geo.setAttribute('rnd', new BufferAttribute(rnd, 3));
+    const geo = figureGeometry(segs);
     // shared per card picture: uploaded once (ahead of time, see Stage.upload), not per figure
     this.texs = artTextures(art);
     this.texs.users++;
@@ -2581,10 +2632,14 @@ export class Stage {
   /** Compiles every material's program ahead of time (resolves when ready to draw without stalls). */
   prewarm(): Promise<void> {
     if (this.lost || this.disposed) return Promise.resolve();
-    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed));
+    return (this.warm ??= prewarmRenderer(this.renderer, this.camera, WARM_ORDER, () => !this.lost && !this.disposed).then(() =>
+      // the field figures (40) and this stage's own (see runtime.ts)
+      warmFigureGeometry([40, this.quality === 'full' ? 56 : 32]),
+    ));
   }
 
   private uploads: Texture[] = [];
+  // (paced by idle time, not back-to-back frames: each upload competes with the board for the GPU)
   private uploadRaf = 0;
 
   /**
@@ -2594,8 +2649,10 @@ export class Stage {
   upload(art: ArtData) {
     if (this.lost || this.disposed) return;
     const t = artTextures(art);
+    // (and the figure's colour taming worked out now, in loading time, not at the start of its shot)
+    artTame(art);
     for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
-    this.uploadRaf ||= requestAnimationFrame(this.onUpload);
+    this.uploadRaf ||= nextQuiet(this.onUpload);
   }
 
   private onUpload = () => this.uploadOne();
@@ -2610,7 +2667,7 @@ export class Stage {
     } catch {
       /* a lost context mid-upload: it uploads on first use instead */
     }
-    if (this.uploads.length) this.uploadRaf = requestAnimationFrame(this.onUpload);
+    if (this.uploads.length) this.uploadRaf = nextQuiet(this.onUpload);
   }
 
   resize() {
@@ -2913,6 +2970,7 @@ export class Stage {
     this.clear();
     this.disposed = true;
     cancelAnimationFrame(this.uploadRaf);
+    (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.uploadRaf);
     this.uploads.length = 0;
     this.canvas.removeEventListener('webglcontextlost', this.handleLost, false);
     this.canvas.removeEventListener('webglcontextrestored', this.handleRestore, false);

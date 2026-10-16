@@ -355,13 +355,14 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     return () => void (gone = true);
   }, [on3d]);
 
-  // Monsters standing on their cards: every face-up monster on the field.
+  // Monsters standing on their cards: every face-up monster on the field (a Token stays a flat card:
+  // its art is a plain disc that rose as a smeared blob).
   // (ready: may attack in its controller's Battle Phase; hit: an attack or effect aims at it)
   const standing: BoardMonster[] = [];
   if (on3d && state.winner === null)
     for (const p of [0, 1] as Pid[])
       for (const c of state.players[p].mz)
-        if (c?.faceUp)
+        if (c?.faceUp && !c.token)
           standing.push({
             uid: c.uid,
             name: c.name,

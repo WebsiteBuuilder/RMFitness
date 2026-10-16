@@ -2,6 +2,7 @@
 // the card frame, a depth map guessed from the art (the subject stands forward,
 // the background falls back) and the art's own main colors.
 import { card, imageUrl } from '../eds/db';
+import { pressQuiet } from './hold';
 
 /** The artwork box inside a full card picture, as fractions of its size. */
 export const ART_BOX = { x: 0.12, y: 0.178, w: 0.76, h: 0.525 };
@@ -20,6 +21,13 @@ export interface ArtData {
    * background. Much cleaner than the guessed depth.
    */
   relief: HTMLImageElement | null;
+  /**
+   * Small pixel copies read once while the art loads (in the background), so measuring a
+   * figure later never draws and reads an image mid-duel (that can stall a frame for seconds
+   * while the GPU is busy): the relief at 64×64 and the art at 32×32, RGBA.
+   */
+  reliefPx?: Uint8ClampedArray;
+  artPx?: Uint8ClampedArray;
   /** three main colors of the art, most striking first (0xRRGGBB) */
   palette: number[];
   /** the card's id when known (per-card figure tunes, src/art/overrides.ts) */
@@ -185,15 +193,16 @@ function figures(): Promise<Record<string, number[]>> {
   return figIndex;
 }
 
-async function relief(name: string): Promise<{ img: HTMLImageElement; palette: number[] } | null> {
+async function relief(name: string): Promise<{ img: HTMLImageElement; palette: number[]; px?: Uint8ClampedArray } | null> {
   const id = card(name)?.id;
   if (!id) return null;
   const palette = (await figures())[id];
   if (!palette) return null;
   try {
-    const img = await loadImage(`${BASE}cards/fig/${id}.webp`);
+    const src = `${BASE}cards/fig/${id}.webp`;
+    const [img, px] = await Promise.all([loadImage(src), pxOff(src, 64)]);
     await img.decode?.().catch(() => {});
-    return { img, palette };
+    return { img, palette, px };
   } catch {
     return null;
   }
@@ -205,10 +214,12 @@ async function build(name: string): Promise<ArtData> {
   let full: HTMLCanvasElement;
   try {
     if (!url) throw new Error('no image');
-    const img = await loadImage(url);
-    await img.decode?.().catch(() => {});
-    full = canvas(img.naturalWidth || 300, img.naturalHeight || 437);
-    full.getContext('2d')!.drawImage(img, 0, 0, full.width, full.height);
+    // decoded off the page where the browser can (createImageBitmap from the file), so drawing it is a copy
+    const img = await decoded(url);
+    full = canvas(img.width || 300, img.height || 437);
+    // CPU-backed (willReadFrequently): the reads of this art below and in artTame never stall on the GPU
+    full.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, full.width, full.height);
+    if ('close' in img) img.close();
   } catch {
     full = drawnCard(name);
   }
@@ -217,15 +228,68 @@ async function build(name: string): Promise<ArtData> {
   const sw = full.width * ART_BOX.w;
   const sh = full.height * ART_BOX.h;
   const art = canvas(256, 256);
-  art.getContext('2d')!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
+  art.getContext('2d', { willReadFrequently: true })!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
   const id = card(name)?.id;
-  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id };
+  const artPx = readPx(art, 32);
+  if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id, reliefPx: pre.px ?? readPx(pre.img, 64), artPx };
   const small = canvas(DEPTH_SIZE, DEPTH_SIZE);
   const sg = small.getContext('2d', { willReadFrequently: true })!;
   sg.drawImage(art, 0, 0, DEPTH_SIZE, DEPTH_SIZE);
   const { depth, palette } = analyse(sg.getImageData(0, 0, DEPTH_SIZE, DEPTH_SIZE).data, DEPTH_SIZE);
-  return { art, full, depth, relief: null, palette, id };
+  return { art, full, depth, relief: null, palette, id, artPx };
+}
+
+let pxWorker: Worker | null | undefined;
+let pxSeq = 0;
+const pxWaiting = new Map<number, (px: Uint8ClampedArray | undefined) => void>();
+/** The picture at `url` read at n×n by a worker, off the page (undefined where workers can't). */
+function pxOff(url: string, n: number): Promise<Uint8ClampedArray | undefined> {
+  if (pxWorker === undefined) {
+    try {
+      pxWorker = typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' ? new Worker(new URL('./px.worker.ts', import.meta.url), { type: 'module' }) : null;
+      pxWorker?.addEventListener('message', (e: MessageEvent<{ id: number; px: Uint8ClampedArray | null }>) => {
+        pxWaiting.get(e.data.id)?.(e.data.px ?? undefined);
+        pxWaiting.delete(e.data.id);
+      });
+    } catch {
+      pxWorker = null;
+    }
+  }
+  if (!pxWorker) return Promise.resolve(undefined);
+  const id = ++pxSeq;
+  return new Promise((ok) => {
+    pxWaiting.set(id, ok);
+    pxWorker!.postMessage({ id, url: new URL(url, location.href).href, n });
+  });
+}
+
+/** The picture at `url`, decoded: an ImageBitmap (decoded off the page) or, where that can't be, a decoded <img>. */
+async function decoded(url: string): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await createImageBitmap(await r.blob());
+    } catch {
+      /* the <img> way below */
+    }
+  }
+  const img = await loadImage(url);
+  await img.decode?.().catch(() => {});
+  img.width ||= img.naturalWidth;
+  img.height ||= img.naturalHeight;
+  return img;
+}
+
+/** `src` drawn at n×n on a CPU-backed canvas and read back (undefined if that fails). */
+function readPx(src: CanvasImageSource, n: number): Uint8ClampedArray | undefined {
+  try {
+    const g = canvas(n, n).getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(src, 0, 0, n, n);
+    return g.getImageData(0, 0, n, n).data;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Art data for a card, built once and cached (the last 40 cards). */
@@ -253,13 +317,22 @@ const CACHE_MAX = 48;
 export async function preloadArt(names: string[], stop: () => boolean = () => false, each?: (art: ArtData) => void): Promise<void> {
   const list = names.filter((n) => !!card(n)).slice(0, CACHE_MAX - 8);
   let i = 0;
-  const pause = () => new Promise<void>((ok) => setTimeout(ok, 60));
+  // between cards, wait for an idle moment (never mid-animation when the phone is busy)
+  const w = typeof window !== 'undefined' ? (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) : null;
+  const idle = () => new Promise<void>((ok) => (w?.requestIdleCallback ? w.requestIdleCallback(() => ok(), { timeout: 1500 }) : setTimeout(ok, 60)));
+  // and never while a cinematic plays or a finger is on the screen (up to 8 s of waiting, then on)
+  const pause = async () => {
+    await idle();
+    for (let k = 0; k < 40 && typeof document !== 'undefined' && (document.body.classList.contains('art-on') || pressQuiet()); k++) await new Promise((ok) => setTimeout(ok, 200));
+  };
   const worker = async () => {
     while (i < list.length && !stop()) {
+      // (the first waits too: the opening deal may have asked for a quiet moment)
+      await pause();
+      if (i >= list.length || stop()) break;
       const n = list[i++];
       const art = await artFor(n).catch(() => null);
       if (art && each && !stop()) each(art);
-      await pause();
     }
   };
   await Promise.all([worker(), worker()]);

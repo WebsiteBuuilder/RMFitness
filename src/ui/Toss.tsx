@@ -15,8 +15,8 @@ const LABEL: Record<Hand, string> = { rock: 'Rock', paper: 'Paper', scissors: 'S
 /** seconds to throw or pick before the game does it for you (nobody waits on a phone left on the table) */
 const THROW_SECS = 10;
 /** how long a throw's reveal stays up, and the "X goes first" banner before the duel starts */
-const REVEAL_MS = 2100;
-const GO_MS = 1500;
+const REVEAL_MS = 1700;
+const GO_MS = 800;
 
 export function TossScreen({
   session,
@@ -125,7 +125,7 @@ export function TossScreen({
   }, [throwing, t.round, !!t.hands[other(cpuSeat ?? 0)]]);
   useEffect(() => {
     if (cpuSeat === null || !choosing || t.chooser !== cpuSeat) return;
-    const id = window.setTimeout(() => pick(cpuSeat, cpuSeat), 1100);
+    const id = window.setTimeout(() => pick(cpuSeat, cpuSeat), 800);
     return () => clearTimeout(id);
   }, [choosing, t.chooser]);
 

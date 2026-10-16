@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { loadDb, loadSpeedDb } from '../eds/db';
 import { activeDeck, loadSpeedSave, speedDeckProblems, withSpeedResult, writeSpeedSave, type SpeedSave } from '../eds/speedSave';
 import type { Action, GameMode } from '../eds/types';
@@ -92,6 +92,14 @@ export function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [save, setSaveState] = useState<SaveFile | null>(null);
   const [screen, setScreen] = useState<Screen>('title');
+  // A new screen fades in (opacity only: a transform here would move the screens' fixed layers).
+  useLayoutEffect(() => {
+    const el = document.getElementById('app');
+    if (!el) return;
+    el.classList.remove('scr-in');
+    void el.offsetWidth;
+    el.classList.add('scr-in');
+  }, [screen]);
   const [dbReady, setDbReady] = useState(false);
   const [session, setSession] = useState<DuelSession | null>(null);
   const [hotseat, setHotseat] = useState(false);

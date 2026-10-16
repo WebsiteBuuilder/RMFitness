@@ -41,6 +41,10 @@ export const START_GRACE_MS = 4000;
 export const WATCHDOG_SLACK_MS = 1500;
 /** An opponent's summon that is not a big one plays this much faster (a short version). */
 export const OPP_SUMMON_SCALE = 2.5;
+/** Attacks after the duel's first two play this much faster. */
+export const REPEAT_ATTACK_SCALE = 1.3;
+/** Your own Spell/Trap that strikes nothing plays this much faster (repeats: 2x). */
+export const OWN_ST_SCALE = 1.35;
 /** Life Points count to their new value over this long (LpCount). */
 export const LP_TICK_MS = 600;
 /** The result shows this long after the Life Points have finished counting down. */
@@ -190,6 +194,8 @@ export class Flow {
   private track: CueTrack = { battle: null };
   /** card names already summoned with a cinematic this duel (a repeat plays a short version) */
   private summoned = new Set<string>();
+  /** attacks played so far this duel (after the first two, they play a little brisker) */
+  private attacks = 0;
   /** Spells/Traps that already played their activation (a face-up card using its effect again stays quiet under Big moments) */
   private activated = new Set<number>();
   /** Spell/Trap names already seen activated this duel (a repeat plays faster) */
@@ -282,8 +288,12 @@ export class Flow {
           // the opponent's everyday Spell/Trap (a Continuous, Field or Equip card that strikes nothing): a short version
           const strikes = !!c.targets?.length || !!c.field?.some((f) => f.dies);
           if (c.card.controller !== viewer && !strikes && !SIGNATURES.has(c.card.name)) return OPP_SUMMON_SCALE;
+          // your own everyday Spell/Trap (strikes nothing): a brisker version, so your turn keeps its pace
+          if (!strikes && !SIGNATURES.has(c.card.name)) return again ? 2 : OWN_ST_SCALE;
           return again ? 1.6 : 1;
         }
+        if (c.kind === 'attack') this.attacks++;
+        if (c.kind === 'attack' || c.kind === 'hit') return this.attacks > 2 ? REPEAT_ATTACK_SCALE : 1;
         if (c.kind !== 'summon' && c.kind !== 'flip') return 1;
         if (!c.card.name) return 1;
         const again = this.summoned.has(c.card.name);

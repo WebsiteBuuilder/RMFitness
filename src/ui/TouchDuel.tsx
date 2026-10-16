@@ -1,7 +1,8 @@
 // Touch controls: a Master Duel-style duel screen. Tap a card to see it and what it can do,
 // drag a card from your hand onto the field to play it, drag a monster onto a target to attack.
 // The rules and every move go through the same engine actions as the Classic screen.
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren, VNode } from 'preact';
+import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession } from '../eds/session';
 import type { Engine } from '../eds/engine';
@@ -13,6 +14,8 @@ import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
+import { useFlights } from './flights';
+import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -56,6 +59,8 @@ export interface TouchCtl {
   onFinished: (winner: Pid | 'draw') => void;
 }
 
+/** the hint line under the turn row comes and goes (it moves the row a little) */
+
 const PHASE_NAMES: Record<string, string> = { DP: 'Draw', SP: 'Standby', M1: 'Main 1', BP: 'Battle', M2: 'Main 2', EP: 'End' };
 
 /** A card being dragged: where it came from and where the finger is. */
@@ -82,18 +87,57 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   // where the turn / phase row sits on screen (its flat copy over the field figures follows it)
   const midRef = useRef<HTMLDivElement>(null);
   const [midBox, setMidBox] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [, setResized] = useState(0);
+  const [resized, setResized] = useState(0);
   useEffect(() => {
     const on = () => setResized((n) => n + 1);
     window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
+    // the field swings into place as the duel opens: place the turn row again once it has
+    const t = setTimeout(on, 900);
+    // (and when the row itself changes size: not on every step of a turn, which forced a layout each time)
+    const ro = typeof ResizeObserver !== 'undefined' && midRef.current ? new ResizeObserver(on) : null;
+    if (ro && midRef.current) ro.observe(midRef.current);
+    return () => (window.removeEventListener('resize', on), clearTimeout(t), ro?.disconnect());
   }, []);
+  // (measured only when the layout can have moved: not after every render, which forced a layout each time)
+  const figuresOn = typeof document !== 'undefined' && document.body.classList.contains('art3d-on');
   useLayoutEffect(() => {
     const el = midRef.current;
-    const b = el && document.body.classList.contains('art3d-on') ? el.getBoundingClientRect() : null;
+    const b = el && figuresOn ? el.getBoundingClientRect() : null;
     const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
     if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
-  });
+  }, [resized, figuresOn, state.winner]);
+
+  useFlights(root, state, acting);
+
+  // The opening swing starts two frames after the screen opens, once its first heavy frame is painted.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    let a = requestAnimationFrame(() => (a = requestAnimationFrame(() => setArmed(true))));
+    return () => cancelAnimationFrame(a);
+  }, []);
+
+  // The finishing blow: the field shakes and darkens and the loser's Life Points flash red
+  // for a beat, after their count reaches 0, before the result slides in.
+  // (it waits for the finishing cinematic to leave the stage, so it plays on the visible board)
+  const [resultUp, setResultUp] = useState(state.winner !== null);
+  const [koOn, setKoOn] = useState(false);
+  useEffect(() => {
+    setKoOn(false);
+    if (state.winner === null) return setResultUp(false);
+    let t: ReturnType<typeof setTimeout>;
+    const t0 = Date.now();
+    const wait = () => {
+      if (document.body.classList.contains('art-on') && Date.now() - t0 < 20000) return void (t = setTimeout(wait, 100));
+      // (a breath after the stage has faded away, then a full beat on the red board)
+      t = setTimeout(() => {
+        setKoOn(true);
+        t = setTimeout(() => setResultUp(true), 1800);
+      }, 450);
+    };
+    wait();
+    return () => clearTimeout(t);
+  }, [state.winner]);
+  const loser: Pid | null = state.winner === null || state.winner === 'draw' ? null : other(state.winner);
 
   const idle = canAct && !prompt && state.winner === null;
   const actions = commands.filter((c) => !c.disabled && c.label !== 'Card Info');
@@ -109,7 +153,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
   // (a tag duel: while your teammate is in, it's their turn, by name)
-  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.toUpperCase()}'S TURN`;
+  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) showBanner('DUEL!', 'duel', 1300, turnWho);
@@ -167,16 +211,19 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const w = window.innerWidth;
       const x = Math.min(Math.max(r.left + r.width / 2, 80), w - 80);
       // Cards near the top get their buttons underneath instead.
-      const below = r.top < 150;
+      // (a card on the field gets them underneath: above, they'd cover the turn row and the targets)
+      const below = r.top < 150 || !el.closest('.thand');
       // A hand card's buttons sit above your Life Points bar, never over it (or your portrait).
       const bar = el.closest('.thand') ? root.current?.querySelector('.tbar.bottom')?.getBoundingClientRect() : null;
       const top = bar ? Math.min(r.top, bar.top) : r.top;
-      setBubble({ x, y: below ? r.bottom + 6 : top - 6, below });
+      const y = below ? r.bottom + 6 : top - 6;
+      // the same spot: no new object, so no second render of the whole duel
+      setBubble((b) => (b && b.x === x && b.y === y && b.below === below ? b : { x, y, below }));
     };
     place();
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
-  }, [sel, actions.length, mode, state]);
+  }, [sel, actions.length, mode, me.hand.length, state.phase, state.turn, resized]);
 
   // ----- what a dragged card may be dropped on -----
   const dropSpots = (uid: number, from: 'hand' | 'mz'): Set<string> => {
@@ -270,18 +317,22 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     press.current = null;
     setDrag(null);
   };
-  const dragProps = (c: Card, from: 'hand' | 'mz') => ({
-    onPointerDown: (ev: PointerEvent) => onDown(ev, c, from),
-    onPointerMove: onMove,
-    onPointerUp: onUp,
-    onPointerCancel: onCancel,
-  });
 
   const tapCard = (uid: number) => {
     if (dragged.current) return;
     setPhaseOpen(false);
     tap(uid);
   };
+
+  // (what a memoized Piece's handlers call: always this render's)
+  const live = useRef({ tapCard, setSel, onDown, onMove, onUp, onCancel });
+  live.current = { tapCard, setSel, onDown, onMove, onUp, onCancel };
+  const liveDrag = (c: Card, from: 'hand' | 'mz') => ({
+    onPointerDown: (ev: PointerEvent) => live.current.onDown(ev, c, from),
+    onPointerMove: (ev: PointerEvent) => live.current.onMove(ev),
+    onPointerUp: (ev: PointerEvent) => live.current.onUp(ev),
+    onPointerCancel: () => live.current.onCancel(),
+  });
 
   const spotCls = (id: string) => (spots ? (spots.has(id) ? (drag?.over === id ? ' drop-on' : ' drop-ok') : '') : '');
 
@@ -291,35 +342,38 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const mine = owner === acting;
     const dropId = mine ? `${kind}z${i}` : c && kind === 'm' ? `t${c.uid}` : undefined;
     const draggable = mine && kind === 'm' && c && state.phase === 'BP';
-    return (
+    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
+    const named = c && c.faceUp ? e.nameOf(c) : '';
+    const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
+    const sig = c ? `${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
-        key={`${owner}${kind}${i}`}
-        class={`tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`}
+        class={cls}
         data-uid={c?.uid}
         data-drop={dropId}
         onClick={(ev) => {
           ev.stopPropagation();
-          if (c) tapCard(c.uid);
-          else setSel(null);
+          if (c) live.current.tapCard(c.uid);
+          else live.current.setSel(null);
         }}
-        {...(draggable ? dragProps(c, 'mz') : {})}
+        {...(draggable ? liveDrag(c, 'mz') : {})}
       >
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
-            {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
+            {c.faceUp && named !== c.name && <span class="namechg">{named}</span>}
           </div>
         )}
         {c && c.faceUp && kind === 'm' && (
           <div class={`tstat ${c.pos === 'def' ? 'def' : ''}`}>
-            {c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)}
+            {stat}
           </div>
         )}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
-    );
+    )} />;
   };
 
   const fieldZone = (p: Pid) => {
@@ -344,7 +398,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const gy = (p: Pid) => {
     const ps = state.players[p];
     return (
-      <button class="tpile" onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy }))}>
+      <button class="tpile gy" data-pile={`gy${p}`} onClick={(ev) => (ev.stopPropagation(), ctl.setPile({ title: `${ps.name}'s Graveyard`, cards: ps.gy }))}>
         {ps.gy.length > 0 ? <CardImg name={ps.gy[ps.gy.length - 1].name} owner={ps.gy[ps.gy.length - 1].owner} /> : <span class="tz-label">GY</span>}
         <span class="tcount">{ps.gy.length}</span>
       </button>
@@ -355,7 +409,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const ps = state.players[p];
     const extra = ps.fusion.length > 0 || ps.removed.length > 0;
     return (
-      <div class="tpile deck">
+      <div class="tpile deck" data-pile={`deck${p}`}>
         {ps.deck.length > 0 ? <CardImg name="" back /> : <span class="tz-label">DECK</span>}
         <span class="tcount">{ps.deck.length}</span>
         {extra && (
@@ -377,6 +431,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const hurt = anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '';
     const isTurn = state.turnPlayer === p;
     const directOk = top && spots?.has('direct');
+    const frac = Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp)));
     return (
       <div
         class={`tbar ${top ? 'top' : 'bottom'} ${isTurn ? 'turn' : ''}${directOk ? (drag?.over === 'direct' ? ' drop-on' : ' drop-ok') : ''} ${mode && top && canDirect() ? 'drop-ok' : ''}`}
@@ -404,6 +459,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <LpCount value={ps.lp} who={p} />
           {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
         </div>
+        <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
+          <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+        </i>
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
             ☰
@@ -439,6 +498,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   };
 
   const sheet = () => {
+    if (state.winner !== null && !resultUp) return null;
     if (state.winner !== null) {
       const won = state.winner === 'draw' ? null : state.winner === ctl.mySeat;
       const title = state.winner === 'draw' ? 'DRAW' : ctl.hotseat ? `${state.players[state.winner].name} wins` : won ? 'VICTORY' : 'DEFEAT';
@@ -534,19 +594,22 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          Tap a glowing monster{canDirect() ? ' or their portrait' : ''} to attack
+          Choose a target: tap a glowing monster{canDirect() ? ' or their portrait' : ''}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>
         </div>
       );
+    // the first turns' hint: a small pill over your hand, never over the field
+    const h = hint();
+    if (h) return <div class="ttoast hint">{h}</div>;
     return null;
   };
 
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
     if (state.phase === 'BP') return state.firstTurn ? null : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it for options';
+    if (e.inMainPhase() && state.turn <= 4) return 'Drag a card up to play it, or tap it';
     return null;
   };
 
@@ -560,15 +623,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const midText = (
     <>
       <span class={`tturn ${myTurn ? 'mine' : ''}`}>
-        {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} · {PHASE_NAMES[state.phase]}
+        {myTurn && !ctl.locked ? 'Your turn' : `${state.players[state.turnPlayer].name.split(' ')[0]}'s turn`} · {PHASE_NAMES[state.phase]}
       </span>
-      {hint() && <span class="thint">{hint()}</span>}
     </>
   );
 
   return (
     <div
-      class={`duel touch ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''}`}
+      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -577,14 +639,18 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     >
       {lpBar(oppId, true)}
       <div class="topp-hand">
-        {opp.hand.map((c) => (
-          <div key={c.uid} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name, c.owner))}>
+        {opp.hand.map((c, i) => (
+          <div key={c.uid} data-uid={c.uid} style={{ '--arc': (i - (opp.hand.length - 1) / 2).toFixed(2), '--arc2': ((i - (opp.hand.length - 1) / 2) ** 2).toFixed(2) } as Record<string, string>} class={`thc ${anim?.uid === c.uid ? 'anim-draw' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.oppHandShown && ctl.setInfo(c.name, c.owner))}>
             <CardImg name={c.name} back={!ctl.oppHandShown} owner={c.owner} />
           </div>
         ))}
       </div>
 
       <div class="tboard">
+        <div class="tarena" aria-hidden="true">
+          <i class="tarena-glow" />
+          <i class="tarena-floor" />
+        </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           <div class="trow">
             {deck(oppId)}
@@ -666,18 +732,29 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       )}
       {lpBar(acting, false)}
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
-        {me.hand.map((c) => (
-          <div
-            key={c.uid}
-            data-uid={c.uid}
-            class={`thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`}
-            onClick={(ev) => (ev.stopPropagation(), tapCard(c.uid))}
-            {...dragProps(c, 'hand')}
-          >
-            <CardImg name={c.name} back={!canAct && !ctl.spectator && !ctl.locked} owner={c.owner} />
-            {(canAct || ctl.spectator || ctl.locked) && <span class="hname">{c.name}</span>}
-          </div>
-        ))}
+        {me.hand.map((c, i) => {
+          const arc = (i - (handCount - 1) / 2).toFixed(2);
+          const cls = `thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
+          const shown = canAct || !!ctl.spectator || !!ctl.locked;
+          return (
+            <Piece
+              key={c.uid}
+              sig={`${cls}|${c.name}|${arc}|${shown}`}
+              render={() => (
+                <div
+                  data-uid={c.uid}
+                  style={{ '--arc': arc, '--arc2': ((i - (handCount - 1) / 2) ** 2).toFixed(2) } as Record<string, string>}
+                  class={cls}
+                  onClick={(ev) => (ev.stopPropagation(), live.current.tapCard(c.uid))}
+                  {...liveDrag(c, 'hand')}
+                >
+                  <CardImg name={c.name} back={!shown} owner={c.owner} />
+                  {shown && <span class="hname">{c.name}</span>}
+                </div>
+              )}
+            />
+          );
+        })}
         {handCount === 0 && <div class="thint">No cards in hand</div>}
       </div>
 
@@ -745,3 +822,13 @@ function DetailLine({ name }: { name: string }) {
     );
   return <span class="tdetail-type">{`${info.sub} ${info.kind === 'spell' ? spellWord() : 'Trap'}`}</span>;
 }
+
+/**
+ * A piece of the board drawn again only when its `sig` (what it shows) changes: the engine
+ * reports every step of a turn and the screen renders for each, but most zones are unchanged.
+ * Its handlers must read through a ref (they are kept from the render that drew it).
+ */
+const Piece = memo(
+  ({ render }: { sig: string; render: () => VNode }) => render(),
+  (a, b) => a.sig === b.sig,
+);

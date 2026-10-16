@@ -46,9 +46,10 @@ function style() {
   styled = true;
   const el = document.createElement('style');
   el.textContent = `
-@keyframes cpu-spot { 0% { box-shadow: 0 0 0 0 rgba(255, 214, 90, 0); } 25% { box-shadow: 0 0 0 3px rgba(255, 214, 90, 0.95), 0 0 18px 6px rgba(255, 190, 60, 0.75); } 100% { box-shadow: 0 0 0 0 rgba(255, 214, 90, 0); } }
-.cpu-spot { animation: cpu-spot 0.9s ease-out; position: relative; z-index: 3; }
-@media (prefers-reduced-motion: reduce) { .cpu-spot { animation: none; outline: 3px solid rgba(255, 214, 90, 0.9); } }`;
+@keyframes cpu-spot { 0% { opacity: 0; transform: scale(1.15); } 25% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+.cpu-spot { position: relative; z-index: 3; }
+.cpu-spot::after { content: ''; position: absolute; inset: -1px; border-radius: 6px; pointer-events: none; box-shadow: 0 0 0 3px rgba(255, 214, 90, 0.95), 0 0 18px 6px rgba(255, 190, 60, 0.75); opacity: 0; animation: cpu-spot 0.9s ease-out; }
+@media (prefers-reduced-motion: reduce) { .cpu-spot::after { animation: none; } .cpu-spot { outline: 3px solid rgba(255, 214, 90, 0.9); } }`;
   document.head.appendChild(el);
 }
 
