@@ -16,7 +16,7 @@ import './pad.css';
 const NATIVE = 'button:not([disabled]), a[href], input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role=button], [role=tab], [tabindex]:not([tabindex="-1"]), summary';
 const TEXT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select';
 /** A sheet, menu or window that opens over the screen: focus jumps into it. */
-const LAYER = '.overlay, .duel .msgwin, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
+const LAYER = '.overlay, .msgwin, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
 const PRIMARY = '[autofocus], .tbtn.main, .taction.main, .csheet-ok, .primary, .main, .ok';
 const CLOSE = '.win-x, [aria-label="Close"], [aria-label="Back"], [data-pad-back]';
 const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick)';
@@ -125,6 +125,8 @@ function candidates(): Cand[] {
     if (el.getAttribute('aria-hidden') === 'true') continue;
     // an empty zone on the board is only a stop while it can be picked
     if (el.matches(EMPTY_ZONE)) continue;
+    // (greyed-out choices are skipped, like Master Duel's menus)
+    if ((el as HTMLButtonElement).disabled || el.matches('.menu-item.off')) continue;
     const box = rectOf(el);
     if (!reachable(el, box)) continue;
     // a whole board or backdrop that takes taps isn't a button (unless it's all there is: "tap to start")
@@ -388,6 +390,14 @@ export function back(viaEscape = true) {
     const picked = classic.querySelector<HTMLElement>('[data-uid].sel');
     if (picked) return void (tap(picked), setTimeout(() => validate(true), 60));
   }
+  // a card's command window (deck editor, trunk): back to the card list, the card put down
+  if (focused?.closest('.msgwin') && !focused.closest('.overlay') && cameFrom?.el.isConnected) {
+    const from = cameFrom.el;
+    cameFrom = null;
+    if (from.matches('.sel')) tap(from);
+    setFocus(from);
+    return void setTimeout(() => validate(true), 60);
+  }
   const close = visible(CLOSE);
   if (close) return void (tap(close), setTimeout(() => validate(true), 60));
   const ov = visible('.overlay');
@@ -500,17 +510,21 @@ function hintList(): Hint[] {
 
 /** A bar fixed along the bottom of the screen (tabs, a hand): the hints sit just above it. */
 function bottomBarTop(): number {
-  for (const fx of [0.5, 0.2, 0.8]) {
-    for (let el = document.elementFromPoint(innerWidth * fx, innerHeight - 8); el && el !== document.body; el = el.parentElement) {
-      const pos = getComputedStyle(el).position;
-      if (pos === 'fixed' || pos === 'sticky') {
-        const r = el.getBoundingClientRect();
-        if (r.bottom >= innerHeight - 4 && r.height < innerHeight * 0.3) return r.top;
-        break;
+  // (tab bars along the bottom, and the floating Friends button)
+  let top = innerHeight;
+  for (const fx of [0.5, 0.2, 0.8, 0.9]) {
+    for (const dy of [8, 36]) {
+      for (let el = document.elementFromPoint(innerWidth * fx, innerHeight - dy); el && el !== document.body; el = el.parentElement) {
+        const pos = getComputedStyle(el).position;
+        if (pos === 'fixed' || pos === 'sticky') {
+          const r = el.getBoundingClientRect();
+          if (r.bottom >= innerHeight - 48 && r.height < innerHeight * 0.3) top = Math.min(top, r.top);
+          break;
+        }
       }
     }
   }
-  return innerHeight;
+  return top;
 }
 
 function renderHints(force = false) {
