@@ -26,18 +26,25 @@ export const findNode = (id: string) => NODES.get(id);
 export const allCampaignDuelists = (): CpuDuelist[] => CHAPTERS.flatMap((c) => c.nodes.map((n) => n.duelist));
 
 const won = (solo: SoloSave, id: string) => (solo.campaign.wins[id] ?? 0) > 0;
+/** Beaten with any deck, Anything goes included: enough to open what comes next. */
+export const nodePassed = (solo: SoloSave, id: string) => won(solo, id) || (solo.campaign.openWins?.[id] ?? 0) > 0;
+
+/** What's wrong with a deck for the solo modes: a deck from your cards has to use copies you own; an Anything goes deck only has to be legal. */
+export function soloDeckProblems(speed: SpeedSave, d: SpeedDeck): string[] {
+  return d.open ? speedDeckProblems(d) : roadDeckProblems(speed, d);
+}
 
 export function chapterOpen(solo: SoloSave, ch: Chapter): boolean {
   if (!solo.campaign.starter) return false;
   const i = CHAPTERS.indexOf(ch);
   if (i <= 0) return true;
   const prev = CHAPTERS[i - 1];
-  return won(solo, prev.nodes[prev.nodes.length - 1].id);
+  return nodePassed(solo, prev.nodes[prev.nodes.length - 1].id);
 }
 
 export function nodeOpen(solo: SoloSave, ch: Chapter, index: number): boolean {
   if (!chapterOpen(solo, ch)) return false;
-  return index === 0 || won(solo, ch.nodes[index - 1].id);
+  return index === 0 || nodePassed(solo, ch.nodes[index - 1].id);
 }
 
 export const chapterCleared = (solo: SoloSave, ch: Chapter) => won(solo, ch.nodes[ch.nodes.length - 1].id);
@@ -125,16 +132,20 @@ export interface Settled {
   firstWin: boolean;
   /** a chapter just cleared */
   cleared: Chapter | null;
+  /** won with an Anything goes deck: the road moves on, nothing is paid */
+  noEarn?: boolean;
 }
 
 /** Writes a campaign duel's result: record, stars, rewards. */
-export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string, o: DuelOutcome, seed = Date.now()): Settled {
+export function settleCampaign(speed: SpeedSave, solo: SoloSave, nodeId: string, o: DuelOutcome, seed = Date.now(), open = false): Settled {
   const found = findNode(nodeId);
   const none: Settled = { speed, solo, stars: [false, false, false], newStars: [false, false, false], lines: [], cards: [], picks: [], firstWin: false, cleared: null };
   if (!found) return none;
   const { node, chapter } = found;
   const c = solo.campaign;
   if (o.result !== 'w') return { ...none, solo: { ...solo, campaign: { ...c, losses: c.losses + 1, tries: { ...c.tries, [nodeId]: (c.tries?.[nodeId] ?? 0) + 1 } } } };
+  // An Anything goes deck: the win opens the road ahead, but no stars, cards, chips or Items.
+  if (open) return { ...none, noEarn: true, solo: { ...solo, campaign: { ...c, openWins: { ...c.openWins, [nodeId]: (c.openWins?.[nodeId] ?? 0) + 1 }, tries: { ...c.tries, [nodeId]: 0 } } } };
 
   const old = c.stars[nodeId] ?? [false, false, false];
   const got = starsFor(node.goal, o);

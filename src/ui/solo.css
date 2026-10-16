@@ -1273,3 +1273,57 @@ ul.so-understood li::before {
 .so-watchbar button.on {
   background: rgba(242, 193, 78, 0.25);
 }
+
+/* Any deck in every mode: the Anything goes tag, the story-deck switch, prizes still waiting */
+.so-anygoes {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(181, 120, 255, 0.18);
+  border: 1px solid rgba(181, 120, 255, 0.55);
+  color: #e2c8ff;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.so-node-t em.so-waiting {
+  color: #e2c8ff;
+}
+.so-storypick {
+  gap: 8px;
+}
+.so-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.so-seg button {
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.so-seg button.on {
+  background: var(--so-blue);
+  color: #04121c;
+}
+.so-mydecks {
+  max-height: 34vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}

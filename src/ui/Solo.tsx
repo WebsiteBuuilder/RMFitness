@@ -5,7 +5,7 @@ import { card } from '../eds/db';
 import { loadProfiles, type Profile } from '../eds/save';
 import { STARTERS, activeDeck, deckFromStarter, loadSpeedSave, owned as ownedCopies, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { CHAPTERS, DEALER_CONDITIONS, type CampaignNode, type Chapter } from '../eds/speedCampaign/roster';
-import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, repairRoadDeck, roadDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
+import { allCampaignDuelists, chapterCleared, chapterOpen, currentChapter, deckOf, findNode, nodeOpen, nodePassed, repairRoadDeck, soloDeckProblems, starCount, startRoad, takePick } from '../eds/speedCampaign/campaign';
 import { deckCode, fighterCode, readDeckCode, talkOf } from '../eds/speedCampaign/deckCode';
 import { readPepTalk, tacticsLabel } from '../eds/tactics';
 import { campaignDifficulty, labyrinthDifficulty, savedDifficulty } from '../eds/difficulty';
@@ -754,28 +754,29 @@ function Road(p: Ctx) {
     setRepaired(r.removed);
   }, [c.deck, speed.collection]);
 
-  // The road deck, or one of your own decks built from cards you own (Anything goes decks can't earn here).
-  const ownDecks = speed.decks.filter((d) => !d.open);
+  // The road deck or any of your decks. Anything goes decks walk the road too, but their wins pay nothing.
+  const ownDecks = speed.decks;
   const chosen = c.deckId ? (ownDecks.find((d) => d.id === c.deckId) ?? null) : null;
   const deck = chosen ?? c.deck;
+  const [storyOwn, setStoryOwn] = useState(false);
   if (!c.starter) return <RoadStart {...p} />;
   if (editing && deck)
     return (
       <SpeedDeckEdit
         deck={deck}
-        collection={speed.collection ?? {}}
+        collection={deck.open ? undefined : (speed.collection ?? {})}
         onChange={(d) => (chosen ? p.onSpeed({ ...speed, decks: speed.decks.map((x) => (x.id === d.id ? d : x)) }) : (setSolo({ ...solo, campaign: { ...c, deck: d } }), p.onSpeed({ ...speed, road: d })))}
         onBack={() => setEditing(false)}
       />
     );
 
   const ch = CHAPTERS.find((x) => x.id === chId) ?? CHAPTERS[0];
-  const problems = deck ? roadDeckProblems(speed, deck) : ['No road deck'];
+  const problems = deck ? soloDeckProblems(speed, deck) : ['No road deck'];
   const owned = Object.values(speed.collection ?? {}).reduce((a, b) => a + b, 0);
   const allIds = CHAPTERS.flatMap((x) => x.nodes.map((n) => n.id));
   // The first duel you haven't won yet: the road's next stop.
   const nextUp = (() => {
-    for (const x of CHAPTERS) for (let i = 0; i < x.nodes.length; i++) if (nodeOpen(solo, x, i) && !(c.wins[x.nodes[i].id] ?? 0)) return { chapter: x, node: x.nodes[i] };
+    for (const x of CHAPTERS) for (let i = 0; i < x.nodes.length; i++) if (nodeOpen(solo, x, i) && !nodePassed(solo, x.nodes[i].id)) return { chapter: x, node: x.nodes[i] };
     return null;
   })();
   const scrollTo = (el: HTMLElement | null) => {
@@ -790,15 +791,16 @@ function Road(p: Ctx) {
     const d = deckOf(n.duelist);
     // Two losses in a row on a duel: the next try starts with 1000 extra LP.
     const help = (c.tries?.[n.id] ?? 0) >= 2;
-    const mine = n.story ? { main: n.story.main.flatMap((e) => (/\*\d$/.test(e) ? Array<string>(Number(e.slice(-1))).fill(e.slice(0, -2)) : [e])), extra: n.story.extra, skill: n.story.skill, name: n.story.as } : deck ? { main: deck.main, extra: deck.extra, skill: deck.skill, name: p.name } : null;
+    const useStory = n.story && !storyOwn;
+    const mine = useStory && n.story ? { main: n.story.main.flatMap((e) => (/\*\d$/.test(e) ? Array<string>(Number(e.slice(-1))).fill(e.slice(0, -2)) : [e])), extra: n.story.extra, skill: n.story.skill, name: n.story.as } : deck ? { main: deck.main, extra: deck.extra, skill: deck.skill, name: p.name } : null;
     if (!mine) return;
     p.onDuel({
       me: { name: mine.name, main: mine.main, extra: mine.extra, skill: mine.skill, setup: help ? { ...n.condition?.player, lp: (n.condition?.player?.lp ?? 4000) + 1000 } : n.condition?.player },
       cpu: { name: n.duelist.name, main: d.main, extra: d.extra, skill: d.skill, setup: n.condition?.cpu },
       first: n.condition?.cpuFirst ? 'cpu' : 'coin',
-      context: { kind: 'campaign', nodeId: n.id },
+      context: { kind: 'campaign', nodeId: n.id, ...(!useStory && deck?.open ? { open: true } : {}) },
       level: campaignDifficulty((findNode(n.id)?.chapter ?? ch).n, n.boss),
-      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: STAR_TEXT(n.goal) },
+      vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : useStory && n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : []), ...(!useStory && deck?.open ? [ANY_GOES_NOTE] : [])], goals: !useStory && deck?.open ? [] : STAR_TEXT(n.goal) },
     });
   };
 
@@ -883,15 +885,17 @@ function Road(p: Ctx) {
             {ch.nodes.map((n, i) => {
               const open = nodeOpen(solo, ch, i);
               const wins = c.wins[n.id] ?? 0;
+              const waiting = !wins && nodePassed(solo, n.id);
               const isNext = nextUp?.node.id === n.id;
               return (
-                <button key={n.id} ref={isNext ? scrollTo : undefined} class={`so-node ${n.boss ? 'boss' : ''} ${open ? '' : 'locked'} ${wins ? 'won' : ''} ${isNext ? 'next' : ''}`} disabled={!open} onClick={() => setSel(n)}>
+                <button key={n.id} ref={isNext ? scrollTo : undefined} class={`so-node ${n.boss ? 'boss' : ''} ${open ? '' : 'locked'} ${wins || waiting ? 'won' : ''} ${isNext ? 'next' : ''}`} disabled={!open} onClick={() => setSel(n)}>
                   <Portrait d={n.duelist} size={n.boss ? 'm' : 's'} />
                   <div class="so-node-t">
                     <b>{open ? n.duelist.name : '???'}</b>
                     <span>{open ? n.duelist.title : 'Win the duel before this one'}</span>
                     {n.story && open && <em>Story duel: you play as {n.story.as}</em>}
                     {n.boss && open && <em>Boss · {ch.item}</em>}
+                    {waiting && <em class="so-waiting">Prizes waiting: win with your own cards</em>}
                   </div>
                   <Stars s={c.stars[n.id]} />
                 </button>
@@ -909,8 +913,12 @@ function Road(p: Ctx) {
           </div>
           <div class="so-deckbar">
             <div>
-              <b>{chosen ? `Your deck: ${chosen.name}` : 'Road deck'}</b>
+              <b>
+                {chosen ? `Your deck: ${chosen.name}` : 'Road deck'}
+                {chosen?.open && <span class="so-anygoes">Anything goes</span>}
+              </b>
               <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
+              {chosen?.open && !problems.length && <span class="so-dim">Wins open the road but pay no cards, chips or Items.</span>}
               {!chosen && repaired.length > 0 && <span class="so-dim">Took out {repaired.length === 1 ? repaired[0] : `${repaired.length} cards`} you no longer own and refilled the deck from your collection.</span>}
             </div>
             {ownDecks.length > 0 && (
@@ -925,7 +933,7 @@ function Road(p: Ctx) {
       )}
 
       {sel && (
-        <Sheet onClose={() => setSel(null)}>
+        <Sheet onClose={() => (setSel(null), setStoryOwn(false))}>
           <div class="so-intro">
             <Portrait d={sel.duelist} size="l" />
             <div>
@@ -945,20 +953,40 @@ function Road(p: Ctx) {
               )}
             </div>
           )}
-          {sel.story && <div class="so-cond blue">You duel as {sel.story.as}, with their deck. Your own road deck sits this one out.</div>}
-          <div class="so-goals">
-            {STAR_TEXT(sel.goal).map((t, i) => (
-              <div key={t} class={c.stars[sel.id]?.[i] ? 'on' : ''}>
-                <span>★</span> {t}
+          {sel.story && (
+            <div class="so-cond blue so-storypick">
+              <span>{storyOwn ? `Story duel, but you bring your own deck instead of ${sel.story.as}'s.` : `You duel as ${sel.story.as}, with their deck.`}</span>
+              <div class="so-seg">
+                <button class={storyOwn ? '' : 'on'} onClick={() => setStoryOwn(false)}>
+                  Story deck
+                </button>
+                <button class={storyOwn ? 'on' : ''} onClick={() => setStoryOwn(true)}>
+                  My deck
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+          {(sel.story && !storyOwn) || !deck?.open ? (
+            <div class="so-goals">
+              {STAR_TEXT(sel.goal).map((t, i) => (
+                <div key={t} class={c.stars[sel.id]?.[i] ? 'on' : ''}>
+                  <span>★</span> {t}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p class="so-dim">No stars with an Anything goes deck. A win still opens the next duel.</p>
+          )}
           <div class="so-dim">Their deck: {deckOf(sel.duelist).main.length} cards{sel.duelist.skill ? ` · Skill: ${skillName(sel.duelist.skill)}` : ''}</div>
-          {!sel.story && deck && (
+          {(!sel.story || storyOwn) && deck && (
             <div class="so-deckbar">
               <div>
-                <b>Your deck: {deck.name}</b>
+                <b>
+                  Your deck: {deck.name}
+                  {deck.open && <span class="so-anygoes">Anything goes</span>}
+                </b>
                 <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck.main.length} cards · ${skillName(deck.skill)}`}</span>
+                {deck.open && !problems.length && <span class="so-dim">{ANY_GOES_NOTE}</span>}
               </div>
               {ownDecks.length > 0 && (
                 <Btn kind="blue" onClick={() => setPicking(true)}>
@@ -967,7 +995,7 @@ function Road(p: Ctx) {
               )}
             </div>
           )}
-                    <Btn kind="gold" disabled={!sel.story && problems.length > 0} onClick={() => (setSel(null), duel(sel))}>
+          <Btn kind="gold" disabled={(!sel.story || storyOwn) && problems.length > 0} onClick={() => (setSel(null), setStoryOwn(false), duel(sel))}>
             Duel!
           </Btn>
         </Sheet>
@@ -989,8 +1017,8 @@ function Road(p: Ctx) {
           title="Deck for the Millennium Road"
           decks={[...(c.deck ? [c.deck] : []), ...ownDecks]}
           current={deck}
-          problemsOf={(d) => roadDeckProblems(speed, d)}
-          note={`Walk the road with your road deck or any deck built from cards you own. "Anything goes" decks can't: the road pays cards and chips.`}
+          problemsOf={(d) => soloDeckProblems(speed, d)}
+          note={ANY_GOES_PICK_NOTE}
           onPick={(d) => (setSolo({ ...solo, campaign: { ...c, deckId: d.id === c.deck?.id ? null : d.id } }), setPicking(false))}
           onClose={() => setPicking(false)}
         />
@@ -1003,7 +1031,9 @@ function Road(p: Ctx) {
             <Portrait d={repNode.node.duelist} size="s" />
             <p class="so-quote">“{rep.outcome.result === 'w' ? repNode.node.duelist.onLose : repNode.node.duelist.onWin}”</p>
           </div>
-          {rep.outcome.result === 'w' ? (
+          {rep.outcome.result === 'w' && rep.settled.noEarn ? (
+            <p class="so-center">The road moves on. Anything goes decks don't earn stars or prizes, so this duel's prizes wait for a win with your own cards.</p>
+          ) : rep.outcome.result === 'w' ? (
             <>
               <div class="so-goals">
                 {STAR_TEXT(repNode.node.goal).map((t, i) => (
@@ -1228,13 +1258,18 @@ function LabyrinthStart(p: Ctx) {
   const lab = solo.labyrinth;
   const [sheet, setSheet] = useState<'new' | 'daily' | 'upgrades' | 'history' | 'compare' | null>(null);
   const [starter, setStarter] = useState(STARTERS[0].character);
+  // Or one of your own decks (any of them, Anything goes too) instead of a Starter Deck.
+  const myDecks = soloDecks(p.speed);
+  const [myDeckId, setMyDeckId] = useState<string | null>(null);
+  const myDeck = myDecks.find((d) => d.id === myDeckId) ?? null;
+  const myProblems = myDeck ? soloDeckProblems(p.speed, myDeck) : [];
   const [curse, setCurse] = useState(0);
   const [bring, setBring] = useState<string | null>(null);
   const items = solo.campaign.items.filter((x) => relic(x)?.millennium);
   const [code, setCode] = useState('');
   const today = todayString();
   const doneToday = lab.history.find((h) => h.daily === today);
-  const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string }) => {
+  const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string; deck?: SpeedDeck }) => {
     const run = newRun({ ...o, upgrades: lab.upgrades });
     setSolo({ ...solo, labyrinth: { ...lab, run } });
   };
@@ -1245,7 +1280,7 @@ function LabyrinthStart(p: Ctx) {
       <div class="so-body">
         <div class="so-prologue">
           <span class="so-label">THE LABYRINTH</span>
-          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart.</p>
+          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck or one of your own decks, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart.</p>
         </div>
         <Btn kind="gold" onClick={() => setSheet('new')}>
           New run
@@ -1270,11 +1305,32 @@ function LabyrinthStart(p: Ctx) {
           <div class="so-group">Starter Deck</div>
           <div class="so-chips">
             {STARTERS.map((s) => (
-              <button key={s.character} class={`so-chip ${starter === s.character ? 'on' : ''}`} onClick={() => setStarter(s.character)}>
+              <button key={s.character} class={`so-chip ${!myDeck && starter === s.character ? 'on' : ''}`} onClick={() => (setStarter(s.character), setMyDeckId(null))}>
                 {s.character}
               </button>
             ))}
           </div>
+          {myDecks.length > 0 && (
+            <>
+              <div class="so-group">Or bring your own deck</div>
+              <div class="so-mydecks">
+                {myDecks.map((d) => {
+                  const bad = soloDeckProblems(p.speed, d);
+                  return (
+                    <button key={d.id} class={`lg-deck ${myDeckId === d.id ? 'on' : ''}`} onClick={() => (playBlip(), setMyDeckId(myDeckId === d.id ? null : d.id))}>
+                      <b>
+                        {myDeckId === d.id ? '★ ' : ''}
+                        {d.name}
+                        {d.open && <span class="so-anygoes">Anything goes</span>}
+                      </b>
+                      <span class={bad.length ? 'so-bad' : 'so-good'}>{bad.length ? bad[0] : deckSummary(d)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {myDeck?.open && <p class="so-dim">{ANY_GOES_NOTE} No Soul Fragments either.</p>}
+            </>
+          )}
           {lab.curseUnlocked > 0 && (
             <>
               <div class="so-group">Curse</div>
@@ -1313,7 +1369,7 @@ function LabyrinthStart(p: Ctx) {
               {bring && <p class="so-dim">{relic(bring)?.text}</p>}
             </>
           )}
-          <Btn kind="gold" onClick={() => begin({ starter, seed: randomSeed(), curse, bring: bring ?? undefined })}>
+          <Btn kind="gold" disabled={myProblems.length > 0} onClick={() => begin({ starter, seed: randomSeed(), curse, bring: bring ?? undefined, deck: myDeck ?? undefined })}>
             Enter the Labyrinth
           </Btn>
         </Sheet>
@@ -1437,7 +1493,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
       level: labyrinthDifficulty(at.floor, kind === 'boss', at.curse),
       // The Daily deals every duel the same way for both brothers.
       seed: at.daily ? (at.seed + at.step * 7919) >>> 0 : undefined,
-      vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : [])], goals: [] },
+      vs: { label: `FLOOR ${at.floor + 1} · ${kind === 'boss' ? 'FLOOR BOSS' : kind === 'elite' ? 'ELITE DUEL' : 'DUEL'}`, mePortrait: ace(at.main), cpuPortrait: d.foe.portrait, cpuTitle: d.foe.title, line: d.foe.intro, notes: [...d.notes, ...(at.relics.length ? [`Relics: ${at.relics.join(', ')}`] : []), ...(at.open ? [ANY_GOES_NOTE] : [])], goals: [] },
     }, at !== before ? () => setRun(before) : undefined);
   };
 
@@ -1451,7 +1507,7 @@ function RunView(p: Ctx & { run: Run; setRun: (r: Run) => void; walkedOut?: bool
     <div class="screen so lab">
       <Top
         title={`Floor ${run.floor + 1} of 3${run.daily ? ' · Daily' : ''}`}
-        sub={`Starter: ${run.starter}${run.curse ? ` · Curse ${run.curse}` : ''}`}
+        sub={`${run.ownDeck ? 'Deck' : 'Starter'}: ${run.starter}${run.open ? ' (Anything goes)' : ''}${run.curse ? ` · Curse ${run.curse}` : ''}`}
         onBack={p.onExit}
         right={
           <div class="so-runstat">
@@ -1753,7 +1809,7 @@ function RunEnd(p: Ctx & { s: RunSummary; onDone: () => void }) {
             {s.wins} wins with {s.starter}
             {s.curse ? ` at Curse ${s.curse}` : ''}.
           </p>
-          <p class="so-reward">+{s.fragments} Soul Fragments</p>
+          {s.open ? <p class="so-dim">Anything goes deck: no Soul Fragments or chips for this run.</p> : <p class="so-reward">+{s.fragments} Soul Fragments</p>}
           {s.won && s.curse < 10 && <p>Curse {s.curse + 1} is now open.</p>}
         </div>
         {code && (
@@ -1775,6 +1831,22 @@ function RunEnd(p: Ctx & { s: RunSummary; onDone: () => void }) {
 
 // Re-exported for tests that walk the screens.
 export const SOLO_DEBUG = { EVENTS, allCampaignDuelists };
+
+/** Every deck the solo modes can take: the road deck first, then all your decks (Anything goes too). */
+export function soloDecks(speed: SpeedSave): SpeedDeck[] {
+  const out: SpeedDeck[] = [];
+  const seen = new Set<string>();
+  for (const d of [...(speed.road ? [speed.road] : []), ...speed.decks]) {
+    if (seen.has(d.id)) continue;
+    seen.add(d.id);
+    out.push(d);
+  }
+  return out;
+}
+
+/** What an Anything goes deck means in the solo modes, said the same way everywhere. */
+export const ANY_GOES_NOTE = 'Anything goes deck: wins move you forward but pay no cards, chips or prizes.';
+export const ANY_GOES_PICK_NOTE = 'Any deck can play, Anything goes decks too. Their wins move you forward but pay no cards, chips or prizes, so those wait for a win with a deck made from cards you own.';
 
 /** The deck list in the solo screens' sheet style. */
 export function SoloDeckPick({ title, decks, current, problemsOf, note, onPick, onClose }: { title: string; decks: SpeedDeck[]; current: SpeedDeck | null; problemsOf: (d: SpeedDeck) => string[]; note?: string; onPick: (d: SpeedDeck) => void; onClose: () => void }) {

@@ -38,11 +38,11 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   if (ctx.kind === 'campaign') {
     // Leaving a campaign duel halfway costs nothing; you can try again.
     if (o.forfeit) return { speed, solo, report: { kind: 'campaign', outcome: o, nodeId: ctx.nodeId, settled: { speed, solo, stars: [false, false, false], newStars: [false, false, false], lines: [], cards: [], picks: [], firstWin: false, cleared: null } } };
-    const settled = settleCampaign(speed, solo, ctx.nodeId, o);
+    const settled = settleCampaign(speed, solo, ctx.nodeId, o, Date.now(), !!ctx.open);
     return { speed: settled.speed, solo: settled.solo, report: { kind: 'campaign', outcome: o, nodeId: ctx.nodeId, settled } };
   }
   if (ctx.kind === 'legend') {
-    const settled = settleLegend(speed, solo, ctx.duelId, o, !!ctx.rematch);
+    const settled = settleLegend(speed, solo, ctx.duelId, o, !!ctx.rematch, Date.now(), !!ctx.open);
     return { speed: settled.speed, solo: settled.solo, report: { kind: 'legend', outcome: o, duelId: ctx.duelId, rematch: !!ctx.rematch, settled } };
   }
   const run = solo.labyrinth.run;
@@ -53,7 +53,8 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   // floor-1 boss and Give up can't farm them).
   const stop = run.inDuel ? stopById(run, run.inDuel) : null;
   const today = todayString();
-  if (o.result === 'w' && stop?.kind === 'boss' && solo.labyrinth.chipDay !== today) {
+  // A run with an Anything goes deck pays nothing.
+  if (o.result === 'w' && stop?.kind === 'boss' && !run.open && solo.labyrinth.chipDay !== today) {
     const g = grant(speed, solo, [{ kind: 'chips', n: 1 }]);
     const paid = g.speed.chips !== speed.chips;
     speed = g.speed;
