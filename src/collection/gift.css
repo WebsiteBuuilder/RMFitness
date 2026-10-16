@@ -185,6 +185,10 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 0;
+}
+.gift-card {
+  z-index: 1;
 }
 .confetti i {
   position: absolute;

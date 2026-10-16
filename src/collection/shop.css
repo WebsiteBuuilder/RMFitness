@@ -864,3 +864,10 @@
 .no-pill .ol-pill {
   display: none;
 }
+/* the summary's Done stays in reach below a long list */
+.reveal.summary > .menu {
+  position: sticky;
+  bottom: -1px;
+  background: var(--sd-card, #141f3d);
+  padding-top: 6px;
+}

@@ -296,7 +296,7 @@ export const GIFT = {
 /** A phone hands each gift to at most this many profiles (like the welcome packs). */
 export const GIFT_PROFILES = 2;
 
-/** The profiles this phone already gave a gift to (a lost or rolled-back save can't claim it twice here). */
+/** The profiles this phone already gave a gift to (only these can claim it here once the phone's share is used). */
 const giftedKey = (id: string) => `eds.speed.gifted.${id}`;
 function giftedHere(gift: typeof GIFT): string[] {
   try {
@@ -312,7 +312,8 @@ export function giftFor(s: SpeedSave, created: number, gift = GIFT, profileId?: 
   if ((E(s).gifts ?? []).includes(gift.id) || created >= gift.madeBefore) return null;
   if (profileId) {
     const here = giftedHere(gift);
-    if (here.includes(profileId) || here.length >= GIFT_PROFILES) return null;
+    // A profile on the list may claim again only if its save lost the gift (an account sync kept another phone's copy).
+    if (!here.includes(profileId) && here.length >= GIFT_PROFILES) return null;
   }
   return gift;
 }
@@ -322,7 +323,7 @@ export function claimGift(s: SpeedSave, created: number, gift = GIFT, profileId?
   if (!giftFor(s, created, gift, profileId)) return null;
   if (profileId)
     try {
-      localStorage.setItem(giftedKey(gift.id), JSON.stringify([...giftedHere(gift), profileId]));
+      localStorage.setItem(giftedKey(gift.id), JSON.stringify([...new Set([...giftedHere(gift), profileId])]));
     } catch {
       /* storage blocked */
     }

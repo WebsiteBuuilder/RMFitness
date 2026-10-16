@@ -112,13 +112,16 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
     let cur = from;
     const sets = boosterSets().map((x) => x.name);
     const start = Math.floor(Math.random() * sets.length);
-    for (let i = 0; i < count; i++) {
-      const o = openOwnedPack(cur, set ?? sets[(start + i) % sets.length], Date.now() + i * 7919);
-      if (!o) break;
-      out.push(o);
-      cur = o.save;
+    try {
+      for (let i = 0; i < count; i++) {
+        const o = openOwnedPack(cur, set ?? sets[(start + i) % sets.length], Date.now() + i * 7919);
+        if (!o) break;
+        out.push(o);
+        cur = o.save;
+      }
+    } finally {
+      setBusy(0);
     }
-    setBusy(0);
     if (!out.length) return;
     onSave(cur);
     show(out);
@@ -160,8 +163,8 @@ export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s
           <PackReveal
             key={n}
             opened={opened[0]}
-            left={packsFor(opened[0].save, opened[0].set!)}
-            onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? packsFor(opened[0].save, opened[0].set!) : 1)}
+            left={oneSetMax(opened[0].save, opened[0].set!)}
+            onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? oneSetMax(opened[0].save, opened[0].set!) : 1)}
             onDone={() => setOpened(null)}
           />
         ) : (
@@ -184,6 +187,8 @@ const completion = (save: SpeedSave, cards: [string, Rarity][]) => {
 
 /** Opening this many gift packs at once from mixed sets. */
 const MIX = 10;
+/** The most packs one set opens in a go: gift packs are better spread over every set, so 10 at a time while any are left. */
+const oneSetMax = (save: SpeedSave, set: string) => (giftPacksOf(save) > 0 ? Math.min(MIX, packsFor(save, set)) : packsFor(save, set));
 
 function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null, count: number) => void }) {
   const all = boosterSets();
