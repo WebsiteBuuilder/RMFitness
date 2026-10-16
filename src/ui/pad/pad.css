@@ -168,3 +168,10 @@
 .pad-here .touch-txt {
   display: none;
 }
+/* in a duel, controller notes sit mid-board, clear of both life bars */
+.pad-duel .pad-toast {
+  top: 40%;
+}
+.pad-duel .pad-hints.show.dim:not(.guide):not(.under) {
+  opacity: 0.3;
+}

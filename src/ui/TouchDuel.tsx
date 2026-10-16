@@ -9,6 +9,7 @@ import type { Engine } from '../eds/engine';
 import { other } from '../eds/engine';
 import type { Card, DuelState, FieldCard, Pid, PlayerState, Prompt, SelectOption } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
+import { getEffect } from '../eds/effects';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
@@ -630,8 +631,33 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     </>
   );
 
+  /** a card in your hand that has something to do right now (a controller's hints say Play only on those) */
+  const playable = canAct && myTurn && !prompt && state.winner === null && e.inMainPhase();
+  const canPlayNow = (c: Card) => {
+    if (!playable) return false;
+    const info = cardInfo(c.name);
+    if (info?.kind === 'monster') {
+      const eff = getEffect(c.name);
+      return e.canNormalSummon(acting, c) || (!!eff?.summonProc && e.canSpecialProc(acting, c)) || (!!eff?.handIgnition && e.canUseMonsterEffect(acting, c));
+    }
+    return (info?.kind === 'spell' && e.canActivateMain(acting, c.uid)) || e.canSet(acting, c);
+  };
+  /** a controller's Y: the full text of the card the ring is on (never a face-down card that isn't yours) */
+  const padCardText = (ev: Event) => {
+    const uid = Number((ev.target as HTMLElement).closest?.('[data-uid]')?.getAttribute('data-uid'));
+    const found = Number.isFinite(uid) ? e.find(uid) : null;
+    if (!found) return;
+    const mine = found.loc.player === acting || !!ctl.spectator;
+    const z = found.loc.zone;
+    const open = z === 'hand' ? mine || ctl.oppHandShown : z === 'mz' || z === 'sz' || z === 'field' ? (found.card as FieldCard).faceUp || mine : z !== 'deck';
+    if (!open) return;
+    ev.preventDefault();
+    ctl.setInfo(found.card.name, found.card.owner);
+  };
+
   return (
     <div
+      {...({ onpady: padCardText } as object)}
       class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
@@ -736,7 +762,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       <div class="thand" style={{ '--overlap': overlap.toFixed(3) } as Record<string, string>}>
         {me.hand.map((c, i) => {
           const arc = (i - (handCount - 1) / 2).toFixed(2);
-          const cls = `thcard ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
+          const cls = `thcard${canPlayNow(c) ? ' can' : ''} ${highlight(c.uid)} ${anim?.uid === c.uid && anim.kind === 'draw' ? 'anim-draw' : ''} ${drag?.uid === c.uid ? 'lifted' : ''}`;
           const shown = canAct || !!ctl.spectator || !!ctl.locked;
           return (
             <Piece

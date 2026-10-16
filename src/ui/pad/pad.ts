@@ -17,7 +17,7 @@ const NATIVE = 'button:not([disabled]), a[href], input:not([type=hidden]):not([d
 const TEXT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select';
 /** A sheet, menu or window that opens over the screen: focus jumps into it. */
 const LAYER = '.overlay, .msgwin, [role=dialog], [role=alertdialog], .csheet-back, .tsheet, .tactions, .tphase-menu, .ttoast.aim, .tresult, .sheet, .so-sheet, .sr-sheet, .lv-sheet, .tb-sheet';
-const PRIMARY = '[autofocus], .tbtn.main, .taction.main, .csheet-ok, .primary, .main, .ok';
+const PRIMARY = '[autofocus], .rematch-go, .so-btn.gold, .tbtn.main, .taction.main, .csheet-ok, .primary, .main, .ok';
 const CLOSE = '.win-x, [aria-label="Close"], [aria-label="Back"], [data-pad-back]';
 const EMPTY_ZONE = '.duel .tz.empty:not(.pick):not(.drop-ok), .duel .zone.empty:not(.pick), .topp-hand [data-uid]:not(.pick)';
 const HAND = '.thcard, .hcard, .hand [data-uid]';
@@ -379,7 +379,10 @@ function move(dir: Dir) {
       // left/right stays on its own row when the next thing over is a bar or a close ×
       !((dir === 'left' || dir === 'right') && !fromBar && (x.el.matches(CLOSE) || x.el.closest(FLOATING) || x.el.closest(TABS)) && (x.box.bottom <= from.top || x.box.top >= from.bottom)),
   );
-  const i = pickNext(from, dir, c.map((x) => x.box));
+  const small = (x: Cand) => x.el.matches('.tskill') || /^\s*Out \d+\s*$/.test(x.el.textContent ?? '');
+  const field = focused.matches(HAND) && dir === 'up' ? c.filter((x) => !small(x) && !x.el.matches(HAND)) : null;
+  const j = field ? pickNext(from, dir, field.map((x) => x.box)) : -1;
+  const i = j >= 0 ? c.indexOf(field![j]) : pickNext(from, dir, c.map((x) => x.box));
   if (i >= 0) {
     setFocus(c[i].el);
     rumble(0, 0.12, 18);
@@ -462,6 +465,7 @@ function press() {
     (el as HTMLSelectElement).showPicker?.();
     return;
   }
+  if (el.matches('.tphase-item, .tphase-menu button') && /battle/i.test(el.textContent ?? '')) setTimeout(() => mine().length && duelJump(false, true), 350);
   if ((el as HTMLButtonElement).disabled) {
     say('Locked · clear the one before it first');
     rumble(0.25, 0, 70);
@@ -593,6 +597,10 @@ function visibleTabs(): HTMLElement | null {
 }
 
 function cardInfo() {
+  if (focused?.matches('.duel.touch [data-uid]')) {
+    if (!focused.dispatchEvent(new CustomEvent('pady', { bubbles: true, cancelable: true }))) return;
+    return void say('A face-down card: its text is hidden');
+  }
   if (focused?.hasAttribute('data-pad-y')) return void focused.dispatchEvent(new CustomEvent('pady', { bubbles: true }));
   const detail = visible('.tdetail');
   if (detail) return tap(detail);
@@ -650,7 +658,7 @@ function onButton(b: Btn) {
       return renderHints(true);
     case 'lb':
     case 'rb':
-      if (inDuel() && !visibleTabs()) return duelJump(b === 'lb');
+      if (inDuel() && !visibleTabs()) return b === 'lb' && focused?.matches(HAND) && mine().length ? duelJump(false, true) : duelJump(b === 'lb');
       return tabStep(b === 'lb' ? -1 : 1);
     case 'lt':
     case 'rt':
@@ -659,8 +667,17 @@ function onButton(b: Btn) {
 }
 
 /** In a duel: LB to your hand, RB to the opponent's monsters. */
-function duelJump(hand: boolean) {
+/** your monsters on the field */
+function mine(c = candidates()) {
+  return c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top >= innerHeight / 2);
+}
+function duelJump(hand: boolean, own = false) {
   const c = candidates();
+  if (own) {
+    const m = mine(c).sort((a, b) => a.box.left - b.box.left);
+    if (m.length) setFocus(m[Math.floor((m.length - 1) / 2)].el);
+    return;
+  }
   const zone = hand ? c.filter((x) => x.el.matches(HAND)) : c.filter((x) => x.el.matches('.tz-m, .zone.z-m') && (x.el as HTMLElement).dataset.uid && x.box.top < innerHeight / 2);
   // (no monsters over there: their other cards, then their portrait)
   const list = zone.length ? zone : hand ? [] : c.filter((x) => x.el.matches('[data-uid], .tpile, .pile') && x.box.top < innerHeight / 2);
@@ -682,7 +699,7 @@ function hintList(): Hint[] {
   if (document.querySelector('.duel')) {
     out[0][1] = aLabel();
     if (!guide) return [...out, [['x'], 'Phase'], [['y'], 'Text'], [['select'], 'More']];
-    out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand'], [['rb'], 'Foes'], [['start'], 'Menu'], [['lt', 'rt'], 'Page'], [['select'], 'Hide']);
+    out.push([['x'], 'Phase'], [['y'], 'Text'], [['lb'], 'Hand ⇄ Field'], [['rb'], 'Foes'], [['start'], 'Menu'], [['lt', 'rt'], 'Page'], [['select'], 'Hide']);
     return out;
   }
   const xl = focused?.getAttribute('data-pad-x');
@@ -702,6 +719,7 @@ function aLabel(): string {
   if (f.matches('.pick')) return document.querySelector('.ttoast.aim') ? 'Attack this' : 'Choose';
   if (f.matches('.topt')) return 'Choose';
   if (f.matches('.tbar.top') && document.querySelector('.ttoast.aim')) return 'Direct attack';
+  if (f.matches('.thcard')) return f.matches('.can') ? 'Play' : 'Card';
   if (f.matches(HAND)) return document.querySelector('.duel.turn-me .tphase-btn.live') ? 'Play' : 'Card';
   if (f.matches('[data-uid]')) return 'Card';
   if (f.matches('.tpile, .pile')) return 'Look';
@@ -727,6 +745,7 @@ function bottomBarTop(): number {
   return top;
 }
 
+let dimT = 0;
 function renderHints(force = false) {
   if (!hints) return;
   const duel = !!document.querySelector('.duel');
@@ -744,6 +763,10 @@ function renderHints(force = false) {
   hints.style.top = lp ? 'auto' : '';
   if (!force && key === hintKey) return;
   hintKey = key;
+  // (in a duel the bar fades back after a few seconds, so the cards under it can be read)
+  hints.classList.remove('dim');
+  clearTimeout(dimT);
+  if (duel) dimT = window.setTimeout(() => hints.classList.add('dim'), 3500);
   hints.innerHTML = list
     .map(([bs, label]) => `<span class="pad-hint">${bs.map((b) => `<b class="pad-k pad-${family} pad-${b}">${glyph(family, b)}</b>`).join('')}${label}</span>`)
     .join('');
