@@ -5,7 +5,7 @@
 // keeps its own progress and rewards; rewards come from first wins only.
 import { COPIES, owned, type SpeedSave } from '../speedSave';
 import { CHAPTERS, type Chapter } from './roster';
-import { deckOf, expand, findNode } from './campaign';
+import { deckOf, expand, findNode, nodePassed } from './campaign';
 import { grant } from './rewards';
 import type { SoloSave } from './save';
 import type { CpuDuelist, DuelOutcome, Reward } from './types';
@@ -79,26 +79,30 @@ export const pairName = (n: TagNode) => `${foeOf(n.pair[0]).name} & ${foeOf(n.pa
 export interface TagRoadProgress {
   wins: Record<string, number>;
   losses: number;
+  /** pair id -> wins with an Anything goes deck: the road opens, the prizes wait */
+  openWins?: Record<string, number>;
 }
 export const tagProgress = (solo: SoloSave): TagRoadProgress => solo.tagRoad ?? { wins: {}, losses: 0 };
 const won = (solo: SoloSave, id: string) => (tagProgress(solo).wins[id] ?? 0) > 0;
+/** Beaten with any deck, Anything goes included: enough to open what comes next. */
+export const tagNodePassed = (solo: SoloSave, id: string) => won(solo, id) || (tagProgress(solo).openWins?.[id] ?? 0) > 0;
 
 /** The first chapter is open from the start; each next one opens when the last boss pair falls. */
 export function tagChapterOpen(solo: SoloSave, ch: TagChapter): boolean {
   const i = TAG_CHAPTERS.indexOf(ch);
   if (i <= 0) return true;
   const prev = TAG_CHAPTERS[i - 1];
-  return won(solo, prev.nodes[prev.nodes.length - 1].id);
+  return tagNodePassed(solo, prev.nodes[prev.nodes.length - 1].id);
 }
 export function tagNodeOpen(solo: SoloSave, ch: TagChapter, index: number): boolean {
   if (!tagChapterOpen(solo, ch)) return false;
-  return index === 0 || won(solo, ch.nodes[index - 1].id);
+  return index === 0 || tagNodePassed(solo, ch.nodes[index - 1].id);
 }
 export const tagNodeWon = won;
 
 /** The next pair to beat (or the last one, once everything is cleared). */
 export function nextTagNode(solo: SoloSave): TagNode {
-  for (const ch of TAG_CHAPTERS) for (const n of ch.nodes) if (!won(solo, n.id)) return n;
+  for (const ch of TAG_CHAPTERS) for (const n of ch.nodes) if (!tagNodePassed(solo, n.id)) return n;
   const last = TAG_CHAPTERS[TAG_CHAPTERS.length - 1];
   return last.nodes[last.nodes.length - 1];
 }
@@ -116,7 +120,7 @@ export function partnersFor(solo: SoloSave): CpuDuelist[] {
     out.push(d);
   };
   add(findNode('c7-joey')!.node.duelist);
-  for (const ch of CHAPTERS) for (const n of ch.nodes) if ((solo.campaign.wins[n.id] ?? 0) > 0) add(n.duelist);
+  for (const ch of CHAPTERS) for (const n of ch.nodes) if (nodePassed(solo, n.id)) add(n.duelist);
   return out;
 }
 
@@ -140,13 +144,15 @@ export interface TagSettled {
 }
 
 /** Files a Tag Road duel on one phone: the record, and rewards for a first win. */
-export function settleTagRoad(speed: SpeedSave, solo: SoloSave, nodeId: string, o: DuelOutcome, seed = Date.now()): TagSettled {
+export function settleTagRoad(speed: SpeedSave, solo: SoloSave, nodeId: string, o: DuelOutcome, seed = Date.now(), open = false): TagSettled {
   const found = findTagNode(nodeId);
   const p = tagProgress(solo);
   const none: TagSettled = { speed, solo, lines: [], cards: [], firstWin: false, cleared: null };
   if (!found) return none;
   if (o.result !== 'w') return { ...none, solo: { ...solo, tagRoad: { ...p, losses: p.losses + 1 } } };
   const { node, chapter } = found;
+  // An Anything goes deck: the road opens on, but no cards or packs (they wait for a win with your own cards).
+  if (open) return { ...none, solo: { ...solo, tagRoad: { ...p, openWins: { ...p.openWins, [nodeId]: (p.openWins?.[nodeId] ?? 0) + 1 } } }, cleared: node.boss && !tagNodePassed(solo, nodeId) ? chapter : null };
   const firstWin = !won(solo, nodeId);
   const rewards: Reward[] = [];
   if (firstWin) {

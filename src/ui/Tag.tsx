@@ -5,7 +5,7 @@ import { activeDeck, speedDeckProblems, type SpeedDeck, type SpeedSave } from '.
 import { collectionProblems } from '../collection/economy';
 import type { SoloSave } from '../eds/speedCampaign/save';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
-import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, tagChapterOpen, tagLevel, tagNodeOpen, tagNodeWon, type TagNode, type TagSettled } from '../eds/speedCampaign/tagRoad';
+import { TAG_CHAPTERS, findTagNode, foeOf, nextTagNode, pairName, partnersFor, tagChapterOpen, tagLevel, tagNodeOpen, tagNodePassed, type TagNode, type TagSettled } from '../eds/speedCampaign/tagRoad';
 import { LAYOUTS, sideOfPhone, type TagLayout } from '../eds/tagDuel';
 import { activeMember, benchHand } from '../eds/tag';
 import type { DuelState, Pid } from '../eds/types';
@@ -259,7 +259,7 @@ function Road(p: Ctx & { back: () => void }) {
         <div class="so-chapters">
           {TAG_CHAPTERS.map((x) => {
             const open = tagChapterOpen(p.solo, x);
-            const done = tagNodeWon(p.solo, x.nodes[x.nodes.length - 1].id);
+            const done = tagNodePassed(p.solo, x.nodes[x.nodes.length - 1].id);
             return (
               <button key={x.id} class={`so-chap ${x.id === ch.id ? 'on' : ''} ${done ? 'done' : ''}`} disabled={!open} onClick={() => setChId(x.id)}>
                 {open ? x.n : '🔒'}
@@ -276,7 +276,7 @@ function Road(p: Ctx & { back: () => void }) {
         <div class="so-path">
           {ch.nodes.map((n, i) => {
             const open = tagNodeOpen(p.solo, ch, i);
-            const won = tagNodeWon(p.solo, n.id);
+            const won = tagNodePassed(p.solo, n.id);
             const a = foeOf(n.pair[0]);
             const b = foeOf(n.pair[1]);
             return (
@@ -323,7 +323,7 @@ function Road(p: Ctx & { back: () => void }) {
               )}
             </div>
           )}
-          {rep.noEarn && rep.result === 'w' && <p class="so-dim so-center">An Anything goes deck earns nothing, but the win counts on the road.</p>}
+          {rep.noEarn && rep.result === 'w' && <p class="so-dim so-center">An Anything goes deck earns nothing, but the win counts on the road. This pair's prizes wait for a win with your own cards.</p>}
           {rep.settled?.cleared && <p class="so-center tag-clear">Chapter {rep.settled.cleared.n} cleared! The next chapter is open.</p>}
           <Btn kind="gold" onClick={p.onReportSeen}>
             Continue
