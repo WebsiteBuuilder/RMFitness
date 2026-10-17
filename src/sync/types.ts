@@ -18,6 +18,8 @@ export interface SyncAdapter {
   retry?(): void;
   /** the host empties the log for a rematch in the same room (every phone in it follows) */
   restart?(): void;
+  /** the other phone has been gone so long that leaving wins the duel (this phone is still online) */
+  abandoned?(): boolean;
 }
 
 /** Shared bookkeeping for adapters: listeners and a status value. */

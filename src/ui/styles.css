@@ -2183,6 +2183,63 @@ p {
 .who-sub.warn {
   color: #f0b04a;
 }
+.who-net {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 340px;
+}
+.who-net .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8a8f98;
+  flex: none;
+}
+.who-net.on .dot {
+  background: #3ad17a;
+  box-shadow: 0 0 6px #3ad17a;
+}
+.who-net.offline {
+  color: #f0b04a;
+}
+.who-net.offline .dot {
+  background: #f0b04a;
+}
+.who-net.busy .dot {
+  animation: who-pulse 1s ease-in-out infinite;
+}
+@keyframes who-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+.ptile.add:disabled {
+  opacity: 0.45;
+}
+.profiles .overlay {
+  background: rgba(5, 8, 18, 0.92);
+}
+.who-retry {
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: #2f7fe0;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  min-height: 28px;
+  margin-left: 8px;
+}
 .pbadge {
   position: absolute;
   right: -6px;

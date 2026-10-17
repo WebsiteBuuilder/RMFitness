@@ -70,6 +70,13 @@ const lastGame = (id: string): string | null => {
     return null;
   }
 };
+const hasSpeedSave = (id: string): boolean => {
+  try {
+    return localStorage.getItem(`eds.speed.${id}`) !== null;
+  } catch {
+    return false;
+  }
+};
 /** How long the board settles before the computer thinks (counted inside its usual pause). */
 const THINK_BEAT = 300;
 const setLastGame = (id: string, g: string) => {
@@ -272,11 +279,13 @@ export function App() {
 
   const pickProfile = (p: Profile) => {
     const s = loadSave(p.id);
+    // a duelist logging in on a new phone opens in Speed Duel if that's where their decks are
+    const game = lastGame(p.id) ?? (hasSpeedSave(p.id) ? 'speed' : null);
     setProfile(p);
     setSaveState(s);
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
-    setScreen(!s ? 'intro' : pendingJoin ? 'link' : lastGame(p.id) === 'speed' ? 'speed' : 'menu');
+    setScreen(!s ? 'intro' : pendingJoin ? 'link' : game === 'speed' ? 'speed' : 'menu');
   };
   // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
   useEffect(() => {
@@ -340,7 +349,7 @@ export function App() {
   const parkRoom = (ses: DuelSession | null) => {
     if (!ses) return;
     const st = ses.engine.state;
-    const canRematch = !cpu && !st.tag && !!ses.adapter.restart && (hotseat || (ses.adapter.kind === 'peer' && ses.status === 'connected'));
+    const canRematch = !cpu && !st.tag && !!ses.adapter.restart && (hotseat || (ses.adapter.kind !== 'local' && ses.status === 'connected'));
     if (!canRematch) return ses.close();
     const seat = mySeat;
     const hs = hotseat;
@@ -712,7 +721,8 @@ export function App() {
       if (!hotseat && session.status !== 'connected') {
         if (!sure) return setOfflineLeave(true);
         setOfflineLeave(false);
-        const left = speedSave ? settleLeftDuel(speedSave) : null;
+        // the other phone walked out long ago (online rooms say so): the win goes to the one who stayed
+        const left = speedSave ? settleLeftDuel(speedSave, session.adapter.abandoned?.() ? mySeat : undefined) : null;
         settled.current = session;
         if (left) setSpeedSave(left.save);
         setSpeedNews(left ? left.lines : ['The connection was lost, so this friendly duel has no result.']);
@@ -1142,11 +1152,15 @@ export function App() {
         return (
           <Overlay onClose={() => setOfflineLeave(false)}>
             <Win title="Connection lost" onClose={() => setOfflineLeave(false)}>
-              <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+              {session.adapter.abandoned?.() ? (
+                <p>Your opponent has been gone for over a minute and a half. Leave now and the win is yours.</p>
+              ) : (
+                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+              )}
               <Menu
                 items={[
                   { label: 'Keep waiting', onPick: () => setOfflineLeave(false) },
-                  { label: 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
+                  { label: session.adapter.abandoned?.() ? 'Leave and take the win' : 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
                 ]}
               />
             </Win>

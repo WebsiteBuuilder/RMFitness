@@ -1,5 +1,5 @@
 // Link Battle: create or join an online room, or play on one phone.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Action, GameMode, Pid } from '../eds/types';
 import { speedDeckProblems, type SpeedDeck } from '../eds/speedSave';
@@ -89,6 +89,9 @@ export function startFromSeats(seats: SessionView['seats'], mode: GameMode, firs
     ...(mode === 'speed' ? { mode: 'speed' as const, skills: [seats[0].skill ?? null, seats[1].skill ?? null] as [string | null, string | null] } : {}),
   };
 }
+
+/** A Find a Match room with no bets starts by itself after this many seconds. */
+const AUTO_START_S = 4;
 
 /** How a room decides who goes first: the last loser calls it in a rematch, else rock-paper-scissors (a coin on one phone). */
 export function tossFor(view: SessionView, hotseat: boolean): { type: 'TOSS'; how: TossHow; chooser?: Pid } {
@@ -243,6 +246,26 @@ export function Lobby({
     if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready)) ready();
   }, [matched?.room, status, view.log.length]);
 
+  // ...and the host's phone starts it by itself a few seconds later, unless someone puts up a bet.
+  const autoGo = !!matched && !rematch && bothReady && sameGame && !view.toss && status === 'connected' && stakesReady(view) && noAnte(seats[0].stakes?.ante) && noAnte(seats[1].stakes?.ante);
+  const [goIn, setGoIn] = useState(0);
+  const viewNow = useRef(view);
+  viewNow.current = view;
+  useEffect(() => {
+    if (!autoGo) return setGoIn(0);
+    let n = AUTO_START_S;
+    setGoIn(n);
+    const id = window.setInterval(() => {
+      n--;
+      setGoIn(Math.max(n, 0));
+      if (n > 0) return;
+      clearInterval(id);
+      // the guest's phone only counts along; the host starts it (unless a tap already did)
+      if (session.adapter.isHost && !viewNow.current.toss) session.send(tossFor(viewNow.current, hotseat));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autoGo]);
+
   // A deck changed in the room after sitting down: sit back down with the new one (bets get accepted again).
   const myKey = mine ? `${mine.deck.join('|')}#${mine.fusion.join('|')}#${mine.skill ?? ''}` : '';
   const seatKey = `${seats[mySeat].deck.join('|')}#${seats[mySeat].fusion.join('|')}#${seats[mySeat].skill ?? ''}`;
@@ -303,7 +326,7 @@ export function Lobby({
       <Win title={code ? `Room ${code} · ${GAME_NAME[roomMode]}` : `Play on this phone · ${GAME_NAME[roomMode]}`} onClose={onLeave}>
         {code && <p class={`status s-${status}`}>{detail || status}</p>}
         {tag && <p class="tag-room">{tag.title ?? '2v2 Tag Duel'} · {tag.note}</p>}
-        {matched && <p class="hint">Find a Match: you're dueling {matched.opponent}. {session.adapter.isHost ? 'Start when you are both ready.' : ''}</p>}
+        {matched && <p class="hint">Find a Match: you're dueling {matched.opponent}. {goIn > 0 ? 'The duel starts by itself.' : session.adapter.isHost ? 'Start when you are both ready.' : ''}</p>}
         {code && session.adapter.isHost && status === 'waiting' && !matched && (
           <p>
             Tell your brother the code <b>{code}</b> or send him this link:{' '}
@@ -364,7 +387,7 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: goIn > 0 ? `Starting in ${goIn}… tap to start` : 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? 'place a bet to wait' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">{goIn > 0 ? `Starting in ${goIn}… place a bet to wait` : 'Waiting for the host to start…'}</p>)}
       </Win>
       {linkToCopy && (
         <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>

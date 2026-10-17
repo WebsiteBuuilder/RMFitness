@@ -30,12 +30,22 @@ export class FirebaseBackend implements CloudBackend {
       const { initializeApp, getApps } = await import('firebase/app');
       const { getAuth, onAuthStateChanged } = await import('firebase/auth');
       const { getDatabase } = await import('firebase/database');
-      const app = getApps().find((a) => a.name === '[DEFAULT]') ?? initializeApp(this.config);
+      const old = getApps().find((a) => a.name === '[DEFAULT]');
+      const app = old ?? initializeApp(this.config);
       const auth = getAuth(app);
+      const db = getDatabase(app);
+      // `?emu=host`: the Firebase emulators instead of the real service (tests)
+      const emu = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('emu') : null;
+      if (emu && !old) {
+        const { connectAuthEmulator } = await import('firebase/auth');
+        const { connectDatabaseEmulator } = await import('firebase/database');
+        connectAuthEmulator(auth, `http://${emu}:9099`, { disableWarnings: true });
+        connectDatabaseEmulator(db, emu, 9000);
+      }
       onAuthStateChanged(auth, (u) => (this.user = u?.uid ?? null));
       await auth.authStateReady();
       this.user = auth.currentUser?.uid ?? null;
-      return { app, auth, db: getDatabase(app) };
+      return { app, auth, db };
     })();
     return this.ready;
   }
@@ -143,14 +153,9 @@ export class FirebaseBackend implements CloudBackend {
   /** Backups sign in as this phone (an anonymous account in a second app), apart from the duelist. */
   private backupInit() {
     this.backupReady ??= (async () => {
-      const { initializeApp, getApps } = await import('firebase/app');
-      const { getAuth, signInAnonymously } = await import('firebase/auth');
-      const { getDatabase } = await import('firebase/database');
-      const app = getApps().find((a) => a.name === 'eds-backup') ?? initializeApp(this.config, 'eds-backup');
-      const auth = getAuth(app);
-      await auth.authStateReady();
-      const uid = auth.currentUser?.uid ?? (await signInAnonymously(auth)).user.uid;
-      return { db: getDatabase(app), uid };
+      const { phoneApp, phoneUid } = await import('../sync/cloud');
+      const { db } = await phoneApp();
+      return { db, uid: await phoneUid() };
     })().catch((e) => {
       this.backupReady = null;
       throw fail(e);

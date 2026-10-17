@@ -532,7 +532,7 @@ html.sd-home .mm-bar {
 .mm-vs-flash {
   position: absolute;
   inset: 0;
-  background: #fff;
+  background: radial-gradient(closest-side, #ffd75e88, transparent);
   animation: mm-flash 0.5s ease-out forwards;
   pointer-events: none;
 }
@@ -562,6 +562,8 @@ html.sd-home .mm-bar {
   gap: 10px;
   width: 100%;
   max-width: 480px;
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 .mm-vs-side {
   flex: 1;
@@ -597,6 +599,8 @@ html.sd-home .mm-bar {
 .mm-vs-side small {
   font-size: 12px;
   color: #f2d48a;
+  text-align: center;
+  max-width: 100%;
 }
 .mm-vs-x {
   font-size: 34px;

@@ -1,0 +1,22 @@
+name: Online check
+
+# Checks the live online service (sign-in, duelist list) from outside.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/online-check.mjs
+      - .github/workflows/online-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/online-check.mjs

@@ -5,17 +5,17 @@ import type { Profile } from '../eds/save';
 import type { DuelSession } from '../eds/session';
 import { newRoomCode } from '../sync/types';
 import { Presence, type OutgoingInvite } from './presence';
-import { PeerTransport } from './peerTransport';
+import { AutoTransport, queueNet } from './autoNet';
+import { checkCloud, cloudState, onCloudState } from '../sync/cloud';
 import { parseFriendCode, type Activity, type Transport } from './protocol';
 import { loadOnline, writeOnline } from './store';
 import type { BoardStats } from '../collection/rankings';
 import { Matchmaker, type Match } from './matchmaking';
-import { PeerQueue } from './peerQueue';
 
 /** The "Opponent found!" screen stays up this long before the duel room opens. */
-export const VERSUS_MS = 2600;
+export const VERSUS_MS = 1800;
 /** The joining phone waits a little longer, so the host's room is open by the time it knocks. */
-const GUEST_EXTRA_MS = 1200;
+const GUEST_EXTRA_MS = 500;
 
 export interface AppHooks {
   /** open a room as its host, under this code, for this game */
@@ -49,8 +49,11 @@ class OnlineController {
   passive = false;
   private instance = Math.random().toString(36).slice(2);
   private channel: BroadcastChannel | null = null;
+  private transport: Transport | null = null;
+  /** which queue the current search is on */
+  private mmKind: 'cloud' | 'peer' = 'cloud';
   /** tests swap in their own transport */
-  makeTransport: () => Transport = () => new PeerTransport();
+  makeTransport: () => Transport = () => new AutoTransport();
   /** Find a Match: the queue for a duel against whoever else is searching */
   readonly mm: Matchmaker;
   /** the match being shown on the "Opponent found!" screen, before its room opens */
@@ -63,13 +66,35 @@ class OnlineController {
 
   constructor() {
     this.mm = new Matchmaker({
-      net: () => new PeerQueue(),
+      net: () => {
+        // a search started while the check runs waits for it and lands on the right queue by itself
+        this.mmKind = cloudState() === 'off' ? 'peer' : 'cloud';
+        return queueNet();
+      },
       me: () => {
         const pr = this.presence;
         return { name: pr?.me.name ?? this.profile?.alias ?? 'Duelist', color: pr?.me.color ?? this.profile?.color ?? '#888888', code: pr?.data.code ?? '', ...(pr?.me.board ? { board: pr.me.board } : {}) };
       },
     });
     this.mm.subscribe(() => this.changed());
+    // the online service came through after this phone had gone online the old way: switch over
+    onCloudState((st) => {
+      const t = this.transport;
+      // a search still on the old queue moves over too, so it can meet phones on the service
+      if (st === 'on' && this.mm.state === 'searching' && this.mmKind === 'peer' && !this.versus) {
+        const g = this.mm.game;
+        this.mm.cancel();
+        this.findMatch(g);
+      }
+      if (st === 'on' && t instanceof AutoTransport && t.kind === 'peer' && this.profile && !this.versus) {
+        const p = this.profile;
+        this.unsubPresence?.();
+        this.presence?.stop();
+        this.presence = null;
+        this.goOnline(p);
+        this.changed();
+      }
+    });
     this.mm.onMatch = (m) => this.matched(m);
     if (typeof location !== 'undefined') {
       const p = new URLSearchParams(location.search);
@@ -104,6 +129,7 @@ class OnlineController {
           this.resumeSearch = false;
           if (this.profile && !this.versus) this.findMatch(this.mm.game);
         }
+        if (cloudState() === 'off') void checkCloud();
         if (this.passive && this.profile) {
           this.passive = false;
           this.goOnline(this.profile);
@@ -159,7 +185,9 @@ class OnlineController {
   private goOnline(p: Profile): Presence {
     // fresh from storage: another window of this game may have changed the list
     const data = loadOnline(p.id);
-    const pr = new Presence({ transport: this.makeTransport(), data, me: { name: p.alias, color: p.color }, save: (d) => writeOnline(p.id, d) });
+    const transport = this.makeTransport();
+    this.transport = transport;
+    const pr = new Presence({ transport, data, me: { name: p.alias, color: p.color }, save: (d) => writeOnline(p.id, d) });
     this.presence = pr;
     this.unsubPresence = pr.subscribe(() => this.changed());
     pr.onNotice = (text) => this.say(text);
