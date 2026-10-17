@@ -8,6 +8,7 @@ export const NET_HOST_LEFT = 'Your opponent left the room.';
 export const NET_TAKEN = 'That room code is already in use. Create a new room.';
 
 /** How long a guest looks for a room (the host may still be opening it) before saying it doesn't exist. */
+export const NET_TOOK_WIN = 'Your opponent waited and took the win. Leave from the menu.';
 export const FIND_MS = 12_000;
 const LOOK_MS = 1_500;
 /** How long the first connection gets before the room counts as unreachable. */
@@ -143,6 +144,12 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   /** the other phone already took this duel's win by leaving after waiting */
   private otherWon = false;
 
+  /** the other phone waited out this one and took the win: say so, the duel is over */
+  private onLeft(v: unknown, me: string) {
+    this.otherWon = !!v && v !== me;
+    if (this.otherWon && !this.closed) this.fail(NET_TOOK_WIN);
+  }
+
   abandoned(): boolean {
     return this.everLinked && !this.otherHere && this.online && !this.otherWon && this.status !== 'error' && this.goneSince > 0 && Date.now() - this.goneSince >= ABANDON_MS;
   }
@@ -212,7 +219,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         this.otherHere = !!v;
         this.showLink();
       }),
-      db.onValue(`${this.base}/left`, (v) => (this.otherWon = !!v && v !== db.uid)),
+      db.onValue(`${this.base}/left`, (v) => this.onLeft(v, db.uid)),
       db.onChildAdded(`${this.base}/in`, (key, v) => {
         void db.remove(`${this.base}/in/${key}`).catch(() => {});
         if (typeof v !== 'string') return;
@@ -259,7 +266,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         this.showLink();
       }),
       db.onValue(`${this.base}/ep`, (v) => v !== null && this.followLog(db, Number(v) || 0)),
-      db.onValue(`${this.base}/left`, (v) => (this.otherWon = !!v && v !== db.uid)),
+      db.onValue(`${this.base}/left`, (v) => this.onLeft(v, db.uid)),
       // the host closed the room: the board stays as it was, with a plain message
       db.onValue(`${this.base}/meta`, (v) => {
         if (!v && this.everLinked) this.fail(NET_HOST_LEFT);
@@ -285,6 +292,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         if (ev.seq !== this.events.length) return;
         this.events = [...this.events, ev];
         this.emit();
+        // a guest back after a reload: moves mean the duel was linked, so a missing host gets the clock
+        if (!this.everLinked) {
+          this.everLinked = true;
+          this.showLink();
+        }
       } catch {
         /* not a move */
       }

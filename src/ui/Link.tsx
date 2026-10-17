@@ -387,7 +387,7 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: goIn > 0 ? `Starting in ${goIn}… tap to go now` : 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? 'place a bet to wait' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">{goIn > 0 ? `Starting in ${goIn}… place a bet to wait` : 'Waiting for the host to start…'}</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: goIn > 0 ? `Starting in ${goIn}… tap to start` : 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? 'place a bet to wait' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">{goIn > 0 ? `Starting in ${goIn}… place a bet to wait` : 'Waiting for the host to start…'}</p>)}
       </Win>
       {linkToCopy && (
         <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>

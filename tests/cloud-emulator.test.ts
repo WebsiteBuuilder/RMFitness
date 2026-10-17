@@ -175,8 +175,21 @@ async function main() {
   // someone else's room code
   const clash = new FirebaseAdapter(room, true, async () => c2);
   check(await until(() => clash.status === 'error') && /already in use/.test(clash.detail), "can't host under a code someone is using");
-  host.close();
+  // the guest reloads while the host is away: the room is still there, with the clock running
   guest.close();
+  a.off();
+  const back = new FirebaseAdapter(room, false, async () => b);
+  let backLog: LoggedEvent[] = [];
+  back.subscribe((e) => (backLog = e));
+  check(await until(() => backLog.length === 2), 'a guest back after a reload gets the moves');
+  await wait(14000);
+  check(back.status !== 'error' && /Waiting for them to come back/.test(back.detail), "and waits on the host's clock instead of \"no room\"");
+  // the host took the abandoned win meanwhile: the guest is told
+  await c2.set(`net/rooms/${room}/left`, 'host-phone');
+  check(await until(() => back.status === 'error') && /took the win/.test(back.detail), 'the phone that walked away hears the other took the win');
+  back.close();
+  a.on();
+  host.close();
   lost.close();
   clash.close();
 
