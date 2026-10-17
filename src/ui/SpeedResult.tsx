@@ -23,6 +23,8 @@ export interface SpeedResultData {
   lp: { name: string; lp: number }[];
   turns: number;
   rewards: ResultReward[];
+  /** what this player's cards did: damage dealt, monsters destroyed, cards played, and the standout card */
+  stats?: { dealt: number; kills: number; plays: number; mvp?: string };
 }
 
 /** When the first reward appears, and the longest wait before Continue can be tapped (ms). */
@@ -79,6 +81,35 @@ export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResult
         ))}
         <div class="mdres-turns">Turn {data.turns}</div>
       </div>
+      {data.stats && (data.stats.plays > 0 || data.stats.dealt > 0) && (
+        <div class="mdres-stats">
+          {data.stats.mvp && (
+            <div class="mdres-mvp">
+              <span class="mdres-mvp-card">
+                <CardImg name={data.stats.mvp} />
+              </span>
+              <span>
+                <small>Best card</small>
+                <b>{data.stats.mvp}</b>
+              </span>
+            </div>
+          )}
+          <div class="mdres-nums">
+            <span>
+              <b>{data.stats.dealt}</b>
+              <small>damage dealt</small>
+            </span>
+            <span>
+              <b>{data.stats.kills}</b>
+              <small>destroyed</small>
+            </span>
+            <span>
+              <b>{data.stats.plays}</b>
+              <small>cards played</small>
+            </span>
+          </div>
+        </div>
+      )}
       <div class="mdres-rewards">
         {n > 0 && <div class="mdres-rhead">Rewards</div>}
         <ul>

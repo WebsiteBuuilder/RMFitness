@@ -273,12 +273,15 @@
   border-radius: 7px;
   margin-bottom: 4px;
 }
-/* the card's picture box only (the art sits at about 18-64% of the card's height) */
+/* the card's picture box only: the card fills the square, then zooms onto its art (about 18-64% of its height) */
 .sp-pick-art .cimg {
-  width: 150%;
-  max-width: none;
-  margin: -40% 0 0 -25%;
   display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 50% 21%;
+  transform: scale(1.5);
 }
 .sp-pick b {
   font-size: 13px;
@@ -322,4 +325,20 @@
   font-weight: 900;
   font-size: 18px;
   letter-spacing: 0.04em;
+}
+/* one line each on the smallest phones (the Speed theme's own filter rules wrap) */
+.ui-speed .dk .dk-filters {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ui-speed .dk .dk-filters .chip {
+  padding: 0 9px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.ui-speed .dk .dk-filters .search {
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }

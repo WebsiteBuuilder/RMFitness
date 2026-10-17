@@ -1352,3 +1352,25 @@ ul.so-understood li::before {
   font-weight: 600;
   opacity: 0.85;
 }
+/* the VS screen's Duel! fills up as the duel is about to start by itself */
+.vs-go {
+  position: relative;
+  overflow: hidden;
+}
+.vs-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: rgba(42, 26, 0, 0.55);
+  transform-origin: left;
+  animation: vs-timer linear both;
+}
+@keyframes vs-timer {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.so .so-sticky-go .so-btn {
+  width: 100%;
+}

@@ -94,12 +94,26 @@ export function soloBack(): boolean {
 export const ace = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
 
 // ---------- the VS splash ----------
+/** How long the VS screen stays up before the duel starts by itself (longer with conditions or goals to read). */
+const VS_AUTO_MS = 4000;
+
 function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => void; onCancel: () => void }) {
   const v = spec.vs!;
   useBack(onCancel);
   useEffect(() => {
     playVs();
     buzz([40, 60, 90]);
+  }, []);
+  // The duel starts by itself after a beat (time to read the conditions); Duel! starts it now.
+  const started = useRef(false);
+  const go = () => {
+    if (started.current) return;
+    started.current = true;
+    onGo();
+  };
+  useEffect(() => {
+    const t = setTimeout(go, VS_AUTO_MS);
+    return () => clearTimeout(t);
   }, []);
   return (
     <div class="so vs">
@@ -135,8 +149,9 @@ function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => voi
           ))}
         </div>
       )}
-      <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), onGo())}>
+      <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), go())}>
         Duel!
+        <i class="vs-timer" style={{ animationDuration: `${VS_AUTO_MS}ms` }} />
       </button>
     </div>
   );

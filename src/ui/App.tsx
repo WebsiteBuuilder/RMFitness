@@ -40,7 +40,7 @@ import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
 import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
-import { rarityMap, TIERS, tierIndex, withLevels, type LevelReport } from '../level/leveling';
+import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
 import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult, tooQuick } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
@@ -1238,7 +1238,25 @@ function resultOf(st: DuelState, mySeat: Pid, hotseat: boolean, before: SpeedSav
     for (const n of c.lost) rewards.push({ kind: 'card', card: n, won: false, who });
   }
   for (const l of lines) rewards.push({ kind: 'line', text: l });
-  return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards };
+  return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards, stats: duelStats(st, mySeat) };
+}
+/** What this player's cards did in the duel, and the card that did the most (Master Duel's MVP). */
+function duelStats(st: DuelState, seat: Pid): SpeedResultData['stats'] {
+  const deeds = (st.fx?.lvl as { s: Record<string, Deeds>[] } | undefined)?.s?.[seat];
+  if (!deeds) return undefined;
+  let dealt = 0;
+  let kills = 0;
+  let plays = 0;
+  let mvp: { name: string; score: number } | null = null;
+  for (const [name, d] of Object.entries(deeds)) {
+    const dmg = (d.bd ?? 0) + (d.dd ?? 0) + (d.ed ?? 0);
+    dealt += dmg;
+    kills += d.k ?? 0;
+    plays += d.p ?? 0;
+    const score = dmg + 600 * (d.k ?? 0) + 100 * (d.p ?? 0);
+    if (score > 0 && (!mvp || score > mvp.score)) mvp = { name, score };
+  }
+  return { dealt, kills, plays, mvp: mvp?.name };
 }
 /** Life Points both players lost (damage and costs) over the whole duel. */
 const lpLostIn = (st: DuelState) => ((st.fx.lpLost ?? [0, 0]) as number[]).reduce((a, b) => a + (b ?? 0), 0);

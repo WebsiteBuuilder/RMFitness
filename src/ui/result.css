@@ -404,3 +404,88 @@
   margin-top: 0;
   min-height: 52px;
 }
+
+/* What your cards did: the best card and three numbers, between the Life Points and the rewards. */
+.mdres-stats {
+  position: relative;
+  width: min(100%, 520px);
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: mdres-stats-in 0.4s 0.8s ease-out both;
+}
+.res-skipped .mdres-stats {
+  animation-delay: 0ms;
+}
+@keyframes mdres-stats-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+.mdres-mvp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.mdres-mvp-card {
+  flex: none;
+  width: 44px;
+}
+.mdres-mvp-card .cimg {
+  width: 100%;
+  display: block;
+  border-radius: 3px;
+  box-shadow: 0 0 12px rgba(255, 214, 90, 0.5);
+}
+.mdres-mvp > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mdres-mvp small,
+.mdres-nums small {
+  font-size: 11px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mdres-mvp b {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.mdres-nums {
+  display: flex;
+  gap: 12px;
+  flex: none;
+}
+.mdres-nums span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.mdres-nums b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.mdres-nums small {
+  font-size: 9px;
+  max-width: 52px;
+}
+@media (max-width: 380px) {
+  .mdres-stats {
+    flex-wrap: wrap;
+  }
+  .mdres-mvp {
+    flex-basis: 100%;
+  }
+  .mdres-nums {
+    width: 100%;
+    justify-content: space-around;
+  }
+}

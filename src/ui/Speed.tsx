@@ -273,7 +273,9 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
       </Win>
       {sel && preview && (
         <Win title={`${sel.character} · ${preview.main.length} cards`}>
-          <Menu items={[{ label: `Take ${sel.character}'s deck`, onPick: () => onPick(preview) }]} />
+          <button class="sp-go" onClick={() => onPick(preview)}>
+            Take {sel.character}'s deck
+          </button>
           {preview.skill && (
             <p class="starter-skill">
               <b>Skill: {preview.skill.replace(/ \(Skill Card\)$/, '')}</b>
@@ -590,17 +592,17 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
         <div class="filters dk-filters">
           {(['all', 'monster', 'spell', 'trap', 'extra'] as Kind[]).map((f) => (
             <button key={f} class={`chip ${kind === f ? 'on' : ''}`} onClick={() => (setKind(f), setLimit(PAGE))}>
-              {f === 'all' ? 'All' : f === 'monster' ? 'Mon' : f === 'spell' ? 'Spell' : f === 'trap' ? 'Trap' : 'Extra'}
+              {f === 'all' ? 'All' : f === 'monster' ? 'Monster' : f === 'spell' ? 'Spell' : f === 'trap' ? 'Trap' : 'Extra'}
             </button>
           ))}
           <button class={`chip ${moreFilters || attr !== 'all' || lvl !== 'all' || setF !== 'all' ? 'on' : ''}`} onClick={() => setMoreFilters(!moreFilters)} aria-label="More filters and sort">
-            ⚙
+            Sort ▾
           </button>
         </div>
         <div class="filters dk-filters">
           <input class="search" type="search" placeholder={inText ? 'Search card text' : 'Search name'} value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
           <button class={`chip ${inText ? 'on' : ''}`} onClick={() => setInText(!inText)} title="Search card text too">
-            Txt
+            In text
           </button>
           {filtered && (
             <button class="chip" onClick={() => (setKind('all'), setAttr('all'), setLvl('all'), setSetF('all'), setQ(''), setLimit(PAGE))}>
