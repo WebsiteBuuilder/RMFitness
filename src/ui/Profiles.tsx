@@ -102,7 +102,8 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
           );
         })}
         {!manage && (
-          <button class="ptile add" onClick={() => (playBlip(), setSheet({ kind: 'add' }))}>
+          // waits for the duelist list, so nobody makes a second copy of a duelist that's already there
+          <button class="ptile add" disabled={loading} onClick={() => (playBlip(), setSheet({ kind: 'add' }))}>
             <span class="pav-wrap">
               <span class="pavatar big plus">+</span>
             </span>

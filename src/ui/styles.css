@@ -2223,6 +2223,12 @@ p {
     opacity: 0.25;
   }
 }
+.ptile.add:disabled {
+  opacity: 0.45;
+}
+.profiles .overlay {
+  background: rgba(5, 8, 18, 0.92);
+}
 .who-retry {
   font: inherit;
   font-weight: 700;

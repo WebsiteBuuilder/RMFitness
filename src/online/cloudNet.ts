@@ -194,10 +194,20 @@ export class Endpoint {
 
   private stopMail: (() => void) | null = null;
 
-  /** Tries to take the name. */
-  async claim(): Promise<HoldState> {
+  private claiming: Promise<HoldState> | null = null;
+  /** mail sent before this (server clock) was for an earlier holder */
+  private since = 0;
+
+  /** Tries to take the name (one try at a time). */
+  claim(): Promise<HoldState> {
+    this.claiming ??= this.tryClaim().finally(() => (this.claiming = null));
+    return this.claiming;
+  }
+
+  private async tryClaim(): Promise<HoldState> {
     if (this.released) return 'lost';
     if (this.isHeld) return 'held';
+    this.since = this.db.serverNow() - 5_000;
     const path = `net/who/${this.id}`;
     const me = this.db.uid;
     // a name is free when nobody holds it, it's ours, or its holder stopped refreshing it
@@ -215,8 +225,6 @@ export class Endpoint {
       return 'lost';
     }
     await this.db.onDisconnectRemove(path).catch(() => {});
-    // whatever was left for an earlier holder is stale
-    await this.db.remove(`net/mail/${this.id}`).catch(() => {});
     this.isHeld = true;
     this.stopMail?.();
     this.stopMail = this.db.onChildAdded(
@@ -239,6 +247,8 @@ export class Endpoint {
   private mail(key: string, m: Mail) {
     void this.db.remove(`net/mail/${this.id}/${key}`).catch(() => {});
     if (!m || typeof m.link !== 'string' || typeof m.from !== 'string') return;
+    // left for an earlier holder of this name
+    if (typeof m.at === 'number' && m.at < this.since) return;
     if (m.k === 'open') {
       if (this.links.has(m.link)) return;
       const l = new CloudLink(this, m.from, m.link, false, this.live);

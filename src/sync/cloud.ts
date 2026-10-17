@@ -214,7 +214,9 @@ export function useTestDb(db: (() => Promise<Db>) | null) {
 }
 
 /** How long the first sign-in and test write get before the phone falls back to the old phone-to-phone links. */
-const CHECK_MS = 12_000;
+const CHECK_MS = 20_000;
+/** After a failed check, ask again in the background this long after (doubling up to a minute). */
+let recheckMs = 10_000;
 
 /**
  * Finds out once whether online play can go through the service: signs this phone in and
@@ -245,8 +247,14 @@ export function checkCloud(): Promise<CloudState> {
     }
   })().then((s) => {
     setState(s);
-    // a failed check is tried again the next time someone asks
-    if (s !== 'on') check = null;
+    // a failed check is tried again in the background (and whenever someone asks)
+    if (s !== 'on') {
+      check = null;
+      if (firebaseConfig && !forced) {
+        setTimeout(() => state === 'off' && void checkCloud(), recheckMs);
+        recheckMs = Math.min(recheckMs * 2, 60_000);
+      }
+    }
     return s;
   });
   return check;

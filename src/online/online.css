@@ -299,3 +299,14 @@
     transform: translate(-50%, -12px);
   }
 }
+
+/* The Start Duel button's small print, readable on its gold */
+.menu.start-duel .menu-item:not(.off) .menu-note {
+  color: #4a3000;
+  opacity: 1;
+}
+/* A dropped connection in a Speed Duel shows over the middle of the board, not over the LP */
+.ui-speed .netwarn {
+  top: 36%;
+  max-width: min(340px, calc(100% - 32px));
+}

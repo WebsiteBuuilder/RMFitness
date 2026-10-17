@@ -4,13 +4,14 @@ import { cloudState, denied, onlineDb, type Db } from './cloud';
 
 export const NET_NO_ROOM = 'No room with that code. Check the 4 letters, or create a room.';
 export const NET_UNREACHABLE = "Can't reach the online server. Check your Wi-Fi or mobile data.";
+export const NET_HOST_LEFT = 'Your opponent left the room.';
 export const NET_TAKEN = 'That room code is already in use. Create a new room.';
 
 /** How long a guest looks for a room (the host may still be opening it) before saying it doesn't exist. */
 export const FIND_MS = 12_000;
 const LOOK_MS = 1_500;
 /** How long the first connection gets before the room counts as unreachable. */
-const OPEN_MS = 15_000;
+const OPEN_MS = 20_000;
 
 type Meta = { host?: string; at?: number } | null;
 
@@ -69,6 +70,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   private stopAll() {
     this.run++;
+    if (this.goneTimer) clearInterval(this.goneTimer);
+    this.goneTimer = null;
     this.ready = false;
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
@@ -92,7 +95,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   private async start() {
     const run = this.run;
-    this.later(OPEN_MS, () => !this.db && this.fail(NET_UNREACHABLE));
+    // the whole open (or a guest's search for the room) must finish in time
+    this.later(OPEN_MS, () => !this.ready && this.fail(NET_UNREACHABLE));
     let db: Db;
     try {
       db = await this.getDb();
@@ -132,13 +136,35 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     );
   }
 
+  private goneSince = 0;
+  private goneTimer: ReturnType<typeof setInterval> | null = null;
+
   private showLink() {
     if (!this.online) return;
     if (this.otherHere) {
       this.everLinked = true;
+      this.goneSince = 0;
+      if (this.goneTimer) clearInterval(this.goneTimer);
+      this.goneTimer = null;
       this.setStatus('connected', this.isHost ? 'Opponent connected' : 'Connected to host');
-    } else if (this.isHost) this.setStatus('waiting', this.everLinked ? 'Opponent disconnected. Waiting for them to rejoin…' : `Room ${this.roomCode}. Waiting for your opponent…`);
-    else this.setStatus('connecting', this.everLinked ? 'Lost the host. Reconnecting…' : `Looking for room ${this.roomCode}…`);
+      return;
+    }
+    if (!this.everLinked) {
+      if (this.isHost) this.setStatus('waiting', `Room ${this.roomCode}. Waiting for your opponent…`);
+      else this.setStatus('connecting', `Looking for room ${this.roomCode}…`);
+      return;
+    }
+    // the other phone dropped off mid-room: count the time, so nobody waits blind
+    if (!this.goneSince) this.goneSince = Date.now();
+    const say = () => {
+      const s = Math.floor((Date.now() - this.goneSince) / 1000);
+      const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      const who = this.isHost ? 'Opponent disconnected' : 'Lost the host';
+      const tail = s >= 60 ? ' They may not be back: you can leave from the menu.' : '';
+      this.setStatus(this.isHost ? 'waiting' : 'connecting', `${who} · ${clock}. Waiting for them to come back…${tail}`);
+    };
+    say();
+    this.goneTimer ??= setInterval(() => (this.closed || this.otherHere || !this.online ? undefined : say()), 1000);
   }
 
   private async openAsHost(db: Db) {
@@ -178,7 +204,9 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         void db.remove(`${this.base}/in/${key}`).catch(() => {});
         if (typeof v !== 'string') return;
         try {
-          this.append(JSON.parse(v) as GameEvent);
+          const m = JSON.parse(v) as { ep?: number; ev?: GameEvent };
+          // a move sent during the last duel doesn't land in the rematch
+          if (m && typeof m === 'object' && m.ev && m.ep === this.ep) this.append(m.ev);
         } catch {
           /* not a move */
         }
@@ -217,7 +245,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         this.otherHere = !!v;
         this.showLink();
       }),
-      db.onValue(`${this.base}/ep`, (v) => this.followLog(db, Number(v) || 0)),
+      db.onValue(`${this.base}/ep`, (v) => v !== null && this.followLog(db, Number(v) || 0)),
+      // the host closed the room: the board stays as it was, with a plain message
+      db.onValue(`${this.base}/meta`, (v) => {
+        if (!v && this.everLinked) this.fail(NET_HOST_LEFT);
+      }),
     );
     this.watchConnection(db, 'guestOn', db.uid);
     this.ready = true;
@@ -255,7 +287,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   private propose(ev: GameEvent) {
     const db = this.db!;
     const path = `${this.base}/in`;
-    void db.set(`${path}/${db.pushKey(path)}`, JSON.stringify(ev)).catch(() => {});
+    void db.set(`${path}/${db.pushKey(path)}`, JSON.stringify({ ep: this.ep, ev })).catch(() => {});
   }
 
   /** Rematch: the host starts a new log and the guest's phone follows. */

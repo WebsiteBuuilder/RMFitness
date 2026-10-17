@@ -533,7 +533,8 @@ html.sd-home .mm-bar {
   position: absolute;
   inset: 0;
   background: #fff;
-  animation: mm-flash 0.5s ease-out forwards;
+  opacity: 0.45;
+  animation: mm-flash 0.35s ease-out forwards;
   pointer-events: none;
 }
 @keyframes mm-flash {

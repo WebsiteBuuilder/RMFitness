@@ -90,6 +90,9 @@ export function startFromSeats(seats: SessionView['seats'], mode: GameMode, firs
   };
 }
 
+/** A Find a Match room with no bets starts by itself after this many seconds. */
+const AUTO_START_S = 4;
+
 /** How a room decides who goes first: the last loser calls it in a rematch, else rock-paper-scissors (a coin on one phone). */
 export function tossFor(view: SessionView, hotseat: boolean): { type: 'TOSS'; how: TossHow; chooser?: Pid } {
   const last = view.series.last;
@@ -243,6 +246,24 @@ export function Lobby({
     if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready)) ready();
   }, [matched?.room, status, view.log.length]);
 
+  // ...and the host's phone starts it by itself a few seconds later, unless someone puts up a bet.
+  const autoGo = !!matched && !rematch && session.adapter.isHost && bothReady && sameGame && !view.toss && status === 'connected' && stakesReady(view) && noAnte(seats[0].stakes?.ante) && noAnte(seats[1].stakes?.ante);
+  const [goIn, setGoIn] = useState(0);
+  useEffect(() => {
+    if (!autoGo) return setGoIn(0);
+    let n = AUTO_START_S;
+    setGoIn(n);
+    const id = window.setInterval(() => {
+      n--;
+      setGoIn(n);
+      if (n <= 0) {
+        clearInterval(id);
+        start();
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autoGo]);
+
   // A deck changed in the room after sitting down: sit back down with the new one (bets get accepted again).
   const myKey = mine ? `${mine.deck.join('|')}#${mine.fusion.join('|')}#${mine.skill ?? ''}` : '';
   const seatKey = `${seats[mySeat].deck.join('|')}#${seats[mySeat].fusion.join('|')}#${seats[mySeat].skill ?? ''}`;
@@ -364,7 +385,7 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
+        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? `starting in ${goIn}… place a bet to wait` : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">Waiting for the host to start…</p>)}
       </Win>
       {linkToCopy && (
         <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>

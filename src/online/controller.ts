@@ -13,9 +13,9 @@ import type { BoardStats } from '../collection/rankings';
 import { Matchmaker, type Match } from './matchmaking';
 
 /** The "Opponent found!" screen stays up this long before the duel room opens. */
-export const VERSUS_MS = 2600;
+export const VERSUS_MS = 1800;
 /** The joining phone waits a little longer, so the host's room is open by the time it knocks. */
-const GUEST_EXTRA_MS = 1200;
+const GUEST_EXTRA_MS = 500;
 
 export interface AppHooks {
   /** open a room as its host, under this code, for this game */
@@ -265,11 +265,6 @@ class OnlineController {
     const problem = this.app.deckProblem(game);
     if (problem) return problem;
     this.resumeSearch = false;
-    if (cloudState() === 'checking' || cloudState() === 'unknown') {
-      // still finding out how to go online: search the moment that's known
-      void checkCloud().then(() => this.profile && !this.mm.searching && !this.versus && this.findMatch(game));
-      return null;
-    }
     this.mm.start(game);
     return null;
   }
