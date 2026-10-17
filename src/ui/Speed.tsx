@@ -240,6 +240,22 @@ function requestsNote(save: SpeedSave): string {
   return done === b.list.length ? 'all done today ✓ new ones tomorrow' : `${done}/${b.list.length} done today · each pays a card`;
 }
 
+/** The strongest monster in a deck: its face on a picker tile. */
+const aceOf = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
+
+/** A duelist or deck to pick: their ace card's art, the name, one line under it. */
+function PickTile({ art, name, note, on, disabled, onPick }: { art: string; name: string; note: string; on: boolean; disabled?: boolean; onPick: () => void }) {
+  return (
+    <button class={`sp-pick ${on ? 'on' : ''}`} disabled={disabled} onClick={onPick}>
+      <span class="sp-pick-art">
+        <CardImg name={art} />
+      </span>
+      <b>{name}</b>
+      <small>{note}</small>
+    </button>
+  );
+}
+
 function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExit: () => void }) {
   const [sel, setSel] = useState<Starter | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -248,7 +264,12 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
     <div class="screen">
       <Win title="Pick your first Speed Duel deck" onClose={onExit}>
         <p>Each one is a real Speed Duel Starter Deck with its Skill. Its cards become yours. Win packs and Duel Chips to grow your collection, plus 3 welcome packs to start.</p>
-        <Menu items={STARTERS.map((s) => ({ label: s.character, note: s.title.replace(/^.*\(|\)$/g, ''), selected: sel === s, onPick: () => (playBlip(), setSel(s)) }))} />
+        <div class="sp-picks">
+          {STARTERS.map((s) => {
+            const d = deckFromStarter(s);
+            return <PickTile key={s.character} art={aceOf(d.main)} name={s.character} note={d.skill ? d.skill.replace(/ \(Skill Card\)$/, '') : s.title.replace(/^.*\(|\)$/g, '')} on={sel === s} onPick={() => (playBlip(), setSel(s))} />;
+          })}
+        </div>
       </Win>
       {sel && preview && (
         <Win title={`${sel.character} · ${preview.main.length} cards`}>
@@ -754,12 +775,12 @@ function CpuPick({ save, problems, deckSwitch, onPick, onBack }: { save: SpeedSa
     <div class="screen">
       <Win title="Duel the Computer" onClose={onBack}>
         {deckSwitch}
-        <Menu
-          items={opps.map((o) => {
+        <div class="sp-picks">
+          {opps.map((o) => {
             const r = save.record[o.name];
-            return { label: o.name, disabled: problems.length > 0, selected: sel?.name === o.name, note: `W${r?.w ?? 0} L${r?.l ?? 0} D${r?.d ?? 0}`, onPick: () => setSel(o) };
+            return <PickTile key={o.name} art={aceOf(o.main)} name={o.name} note={r ? `${r.w ?? 0} won · ${r.l ?? 0} lost` : 'Not duelled yet'} on={sel?.name === o.name} disabled={problems.length > 0} onPick={() => (playBlip(), setSel(o))} />;
           })}
-        />
+        </div>
       </Win>
       {sel && (
         <Overlay onClose={() => setSel(null)}>
@@ -769,8 +790,17 @@ function CpuPick({ save, problems, deckSwitch, onPick, onBack }: { save: SpeedSa
               {sel.skill ? ` · Skill: ${sel.skill}` : ''}
             </p>
             <p class="hint">Computer level</p>
-            <Menu items={DIFFICULTIES.map((d) => ({ label: DIFFICULTY_LABEL[d], note: DIFFICULTY_NOTE[d], selected: level === d, onPick: () => pickLevel(d) }))} />
-            <Menu items={[{ label: 'Duel!', onPick: () => onPick({ ...sel, level }) }, { label: 'Back', onPick: () => setSel(null) }]} />
+            <div class="sp-levels" role="radiogroup">
+              {DIFFICULTIES.map((d) => (
+                <button key={d} role="radio" aria-checked={level === d} class={`sp-level ${level === d ? 'on' : ''}`} onClick={() => (playBlip(), pickLevel(d))}>
+                  {DIFFICULTY_LABEL[d]}
+                </button>
+              ))}
+            </div>
+            <p class="hint sp-level-note">{DIFFICULTY_NOTE[level]}</p>
+            <button class="sp-go" onClick={() => onPick({ ...sel, level })}>
+              Duel!
+            </button>
           </Win>
         </Overlay>
       )}

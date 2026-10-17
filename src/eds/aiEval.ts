@@ -225,3 +225,67 @@ export function coin(e: Engine, key: string, odds: number): boolean {
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619) >>> 0;
   return (h % 1000) / 1000 < odds;
 }
+
+/**
+ * Plays `action` and then the rest of `me`'s turn (by `choose`, the opponent never answering with
+ * a Set card, as in lookahead) and scores where the turn ends, counting what the opponent's face-up
+ * monsters could do to it next turn. Used by Hard to pick its Summon by the whole turn it leads to.
+ */
+export function rolloutTurn(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (e.state.prompt || e.state.winner !== null) return null;
+  let sim: Engine;
+  try {
+    sim = sandbox(e);
+  } catch {
+    return null;
+  }
+  const turn = sim.state.turn;
+  try {
+    sim.apply(action);
+    for (let i = 0; i < 160 && sim.state.winner === null && sim.state.turn === turn; i++) {
+      const pr = sim.state.prompt;
+      const p = (pr ? pr.player : sim.state.turnPlayer) as Pid;
+      let a: Action | null;
+      if (pr && p !== me && pr.kind === 'response') a = { type: 'PASS', player: p };
+      else if (pr && p !== me && pr.kind === 'yesno') a = { type: 'NO', player: p };
+      else a = choose(sim, p);
+      if (!a) a = pr ? null : { type: 'END_TURN', player: p };
+      if (!a) return null;
+      sim.apply(a);
+    }
+  } catch {
+    return null;
+  }
+  return endOfTurnValue(sim, me) - endOfTurnValue(e, me, true);
+}
+
+/** evaluate, less what the opponent's face-up attackers threaten on their turn (`now`: before the turn's plays, nothing exposed yet). */
+function endOfTurnValue(e: Engine, me: Pid, now = false): number {
+  const v = evaluate(e, me);
+  if (now || Math.abs(v) >= WIN / 4) return v;
+  const opp = other(me);
+  const theirs = e
+    .monsters(opp)
+    .filter((m) => m.faceUp && !m.cannotAttack)
+    .map((m) => e.atkOf(m))
+    .sort((a, b) => b - a);
+  if (!theirs.length) return v;
+  let threat = 0;
+  const mine = e.monsters(me);
+  const used = new Set<number>();
+  // each of their attackers takes the best trade it can get
+  for (const atk of theirs) {
+    let gain = 0;
+    let pick = -1;
+    for (const m of mine) {
+      if (used.has(m.uid)) continue;
+      const w = m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1500;
+      if (atk <= w) continue;
+      const g = 200 + 0.7 * Math.max(e.atkOf(m), e.defOf(m) * 0.8) + (m.faceUp && m.pos === 'atk' ? atk - w : 0);
+      if (g > gain) (gain = g), (pick = m.uid);
+    }
+    if (pick >= 0) (used.add(pick), (threat += gain));
+    else if (!mine.some((m) => !used.has(m.uid))) threat += atk * 0.8;
+  }
+  return v - 0.6 * threat;
+}

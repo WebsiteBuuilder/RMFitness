@@ -414,17 +414,29 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
             </div>
             {all && best(fin) >= 3 && <p class="rv-best">Best pull: {TIERS[best(fin)].name}!</p>}
             {all && opened.shards > 0 && <p class="hint">Copies past 3 broke into {opened.shards} shards.</p>}
-            <Menu
-              items={
-                all
-                  ? [
-                      ...(left > 0 ? [{ label: 'Open another', note: `${left} left`, onPick: () => onAgain(false) }] : []),
-                      ...(left > 1 ? [{ label: `Open all ${left}`, onPick: () => onAgain(true) }] : []),
-                      { label: 'Done', onPick: onDone },
-                    ]
-                  : [{ label: 'Flip all', onPick: flipAll }]
-              }
-            />
+            <div class="rv-actions">
+              {all ? (
+                <>
+                  {left > 0 && (
+                    <button class="rv-btn main" onClick={() => onAgain(false)}>
+                      Open another <small>{left} left</small>
+                    </button>
+                  )}
+                  {left > 1 && (
+                    <button class="rv-btn" onClick={() => onAgain(true)}>
+                      Open all {left}
+                    </button>
+                  )}
+                  <button class={`rv-btn ${left > 0 ? 'quiet' : 'main'}`} onClick={onDone}>
+                    Done
+                  </button>
+                </>
+              ) : (
+                <button class="rv-btn main" onClick={flipAll}>
+                  Flip all
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -488,7 +500,11 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
             Show more ({cards.length - limit} left)
           </button>
         )}
-        <Menu items={[{ label: 'Done', onPick: onDone }]} />
+        <div class="rv-actions sticky">
+          <button class="rv-btn main" onClick={onDone}>
+            Done
+          </button>
+        </div>
       </div>
       {info && (
         <Overlay onClose={() => setInfo(null)}>

@@ -70,6 +70,8 @@ const lastGame = (id: string): string | null => {
     return null;
   }
 };
+/** How long the board settles before the computer thinks (counted inside its usual pause). */
+const THINK_BEAT = 300;
 const setLastGame = (id: string, g: string) => {
   try {
     localStorage.setItem(`eds.lastGame.${id}`, g);
@@ -749,7 +751,8 @@ export function App() {
       const st = session?.engine.state;
       let myLevels: LevelReport | null = null;
       const lv = (s: SpeedSave, seat: Pid) => {
-        if (!st) return s;
+        // A surrender before the duel got going teaches the cards nothing (no free level points).
+        if (!st || tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) })) return s;
         const r = withLevels(s, st, seat);
         if (seat === mySeat) myLevels = r.report;
         return r.save;
@@ -894,6 +897,16 @@ export function App() {
           addToTrunk(s, []);
           setSave(s);
           setScreen(pendingJoin ? 'link' : 'menu');
+        }}
+        onSpeed={(_name, color, deck) => {
+          const s = newSave(profile.alias);
+          s.starter = color;
+          s.main = deck;
+          addToTrunk(s, []);
+          setSave(s);
+          setLastGame(profile.id, 'speed');
+          setSpeedSaveState(speedSaveOf(profile.id, true));
+          setScreen(pendingJoin ? 'link' : 'speed');
         }}
       />
     );
@@ -1304,50 +1317,57 @@ function Running({
     // A tag duel: the computer duelists move from phone 0 only, whenever one of them is in and on the spot.
     const tagCpu = !!view.state.tag && runsComputers(mySeat);
     if (!(cpu || tagCpu) || !view.state.started || view.state.winner !== null || watch?.paused) return;
-    // Watching: whichever seat has something to do moves, each with its own pep talk.
-    let seat: Pid = mySeat === 0 ? 1 : 0;
-    let action = watch ? null : aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel });
-    if (tagCpu) {
-      const w = whoMoves(session.engine.state);
-      seat = w.side;
-      action = w.ctl === 'cpu' ? aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel }) : null;
-    }
-    if (watch) {
-      const st = session.engine.state;
-      const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
-      for (const p of [first, (first === 0 ? 1 : 0) as Pid]) {
-        action = aiAction(session.engine, p, watch.tactics[p]);
-        if (action) {
-          seat = p;
-          break;
+    // The computer thinks once the board is still (after any cinematic and the move's own animation),
+    // so its thinking never lands in the middle of an animation as a stutter.
+    let t = 0;
+    let dead = false;
+    const think = () => {
+      if (dead) return;
+      // Watching: whichever seat has something to do moves, each with its own pep talk.
+      let seat: Pid = mySeat === 0 ? 1 : 0;
+      let action = watch ? null : aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel });
+      if (tagCpu) {
+        const w = whoMoves(session.engine.state);
+        seat = w.side;
+        action = w.ctl === 'cpu' ? aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel }) : null;
+      }
+      if (watch) {
+        const st = session.engine.state;
+        const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
+        for (const p of [first, (first === 0 ? 1 : 0) as Pid]) {
+          action = aiAction(session.engine, p, watch.tactics[p]);
+          if (action) {
+            seat = p;
+            break;
+          }
         }
       }
-    }
-    if (!action) {
-      cpuStreak.current = 0;
-      return;
-    }
-    // Safety net: if the computer somehow keeps sending moves the rules ignore, end its turn.
-    cpuStreak.current++;
-    if (cpuStreak.current > 80) {
-      cpuStreak.current = 0;
-      session.send({ type: 'END_TURN', player: seat });
-      return;
-    }
-    const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
-    // faster Animation speed) with a spotlight on the card it moves...
-    const st = session.engine.state;
-    const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
-    const send = () => {
-      const uid = spotUid(action!);
-      session.send(action!);
-      if (uid !== null) spotlight(uid);
+      if (!action) {
+        cpuStreak.current = 0;
+        return;
+      }
+      // Safety net: if the computer somehow keeps sending moves the rules ignore, end its turn.
+      cpuStreak.current++;
+      if (cpuStreak.current > 80) {
+        cpuStreak.current = 0;
+        session.send({ type: 'END_TURN', player: seat });
+        return;
+      }
+      const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
+      // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
+      // faster Animation speed) with a spotlight on the card it moves...
+      const st = session.engine.state;
+      const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
+      const send = () => {
+        const uid = spotUid(action!);
+        session.send(action!);
+        if (uid !== null) spotlight(uid);
+      };
+      t = window.setTimeout(send, Math.max(0, pace - THINK_BEAT));
     };
     // ...and never in the middle of a 3D cinematic.
-    let t = 0;
-    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(send, pace)));
-    return () => (stopWaiting(), clearTimeout(t));
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(think, THINK_BEAT)));
+    return () => ((dead = true), stopWaiting(), clearTimeout(t));
   }, [cpu, cpuLevel, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   // (a tag duel: each side shows the rarities of the phones playing on it; computers have none)

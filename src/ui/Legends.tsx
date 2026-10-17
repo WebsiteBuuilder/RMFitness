@@ -56,7 +56,7 @@ export function Legends(p: Ctx) {
   const done = LEGENDS.filter((l) => legendFinished(solo, l)).length;
   const sel = openId ? legendById(openId) : null;
 
-  const duel = (d: LegendDuel, isRematch: boolean) => {
+  const duel = (d: LegendDuel, isRematch: boolean, retry = false) => {
     const found = findLegendDuel(d.id)!;
     const foe = legendFoe(d);
     const borrowed = storyOwn ? null : legendBorrowed(d);
@@ -84,6 +84,8 @@ export function Legends(p: Ctx) {
         notes,
         goals: [],
       },
+      // straight back in from a loss: the VS screen was seen a moment ago
+      ...(retry ? { retry: true } : {}),
     });
   };
 
@@ -118,8 +120,11 @@ export function Legends(p: Ctx) {
             </button>
           )}
           {next && (
-            <Btn kind="gold" onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
-              Continue: {next.legend.card}, duel {next.index + 1}
+            <Btn kind="gold" class="lg-continue" onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
+              Continue
+              <small>
+                {next.legend.card} · duel {next.index + 1}
+              </small>
             </Btn>
           )}
           <div class="lg-covers">
@@ -185,7 +190,7 @@ export function Legends(p: Ctx) {
         <ResultSheet
           {...p}
           rep={rep}
-          onRetry={() => (seen(), duel(repFound.duel, !!rep.rematch))}
+          onRetry={() => (seen(), duel(repFound.duel, !!rep.rematch, true))}
           onDone={() => {
             seen();
             if (rep.outcome.result === 'w' && !rep.settled.finished) {

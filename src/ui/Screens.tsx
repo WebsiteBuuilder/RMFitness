@@ -42,7 +42,7 @@ export function Title({ onStart, hasSave, who, opening }: { onStart: () => void;
   );
 }
 
-export function Intro({ onDone, presetName }: { onDone: (name: string, color: StarterColor, deck: string[]) => void; presetName?: string }) {
+export function Intro({ onDone, onSpeed, presetName }: { onDone: (name: string, color: StarterColor, deck: string[]) => void; onSpeed?: (name: string, color: StarterColor, deck: string[]) => void; presetName?: string }) {
   const [name, setName] = useState(presetName ?? '');
   const [color, setColor] = useState<StarterColor | null>(null);
   const [preview, setPreview] = useState<string[] | null>(null);
@@ -67,6 +67,20 @@ export function Intro({ onDone, presetName }: { onDone: (name: string, color: St
           </>
         )}
         <Menu items={STARTER_COLORS.map((c) => ({ label: `${c} Deck`, selected: color === c, note: STARTER_BLURB[c], onPick: () => pick(c) }))} />
+        {onSpeed && (
+          <Menu
+            items={[
+              {
+                label: 'Skip to Speed Duel',
+                note: 'this game gets a random Starter Deck',
+                onPick: () => {
+                  const c = STARTER_COLORS[seed % STARTER_COLORS.length];
+                  onSpeed(name.trim() || 'Duelist', c, buildStarterDeck(c, seed + STARTER_COLORS.indexOf(c)));
+                },
+              },
+            ]}
+          />
+        )}
       </Win>
       {preview && color && (
         <Win title={`${color} Deck · 40 cards`}>

@@ -86,6 +86,8 @@ export interface CpuDuelSpec {
   seed?: number;
   /** what the VS splash and the in-duel goal chip show */
   vs?: VsInfo;
+  /** straight back in after a loss: the VS splash was seen a moment ago, so it's skipped */
+  retry?: boolean;
 }
 
 export interface VsInfo {

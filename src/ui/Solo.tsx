@@ -56,7 +56,7 @@ export function Solo(p: Props) {
     if (spec.context.kind === 'labyrinth' && run) setSolo({ ...solo, labyrinth: { ...solo.labyrinth, run: stake(run) } });
     p.onDuel(spec);
   };
-  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs ? setVs({ spec, cancel }) : go(spec)) };
+  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs && !spec.retry ? setVs({ spec, cancel }) : go(spec)) };
   return (
     <>
       {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : p.mode === 'legends' ? <Legends {...ctx} /> : <Road {...ctx} />}
@@ -209,9 +209,9 @@ export function Sheet({ title, onClose, children, wide }: { title?: string; onCl
   );
 }
 
-export function Btn({ children, onClick, kind = 'plain', disabled }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean }) {
+export function Btn({ children, onClick, kind = 'plain', disabled, class: cls }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean; class?: string }) {
   return (
-    <button class={`so-btn ${kind}`} disabled={disabled} onClick={() => (playBlip(), onClick?.())}>
+    <button class={`so-btn ${kind}${cls ? ` ${cls}` : ''}`} disabled={disabled} onClick={() => (playBlip(), onClick?.())}>
       {children}
     </button>
   );
@@ -484,9 +484,11 @@ function Practice(p: Ctx) {
             </div>
           )}
         </div>
-        <Btn kind="gold" disabled={!foe || problems.length > 0} onClick={start}>
-          Duel!
-        </Btn>
+        <div class="so-sticky-go">
+          <Btn kind="gold" disabled={!foe || problems.length > 0} onClick={start}>
+            Duel!
+          </Btn>
+        </div>
         <div class="so-row">
           <Btn onClick={() => setShare(true)} disabled={!myDeck}>
             Share my deck code
@@ -786,7 +788,8 @@ function Road(p: Ctx) {
     setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
   };
 
-  const duel = (node: CampaignNode) => {
+  /** `retry`: straight back in from a loss (the VS screen was seen a moment ago). */
+  const duel = (node: CampaignNode, retry = false) => {
     // The Masked Dealer deals a different Duel Condition every duel.
     const n = node.condition === DEALER_CONDITIONS[0] ? { ...node, condition: DEALER_CONDITIONS[Math.floor(Math.random() * DEALER_CONDITIONS.length)] } : node;
     const d = deckOf(n.duelist);
@@ -802,6 +805,7 @@ function Road(p: Ctx) {
       context: { kind: 'campaign', nodeId: n.id, ...(!useStory && deck?.open ? { open: true } : {}) },
       level: campaignDifficulty((findNode(n.id)?.chapter ?? ch).n, n.boss),
       vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : useStory && n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: !useStory && deck?.open ? [] : STAR_TEXT(n.goal) },
+      ...(retry ? { retry: true } : {}),
     });
   };
 
@@ -1062,7 +1066,7 @@ function Road(p: Ctx) {
             <p class="so-center">Tune your road deck and try again. A loss here costs nothing.</p>
           )}
           {rep.outcome.result !== 'w' && (
-            <Btn kind="gold" disabled={problems.length > 0 && !(repNode.node.story && !storyOwn)} onClick={() => (advance(solo), duel(repNode.node))}>
+            <Btn kind="gold" disabled={problems.length > 0 && !(repNode.node.story && !storyOwn)} onClick={() => (advance(solo), duel(repNode.node, true))}>
               Try again
             </Btn>
           )}

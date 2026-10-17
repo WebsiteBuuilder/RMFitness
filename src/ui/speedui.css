@@ -331,3 +331,28 @@ button.gcard {
   font: inherit;
   color: inherit;
 }
+
+/* The Classic board in a Speed Duel wears the Speed Duel arena's colours (navy and violet, gold for
+   Spells/Traps), not the original game's green felt. */
+.ui-speed .duel.speed:not(.touch) {
+  --field: #18163f;
+  --field2: #0b0d26;
+  --zone: #1a1a48;
+  --zoneb: #5b54b8;
+  background: radial-gradient(ellipse at 50% 45%, #2a2370 0%, #141338 45%, #080a1e 100%);
+}
+.ui-speed .duel.speed:not(.touch) .zone {
+  border-width: 1px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 12px #6c5cff22;
+}
+.ui-speed .duel.speed:not(.touch) .zone.z-s {
+  background: #1d1a3f;
+  border-color: #8b78d8;
+}
+.ui-speed .duel.speed:not(.touch) .zone.empty {
+  opacity: 0.85;
+}
+.ui-speed .duel.speed:not(.touch) .zone .cimg {
+  border-radius: 5px;
+}

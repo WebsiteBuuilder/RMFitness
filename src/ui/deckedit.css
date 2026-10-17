@@ -238,3 +238,88 @@
   max-height: 60dvh;
   padding-bottom: 8px;
 }
+
+/* Picker tiles (first Speed Duel deck, Duel the Computer): the ace card's art over the name. */
+.sp-picks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.sp-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 4px 6px;
+  border-radius: 10px;
+  border: 1px solid #ffffff22;
+  background: #0f1834;
+  color: #fff;
+  text-align: center;
+}
+.sp-pick.on {
+  border-color: #f2c14e;
+  box-shadow: 0 0 0 1px #f2c14e, 0 0 16px #f2c14e55;
+}
+.sp-pick:disabled {
+  opacity: 0.45;
+}
+.sp-pick-art {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 7px;
+  margin-bottom: 4px;
+}
+/* the card's picture box only (the art sits at about 18-64% of the card's height) */
+.sp-pick-art .cimg {
+  width: 150%;
+  max-width: none;
+  margin: -40% 0 0 -25%;
+  display: block;
+}
+.sp-pick b {
+  font-size: 13px;
+  line-height: 1.15;
+}
+.sp-pick small {
+  font-size: 11px;
+  color: #aab6dd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-levels {
+  display: flex;
+  gap: 6px;
+}
+.sp-level {
+  flex: 1;
+  min-height: 42px;
+  border-radius: 21px;
+  border: 1px solid #ffffff33;
+  background: #0f1834;
+  color: #fff;
+  font-weight: 700;
+}
+.sp-level.on {
+  background: linear-gradient(180deg, #ffe07a, #d29a1e);
+  color: #2a1a00;
+  border-color: transparent;
+}
+.sp-level-note {
+  min-height: 2.6em;
+}
+.sp-go {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 25px;
+  border: 0;
+  background: linear-gradient(180deg, #ffe07a, #d29a1e);
+  color: #2a1a00;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}

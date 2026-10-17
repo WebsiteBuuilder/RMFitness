@@ -149,6 +149,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     }
   }, [state.winner]);
 
+  // A Speed Duel given up goes straight to the result screen (no in-board banner to tap through first).
+  useEffect(() => {
+    if (state.winner === null || !e.speed || !/surrendered$/.test(state.winReason)) return;
+    const w = state.winner;
+    const t = setTimeout(() => finish(w), 700);
+    return () => clearTimeout(t);
+  }, [state.winner]);
+
   // a cinematic starts: a card inspector or info box open over the board closes (the stage takes the screen)
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -174,6 +182,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   };
   /** Leaving a finished duel still saves its result; leaving an online duel early concedes it, so the other player isn't left waiting. */
   /** a card still in someone's Out pile (a face-down one there stays hidden from the opponent) */
+  /** A revealed Field Skill (Power of Dark, Peak Performance...) sits face-up in an empty Field Zone, as on the Touch board. */
+  const fieldSkillOf = (p: Pid): string | null => {
+    const ps = state.players[p];
+    const sk = !ps.field && ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+    return sk?.aura && sk.startOfDuel ? (ps.skill ?? null) : null;
+  };
   const ps0Removed = (uid: number) => state.players.some((p) => p.removed.some((c) => c.uid === uid));
   const leave = () => {
     if (state.winner !== null) return finish(state.winner);
@@ -329,8 +343,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
           <span>Deck {ps.deck.length}</span>
         </div>
-        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
-          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : <span class="zlabel">F</span>}
+        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
+          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : fieldSkillOf(p) ? <CardImg name={fieldSkillOf(p)!} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
         </div>
         {ps.removed.length > 0 && (

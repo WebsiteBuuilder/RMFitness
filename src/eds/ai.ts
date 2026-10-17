@@ -8,11 +8,13 @@ import { getEffect } from './effects';
 import type { Action, FieldCard, Pid, Prompt } from './types';
 import { getSkill } from './skills';
 import { DEFAULT_TACTICS, type Tactics } from './tactics';
-import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, lookaheadCombo, wall } from './aiEval';
+import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, lookaheadCombo, rolloutTurn, wall } from './aiEval';
 import { skillDrawOk, skillVerdict } from './aiSkills';
 
 /** Moves the computer already tried this turn (so a cancelled or declined effect is not retried forever). */
 const TRIED = new Set<string>();
+/** How much better (in board value) Hard's planned Summon must be than its usual pick. */
+const PLAN_MARGIN = 150;
 
 const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
 /** Draw spells: not with the Deck nearly empty (drawing out loses the Duel). */
@@ -250,6 +252,14 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     }
     // Our attackers can clear their side this turn: anything else we put out face-up hits them directly.
     const clearing = !s.firstTurn && !wallUp && (theirMonsters.length === 0 || attackPlan(e, me).steps.filter((x) => x.target !== null).length >= theirMonsters.length);
+    // 4. Hard: try each Summon (Attack or Set) on a copy and play out the turn it leads to; the one
+    // leaving the best board, after what their monsters could do back, wins (when clearly better
+    // than the usual pick).
+    if (hard && !my.normalSummoned && s.phase === 'M1' && !tried(`plan:${sig()}`)) {
+      tryOnce(`plan:${sig()}`);
+      const pick = planSummon(e, me, t);
+      if (pick) return pick;
+    }
     // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
     if (!my.normalSummoned) {
       const candidates = my.hand.filter((c) => e.canNormalSummon(me, c)).map((c) => ({ c, info: e.info(c.name) }));
@@ -428,4 +438,46 @@ function rankOptions(e: Engine, me: Pid, title: string, options: Extract<Prompt,
   });
   idx.sort((a, b) => val[b] - val[a]);
   return { order: idx, val };
+}
+
+/** Hard's Summon planner (see step 4): null to leave it to the usual pick. */
+function planSummon(e: Engine, me: Pid, t: Tactics): Action | null {
+  const my = e.player(me);
+  const zone = e.freeMonsterZone(me);
+  const opts: Action[] = [];
+  for (const c of my.hand) {
+    if (!e.canNormalSummon(me, c)) continue;
+    const need = e.tributesNeeded(e.info(c.name).level ?? 1);
+    if (need > e.monsters(me).length || (need === 0 && zone < 0)) continue;
+    const z = zone < 0 ? 0 : zone;
+    if (e.canNormalSummon(me, c, true)) opts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'atk', faceUp: true });
+    opts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'def', faceUp: false });
+  }
+  if (opts.length < 2) return null;
+  // the rest of the turn is played the usual way; the sims mustn't use up this turn's real "tried once" marks
+  const normal: Tactics = { ...t, level: 'normal' };
+  const saved = new Set(TRIED);
+  const policy = (x: Engine, p: Pid) => aiAction(x, p, normal);
+  try {
+    const usual = aiAction(e, me, normal);
+    restore(saved);
+    const base = usual ? rolloutTurn(e, me, usual, policy) : null;
+    restore(saved);
+    let best: { a: Action; v: number } | null = null;
+    for (const a of opts.slice(0, 10)) {
+      const v = rolloutTurn(e, me, a, policy);
+      restore(saved);
+      if (v !== null && (!best || v > best.v)) best = { a, v };
+    }
+    if (!best) return null;
+    if (base !== null && best.v < base + PLAN_MARGIN) return null;
+    return best.a;
+  } finally {
+    restore(saved);
+  }
+}
+
+function restore(saved: Set<string>) {
+  TRIED.clear();
+  for (const k of saved) TRIED.add(k);
 }
