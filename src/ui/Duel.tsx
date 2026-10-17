@@ -395,7 +395,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           </Win>
         );
       const listOptions = prompt.options.map((o: SelectOption, i: number) => ({
-        label: sideLabel(o, acting),
+        // picks in order (Riryoku: halve the 1st, power up the 2nd) carry their number
+        label: `${prompt.max > 1 && picks.includes(i) ? `${picks.indexOf(i) + 1}. ` : ''}${sideLabel(o, acting)}`,
         note: optionNote(e, o, acting),
         selected: picks.includes(i),
         onPick: () => togglePick(prompt, i),
@@ -404,7 +405,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       const ctrls: typeof listOptions = [];
       if (prompt.max > 1 || prompt.min === 0) ctrls.push({ label: `OK (${picks.length}/${prompt.max})`, note: undefined, selected: false, onPick: () => picks.length >= prompt.min && send({ type: 'CHOOSE', player: acting, picks }) });
       if (prompt.cancel) ctrls.push({ label: 'Cancel', note: undefined, selected: false, onPick: () => send({ type: 'CANCEL', player: acting }) });
-      const items = listOptions.length > 3 ? [...ctrls, ...listOptions] : [...listOptions, ...ctrls];
+      const items = listOptions.length >= 3 ? [...ctrls, ...listOptions] : [...listOptions, ...ctrls];
       return (
         <Win title={prompt.title} class="msgwin">
           <Menu items={items} class="scroll" />

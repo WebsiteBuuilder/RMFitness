@@ -83,7 +83,8 @@ function outcome(e: Engine, sim: Engine, uid: number, t: ReturnType<Engine['fiel
   if (dealt > 0) bits.push(`${dealt} damage`);
   if (took > 0) bits.push(`you take ${took}`);
   if (!bits.length) bits.push(t === null ? 'no damage' : 'nothing happens');
-  const tone = took > 0 || (lostMine && !killed) ? 'bad' : killed || dealt > 0 ? 'good' : 'mid';
+  // an even trade is neither a win nor a loss (the Trade chip)
+  const tone = took > 0 || (lostMine && !killed) ? 'bad' : killed && lostMine && dealt === 0 ? 'mid' : killed || dealt > 0 ? 'good' : 'mid';
   return { text: bits.join(' · '), tone };
 }
 

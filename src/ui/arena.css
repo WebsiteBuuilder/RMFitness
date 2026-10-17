@@ -634,12 +634,15 @@
 }
 /* aiming: the banner goes up by the opponent's hand, clear of your Life Points, cards and deck */
 @supports selector(:has(*)) {
-  .duel.touch .tsheet-wrap:has(> .ttoast.aim) {
+  .duel.touch .tsheet-wrap:has(> .ttoast.aim),
+  .duel.touch .tsheet-wrap:has(> .ttoast.hint) {
     top: calc(52px + env(safe-area-inset-top));
     bottom: auto;
   }
-  .duel.touch .tsheet-wrap > .ttoast.aim {
+  .duel.touch .tsheet-wrap > .ttoast.aim,
+  .duel.touch .tsheet-wrap > .ttoast.hint {
     margin-bottom: 0;
+    top: 4px;
   }
 }
 .duel.touch .ttoast.aim {
@@ -787,3 +790,23 @@
 .tfc.bad { border-color: #ff5d6c; color: #ff9aa4; }
 
 
+
+/* a pick's place in the order (Riryoku: 1 is halved, 2 powers up) */
+.duel.touch .topt {
+  position: relative;
+}
+.topt-ord {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #ffd23f;
+  color: #1a1200;
+  font: 800 13px/22px system-ui, sans-serif;
+  font-style: normal;
+  text-align: center;
+  box-shadow: 0 1px 4px #000a;
+  z-index: 2;
+}
