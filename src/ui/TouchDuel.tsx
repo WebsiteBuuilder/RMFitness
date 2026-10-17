@@ -13,7 +13,7 @@ import { getEffect } from '../eds/effects';
 import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
-import { sideLabel } from './sideLabel';
+import { mixedSides, sideLabel } from './sideLabel';
 import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
@@ -590,6 +590,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       );
     if (prompt?.kind === 'select') {
       const multi = prompt.max > 1 || prompt.min === 0;
+      const mixed = mixedSides(e, prompt.options);
       return (
         <div class="tsheet">
           <div class="tsheet-title">
@@ -603,10 +604,11 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="toptions">
             {prompt.options.map((o, i) => {
               const name = optionCard(o);
+              const side = mixed && o.uid !== undefined && e.fieldCard(o.uid) ? (e.controller(o.uid) === acting ? 'Yours: ' : 'Theirs: ') : '';
               return (
                 <button key={i} class={`topt ${ctl.picks.includes(i) ? 'on' : ''} ${name ? '' : 'text'}`} onClick={() => ctl.togglePick(prompt, i)}>
                   {name !== null ? <CardImg name={name} back={name === ''} /> : null}
-                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{sideLabel(o, ctl.acting)}</span>
+                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{side}{sideLabel(o, ctl.acting)}</span>
                 </button>
               );
             })}

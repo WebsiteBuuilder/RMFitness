@@ -1,4 +1,4 @@
-import { sideLabel } from './sideLabel';
+import { optionNote, sideLabel } from './sideLabel';
 import { attackForecast } from './forecast';
 import { getSkill } from '../eds/skills';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -396,12 +396,15 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         );
       const listOptions = prompt.options.map((o: SelectOption, i: number) => ({
         label: sideLabel(o, acting),
+        note: optionNote(e, o, acting),
         selected: picks.includes(i),
         onPick: () => togglePick(prompt, i),
       }));
-      const items = [...listOptions];
-      if (prompt.max > 1 || prompt.min === 0) items.push({ label: `OK (${picks.length}/${prompt.max})`, selected: false, onPick: () => picks.length >= prompt.min && send({ type: 'CHOOSE', player: acting, picks }) });
-      if (prompt.cancel) items.push({ label: 'Cancel', selected: false, onPick: () => send({ type: 'CANCEL', player: acting }) });
+      // OK and Cancel go first in a long list, so a small phone never has them below the fold
+      const ctrls: typeof listOptions = [];
+      if (prompt.max > 1 || prompt.min === 0) ctrls.push({ label: `OK (${picks.length}/${prompt.max})`, note: undefined, selected: false, onPick: () => picks.length >= prompt.min && send({ type: 'CHOOSE', player: acting, picks }) });
+      if (prompt.cancel) ctrls.push({ label: 'Cancel', note: undefined, selected: false, onPick: () => send({ type: 'CANCEL', player: acting }) });
+      const items = listOptions.length > 3 ? [...ctrls, ...listOptions] : [...listOptions, ...ctrls];
       return (
         <Win title={prompt.title} class="msgwin">
           <Menu items={items} class="scroll" />
