@@ -667,6 +667,9 @@
   line-height: 1.15;
 }
 .so-foe span {
+  /* skill names in full, over two lines if need be */
+  white-space: normal;
+  line-height: 1.2;
   font-size: 12px;
   color: var(--so-dim);
 }

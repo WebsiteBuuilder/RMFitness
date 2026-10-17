@@ -1294,6 +1294,8 @@ function LabyrinthStart(p: Ctx) {
   const items = solo.campaign.items.filter((x) => relic(x)?.millennium);
   const [code, setCode] = useState('');
   const today = todayString();
+  // shown as "Oct 17", not the date code the Daily is keyed by
+  const todayLabel = new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const doneToday = lab.history.find((h) => h.daily === today);
   const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string; deck?: SpeedDeck }) => {
     const run = newRun({ ...o, upgrades: lab.upgrades });
@@ -1312,7 +1314,7 @@ function LabyrinthStart(p: Ctx) {
           New run
         </Btn>
         <Btn kind="blue" onClick={() => setSheet('daily')}>
-          Daily Labyrinth · {today}
+          Daily Labyrinth · {todayLabel}
           {doneToday ? ' · played' : ''}
         </Btn>
         <div class="so-row">
@@ -1401,7 +1403,7 @@ function LabyrinthStart(p: Ctx) {
         </Sheet>
       )}
       {sheet === 'daily' && (
-        <Sheet title={`Daily Labyrinth · ${today}`} onClose={() => setSheet(null)}>
+        <Sheet title={`Daily Labyrinth · ${todayLabel}`} onClose={() => setSheet(null)}>
           <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Upgrades, Items, Curses and your own decks stay home, so it's a fair race. Play it, then text your result code to your brother.</p>
           {doneToday ? (
             <>

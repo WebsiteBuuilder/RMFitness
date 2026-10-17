@@ -217,7 +217,8 @@
 .dk-note {
   position: fixed;
   left: 50%;
-  bottom: calc(18px + env(safe-area-inset-bottom));
+  top: calc(64px + env(safe-area-inset-top));
+  pointer-events: none; /* never in the way of the next tap */
   transform: translateX(-50%);
   max-width: 90vw;
   padding: 8px 14px;
@@ -289,10 +290,8 @@
 }
 .sp-pick small {
   font-size: 11px;
+  line-height: 1.2;
   color: #aab6dd;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .sp-levels {
   display: flex;
