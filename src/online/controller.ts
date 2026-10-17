@@ -67,9 +67,9 @@ class OnlineController {
   constructor() {
     this.mm = new Matchmaker({
       net: () => {
-        const n = queueNet();
-        this.mmKind = cloudState() === 'on' ? 'cloud' : 'peer';
-        return n;
+        // a search started while the check runs waits for it and lands on the right queue by itself
+        this.mmKind = cloudState() === 'off' ? 'peer' : 'cloud';
+        return queueNet();
       },
       me: () => {
         const pr = this.presence;
@@ -81,7 +81,7 @@ class OnlineController {
     onCloudState((st) => {
       const t = this.transport;
       // a search still on the old queue moves over too, so it can meet phones on the service
-      if (st === 'on' && this.mm.searching && this.mmKind === 'peer') {
+      if (st === 'on' && this.mm.state === 'searching' && this.mmKind === 'peer' && !this.versus) {
         const g = this.mm.game;
         this.mm.cancel();
         this.findMatch(g);

@@ -140,8 +140,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   private goneSince = 0;
 
+  /** the other phone already took this duel's win by leaving after waiting */
+  private otherWon = false;
+
   abandoned(): boolean {
-    return this.everLinked && !this.otherHere && this.online && this.goneSince > 0 && Date.now() - this.goneSince >= ABANDON_MS;
+    return this.everLinked && !this.otherHere && this.online && !this.otherWon && this.status !== 'error' && this.goneSince > 0 && Date.now() - this.goneSince >= ABANDON_MS;
   }
 
   private goneTimer: ReturnType<typeof setInterval> | null = null;
@@ -193,6 +196,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
       const log = (await db.get(`${this.base}/log/${this.ep}`)) as Record<string, string> | string[] | null;
       const entries = log ? Object.entries(log).sort((a, b) => Number(a[0]) - Number(b[0])) : [];
       this.events = entries.map(([, v]) => JSON.parse(v) as LoggedEvent);
+      // a duel already under way: the opponent was here, so their absence gets the clock
+      if (this.events.length > 0) this.everLinked = true;
       this.emit();
     } else if (!mine) {
       await Promise.all([db.set(`${this.base}/ep`, this.ep), db.remove(`${this.base}/log`), db.remove(`${this.base}/in`), db.remove(`${this.base}/guestOn`).catch(() => {})]);
@@ -207,6 +212,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         this.otherHere = !!v;
         this.showLink();
       }),
+      db.onValue(`${this.base}/left`, (v) => (this.otherWon = !!v && v !== db.uid)),
       db.onChildAdded(`${this.base}/in`, (key, v) => {
         void db.remove(`${this.base}/in/${key}`).catch(() => {});
         if (typeof v !== 'string') return;
@@ -253,6 +259,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         this.showLink();
       }),
       db.onValue(`${this.base}/ep`, (v) => v !== null && this.followLog(db, Number(v) || 0)),
+      db.onValue(`${this.base}/left`, (v) => (this.otherWon = !!v && v !== db.uid)),
       // the host closed the room: the board stays as it was, with a plain message
       db.onValue(`${this.base}/meta`, (v) => {
         if (!v && this.everLinked) this.fail(NET_HOST_LEFT);
@@ -316,10 +323,17 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   close() {
     if (this.closed) return;
+    const tookWin = this.abandoned();
     this.closed = true;
     this.stopAll();
     const db = this.db;
-    if (db) {
+    if (db && tookWin) {
+      // this phone took the win from an opponent who walked out: say so in the room, so their
+      // phone (if it ever comes back) doesn't claim the same duel; the room is swept later
+      void db.set(`${this.base}/left`, db.uid).catch(() => {});
+      void db.cancelOnDisconnect(`${this.base}/${this.isHost ? 'hostOn' : 'guestOn'}`).catch(() => {});
+      void db.remove(`${this.base}/${this.isHost ? 'hostOn' : 'guestOn'}`).catch(() => {});
+    } else if (db) {
       const here = `${this.base}/${this.isHost ? 'hostOn' : 'guestOn'}`;
       void db.cancelOnDisconnect(here).catch(() => {});
       // the host leaving ends the room (the guest sees the host gone, as before)
