@@ -1061,7 +1061,12 @@ function Road(p: Ctx) {
           ) : (
             <p class="so-center">Tune your road deck and try again. A loss here costs nothing.</p>
           )}
-          <Btn kind="gold" onClick={() => advance(solo)}>
+          {rep.outcome.result !== 'w' && (
+            <Btn kind="gold" disabled={problems.length > 0 && !(repNode.node.story && !storyOwn)} onClick={() => (advance(solo), duel(repNode.node))}>
+              Try again
+            </Btn>
+          )}
+          <Btn kind={rep.outcome.result === 'w' ? 'gold' : undefined} onClick={() => advance(solo)}>
             Continue
           </Btn>
         </Sheet>
@@ -1153,7 +1158,6 @@ function RoadStart(p: Ctx) {
             <div class="so-group">
               {st.character}'s deck · {preview.main.length} cards
             </div>
-            <DeckListView main={preview.main} extra={preview.extra} />
             <Btn
               kind="gold"
               onClick={() => {
@@ -1164,6 +1168,7 @@ function RoadStart(p: Ctx) {
             >
               Begin the road with {st.character}
             </Btn>
+            <DeckListView main={preview.main} extra={preview.extra} />
           </>
         )}
         <p class="so-dim">First stop: {first.title}.</p>

@@ -62,6 +62,22 @@ import type { CpuDuelist } from '../eds/speedCampaign/types';
 import { online } from '../online/controller';
 import { setUiGame } from './gameUi';
 
+/** The game a duelist was last in on this phone ('speed' or the EDS 'menu'). */
+const lastGame = (id: string): string | null => {
+  try {
+    return localStorage.getItem(`eds.lastGame.${id}`);
+  } catch {
+    return null;
+  }
+};
+const setLastGame = (id: string, g: string) => {
+  try {
+    localStorage.setItem(`eds.lastGame.${id}`, g);
+  } catch {
+    /* storage full */
+  }
+};
+
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
 function makeOnline(code: string, isHost: boolean): SyncAdapter {
@@ -258,11 +274,29 @@ export function App() {
     setSaveState(s);
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
-    setScreen(!s ? 'intro' : pendingJoin ? 'link' : 'menu');
+    setScreen(!s ? 'intro' : pendingJoin ? 'link' : lastGame(p.id) === 'speed' ? 'speed' : 'menu');
+  };
+  // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
+  useEffect(() => {
+    if (profile && (screen === 'speed' || screen === 'menu')) setLastGame(profile.id, screen);
+  }, [profile, screen]);
+  /** Title tapped: the duelist kept logged in on this phone goes straight in. */
+  const [resuming, setResuming] = useState<string | null>(null);
+  const start = () => {
+    const kept = accounts.stayed();
+    if (!kept) return setScreen('profiles');
+    setResuming(kept.alias || kept.name);
+    void accounts.resume().then((p) => {
+      setResuming(null);
+      if (!p) return setScreen('profiles');
+      accounts.startSync(p);
+      pickProfile(p);
+    });
   };
 
   const switchProfile = () => {
     void accounts.stopSync(); // upload this duelist's latest progress to their account
+    accounts.forget();
     session?.close();
     setSession(null);
     setProfile(null);
@@ -365,6 +399,10 @@ export function App() {
     if (session && parked.current && parked.current.ses !== session) parked.current.close();
     if (session && rematchDock.dock?.kind === 'cpu') rematchDock.set(null);
   }, [session]);
+  // The computer rematch call rides on the result screen; once that's closed it goes too.
+  useEffect(() => {
+    if (!speedResult && !session && rematchDock.dock?.kind === 'cpu') rematchDock.set(null);
+  }, [speedResult]);
   useEffect(() => {
     if (!profile) {
       parked.current?.close();
@@ -635,7 +673,9 @@ export function App() {
   useEffect(() => {
     if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save));
   }, [profile, save, speedSave, screen]);
-  useEffect(() => online.showButton(!!profile && !!save && screen !== 'duel' && screen !== 'title' && screen !== 'profiles' && screen !== 'intro'), [profile, save, screen]);
+  // The floating Friends button only shows on menus with no buttons along the bottom; the
+  // Speed Duel side has its own Friends row on the Duel tab, and invites still pop up anywhere.
+  useEffect(() => online.showButton(!!profile && !!save && (screen === 'menu' || screen === 'link')), [profile, save, screen]);
 
   /** The game the duel on screen belongs to (a guest follows the host's game). */
   const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
@@ -839,7 +879,7 @@ export function App() {
     return false;
   });
 
-  if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} onStart={() => setScreen('profiles')} />;
+  if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} who={accounts.stayed()?.alias} opening={resuming} onStart={start} />;
   if (!profile) return <ProfilePicker onPick={pickProfile} joining={pendingJoin} />;
 
   if (!save) {

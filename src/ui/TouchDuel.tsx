@@ -236,13 +236,18 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const info = cardInfo(f.card.name);
       if (info?.kind === 'monster') {
         // A tribute frees a zone, so any of your zones takes a monster that needs tributes.
-        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
+        if (e.canNormalSummon(acting, f.card)) {
+          if (e.canNormalSummon(acting, f.card, true)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
+          // the SET pad: drop here to Set it face-down
+          out.add('set');
+        }
       } else {
         const ok = (info?.kind === 'spell' && e.canActivateMain(acting, uid)) || e.canSet(acting, f.card);
         if (ok) {
           me.sz.forEach((z, i) => z === null && out.add(`sz${i}`));
           if (info?.sub === 'Field') out.add('field');
         }
+        if (e.canSet(acting, f.card) && me.sz.some((z) => z === null)) out.add('set');
       }
     }
     if (from === 'mz' && state.phase === 'BP') {
@@ -263,7 +268,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const spot = d.over;
     if (d.from === 'hand') {
       const info = cardInfo(f.card.name);
-      if (spot.startsWith('mz')) send({ type: 'SUMMON', player: acting, uid: d.uid, zone: Number(spot.slice(2)), pos: 'atk', faceUp: true });
+      if (spot === 'set') {
+        if (info?.kind === 'monster') send({ type: 'SUMMON', player: acting, uid: d.uid, zone: e.freeMonsterZone(acting), pos: 'def', faceUp: false });
+        else send({ type: 'SET_ST', player: acting, uid: d.uid, zone: me.sz.findIndex((z) => z === null) });
+      } else if (spot.startsWith('mz')) send({ type: 'SUMMON', player: acting, uid: d.uid, zone: Number(spot.slice(2)), pos: 'atk', faceUp: true });
       else {
         const zone = spot === 'field' ? me.sz.findIndex((z) => z === null) : Number(spot.slice(2));
         // Spells are played face-up when they can be; Traps (and Spells that can't be used now) are Set.
@@ -612,7 +620,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // (with a controller: the buttons, not the finger moves)
     const pad = document.documentElement.classList.contains('pad-on');
     if (state.phase === 'BP') return state.firstTurn ? null : pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, or tap it';
+    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it (drop on SET to Set it), or tap it';
     return null;
   };
 
@@ -826,6 +834,13 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
       )}
 
+      {drag && spots?.has('set') && (
+        <div class={`tset-pad ${drag.over === 'set' ? 'drop-on' : ''}`} data-drop="set" aria-label="Set face-down">
+          <span class="tset-card" />
+          <b>SET</b>
+          <small>face-down</small>
+        </div>
+      )}
       {drag && (
         <div class={`tghost ${drag.over ? 'over' : ''}`} style={{ left: `${drag.x}px`, top: `${drag.y}px` }}>
           <CardImg name={drag.name} owner={e.find(drag.uid)?.card.owner} />

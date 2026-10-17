@@ -58,6 +58,8 @@ export interface CloudBackend {
   signIn(login: string, password: string): Promise<string>;
   /** the account signed in right now */
   current(): string | null;
+  /** the account this browser stayed signed in to, once the store has loaded */
+  restore?(): Promise<string | null>;
   signOut(): Promise<void>;
   getSave(uid: string): Promise<CloudSave | null>;
   putSave(uid: string, s: CloudSave): Promise<void>;

@@ -610,7 +610,19 @@
   bottom: calc(8px + env(safe-area-inset-bottom));
   max-width: 520px;
   margin: 0 auto;
-  font-family: 'Silkscreen', 'Courier New', monospace;
+  transition: transform 0.25s ease, opacity 0.25s;
+}
+.artlab-panel.tucked {
+  transform: translateY(110%);
+  opacity: 0;
+  pointer-events: none;
+}
+.artlab-show {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 3;
 }
 .artlab-panel .win-body {
   padding: 8px;

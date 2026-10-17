@@ -69,6 +69,11 @@ export class FirebaseBackend implements CloudBackend {
     }
   }
 
+  async restore(): Promise<string | null> {
+    await this.init();
+    return this.user;
+  }
+
   async signIn(login: string, password: string): Promise<string> {
     const { auth } = await this.init();
     const { signInWithEmailAndPassword } = await import('firebase/auth');

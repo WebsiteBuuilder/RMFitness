@@ -1,6 +1,6 @@
 // Speed Duel: the second game. Its own menu, decks (Speed Duel cards only), Skills,
 // computer opponents and record, sharing profiles and the duel screen with EDS.
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
 import { loadSave, type ControlStyle, type Profile } from '../eds/save';
 import { Rankings } from './Rankings';
@@ -27,11 +27,12 @@ import {
   type Starter,
 } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from './CardImg';
+import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
 import { DeckSwitch } from './DeckPick';
 import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
-import { playBlip } from './sound';
+import { buzz, playBlip } from './sound';
 import { ShadowRealmScreen } from '../art/ShadowRealmScreen';
 import { ArtLab } from '../art/ArtLab';
 import { sealedCards } from '../art/shadow';
@@ -230,6 +231,7 @@ function requestsNote(save: SpeedSave): string {
 
 function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExit: () => void }) {
   const [sel, setSel] = useState<Starter | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const preview = sel ? deckFromStarter(sel) : null;
   return (
     <div class="screen">
@@ -239,16 +241,29 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
       </Win>
       {sel && preview && (
         <Win title={`${sel.character} · ${preview.main.length} cards`}>
-          {preview.skill && <p>Skill: {preview.skill}</p>}
+          <Menu items={[{ label: `Take ${sel.character}'s deck`, onPick: () => onPick(preview) }]} />
+          {preview.skill && (
+            <p class="starter-skill">
+              <b>Skill: {preview.skill.replace(/ \(Skill Card\)$/, '')}</b>
+              {card(preview.skill)?.desc && <span> {card(preview.skill)!.desc}</span>}
+            </p>
+          )}
+          <p class="hint">Tap a card to read it.</p>
           <div class="grid small">
             {[...preview.main, ...preview.extra].map((n, i) => (
-              <div key={i} class="gcard">
+              <button key={i} class="gcard" onClick={() => (playBlip(), setInfo(n))} aria-label={n}>
                 <CardImg name={n} />
-              </div>
+              </button>
             ))}
           </div>
-          <Menu items={[{ label: `Take ${sel.character}'s deck`, onPick: () => onPick(preview) }]} />
         </Win>
+      )}
+      {info && (
+        <Overlay onClose={() => setInfo(null)}>
+          <Win title="Card Info" onClose={() => setInfo(null)}>
+            <CardInfoPanel name={info} />
+          </Win>
+        </Overlay>
       )}
     </div>
   );
@@ -327,38 +342,107 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
 }
 
 const PAGE = 60;
-type Tab = 'cards' | 'main' | 'extra' | 'skill';
 type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
+type Sort = 'type' | 'name' | 'atk' | 'def' | 'level';
+const SORTS: [Sort, string][] = [
+  ['type', 'Type'],
+  ['level', 'Level'],
+  ['atk', 'ATK'],
+  ['def', 'DEF'],
+  ['name', 'Name'],
+];
+const ATTRS = ['DARK', 'LIGHT', 'EARTH', 'WATER', 'FIRE', 'WIND', 'DIVINE'];
+const KIND_ORDER: Record<string, number> = { monster: 0, spell: 1, trap: 2 };
+
+/** Master Duel's deck order: monsters (highest Level first), then Spells, then Traps; ties by name. */
+function byType(a: string, b: string): number {
+  const x = card(a);
+  const y = card(b);
+  return (KIND_ORDER[x?.kind ?? ''] ?? 3) - (KIND_ORDER[y?.kind ?? ''] ?? 3) || (y?.level ?? 0) - (x?.level ?? 0) || (x?.sub ?? '').localeCompare(y?.sub ?? '') || a.localeCompare(b);
+}
+
+function sorter(by: Sort): (a: string, b: string) => number {
+  if (by === 'type') return byType;
+  if (by === 'name') return (a, b) => a.localeCompare(b);
+  const key = (n: string) => {
+    const c = card(n);
+    if (c?.kind !== 'monster') return -1;
+    return by === 'atk' ? (c.atk ?? 0) : by === 'def' ? (c.def ?? 0) : (c.level ?? 0);
+  };
+  return (a, b) => key(b) - key(a) || byType(a, b);
+}
 
 /**
- * Deck editor: every Speed Duel card, 3 copies each, plus the deck's Skill. With a
- * `collection`, only cards (and Skills) owned there are offered, up to the copies owned.
+ * A tap that adds or removes, and a long press (or the corner ⓘ) that reads the card, like
+ * Master Duel's deck editor. Returns the props for a card tile.
  */
+function useTileTouch(onInfo: (n: string) => void) {
+  const held = useRef<{ t: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const clear = () => {
+    if (held.current) clearTimeout(held.current.t);
+    held.current = null;
+  };
+  return (n: string, onTap: () => void) => ({
+    onPointerDown: (ev: PointerEvent) => {
+      clear();
+      fired.current = false;
+      held.current = { x: ev.clientX, y: ev.clientY, t: setTimeout(() => ((fired.current = true), buzz(15), onInfo(n)), 420) };
+    },
+    onPointerMove: (ev: PointerEvent) => {
+      if (held.current && Math.hypot(ev.clientX - held.current.x, ev.clientY - held.current.y) > 10) clear();
+    },
+    onPointerUp: clear,
+    onPointerCancel: clear,
+    onPointerLeave: clear,
+    onContextMenu: (ev: Event) => ev.preventDefault(),
+    onClick: () => {
+      if (fired.current) return void (fired.current = false);
+      onTap();
+    },
+  });
+}
+
 export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; openRandom?: boolean }) {
   const [random, setRandom] = useState(openRandom);
   /** the deck as it was before a random deck replaced it */
   const [undo, setUndo] = useState<SpeedDeck | null>(null);
-  const [tab, setTab] = useState<Tab>('cards');
   const [kind, setKind] = useState<Kind>('all');
+  const [sort, setSort] = useState<Sort>('type');
+  const [attr, setAttr] = useState('all');
+  const [lvl, setLvl] = useState('all');
   const [q, setQ] = useState('');
   const [inText, setInText] = useState(false);
   const [setF, setSetF] = useState('all');
   const [showAll, setShowAll] = useState(false);
+  const [moreFilters, setMoreFilters] = useState(false);
   const [limit, setLimit] = useState(PAGE);
-  const [sel, setSel] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [skillPick, setSkillPick] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  /** why the last tap couldn't add a card (shown for a moment) */
+  const [note, setNote] = useState<{ text: string; id: number } | null>(null);
+  /** the card just added, so its tile in the deck can flash */
+  const [fresh, setFresh] = useState<{ n: string; id: number } | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 1800);
+    return () => clearTimeout(t);
+  }, [note]);
   const pool = useMemo(() => speedCards().filter((c) => !collection || (collection[c.name] ?? 0) > 0), [collection]);
   const skills = useMemo(() => skillCards().filter((c) => !collection || (collection[c.name] ?? 0) > 0), [collection]);
   const ownedCopies = (n: string) => (collection ? Math.min(COPIES, collection[n] ?? 0) : COPIES);
   const problems = speedDeckProblems(deck);
   const copies = (n: string) => deck.main.filter((x) => x === n).length + deck.extra.filter((x) => x === n).length;
+  const tile = useTileTouch(setInfo);
 
   const matches = (name: string) => {
     const c = card(name);
     if (!c) return false;
     if (kind === 'extra' ? !isExtraCard(name) : kind !== 'all' && (c.kind !== kind || (kind === 'monster' && isExtraCard(name)))) return false;
     if (setF !== 'all' && !(c.speedSets ?? []).some((s) => (setF === 'GX' ? s.startsWith('SGX') : s === setF))) return false;
+    if (attr !== 'all' && (c.kind !== 'monster' || c.attribute !== attr)) return false;
+    if (lvl !== 'all' && (c.kind !== 'monster' || String(c.level ?? '') !== lvl)) return false;
     if (!q) return true;
     const needle = q.toLowerCase();
     return name.toLowerCase().includes(needle) || (inText && c.desc.toLowerCase().includes(needle));
@@ -368,9 +452,22 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
     onChange({ ...deck, ...d });
     playBlip();
   };
+  /** why this card can't go in (null: it can) */
+  const whyNot = (n: string): string | null => {
+    const why = unplayableReason(n);
+    if (why) return `Not in the game yet: ${why}`;
+    if (limitStatus(n) === 'Forbidden') return 'Forbidden on the Limited List';
+    if (copies(n) >= ownedCopies(n)) return ownedCopies(n) < COPIES ? `You own ${ownedCopies(n)} cop${ownedCopies(n) === 1 ? 'y' : 'ies'}` : `${COPIES} copies at most`;
+    if (isExtraCard(n) ? deck.extra.length >= EXTRA_MAX : deck.main.length >= MAIN_MAX) return isExtraCard(n) ? `The Extra Deck is full (${EXTRA_MAX})` : `The Main Deck is full (${MAIN_MAX})`;
+    return null;
+  };
+  const canAdd = (n: string) => !whyNot(n);
   const addCard = (n: string) => {
+    const why = whyNot(n);
+    if (why) return void (buzz(30), setNote({ text: why, id: Date.now() }));
     if (isExtraCard(n)) set({ extra: [...deck.extra, n] });
     else set({ main: [...deck.main, n] });
+    setFresh({ n, id: Date.now() });
   };
   const removeCard = (n: string) => {
     const from = deck.extra.includes(n) ? 'extra' : 'main';
@@ -378,54 +475,69 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
     list.splice(list.indexOf(n), 1);
     set({ [from]: list });
   };
-  const canAdd = (n: string) => !unplayableReason(n) && copies(n) < ownedCopies(n) && (isExtraCard(n) ? deck.extra.length < EXTRA_MAX : deck.main.length < MAIN_MAX) && limitStatus(n) !== 'Forbidden';
 
-  const counted = (list: string[]) => {
-    const m = new Map<string, number>();
-    for (const n of list) m.set(n, (m.get(n) ?? 0) + 1);
-    return [...m.entries()].filter(([n]) => matches(n)).sort(([a], [b]) => (card(a)?.kind ?? '').localeCompare(card(b)?.kind ?? '') || a.localeCompare(b));
-  };
-
-  let rows: [string, number | null][] = [];
-  if (tab === 'cards') rows = pool.filter((c) => matches(c.name) && (showAll || !unplayableReason(c.name))).map((c) => [c.name, copies(c.name) || null]);
-  else if (tab === 'main') rows = counted(deck.main);
-  else if (tab === 'extra') rows = counted(deck.extra);
+  const cmp = sorter(sort);
+  const rows = useMemo(
+    () => pool.filter((c) => matches(c.name) && (showAll || !unplayableReason(c.name))).map((c) => c.name).sort(cmp),
+    [pool, kind, setF, attr, lvl, q, inText, showAll, sort],
+  );
   const shown = rows.slice(0, limit);
+  const main = [...deck.main].sort(byType);
+  const extra = [...deck.extra].sort(byType);
+  const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
+  const filtered = kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!q;
 
-  const statLine = (n: string) => {
-    const c = card(n);
-    if (!c) return '';
-    const lim = limitStatus(n);
-    const base = c.kind === 'monster' ? `★${c.level ?? '?'} ${c.atk ?? 0}/${c.def ?? 0}` : c.sub;
-    return lim ? `${base} · ${lim}` : base;
-  };
+  const deckTile = (n: string, i: number) => (
+    <button
+      key={`${n}-${i}`}
+      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''}`}
+      aria-label={`${n}: tap to take out, hold to read`}
+      data-pad-x="Remove one"
+      data-pad-y=""
+      {...({ onpadx: () => removeCard(n), onpady: () => setInfo(n) } as object)}
+      {...tile(n, () => removeCard(n))}
+    >
+      <CardImg name={n} />
+    </button>
+  );
 
   return (
-    <div class="screen deckedit">
-      <div class="tabs">
-        {(['cards', 'main', 'extra', 'skill'] as Tab[]).map((t) => (
-          <button key={t} class={`tab ${tab === t ? 'on' : ''}`} onClick={() => (setTab(t), setSel(null), setLimit(PAGE))}>
-            {t === 'cards' ? (collection ? 'Owned' : 'All cards') : t === 'main' ? `Main ${deck.main.length}` : t === 'extra' ? `Extra ${deck.extra.length}/${EXTRA_MAX}` : 'Skill'}
-          </button>
-        ))}
-        <button class="tab x" onClick={onBack}>
-          Done
+    <div class="screen deckedit dk">
+      <div class="dk-head">
+        <button class="dk-done" onClick={onBack}>
+          ‹ Done
         </button>
-      </div>
-      <div class="sd-deckhead">
-        <button class="chip" onClick={() => setRenaming(true)}>
+        <button class="chip dk-name" onClick={() => setRenaming(true)}>
           {deck.name} ✎
         </button>
         <button class="chip sd-dice" onClick={() => (playBlip(), setRandom(true))} aria-label="Random deck maker">
-          🎲 Random
+          🎲
         </button>
         {undo && (
           <button class="chip" onClick={() => (onChange(undo), setUndo(null), playBlip())}>
             ↶ Undo
           </button>
         )}
-        <span class={problems.length ? 'err' : 'good'}>{problems.length ? problems[0] : `Ready · ${deck.main.length} cards${deck.skill ? ` · ${deck.skill}` : ''}`}</span>
       </div>
+      <div class={`dk-status ${problems.length ? 'err' : 'good'}`}>{problems.length ? problems[0] : `Ready to duel · ${deck.main.length} cards`}</div>
+
+      <div class="dk-deck">
+        <div class="dk-counts">
+          <b>Main {deck.main.length}</b>
+          <span class="dk-k dk-mon">M {count('monster')}</span>
+          <span class="dk-k dk-spell">S {count('spell')}</span>
+          <span class="dk-k dk-trap">T {count('trap')}</span>
+          <b class="dk-ex">
+            Extra {deck.extra.length}/{EXTRA_MAX}
+          </b>
+          <button class={`dk-skill ${deck.skill ? '' : 'none'}`} onClick={() => (playBlip(), setSkillPick(true))} aria-label="Skill">
+            ✦ {deck.skill ? deck.skill.replace(/ \(Skill Card\)$/, '') : 'Pick a Skill'}
+          </button>
+        </div>
+        {main.length ? <div class="dk-grid">{main.map(deckTile)}</div> : <p class="hint">Tap cards below to put them in your deck.</p>}
+        {extra.length > 0 && <div class="dk-grid dk-extra">{extra.map(deckTile)}</div>}
+      </div>
+
       {random && (
         <RandomDeckSheet
           sizes={[20, 25, 30]}
@@ -437,114 +549,155 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
             setUndo(deck);
             onChange({ ...deck, main: r.main, extra: r.extra, skill: r.skill });
             setRandom(false);
-            setTab('main');
-            setSel(null);
           }}
           onClose={() => setRandom(false)}
         />
       )}
-      {deck.open && <p class="hint shop-pad">Anything goes deck: every card is here, but duels with it earn no packs or chips and it can't be bet.</p>}
-      {collection && tab === 'cards' && pool.length < 40 && <p class="hint shop-pad">Only cards you own are here. Get more from packs and crafting in the Card Shop.</p>}
-      {tab !== 'skill' && (
-        <div class="filters">
+
+      <div class="dk-pool">
+        <div class="filters dk-filters">
           {(['all', 'monster', 'spell', 'trap', 'extra'] as Kind[]).map((f) => (
             <button key={f} class={`chip ${kind === f ? 'on' : ''}`} onClick={() => (setKind(f), setLimit(PAGE))}>
               {f === 'all' ? 'All' : f === 'monster' ? 'Mon' : f === 'spell' ? 'Spell' : f === 'trap' ? 'Trap' : 'Extra'}
             </button>
           ))}
-          <input class="search" placeholder={inText ? 'Search text' : 'Search name'} value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
+          <button class={`chip ${moreFilters || attr !== 'all' || lvl !== 'all' || setF !== 'all' ? 'on' : ''}`} onClick={() => setMoreFilters(!moreFilters)} aria-label="More filters and sort">
+            ⚙
+          </button>
+        </div>
+        <div class="filters dk-filters">
+          <input class="search" type="search" placeholder={inText ? 'Search card text' : 'Search name'} value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
           <button class={`chip ${inText ? 'on' : ''}`} onClick={() => setInText(!inText)} title="Search card text too">
             Txt
           </button>
-          <select class="setpick" value={setF} onChange={(ev) => (setSetF((ev.target as HTMLSelectElement).value), setLimit(PAGE))} aria-label="Speed Duel set">
-            <option value="all">All sets</option>
-            <option value="GX">Speed Duel GX (all 3)</option>
-            {SPEED_SETS.map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {tab === 'skill' ? (
-        <div class="cardlist">
-          <p class="hint">Bring one Skill to each Duel. It starts face-down and flips when you use it. Only Skills the game can play are listed.</p>
-          {skills
-            .filter((s) => getSkill(s.name))
-            .map((s) => (
-              <button key={s.name} class={`crow ${deck.skill === s.name ? 'sel' : ''} k-spell`} onClick={() => setSel(s.name)}>
-                <CardImg name={s.name} class="crow-img" />
-                <span class="crow-name">{s.name}</span>
-                <span class="crow-stat">
-                  {s.character}
-                  {limitStatus(s.name) ? ` · ${limitStatus(s.name)}` : ''}
-                </span>
-                <span class="crow-count">{deck.skill === s.name ? '✓' : ''}</span>
-              </button>
-            ))}
-        </div>
-      ) : (
-        <div class="cardlist">
-          {tab === 'cards' && (
-            <p class="hint">
-              {rows.length} card{rows.length === 1 ? '' : 's'}.{' '}
-              <button class="chip" onClick={() => (setShowAll(!showAll), setLimit(PAGE))}>
-                {showAll ? 'Hide cards not in the game yet' : 'Also show cards not in the game yet'}
-              </button>
-            </p>
-          )}
-          {shown.length === 0 && <p class="hint">Nothing here.</p>}
-          {shown.map(([n, c]) => {
-            const why = unplayableReason(n);
-            const ci = card(n);
-            return (
-              <button
-                key={n}
-                class={`crow ${sel === n ? 'sel' : ''} k-${ci?.kind ?? 'monster'} ${why ? 'off' : ''}`}
-                onClick={() => setSel(sel === n ? null : n)}
-                // a controller's X adds a copy (Owned) or takes one out (your deck), Y shows the card, like Master Duel's deck editor
-                data-pad-x={tab === 'cards' ? (why || !canAdd(n) ? '' : 'Add one') : 'Remove one'}
-                data-pad-y=""
-                {...({ onpadx: () => (tab === 'cards' ? !why && canAdd(n) && addCard(n) : removeCard(n)), onpady: () => setInfo(n) } as object)}
-              >
-                <CardImg name={n} class="crow-img" />
-                <span class="crow-name">{n}</span>
-                <span class="crow-stat">{why ? 'not in game yet' : statLine(n)}</span>
-                <span class="crow-count">{c ? `×${c}` : ''}</span>
-              </button>
-            );
-          })}
-          {rows.length > limit && (
-            <button class="gbtn more" onClick={() => setLimit(limit + PAGE)}>
-              Show more ({rows.length - limit} left)
+          {filtered && (
+            <button class="chip" onClick={() => (setKind('all'), setAttr('all'), setLvl('all'), setSetF('all'), setQ(''), setLimit(PAGE))}>
+              Clear
             </button>
           )}
         </div>
+        {moreFilters && (
+          <div class="filters dk-filters dk-more">
+            <label>
+              Sort
+              <select value={sort} onChange={(ev) => setSort((ev.target as HTMLSelectElement).value as Sort)}>
+                {SORTS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Attribute
+              <select value={attr} onChange={(ev) => (setAttr((ev.target as HTMLSelectElement).value), setLimit(PAGE))}>
+                <option value="all">Any</option>
+                {ATTRS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Level
+              <select value={lvl} onChange={(ev) => (setLvl((ev.target as HTMLSelectElement).value), setLimit(PAGE))}>
+                <option value="all">Any</option>
+                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Set
+              <select class="setpick" value={setF} onChange={(ev) => (setSetF((ev.target as HTMLSelectElement).value), setLimit(PAGE))} aria-label="Speed Duel set">
+                <option value="all">All sets</option>
+                <option value="GX">Speed Duel GX (all 3)</option>
+                {SPEED_SETS.map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button class="chip" onClick={() => (setShowAll(!showAll), setLimit(PAGE))}>
+              {showAll ? 'Hide cards not in the game' : 'Show cards not in the game'}
+            </button>
+          </div>
+        )}
+        {deck.open && <p class="hint">Anything goes deck: every card is here, but duels with it earn no packs or chips and it can't be bet.</p>}
+        {collection && pool.length < 40 && <p class="hint">Only cards you own are here. Get more from packs and crafting in the Card Shop.</p>}
+        <p class="hint dk-hint">
+          {rows.length} card{rows.length === 1 ? '' : 's'} · tap to add · hold to read
+        </p>
+        {shown.length === 0 && <p class="hint">Nothing here.</p>}
+        <div class="dk-grid dk-poolgrid">
+          {shown.map((n) => {
+            const why = unplayableReason(n);
+            const inDeck = copies(n);
+            const can = canAdd(n);
+            return (
+              <button
+                key={n}
+                class={`dk-tile ${why ? 'off' : ''} ${!can ? 'maxed' : ''}`}
+                aria-label={`${n}: tap to add, hold to read`}
+                // a controller's X adds a copy, Y shows the card, like Master Duel's deck editor
+                data-pad-x={why || !can ? '' : 'Add one'}
+                data-pad-y=""
+                {...({ onpadx: () => !why && can && addCard(n), onpady: () => setInfo(n) } as object)}
+                {...tile(n, () => addCard(n))}
+              >
+                <CardImg name={n} />
+                {limitStatus(n) && <i class="dk-lim">{limitStatus(n) === 'Forbidden' ? '⊘' : limitStatus(n) === 'Limited' ? '1' : '2'}</i>}
+                <i class="dk-own">
+                  {inDeck > 0 ? `${inDeck}/` : ''}
+                  {collection ? Math.min(collection[n] ?? 0, 9) : COPIES}
+                </i>
+              </button>
+            );
+          })}
+        </div>
+        {rows.length > limit && (
+          <button class="gbtn more" onClick={() => setLimit(limit + PAGE)}>
+            Show more ({rows.length - limit} left)
+          </button>
+        )}
+      </div>
+
+      {note && (
+        <div class="dk-note" key={note.id} role="status">
+          {note.text}
+        </div>
       )}
-      {sel && tab === 'skill' && (
-        <Win title={sel} class="msgwin">
-          <Menu
-            items={[
-              deck.skill === sel ? { label: 'Remove this Skill', onPick: () => (set({ skill: null }), setSel(null)) } : { label: 'Use this Skill', disabled: limitStatus(sel) === 'Forbidden', onPick: () => (set({ skill: sel }), setSel(null)) },
-              { label: 'Skill text', onPick: () => setInfo(sel) },
-            ]}
-          />
-        </Win>
-      )}
-      {sel && tab !== 'skill' && (
-        <Win title={sel} class="msgwin">
-          {unplayableReason(sel) && <p class="hint">Can't be used yet: {unplayableReason(sel)}.</p>}
-          <Menu
-            items={[
-              // (looking at your deck, Remove comes first)
-              ...(tab !== 'cards' && copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
-              ...(!unplayableReason(sel) ? [{ label: isExtraCard(sel) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(sel), note: `${copies(sel)}/${ownedCopies(sel)}`, onPick: () => addCard(sel) }] : []),
-              ...(tab === 'cards' && copies(sel) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(sel) }] : []),
-              { label: 'Card Info', onPick: () => setInfo(sel) },
-            ]}
-          />
-        </Win>
+
+      {skillPick && (
+        <Overlay onClose={() => setSkillPick(false)}>
+          <Win title="Skill" onClose={() => setSkillPick(false)}>
+            <p class="hint">Bring one Skill to each Duel. It starts face-down and flips when you use it. Hold a Skill to read it.</p>
+            <div class="cardlist dk-skills">
+              {skills
+                .filter((sk) => getSkill(sk.name))
+                .map((sk) => (
+                  <button
+                    key={sk.name}
+                    class={`crow ${deck.skill === sk.name ? 'sel' : ''} k-spell`}
+                    disabled={limitStatus(sk.name) === 'Forbidden'}
+                    {...tile(sk.name, () => (set({ skill: deck.skill === sk.name ? null : sk.name }), setSkillPick(false)))}
+                  >
+                    <CardImg name={sk.name} class="crow-img" />
+                    <span class="crow-name">{sk.name.replace(/ \(Skill Card\)$/, '')}</span>
+                    <span class="crow-stat">
+                      {sk.character}
+                      {limitStatus(sk.name) ? ` · ${limitStatus(sk.name)}` : ''}
+                    </span>
+                    <span class="crow-count">{deck.skill === sk.name ? '✓' : ''}</span>
+                  </button>
+                ))}
+            </div>
+          </Win>
+        </Overlay>
       )}
       {info && (
         <Overlay onClose={() => setInfo(null)}>
@@ -554,6 +707,14 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
               <p class="hint">
                 {limitStatus(info)} on the {LIMITED_LIST_NAME}.
               </p>
+            )}
+            {card(info)?.sub !== 'Skill' && (
+              <Menu
+                items={[
+                  ...(!unplayableReason(info) ? [{ label: isExtraCard(info) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(info), note: `${copies(info)}/${ownedCopies(info)}`, onPick: () => addCard(info) }] : []),
+                  ...(copies(info) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(info) }] : []),
+                ]}
+              />
             )}
           </Win>
         </Overlay>

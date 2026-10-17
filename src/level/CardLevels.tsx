@@ -45,7 +45,11 @@ export function levelHeadline(save: SpeedSave): string | null {
   const ups = rankUps(rep.rows);
   if (ups.length) return `${ups.map((r) => `${r.name} is now ${tierOf(r.after).name}`).slice(0, 2).join(' · ')}${ups.length > 2 ? ` and ${ups.length - 2} more` : ''}!`;
   const best = rep.rows[0];
-  return best.after > best.before ? `${best.name} gained the most: +${best.after - best.before}` : null;
+  if (best.after <= best.before) return null;
+  const gain = best.after - best.before;
+  // Every card gaining the same points (a quick duel) has no stand-out card.
+  if (rep.rows.every((r) => r.after - r.before === gain)) return `${rep.rows.length} cards gained +${gain} card level points`;
+  return `${best.name} gained the most: +${gain}`;
 }
 
 /** Roughly what a card you play and win fights with earns in one duel (for the "how long" line). */

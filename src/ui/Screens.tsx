@@ -17,9 +17,9 @@ import { playBlip, playWin, unlockAudio } from './sound';
 /** The Egyptian Gods come in packs but cannot be used, as in EDS. */
 const GODS = new Set(['Obelisk the Tormentor', 'Slifer the Sky Dragon', 'The Winged Dragon of Ra']);
 
-export function Title({ onStart, hasSave }: { onStart: () => void; hasSave: boolean }) {
+export function Title({ onStart, hasSave, who, opening }: { onStart: () => void; hasSave: boolean; who?: string; opening?: string | null }) {
   return (
-    <div class="title" onClick={() => (unlockAudio(), onStart())}>
+    <div class="title" onClick={() => (unlockAudio(), !opening && onStart())}>
       <div class="title-eye">◈</div>
       <div class="title-logo">
         <span class="t1">YU-GI-OH!</span>
@@ -28,8 +28,14 @@ export function Title({ onStart, hasSave }: { onStart: () => void; hasSave: bool
         <span class="t3">fan remake</span>
       </div>
       <div class="press">
-        <span class="touch-txt">{hasSave ? 'TAP TO CONTINUE' : 'TAP TO START'}</span>
-        <span class="pad-txt">{hasSave ? 'PRESS A TO CONTINUE' : 'PRESS A TO START'}</span>
+        {opening ? (
+          <span>OPENING {opening.toUpperCase()}…</span>
+        ) : (
+          <>
+            <span class="touch-txt">{who ? `TAP TO PLAY AS ${who.toUpperCase()}` : hasSave ? 'TAP TO CONTINUE' : 'TAP TO START'}</span>
+            <span class="pad-txt">{who ? `PRESS A TO PLAY AS ${who.toUpperCase()}` : hasSave ? 'PRESS A TO CONTINUE' : 'PRESS A TO START'}</span>
+          </>
+        )}
       </div>
       <div class="title-foot">A fan project. Yu-Gi-Oh! is © Kazuki Takahashi / Konami.</div>
     </div>

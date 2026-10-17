@@ -1,0 +1,240 @@
+/* Speed Duel deck editor, Master Duel style: your deck on top as card pictures, the cards
+   you own underneath. Tap adds or takes out, hold reads. Phone first (iPhone SE up). */
+.dk {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.dk-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: calc(6px + env(safe-area-inset-top)) 8px 4px;
+}
+.dk-done {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--panel2);
+  border: 2px solid var(--border);
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+  flex: none;
+}
+.dk-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.dk-status {
+  padding: 0 10px 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dk-status.err {
+  color: var(--red);
+}
+.dk-status.good {
+  color: var(--green);
+}
+.dk-deck {
+  flex: none;
+  max-height: 38dvh;
+  overflow-y: auto;
+  padding: 4px 8px 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border-top: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+}
+.dk-counts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin: 2px 0 4px;
+}
+.dk-k {
+  padding: 1px 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  color: #fff;
+}
+.dk-mon {
+  background: #8a5a22;
+}
+.dk-spell {
+  background: #1d8a6e;
+}
+.dk-trap {
+  background: #9a2f7c;
+}
+.dk-ex {
+  font-size: 11px;
+  color: var(--dim);
+}
+.dk-skill {
+  margin-left: auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 16px;
+  border: 1px solid var(--gold);
+  background: rgba(240, 200, 80, 0.12);
+  color: var(--gold);
+  font: inherit;
+  font-size: 12px;
+}
+.dk-skill.none {
+  border-color: var(--red);
+  color: var(--red);
+}
+.dk-grid {
+  display: grid;
+  /* 10 across: a 20-30 card Speed deck fits in three rows, even on an iPhone SE */
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
+}
+.dk-extra {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.2);
+}
+.dk-poolgrid {
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
+}
+.dk-tile {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.dk-tile .cimg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 59 / 86;
+  display: block;
+}
+.dk-tile:active {
+  transform: scale(0.94);
+}
+.dk-tile.off .cimg {
+  filter: grayscale(1) brightness(0.55);
+}
+.dk-tile.maxed .cimg {
+  filter: brightness(0.6);
+}
+.dk-own {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+}
+.dk-lim {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #c0392b;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.dk-fresh {
+  animation: dk-in 0.35s ease-out;
+}
+@keyframes dk-in {
+  from {
+    transform: translateY(14px) scale(1.15);
+    filter: brightness(1.8);
+  }
+}
+.dk-pool {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px calc(16px + env(safe-area-inset-bottom));
+}
+.dk .dk-filters {
+  position: static;
+  flex-wrap: nowrap;
+  background: none;
+  border-top: 0;
+  padding: 6px 0 0;
+}
+.dk-filters .chip {
+  min-height: 34px;
+  padding: 0 10px;
+  flex: none;
+}
+.dk .dk-more {
+  flex-wrap: wrap;
+}
+.dk-filters .search {
+  min-height: 34px;
+  font-size: 16px; /* under 16px an iPhone zooms in on the search box */
+}
+.dk-more label {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 2px;
+}
+.dk-more select {
+  min-height: 32px;
+  max-width: 44vw;
+}
+.dk-hint {
+  margin: 6px 0 4px;
+}
+.dk-note {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 8px 14px;
+  border-radius: 18px;
+  background: rgba(10, 14, 30, 0.95);
+  border: 1px solid var(--red);
+  font-size: 13px;
+  z-index: 70;
+  animation: dk-note 0.2s ease-out;
+}
+@keyframes dk-note {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+.dk-skills {
+  max-height: 60dvh;
+  padding-bottom: 8px;
+}

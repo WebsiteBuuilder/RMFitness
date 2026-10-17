@@ -31,6 +31,8 @@ const syncKey = (id: string) => `eds.sync.${id}`;
 const conflictKey = (id: string) => `eds.conflict.${id}`;
 const BACKED_UP_KEY = 'eds.backedUp';
 const DEVICE_KEY = 'eds.device';
+/** the profile that stays logged in on this phone until Switch Profile */
+const STAY_KEY = 'eds.stay';
 export const SYNC_MS = 20_000;
 const TIMEOUT_MS = 12_000;
 
@@ -237,10 +239,72 @@ export class Accounts {
     return { ok: true, p: moved, note: 'moved' };
   }
 
+  // ---------- staying logged in on this phone ----------
+
+  /** Keeps this profile logged in on this phone, so the next visit opens straight into it. */
+  stay(p: Profile) {
+    try {
+      this.st.setItem(STAY_KEY, p.id);
+    } catch {
+      /* storage full: they log in next time */
+    }
+  }
+
+  /** Switch Profile: the next visit asks who's playing again. */
+  forget() {
+    try {
+      this.st.removeItem(STAY_KEY);
+    } catch {
+      /* nothing kept */
+    }
+  }
+
+  /** The profile kept logged in on this phone, if any (no waiting on the internet). */
+  stayed(): Profile | null {
+    let id: string | null = null;
+    try {
+      id = this.st.getItem(STAY_KEY);
+    } catch {
+      return null;
+    }
+    return (id && loadProfiles().find((p) => p.id === id)) || null;
+  }
+
+  /**
+   * Opens the profile kept logged in on this phone. Its account must still be the one this
+   * browser is signed in to (another duelist logged in since: they type the password again).
+   * Pulls newer progress from the account first, giving up after a few seconds without signal.
+   */
+  async resume(): Promise<Profile | null> {
+    const p = this.stayed();
+    if (!p) return null;
+    const b = this.backend;
+    if (!b || !p.uid) return p;
+    let uid: string | null;
+    try {
+      uid = b.restore ? await withTimeout(b.restore(), 4000) : b.current();
+    } catch {
+      this.state = 'offline';
+      return p;
+    }
+    if (uid !== p.uid) {
+      this.forget();
+      return null;
+    }
+    this.state = 'on';
+    let late = false;
+    const pulled = this.reconcile(p, () => !late).then(() => true);
+    if (!(await Promise.race([pulled, new Promise<false>((r) => setTimeout(() => r(false), 4000))]))) {
+      late = true;
+      this.state = 'offline';
+    }
+    return loadProfiles().find((x) => x.id === p.id) ?? p;
+  }
+
   // ---------- keeping phone and account in step ----------
 
   /** Brings this phone and the account to the same progress. True when the account's copy was taken. */
-  async reconcile(p: Profile): Promise<boolean> {
+  async reconcile(p: Profile, wanted: () => boolean = () => true): Promise<boolean> {
     const b = this.backend;
     if (!b || !p.uid) return false;
     let cloud: CloudSave | null;
@@ -262,6 +326,7 @@ export class Accounts {
       return false;
     }
     // The account moved on elsewhere (or this phone has never seen it).
+    if (!wanted()) return false; // the game already opened without it: the next login takes it
     if (same && h !== sy.hash && !isEmpty(local)) {
       // Both changed: the account wins, and this phone's copy is kept aside, never thrown away.
       try {

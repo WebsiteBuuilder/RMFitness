@@ -29,6 +29,10 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
   const layer = useRef<HTMLDivElement>(null);
   const dir = useRef<Director | null>(null);
   const [q, setQ] = useState('');
+  /** the controls tuck away while an animation plays, so it isn't hidden behind them */
+  const [watching, setWatching] = useState(false);
+  const tuck = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (tuck.current && clearTimeout(tuck.current)), []);
   const pool = useMemo(() => speedCards().filter((c) => c.kind === 'monster' || c.kind === 'spell' || c.kind === 'trap'), []);
   const [name, setName] = useState(initial ?? 'Blue-Eyes White Dragon');
   const [foe, setFoe] = useState('Dark Magician');
@@ -104,6 +108,9 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
     showDuelRarity(finish === null ? null : [{ [name]: finish }, {}]);
     dir.current?.clear();
     dir.current?.push(cues);
+    setWatching(true);
+    if (tuck.current) clearTimeout(tuck.current);
+    tuck.current = setTimeout(() => setWatching(false), 4200);
   };
   const me = () => ref(++uid.current, name, 0);
   const them = () => ref(++uid.current, foe, 1);
@@ -213,7 +220,12 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
     <div class="artlab">
       <canvas ref={canvas} class="art-canvas" />
       <div ref={layer} class="art-layer" />
-      <div class="artlab-panel">
+      {watching && (
+        <button class="gbtn artlab-show" onClick={() => setWatching(false)}>
+          ▲ Controls
+        </button>
+      )}
+      <div class={`artlab-panel ${watching ? 'tucked' : ''}`}>
         <Win title="3D Card Viewer" onClose={onBack}>
           {error ? <p class="warn">3D isn't available on this device ({error}).</p> : null}
           <div class="artlab-now">

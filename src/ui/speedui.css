@@ -318,3 +318,16 @@ html.ui-speed {
     -webkit-line-clamp: 3;
   }
 }
+
+/* starter pick: the Skill's text, and card tiles that are buttons */
+.starter-skill {
+  font-size: 13px;
+  line-height: 1.35;
+}
+button.gcard {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+}

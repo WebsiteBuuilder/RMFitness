@@ -87,10 +87,32 @@ export function StampsScreen({ save, onSave, onBack }: { save: SpeedSave; onSave
     setPicking(null);
     setGot({ line: r.line, cards: r.cards });
   };
+  /** Every stamp that needs no choice, in one tap (the pick-a-card stamps wait for their pick). */
+  const claimAll = () => {
+    let s = save;
+    const lines: string[] = [];
+    const won: string[] = [];
+    for (const c of cards)
+      for (let r = claimStamp(s, c.set.code); r; r = claimStamp(s, c.set.code)) {
+        s = r.save;
+        lines.push(r.line);
+        won.push(...r.cards);
+      }
+    if (!lines.length) return;
+    playWin();
+    onSave(s);
+    setGot({ line: lines.length === 1 ? lines[0] : `${lines.length} stamps claimed. ${lines.join('. ')}.`, cards: won });
+  };
+  const quick = cards.filter((c) => c.reached > c.claimed && Math.min(c.claimed, STAMPS - 1) !== 1).length;
   return (
     <div class="screen earn">
       <Win title="Set Stamps" onClose={onBack}>
         <p class="hint">Every Speed Duel booster set has a stamp card. Own a third of its cards for a pack, two thirds to pick 1 of 3 cards you're missing, and the whole set to get its top card at Overframe plus 2 Duel Chips. Each stamp pays once.</p>
+        {quick > 1 && (
+          <button class="gbtn stamp-all" onClick={claimAll}>
+            Claim all ({quick} sets)
+          </button>
+        )}
         <div class="stamp-list">
           {cards.map((c) => {
             const ready = c.reached > c.claimed;

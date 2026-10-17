@@ -644,3 +644,51 @@
   color: #ffe08a;
   text-shadow: 0 0 14px #ffc940;
 }
+
+/* Touch controls: while a card from the hand is dragged, a SET pad at the right edge of
+   your side of the field Sets it face-down (Master Duel lets you drop to Set too). */
+.tset-pad {
+  position: fixed;
+  right: calc(6px + env(safe-area-inset-right));
+  top: 58%;
+  transform: translateY(-50%);
+  z-index: 39;
+  width: 70px;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border-radius: 12px;
+  border: 2px dashed rgba(140, 190, 255, 0.85);
+  background: rgba(10, 24, 60, 0.82);
+  color: #cfe3ff;
+  font-size: 13px;
+  letter-spacing: 1px;
+  animation: tset-in 0.15s ease-out;
+  transition: transform 0.1s, background 0.1s;
+}
+.tset-pad small {
+  font-size: 10px;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+.tset-card {
+  width: 40px;
+  height: 28px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #6b3d1d, #3a1f0c);
+  border: 2px solid #c79b54;
+}
+.tset-pad.drop-on {
+  border-style: solid;
+  border-color: #ffd34d;
+  background: rgba(70, 52, 8, 0.9);
+  transform: translateY(-50%) scale(1.08);
+}
+@keyframes tset-in {
+  from {
+    opacity: 0;
+    transform: translate(20px, -50%);
+  }
+}

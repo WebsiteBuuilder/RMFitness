@@ -867,6 +867,7 @@ p {
 }
 .tab.x {
   flex: 0.5;
+  min-width: 52px; /* "Done" whole on an iPhone SE */
   color: var(--red);
 }
 .filters {
