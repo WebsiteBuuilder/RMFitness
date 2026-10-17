@@ -68,8 +68,19 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
     <div class="screen profiles">
       <h1 class="who">{manage ? 'Manage Profiles' : 'Which duelist are you?'}</h1>
       {joining && !manage && <p class="who-sub">Log in to join room {joining}</p>}
-      {!manage && state === 'on' && <p class="who-sub">Log in from any phone with your password.</p>}
-      {!manage && state === 'offline' && <p class="who-sub warn">Can't reach the shared accounts. Showing this phone's duelists.</p>}
+      {!manage && accounts.backend && (
+        <p class={`who-net ${loading ? 'busy' : state}`} role="status">
+          <span class="dot" aria-hidden="true" />
+          <span>
+            {loading ? 'Connecting to the duelist server…' : state === 'on' ? 'Online · log in on any phone with your password' : "Can't reach the duelist server · showing this phone's duelists"}
+            {!loading && state === 'offline' && (
+              <button class="who-retry" onClick={() => (setLoading(true), refresh())}>
+                Retry
+              </button>
+            )}
+          </span>
+        </p>
+      )}
       <div class="ptiles">
         {shown.map((t) => {
           const p = t.kind === 'local' ? t.p : t.d;
@@ -99,7 +110,6 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
           </button>
         )}
       </div>
-      {loading && !manage && <p class="who-sub">Looking for duelists…</p>}
       {tiles.some((t) => t.kind === 'local') && (
         <button class={`gbtn pmanage ${manage ? 'done' : ''}`} onClick={() => setManage(!manage)}>
           {manage ? 'Done' : 'Manage Profiles'}

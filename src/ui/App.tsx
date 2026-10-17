@@ -70,6 +70,13 @@ const lastGame = (id: string): string | null => {
     return null;
   }
 };
+const hasSpeedSave = (id: string): boolean => {
+  try {
+    return localStorage.getItem(`eds.speed.${id}`) !== null;
+  } catch {
+    return false;
+  }
+};
 /** How long the board settles before the computer thinks (counted inside its usual pause). */
 const THINK_BEAT = 300;
 const setLastGame = (id: string, g: string) => {
@@ -272,11 +279,13 @@ export function App() {
 
   const pickProfile = (p: Profile) => {
     const s = loadSave(p.id);
+    // a duelist logging in on a new phone opens in Speed Duel if that's where their decks are
+    const game = lastGame(p.id) ?? (hasSpeedSave(p.id) ? 'speed' : null);
     setProfile(p);
     setSaveState(s);
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
-    setScreen(!s ? 'intro' : pendingJoin ? 'link' : lastGame(p.id) === 'speed' ? 'speed' : 'menu');
+    setScreen(!s ? 'intro' : pendingJoin ? 'link' : game === 'speed' ? 'speed' : 'menu');
   };
   // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
   useEffect(() => {
