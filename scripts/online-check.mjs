@@ -1,5 +1,4 @@
-// Checks the live online service from outside: anonymous sign-in, the duelist list, and
-// whether the database rules for online play (net/) are published. Prints no names or data.
+// Checks the live online service from outside: sign-in and the duelist list. Prints no names or data.
 // Run by .github/workflows/online-check.yml (the cloud container can't reach the database).
 import { readFileSync } from 'node:fs';
 
@@ -28,10 +27,6 @@ const names = list.ok ? Object.keys((await list.json()) ?? {}).length : -1;
 say(list.ok, list.ok ? `Database reachable, ${names} shared duelist account(s)` : `Duelist list not readable (HTTP ${list.status})`);
 
 if (token) {
-  const probe = `${db}/net/who/p-check-${Date.now().toString(36)}.json?auth=${token}`;
-  const put = await fetch(probe, { method: 'PUT', body: JSON.stringify({ uid: user.localId, at: { '.sv': 'timestamp' } }) });
-  say(put.ok, put.ok ? 'Online play rules are published' : `Online play rules not published yet (HTTP ${put.status})`);
-  if (put.ok) await fetch(probe, { method: 'DELETE' });
   // leave no test account behind
   await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${apiKey}`, {
     method: 'POST',

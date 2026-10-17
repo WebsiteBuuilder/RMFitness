@@ -143,10 +143,16 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   private async openAsHost(db: Db) {
     const run = this.run;
-    const meta = (await db.get(`${this.base}/meta`)) as Meta;
-    const mine = meta?.host === db.uid;
-    if (meta?.host && !mine && typeof meta.at === 'number' && db.serverNow() - meta.at < 6 * 3600_000) throw Object.assign(new Error('taken'), { code: 'PERMISSION_DENIED' });
-    await db.set(`${this.base}/meta`, { host: db.uid, at: db.now });
+    let mine = false;
+    // a room code is free when nobody hosts it, it's ours, or it's an old one
+    const got = await db.transaction(`${this.base}/meta`, (cur) => {
+      const m = cur as Meta;
+      mine = m?.host === db.uid;
+      if (m?.host && !mine && typeof m.at === 'number' && db.serverNow() - m.at < 6 * 3600_000) return undefined;
+      return { host: db.uid, at: db.now };
+    });
+    if (!got) throw Object.assign(new Error('taken'), { code: 'PERMISSION_DENIED' });
+    if (!mine) void this.sweep(db);
     if (run !== this.run) return;
     if (mine && this.events.length === 0) {
       // this phone's own room (it dropped off or reloaded): pick the duel up where it was
@@ -179,6 +185,19 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
       }),
     );
     this.watchConnection(db, 'hostOn', true);
+  }
+
+  /** Clears rooms left behind by phones that never came back (older than 6 hours). */
+  private async sweep(db: Db) {
+    try {
+      const rooms = ((await db.get('net/rooms')) ?? {}) as Record<string, { meta?: Meta }>;
+      for (const [code, r] of Object.entries(rooms)) {
+        const at = r?.meta?.at;
+        if (code !== this.roomCode && (typeof at !== 'number' || db.serverNow() - at > 6 * 3600_000)) void db.remove(`net/rooms/${code}`).catch(() => {});
+      }
+    } catch {
+      /* next time */
+    }
   }
 
   private async joinAsGuest(db: Db, since: number) {
@@ -264,7 +283,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     if (db) {
       const here = `${this.base}/${this.isHost ? 'hostOn' : 'guestOn'}`;
       void db.cancelOnDisconnect(here).catch(() => {});
-      void db.remove(here).catch(() => {});
+      // the host leaving ends the room (the guest sees the host gone, as before)
+      void db.remove(this.isHost ? this.base : here).catch(() => {});
     }
     this.listeners.clear();
     this.statusListeners.clear();

@@ -6,14 +6,15 @@
 // when the phone drops off); messages to it are dropped in net/mail/<name>, which only its
 // holder can read. A link is a conversation between two endpoints, carried as mail.
 import type { Db } from '../sync/cloud';
-import { denied, onlineDb } from '../sync/cloud';
+import { onlineDb } from '../sync/cloud';
 import type { Link, Transport, TransportHandlers, Wire } from './protocol';
 import type { HoldResult, MmLink, MmNet, MmWire } from './matchmaking';
 
 type Mail = { uid: string; from: string; k: 'open' | 'msg' | 'close'; link: string; m?: string; at?: unknown };
 
-/** The holder refreshes its name this often, so a name left behind goes stale (the rules free it after 2 minutes). */
+/** The holder refreshes its name this often, so a name left behind goes stale (free to take after STALE_MS). */
 export const BEAT_MS = 50_000;
+export const STALE_MS = 120_000;
 /** A friend link hears a "ping" this often while the other phone is online (nothing is sent: the server knows). */
 export const LIVE_MS = 8_000;
 
@@ -198,14 +199,16 @@ export class Endpoint {
     if (this.released) return 'lost';
     if (this.isHeld) return 'held';
     const path = `net/who/${this.id}`;
-    try {
-      await this.db.set(path, { uid: this.db.uid, at: this.db.now });
-    } catch (e) {
-      if (denied(e)) {
-        this.onHold('taken');
-        return 'taken';
-      }
-      throw e;
+    const me = this.db.uid;
+    // a name is free when nobody holds it, it's ours, or its holder stopped refreshing it
+    const got = await this.db.transaction(path, (cur) => {
+      const w = cur as { uid?: string; at?: number } | null;
+      if (w?.uid && w.uid !== me && typeof w.at === 'number' && this.db.serverNow() - w.at < STALE_MS) return undefined;
+      return { uid: me, at: this.db.now };
+    });
+    if (!got) {
+      this.onHold('taken');
+      return 'taken';
     }
     if (this.released) {
       void this.db.remove(path).catch(() => {});
@@ -223,7 +226,10 @@ export class Endpoint {
     );
     this.stopBeat?.();
     this.stopBeat = this.clock.every(BEAT_MS, () => {
-      if (this.isHeld) this.db.set(path, { uid: this.db.uid, at: this.db.now }).catch((e) => denied(e) && this.isHeld && this.lose());
+      if (!this.isHeld) return;
+      void this.db
+        .transaction(path, (cur) => ((cur as { uid?: string } | null)?.uid === me || !cur ? { uid: me, at: this.db.now } : undefined))
+        .then((ok) => !ok && this.isHeld && this.lose(), () => {});
     });
     this.resolveHeld();
     this.onHold('held');
@@ -269,8 +275,10 @@ export class Endpoint {
     if (this.isHeld) {
       this.isHeld = false;
       const path = `net/who/${this.id}`;
+      const me = this.db.uid;
+      void this.db.remove(`net/mail/${this.id}`).catch(() => {});
       void this.db.cancelOnDisconnect(path).catch(() => {});
-      void this.db.remove(path).catch(() => {});
+      void this.db.transaction(path, (cur) => (!cur || (cur as { uid?: string }).uid === me ? null : undefined)).catch(() => {});
     }
   }
 }

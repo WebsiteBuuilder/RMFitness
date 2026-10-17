@@ -1,11 +1,11 @@
-// Online play over the real Firebase code and the real database rules, against the Firebase
+// Online play over the real Firebase code and the real database rules (shared online account), against the Firebase
 // emulators (not part of npm test: it needs them running).
 // Run: npx firebase emulators:start --only auth,database --project demo-eds   (firebase.json pointing at database.rules.json)
 //      npx tsx tests/cloud-emulator.test.ts
 import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
-import { connectDatabaseEmulator, getDatabase, goOffline, goOnline } from 'firebase/database';
-import { makeDb, type Db } from '../src/sync/cloud';
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
+import { connectDatabaseEmulator, get, getDatabase, goOffline, goOnline, ref } from 'firebase/database';
+import { makeDb, relaySignIn, type Db } from '../src/sync/cloud';
 import { CloudQueue, CloudTransport, Endpoint } from '../src/online/cloudNet';
 import { Matchmaker, type Match } from '../src/online/matchmaking';
 import { FirebaseAdapter } from '../src/sync/firebase';
@@ -26,17 +26,18 @@ async function until(fn: () => boolean, ms = 8000) {
   }
   return fn();
 }
-const denied = async (p: Promise<unknown>) => p.then(() => false, (e) => /permission/i.test(String(e?.code ?? e?.message)));
 
 let n = 0;
+let rawGet: (p: string) => Promise<unknown> = async () => null;
 async function phone(): Promise<Db & { off(): void; on(): void }> {
   const app = initializeApp({ apiKey: 'demo-key', projectId: 'demo-eds', databaseURL: 'http://127.0.0.1:9000?ns=demo-eds-default-rtdb' }, `phone${++n}`);
   const auth = getAuth(app);
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   const database = getDatabase(app);
   connectDatabaseEmulator(database, '127.0.0.1', 9000);
-  const { user } = await signInAnonymously(auth);
-  const db = await makeDb(database, user.uid);
+  const relay = await relaySignIn(auth);
+  const db = await makeDb(database, `phone${n}-${Math.random().toString(36).slice(2, 8)}`, relay);
+  rawGet = async (p) => (await get(ref(database, p))).val();
   return Object.assign(db, { off: () => goOffline(database), on: () => goOnline(database) });
 }
 
@@ -46,36 +47,13 @@ async function main() {
   const a = await phone();
   const b = await phone();
 
-  // ---------- rules ----------
-  const A = code();
-  await a.set(`net/who/${A}`, { uid: a.uid, at: a.now });
-  check(await denied(b.set(`net/who/${A}`, { uid: b.uid, at: b.now })), "another phone can't take a name that's held");
-  check(await denied(b.remove(`net/who/${A}`)), "another phone can't clear someone's name");
-  check(await denied(a.set(`net/who/${A}`, { uid: a.uid, at: 5 })), 'a made-up clock is refused');
-  check(((await b.get(`net/who/${A}`)) as { uid: string }).uid === a.uid, 'anyone signed in can see who is online');
-  const B = code();
-  await b.set(`net/who/${B}`, { uid: b.uid, at: b.now });
-  check(!(await denied(b.set(`net/mail/${A}/m1`, { uid: b.uid, from: B, k: 'open', link: 'x', at: b.now }))), 'mail to a held name goes through');
-  check(await denied(b.set(`net/mail/${A}/m2`, { uid: b.uid, from: A, k: 'open', link: 'x', at: b.now })), "can't send mail pretending to be someone else");
-  check(await denied(b.get(`net/mail/${A}`)), "can't read someone else's mail");
-  check(!(await denied(a.get(`net/mail/${A}`))), 'the holder reads its mail');
-  check(!(await denied(a.remove(`net/mail/${A}/m1`))), 'the holder clears its mail');
-  check(await denied(b.set(`net/mail/${A}/m3`, { uid: b.uid, from: B, k: 'msg', link: 'x', m: 5 })), 'mail with a non-text message is refused');
-  check(await denied(b.set(`net/who/${'x'.repeat(41)}`, { uid: b.uid, at: b.now })), 'names over 40 letters are refused');
-  await a.remove(`net/who/${A}`);
-  check(!(await denied(b.set(`net/who/${A}`, { uid: b.uid, at: b.now }))), 'a name that was let go can be taken');
-  await b.remove(`net/who/${A}`);
-  await b.remove(`net/who/${B}`);
-  // rooms
-  const R = 'R' + code().slice(0, 3);
-  await a.set(`net/rooms/${R}/meta`, { host: a.uid, at: a.now });
-  check(await denied(b.set(`net/rooms/${R}/meta`, { host: b.uid, at: b.now })), "nobody else can take over a fresh room");
-  check(await denied(b.set(`net/rooms/${R}/log/0/0`, '{}')), "the guest can't write the duel log");
-  check(!(await denied(b.set(`net/rooms/${R}/in/k1`, '{}'))), 'the guest proposes moves');
-  check(await denied(b.set(`net/rooms/${R}/in/k1`, '{"x":1}')), "the guest can't change a move already sent");
-  check(!(await denied(a.set(`net/rooms/${R}/log/0/0`, '{}'))), 'the host writes the log');
-  check(!(await denied(a.remove(`net/rooms/${R}/in`))), 'the host clears proposals');
-  check(await denied(b.set(`net/rooms/${R}/hostOn`, true)), "the guest can't pretend to be the host");
+  // ---------- the shared account's entry ----------
+  await a.set('net/x', 'hello');
+  check((await b.get('net/x')) === 'hello', 'every phone works in the same shared space');
+  await b.remove('net/x');
+  const list = (await rawGet('duelists')) as Record<string, { alias?: unknown; login?: unknown }>;
+  const shown = Object.values(list ?? {}).filter((d) => d && typeof d.login === 'string' && typeof d.alias === 'string');
+  check(shown.length === Object.values(list ?? {}).length - 1, 'the shared entry stays off the "Which duelist are you?" list');
 
   // ---------- friends links ----------
   const ca = code();

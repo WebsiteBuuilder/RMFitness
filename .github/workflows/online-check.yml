@@ -1,11 +1,10 @@
 name: Online check
 
-# Checks the live online service (sign-in, duelist list, online play rules) from outside.
+# Checks the live online service (sign-in, duelist list) from outside.
 on:
   workflow_dispatch:
   push:
     paths:
-      - database.rules.json
       - scripts/online-check.mjs
       - .github/workflows/online-check.yml
 

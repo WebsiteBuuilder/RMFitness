@@ -1,17 +1,19 @@
 // The online service: Firebase's Realtime Database, reached by every phone over the same
 // secure web connection any website uses, so two phones find each other on any Wi-Fi or
 // mobile data. Friends, Find a Match and duel rooms all go through it (src/online/cloudNet.ts,
-// src/sync/firebase.ts). Each phone signs in as itself (an anonymous account, the same one
-// profile backups use), apart from whichever duelist is logged in.
+// src/sync/firebase.ts), apart from whichever duelist is logged in.
 //
-// Everything lives under net/ (rules in database.rules.json). Values are stored as JSON
-// text, so empty lists and missing fields come back exactly as they were sent.
+// It runs on the database rules the shared accounts already have: every phone signs in to one
+// shared online account and works under that account's entry, duelists/<its id>/n/ (the
+// duelist list skips it: its name fields aren't text). Each phone tells itself apart by its own
+// id. Values are stored as JSON text, so empty lists and missing fields come back as sent.
+import type { Auth } from 'firebase/auth';
 import type { Database } from 'firebase/database';
 import { firebaseConfig } from './firebaseConfig';
 
 /** The few database calls the online code needs: Firebase on phones, an in-memory copy in tests. */
 export interface Db {
-  /** this phone's account id */
+  /** this phone's id */
   readonly uid: string;
   set(path: string, value: unknown): Promise<void>;
   remove(path: string): Promise<void>;
@@ -24,6 +26,8 @@ export interface Db {
   onDisconnectRemove(path: string): Promise<void>;
   onDisconnectSet(path: string, value: unknown): Promise<void>;
   cancelOnDisconnect(path: string): Promise<void>;
+  /** changes a value only if `fn` returns one (undefined leaves it); true when it changed */
+  transaction(path: string, fn: (cur: unknown) => unknown): Promise<boolean>;
   /** follows this phone's connection to the server */
   connected(cb: (on: boolean) => void): () => void;
   /** stands for "the server's clock" in a value */
@@ -85,17 +89,78 @@ export async function phoneUid(): Promise<string> {
   return signingIn;
 }
 
-async function open(): Promise<Db> {
-  const { db } = await phoneApp();
-  return makeDb(db, await phoneUid());
+/**
+ * The shared account every phone signs in to for online play. Jammy chose this (2026-10-17)
+ * over changing the database rules in the Firebase console: it needs no setup, and it can only
+ * reach its own entry in the duelist list (duelists/<its id>), where online play lives.
+ */
+export const RELAY_LOGIN = 'online-relay@duelist.eds-remake.app';
+const RELAY_KEY = 'eds-relay:speed-duel-online-v1';
+
+/** This phone's own id for online play (kept on the phone). */
+function phoneId(): string {
+  const make = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+  try {
+    let id = localStorage.getItem('eds.netid');
+    if (!id) {
+      id = make();
+      localStorage.setItem('eds.netid', id);
+    }
+    return id;
+  } catch {
+    return make();
+  }
 }
 
-/** The online calls over one Firebase database, signed in as `uid`. */
-export async function makeDb(db: Database, uid: string): Promise<Db> {
+/** Signs a Firebase app in to the shared online account, making it the first time. Returns its id. */
+export async function relaySignIn(auth: Auth): Promise<string> {
+  const { signInWithEmailAndPassword, createUserWithEmailAndPassword } = await import('firebase/auth');
+  await auth.authStateReady();
+  if (auth.currentUser?.email === RELAY_LOGIN) return auth.currentUser.uid;
+  const code = (e: unknown) => String((e as { code?: string })?.code ?? '');
+  try {
+    return (await signInWithEmailAndPassword(auth, RELAY_LOGIN, RELAY_KEY)).user.uid;
+  } catch (e) {
+    if (!/user-not-found|invalid-credential|invalid-login/.test(code(e))) throw e;
+  }
+  try {
+    return (await createUserWithEmailAndPassword(auth, RELAY_LOGIN, RELAY_KEY)).user.uid;
+  } catch (e) {
+    // another phone made it a moment ago
+    if (code(e).includes('email-already-in-use')) return (await signInWithEmailAndPassword(auth, RELAY_LOGIN, RELAY_KEY)).user.uid;
+    throw e;
+  }
+}
+
+async function open(): Promise<Db> {
+  if (!firebaseConfig) throw new Error('no online service configured');
+  const { initializeApp, getApps } = await import('firebase/app');
+  const { getAuth, connectAuthEmulator } = await import('firebase/auth');
+  const { getDatabase, connectDatabaseEmulator } = await import('firebase/database');
+  const old = getApps().find((a) => a.name === 'eds-online');
+  const app = old ?? initializeApp(firebaseConfig, 'eds-online');
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+  const emu = emulatorHost();
+  if (emu && !old) {
+    connectAuthEmulator(auth, `http://${emu}:9099`, { disableWarnings: true });
+    connectDatabaseEmulator(db, emu, 9000);
+  }
+  return makeDb(db, phoneId(), await relaySignIn(auth));
+}
+
+/**
+ * The online calls over one Firebase database. Paths starting net/ land under the shared
+ * account's entry, duelists/<relay>/n/ (made ready here); `uid` is this phone's id.
+ */
+export async function makeDb(db: Database, uid: string, relay: string): Promise<Db> {
   const fb = await import('firebase/database');
+  const home = `duelists/${relay}`;
+  // the duelists rules want these two fields on every entry; numbers keep it off the duelist list
+  await fb.update(fb.ref(db, home), { alias: 0, login: 0 });
   let offset = 0;
   fb.onValue(fb.ref(db, '.info/serverTimeOffset'), (s) => (offset = Number(s.val()) || 0));
-  const r = (p: string) => fb.ref(db, p);
+  const r = (p: string) => fb.ref(db, p.startsWith('net/') ? `${home}/n/${p.slice(4)}` : p);
   return {
     uid,
     now: fb.serverTimestamp(),
@@ -109,6 +174,7 @@ export async function makeDb(db: Database, uid: string): Promise<Db> {
     onDisconnectRemove: (p) => fb.onDisconnect(r(p)).remove(),
     onDisconnectSet: (p, v) => fb.onDisconnect(r(p)).set(v),
     cancelOnDisconnect: (p) => fb.onDisconnect(r(p)).cancel(),
+    transaction: async (p, fn) => (await fb.runTransaction(r(p), (cur) => fn(cur), { applyLocally: false })).committed,
     connected: (cb) => fb.onValue(r('.info/connected'), (s) => cb(s.val() === true)),
   };
 }
@@ -152,8 +218,8 @@ const CHECK_MS = 12_000;
 
 /**
  * Finds out once whether online play can go through the service: signs this phone in and
- * makes one test write under net/. 'off' when there's no config, the database rules
- * haven't been updated yet, or the service can't be reached in time (asked again later).
+ * makes one test write. 'off' when there's no config or the service can't be reached in
+ * time (asked again later): the phone then uses the older phone-to-phone links.
  */
 export function checkCloud(): Promise<CloudState> {
   if (state === 'on' || (state === 'off' && !firebaseConfig)) return Promise.resolve(state);
@@ -163,7 +229,7 @@ export function checkCloud(): Promise<CloudState> {
     const timeout = new Promise<'slow'>((res) => (timer = setTimeout(() => res('slow'), CHECK_MS)));
     const attempt = (async () => {
       const db = await onlineDb();
-      const probe = `net/who/p-${db.uid.slice(0, 20)}`;
+      const probe = `net/probe/${db.uid.slice(0, 20)}`;
       await db.set(probe, { uid: db.uid, at: db.now });
       await db.remove(probe);
       return 'ok' as const;
