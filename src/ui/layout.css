@@ -208,3 +208,14 @@
   font-size: 12px;
   padding: 5px 7px;
 }
+
+/* Tall phones (most Androids, iPhone Pro/Max): the board and your hand take the height the
+   screen has, instead of leaving bands of empty space above and below the field. */
+@media (min-height: 800px) and (max-width: 520px) {
+  @supports (width: 1cqh) {
+    .duel.touch.speed .tmat {
+      max-width: 420px;
+      width: min(100%, 420px, calc(100cqw / 1.05), calc((100cqh * 0.96 - 56px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 5px));
+    }
+  }
+}

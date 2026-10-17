@@ -639,6 +639,27 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     return null;
   };
 
+  /** What an attack would do, shown while it is dragged onto a target (face-down targets are a guess). */
+  const forecast = (uid: number, target: number | null): { vs: string; text: string; tone: string } | null => {
+    const a = e.fieldCard(uid);
+    if (!a) return null;
+    const atk = e.atkOf(a);
+    if (target === null) return { vs: `${atk} direct`, text: `${atk} damage`, tone: 'good' };
+    const t = e.fieldCard(target);
+    if (!t) return null;
+    if (!t.faceUp) return { vs: `${atk} vs ?`, text: 'face-down: flips when hit', tone: 'mid' };
+    if (t.pos === 'atk') {
+      const v = e.atkOf(t);
+      if (atk > v) return { vs: `${atk} vs ${v}`, text: `destroys it · ${atk - v} damage`, tone: 'good' };
+      if (atk === v) return { vs: `${atk} vs ${v}`, text: 'both destroyed', tone: 'mid' };
+      return { vs: `${atk} vs ${v}`, text: `yours is destroyed · you take ${v - atk}`, tone: 'bad' };
+    }
+    const d = e.defOf(t);
+    if (atk > d) return { vs: `${atk} vs DEF ${d}`, text: 'destroys it · no damage', tone: 'good' };
+    if (atk === d) return { vs: `${atk} vs DEF ${d}`, text: 'nothing happens', tone: 'mid' };
+    return { vs: `${atk} vs DEF ${d}`, text: `you take ${d - atk}`, tone: 'bad' };
+  };
+
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
     // (with a controller: the buttons, not the finger moves)
@@ -870,6 +891,15 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <small>face-down</small>
         </div>
       )}
+      {drag && drag.from === 'mz' && drag.over && (drag.over === 'direct' || drag.over.startsWith('t')) && (() => {
+        const f = forecast(drag.uid, drag.over === 'direct' ? null : Number(drag.over.slice(1)));
+        return f ? (
+          <div class={`tforecast ${f.tone}`} style={{ left: `${Math.min(window.innerWidth - 100, Math.max(100, drag.x))}px`, top: `${Math.max(8, drag.y - 120)}px` }}>
+            <b>{f.vs}</b>
+            <span>{f.text}</span>
+          </div>
+        ) : null;
+      })()}
       {drag && (
         <div class={`tghost ${drag.over ? 'over' : ''}`} style={{ left: `${drag.x}px`, top: `${drag.y}px` }}>
           <CardImg name={drag.name} owner={e.find(drag.uid)?.card.owner} />
