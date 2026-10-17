@@ -59,6 +59,19 @@ export type Chooser = (e: Engine, p: Pid) => Action | null;
  */
 export function lookahead(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
   if (e.state.prompt || e.state.winner !== null) return null;
+  return playOut(e, me, action, choose);
+}
+
+/**
+ * Like lookahead, but from an open question (a "Respond?" window): answers it with `action`
+ * and plays the chain and the rest of that battle out. Used to judge a response before springing it.
+ */
+export function lookaheadAnswer(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (!e.state.prompt || e.state.winner !== null) return null;
+  return playOut(e, me, action, choose);
+}
+
+function playOut(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
   let sim: Engine;
   try {
     sim = sandbox(e);

@@ -1054,7 +1054,11 @@ export function App() {
               </Win>
             </Overlay>
           );
-      if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
+      if (speedResult) {
+        // against the computer the rematch is a button beside Continue (no banner over the rewards)
+        const cpuDock = rematchDock.dock?.kind === 'cpu' ? rematchDock.dock : null;
+        return <SpeedResult data={speedResult} onContinue={closeResult} onRematch={cpuDock ? () => (cpuDock.again(), closeResult()) : undefined} />;
+      }
       if (raidOpen)
         return (
           <RaidHub

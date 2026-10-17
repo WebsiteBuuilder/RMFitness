@@ -645,12 +645,12 @@
   text-shadow: 0 0 14px #ffc940;
 }
 
-/* Touch controls: while a card from the hand is dragged, a SET pad at the right edge of
-   your side of the field Sets it face-down (Master Duel lets you drop to Set too). */
+/* Touch controls: while a card from the hand is dragged, a SET pad in the empty corner left of
+   your Monster Zones Sets it face-down (Master Duel lets you drop to Set too). */
 .tset-pad {
   position: fixed;
-  right: calc(6px + env(safe-area-inset-right));
-  top: 58%;
+  left: calc(6px + env(safe-area-inset-left));
+  top: 53%;
   transform: translateY(-50%);
   z-index: 39;
   width: 70px;
@@ -689,6 +689,32 @@
 @keyframes tset-in {
   from {
     opacity: 0;
-    transform: translate(20px, -50%);
+    transform: translate(-20px, -50%);
+  }
+}
+
+/* where a dragged card may land: these sit after the zone looks above so they win */
+.duel.touch .tz.drop-ok,
+.duel.touch.turn-me .trow .tz.tz-m.drop-ok {
+  border: 2px solid #5be07a;
+  background-color: #5be07a1f;
+  box-shadow: inset 0 0 16px #5be07a77, 0 0 8px #5be07a88;
+  animation: tdrop-ok 1.1s ease-in-out infinite;
+}
+.duel.touch .tz.drop-on,
+.duel.touch.turn-me .trow .tz.tz-m.drop-on {
+  border: 2px solid var(--gold);
+  background-color: #f7c94855;
+  box-shadow: 0 0 18px var(--gold), inset 0 0 18px #f7c94888;
+  animation: none;
+  transform: scale(1.05);
+}
+.duel.touch .tz.tz-s.drop-ok,
+.duel.touch .tz.tz-s.drop-on {
+  background-image: none;
+}
+@keyframes tdrop-ok {
+  50% {
+    box-shadow: inset 0 0 22px #5be07aaa, 0 0 14px #5be07a;
   }
 }

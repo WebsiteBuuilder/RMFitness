@@ -619,8 +619,13 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (!myTurn || !idle || sel !== null || drag) return null;
     // (with a controller: the buttons, not the finger moves)
     const pad = document.documentElement.classList.contains('pad-on');
-    if (state.phase === 'BP') return state.firstTurn ? null : pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it (drop on SET to Set it), or tap it';
+    if (state.phase === 'BP') {
+      if (state.firstTurn) return null;
+      // nothing left to swing: point at ending the turn instead
+      if (!e.monsters(acting).some((m) => e.canAttackWith(acting, m))) return pad ? 'All done? X for phases, then End Turn' : 'All done? Tap the phase button to end your turn';
+      return pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
+    }
+    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, onto SET to Set it, or tap it';
     return null;
   };
 

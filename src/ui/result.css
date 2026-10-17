@@ -372,3 +372,23 @@
     animation-delay: 0s !important;
   }
 }
+.mdres-again {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 10px;
+  border-radius: 23px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #f4ecff;
+  background: linear-gradient(180deg, rgba(90, 50, 160, 0.95), rgba(40, 20, 80, 0.95));
+  border: 1px solid rgba(255, 211, 107, 0.6);
+  touch-action: manipulation;
+  animation: mdres-again-in 0.3s ease-out;
+}
+@keyframes mdres-again-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}

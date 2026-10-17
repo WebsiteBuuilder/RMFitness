@@ -8,7 +8,7 @@ import { getEffect } from './effects';
 import type { Action, FieldCard, Pid, Prompt } from './types';
 import { getSkill } from './skills';
 import { DEFAULT_TACTICS, type Tactics } from './tactics';
-import { attackPlan, attackers, coin, lethalPlan, lookahead, wall } from './aiEval';
+import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, wall } from './aiEval';
 import { skillDrawOk, skillVerdict } from './aiSkills';
 
 /** Moves the computer already tried this turn (so a cancelled or declined effect is not retried forever). */
@@ -45,9 +45,9 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     if (prompt.kind === 'yesno') return { type: yesNo(e, me, prompt.title) ? 'YES' : 'NO', player: me };
     if (prompt.kind === 'response') {
       // Don't spring defensive traps (Waboku, Negate Attack...) on your own attacks.
-      if (s.turnPlayer === me && / attacks\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
+      if (s.turnPlayer === me && / attacks( .+)?\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
       // Told to save traps: only answer a big attacker or a hit that would finish us.
-      const atk = prompt.title.match(/^(.*) attacks\. Respond\?$/);
+      const atk = prompt.title.match(/^(.*?) attacks(?: .+)?\. Respond\?$/);
       if (t.traps === 'hold' && atk) {
         const a = e.monsters(opp).find((m) => m.name === atk[1]);
         const power = a ? e.atkOf(a) : (e.info(atk[1]).atk ?? 0);
@@ -56,10 +56,21 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         const kills = target && target.faceUp && power > wall(e, target) && wall(e, target) >= 1500;
         if (power < 1800 && power < my.lp && !kills) return { type: 'PASS', player: me };
       }
-      // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
+      // Otherwise try each set card on a copy of the duel and spring the one that helps most, if any
+      // helps more than letting it go (no Wild Tornado on its own Toon World, no Dicephoon gamble for nothing).
       // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
-      const k = prompt.options.findIndex((o) => o.value !== 'hand');
-      return k >= 0 ? { type: 'CHOOSE', player: me, picks: [k] } : { type: 'PASS', player: me };
+      const ks = prompt.options.map((o, i) => (o.value !== 'hand' ? i : -1)).filter((i) => i >= 0);
+      if (!ks.length) return { type: 'PASS', player: me };
+      const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
+      const pass = easy ? null : lookaheadAnswer(e, me, { type: 'PASS', player: me }, policy);
+      if (pass === null) return { type: 'CHOOSE', player: me, picks: [ks[0]] };
+      let best = -1;
+      let bestVal = pass + 150;
+      for (const k of ks) {
+        const v = lookaheadAnswer(e, me, { type: 'CHOOSE', player: me, picks: [k] }, policy);
+        if (v !== null && v > bestVal) (best = k), (bestVal = v);
+      }
+      return best >= 0 ? { type: 'CHOOSE', player: me, picks: [best] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.
     const { order: ranked, val } = rankOptions(e, me, prompt.title, prompt.options);

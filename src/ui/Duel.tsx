@@ -1,3 +1,4 @@
+import { getSkill } from '../eds/skills';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, DuelState, EngineEvent, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
@@ -111,6 +112,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setPicks([]);
   }, [state.prompt, state.phase, state.turn]);
 
+  // Your own attack: a Set Trap is almost never what you want there, so like Master Duel's auto
+  // chaining the window passes by itself (Quick-Play Spells and cards from the hand still ask).
+  useEffect(() => {
+    const pr = state.prompt;
+    if (!prompt || !pr || pr.kind !== 'response' || state.turnPlayer !== acting || !state.battle || !/ attacks( .+)?\. Respond\?$/.test(pr.title)) return;
+    const trapsOnly = pr.options.every((o) => o.uid !== undefined && e.find(o.uid)?.loc.zone !== 'hand' && cardInfo(e.find(o.uid)!.card.name)?.kind === 'trap');
+    if (!trapsOnly) return;
+    const t = setTimeout(() => session.send({ type: 'PASS', player: acting }), 120);
+    return () => clearTimeout(t);
+  }, [state.prompt]);
+
   useEffect(() => {
     if (state.winner !== null && !finished.current) {
       finished.current = true;
@@ -148,6 +160,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     onFinished(w);
   };
   /** Leaving a finished duel still saves its result; leaving an online duel early concedes it, so the other player isn't left waiting. */
+  /** a card still in someone's Out pile (a face-down one there stays hidden from the opponent) */
+  const ps0Removed = (uid: number) => state.players.some((p) => p.removed.some((c) => c.uid === uid));
   const leave = () => {
     if (state.winner !== null) return finish(state.winner);
     if (online && canAct) session.send({ type: 'SURRENDER', player: acting });
@@ -453,6 +467,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                           Effect
                         </button>
                       </div>
+                    ) : c.owner !== acting && ((state.fx.banishedDown ?? []) as number[]).includes(c.uid) && ps0Removed(c.uid) ? (
+                      <div key={c.uid} class="gcard">
+                        <CardImg name="" back />
+                        <span>Face-down</span>
+                      </div>
                     ) : (
                       <button key={c.uid} class="gcard" onClick={() => setInfo(c.name, c.owner)}>
                         <CardImg name={c.name} owner={c.owner} />
@@ -471,7 +490,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             {skillOf === acting || state.players[skillOf].skillRevealed ? (
               <>
                 <CardInfoPanel name={state.players[skillOf].skill ?? ''} />
-                {skillOf === acting && canAct && (
+                {skillOf === acting && canAct && !getSkill(state.players[skillOf].skill ?? '')?.use && <p class="hint">This Skill works by itself: nothing to press.</p>}
+                {skillOf === acting && canAct && !!getSkill(state.players[skillOf].skill ?? '')?.use && (
                   <Menu
                     items={[
                       {
@@ -516,7 +536,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
-                { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
+                // Against the computer, walking out of a live Speed Duel is a surrender: asked first, and it counts.
+                { label: 'Leave duel', onPick: () => (setShowMenu(false), e.speed && !online && !hotseat && canAct && state.winner === null ? setAskSurrender(true) : leave()) },
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />

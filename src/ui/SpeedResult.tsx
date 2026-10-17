@@ -29,7 +29,7 @@ export interface SpeedResultData {
 const FIRST = 1200;
 const READY_MAX = 3600;
 
-export function SpeedResult({ data, onContinue }: { data: SpeedResultData; onContinue: () => void }) {
+export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResultData; onContinue: () => void; /** a computer duel: run it back */ onRematch?: () => void }) {
   const n = data.rewards.length;
   const step = n ? Math.min(280, 2000 / n) : 0;
   const readyAt = Math.min(READY_MAX, FIRST + n * step + 300);
@@ -93,6 +93,11 @@ export function SpeedResult({ data, onContinue }: { data: SpeedResultData; onCon
         <button ref={cont} type="button" class={`mdres-go ${ready ? 'go-ready' : ''}`} aria-disabled={!ready} onClick={(ev) => (ev.stopPropagation(), ready ? go() : skip())}>
           Continue
         </button>
+        {onRematch && ready && (
+          <button type="button" class="mdres-again" onClick={(ev) => (ev.stopPropagation(), done.current || ((done.current = true), onRematch()))}>
+            {data.outcome === 'lose' ? 'REMATCH!' : 'Rematch'}
+          </button>
+        )}
         {!ready && <p class="mdres-skip">Tap to skip</p>}
       </div>
     </div>

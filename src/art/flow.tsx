@@ -43,6 +43,9 @@ export const WATCHDOG_SLACK_MS = 1500;
 export const OPP_SUMMON_SCALE = 2.5;
 /** Attacks after the duel's first two play this much faster. */
 export const REPEAT_ATTACK_SCALE = 1.3;
+/** an everyday attack plays at this speed (about 2 s instead of 4), a big monster's first swings at BIG_ATTACK_SCALE */
+export const ATTACK_SCALE = 2;
+export const BIG_ATTACK_SCALE = 1.3;
 /** Your own Spell/Trap that strikes nothing plays this much faster (repeats: 2x). */
 export const OWN_ST_SCALE = 1.35;
 /** Life Points count to their new value over this long (LpCount). */
@@ -293,7 +296,12 @@ export class Flow {
           return again ? 1.6 : 1;
         }
         if (c.kind === 'attack') this.attacks++;
-        if (c.kind === 'attack' || c.kind === 'hit') return this.attacks > 2 ? REPEAT_ATTACK_SCALE : 1;
+        if (c.kind === 'attack' || c.kind === 'hit') {
+          // Master Duel pace: an everyday attack is brisk; a boss monster's swing keeps its weight
+          const big = !!c.attacker?.name && bigCard(c.attacker.name);
+          if (this.attacks > 2) return big ? REPEAT_ATTACK_SCALE * 1.4 : REPEAT_ATTACK_SCALE * 1.8;
+          return big ? BIG_ATTACK_SCALE : ATTACK_SCALE;
+        }
         if (c.kind !== 'summon' && c.kind !== 'flip') return 1;
         if (!c.card.name) return 1;
         const again = this.summoned.has(c.card.name);

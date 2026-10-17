@@ -409,3 +409,7 @@ body:has(.mdres) .rematch-dock {
   color: #ffd98a;
   animation: toss-slam 0.5s 0.25s both;
 }
+/* against the computer the result screen carries its own Rematch button */
+body:has(.mdres) .rematch-dock.cpu {
+  display: none;
+}

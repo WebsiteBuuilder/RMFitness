@@ -1579,7 +1579,7 @@ export class Engine {
   }
 
   /** Removes a card from play (D.D. Warrior, Gravedigger Ghoul). */
-  banish(uid: number) {
+  banish(uid: number, faceDown = false) {
     const f = this.find(uid);
     if (!f) return;
     this.state.fx.banishing = uid; // audit-07: locksGrave can tell a banish from other moves (Kycoo the Ghost Destroyer)
@@ -1597,8 +1597,12 @@ export class Engine {
       return;
     }
     this.player(card.owner).removed.push(card);
-    this.event('to-gy', { uid, player: card.owner, ...this.whence(f, 'banish') });
-    if (fc) this.logLeave(f.loc.player, card.name, 'was removed from play', /remov|banish/i);
+    this.event('to-gy', { uid, player: card.owner, ...this.whence(f, 'banish'), ...(faceDown ? { down: true } : {}) });
+    if (faceDown) {
+      // face-down (Lightforce Sword): its owner knows it, the opponent doesn't; the Out pile shows its back to them
+      ((this.state.fx.banishedDown ??= []) as number[]).push(uid);
+      this.log(card.owner, `A card from ${this.player(card.owner).name}'s hand was banished face-down`);
+    } else if (fc) this.logLeave(f.loc.player, card.name, 'was removed from play', /remov|banish/i);
     else this.log(card.owner, `${card.name} was removed from play`);
     this.queueBanished(card); // audit-09
   }
@@ -2116,6 +2120,7 @@ export class Engine {
           if (card && card.loc.zone === 'removed') this.toHand(x.uid);
         }
         fx.lightforce = lf.filter((x) => x.back > this.state.turn);
+        if (fx.banishedDown) fx.banishedDown = (fx.banishedDown as number[]).filter((u) => this.find(u)?.loc.zone === 'removed');
         // Speed Duel: monsters banished "until your next Standby Phase" come back (Flyfang).
         const away = (fx.returnAtStandby ?? []) as { uid: number; p: Pid; pos: Pos; after: number }[];
         for (const x of away.filter((y) => y.p === tp && y.after < this.state.turn)) {
@@ -3202,8 +3207,12 @@ export class Engine {
         return `${this.find(ctx.uid!)?.card.name ?? 'A monster'} was Summoned. Respond?`;
       case 'effect':
         return `${ctx.link?.card.name ?? 'A card'}'s effect was activated. Respond?`;
-      case 'attack':
-        return `${this.find(ctx.uid!)?.card.name ?? 'A monster'} attacks. Respond?`;
+      case 'attack': {
+        // name the target too, so a Trap can be judged without looking for it
+        const t = this.state.battle?.target != null ? this.fieldCard(this.state.battle.target) : null;
+        const at = !t ? ' directly' : t.faceUp ? ` ${t.name}` : ' a face-down monster';
+        return `${this.find(ctx.uid!)?.card.name ?? 'A monster'} attacks${at}. Respond?`;
+      }
       case 'spell':
       case 'trap':
         return `${ctx.link?.card.name ?? 'A card'} was activated. Respond?`;
