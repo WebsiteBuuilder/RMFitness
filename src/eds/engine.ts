@@ -1369,6 +1369,8 @@ export class Engine {
     if (amount > 0 && (this.state.fx.halfDamage as number[] | undefined)?.[player] === this.state.turn) amount = Math.floor(amount / 2);
     if (amount > 0) (this.state.fx.lpLost ??= [0, 0])[player] += amount;
     if (amount > 0) (this.state.fx.hurt ??= [0, 0])[player] += amount;
+    // every bit of damage ever taken (fx.hurt is emptied by the damage window and each Draw Phase): Boss Raid counts hits by it
+    if (amount > 0) (this.state.fx.hurtTotal ??= [0, 0])[player] += amount;
     if (amount > 0 && (this.battleHit || (this.actor !== null && this.actor !== player))) (this.state.fx.dmgByOpp ??= [-1, -1])[player] = this.state.turn; // audit-07: took battle/opponent's effect damage this turn (Magikuriboh)
     if (amount <= 0) return;
     const ps = this.player(player);

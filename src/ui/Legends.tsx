@@ -185,6 +185,7 @@ export function Legends(p: Ctx) {
         <ResultSheet
           {...p}
           rep={rep}
+          onRetry={() => (seen(), duel(repFound.duel, !!rep.rematch))}
           onDone={() => {
             seen();
             if (rep.outcome.result === 'w' && !rep.settled.finished) {
@@ -319,7 +320,7 @@ function SceneSheet(p: {
   );
 }
 
-function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind: 'legend' }>; onDone: () => void }) {
+function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind: 'legend' }>; onDone: () => void; onRetry: () => void }) {
   const { rep } = p;
   const found = findLegendDuel(rep.duelId)!;
   const foe = legendFoe(found.duel);
@@ -350,7 +351,12 @@ function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind:
       {won && s.noEarn && <p class="so-center so-dim">The story moves on. Anything goes decks don't earn chips, so this duel's chips wait for a win with your own cards.</p>}
       {won && !s.noEarn && !s.firstWin && !s.rematchPaid && <p class="so-center so-dim">A replay: no chips this time.{rep.rematch ? ' The rematch already paid today.' : ''}</p>}
       {!won && <p class="so-center">A loss costs nothing. Tune your deck and try again.</p>}
-      <Btn kind="gold" onClick={p.onDone}>
+      {!won && (
+        <Btn kind="gold" onClick={p.onRetry}>
+          Try again
+        </Btn>
+      )}
+      <Btn kind={won ? 'gold' : undefined} onClick={p.onDone}>
         Continue
       </Btn>
     </Sheet>

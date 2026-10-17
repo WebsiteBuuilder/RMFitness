@@ -287,6 +287,8 @@ for (let g = 0; g < N; g++) {
   if (r.phase === 'won') won++;
   else if (r.phase === 'lost') lost++;
   else stuck++;
+  // the hits that won it were counted (they fill Team Power and the damage table)
+  if (r.phase === 'won') ok(r.total[0] + r.total[1] > 0, `raid ${g}: a won raid counted the brothers' damage (${r.total})`);
   ok(r.phase === 'won' || r.phase === 'lost', `raid ${g} (${raid.title}) finished (phase ${r.phase}, stage ${r.stage}, ${steps} steps)`);
   // the second phone replays the log and lands on the same raid
   const twin = new Raid();

@@ -8,7 +8,7 @@ import { getEffect } from './effects';
 import type { Action, FieldCard, Pid, Prompt } from './types';
 import { getSkill } from './skills';
 import { DEFAULT_TACTICS, type Tactics } from './tactics';
-import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, wall } from './aiEval';
+import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, lookaheadCombo, wall } from './aiEval';
 import { skillDrawOk, skillVerdict } from './aiSkills';
 
 /** Moves the computer already tried this turn (so a cancelled or declined effect is not retried forever). */
@@ -231,14 +231,16 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         // Hard: weigh every option and play the best one.
         let best: { c: (typeof fresh)[number]; d: number } | null = null;
         for (const c of fresh) {
-          const d = lookahead(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? 0;
+          let d = lookahead(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? 0;
+          // not worth it alone: maybe it opens a Summon (Toon World, then a Toon)
+          if (d < c.min && c.act.type !== 'SPECIAL') d = lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? d;
           if (d < c.min) decline(c.key); // not worth it now
           else if (!best || d > best.d) best = { c, d };
         }
         if (best && tryOnce(best.c.key)) return best.c.act;
       } else {
         for (const c of fresh) {
-          if (worth(c.act, c.min)) {
+          if (worth(c.act, c.min) || (!easy && c.act.type !== 'SPECIAL' && (lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? -Infinity) >= c.min + 400)) {
             tryOnce(c.key);
             return c.act;
           }

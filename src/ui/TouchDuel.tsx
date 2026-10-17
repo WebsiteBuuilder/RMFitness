@@ -10,6 +10,7 @@ import { other } from '../eds/engine';
 import type { Card, DuelState, FieldCard, Pid, PlayerState, Prompt, SelectOption } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
 import { getEffect } from '../eds/effects';
+import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { playBlip, unlockAudio } from './sound';
@@ -312,13 +313,31 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     ev.preventDefault();
     setDrag({ ...drag, x: ev.clientX, y: ev.clientY, over: spotAt(ev.clientX, ev.clientY, spots!) });
   };
+  /**
+   * Let go near (not exactly on) a lit spot: the closest one takes it, like Master Duel's forgiving
+   * drops. The SET pad and the opponent's portrait only count when hit exactly.
+   */
+  const nearSpot = (x: number, y: number, allowed: Set<string>, reach: number): string | null => {
+    let best: string | null = null;
+    let dist = reach;
+    for (const el of document.querySelectorAll<HTMLElement>('[data-drop]')) {
+      const id = el.dataset.drop!;
+      if (!allowed.has(id) || id === 'set' || id === 'direct') continue;
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d < dist) (dist = d), (best = id);
+    }
+    return best;
+  };
   const onUp = (ev: PointerEvent) => {
     const p = press.current;
     press.current = null;
     if (!p || p.id !== ev.pointerId || !drag) return;
     dragged.current = true;
     setTimeout(() => (dragged.current = false), 50);
-    const d = { ...drag, over: spotAt(ev.clientX, ev.clientY, spots!) };
+    // a card from the hand pulled well up onto the field lands in the nearest free zone
+    const lifted = p.from === 'hand' && p.y - ev.clientY > 70;
+    const d = { ...drag, over: spotAt(ev.clientX, ev.clientY, spots!) ?? nearSpot(ev.clientX, ev.clientY, spots!, lifted ? 140 : 40) };
     setDrag(null);
     drop(d);
   };
@@ -388,6 +407,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const fieldZone = (p: Pid) => {
     const ps = state.players[p];
     const mine = p === acting;
+    // A Field Skill (Power of Dark, Peak Performance...) sits face-up in the empty Field Zone, like the real game
+    const sk = !ps.field && ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+    const fieldSkill = sk?.aura && sk.startOfDuel ? ps.skill : null;
     return (
       <div
         class={`tz tz-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}${mine ? spotCls('field') : ''}${ps.field && !ps.field.faceUp && (mine || ctl.spectator) ? ' myset' : ''}`}
@@ -396,9 +418,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         onClick={(ev) => {
           ev.stopPropagation();
           if (ps.field) tapCard(ps.field.uid);
+          else if (fieldSkill) ctl.openSkill(p);
         }}
       >
-        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : <span class="tz-label">FIELD</span>}
+        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : fieldSkill ? <CardImg name={fieldSkill} class="tz-skillcard" /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
       </div>
     );

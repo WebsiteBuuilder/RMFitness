@@ -72,6 +72,40 @@ export function lookaheadAnswer(e: Engine, me: Pid, action: Action, choose: Choo
 }
 
 function playOut(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  const r = playOutSim(e, me, action, choose);
+  return r && r.value;
+}
+
+/**
+ * A play that only pays off with the next one (Toon World before a Toon, a Spell that frees a
+ * Tribute): the play, then the best Summon it opened up, judged together. Returns the better of
+ * the play alone and the play plus that Summon, or null when it can't be told.
+ */
+export function lookaheadCombo(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (e.state.prompt || e.state.winner !== null) return null;
+  const first = playOutSim(e, me, action, choose);
+  if (!first) return null;
+  const sim = first.sim;
+  if (sim.state.winner !== null || sim.state.turnPlayer !== me || !sim.inMainPhase()) return first.value;
+  const ps = sim.player(me);
+  const before = e.player(me);
+  const follow: Action[] = [];
+  for (const c of ps.hand) {
+    const was = before.hand.find((x) => x.uid === c.uid);
+    if (sim.canSpecialProc(me, c) && !(was && e.canSpecialProc(me, was))) follow.push({ type: 'SPECIAL', player: me, uid: c.uid });
+    else if (!ps.normalSummoned && sim.canNormalSummon(me, c, true) && !(was && e.canNormalSummon(me, was, true)) && sim.freeMonsterZone(me) >= 0)
+      follow.push({ type: 'SUMMON', player: me, uid: c.uid, zone: sim.freeMonsterZone(me), pos: 'atk', faceUp: true });
+  }
+  let best = first.value;
+  const base = evaluate(e, me);
+  for (const a of follow.slice(0, 4)) {
+    const r = playOutSim(sim, me, a, choose);
+    if (r) best = Math.max(best, evaluate(r.sim, me) - base);
+  }
+  return best;
+}
+
+function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser): { sim: Engine; value: number } | null {
   let sim: Engine;
   try {
     sim = sandbox(e);
@@ -96,7 +130,7 @@ function playOut(e: Engine, me: Pid, action: Action, choose: Chooser): number | 
   }
   if (sim.state.prompt && sim.state.winner === null) return null;
   if (sim.state.turn !== turn && sim.state.winner === null) return null;
-  return evaluate(sim, me) - before;
+  return { sim, value: evaluate(sim, me) - before };
 }
 
 /** What a monster on the opponent's side needs to be beaten (face-down ones are a guess). */

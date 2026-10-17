@@ -392,3 +392,15 @@
     transform: translateY(8px);
   }
 }
+/* Continue and Rematch side by side, so the rewards keep their room on short phones */
+.mdres-foot:has(.mdres-again) {
+  display: flex;
+  gap: 10px;
+}
+.mdres-foot:has(.mdres-again) .mdres-go,
+.mdres-foot .mdres-again {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+  min-height: 52px;
+}

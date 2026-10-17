@@ -131,7 +131,9 @@ function Reward({ r }: { r: ResultReward }) {
             <CardImg name={r.card} />
           </span>
           <span class="mdres-rt">
-            <span class={`mdres-tier t-${r.tier}`}>{r.tier}</span> {r.card}
+            <span>
+              <span class={`mdres-tier t-${r.tier}`}>{r.tier}</span> {r.card}
+            </span>
             <small>Rank up! Now {r.tierName}</small>
           </span>
         </>

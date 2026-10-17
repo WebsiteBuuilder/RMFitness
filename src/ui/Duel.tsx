@@ -536,8 +536,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
-                // Against the computer, walking out of a live Speed Duel is a surrender: asked first, and it counts.
-                { label: 'Leave duel', onPick: () => (setShowMenu(false), e.speed && !online && !hotseat && canAct && state.winner === null ? setAskSurrender(true) : leave()) },
+                // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),
+                // so only Surrender is offered then.
+                ...(e.speed && !online && !hotseat && canAct && state.winner === null ? [] : [{ label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) }]),
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />
