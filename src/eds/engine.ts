@@ -853,9 +853,13 @@ export class Engine {
       const v = sides === 6 ? fixed.die! : fixed.coin!;
       this.state.fx.fixedRoll = undefined;
       this.log(fixed.p, `${this.player(fixed.p).name} decides the result: ${sides === 6 ? v : v === 1 ? 'heads' : 'tails'}`);
+      this.event('roll', { player: fixed.p, amount: v, to: sides === 6 ? 'die' : 'coin' });
       return v;
     }
-    return 1 + Math.floor(this.rand() * sides);
+    const v = 1 + Math.floor(this.rand() * sides);
+    // Shown on screen (dice and coins are public), so nobody has to dig the result out of the log.
+    if (sides === 6 || sides === 2) this.event('roll', { player: this.actor ?? this.state.turnPlayer, amount: v, to: sides === 6 ? 'die' : 'coin' });
+    return v;
   }
 
   /** Fusion materials named on a Fusion Monster's text, as card ids. */

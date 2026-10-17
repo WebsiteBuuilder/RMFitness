@@ -1,3 +1,4 @@
+import { sideLabel } from './sideLabel';
 import { getSkill } from '../eds/skills';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
@@ -81,6 +82,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as Record<string, unknown>).__duel = { e, state, acting };
   const lastActing = useRef(acting);
   const lastSeq = useRef(0);
+  const [roll, setRoll] = useState<{ player?: Pid; amount?: number; to?: string; seq: number } | null>(null);
+  const lastRoll = useRef(state.events?.reduce((m, x) => Math.max(m, x.seq), 0) ?? 0);
   const finished = useRef(false);
 
   // Hotseat: pass the phone when the acting seat changes (before paint, so the next hand never flashes).
@@ -95,6 +98,16 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   }, []);
 
   // Animations and sounds from engine events.
+  // Dice and coin results, shown big for a moment (the other events of the same step can bury them).
+  useEffect(() => {
+    const r = (state.events ?? []).filter((x) => x.kind === 'roll' && x.seq > lastRoll.current).pop();
+    if (!r) return;
+    lastRoll.current = r.seq;
+    setRoll(r);
+    const t = setTimeout(() => setRoll(null), 1800);
+    return () => clearTimeout(t);
+  }, [state.events?.length, state.lastEvent]);
+
   useEffect(() => {
     const ev = state.lastEvent;
     if (!ev || ev.seq === lastSeq.current) return;
@@ -366,7 +379,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           </Win>
         );
       const listOptions = prompt.options.map((o: SelectOption, i: number) => ({
-        label: o.label,
+        label: sideLabel(o, acting),
         selected: picks.includes(i),
         onPick: () => togglePick(prompt, i),
       }));
@@ -429,6 +442,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {roll && (
+        <div key={roll.seq} class="roll-chip" aria-live="polite">
+          <span class="roll-face">{roll.to === 'coin' ? (roll.amount === 1 ? 'H' : 'T') : roll.amount}</span>
+          <span>
+            {roll.player === acting ? 'You' : state.players[roll.player ?? 0].name} {roll.to === 'coin' ? `flipped ${roll.amount === 1 ? 'heads' : 'tails'}` : `rolled a ${roll.amount}`}
+          </span>
+        </div>
+      )}
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>

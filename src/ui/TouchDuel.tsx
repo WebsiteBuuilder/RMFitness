@@ -13,6 +13,7 @@ import { getEffect } from '../eds/effects';
 import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
+import { sideLabel } from './sideLabel';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
@@ -600,7 +601,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               return (
                 <button key={i} class={`topt ${ctl.picks.includes(i) ? 'on' : ''} ${name ? '' : 'text'}`} onClick={() => ctl.togglePick(prompt, i)}>
                   {name !== null ? <CardImg name={name} back={name === ''} /> : null}
-                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{o.label}</span>
+                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{sideLabel(o, ctl.acting)}</span>
                 </button>
               );
             })}
