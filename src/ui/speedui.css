@@ -365,3 +365,23 @@ button.gcard {
   overflow-y: auto;
   box-shadow: 0 -6px 18px #000a;
 }
+/* short phones: the Classic card box is compact enough to show every choice without scrolling */
+@media (max-height: 700px) {
+  .ui-speed .duel.speed:not(.touch) > .msgwin .menu-item {
+    min-height: 34px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    font-size: 15px;
+  }
+  .ui-speed .duel.speed:not(.touch) > .msgwin .win-title {
+    padding: 5px 12px;
+  }
+  .ui-speed .duel.speed:not(.touch) > .msgwin .win-body {
+    min-height: 0;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .ui-speed .duel.speed:not(.touch) .selstat {
+    margin-bottom: 0;
+  }
+}

@@ -279,7 +279,8 @@ function endOfTurnValue(e: Engine, me: Pid, now = false): number {
     let pick = -1;
     for (const m of mine) {
       if (used.has(m.uid)) continue;
-      const w = m.faceUp ? (m.pos === 'atk' ? e.atkOf(m) : e.defOf(m)) : 1500;
+      // (our own Set monsters: we know their DEF)
+      const w = m.pos === 'atk' ? e.atkOf(m) : m.faceUp ? e.defOf(m) : (e.info(m.name).def ?? 0);
       if (atk <= w) continue;
       const g = 200 + 0.7 * Math.max(e.atkOf(m), e.defOf(m) * 0.8) + (m.faceUp && m.pos === 'atk' ? atk - w : 0);
       if (g > gain) (gain = g), (pick = m.uid);

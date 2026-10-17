@@ -126,7 +126,7 @@ export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResult
         </button>
         {onRematch && ready && (
           <button type="button" class="mdres-again" onClick={(ev) => (ev.stopPropagation(), done.current || ((done.current = true), onRematch()))}>
-            {data.outcome === 'lose' ? 'REMATCH!' : 'Rematch'}
+            Rematch
           </button>
         )}
         {!ready && <p class="mdres-skip">Tap to skip</p>}
