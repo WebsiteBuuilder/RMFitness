@@ -625,6 +625,8 @@
   }
 }
 .duel.touch .ttoast.aim {
+  /* above your name and Life Points, not over them */
+  margin-bottom: calc(168px + env(safe-area-inset-bottom));
   font-size: 14px;
   font-weight: 700;
   box-shadow: 0 0 14px #ff304066;
@@ -766,3 +768,9 @@
 }
 .tfc.good { border-color: #5be07a; color: #8ff0a6; }
 .tfc.bad { border-color: #ff5d6c; color: #ff9aa4; }
+
+@media (min-height: 760px) {
+  .duel.touch .ttoast.aim {
+    margin-bottom: calc(196px + env(safe-area-inset-bottom));
+  }
+}

@@ -15,6 +15,8 @@ import { skillDrawOk, skillVerdict } from './aiSkills';
 const TRIED = new Set<string>();
 /** How much better (in board value) Hard's planned Summon must be than its usual pick. */
 const PLAN_MARGIN = 150;
+/** The least a Spell from the hand must gain Hard (the card itself is worth about 300). */
+const HARD_SPELL_MIN = -50;
 
 const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
 /** Draw spells: not with the Deck nearly empty (drawing out loses the Duel). */
@@ -236,13 +238,15 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
           let d = lookahead(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? 0;
           // not worth it alone: maybe it opens a Summon (Toon World, then a Toon)
           if (d < c.min && c.act.type !== 'SPECIAL') d = lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? d;
-          if (d < c.min) decline(c.key); // not worth it now
+          // Hard never spends a card on a play that leaves it no better off (a Spell with nothing to work on)
+          if (d < c.min || (c.key.startsWith('act') && d < HARD_SPELL_MIN)) decline(c.key); // not worth it now
           else if (!best || d > best.d) best = { c, d };
         }
         if (best && tryOnce(best.c.key)) return best.c.act;
       } else {
         for (const c of fresh) {
-          if (worth(c.act, c.min) || (!easy && c.act.type !== 'SPECIAL' && (lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? -Infinity) >= c.min + 400)) {
+          const min = hard && c.key.startsWith('act') ? Math.max(c.min, HARD_SPELL_MIN) : c.min;
+          if (worth(c.act, min) || (!easy && c.act.type !== 'SPECIAL' && (lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? -Infinity) >= min + 400)) {
             tryOnce(c.key);
             return c.act;
           }

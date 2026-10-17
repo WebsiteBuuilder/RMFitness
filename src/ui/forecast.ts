@@ -43,8 +43,11 @@ function compute(e: Engine, uid: number, target: number | null): Forecast | null
   const sim = play(e, uid, target, 0);
   if (!sim) return plain(e, atk, t, vs);
   // a dice or coin in the battle (Skull Dice, Graceful Dice...): a second throw that ends differently means it's luck
-  const other2 = play(e, uid, target, 0x9e3779b9);
-  const lucky = !!other2 && (other2.player(0).lp !== sim.player(0).lp || other2.player(1).lp !== sim.player(1).lp || !!other2.fieldCard(uid) !== !!sim.fieldCard(uid));
+  // (several throws: a coin lands the same way twice half the time; only if the battle threw anything)
+  const differs = (o: Engine | null) => !!o && (o.player(0).lp !== sim.player(0).lp || o.player(1).lp !== sim.player(1).lp || !!o.fieldCard(uid) !== !!sim.fieldCard(uid) || (t !== null && !!o.fieldCard(t.uid) !== !!sim.fieldCard(t.uid)));
+  const threw = sim.state.rngState !== ((sandbox(e).state.rngState) >>> 0);
+  let lucky = false;
+  for (let i = 1; threw && !lucky && i <= 8; i++) lucky = differs(play(e, uid, target, Math.imul(0x9e3779b9, i) >>> 0));
   const me = e.controller(uid) as Pid;
   const opp = other(me);
   const took = e.player(me).lp - sim.player(me).lp;
