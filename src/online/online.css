@@ -307,6 +307,9 @@
 }
 /* A dropped connection in a Speed Duel shows over the middle of the board, not over the LP */
 .ui-speed .netwarn {
-  top: 36%;
-  max-width: min(340px, calc(100% - 32px));
+  top: calc(64px + env(safe-area-inset-top));
+  max-width: min(320px, calc(100% - 32px));
+  font-size: 12px;
+  padding: 5px 10px;
+  background: rgba(74, 28, 28, 0.88);
 }

@@ -12,6 +12,8 @@ export const FIND_MS = 12_000;
 const LOOK_MS = 1_500;
 /** How long the first connection gets before the room counts as unreachable. */
 const OPEN_MS = 20_000;
+/** The other phone gone this long mid-duel: leaving wins it. */
+export const ABANDON_MS = 90_000;
 
 type Meta = { host?: string; at?: number } | null;
 
@@ -137,6 +139,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   }
 
   private goneSince = 0;
+
+  abandoned(): boolean {
+    return this.everLinked && !this.otherHere && this.online && this.goneSince > 0 && Date.now() - this.goneSince >= ABANDON_MS;
+  }
+
   private goneTimer: ReturnType<typeof setInterval> | null = null;
 
   private showLink() {
@@ -160,7 +167,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
       const s = Math.floor((Date.now() - this.goneSince) / 1000);
       const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
       const who = this.isHost ? 'Opponent disconnected' : 'Lost the host';
-      const tail = s >= 60 ? ' They may not be back: you can leave from the menu.' : '';
+      const tail = s * 1000 >= ABANDON_MS ? " They haven't come back: leave from the menu and the win is yours." : '';
       this.setStatus(this.isHost ? 'waiting' : 'connecting', `${who} · ${clock}. Waiting for them to come back…${tail}`);
     };
     say();

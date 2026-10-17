@@ -217,6 +217,7 @@ export function useTestDb(db: (() => Promise<Db>) | null) {
 const CHECK_MS = 20_000;
 /** After a failed check, ask again in the background this long after (doubling up to a minute). */
 let recheckMs = 10_000;
+let recheck: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Finds out once whether online play can go through the service: signs this phone in and
@@ -250,11 +251,14 @@ export function checkCloud(): Promise<CloudState> {
     // a failed check is tried again in the background (and whenever someone asks)
     if (s !== 'on') {
       check = null;
-      if (firebaseConfig && !forced) {
-        setTimeout(() => state === 'off' && void checkCloud(), recheckMs);
+      if (firebaseConfig && !forced && !recheck) {
+        recheck = setTimeout(() => {
+          recheck = null;
+          if (state === 'off') void checkCloud();
+        }, recheckMs);
         recheckMs = Math.min(recheckMs * 2, 60_000);
       }
-    }
+    } else recheckMs = 10_000;
     return s;
   });
   return check;

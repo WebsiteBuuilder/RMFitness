@@ -50,6 +50,8 @@ class OnlineController {
   private instance = Math.random().toString(36).slice(2);
   private channel: BroadcastChannel | null = null;
   private transport: Transport | null = null;
+  /** which queue the current search is on */
+  private mmKind: 'cloud' | 'peer' = 'cloud';
   /** tests swap in their own transport */
   makeTransport: () => Transport = () => new AutoTransport();
   /** Find a Match: the queue for a duel against whoever else is searching */
@@ -64,7 +66,11 @@ class OnlineController {
 
   constructor() {
     this.mm = new Matchmaker({
-      net: () => queueNet(),
+      net: () => {
+        const n = queueNet();
+        this.mmKind = cloudState() === 'on' ? 'cloud' : 'peer';
+        return n;
+      },
       me: () => {
         const pr = this.presence;
         return { name: pr?.me.name ?? this.profile?.alias ?? 'Duelist', color: pr?.me.color ?? this.profile?.color ?? '#888888', code: pr?.data.code ?? '', ...(pr?.me.board ? { board: pr.me.board } : {}) };
@@ -74,7 +80,13 @@ class OnlineController {
     // the online service came through after this phone had gone online the old way: switch over
     onCloudState((st) => {
       const t = this.transport;
-      if (st === 'on' && t instanceof AutoTransport && t.kind === 'peer' && this.profile && !this.mm.searching && !this.versus) {
+      // a search still on the old queue moves over too, so it can meet phones on the service
+      if (st === 'on' && this.mm.searching && this.mmKind === 'peer') {
+        const g = this.mm.game;
+        this.mm.cancel();
+        this.findMatch(g);
+      }
+      if (st === 'on' && t instanceof AutoTransport && t.kind === 'peer' && this.profile && !this.versus) {
         const p = this.profile;
         this.unsubPresence?.();
         this.presence?.stop();

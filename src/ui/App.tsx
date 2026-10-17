@@ -721,7 +721,8 @@ export function App() {
       if (!hotseat && session.status !== 'connected') {
         if (!sure) return setOfflineLeave(true);
         setOfflineLeave(false);
-        const left = speedSave ? settleLeftDuel(speedSave) : null;
+        // the other phone walked out long ago (online rooms say so): the win goes to the one who stayed
+        const left = speedSave ? settleLeftDuel(speedSave, session.adapter.abandoned?.() ? mySeat : undefined) : null;
         settled.current = session;
         if (left) setSpeedSave(left.save);
         setSpeedNews(left ? left.lines : ['The connection was lost, so this friendly duel has no result.']);
@@ -1151,11 +1152,15 @@ export function App() {
         return (
           <Overlay onClose={() => setOfflineLeave(false)}>
             <Win title="Connection lost" onClose={() => setOfflineLeave(false)}>
-              <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+              {session.adapter.abandoned?.() ? (
+                <p>Your opponent has been gone for over a minute and a half. Leave now and the win is yours.</p>
+              ) : (
+                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+              )}
               <Menu
                 items={[
                   { label: 'Keep waiting', onPick: () => setOfflineLeave(false) },
-                  { label: 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
+                  { label: session.adapter.abandoned?.() ? 'Leave and take the win' : 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
                 ]}
               />
             </Win>
