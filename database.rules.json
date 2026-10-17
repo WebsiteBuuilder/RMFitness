@@ -18,6 +18,58 @@
         ".read": "auth != null && auth.uid === $phone",
         ".write": "auth != null && auth.uid === $phone"
       }
+    },
+    "net": {
+      "who": {
+        "$id": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid || data.child('at').val() < now - 120000) && (newData.exists() || data.child('uid').val() === auth.uid)",
+          ".validate": "$id.length <= 40 && newData.hasChildren(['uid', 'at']) && newData.child('uid').val() === auth.uid && newData.child('at').val() === now"
+        }
+      },
+      "mail": {
+        "$id": {
+          ".read": "auth != null && root.child('net/who/' + $id + '/uid').val() === auth.uid",
+          ".write": "auth != null && !newData.exists() && root.child('net/who/' + $id + '/uid').val() === auth.uid",
+          "$msg": {
+            ".write": "auth != null && ((!newData.exists() && root.child('net/who/' + $id + '/uid').val() === auth.uid) || (!data.exists() && newData.child('uid').val() === auth.uid && root.child('net/who/' + newData.child('from').val() + '/uid').val() === auth.uid))",
+            ".validate": "newData.hasChildren(['uid', 'from', 'k', 'link']) && (!newData.child('m').exists() || (newData.child('m').isString() && newData.child('m').val().length < 20000))"
+          }
+        }
+      },
+      "rooms": {
+        "$room": {
+          ".read": "auth != null",
+          "meta": {
+            ".write": "auth != null && newData.child('host').val() === auth.uid && (!data.exists() || data.child('host').val() === auth.uid || data.child('at').val() < now - 21600000)",
+            ".validate": "$room.length <= 12 && newData.hasChildren(['host', 'at']) && newData.child('at').val() === now"
+          },
+          "hostOn": {
+            ".write": "auth != null && root.child('net/rooms/' + $room + '/meta/host').val() === auth.uid"
+          },
+          "ep": {
+            ".write": "auth != null && root.child('net/rooms/' + $room + '/meta/host').val() === auth.uid"
+          },
+          "log": {
+            ".write": "auth != null && root.child('net/rooms/' + $room + '/meta/host').val() === auth.uid",
+            "$ep": {
+              "$seq": {
+                ".validate": "newData.isString() && newData.val().length < 20000"
+              }
+            }
+          },
+          "guestOn": {
+            ".write": "auth != null"
+          },
+          "in": {
+            ".write": "auth != null && root.child('net/rooms/' + $room + '/meta/host').val() === auth.uid",
+            "$k": {
+              ".write": "auth != null && !data.exists()",
+              ".validate": "newData.isString() && newData.val().length < 20000"
+            }
+          }
+        }
+      }
     }
   }
 }

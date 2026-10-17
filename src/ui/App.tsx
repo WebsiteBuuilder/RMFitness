@@ -340,7 +340,7 @@ export function App() {
   const parkRoom = (ses: DuelSession | null) => {
     if (!ses) return;
     const st = ses.engine.state;
-    const canRematch = !cpu && !st.tag && !!ses.adapter.restart && (hotseat || (ses.adapter.kind === 'peer' && ses.status === 'connected'));
+    const canRematch = !cpu && !st.tag && !!ses.adapter.restart && (hotseat || (ses.adapter.kind !== 'local' && ses.status === 'connected'));
     if (!canRematch) return ses.close();
     const seat = mySeat;
     const hs = hotseat;
