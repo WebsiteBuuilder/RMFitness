@@ -18,6 +18,7 @@ import {
   deckFromStarter,
   isExtraCard,
   limitStatus,
+  limitedGroupFull,
   newDeckId,
   speedDeckProblems,
   starterSkill,
@@ -466,6 +467,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const [limit, setLimit] = useState(PAGE);
   /** the card being read before anything changes, and the cards ‹ › step through */
   const [view, setView] = useState<{ n: string; list: string[] } | null>(null);
+  const [viewFromDeck, setViewFromDeck] = useState(false);
   /** the Skill being read in the Skill list before it goes on */
   const [skillView, setSkillView] = useState<string | null>(null);
   const [quick, setQuickState] = useState(savedQuick);
@@ -530,6 +532,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
     if (why) return `Not in the game yet: ${why}`;
     if (limitStatus(n) === 'Forbidden') return 'Forbidden on the Limited List';
     if (copies(n) >= ownedCopies(n)) return ownedCopies(n) < COPIES ? ownedCopies(n) === 1 ? 'Your only copy is already in the deck' : `All ${ownedCopies(n)} of your copies are already in the deck` : `${COPIES} copies at most`;
+    const group = limitedGroupFull([...deck.main, ...deck.extra], n);
+    if (group) return group;
     if (isExtraCard(n) ? deck.extra.length >= EXTRA_MAX : deck.main.length >= MAIN_MAX) return isExtraCard(n) ? `The Extra Deck is full (${EXTRA_MAX})` : `The Main Deck is full (${MAIN_MAX})`;
     return null;
   };
@@ -559,8 +563,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
   const filtered = kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!q;
 
-  const openPool = (n: string) => (playBlip(), setView({ n, list: shown }));
-  const openDeck = (n: string) => (playBlip(), setView({ n, list: [...new Set([...main, ...extra])] }));
+  const openPool = (n: string) => (playBlip(), setViewFromDeck(false), setView({ n, list: rows }));
+  const openDeck = (n: string) => (playBlip(), setViewFromDeck(true), setView({ n, list: [...new Set([...main, ...extra])] }));
 
   const deckTile = (n: string, i: number) => (
     <button
@@ -730,7 +734,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
                 {...tile(() => (quick ? addCard(n) : openPool(n)), () => openPool(n))}
               >
                 <CardImg name={n} />
-                {limitStatus(n) && <i class="dk-lim">{limitStatus(n) === 'Forbidden' ? '⊘' : limitStatus(n) === 'Limited' ? '1' : '2'}</i>}
+                {limitStatus(n) && <i class="dk-lim">{limitStatus(n) === 'Forbidden' ? '⊘' : limitStatus(n)!.slice(-1)}</i>}
                 <i class="dk-own">
                   {inDeck > 0 ? `${inDeck}/` : ''}
                   {collection ? Math.min(collection[n] ?? 0, 9) : COPIES}
@@ -763,7 +767,6 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
                   <button
                     key={sk.name}
                     class={`crow ${deck.skill === sk.name ? 'sel' : ''} k-spell`}
-                    disabled={limitStatus(sk.name) === 'Forbidden'}
                     onClick={() => (playBlip(), setSkillView(sk.name))}
                   >
                     <CardImg name={sk.name} class="crow-img" />
@@ -782,11 +785,11 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
       {view && (
         <CardView
           view={view}
+          inDeck={viewFromDeck}
           copies={copies(view.n)}
           owned={ownedCopies(view.n)}
           why={whyNot(view.n)}
-          quick={quick}
-          onQuick={setQuick}
+          deckLine={isExtraCard(view.n) ? `Extra ${deck.extra.length}/${EXTRA_MAX}` : `Main ${deck.main.length}/${MAIN_MAX}`}
           onStep={(n) => setView({ ...view, n })}
           onAdd={() => addCard(view.n)}
           onRemove={() => removeCard(view.n)}
@@ -808,7 +811,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
               </button>
               {deck.skill === skillView ? (
                 <button class="gbtn" onClick={() => (set({ skill: null }), setSkillView(null), setSkillPick(false))}>
-                  Take it off
+                  Remove Skill
                 </button>
               ) : (
                 <button class="gbtn gold" disabled={limitStatus(skillView) === 'Forbidden'} onClick={() => (set({ skill: skillView }), setSkillView(null), setSkillPick(false))}>
@@ -835,40 +838,84 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
 }
 
 /**
- * A card read big before anything changes: Add and Remove are the confirm, ‹ › (or a swipe)
- * read the next card without closing.
+ * A card read big before anything changes: Add and Remove are the confirm, ‹ › (or a swipe,
+ * or the arrow keys) read the next card without closing.
  */
-function CardView({ view, copies, owned, why, quick, onQuick, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; copies: number; owned: number; why: string | null; quick: boolean; onQuick: (on: boolean) => void; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
+function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; /** stepping through the deck's cards (one per name) */ inDeck: boolean; copies: number; owned: number; why: string | null; /** "Main 21/30": the deck this card goes in */ deckLine: string; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
   const { n, list } = view;
   const i = list.indexOf(n);
+  const canStep = list.length > 1 && i >= 0;
+  /** which way the last step went, so the next card slides in from that side */
+  const [dir, setDir] = useState(0);
+  /** the finger's sideways drag while swiping */
+  const [drag, setDrag] = useState(0);
+  /** the last Add or Remove, shown as +1 / −1 on the picture */
+  const [bump, setBump] = useState<{ d: 1 | -1; id: number } | null>(null);
   const step = (d: number) => {
     const next = list[i + d];
     if (i < 0 || !next) return;
     playBlip();
+    setDir(d);
+    setBump(null);
     onStep(next);
   };
-  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const live = useRef(step);
+  live.current = step;
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key === 'ArrowLeft') live.current(-1);
+      else if (ev.key === 'ArrowRight') live.current(1);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+  const swipe = useRef<{ x: number; y: number; side: boolean | null } | null>(null);
   const skill = card(n)?.sub === 'Skill';
-  const canStep = list.length > 1 && i >= 0;
-  // a card not in the game yet says why, but "full" or "max copies" sits by the Add button
   const notReady = unplayableReason(n);
+  const change = (d: 1 | -1) => {
+    if (d > 0) onAdd();
+    else onRemove();
+    buzz(12);
+    setBump({ d, id: Date.now() });
+  };
   return (
     <Overlay onClose={onClose}>
-      <Win title={list.length > 1 && i >= 0 ? `Card ${i + 1} of ${list.length}` : 'Card'} class="dk-view" onClose={onClose}>
+      <Win title={canStep ? (inDeck ? `In your deck · ${i + 1} of ${list.length}` : `Card ${i + 1} of ${list.length}`) : 'Card'} class="dk-view" onClose={onClose}>
         <div
-          class="dk-view-card"
-          key={n}
-          onTouchStart={(ev) => (swipe.current = { x: ev.touches[0].clientX, y: ev.touches[0].clientY })}
+          class="dk-view-swipe"
+          onTouchStart={(ev) => (swipe.current = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, side: null })}
+          onTouchMove={(ev) => {
+            const s = swipe.current;
+            if (!s || !canStep) return;
+            const dx = ev.touches[0].clientX - s.x;
+            const dy = ev.touches[0].clientY - s.y;
+            // the first real move decides: sideways steps cards, up and down scrolls the text
+            if (s.side === null && Math.hypot(dx, dy) > 8) s.side = Math.abs(dx) > Math.abs(dy) * 1.2;
+            if (s.side) setDrag(dx);
+          }}
           onTouchEnd={(ev) => {
             const s = swipe.current;
             swipe.current = null;
-            if (!s) return;
+            setDrag(0);
+            if (!s?.side) return;
             const dx = ev.changedTouches[0].clientX - s.x;
-            const dy = ev.changedTouches[0].clientY - s.y;
-            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+            if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
           }}
+          onTouchCancel={() => ((swipe.current = null), setDrag(0))}
         >
-          <CardInfoPanel name={n} />
+          <div class={`dk-view-card ${dir < 0 ? 'from-left' : dir > 0 ? 'from-right' : ''}`} key={n} style={drag ? { transform: `translateX(${drag * 0.6}px)`, transition: 'none' } : undefined}>
+            <CardInfoPanel name={n} />
+            {!skill && (
+              <i class="dk-view-own" key={bump?.id ?? 0}>
+                {copies}/{owned}
+              </i>
+            )}
+            {bump && (
+              <i class={`dk-view-bump ${bump.d > 0 ? 'up' : 'down'}`} key={bump.id}>
+                {bump.d > 0 ? '+1' : '−1'}
+              </i>
+            )}
+          </div>
         </div>
         {limitStatus(n) && (
           <p class="hint">
@@ -882,26 +929,22 @@ function CardView({ view, copies, owned, why, quick, onQuick, onStep, onAdd, onR
               <button class="gbtn dk-step" disabled={!canStep || i === 0} onClick={() => step(-1)} aria-label="Previous card">
                 ‹
               </button>
-              <button class="gbtn" disabled={copies === 0} onClick={onRemove}>
+              <button class="gbtn" disabled={copies === 0} onClick={() => change(-1)}>
                 Remove
               </button>
-              <button class="gbtn gold" disabled={!!why} onClick={onAdd}>
-                + Add
+              <button class="gbtn gold" disabled={!!why} onClick={() => change(1)}>
+                {isExtraCard(n) ? '+ Extra' : '+ Add'}
               </button>
               <button class="gbtn dk-step" disabled={!canStep || i === list.length - 1} onClick={() => step(1)} aria-label="Next card">
                 ›
               </button>
             </div>
-            <p class="hint dk-view-count">
-              {copies} of {owned} in your deck
-              {why && !notReady && copies < owned ? ` · ${why}` : ''}
+            <p class={`hint dk-view-count ${bump ? 'pulse' : ''}`} key={bump?.id ?? 0}>
+              {copies} of {owned} in your deck · {deckLine}
+              {why && !notReady && <span class="dk-view-whyline">{why}</span>}
             </p>
           </>
         ) : null}
-        <label class="dk-view-quick">
-          <input type="checkbox" checked={quick} onChange={(ev) => onQuick((ev.target as HTMLInputElement).checked)} />
-          Quick add: a tap on a card adds or takes it out without opening it
-        </label>
       </Win>
     </Overlay>
   );

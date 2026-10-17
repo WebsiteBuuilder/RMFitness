@@ -689,6 +689,14 @@ export function back(viaEscape = true) {
   setTimeout(() => validate(true), 60);
 }
 
+/** A card open in the deck editor: the shoulders read the previous or next card. */
+function deckCardStep(i: 0 | 1): boolean {
+  const step = document.querySelectorAll<HTMLButtonElement>('.dk-view .dk-step')[i];
+  if (!step) return false;
+  if (!step.disabled) step.click();
+  return true;
+}
+
 function inDuel() {
   return !!document.querySelector('.duel.touch, .duel');
 }
@@ -798,6 +806,7 @@ function onButton(b: Btn) {
       return renderHints(true);
     case 'lb':
     case 'rb':
+      if (deckCardStep(b === 'lb' ? 0 : 1)) return;
       if (inDuel() && !visibleTabs()) return b === 'lb' && focused?.matches(HAND) && mine().length ? duelJump(false, true) : duelJump(b === 'lb');
       return tabStep(b === 'lb' ? -1 : 1);
     case 'lt':
@@ -858,7 +867,8 @@ function hintList(): Hint[] {
   const xl = focused?.getAttribute('data-pad-x');
   if (xl) out.push([['x'], xl]);
   if (focused?.hasAttribute('data-pad-y') || [...document.querySelectorAll('.msgwin .menu-item, .overlay .menu-item')].some((b) => /card info|skill text/i.test(b.textContent ?? ''))) out.push([['y'], 'Card info']);
-  if (visibleTabs()) out.push([['lb', 'rb'], 'Tabs']);
+  if (document.querySelector('.dk-view .dk-step')) out.push([['lb', 'rb'], 'Cards']);
+  else if (visibleTabs()) out.push([['lb', 'rb'], 'Tabs']);
   if (guide) out.push([['lt', 'rt'], 'Page'], [['select'], 'Hide']);
   else out.push([['select'], 'Guide']);
   return out;
