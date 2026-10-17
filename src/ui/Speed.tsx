@@ -95,6 +95,8 @@ export function speedOpponents(): SpeedOpponent[] {
 
 /** Android back inside the Speed Duel menu: steps back to the hub before leaving it (see App). */
 let hubBack: (() => boolean) | null = null;
+/** Android back inside the deck editor: closes its open sheet first (a card being read, the Skill list) */
+let editBack: (() => boolean) | null = null;
 export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
@@ -174,6 +176,7 @@ export function SpeedHub({
         setTab('duel');
         return true;
       }
+      if (sub === 'edit' && editBack?.()) return true;
       setSub(sub === 'edit' ? 'decks' : 'menu');
       return true;
     };
@@ -406,22 +409,32 @@ function sorter(by: Sort): (a: string, b: string) => number {
   return (a, b) => key(b) - key(a) || byType(a, b);
 }
 
+/** Quick add (a tap adds or takes out at once) is off unless the player turns it on. */
+const QUICK_KEY = 'eds.deckQuickAdd';
+function savedQuick(): boolean {
+  try {
+    return localStorage.getItem(QUICK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /**
- * A tap that adds or removes, and a long press (or the corner ⓘ) that reads the card, like
- * Master Duel's deck editor. Returns the props for a card tile.
+ * A tap and a long press for a card tile, like Master Duel's deck editor.
+ * Returns the props for a card tile.
  */
-function useTileTouch(onInfo: (n: string) => void) {
+function useTileTouch() {
   const held = useRef<{ t: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const fired = useRef(false);
   const clear = () => {
     if (held.current) clearTimeout(held.current.t);
     held.current = null;
   };
-  return (n: string, onTap: () => void) => ({
+  return (onTap: () => void, onHold: () => void) => ({
     onPointerDown: (ev: PointerEvent) => {
       clear();
       fired.current = false;
-      held.current = { x: ev.clientX, y: ev.clientY, t: setTimeout(() => ((fired.current = true), buzz(15), onInfo(n)), 420) };
+      held.current = { x: ev.clientX, y: ev.clientY, t: setTimeout(() => ((fired.current = true), buzz(15), onHold()), 420) };
     },
     onPointerMove: (ev: PointerEvent) => {
       if (held.current && Math.hypot(ev.clientX - held.current.x, ev.clientY - held.current.y) > 10) clear();
@@ -451,7 +464,19 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const [showAll, setShowAll] = useState(false);
   const [moreFilters, setMoreFilters] = useState(false);
   const [limit, setLimit] = useState(PAGE);
-  const [info, setInfo] = useState<string | null>(null);
+  /** the card being read before anything changes, and the cards ‹ › step through */
+  const [view, setView] = useState<{ n: string; list: string[] } | null>(null);
+  /** the Skill being read in the Skill list before it goes on */
+  const [skillView, setSkillView] = useState<string | null>(null);
+  const [quick, setQuickState] = useState(savedQuick);
+  const setQuick = (on: boolean) => {
+    setQuickState(on);
+    try {
+      localStorage.setItem(QUICK_KEY, on ? '1' : '0');
+    } catch {
+      /* private mode: it lasts until the editor closes */
+    }
+  };
   const [skillPick, setSkillPick] = useState(false);
   const [renaming, setRenaming] = useState(false);
   /** why the last tap couldn't add a card (shown for a moment) */
@@ -468,7 +493,20 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const ownedCopies = (n: string) => (collection ? Math.min(COPIES, collection[n] ?? 0) : COPIES);
   const problems = speedDeckProblems(deck);
   const copies = (n: string) => deck.main.filter((x) => x === n).length + deck.extra.filter((x) => x === n).length;
-  const tile = useTileTouch(setInfo);
+  const tile = useTileTouch();
+  useEffect(() => {
+    editBack = () => {
+      if (skillView) return (setSkillView(null), true);
+      if (view) return (setView(null), true);
+      if (skillPick) return (setSkillPick(false), true);
+      if (renaming) return (setRenaming(false), true);
+      if (random) return (setRandom(false), true);
+      return false;
+    };
+    return () => {
+      editBack = null;
+    };
+  });
 
   const matches = (name: string) => {
     const c = card(name);
@@ -521,15 +559,18 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
   const filtered = kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!q;
 
+  const openPool = (n: string) => (playBlip(), setView({ n, list: shown }));
+  const openDeck = (n: string) => (playBlip(), setView({ n, list: [...new Set([...main, ...extra])] }));
+
   const deckTile = (n: string, i: number) => (
     <button
       key={`${n}-${i}`}
       class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''}`}
-      aria-label={`${n}: tap to take out, hold to read`}
+      aria-label={quick ? `${n}: tap to take out, hold to read` : `${n}: tap to read, then take out`}
       data-pad-x="Remove one"
       data-pad-y=""
-      {...({ onpadx: () => removeCard(n), onpady: () => setInfo(n) } as object)}
-      {...tile(n, () => removeCard(n))}
+      {...({ onpadx: () => removeCard(n), onpady: () => openDeck(n) } as object)}
+      {...tile(() => (quick ? removeCard(n) : openDeck(n)), () => openDeck(n))}
     >
       <CardImg name={n} />
     </button>
@@ -568,7 +609,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
             ✦ {deck.skill ? deck.skill.replace(/ \(Skill Card\)$/, '') : 'Pick a Skill'}
           </button>
         </div>
-        {main.length ? <div class="dk-grid">{main.map(deckTile)}</div> : <p class="hint">Tap cards below to put them in your deck.</p>}
+        {main.length ? <div class="dk-grid">{main.map(deckTile)}</div> : <p class="hint">{quick ? 'Tap cards below to put them in your deck.' : 'Tap a card below to read it, then press Add.'}</p>}
         {extra.length > 0 && <div class="dk-grid dk-extra">{extra.map(deckTile)}</div>}
       </div>
 
@@ -664,7 +705,12 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
         {deck.open && <p class="hint">Anything goes deck: every card is here, but duels with it earn no packs or chips and it can't be bet.</p>}
         {collection && pool.length < 40 && <p class="hint">Only cards you own are here. Get more from packs and crafting in the Card Shop.</p>}
         <p class="hint dk-hint">
-          {rows.length} card{rows.length === 1 ? '' : 's'} · tap to add · hold to read
+          <span>
+            {rows.length} card{rows.length === 1 ? '' : 's'} · {quick ? 'tap to add · hold to read' : 'tap to read, then Add'}
+          </span>
+          <button class={`chip dk-quick ${quick ? 'on' : ''}`} role="switch" aria-checked={quick} onClick={() => (playBlip(), setQuick(!quick))}>
+            Quick add {quick ? 'on' : 'off'}
+          </button>
         </p>
         {shown.length === 0 && <p class="hint">Nothing here.</p>}
         <div class="dk-grid dk-poolgrid">
@@ -676,12 +722,12 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
               <button
                 key={n}
                 class={`dk-tile ${why ? 'off' : ''} ${!can ? 'maxed' : ''}`}
-                aria-label={`${n}: tap to add, hold to read`}
+                aria-label={quick ? `${n}: tap to add, hold to read` : `${n}: tap to read, then add`}
                 // a controller's X adds a copy, Y shows the card, like Master Duel's deck editor
                 data-pad-x={why || !can ? '' : 'Add one'}
                 data-pad-y=""
-                {...({ onpadx: () => !why && can && addCard(n), onpady: () => setInfo(n) } as object)}
-                {...tile(n, () => addCard(n))}
+                {...({ onpadx: () => !why && can && addCard(n), onpady: () => openPool(n) } as object)}
+                {...tile(() => (quick ? addCard(n) : openPool(n)), () => openPool(n))}
               >
                 <CardImg name={n} />
                 {limitStatus(n) && <i class="dk-lim">{limitStatus(n) === 'Forbidden' ? '⊘' : limitStatus(n) === 'Limited' ? '1' : '2'}</i>}
@@ -709,7 +755,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
       {skillPick && (
         <Overlay onClose={() => setSkillPick(false)}>
           <Win title="Skill" onClose={() => setSkillPick(false)}>
-            <p class="hint">Bring one Skill to each Duel. It starts face-down and flips when you use it. Hold a Skill to read it.</p>
+            <p class="hint">Bring one Skill to each Duel. It starts face-down and flips when you use it. Tap a Skill to read it first.</p>
             <div class="cardlist dk-skills">
               {skills
                 .filter((sk) => getSkill(sk.name))
@@ -718,7 +764,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
                     key={sk.name}
                     class={`crow ${deck.skill === sk.name ? 'sel' : ''} k-spell`}
                     disabled={limitStatus(sk.name) === 'Forbidden'}
-                    {...tile(sk.name, () => (set({ skill: deck.skill === sk.name ? null : sk.name }), setSkillPick(false)))}
+                    onClick={() => (playBlip(), setSkillView(sk.name))}
                   >
                     <CardImg name={sk.name} class="crow-img" />
                     <span class="crow-name">{sk.name.replace(/ \(Skill Card\)$/, '')}</span>
@@ -733,23 +779,43 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
           </Win>
         </Overlay>
       )}
-      {info && (
-        <Overlay onClose={() => setInfo(null)}>
-          <Win title="Card Info" onClose={() => setInfo(null)}>
-            <CardInfoPanel name={info} />
-            {limitStatus(info) && (
+      {view && (
+        <CardView
+          view={view}
+          copies={copies(view.n)}
+          owned={ownedCopies(view.n)}
+          why={whyNot(view.n)}
+          quick={quick}
+          onQuick={setQuick}
+          onStep={(n) => setView({ ...view, n })}
+          onAdd={() => addCard(view.n)}
+          onRemove={() => removeCard(view.n)}
+          onClose={() => setView(null)}
+        />
+      )}
+      {skillView && (
+        <Overlay onClose={() => setSkillView(null)}>
+          <Win title="Skill" class="dk-view" onClose={() => setSkillView(null)}>
+            <CardInfoPanel name={skillView} />
+            {limitStatus(skillView) && (
               <p class="hint">
-                {limitStatus(info)} on the {LIMITED_LIST_NAME}.
+                {limitStatus(skillView)} on the {LIMITED_LIST_NAME}.
               </p>
             )}
-            {card(info)?.sub !== 'Skill' && (
-              <Menu
-                items={[
-                  ...(!unplayableReason(info) ? [{ label: isExtraCard(info) ? 'Add to Extra Deck' : 'Add to Main Deck', disabled: !canAdd(info), note: `${copies(info)}/${ownedCopies(info)}`, onPick: () => addCard(info) }] : []),
-                  ...(copies(info) > 0 ? [{ label: 'Remove one', onPick: () => removeCard(info) }] : []),
-                ]}
-              />
-            )}
+            <div class="dk-view-acts">
+              <button class="gbtn" onClick={() => (playBlip(), setSkillView(null))}>
+                Back
+              </button>
+              {deck.skill === skillView ? (
+                <button class="gbtn" onClick={() => (set({ skill: null }), setSkillView(null), setSkillPick(false))}>
+                  Take it off
+                </button>
+              ) : (
+                <button class="gbtn gold" disabled={limitStatus(skillView) === 'Forbidden'} onClick={() => (set({ skill: skillView }), setSkillView(null), setSkillPick(false))}>
+                  Use this Skill
+                </button>
+              )}
+            </div>
           </Win>
         </Overlay>
       )}
@@ -765,6 +831,79 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
         </Overlay>
       )}
     </div>
+  );
+}
+
+/**
+ * A card read big before anything changes: Add and Remove are the confirm, ‹ › (or a swipe)
+ * read the next card without closing.
+ */
+function CardView({ view, copies, owned, why, quick, onQuick, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; copies: number; owned: number; why: string | null; quick: boolean; onQuick: (on: boolean) => void; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
+  const { n, list } = view;
+  const i = list.indexOf(n);
+  const step = (d: number) => {
+    const next = list[i + d];
+    if (i < 0 || !next) return;
+    playBlip();
+    onStep(next);
+  };
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const skill = card(n)?.sub === 'Skill';
+  const canStep = list.length > 1 && i >= 0;
+  // a card not in the game yet says why, but "full" or "max copies" sits by the Add button
+  const notReady = unplayableReason(n);
+  return (
+    <Overlay onClose={onClose}>
+      <Win title={list.length > 1 && i >= 0 ? `Card ${i + 1} of ${list.length}` : 'Card'} class="dk-view" onClose={onClose}>
+        <div
+          class="dk-view-card"
+          key={n}
+          onTouchStart={(ev) => (swipe.current = { x: ev.touches[0].clientX, y: ev.touches[0].clientY })}
+          onTouchEnd={(ev) => {
+            const s = swipe.current;
+            swipe.current = null;
+            if (!s) return;
+            const dx = ev.changedTouches[0].clientX - s.x;
+            const dy = ev.changedTouches[0].clientY - s.y;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+          }}
+        >
+          <CardInfoPanel name={n} />
+        </div>
+        {limitStatus(n) && (
+          <p class="hint">
+            {limitStatus(n)} on the {LIMITED_LIST_NAME}.
+          </p>
+        )}
+        {notReady && <p class="hint dk-view-why">Not in the game yet: {notReady}</p>}
+        {!skill ? (
+          <>
+            <div class="dk-view-acts dk-view-row">
+              <button class="gbtn dk-step" disabled={!canStep || i === 0} onClick={() => step(-1)} aria-label="Previous card">
+                ‹
+              </button>
+              <button class="gbtn" disabled={copies === 0} onClick={onRemove}>
+                Remove
+              </button>
+              <button class="gbtn gold" disabled={!!why} onClick={onAdd}>
+                + Add
+              </button>
+              <button class="gbtn dk-step" disabled={!canStep || i === list.length - 1} onClick={() => step(1)} aria-label="Next card">
+                ›
+              </button>
+            </div>
+            <p class="hint dk-view-count">
+              {copies} of {owned} in your deck
+              {why && !notReady && copies < owned ? ` · ${why}` : ''}
+            </p>
+          </>
+        ) : null}
+        <label class="dk-view-quick">
+          <input type="checkbox" checked={quick} onChange={(ev) => onQuick((ev.target as HTMLInputElement).checked)} />
+          Quick add: a tap on a card adds or takes it out without opening it
+        </label>
+      </Win>
+    </Overlay>
   );
 }
 
