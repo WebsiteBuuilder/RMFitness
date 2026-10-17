@@ -54,7 +54,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const opp = state.players[other(acting)];
   const canAct = !spectator && !locked && (hotseat || acting === mySeat);
   const myTurn = state.turnPlayer === acting;
-  const prompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
+  const ownPrompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
+  const quiet = !!ownPrompt && quietWindow(e, state, acting);
+  const prompt = quiet ? null : ownPrompt;
 
   const [sel, setSel] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>(null);
@@ -126,16 +128,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setPicks([]);
   }, [state.prompt, state.phase, state.turn]);
 
-  // Your own attack: a Set Trap is almost never what you want there, so like Master Duel's auto
-  // chaining the window passes by itself (Quick-Play Spells and cards from the hand still ask).
+  // Your own Summon, attack or hit: a Set Trap is almost never what you want there, so like Master Duel's
+  // auto chaining the window passes by itself, unseen (see quietWindow).
   useEffect(() => {
-    const pr = state.prompt;
-    if (!prompt || !pr || pr.kind !== 'response' || state.turnPlayer !== acting || !state.battle || !/ attacks( .+)?\. Respond\?$/.test(pr.title)) return;
-    const trapsOnly = pr.options.every((o) => o.uid !== undefined && e.find(o.uid)?.loc.zone !== 'hand' && cardInfo(e.find(o.uid)!.card.name)?.kind === 'trap');
-    if (!trapsOnly) return;
+    if (!quiet) return;
     const t = setTimeout(() => session.send({ type: 'PASS', player: acting }), 120);
     return () => clearTimeout(t);
-  }, [state.prompt]);
+  }, [state.prompt, quiet]);
 
   useEffect(() => {
     if (state.winner !== null && !finished.current) {
@@ -745,4 +744,21 @@ function eventSound(ev: EngineEvent, state: DuelState) {
     case 'win':
       return playWin();
   }
+}
+
+/**
+ * A response window on your own Summon, attack or hit where all you could chain is a Set Trap: like Master
+ * Duel's auto chaining it passes by itself (Quick-Play Spells, cards from the hand and any reply to an
+ * opponent's card still ask).
+ */
+function quietWindow(e: DuelSession['engine'], state: DuelState, acting: Pid): boolean {
+  const pr = state.prompt;
+  if (!pr || pr.kind !== 'response' || pr.player !== acting || state.turnPlayer !== acting || state.chain.length > 0) return false;
+  const ev = state.lastEvent;
+  const mine = (uid?: number) => uid !== undefined && e.find(uid) !== undefined && e.controller(uid) === acting;
+  const ownAttack = !!state.battle && / attacks( .+)?\. Respond\?$/.test(pr.title);
+  const ownSummon = / was Summoned\. Respond\?$/.test(pr.title) && ev?.kind === 'summon' && mine(ev.uid);
+  const ownHit = pr.title === `${state.players[other(acting)].name} took ${ev?.amount ?? -1} damage. Respond?`;
+  if (!ownAttack && !ownSummon && !ownHit) return false;
+  return pr.options.every((o) => o.uid !== undefined && e.find(o.uid)?.loc.zone !== 'hand' && cardInfo(e.find(o.uid)!.card.name)?.kind === 'trap');
 }

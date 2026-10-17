@@ -42,19 +42,40 @@ function compute(e: Engine, uid: number, target: number | null): Forecast | null
   const vs = t === null ? `${atk} direct` : t.pos === 'atk' ? `${atk} vs ${e.atkOf(t)}` : `${atk} vs DEF ${e.defOf(t)}`;
   const sim = play(e, uid, target, 0);
   if (!sim) return plain(e, atk, t, vs);
-  // a dice or coin in the battle (Skull Dice, Graceful Dice...): a second throw that ends differently means it's luck
-  // (several throws: a coin lands the same way twice half the time; only if the battle threw anything)
-  const differs = (o: Engine | null) => !!o && (o.player(0).lp !== sim.player(0).lp || o.player(1).lp !== sim.player(1).lp || !!o.fieldCard(uid) !== !!sim.fieldCard(uid) || (t !== null && !!o.fieldCard(t.uid) !== !!sim.fieldCard(t.uid)));
-  const threw = sim.state.rngState !== ((sandbox(e).state.rngState) >>> 0);
-  let lucky = false;
-  for (let i = 1; threw && !lucky && i <= 8; i++) lucky = differs(play(e, uid, target, Math.imul(0x9e3779b9, i) >>> 0));
   const me = e.controller(uid) as Pid;
+  const first = outcome(e, sim, uid, t, me);
+  // a dice or coin in the battle (Skull Dice, Graceful Dice, Jirai Gumo...): throw it again several times and,
+  // if the ending changes, say so and name the two likeliest endings (only if the battle threw anything)
+  const threw = sim.state.rngState !== ((sandbox(e).state.rngState) >>> 0);
+  if (!threw) return { vs, ...first };
+  const seen = new Map<string, { n: number; o: Outcome }>([[first.text, { n: 1, o: first }]]);
+  for (let i = 1; i <= 11; i++) {
+    const o = play(e, uid, target, Math.imul(0x9e3779b9, i) >>> 0);
+    if (!o) continue;
+    const r = outcome(e, o, uid, t, me);
+    const got = seen.get(r.text);
+    if (got) got.n++;
+    else seen.set(r.text, { n: 1, o: r });
+  }
+  if (seen.size < 2) return { vs, ...first };
+  // what both endings share is said plainly; only the part the throw decides is put as luck
+  const [la, lb] = [...seen.values()].sort((x, y) => y.n - x.n).slice(0, 2).map((x) => x.o.text.split(' · '));
+  const same = la.filter((x) => lb.includes(x));
+  const da = la.filter((x) => !same.includes(x)).join(' · ');
+  const db = lb.filter((x) => !same.includes(x)).join(' · ');
+  const luck = !da || !db ? `luck: maybe ${da || db}` : `luck: ${da} or ${db}`;
+  return { vs, text: [...same, luck].join(' · '), tone: 'mid' };
+}
+
+type Outcome = { text: string; tone: Forecast['tone'] };
+function outcome(e: Engine, sim: Engine, uid: number, t: ReturnType<Engine['fieldCard']>, me: Pid): Outcome {
   const opp = other(me);
+  if (sim.state.winner === me) return { text: 'wins the duel', tone: 'good' };
+  if (sim.state.winner === opp) return { text: 'you lose the duel', tone: 'bad' };
   const took = e.player(me).lp - sim.player(me).lp;
   const dealt = e.player(opp).lp - sim.player(opp).lp;
   const lostMine = !sim.fieldCard(uid);
   const killed = t !== null && !sim.fieldCard(t.uid);
-  if (sim.state.winner === me) return { vs, text: 'wins the duel', tone: 'good' };
   const bits: string[] = [];
   if (killed && lostMine) bits.push('both destroyed');
   else if (killed) bits.push('destroys it');
@@ -63,8 +84,7 @@ function compute(e: Engine, uid: number, target: number | null): Forecast | null
   if (took > 0) bits.push(`you take ${took}`);
   if (!bits.length) bits.push(t === null ? 'no damage' : 'nothing happens');
   const tone = took > 0 || (lostMine && !killed) ? 'bad' : killed || dealt > 0 ? 'good' : 'mid';
-  if (lucky) return { vs, text: `luck decides · maybe ${bits.join(' · ')}`, tone: 'mid' };
-  return { vs, text: bits.join(' · '), tone };
+  return { text: bits.join(' · '), tone };
 }
 
 /** The attack played out on a copy; null when it can't be told (the copy stopped somewhere odd). */

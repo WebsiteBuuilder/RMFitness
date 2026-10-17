@@ -46,6 +46,20 @@
     --th-h: 114px;
   }
 }
+/* tall phones: the field is as wide as the screen allows, so the spare height goes to your hand
+   (sizes repeated in TouchDuel's fan: cardW) */
+@media (min-height: 820px) and (min-width: 381px) {
+  .duel.touch .thand {
+    --th-w: 88px;
+    --th-h: 128px;
+  }
+}
+@media (min-height: 880px) and (min-width: 381px) {
+  .duel.touch .thand {
+    --th-w: 100px;
+    --th-h: 146px;
+  }
+}
 .duel.touch .thcard:active:not(.sel) {
   transform: translateY(-6px) scale(1.05);
   transform-origin: 50% 100%;

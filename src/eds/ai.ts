@@ -13,6 +13,8 @@ import { skillDrawOk, skillVerdict } from './aiSkills';
 
 /** Moves the computer already tried this turn (so a cancelled or declined effect is not retried forever). */
 const TRIED = new Set<string>();
+/** Cards that only ever help the other side once face-up (The Eye of Truth feeds them 1000 LP a turn): never sprung. */
+const GIFTS_FOE = new Set(['The Eye of Truth']);
 /** How much better (in board value) Hard's planned Summon must be than its usual pick. */
 const PLAN_MARGIN = 150;
 /** The least a Spell from the hand must gain Hard (the card itself is worth about 300). */
@@ -63,7 +65,7 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
       // Otherwise try each set card on a copy of the duel and spring the one that helps most, if any
       // helps more than letting it go (no Wild Tornado on its own Toon World, no Dicephoon gamble for nothing).
       // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
-      const ks = prompt.options.map((o, i) => (o.value !== 'hand' ? i : -1)).filter((i) => i >= 0);
+      const ks = prompt.options.map((o, i) => (o.value !== 'hand' && !(o.uid !== undefined && GIFTS_FOE.has(e.find(o.uid)?.card.name ?? '')) ? i : -1)).filter((i) => i >= 0);
       if (!ks.length) return { type: 'PASS', player: me };
       const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
       const pass = easy ? null : lookaheadAnswer(e, me, { type: 'PASS', player: me }, policy);

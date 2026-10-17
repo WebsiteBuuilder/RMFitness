@@ -544,10 +544,6 @@
 
 /* tall phones: the field is as wide as the screen allows, so the spare height goes to bigger hands */
 @media (min-height: 820px) and (min-width: 381px) {
-  .duel.touch .thand {
-    --th-w: 88px;
-    --th-h: 128px;
-  }
   .duel.touch .topp-hand {
     height: 62px;
   }
@@ -555,6 +551,18 @@
     width: 48px;
     height: 70px;
     margin: -10px -6px 0;
+  }
+}
+
+/* very tall phones (most Androids): still more height to spare, so both hands grow again */
+@media (min-height: 880px) and (min-width: 381px) {
+  .duel.touch .topp-hand {
+    height: 80px;
+  }
+  .duel.touch .thc {
+    width: 56px;
+    height: 82px;
+    margin: -6px -7px 0;
   }
 }
 
@@ -624,8 +632,17 @@
     opacity: 0.55;
   }
 }
+/* aiming: the banner goes up by the opponent's hand, clear of your Life Points, cards and deck */
+@supports selector(:has(*)) {
+  .duel.touch .tsheet-wrap:has(> .ttoast.aim) {
+    top: calc(52px + env(safe-area-inset-top));
+    bottom: auto;
+  }
+  .duel.touch .tsheet-wrap > .ttoast.aim {
+    margin-bottom: 0;
+  }
+}
 .duel.touch .ttoast.aim {
-  /* above your name and Life Points, not over them */
   margin-bottom: calc(168px + env(safe-area-inset-bottom));
   font-size: 14px;
   font-weight: 700;
@@ -769,8 +786,4 @@
 .tfc.good { border-color: #5be07a; color: #8ff0a6; }
 .tfc.bad { border-color: #ff5d6c; color: #ff9aa4; }
 
-@media (min-height: 760px) {
-  .duel.touch .ttoast.aim {
-    margin-bottom: calc(196px + env(safe-area-inset-bottom));
-  }
-}
+

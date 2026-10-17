@@ -377,7 +377,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
-    const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.startsWith('luck') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
+    const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
     const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
@@ -632,7 +632,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Choose a target: tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
+          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>
@@ -663,7 +663,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const handCount = me.hand.length;
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 760 ? 78 : 70;
+  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 880 ? 100 : window.innerHeight >= 820 ? 88 : window.innerHeight >= 760 ? 78 : 70;
   const room = Math.min(window.innerWidth, 560) - 20;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
