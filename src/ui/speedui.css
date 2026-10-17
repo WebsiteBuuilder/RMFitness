@@ -356,3 +356,12 @@ button.gcard {
 .ui-speed .duel.speed:not(.touch) .zone .cimg {
   border-radius: 5px;
 }
+/* the Classic card box never runs off the bottom of a small phone: it stays on screen and scrolls */
+.ui-speed .duel.speed:not(.touch) > .msgwin {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  max-height: 42dvh;
+  overflow-y: auto;
+  box-shadow: 0 -6px 18px #000a;
+}

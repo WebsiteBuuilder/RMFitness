@@ -747,3 +747,22 @@
 .tforecast.good span { color: #8ff0a6; }
 .tforecast.bad { border-color: #ff5d6c; }
 .tforecast.bad span { color: #ff9aa4; }
+/* the same forecast in short, on each target while aiming by taps: +damage, Win, −damage */
+.tfc {
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  z-index: 4;
+  transform: translateX(-50%) rotateX(-18deg);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: #0b1030ee;
+  border: 1px solid #ffffff55;
+  color: #fff;
+  pointer-events: none;
+}
+.tfc.good { border-color: #5be07a; color: #8ff0a6; }
+.tfc.bad { border-color: #ff5d6c; color: #ff9aa4; }

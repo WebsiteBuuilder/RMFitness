@@ -14,6 +14,7 @@ import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
 import { sideLabel } from './sideLabel';
+import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
@@ -374,7 +375,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
     const named = c && c.faceUp ? e.nameOf(c) : '';
     const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
-    const sig = c ? `${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    // aiming an attack (tap Attack, then a target): each target says how the battle would go
+    const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
+    const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? `−${/take (\d+)/.exec(fc.text)?.[1] ?? ''}` : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -399,6 +403,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             {stat}
           </div>
         )}
+        {fc && <div class={`tfc ${fc.tone}`}>{fcShort}</div>}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
@@ -639,26 +644,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     return null;
   };
 
-  /** What an attack would do, shown while it is dragged onto a target (face-down targets are a guess). */
-  const forecast = (uid: number, target: number | null): { vs: string; text: string; tone: string } | null => {
-    const a = e.fieldCard(uid);
-    if (!a) return null;
-    const atk = e.atkOf(a);
-    if (target === null) return { vs: `${atk} direct`, text: `${atk} damage`, tone: 'good' };
-    const t = e.fieldCard(target);
-    if (!t) return null;
-    if (!t.faceUp) return { vs: `${atk} vs ?`, text: 'face-down: flips when hit', tone: 'mid' };
-    if (t.pos === 'atk') {
-      const v = e.atkOf(t);
-      if (atk > v) return { vs: `${atk} vs ${v}`, text: `destroys it · ${atk - v} damage`, tone: 'good' };
-      if (atk === v) return { vs: `${atk} vs ${v}`, text: 'both destroyed', tone: 'mid' };
-      return { vs: `${atk} vs ${v}`, text: `yours is destroyed · you take ${v - atk}`, tone: 'bad' };
-    }
-    const d = e.defOf(t);
-    if (atk > d) return { vs: `${atk} vs DEF ${d}`, text: 'destroys it · no damage', tone: 'good' };
-    if (atk === d) return { vs: `${atk} vs DEF ${d}`, text: 'nothing happens', tone: 'mid' };
-    return { vs: `${atk} vs DEF ${d}`, text: `you take ${d - atk}`, tone: 'bad' };
-  };
+  const forecast = (uid: number, target: number | null) => attackForecast(e, uid, target);
 
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;

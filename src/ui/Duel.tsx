@@ -1,4 +1,5 @@
 import { sideLabel } from './sideLabel';
+import { attackForecast } from './forecast';
 import { getSkill } from '../eds/skills';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
@@ -416,7 +417,21 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (mode?.kind === 'attack') {
       return (
         <Win title="Attack which monster?" class="msgwin">
-          <Menu items={[{ label: 'Cancel', onPick: () => setMode(null) }]} />
+          {(() => {
+            const attacker = e.fieldCard(mode.uid);
+            const targets = attacker ? e.legalTargets(acting, attacker) : [];
+            return (
+              <Menu
+                items={[
+                  ...targets.map((t) => {
+                    const f = attackForecast(e, mode.uid, t.uid);
+                    return { label: t.faceUp ? e.nameOf(t) : 'Face-down monster', note: f ? `${f.vs} · ${f.text}` : undefined, onPick: () => (send({ type: 'ATTACK', player: acting, uid: mode.uid, target: t.uid }), setMode(null)) };
+                  }),
+                  { label: 'Cancel', onPick: () => setMode(null) },
+                ]}
+              />
+            );
+          })()}
         </Win>
       );
     }
