@@ -491,7 +491,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
     const why = unplayableReason(n);
     if (why) return `Not in the game yet: ${why}`;
     if (limitStatus(n) === 'Forbidden') return 'Forbidden on the Limited List';
-    if (copies(n) >= ownedCopies(n)) return ownedCopies(n) < COPIES ? `You own ${ownedCopies(n)} cop${ownedCopies(n) === 1 ? 'y' : 'ies'}` : `${COPIES} copies at most`;
+    if (copies(n) >= ownedCopies(n)) return ownedCopies(n) < COPIES ? ownedCopies(n) === 1 ? 'Your only copy is already in the deck' : `All ${ownedCopies(n)} of your copies are already in the deck` : `${COPIES} copies at most`;
     if (isExtraCard(n) ? deck.extra.length >= EXTRA_MAX : deck.main.length >= MAIN_MAX) return isExtraCard(n) ? `The Extra Deck is full (${EXTRA_MAX})` : `The Main Deck is full (${MAIN_MAX})`;
     return null;
   };

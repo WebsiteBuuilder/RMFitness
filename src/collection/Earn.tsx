@@ -17,9 +17,10 @@ export function RequestsScreen({ save, onSave, onBack }: { save: SpeedSave; onSa
   return (
     <div class="screen earn">
       <Win title="Duelist Requests" onClose={onBack}>
-        <p class="hint">
+        <details class="howto">
+          <summary>How requests work</summary>
           Three duelists ask for something every day. Do it in the Millennium Road, the Labyrinth, Duel the Computer or against your brother (with a collection deck) and they give you a card from their deck you don't own yet. All {PER_DAY} done: a booster pack too. New requests every day, the same for everyone, so you can race your brother.
-        </p>
+        </details>
         {!b && <div class="warn">Your phone's clock reads earlier than the last day you played. Requests come back once the real date catches up.</div>}
         {b && (
           <>
@@ -107,7 +108,10 @@ export function StampsScreen({ save, onSave, onBack }: { save: SpeedSave; onSave
   return (
     <div class="screen earn">
       <Win title="Set Stamps" onClose={onBack}>
-        <p class="hint">Every Speed Duel booster set has a stamp card. Own a third of its cards for a pack, two thirds to pick 1 of 3 cards you're missing, and the whole set to get its top card at Overframe plus 2 Duel Chips. Each stamp pays once.</p>
+        <details class="howto">
+          <summary>How stamps work</summary>
+          Every Speed Duel booster set has a stamp card. Own a third of its cards for a pack, two thirds to pick 1 of 3 cards you're missing, and the whole set to get its top card at Overframe plus 2 Duel Chips. Each stamp pays once.
+        </details>
         {quick > 1 && (
           <button class="gbtn stamp-all" onClick={claimAll}>
             Claim all ({quick} sets)

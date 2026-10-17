@@ -2248,3 +2248,37 @@ p {
 @keyframes roll-in { 0% { opacity: 0; transform: translate(-50%, -40%) scale(0.8); } 12%, 85% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; } }
 @keyframes roll-spin { from { transform: rotate(-200deg) scale(0.5); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .roll-chip, .roll-face { animation: none; } }
+
+/* "How it works" folded away under a one-line toggle, so a screen opens on its content */
+.howto {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+.howto summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cfd8ff;
+  font-weight: 600;
+  list-style: none;
+}
+.howto summary::-webkit-details-marker {
+  display: none;
+}
+.howto summary::before {
+  content: '?';
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 12px;
+}
+.howto[open] summary {
+  margin-bottom: 4px;
+}

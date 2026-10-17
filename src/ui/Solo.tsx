@@ -382,7 +382,8 @@ function Practice(p: Ctx) {
     if (myDeck) out.push({ id: 'mirror', name: 'Mirror Match', title: `a copy of ${myDeck.name}`, portrait: myDeck.main.find((n) => card(n)?.kind === 'monster') ?? myDeck.main[0], main: myDeck.main, extra: myDeck.extra, skill: myDeck.skill, group: 'Brothers and friends' });
     return out;
   }, [solo, myDeck?.id, prefs.codes.length]);
-  const foe = foes.find((f) => f.id === prefs.oppId) ?? foes[0];
+  // (until one is picked: the first starter that isn't the deck you're testing, not a mirror of it)
+  const foe = foes.find((f) => f.id === prefs.oppId) ?? foes.find((f) => f.skill !== myDeck?.skill || f.main.join() !== myDeck?.main.join()) ?? foes[0];
   const problems = myDeck ? speedDeckProblems(myDeck) : ['Build a deck first'];
 
   const start = () => {

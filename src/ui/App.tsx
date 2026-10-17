@@ -1238,6 +1238,11 @@ function resultOf(st: DuelState, mySeat: Pid, hotseat: boolean, before: SpeedSav
     for (const n of c.lost) rewards.push({ kind: 'card', card: n, won: false, who });
   }
   for (const l of lines) rewards.push({ kind: 'line', text: l });
+  // never a blank screen: say why nothing came of it
+  if (!rewards.length) {
+    const quit = /surrendered$/.test(st.winReason) && st.winner !== mySeat;
+    rewards.push({ kind: 'line', text: quit && st.turn < 3 ? 'Given up before the duel got going: no rewards, and no card level points.' : outcome === 'win' ? 'Nothing riding on this one.' : 'No rewards this time.' });
+  }
   return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards, stats: duelStats(st, mySeat) };
 }
 /** What this player's cards did in the duel, and the card that did the most (Master Duel's MVP). */
