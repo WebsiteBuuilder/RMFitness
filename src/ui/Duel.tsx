@@ -263,15 +263,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       const fresh = m.placedTurn !== state.turn && !m.posChanged && !m.attacked;
       if (state.phase === 'BP') {
         const can = e.canAttackWith(acting, m);
+        const open = e.monsters(other(acting)).length === 0;
         commands.push({
-          label: 'Attack',
+          // nothing to block it: the button says what the hit will do
+          label: open && can ? `Attack directly · ${attackForecast(e, m.uid, null)?.text ?? `${e.atkOf(m)} damage`}` : 'Attack',
           disabled: !can || (e.monsters(other(acting)).length > 0 && e.legalTargets(acting, m).length === 0 && !e.canAttackDirectly(m)),
           onPick: () => {
             if (e.monsters(other(acting)).length === 0) send({ type: 'ATTACK', player: acting, uid: m.uid, target: null });
             else setMode({ kind: 'attack', uid: m.uid });
           },
         });
-        if (can && e.canAttackDirectly(m) && e.monsters(other(acting)).length > 0) commands.push({ label: 'Direct Attack', onPick: () => send({ type: 'ATTACK', player: acting, uid: m.uid, target: null }) });
+        if (can && e.canAttackDirectly(m) && e.monsters(other(acting)).length > 0) commands.push({ label: `Direct Attack · ${attackForecast(e, m.uid, null)?.text ?? `${e.atkOf(m)} damage`}`, onPick: () => send({ type: 'ATTACK', player: acting, uid: m.uid, target: null }) });
       }
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });

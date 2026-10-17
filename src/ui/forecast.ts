@@ -20,6 +20,8 @@ export interface Forecast {
  */
 export function attackForecast(e: Engine, uid: number, target: number | null): Forecast | null {
   // (worked out once per position: a drag re-renders on every finger move)
+  let cache = caches.get(e);
+  if (!cache) caches.set(e, (cache = new Map()));
   const key = `${e.state.seed}:${e.state.turn}:${e.state.log.length}:${e.state.lastEvent?.seq ?? 0}:${uid}:${target}`;
   if (cache.has(key)) return cache.get(key)!;
   const f = compute(e, uid, target);
@@ -27,7 +29,8 @@ export function attackForecast(e: Engine, uid: number, target: number | null): F
   cache.set(key, f);
   return f;
 }
-const cache = new Map<string, Forecast | null>();
+/** per duel (two duels can share a seed) */
+const caches = new WeakMap<Engine, Map<string, Forecast | null>>();
 
 function compute(e: Engine, uid: number, target: number | null): Forecast | null {
   const a = e.fieldCard(uid);
@@ -37,8 +40,11 @@ function compute(e: Engine, uid: number, target: number | null): Forecast | null
   if (target !== null && !t) return null;
   if (t && !t.faceUp) return { vs: `${atk} vs ?`, text: 'face-down: flips when hit', tone: 'mid' };
   const vs = t === null ? `${atk} direct` : t.pos === 'atk' ? `${atk} vs ${e.atkOf(t)}` : `${atk} vs DEF ${e.defOf(t)}`;
-  const sim = play(e, uid, target);
+  const sim = play(e, uid, target, 0);
   if (!sim) return plain(e, atk, t, vs);
+  // a dice or coin in the battle (Skull Dice, Graceful Dice...): a second throw that ends differently means it's luck
+  const other2 = play(e, uid, target, 0x9e3779b9);
+  const lucky = !!other2 && (other2.player(0).lp !== sim.player(0).lp || other2.player(1).lp !== sim.player(1).lp || !!other2.fieldCard(uid) !== !!sim.fieldCard(uid));
   const me = e.controller(uid) as Pid;
   const opp = other(me);
   const took = e.player(me).lp - sim.player(me).lp;
@@ -54,15 +60,17 @@ function compute(e: Engine, uid: number, target: number | null): Forecast | null
   if (took > 0) bits.push(`you take ${took}`);
   if (!bits.length) bits.push(t === null ? 'no damage' : 'nothing happens');
   const tone = took > 0 || (lostMine && !killed) ? 'bad' : killed || dealt > 0 ? 'good' : 'mid';
+  if (lucky) return { vs, text: `luck decides · maybe ${bits.join(' · ')}`, tone: 'mid' };
   return { vs, text: bits.join(' · '), tone };
 }
 
 /** The attack played out on a copy; null when it can't be told (the copy stopped somewhere odd). */
-function play(e: Engine, uid: number, target: number | null): Engine | null {
+function play(e: Engine, uid: number, target: number | null, salt: number): Engine | null {
   if (e.state.prompt || e.state.winner !== null) return null;
   const me = e.controller(uid) as Pid;
   try {
     const sim = sandbox(e);
+    sim.state.rngState = (sim.state.rngState ^ salt) >>> 0;
     sim.apply({ type: 'ATTACK', player: me, uid, target });
     const turn = sim.state.turn;
     for (let i = 0; i < 60 && sim.state.prompt && sim.state.winner === null; i++) {

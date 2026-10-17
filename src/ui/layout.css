@@ -212,6 +212,10 @@
 /* Tall phones (most Androids, iPhone Pro/Max): the board and your hand take the height the
    screen has, instead of leaving bands of empty space above and below the field. */
 @media (min-height: 800px) and (max-width: 520px) {
+  /* a flatter field: taller on screen, closer to Master Duel's near-top-down board */
+  .duel.touch {
+    --tilt: 9deg;
+  }
   @supports (width: 1cqh) {
     .duel.touch.speed .tmat {
       max-width: 420px;

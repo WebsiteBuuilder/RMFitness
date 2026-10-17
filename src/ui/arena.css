@@ -60,7 +60,7 @@
 .duel.touch .tmat {
   position: relative;
   z-index: 1;
-  transform: rotateX(18deg);
+  transform: rotateX(var(--tilt, 18deg));
 }
 .duel.touch .tmat::before {
   content: '';
@@ -351,7 +351,7 @@
     opacity: 0;
   }
   to {
-    transform: rotateX(18deg);
+    transform: rotateX(var(--tilt, 18deg));
     opacity: 1;
   }
 }
@@ -751,12 +751,12 @@
 .tfc {
   position: absolute;
   left: 50%;
-  top: -10px;
-  z-index: 4;
-  transform: translateX(-50%) rotateX(-18deg);
+  top: -16px;
+  z-index: 30; /* over a monster's art popping out of its card */
+  transform: translateX(-50%) rotateX(calc(-1 * var(--tilt, 18deg)));
   padding: 1px 6px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   background: #0b1030ee;
