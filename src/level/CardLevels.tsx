@@ -45,7 +45,11 @@ export function levelHeadline(save: SpeedSave): string | null {
   const ups = rankUps(rep.rows);
   if (ups.length) return `${ups.map((r) => `${r.name} is now ${tierOf(r.after).name}`).slice(0, 2).join(' · ')}${ups.length > 2 ? ` and ${ups.length - 2} more` : ''}!`;
   const best = rep.rows[0];
-  return best.after > best.before ? `${best.name} gained the most: +${best.after - best.before}` : null;
+  if (best.after <= best.before) return null;
+  const gain = best.after - best.before;
+  // Every card gaining the same points (a quick duel) has no stand-out card.
+  if (rep.rows.every((r) => r.after - r.before === gain)) return `${rep.rows.length} cards gained +${gain} card level points`;
+  return `${best.name} gained the most: +${gain}`;
 }
 
 /** Roughly what a card you play and win fights with earns in one duel (for the "how long" line). */
@@ -137,9 +141,10 @@ export function CardLevels({ save, deckNames, onBack }: { save: SpeedSave; deckN
         <button class="chip lv-preview-btn" onClick={() => setPreview(true)}>
           ★ What do ranks look like?
         </button>
-        <p class="hint">
+        <details class="howto">
+          <summary>How card levels work</summary>
           Every card ranks up the more you duel with it: N, R, SR, UR, the Glossy and Royal finishes, and finally Overframe, where its art breaks out of the card. Destroying monsters, battle damage, direct attacks and burn fill the meter fast (+{XP.kill} a kill, +{XP.direct} a direct hit). Playing it fills a little. Dying or getting banished drains a little, but a card never loses a rarity it reached. Rarity is a look only: ATK, DEF and effects stay the same.
-        </p>
+        </details>
         <p class="hint">Tap a card to see it at every rank.</p>
         <div class="lv-filter">
           <button class={`chip ${tab === 'last' ? 'sel' : ''}`} onClick={() => setTab('last')}>

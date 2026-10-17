@@ -8,11 +8,17 @@ import { getEffect } from './effects';
 import type { Action, FieldCard, Pid, Prompt } from './types';
 import { getSkill } from './skills';
 import { DEFAULT_TACTICS, type Tactics } from './tactics';
-import { attackPlan, attackers, coin, lethalPlan, lookahead, wall } from './aiEval';
+import { attackPlan, attackers, coin, lethalPlan, lookahead, lookaheadAnswer, lookaheadCombo, rolloutTurn, wall } from './aiEval';
 import { skillDrawOk, skillVerdict } from './aiSkills';
 
 /** Moves the computer already tried this turn (so a cancelled or declined effect is not retried forever). */
 const TRIED = new Set<string>();
+/** Cards that only ever help the other side once face-up (The Eye of Truth feeds them 1000 LP a turn): never sprung. */
+const GIFTS_FOE = new Set(['The Eye of Truth']);
+/** How much better (in board value) Hard's planned Summon must be than its usual pick. */
+const PLAN_MARGIN = 150;
+/** The least a Spell from the hand must gain Hard (the card itself is worth about 300). */
+const HARD_SPELL_MIN = -50;
 
 const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
 /** Draw spells: not with the Deck nearly empty (drawing out loses the Duel). */
@@ -45,9 +51,9 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     if (prompt.kind === 'yesno') return { type: yesNo(e, me, prompt.title) ? 'YES' : 'NO', player: me };
     if (prompt.kind === 'response') {
       // Don't spring defensive traps (Waboku, Negate Attack...) on your own attacks.
-      if (s.turnPlayer === me && / attacks\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
+      if (s.turnPlayer === me && / attacks( .+)?\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
       // Told to save traps: only answer a big attacker or a hit that would finish us.
-      const atk = prompt.title.match(/^(.*) attacks\. Respond\?$/);
+      const atk = prompt.title.match(/^(.*?) attacks(?: .+)?\. Respond\?$/);
       if (t.traps === 'hold' && atk) {
         const a = e.monsters(opp).find((m) => m.name === atk[1]);
         const power = a ? e.atkOf(a) : (e.info(atk[1]).atk ?? 0);
@@ -56,10 +62,21 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         const kills = target && target.faceUp && power > wall(e, target) && wall(e, target) >= 1500;
         if (power < 1800 && power < my.lp && !kills) return { type: 'PASS', player: me };
       }
-      // Otherwise respond with the first legal set card: the engine already filtered to useful moments.
+      // Otherwise try each set card on a copy of the duel and spring the one that helps most, if any
+      // helps more than letting it go (no Wild Tornado on its own Toon World, no Dicephoon gamble for nothing).
       // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
-      const k = prompt.options.findIndex((o) => o.value !== 'hand');
-      return k >= 0 ? { type: 'CHOOSE', player: me, picks: [k] } : { type: 'PASS', player: me };
+      const ks = prompt.options.map((o, i) => (o.value !== 'hand' && !(o.uid !== undefined && GIFTS_FOE.has(e.find(o.uid)?.card.name ?? '')) ? i : -1)).filter((i) => i >= 0);
+      if (!ks.length) return { type: 'PASS', player: me };
+      const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
+      const pass = easy ? null : lookaheadAnswer(e, me, { type: 'PASS', player: me }, policy);
+      if (pass === null) return { type: 'CHOOSE', player: me, picks: [ks[0]] };
+      let best = -1;
+      let bestVal = pass + 150;
+      for (const k of ks) {
+        const v = lookaheadAnswer(e, me, { type: 'CHOOSE', player: me, picks: [k] }, policy);
+        if (v !== null && v > bestVal) (best = k), (bestVal = v);
+      }
+      return best >= 0 ? { type: 'CHOOSE', player: me, picks: [best] } : { type: 'PASS', player: me };
     }
     // Selection: rank options by context.
     const { order: ranked, val } = rankOptions(e, me, prompt.title, prompt.options);
@@ -220,14 +237,18 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
         // Hard: weigh every option and play the best one.
         let best: { c: (typeof fresh)[number]; d: number } | null = null;
         for (const c of fresh) {
-          const d = lookahead(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? 0;
-          if (d < c.min) decline(c.key); // not worth it now
+          let d = lookahead(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? 0;
+          // not worth it alone: maybe it opens a Summon (Toon World, then a Toon)
+          if (d < c.min && c.act.type !== 'SPECIAL') d = lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? d;
+          // Hard never spends a card on a play that leaves it no better off (a Spell with nothing to work on)
+          if (d < c.min || (c.key.startsWith('act') && d < HARD_SPELL_MIN)) decline(c.key); // not worth it now
           else if (!best || d > best.d) best = { c, d };
         }
         if (best && tryOnce(best.c.key)) return best.c.act;
       } else {
         for (const c of fresh) {
-          if (worth(c.act, c.min)) {
+          const min = hard && c.key.startsWith('act') ? Math.max(c.min, HARD_SPELL_MIN) : c.min;
+          if (worth(c.act, min) || (!easy && c.act.type !== 'SPECIAL' && (lookaheadCombo(e, me, c.act, (x, p) => aiAction(x, p, t)) ?? -Infinity) >= min + 400)) {
             tryOnce(c.key);
             return c.act;
           }
@@ -237,6 +258,14 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     }
     // Our attackers can clear their side this turn: anything else we put out face-up hits them directly.
     const clearing = !s.firstTurn && !wallUp && (theirMonsters.length === 0 || attackPlan(e, me).steps.filter((x) => x.target !== null).length >= theirMonsters.length);
+    // 4. Hard: try each Summon (Attack or Set) on a copy and play out the turn it leads to; the one
+    // leaving the best board, after what their monsters could do back, wins (when clearly better
+    // than the usual pick).
+    if (hard && !my.normalSummoned && s.phase === 'M1' && !tried(`plan:${sig()}`)) {
+      tryOnce(`plan:${sig()}`);
+      const pick = planSummon(e, me, t);
+      if (pick) return pick;
+    }
     // 4. Normal Summon the strongest monster possible (tribute only for an upgrade).
     if (!my.normalSummoned) {
       const candidates = my.hand.filter((c) => e.canNormalSummon(me, c)).map((c) => ({ c, info: e.info(c.name) }));
@@ -415,4 +444,46 @@ function rankOptions(e: Engine, me: Pid, title: string, options: Extract<Prompt,
   });
   idx.sort((a, b) => val[b] - val[a]);
   return { order: idx, val };
+}
+
+/** Hard's Summon planner (see step 4): null to leave it to the usual pick. */
+function planSummon(e: Engine, me: Pid, t: Tactics): Action | null {
+  const my = e.player(me);
+  const zone = e.freeMonsterZone(me);
+  const opts: Action[] = [];
+  for (const c of my.hand) {
+    if (!e.canNormalSummon(me, c)) continue;
+    const need = e.tributesNeeded(e.info(c.name).level ?? 1);
+    if (need > e.monsters(me).length || (need === 0 && zone < 0)) continue;
+    const z = zone < 0 ? 0 : zone;
+    if (e.canNormalSummon(me, c, true)) opts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'atk', faceUp: true });
+    opts.push({ type: 'SUMMON', player: me, uid: c.uid, zone: z, pos: 'def', faceUp: false });
+  }
+  if (opts.length < 2) return null;
+  // the rest of the turn is played the usual way; the sims mustn't use up this turn's real "tried once" marks
+  const normal: Tactics = { ...t, level: 'normal' };
+  const saved = new Set(TRIED);
+  const policy = (x: Engine, p: Pid) => aiAction(x, p, normal);
+  try {
+    const usual = aiAction(e, me, normal);
+    restore(saved);
+    const base = usual ? rolloutTurn(e, me, usual, policy) : null;
+    restore(saved);
+    let best: { a: Action; v: number } | null = null;
+    for (const a of opts.slice(0, 10)) {
+      const v = rolloutTurn(e, me, a, policy);
+      restore(saved);
+      if (v !== null && (!best || v > best.v)) best = { a, v };
+    }
+    if (!best) return null;
+    if (base !== null && best.v < base + PLAN_MARGIN) return null;
+    return best.a;
+  } finally {
+    restore(saved);
+  }
+}
+
+function restore(saved: Set<string>) {
+  TRIED.clear();
+  for (const k of saved) TRIED.add(k);
 }

@@ -56,7 +56,7 @@ export function Solo(p: Props) {
     if (spec.context.kind === 'labyrinth' && run) setSolo({ ...solo, labyrinth: { ...solo.labyrinth, run: stake(run) } });
     p.onDuel(spec);
   };
-  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs ? setVs({ spec, cancel }) : go(spec)) };
+  const ctx = { ...p, solo, setSolo, onDuel: (spec: CpuDuelSpec, cancel?: () => void) => (spec.vs && !spec.retry ? setVs({ spec, cancel }) : go(spec)) };
   return (
     <>
       {p.mode === 'practice' ? <Practice {...ctx} /> : p.mode === 'labyrinth' ? <Labyrinth {...ctx} /> : p.mode === 'legends' ? <Legends {...ctx} /> : <Road {...ctx} />}
@@ -94,12 +94,26 @@ export function soloBack(): boolean {
 export const ace = (main: string[]) => [...main].filter((n) => card(n)?.kind === 'monster').sort((a, b) => (card(b)?.atk ?? 0) - (card(a)?.atk ?? 0))[0] ?? main[0];
 
 // ---------- the VS splash ----------
+/** How long the VS screen stays up before the duel starts by itself (longer with conditions or goals to read). */
+const VS_AUTO_MS = 4000;
+
 function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => void; onCancel: () => void }) {
   const v = spec.vs!;
   useBack(onCancel);
   useEffect(() => {
     playVs();
     buzz([40, 60, 90]);
+  }, []);
+  // The duel starts by itself after a beat (time to read the conditions); Duel! starts it now.
+  const started = useRef(false);
+  const go = () => {
+    if (started.current) return;
+    started.current = true;
+    onGo();
+  };
+  useEffect(() => {
+    const t = setTimeout(go, VS_AUTO_MS);
+    return () => clearTimeout(t);
   }, []);
   return (
     <div class="so vs">
@@ -135,8 +149,9 @@ function VsSplash({ spec, onGo, onCancel }: { spec: CpuDuelSpec; onGo: () => voi
           ))}
         </div>
       )}
-      <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), onGo())}>
+      <button class="so-btn gold vs-go" onClick={(e) => (e.stopPropagation(), playBlip(), go())}>
         Duel!
+        <i class="vs-timer" style={{ animationDuration: `${VS_AUTO_MS}ms` }} />
       </button>
     </div>
   );
@@ -209,9 +224,9 @@ export function Sheet({ title, onClose, children, wide }: { title?: string; onCl
   );
 }
 
-export function Btn({ children, onClick, kind = 'plain', disabled }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean }) {
+export function Btn({ children, onClick, kind = 'plain', disabled, class: cls }: { children: preact.ComponentChildren; onClick?: () => void; kind?: 'plain' | 'gold' | 'blue' | 'red'; disabled?: boolean; class?: string }) {
   return (
-    <button class={`so-btn ${kind}`} disabled={disabled} onClick={() => (playBlip(), onClick?.())}>
+    <button class={`so-btn ${kind}${cls ? ` ${cls}` : ''}`} disabled={disabled} onClick={() => (playBlip(), onClick?.())}>
       {children}
     </button>
   );
@@ -367,7 +382,8 @@ function Practice(p: Ctx) {
     if (myDeck) out.push({ id: 'mirror', name: 'Mirror Match', title: `a copy of ${myDeck.name}`, portrait: myDeck.main.find((n) => card(n)?.kind === 'monster') ?? myDeck.main[0], main: myDeck.main, extra: myDeck.extra, skill: myDeck.skill, group: 'Brothers and friends' });
     return out;
   }, [solo, myDeck?.id, prefs.codes.length]);
-  const foe = foes.find((f) => f.id === prefs.oppId) ?? foes[0];
+  // (until one is picked: the first starter that isn't the deck you're testing, not a mirror of it)
+  const foe = foes.find((f) => f.id === prefs.oppId) ?? foes.find((f) => f.skill !== myDeck?.skill || f.main.join() !== myDeck?.main.join()) ?? foes[0];
   const problems = myDeck ? speedDeckProblems(myDeck) : ['Build a deck first'];
 
   const start = () => {
@@ -484,9 +500,11 @@ function Practice(p: Ctx) {
             </div>
           )}
         </div>
-        <Btn kind="gold" disabled={!foe || problems.length > 0} onClick={start}>
-          Duel!
-        </Btn>
+        <div class="so-sticky-go">
+          <Btn kind="gold" disabled={!foe || problems.length > 0} onClick={start}>
+            Duel!
+          </Btn>
+        </div>
         <div class="so-row">
           <Btn onClick={() => setShare(true)} disabled={!myDeck}>
             Share my deck code
@@ -786,7 +804,8 @@ function Road(p: Ctx) {
     setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150);
   };
 
-  const duel = (node: CampaignNode) => {
+  /** `retry`: straight back in from a loss (the VS screen was seen a moment ago). */
+  const duel = (node: CampaignNode, retry = false) => {
     // The Masked Dealer deals a different Duel Condition every duel.
     const n = node.condition === DEALER_CONDITIONS[0] ? { ...node, condition: DEALER_CONDITIONS[Math.floor(Math.random() * DEALER_CONDITIONS.length)] } : node;
     const d = deckOf(n.duelist);
@@ -802,6 +821,7 @@ function Road(p: Ctx) {
       context: { kind: 'campaign', nodeId: n.id, ...(!useStory && deck?.open ? { open: true } : {}) },
       level: campaignDifficulty((findNode(n.id)?.chapter ?? ch).n, n.boss),
       vs: { label: n.boss ? `BOSS DUEL · ${ch.item.toUpperCase()}` : useStory && n.story ? `STORY DUEL · YOU ARE ${n.story.as.toUpperCase()}` : `CHAPTER ${ch.n}`.replace('CHAPTER 8', 'POST-GAME'), mePortrait: ace(mine.main), cpuPortrait: n.duelist.portrait, cpuTitle: n.duelist.title, line: n.duelist.intro, notes: [...(n.condition ? [n.condition.text] : []), ...(help ? ['Helping hand: after two losses you start with 1000 extra LP.'] : [])], goals: !useStory && deck?.open ? [] : STAR_TEXT(n.goal) },
+      ...(retry ? { retry: true } : {}),
     });
   };
 
@@ -1061,7 +1081,12 @@ function Road(p: Ctx) {
           ) : (
             <p class="so-center">Tune your road deck and try again. A loss here costs nothing.</p>
           )}
-          <Btn kind="gold" onClick={() => advance(solo)}>
+          {rep.outcome.result !== 'w' && (
+            <Btn kind="gold" disabled={problems.length > 0 && !(repNode.node.story && !storyOwn)} onClick={() => (advance(solo), duel(repNode.node, true))}>
+              Try again
+            </Btn>
+          )}
+          <Btn kind={rep.outcome.result === 'w' ? 'gold' : undefined} onClick={() => advance(solo)}>
             Continue
           </Btn>
         </Sheet>
@@ -1153,7 +1178,6 @@ function RoadStart(p: Ctx) {
             <div class="so-group">
               {st.character}'s deck · {preview.main.length} cards
             </div>
-            <DeckListView main={preview.main} extra={preview.extra} />
             <Btn
               kind="gold"
               onClick={() => {
@@ -1164,6 +1188,7 @@ function RoadStart(p: Ctx) {
             >
               Begin the road with {st.character}
             </Btn>
+            <DeckListView main={preview.main} extra={preview.extra} />
           </>
         )}
         <p class="so-dim">First stop: {first.title}.</p>
@@ -1269,6 +1294,8 @@ function LabyrinthStart(p: Ctx) {
   const items = solo.campaign.items.filter((x) => relic(x)?.millennium);
   const [code, setCode] = useState('');
   const today = todayString();
+  // shown as "Oct 17", not the date code the Daily is keyed by
+  const todayLabel = new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const doneToday = lab.history.find((h) => h.daily === today);
   const begin = (o: { starter: string; seed: number; daily?: string; curse: number; bring?: string; deck?: SpeedDeck }) => {
     const run = newRun({ ...o, upgrades: lab.upgrades });
@@ -1287,7 +1314,7 @@ function LabyrinthStart(p: Ctx) {
           New run
         </Btn>
         <Btn kind="blue" onClick={() => setSheet('daily')}>
-          Daily Labyrinth · {today}
+          Daily Labyrinth · {todayLabel}
           {doneToday ? ' · played' : ''}
         </Btn>
         <div class="so-row">
@@ -1376,7 +1403,7 @@ function LabyrinthStart(p: Ctx) {
         </Sheet>
       )}
       {sheet === 'daily' && (
-        <Sheet title={`Daily Labyrinth · ${today}`} onClose={() => setSheet(null)}>
+        <Sheet title={`Daily Labyrinth · ${todayLabel}`} onClose={() => setSheet(null)}>
           <p>Everyone gets the same map, the same Starter Deck ({dailyStarter(today)}) and the same cards today. Upgrades, Items, Curses and your own decks stay home, so it's a fair race. Play it, then text your result code to your brother.</p>
           {doneToday ? (
             <>

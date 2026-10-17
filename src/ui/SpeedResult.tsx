@@ -23,13 +23,15 @@ export interface SpeedResultData {
   lp: { name: string; lp: number }[];
   turns: number;
   rewards: ResultReward[];
+  /** what this player's cards did: damage dealt, monsters destroyed, cards played, and the standout card */
+  stats?: { dealt: number; kills: number; plays: number; mvp?: string };
 }
 
 /** When the first reward appears, and the longest wait before Continue can be tapped (ms). */
 const FIRST = 1200;
 const READY_MAX = 3600;
 
-export function SpeedResult({ data, onContinue }: { data: SpeedResultData; onContinue: () => void }) {
+export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResultData; onContinue: () => void; /** a computer duel: run it back */ onRematch?: () => void }) {
   const n = data.rewards.length;
   const step = n ? Math.min(280, 2000 / n) : 0;
   const readyAt = Math.min(READY_MAX, FIRST + n * step + 300);
@@ -79,6 +81,35 @@ export function SpeedResult({ data, onContinue }: { data: SpeedResultData; onCon
         ))}
         <div class="mdres-turns">Turn {data.turns}</div>
       </div>
+      {data.stats && (data.stats.plays > 0 || data.stats.dealt > 0) && (
+        <div class="mdres-stats">
+          {data.stats.mvp && (
+            <div class="mdres-mvp">
+              <span class="mdres-mvp-card">
+                <CardImg name={data.stats.mvp} />
+              </span>
+              <span>
+                <small>Best card</small>
+                <b>{data.stats.mvp}</b>
+              </span>
+            </div>
+          )}
+          <div class="mdres-nums">
+            <span>
+              <b>{data.stats.dealt}</b>
+              <small>damage dealt</small>
+            </span>
+            <span>
+              <b>{data.stats.kills}</b>
+              <small>destroyed</small>
+            </span>
+            <span>
+              <b>{data.stats.plays}</b>
+              <small>cards played</small>
+            </span>
+          </div>
+        </div>
+      )}
       <div class="mdres-rewards">
         {n > 0 && <div class="mdres-rhead">Rewards</div>}
         <ul>
@@ -93,6 +124,11 @@ export function SpeedResult({ data, onContinue }: { data: SpeedResultData; onCon
         <button ref={cont} type="button" class={`mdres-go ${ready ? 'go-ready' : ''}`} aria-disabled={!ready} onClick={(ev) => (ev.stopPropagation(), ready ? go() : skip())}>
           Continue
         </button>
+        {onRematch && ready && (
+          <button type="button" class="mdres-again" onClick={(ev) => (ev.stopPropagation(), done.current || ((done.current = true), onRematch()))}>
+            Rematch
+          </button>
+        )}
         {!ready && <p class="mdres-skip">Tap to skip</p>}
       </div>
     </div>
@@ -126,7 +162,9 @@ function Reward({ r }: { r: ResultReward }) {
             <CardImg name={r.card} />
           </span>
           <span class="mdres-rt">
-            <span class={`mdres-tier t-${r.tier}`}>{r.tier}</span> {r.card}
+            <span>
+              <span class={`mdres-tier t-${r.tier}`}>{r.tier}</span> {r.card}
+            </span>
             <small>Rank up! Now {r.tierName}</small>
           </span>
         </>

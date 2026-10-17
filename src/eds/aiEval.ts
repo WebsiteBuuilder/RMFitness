@@ -59,6 +59,53 @@ export type Chooser = (e: Engine, p: Pid) => Action | null;
  */
 export function lookahead(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
   if (e.state.prompt || e.state.winner !== null) return null;
+  return playOut(e, me, action, choose);
+}
+
+/**
+ * Like lookahead, but from an open question (a "Respond?" window): answers it with `action`
+ * and plays the chain and the rest of that battle out. Used to judge a response before springing it.
+ */
+export function lookaheadAnswer(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (!e.state.prompt || e.state.winner !== null) return null;
+  return playOut(e, me, action, choose);
+}
+
+function playOut(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  const r = playOutSim(e, me, action, choose);
+  return r && r.value;
+}
+
+/**
+ * A play that only pays off with the next one (Toon World before a Toon, a Spell that frees a
+ * Tribute): the play, then the best Summon it opened up, judged together. Returns the better of
+ * the play alone and the play plus that Summon, or null when it can't be told.
+ */
+export function lookaheadCombo(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (e.state.prompt || e.state.winner !== null) return null;
+  const first = playOutSim(e, me, action, choose);
+  if (!first) return null;
+  const sim = first.sim;
+  if (sim.state.winner !== null || sim.state.turnPlayer !== me || !sim.inMainPhase()) return first.value;
+  const ps = sim.player(me);
+  const before = e.player(me);
+  const follow: Action[] = [];
+  for (const c of ps.hand) {
+    const was = before.hand.find((x) => x.uid === c.uid);
+    if (sim.canSpecialProc(me, c) && !(was && e.canSpecialProc(me, was))) follow.push({ type: 'SPECIAL', player: me, uid: c.uid });
+    else if (!ps.normalSummoned && sim.canNormalSummon(me, c, true) && !(was && e.canNormalSummon(me, was, true)) && sim.freeMonsterZone(me) >= 0)
+      follow.push({ type: 'SUMMON', player: me, uid: c.uid, zone: sim.freeMonsterZone(me), pos: 'atk', faceUp: true });
+  }
+  let best = first.value;
+  const base = evaluate(e, me);
+  for (const a of follow.slice(0, 4)) {
+    const r = playOutSim(sim, me, a, choose);
+    if (r) best = Math.max(best, evaluate(r.sim, me) - base);
+  }
+  return best;
+}
+
+function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser): { sim: Engine; value: number } | null {
   let sim: Engine;
   try {
     sim = sandbox(e);
@@ -83,7 +130,7 @@ export function lookahead(e: Engine, me: Pid, action: Action, choose: Chooser): 
   }
   if (sim.state.prompt && sim.state.winner === null) return null;
   if (sim.state.turn !== turn && sim.state.winner === null) return null;
-  return evaluate(sim, me) - before;
+  return { sim, value: evaluate(sim, me) - before };
 }
 
 /** What a monster on the opponent's side needs to be beaten (face-down ones are a guess). */
@@ -177,4 +224,69 @@ export function coin(e: Engine, key: string, odds: number): boolean {
   let h = (e.state.seed ^ (e.state.turn * 2654435761)) >>> 0;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619) >>> 0;
   return (h % 1000) / 1000 < odds;
+}
+
+/**
+ * Plays `action` and then the rest of `me`'s turn (by `choose`, the opponent never answering with
+ * a Set card, as in lookahead) and scores where the turn ends, counting what the opponent's face-up
+ * monsters could do to it next turn. Used by Hard to pick its Summon by the whole turn it leads to.
+ */
+export function rolloutTurn(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
+  if (e.state.prompt || e.state.winner !== null) return null;
+  let sim: Engine;
+  try {
+    sim = sandbox(e);
+  } catch {
+    return null;
+  }
+  const turn = sim.state.turn;
+  try {
+    sim.apply(action);
+    for (let i = 0; i < 160 && sim.state.winner === null && sim.state.turn === turn; i++) {
+      const pr = sim.state.prompt;
+      const p = (pr ? pr.player : sim.state.turnPlayer) as Pid;
+      let a: Action | null;
+      if (pr && p !== me && pr.kind === 'response') a = { type: 'PASS', player: p };
+      else if (pr && p !== me && pr.kind === 'yesno') a = { type: 'NO', player: p };
+      else a = choose(sim, p);
+      if (!a) a = pr ? null : { type: 'END_TURN', player: p };
+      if (!a) return null;
+      sim.apply(a);
+    }
+  } catch {
+    return null;
+  }
+  return endOfTurnValue(sim, me) - endOfTurnValue(e, me, true);
+}
+
+/** evaluate, less what the opponent's face-up attackers threaten on their turn (`now`: before the turn's plays, nothing exposed yet). */
+function endOfTurnValue(e: Engine, me: Pid, now = false): number {
+  const v = evaluate(e, me);
+  if (now || Math.abs(v) >= WIN / 4) return v;
+  const opp = other(me);
+  const theirs = e
+    .monsters(opp)
+    .filter((m) => m.faceUp && !m.cannotAttack)
+    .map((m) => e.atkOf(m))
+    .sort((a, b) => b - a);
+  if (!theirs.length) return v;
+  let threat = 0;
+  const mine = e.monsters(me);
+  const used = new Set<number>();
+  // each of their attackers takes the best trade it can get
+  for (const atk of theirs) {
+    let gain = 0;
+    let pick = -1;
+    for (const m of mine) {
+      if (used.has(m.uid)) continue;
+      // (our own Set monsters: we know their DEF)
+      const w = m.pos === 'atk' ? e.atkOf(m) : m.faceUp ? e.defOf(m) : (e.info(m.name).def ?? 0);
+      if (atk <= w) continue;
+      const g = 200 + 0.7 * Math.max(e.atkOf(m), e.defOf(m) * 0.8) + (m.faceUp && m.pos === 'atk' ? atk - w : 0);
+      if (g > gain) (gain = g), (pick = m.uid);
+    }
+    if (pick >= 0) (used.add(pick), (threat += gain));
+    else if (!mine.some((m) => !used.has(m.uid))) threat += atk * 0.8;
+  }
+  return v - 0.6 * threat;
 }

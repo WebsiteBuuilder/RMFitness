@@ -1,3 +1,6 @@
+import { optionNote, sideLabel } from './sideLabel';
+import { attackForecast } from './forecast';
+import { getSkill } from '../eds/skills';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Card, DuelState, EngineEvent, FieldCard, Pid, Prompt, SelectOption } from '../eds/types';
@@ -51,7 +54,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const opp = state.players[other(acting)];
   const canAct = !spectator && !locked && (hotseat || acting === mySeat);
   const myTurn = state.turnPlayer === acting;
-  const prompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
+  const ownPrompt = state.prompt && state.prompt.player === acting && canAct ? state.prompt : null;
+  const quiet = !!ownPrompt && quietWindow(e, state, acting);
+  const prompt = quiet ? null : ownPrompt;
 
   const [sel, setSel] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>(null);
@@ -80,6 +85,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (typeof location !== 'undefined' && location.search.includes('debug')) (window as unknown as Record<string, unknown>).__duel = { e, state, acting };
   const lastActing = useRef(acting);
   const lastSeq = useRef(0);
+  const [roll, setRoll] = useState<{ player?: Pid; amount?: number; to?: string; seq: number } | null>(null);
+  const lastRoll = useRef(state.events?.reduce((m, x) => Math.max(m, x.seq), 0) ?? 0);
   const finished = useRef(false);
 
   // Hotseat: pass the phone when the acting seat changes (before paint, so the next hand never flashes).
@@ -94,6 +101,16 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   }, []);
 
   // Animations and sounds from engine events.
+  // Dice and coin results, shown big for a moment (the other events of the same step can bury them).
+  useEffect(() => {
+    const r = (state.events ?? []).filter((x) => x.kind === 'roll' && x.seq > lastRoll.current).pop();
+    if (!r) return;
+    lastRoll.current = r.seq;
+    setRoll(r);
+    const t = setTimeout(() => setRoll(null), 1800);
+    return () => clearTimeout(t);
+  }, [state.events?.length, state.lastEvent]);
+
   useEffect(() => {
     const ev = state.lastEvent;
     if (!ev || ev.seq === lastSeq.current) return;
@@ -111,6 +128,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     setPicks([]);
   }, [state.prompt, state.phase, state.turn]);
 
+  // Your own Summon, attack or hit: a Set Trap is almost never what you want there, so like Master Duel's
+  // auto chaining the window passes by itself, unseen (see quietWindow).
+  useEffect(() => {
+    if (!quiet) return;
+    const t = setTimeout(() => session.send({ type: 'PASS', player: acting }), 120);
+    return () => clearTimeout(t);
+  }, [state.prompt, quiet]);
+
   useEffect(() => {
     if (state.winner !== null && !finished.current) {
       finished.current = true;
@@ -122,6 +147,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       setInfo(null);
       setPile(null);
     }
+  }, [state.winner]);
+
+  // A Speed Duel given up goes straight to the result screen (no in-board banner to tap through first).
+  useEffect(() => {
+    if (state.winner === null || !e.speed || !/surrendered$/.test(state.winReason)) return;
+    const w = state.winner;
+    const t = setTimeout(() => finish(w), 700);
+    return () => clearTimeout(t);
   }, [state.winner]);
 
   // a cinematic starts: a card inspector or info box open over the board closes (the stage takes the screen)
@@ -148,6 +181,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     onFinished(w);
   };
   /** Leaving a finished duel still saves its result; leaving an online duel early concedes it, so the other player isn't left waiting. */
+  /** a card still in someone's Out pile (a face-down one there stays hidden from the opponent) */
+  /** A revealed Field Skill (Power of Dark, Peak Performance...) sits face-up in an empty Field Zone, as on the Touch board. */
+  const fieldSkillOf = (p: Pid): string | null => {
+    const ps = state.players[p];
+    const sk = !ps.field && ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+    return sk?.aura && sk.startOfDuel ? (ps.skill ?? null) : null;
+  };
+  const ps0Removed = (uid: number) => state.players.some((p) => p.removed.some((c) => c.uid === uid));
   const leave = () => {
     if (state.winner !== null) return finish(state.winner);
     if (online && canAct) session.send({ type: 'SURRENDER', player: acting });
@@ -221,15 +262,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       const fresh = m.placedTurn !== state.turn && !m.posChanged && !m.attacked;
       if (state.phase === 'BP') {
         const can = e.canAttackWith(acting, m);
+        const open = e.monsters(other(acting)).length === 0;
         commands.push({
-          label: 'Attack',
+          // nothing to block it: the button says what the hit will do
+          label: open && can ? `Attack directly · ${attackForecast(e, m.uid, null)?.text ?? `${e.atkOf(m)} damage`}` : 'Attack',
           disabled: !can || (e.monsters(other(acting)).length > 0 && e.legalTargets(acting, m).length === 0 && !e.canAttackDirectly(m)),
           onPick: () => {
             if (e.monsters(other(acting)).length === 0) send({ type: 'ATTACK', player: acting, uid: m.uid, target: null });
             else setMode({ kind: 'attack', uid: m.uid });
           },
         });
-        if (can && e.canAttackDirectly(m) && e.monsters(other(acting)).length > 0) commands.push({ label: 'Direct Attack', onPick: () => send({ type: 'ATTACK', player: acting, uid: m.uid, target: null }) });
+        if (can && e.canAttackDirectly(m) && e.monsters(other(acting)).length > 0) commands.push({ label: `Direct Attack · ${attackForecast(e, m.uid, null)?.text ?? `${e.atkOf(m)} damage`}`, onPick: () => send({ type: 'ATTACK', player: acting, uid: m.uid, target: null }) });
       }
       if (e.inMainPhase()) {
         if (m.faceUp && getEffect(m.name)?.ignition) commands.push({ label: 'Effect', disabled: !e.canUseMonsterEffect(acting, m), onPick: () => send({ type: 'MONSTER_EFFECT', player: acting, uid: m.uid }) });
@@ -302,8 +345,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
           <span>Deck {ps.deck.length}</span>
         </div>
-        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => ps.field && tap(ps.field.uid)}>
-          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : <span class="zlabel">F</span>}
+        <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
+          {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : fieldSkillOf(p) ? <CardImg name={fieldSkillOf(p)!} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
         </div>
         {ps.removed.length > 0 && (
@@ -352,13 +395,17 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           </Win>
         );
       const listOptions = prompt.options.map((o: SelectOption, i: number) => ({
-        label: o.label,
+        // picks in order (Riryoku: halve the 1st, power up the 2nd) carry their number
+        label: `${prompt.max > 1 && picks.includes(i) ? `${picks.indexOf(i) + 1}. ` : ''}${sideLabel(o, acting)}`,
+        note: optionNote(e, o, acting),
         selected: picks.includes(i),
         onPick: () => togglePick(prompt, i),
       }));
-      const items = [...listOptions];
-      if (prompt.max > 1 || prompt.min === 0) items.push({ label: `OK (${picks.length}/${prompt.max})`, selected: false, onPick: () => picks.length >= prompt.min && send({ type: 'CHOOSE', player: acting, picks }) });
-      if (prompt.cancel) items.push({ label: 'Cancel', selected: false, onPick: () => send({ type: 'CANCEL', player: acting }) });
+      // OK and Cancel go first in a long list, so a small phone never has them below the fold
+      const ctrls: typeof listOptions = [];
+      if (prompt.max > 1 || prompt.min === 0) ctrls.push({ label: `OK (${picks.length}/${prompt.max})`, note: undefined, selected: false, onPick: () => picks.length >= prompt.min && send({ type: 'CHOOSE', player: acting, picks }) });
+      if (prompt.cancel) ctrls.push({ label: 'Cancel', note: undefined, selected: false, onPick: () => send({ type: 'CANCEL', player: acting }) });
+      const items = listOptions.length >= 2 ? [...ctrls, ...listOptions] : [...listOptions, ...ctrls];
       return (
         <Win title={prompt.title} class="msgwin">
           <Menu items={items} class="scroll" />
@@ -375,7 +422,21 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     if (mode?.kind === 'attack') {
       return (
         <Win title="Attack which monster?" class="msgwin">
-          <Menu items={[{ label: 'Cancel', onPick: () => setMode(null) }]} />
+          {(() => {
+            const attacker = e.fieldCard(mode.uid);
+            const targets = attacker ? e.legalTargets(acting, attacker) : [];
+            return (
+              <Menu
+                items={[
+                  ...targets.map((t) => {
+                    const f = attackForecast(e, mode.uid, t.uid);
+                    return { label: t.faceUp ? e.nameOf(t) : 'Face-down monster', note: f ? `${f.vs} · ${f.text}` : undefined, onPick: () => (send({ type: 'ATTACK', player: acting, uid: mode.uid, target: t.uid }), setMode(null)) };
+                  }),
+                  { label: 'Cancel', onPick: () => setMode(null) },
+                ]}
+              />
+            );
+          })()}
         </Win>
       );
     }
@@ -415,6 +476,14 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {roll && (
+        <div key={roll.seq} class="roll-chip" aria-live="polite">
+          <span class="roll-face">{roll.to === 'coin' ? (roll.amount === 1 ? 'H' : 'T') : roll.amount}</span>
+          <span>
+            {roll.player === acting ? 'You' : state.players[roll.player ?? 0].name} {roll.to === 'coin' ? `flipped ${roll.amount === 1 ? 'heads' : 'tails'}` : `rolled a ${roll.amount}`}
+          </span>
+        </div>
+      )}
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>
@@ -453,6 +522,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                           Effect
                         </button>
                       </div>
+                    ) : c.owner !== acting && ((state.fx.banishedDown ?? []) as number[]).includes(c.uid) && ps0Removed(c.uid) ? (
+                      <div key={c.uid} class="gcard">
+                        <CardImg name="" back />
+                        <span>Face-down</span>
+                      </div>
                     ) : (
                       <button key={c.uid} class="gcard" onClick={() => setInfo(c.name, c.owner)}>
                         <CardImg name={c.name} owner={c.owner} />
@@ -471,7 +545,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             {skillOf === acting || state.players[skillOf].skillRevealed ? (
               <>
                 <CardInfoPanel name={state.players[skillOf].skill ?? ''} />
-                {skillOf === acting && canAct && (
+                {skillOf === acting && canAct && !getSkill(state.players[skillOf].skill ?? '')?.use && <p class="hint">This Skill works by itself: nothing to press.</p>}
+                {skillOf === acting && canAct && !!getSkill(state.players[skillOf].skill ?? '')?.use && (
                   <Menu
                     items={[
                       {
@@ -516,7 +591,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
-                { label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) },
+                // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),
+                // so only Surrender is offered then.
+                ...(e.speed && !online && !hotseat && canAct && state.winner === null ? [] : [{ label: 'Leave duel', onPick: () => (setShowMenu(false), leave()) }]),
                 { label: 'Back', onPick: () => setShowMenu(false) },
               ]}
             />
@@ -671,4 +748,21 @@ function eventSound(ev: EngineEvent, state: DuelState) {
     case 'win':
       return playWin();
   }
+}
+
+/**
+ * A response window on your own Summon, attack or hit where all you could chain is a Set Trap: like Master
+ * Duel's auto chaining it passes by itself (Quick-Play Spells, cards from the hand and any reply to an
+ * opponent's card still ask).
+ */
+function quietWindow(e: DuelSession['engine'], state: DuelState, acting: Pid): boolean {
+  const pr = state.prompt;
+  if (!pr || pr.kind !== 'response' || pr.player !== acting || state.turnPlayer !== acting || state.chain.length > 0) return false;
+  const ev = state.lastEvent;
+  const mine = (uid?: number) => uid !== undefined && e.find(uid) !== undefined && e.controller(uid) === acting;
+  const ownAttack = !!state.battle && / attacks( .+)?\. Respond\?$/.test(pr.title);
+  const ownSummon = / was Summoned\. Respond\?$/.test(pr.title) && ev?.kind === 'summon' && mine(ev.uid);
+  const ownHit = pr.title === `${state.players[other(acting)].name} took ${ev?.amount ?? -1} damage. Respond?`;
+  if (!ownAttack && !ownSummon && !ownHit) return false;
+  return pr.options.every((o) => o.uid !== undefined && e.find(o.uid)?.loc.zone !== 'hand' && cardInfo(e.find(o.uid)!.card.name)?.kind === 'trap');
 }

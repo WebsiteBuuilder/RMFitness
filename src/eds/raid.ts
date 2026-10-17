@@ -484,7 +484,7 @@ export class Raid {
     const delta = x.lastFoeLp - foeLp;
     x.lastFoeLp = foeLp;
     // Damage the enemy took fills Team Power; Life Points it paid as a cost only come off the pool.
-    const hurt = ((x.engine.state.fx.hurt as number[] | undefined)?.[1] ?? 0) - x.lastHurt;
+    const hurt = ((x.engine.state.fx.hurtTotal as number[] | undefined)?.[1] ?? 0) - x.lastHurt;
     x.lastHurt += hurt;
     if (delta !== 0 && this.phase === 'duel') {
       this.pool = Math.max(0, this.pool - delta);

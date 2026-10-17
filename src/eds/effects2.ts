@@ -1629,7 +1629,7 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       const opp = other(p);
       const c = randomPick(e, e.player(opp).hand);
       if (!c) return;
-      e.banish(c.uid);
+      e.banish(c.uid, true);
       const first = e.state.turnPlayer === opp ? e.state.turn + 2 : e.state.turn + 1;
       (e.state.fx.lightforce ??= []).push({ uid: c.uid, back: first + 6 });
     },

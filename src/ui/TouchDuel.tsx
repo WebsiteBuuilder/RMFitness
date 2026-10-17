@@ -10,8 +10,11 @@ import { other } from '../eds/engine';
 import type { Card, DuelState, FieldCard, Pid, PlayerState, Prompt, SelectOption } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
 import { getEffect } from '../eds/effects';
+import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
 import type { Command, Mode } from './Duel';
+import { mixedSides, sideLabel } from './sideLabel';
+import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
@@ -236,13 +239,18 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       const info = cardInfo(f.card.name);
       if (info?.kind === 'monster') {
         // A tribute frees a zone, so any of your zones takes a monster that needs tributes.
-        if (e.canNormalSummon(acting, f.card)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
+        if (e.canNormalSummon(acting, f.card)) {
+          if (e.canNormalSummon(acting, f.card, true)) me.mz.forEach((z, i) => (e.monsterZoneOpen(acting, i) || (z !== null && (info.level ?? 0) >= 5)) && out.add(`mz${i}`));
+          // the SET pad: drop here to Set it face-down
+          out.add('set');
+        }
       } else {
         const ok = (info?.kind === 'spell' && e.canActivateMain(acting, uid)) || e.canSet(acting, f.card);
         if (ok) {
           me.sz.forEach((z, i) => z === null && out.add(`sz${i}`));
           if (info?.sub === 'Field') out.add('field');
         }
+        if (e.canSet(acting, f.card) && me.sz.some((z) => z === null)) out.add('set');
       }
     }
     if (from === 'mz' && state.phase === 'BP') {
@@ -263,7 +271,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const spot = d.over;
     if (d.from === 'hand') {
       const info = cardInfo(f.card.name);
-      if (spot.startsWith('mz')) send({ type: 'SUMMON', player: acting, uid: d.uid, zone: Number(spot.slice(2)), pos: 'atk', faceUp: true });
+      if (spot === 'set') {
+        if (info?.kind === 'monster') send({ type: 'SUMMON', player: acting, uid: d.uid, zone: e.freeMonsterZone(acting), pos: 'def', faceUp: false });
+        else send({ type: 'SET_ST', player: acting, uid: d.uid, zone: me.sz.findIndex((z) => z === null) });
+      } else if (spot.startsWith('mz')) send({ type: 'SUMMON', player: acting, uid: d.uid, zone: Number(spot.slice(2)), pos: 'atk', faceUp: true });
       else {
         const zone = spot === 'field' ? me.sz.findIndex((z) => z === null) : Number(spot.slice(2));
         // Spells are played face-up when they can be; Traps (and Spells that can't be used now) are Set.
@@ -304,13 +315,31 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     ev.preventDefault();
     setDrag({ ...drag, x: ev.clientX, y: ev.clientY, over: spotAt(ev.clientX, ev.clientY, spots!) });
   };
+  /**
+   * Let go near (not exactly on) a lit spot: the closest one takes it, like Master Duel's forgiving
+   * drops. The SET pad and the opponent's portrait only count when hit exactly.
+   */
+  const nearSpot = (x: number, y: number, allowed: Set<string>, reach: number): string | null => {
+    let best: string | null = null;
+    let dist = reach;
+    for (const el of document.querySelectorAll<HTMLElement>('[data-drop]')) {
+      const id = el.dataset.drop!;
+      if (!allowed.has(id) || id === 'set' || id === 'direct') continue;
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d < dist) (dist = d), (best = id);
+    }
+    return best;
+  };
   const onUp = (ev: PointerEvent) => {
     const p = press.current;
     press.current = null;
     if (!p || p.id !== ev.pointerId || !drag) return;
     dragged.current = true;
     setTimeout(() => (dragged.current = false), 50);
-    const d = { ...drag, over: spotAt(ev.clientX, ev.clientY, spots!) };
+    // a card from the hand pulled well up onto the field lands in the nearest free zone
+    const lifted = p.from === 'hand' && p.y - ev.clientY > 70;
+    const d = { ...drag, over: spotAt(ev.clientX, ev.clientY, spots!) ?? nearSpot(ev.clientX, ev.clientY, spots!, lifted ? 140 : 40) };
     setDrag(null);
     drop(d);
   };
@@ -346,7 +375,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
     const named = c && c.faceUp ? e.nameOf(c) : '';
     const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
-    const sig = c ? `${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    // aiming an attack (tap Attack, then a target): each target says how the battle would go
+    const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
+    const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -371,6 +403,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             {stat}
           </div>
         )}
+        {fc && <div class={`tfc ${fc.tone}`}>{fcShort}</div>}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
       </div>
@@ -380,6 +413,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const fieldZone = (p: Pid) => {
     const ps = state.players[p];
     const mine = p === acting;
+    // A Field Skill (Power of Dark, Peak Performance...) sits face-up in the empty Field Zone, like the real game
+    const sk = !ps.field && ps.skill && ps.skillRevealed ? getSkill(ps.skill) : undefined;
+    const fieldSkill = sk?.aura && sk.startOfDuel ? ps.skill : null;
     return (
       <div
         class={`tz tz-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''}${mine ? spotCls('field') : ''}${ps.field && !ps.field.faceUp && (mine || ctl.spectator) ? ' myset' : ''}`}
@@ -388,9 +424,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         onClick={(ev) => {
           ev.stopPropagation();
           if (ps.field) tapCard(ps.field.uid);
+          else if (fieldSkill) ctl.openSkill(p);
         }}
       >
-        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : <span class="tz-label">FIELD</span>}
+        {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : fieldSkill ? <CardImg name={fieldSkill} class="tz-skillcard" /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
       </div>
     );
@@ -553,6 +590,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       );
     if (prompt?.kind === 'select') {
       const multi = prompt.max > 1 || prompt.min === 0;
+      const mixed = mixedSides(e, prompt.options);
       return (
         <div class="tsheet">
           <div class="tsheet-title">
@@ -566,10 +604,12 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="toptions">
             {prompt.options.map((o, i) => {
               const name = optionCard(o);
+              const side = mixed && o.uid !== undefined && e.fieldCard(o.uid) ? (e.controller(o.uid) === acting ? 'Yours: ' : 'Theirs: ') : '';
               return (
                 <button key={i} class={`topt ${ctl.picks.includes(i) ? 'on' : ''} ${name ? '' : 'text'}`} onClick={() => ctl.togglePick(prompt, i)}>
                   {name !== null ? <CardImg name={name} back={name === ''} /> : null}
-                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{o.label}</span>
+                  {prompt.max > 1 && ctl.picks.includes(i) && <i class="topt-ord">{ctl.picks.indexOf(i) + 1}</i>}
+                  <span class={name !== null ? 'topt-label' : 'topt-text'}>{side}{sideLabel(o, ctl.acting)}</span>
                 </button>
               );
             })}
@@ -595,7 +635,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (mode)
       return (
         <div class="ttoast aim">
-          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Choose a target: tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
+          {document.documentElement.classList.contains('pad-on') ? `Choose a target: A on a glowing monster${canDirect() ? ' or their portrait' : ''} · B cancels` : `Tap a glowing monster${canDirect() ? ' or their portrait' : ''}`}
           <button class="tbtn small" onClick={() => setMode(null)}>
             Cancel
           </button>
@@ -607,19 +647,26 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     return null;
   };
 
+  const forecast = (uid: number, target: number | null) => attackForecast(e, uid, target);
+
   const hint = (): string | null => {
     if (!myTurn || !idle || sel !== null || drag) return null;
     // (with a controller: the buttons, not the finger moves)
     const pad = document.documentElement.classList.contains('pad-on');
-    if (state.phase === 'BP') return state.firstTurn ? null : pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
-    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, or tap it';
+    if (state.phase === 'BP') {
+      if (state.firstTurn) return null;
+      // nothing left to swing: point at ending the turn instead
+      if (!e.monsters(acting).some((m) => e.canAttackWith(acting, m))) return pad ? 'All done? X for phases, then End Turn' : 'All done? Tap the phase button to end your turn';
+      return pad ? 'Pick a monster with A, then Attack' : 'Drag a monster onto a target to attack';
+    }
+    if (e.inMainPhase() && state.turn <= 4) return pad ? 'Press A on a card to play it · X for phases' : 'Drag a card up to play it, onto SET to Set it, or tap it';
     return null;
   };
 
   const handCount = me.hand.length;
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 760 ? 78 : 70;
+  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 880 ? 100 : window.innerHeight >= 820 ? 88 : window.innerHeight >= 760 ? 78 : 70;
   const room = Math.min(window.innerWidth, 560) - 20;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
@@ -658,7 +705,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   return (
     <div
       {...({ onpady: padCardText } as object)}
-      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
+      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${mode ? 'aiming' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
@@ -735,7 +782,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </button>
         </div>
 
-        {selCard && canSeeSel && !drag && (
+        {selCard && canSeeSel && !drag && !mode && (
           <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
             <span class="tdetail-pic">
               <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
@@ -826,6 +873,22 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
       )}
 
+      {drag && spots?.has('set') && (
+        <div class={`tset-pad ${drag.over === 'set' ? 'drop-on' : ''}`} data-drop="set" aria-label="Set face-down">
+          <span class="tset-card" />
+          <b>SET</b>
+          <small>face-down</small>
+        </div>
+      )}
+      {drag && drag.from === 'mz' && drag.over && (drag.over === 'direct' || drag.over.startsWith('t')) && (() => {
+        const f = forecast(drag.uid, drag.over === 'direct' ? null : Number(drag.over.slice(1)));
+        return f ? (
+          <div class={`tforecast ${f.tone}`} style={{ left: `${Math.min(window.innerWidth - 100, Math.max(100, drag.x))}px`, top: `${Math.max(8, drag.y - 120)}px` }}>
+            <b>{f.vs}</b>
+            <span>{f.text}</span>
+          </div>
+        ) : null;
+      })()}
       {drag && (
         <div class={`tghost ${drag.over ? 'over' : ''}`} style={{ left: `${drag.x}px`, top: `${drag.y}px` }}>
           <CardImg name={drag.name} owner={e.find(drag.uid)?.card.owner} />

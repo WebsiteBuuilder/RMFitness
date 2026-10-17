@@ -58,6 +58,7 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
   };
 
   const done = (p: Profile) => {
+    accounts.stay(p);
     accounts.startSync(p);
     onPick(p);
   };

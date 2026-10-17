@@ -763,7 +763,7 @@
 .rv-fin {
   position: absolute;
   left: 3px;
-  top: 3px;
+  bottom: 3px; /* where the printed rarity sits, off the card's name */
   z-index: 2;
   min-width: 0;
   font-size: 10px;
@@ -858,9 +858,6 @@
   animation: gift-shake 0.6s ease-in-out infinite;
 }
 /* in the summary a rarity chip sits top left, so NEW drops below the corner */
-.summary .rv-fin ~ .bnew {
-  top: 24px;
-}
 .no-pill .ol-pill {
   display: none;
 }
@@ -868,6 +865,70 @@
 .reveal.summary > .menu {
   position: sticky;
   bottom: -1px;
+  z-index: 5; /* over the cards' rarity chips */
+  align-self: stretch;
   background: var(--sd-card, #141f3d);
   padding-top: 6px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 12px var(--sd-card, #141f3d);
+}
+
+/* Pack opening: big cards on a full stage, real buttons under them. */
+.reveal:not(.summary) {
+  width: min(560px, calc(100vw - 16px));
+  padding: 20px 8px 16px;
+  border-color: #e8c25a88;
+}
+.reveal:not(.summary) .reveal-row {
+  gap: 10px;
+}
+.reveal:not(.summary) .rv {
+  width: min(118px, calc((100vw - 64px) / 3));
+}
+.rv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+.rv-btn {
+  min-width: 128px;
+  min-height: 46px;
+  padding: 8px 18px;
+  border-radius: 23px;
+  border: 1px solid #ffffff40;
+  background: linear-gradient(180deg, #2c4ab0, #142a73);
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px #0008;
+}
+.rv-btn small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.rv-btn.main {
+  background: linear-gradient(180deg, #ffe07a, #d29a1e);
+  color: #2a1a00;
+  border-color: #fff3;
+}
+.rv-btn.quiet {
+  background: transparent;
+  box-shadow: none;
+}
+.rv-btn:active {
+  transform: scale(0.96);
+}
+/* the summary's Done stays in reach below a long list */
+.reveal.summary > .rv-actions.sticky {
+  position: sticky;
+  bottom: -1px;
+  z-index: 5;
+  background: var(--sd-card, #141f3d);
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 12px var(--sd-card, #141f3d);
 }

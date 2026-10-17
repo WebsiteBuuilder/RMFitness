@@ -46,6 +46,20 @@
     --th-h: 114px;
   }
 }
+/* tall phones: the field is as wide as the screen allows, so the spare height goes to your hand
+   (sizes repeated in TouchDuel's fan: cardW) */
+@media (min-height: 820px) and (min-width: 381px) {
+  .duel.touch .thand {
+    --th-w: 88px;
+    --th-h: 128px;
+  }
+}
+@media (min-height: 880px) and (min-width: 381px) {
+  .duel.touch .thand {
+    --th-w: 100px;
+    --th-h: 146px;
+  }
+}
 .duel.touch .thcard:active:not(.sel) {
   transform: translateY(-6px) scale(1.05);
   transform-origin: 50% 100%;
@@ -207,4 +221,19 @@
 .ui-speed .duel.speed:not(.touch) .phasebtns .gbtn {
   font-size: 12px;
   padding: 5px 7px;
+}
+
+/* Tall phones (most Androids, iPhone Pro/Max): the board and your hand take the height the
+   screen has, instead of leaving bands of empty space above and below the field. */
+@media (min-height: 800px) and (max-width: 520px) {
+  /* a flatter field: taller on screen, closer to Master Duel's near-top-down board */
+  .duel.touch {
+    --tilt: 9deg;
+  }
+  @supports (width: 1cqh) {
+    .duel.touch.speed .tmat {
+      max-width: 420px;
+      width: min(100%, 420px, calc(100cqw / 1.05), calc((100cqh * 0.96 - 56px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 5px));
+    }
+  }
 }

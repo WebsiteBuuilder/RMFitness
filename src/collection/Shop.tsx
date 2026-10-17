@@ -69,7 +69,7 @@ export function ChipBar({ save, cpus = [], compact = false }: { save: SpeedSave;
           <span class="shop-chip">
             <i class="dchip" /> Chips {chipsOf(save)}/{CHIP_CAP}
           </span>
-          <span>◆ Shards {shardsOf(save)}/{SHARDS_PER_CHIP}</span>
+          <span>◆ Shards {chipsOf(save) >= CHIP_CAP ? `${shardsOf(save)} (saved)` : `${shardsOf(save)}/${SHARDS_PER_CHIP}`}</span>
           <span>🂠 Packs {packsOf(save)}</span>
           <span class="shop-q">?</span>
         </button>
@@ -179,9 +179,9 @@ const coverOf = (cards: [string, Rarity][]) => [...cards].sort((a, b) => RARITIE
 const best = (f: number[]) => Math.max(0, ...f);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** How many of a set's cards the profile owns. */
+/** How many of a set's cards the profile owns (Skills aside, counted like its Set Stamp). */
 const completion = (save: SpeedSave, cards: [string, Rarity][]) => {
-  const names = [...new Set(cards.map(([n]) => n))];
+  const names = [...new Set(cards.map(([n]) => n))].filter((n) => card(n) && card(n)!.sub !== 'Skill');
   return { have: names.filter((n) => owned(save, n) > 0).length, of: names.length };
 };
 
@@ -403,8 +403,8 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
                       </span>
                       <span class="rv-face">
                         <CardImg name={n} />
-                        <span class="rv-r">{RARITY_SHORT[r]}</span>
-                        {fin[i] > 0 && <span class={`rv-fin lv-chip lv-${TIERS[fin[i]].id}`}>{chipText(TIERS[fin[i]].id)}</span>}
+                        {/* one mark per card: the rarity it was pulled at (never below the printed one) */}
+                        {fin[i] > 0 ? <span class={`rv-fin lv-chip lv-${TIERS[fin[i]].id}`}>{chipText(TIERS[fin[i]].id)}</span> : <span class="rv-r">{RARITY_SHORT[r]}</span>}
                         {opened.fresh.includes(n) && <span class="rv-new">NEW</span>}
                       </span>
                     </span>
@@ -414,17 +414,29 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
             </div>
             {all && best(fin) >= 3 && <p class="rv-best">Best pull: {TIERS[best(fin)].name}!</p>}
             {all && opened.shards > 0 && <p class="hint">Copies past 3 broke into {opened.shards} shards.</p>}
-            <Menu
-              items={
-                all
-                  ? [
-                      ...(left > 0 ? [{ label: 'Open another', note: `${left} left`, onPick: () => onAgain(false) }] : []),
-                      ...(left > 1 ? [{ label: `Open all ${left}`, onPick: () => onAgain(true) }] : []),
-                      { label: 'Done', onPick: onDone },
-                    ]
-                  : [{ label: 'Flip all', onPick: flipAll }]
-              }
-            />
+            <div class="rv-actions">
+              {all ? (
+                <>
+                  {left > 0 && (
+                    <button class="rv-btn main" onClick={() => onAgain(false)}>
+                      Open another <small>{left} left</small>
+                    </button>
+                  )}
+                  {left > 1 && (
+                    <button class="rv-btn" onClick={() => onAgain(true)}>
+                      Open all {left}
+                    </button>
+                  )}
+                  <button class={`rv-btn ${left > 0 ? 'quiet' : 'main'}`} onClick={onDone}>
+                    Done
+                  </button>
+                </>
+              ) : (
+                <button class="rv-btn main" onClick={flipAll}>
+                  Flip all
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -477,8 +489,7 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
           {cards.slice(0, limit).map(({ n, set, f, x }) => (
             <button key={n} class={`bcard rv-up ${RCLASS[rarityIn(set, n)]} ${f >= BIG_FINISH ? `fin fin-${TIERS[f].id}` : ''}`} onClick={() => setInfo(n)}>
               <CardImg name={n} />
-              <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>
-              {f > 0 && <span class={`rv-fin lv-chip lv-${TIERS[f].id}`}>{chipText(TIERS[f].id)}</span>}
+              {f > 0 ? <span class={`rv-fin lv-chip lv-${TIERS[f].id}`}>{chipText(TIERS[f].id)}</span> : <span class={`brar ${RCLASS[rarityIn(set, n)]}`}>{RARITY_SHORT[rarityIn(set, n)]}</span>}
               {fresh.has(n) && <span class="bnew">NEW</span>}
               {x > 1 && <span class="bcount">×{x}</span>}
             </button>
@@ -489,7 +500,11 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
             Show more ({cards.length - limit} left)
           </button>
         )}
-        <Menu items={[{ label: 'Done', onPick: onDone }]} />
+        <div class="rv-actions sticky">
+          <button class="rv-btn main" onClick={onDone}>
+            Done
+          </button>
+        </div>
       </div>
       {info && (
         <Overlay onClose={() => setInfo(null)}>

@@ -31,7 +31,8 @@
   align-items: center;
   gap: 10px;
   padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
-  background: linear-gradient(180deg, #0b1226 70%, rgba(11, 18, 38, 0.85));
+  /* solid: text scrolling under it never shows through */
+  background: #0b1226;
   border-bottom: 1px solid var(--so-line);
 }
 .so-back {
@@ -660,7 +661,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.so-foe b {
+  /* full names on a small phone ("Maximillion Pegasus" goes onto two lines) */
+  white-space: normal;
+  line-height: 1.15;
+}
 .so-foe span {
+  /* skill names in full, over two lines if need be */
+  white-space: normal;
+  line-height: 1.2;
   font-size: 12px;
   color: var(--so-dim);
 }
@@ -781,6 +790,10 @@
   padding: 10px;
 }
 .so-node.locked {
+  /* dimmed contents on a solid card, so the road line doesn't run through it */
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.so-node.locked > * {
   opacity: 0.45;
 }
 .so-node.locked .so-portrait .cimg {
@@ -1326,4 +1339,41 @@ ul.so-understood li::before {
   max-height: 34vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Practice: the Duel! button stays on screen above the options */
+.so .so-sticky-go {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, var(--so-bg, #0a1030) 30%);
+}
+.lg-continue small {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+/* the VS screen's Duel! fills up as the duel is about to start by itself */
+.vs-go {
+  position: relative;
+  overflow: hidden;
+}
+.vs-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: rgba(42, 26, 0, 0.55);
+  transform-origin: left;
+  animation: vs-timer linear both;
+}
+@keyframes vs-timer {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.so .so-sticky-go .so-btn {
+  width: 100%;
 }

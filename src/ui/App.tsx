@@ -40,7 +40,7 @@ import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
 import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
-import { rarityMap, TIERS, tierIndex, withLevels, type LevelReport } from '../level/leveling';
+import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
 import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult, tooQuick } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
@@ -61,6 +61,24 @@ import { deckOf } from '../eds/speedCampaign/campaign';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
 import { online } from '../online/controller';
 import { setUiGame } from './gameUi';
+
+/** The game a duelist was last in on this phone ('speed' or the EDS 'menu'). */
+const lastGame = (id: string): string | null => {
+  try {
+    return localStorage.getItem(`eds.lastGame.${id}`);
+  } catch {
+    return null;
+  }
+};
+/** How long the board settles before the computer thinks (counted inside its usual pause). */
+const THINK_BEAT = 300;
+const setLastGame = (id: string, g: string) => {
+  try {
+    localStorage.setItem(`eds.lastGame.${id}`, g);
+  } catch {
+    /* storage full */
+  }
+};
 
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
@@ -258,11 +276,29 @@ export function App() {
     setSaveState(s);
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
-    setScreen(!s ? 'intro' : pendingJoin ? 'link' : 'menu');
+    setScreen(!s ? 'intro' : pendingJoin ? 'link' : lastGame(p.id) === 'speed' ? 'speed' : 'menu');
+  };
+  // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
+  useEffect(() => {
+    if (profile && (screen === 'speed' || screen === 'menu')) setLastGame(profile.id, screen);
+  }, [profile, screen]);
+  /** Title tapped: the duelist kept logged in on this phone goes straight in. */
+  const [resuming, setResuming] = useState<string | null>(null);
+  const start = () => {
+    const kept = accounts.stayed();
+    if (!kept) return setScreen('profiles');
+    setResuming(kept.alias || kept.name);
+    void accounts.resume().then((p) => {
+      setResuming(null);
+      if (!p) return setScreen('profiles');
+      accounts.startSync(p);
+      pickProfile(p);
+    });
   };
 
   const switchProfile = () => {
     void accounts.stopSync(); // upload this duelist's latest progress to their account
+    accounts.forget();
     session?.close();
     setSession(null);
     setProfile(null);
@@ -365,6 +401,10 @@ export function App() {
     if (session && parked.current && parked.current.ses !== session) parked.current.close();
     if (session && rematchDock.dock?.kind === 'cpu') rematchDock.set(null);
   }, [session]);
+  // The computer rematch call rides on the result screen; once that's closed it goes too.
+  useEffect(() => {
+    if (!speedResult && !session && rematchDock.dock?.kind === 'cpu') rematchDock.set(null);
+  }, [speedResult]);
   useEffect(() => {
     if (!profile) {
       parked.current?.close();
@@ -635,7 +675,9 @@ export function App() {
   useEffect(() => {
     if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save));
   }, [profile, save, speedSave, screen]);
-  useEffect(() => online.showButton(!!profile && !!save && screen !== 'duel' && screen !== 'title' && screen !== 'profiles' && screen !== 'intro'), [profile, save, screen]);
+  // The floating Friends button only shows on menus with no buttons along the bottom; the
+  // Speed Duel side has its own Friends row on the Duel tab, and invites still pop up anywhere.
+  useEffect(() => online.showButton(!!profile && !!save && (screen === 'menu' || screen === 'link')), [profile, save, screen]);
 
   /** The game the duel on screen belongs to (a guest follows the host's game). */
   const gameOf = (): GameMode => session?.engine.state.rules?.mode ?? session?.seats[0].mode ?? duelMode;
@@ -709,7 +751,8 @@ export function App() {
       const st = session?.engine.state;
       let myLevels: LevelReport | null = null;
       const lv = (s: SpeedSave, seat: Pid) => {
-        if (!st) return s;
+        // A surrender before the duel got going teaches the cards nothing (no free level points).
+        if (!st || tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) })) return s;
         const r = withLevels(s, st, seat);
         if (seat === mySeat) myLevels = r.report;
         return r.save;
@@ -839,7 +882,7 @@ export function App() {
     return false;
   });
 
-  if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} onStart={() => setScreen('profiles')} />;
+  if (screen === 'title') return <Title hasSave={loadProfiles().length > 0} who={accounts.stayed()?.alias} opening={resuming} onStart={start} />;
   if (!profile) return <ProfilePicker onPick={pickProfile} joining={pendingJoin} />;
 
   if (!save) {
@@ -854,6 +897,16 @@ export function App() {
           addToTrunk(s, []);
           setSave(s);
           setScreen(pendingJoin ? 'link' : 'menu');
+        }}
+        onSpeed={(_name, color, deck) => {
+          const s = newSave(profile.alias);
+          s.starter = color;
+          s.main = deck;
+          addToTrunk(s, []);
+          setSave(s);
+          setLastGame(profile.id, 'speed');
+          setSpeedSaveState(speedSaveOf(profile.id, true));
+          setScreen(pendingJoin ? 'link' : 'speed');
         }}
       />
     );
@@ -1014,7 +1067,11 @@ export function App() {
               </Win>
             </Overlay>
           );
-      if (speedResult) return <SpeedResult data={speedResult} onContinue={closeResult} />;
+      if (speedResult) {
+        // against the computer the rematch is a button beside Continue (no banner over the rewards)
+        const cpuDock = rematchDock.dock?.kind === 'cpu' ? rematchDock.dock : null;
+        return <SpeedResult data={speedResult} onContinue={closeResult} onRematch={cpuDock ? () => (cpuDock.again(), closeResult()) : undefined} />;
+      }
       if (raidOpen)
         return (
           <RaidHub
@@ -1181,7 +1238,30 @@ function resultOf(st: DuelState, mySeat: Pid, hotseat: boolean, before: SpeedSav
     for (const n of c.lost) rewards.push({ kind: 'card', card: n, won: false, who });
   }
   for (const l of lines) rewards.push({ kind: 'line', text: l });
-  return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards };
+  // never a blank screen: say why nothing came of it
+  if (!rewards.length) {
+    const quit = /surrendered$/.test(st.winReason) && st.winner !== mySeat;
+    rewards.push({ kind: 'line', text: quit && st.turn < 3 ? 'Given up before the duel got going: no rewards, and no card level points.' : outcome === 'win' ? 'Nothing riding on this one.' : 'No rewards this time.' });
+  }
+  return { outcome, title, reason: st.winReason || undefined, lp: [{ name: me.name, lp: me.lp }, { name: opp.name, lp: opp.lp }], turns: st.turn, rewards, stats: duelStats(st, mySeat) };
+}
+/** What this player's cards did in the duel, and the card that did the most (Master Duel's MVP). */
+function duelStats(st: DuelState, seat: Pid): SpeedResultData['stats'] {
+  const deeds = (st.fx?.lvl as { s: Record<string, Deeds>[] } | undefined)?.s?.[seat];
+  if (!deeds) return undefined;
+  let dealt = 0;
+  let kills = 0;
+  let plays = 0;
+  let mvp: { name: string; score: number } | null = null;
+  for (const [name, d] of Object.entries(deeds)) {
+    const dmg = (d.bd ?? 0) + (d.dd ?? 0) + (d.ed ?? 0);
+    dealt += dmg;
+    kills += d.k ?? 0;
+    plays += d.p ?? 0;
+    const score = dmg + 600 * (d.k ?? 0) + 100 * (d.p ?? 0);
+    if (score > 0 && (!mvp || score > mvp.score)) mvp = { name, score };
+  }
+  return { dealt, kills, plays, mvp: mvp?.name };
 }
 /** Life Points both players lost (damage and costs) over the whole duel. */
 const lpLostIn = (st: DuelState) => ((st.fx.lpLost ?? [0, 0]) as number[]).reduce((a, b) => a + (b ?? 0), 0);
@@ -1260,50 +1340,57 @@ function Running({
     // A tag duel: the computer duelists move from phone 0 only, whenever one of them is in and on the spot.
     const tagCpu = !!view.state.tag && runsComputers(mySeat);
     if (!(cpu || tagCpu) || !view.state.started || view.state.winner !== null || watch?.paused) return;
-    // Watching: whichever seat has something to do moves, each with its own pep talk.
-    let seat: Pid = mySeat === 0 ? 1 : 0;
-    let action = watch ? null : aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel });
-    if (tagCpu) {
-      const w = whoMoves(session.engine.state);
-      seat = w.side;
-      action = w.ctl === 'cpu' ? aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel }) : null;
-    }
-    if (watch) {
-      const st = session.engine.state;
-      const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
-      for (const p of [first, (first === 0 ? 1 : 0) as Pid]) {
-        action = aiAction(session.engine, p, watch.tactics[p]);
-        if (action) {
-          seat = p;
-          break;
+    // The computer thinks once the board is still (after any cinematic and the move's own animation),
+    // so its thinking never lands in the middle of an animation as a stutter.
+    let t = 0;
+    let dead = false;
+    const think = () => {
+      if (dead) return;
+      // Watching: whichever seat has something to do moves, each with its own pep talk.
+      let seat: Pid = mySeat === 0 ? 1 : 0;
+      let action = watch ? null : aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel });
+      if (tagCpu) {
+        const w = whoMoves(session.engine.state);
+        seat = w.side;
+        action = w.ctl === 'cpu' ? aiAction(session.engine, seat, { ...DEFAULT_TACTICS, level: cpuLevel }) : null;
+      }
+      if (watch) {
+        const st = session.engine.state;
+        const first: Pid = (st.prompt?.player ?? st.turnPlayer) as Pid;
+        for (const p of [first, (first === 0 ? 1 : 0) as Pid]) {
+          action = aiAction(session.engine, p, watch.tactics[p]);
+          if (action) {
+            seat = p;
+            break;
+          }
         }
       }
-    }
-    if (!action) {
-      cpuStreak.current = 0;
-      return;
-    }
-    // Safety net: if the computer somehow keeps sending moves the rules ignore, end its turn.
-    cpuStreak.current++;
-    if (cpuStreak.current > 80) {
-      cpuStreak.current = 0;
-      session.send({ type: 'END_TURN', player: seat });
-      return;
-    }
-    const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
-    // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
-    // faster Animation speed) with a spotlight on the card it moves...
-    const st = session.engine.state;
-    const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
-    const send = () => {
-      const uid = spotUid(action!);
-      session.send(action!);
-      if (uid !== null) spotlight(uid);
+      if (!action) {
+        cpuStreak.current = 0;
+        return;
+      }
+      // Safety net: if the computer somehow keeps sending moves the rules ignore, end its turn.
+      cpuStreak.current++;
+      if (cpuStreak.current > 80) {
+        cpuStreak.current = 0;
+        session.send({ type: 'END_TURN', player: seat });
+        return;
+      }
+      const quick = action.type === 'NEXT_PHASE' || action.type === 'PASS' || action.type === 'CHOOSE';
+      // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
+      // faster Animation speed) with a spotlight on the card it moves...
+      const st = session.engine.state;
+      const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
+      const send = () => {
+        const uid = spotUid(action!);
+        session.send(action!);
+        if (uid !== null) spotlight(uid);
+      };
+      t = window.setTimeout(send, Math.max(0, pace - THINK_BEAT));
     };
     // ...and never in the middle of a 3D cinematic.
-    let t = 0;
-    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(send, pace)));
-    return () => (stopWaiting(), clearTimeout(t));
+    const stopWaiting = whenArtIdle(() => (t = window.setTimeout(think, THINK_BEAT)));
+    return () => ((dead = true), stopWaiting(), clearTimeout(t));
   }, [cpu, cpuLevel, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   // (a tag duel: each side shows the rarities of the phones playing on it; computers have none)

@@ -14,6 +14,8 @@ const ICON: Record<Hand, string> = { rock: '✊', paper: '✋', scissors: '✌�
 const LABEL: Record<Hand, string> = { rock: 'Rock', paper: 'Paper', scissors: 'Scissors' };
 /** seconds to throw or pick before the game does it for you (nobody waits on a phone left on the table) */
 const THROW_SECS = 10;
+/** ...and against the computer, where nobody else is waiting to see your throw */
+const CPU_SECS = 5;
 /** how long a throw's reveal stays up, and the "X goes first" banner before the duel starts */
 const REVEAL_MS = 1700;
 const GO_MS = 800;
@@ -84,14 +86,15 @@ export function TossScreen({
   // The countdown for whatever this phone has to do next.
   const myTurnToThrow = throwing && !t.hands[mySeat] && cpuSeat !== mySeat && !hotseat;
   const myTurnToChoose = choosing && iControl(t.chooser!) && t.chooser !== cpuSeat;
-  const [left, setLeft] = useState(THROW_SECS);
+  const secs = cpuSeat !== null ? CPU_SECS : THROW_SECS;
+  const [left, setLeft] = useState(secs);
   const key = `${t.round}:${myTurnToThrow}:${myTurnToChoose}`;
   useEffect(() => {
     if (!myTurnToThrow && !myTurnToChoose) return;
-    setLeft(THROW_SECS);
+    setLeft(secs);
     const started = Date.now();
     const id = window.setInterval(() => {
-      const l = THROW_SECS - Math.floor((Date.now() - started) / 1000);
+      const l = secs - Math.floor((Date.now() - started) / 1000);
       setLeft(Math.max(0, l));
       if (l <= 0) {
         clearInterval(id);
@@ -120,7 +123,10 @@ export function TossScreen({
   // The computer throws once you have, and when it wins it goes first.
   useEffect(() => {
     if (cpuSeat === null || !throwing || t.hands[cpuSeat] || !t.hands[other(cpuSeat)]) return;
-    const id = window.setTimeout(() => session.send({ type: 'RPS', player: cpuSeat, hand: randomHand(), round: t.round }), 450);
+    // (never the same hand as yours: no tie rounds against the computer, still a fair 50/50)
+    const yours = t.hands[other(cpuSeat)];
+    const hands = (['rock', 'paper', 'scissors'] as Hand[]).filter((h) => h !== yours);
+    const id = window.setTimeout(() => session.send({ type: 'RPS', player: cpuSeat, hand: hands[Math.floor(Math.random() * hands.length)], round: t.round }), 450);
     return () => clearTimeout(id);
   }, [throwing, t.round, !!t.hands[other(cpuSeat ?? 0)]]);
   useEffect(() => {

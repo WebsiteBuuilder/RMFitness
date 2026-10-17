@@ -42,7 +42,7 @@ const score = (s: Series, me: Pid) => `${s.wins[me]}–${s.wins[other(me)]}${s.d
 function CpuDock({ d }: { d: Extract<Dock, { kind: 'cpu' }> }) {
   const lost = d.series.last === 1;
   return (
-    <div class="rematch-dock" role="region" aria-label="Rematch">
+    <div class="rematch-dock cpu" role="region" aria-label="Rematch">
       <div class="rematch-top">
         <span class="rematch-series">
           ⚔ {d.me} vs {d.opp} · {score(d.series, 0)}

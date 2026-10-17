@@ -365,7 +365,7 @@ export function SpeedHome({
               <div>
                 <b>{profile.alias}</b>
                 <span>
-                  {save.wins} wins · {save.losses} losses · {save.draws} draws
+                  {save.wins} {save.wins === 1 ? 'win' : 'wins'} · {save.losses} {save.losses === 1 ? 'loss' : 'losses'} · {save.draws} {save.draws === 1 ? 'draw' : 'draws'}
                 </span>
                 {crown && <span class="sdh-crown">👑 King of Games over {crown.rival}</span>}
               </div>

@@ -56,7 +56,7 @@ export function Legends(p: Ctx) {
   const done = LEGENDS.filter((l) => legendFinished(solo, l)).length;
   const sel = openId ? legendById(openId) : null;
 
-  const duel = (d: LegendDuel, isRematch: boolean) => {
+  const duel = (d: LegendDuel, isRematch: boolean, retry = false) => {
     const found = findLegendDuel(d.id)!;
     const foe = legendFoe(d);
     const borrowed = storyOwn ? null : legendBorrowed(d);
@@ -84,6 +84,8 @@ export function Legends(p: Ctx) {
         notes,
         goals: [],
       },
+      // straight back in from a loss: the VS screen was seen a moment ago
+      ...(retry ? { retry: true } : {}),
     });
   };
 
@@ -118,8 +120,11 @@ export function Legends(p: Ctx) {
             </button>
           )}
           {next && (
-            <Btn kind="gold" onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
-              Continue: {next.legend.card}, duel {next.index + 1}
+            <Btn kind="gold" class="lg-continue" onClick={() => (setOpenId(next.legend.id), setScene({ duel: next.duel, rematch: false }))}>
+              Continue
+              <small>
+                {next.legend.card} · duel {next.index + 1}
+              </small>
             </Btn>
           )}
           <div class="lg-covers">
@@ -185,6 +190,7 @@ export function Legends(p: Ctx) {
         <ResultSheet
           {...p}
           rep={rep}
+          onRetry={() => (seen(), duel(repFound.duel, !!rep.rematch, true))}
           onDone={() => {
             seen();
             if (rep.outcome.result === 'w' && !rep.settled.finished) {
@@ -319,7 +325,7 @@ function SceneSheet(p: {
   );
 }
 
-function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind: 'legend' }>; onDone: () => void }) {
+function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind: 'legend' }>; onDone: () => void; onRetry: () => void }) {
   const { rep } = p;
   const found = findLegendDuel(rep.duelId)!;
   const foe = legendFoe(found.duel);
@@ -350,7 +356,12 @@ function ResultSheet(p: Ctx & { rep: Extract<NonNullable<Ctx['report']>, { kind:
       {won && s.noEarn && <p class="so-center so-dim">The story moves on. Anything goes decks don't earn chips, so this duel's chips wait for a win with your own cards.</p>}
       {won && !s.noEarn && !s.firstWin && !s.rematchPaid && <p class="so-center so-dim">A replay: no chips this time.{rep.rematch ? ' The rematch already paid today.' : ''}</p>}
       {!won && <p class="so-center">A loss costs nothing. Tune your deck and try again.</p>}
-      <Btn kind="gold" onClick={p.onDone}>
+      {!won && (
+        <Btn kind="gold" onClick={p.onRetry}>
+          Try again
+        </Btn>
+      )}
+      <Btn kind={won ? 'gold' : undefined} onClick={p.onDone}>
         Continue
       </Btn>
     </Sheet>
