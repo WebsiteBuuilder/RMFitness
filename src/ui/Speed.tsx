@@ -839,7 +839,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
 
 /**
  * A card read big before anything changes: Add and Remove are the confirm, ‹ › (or a swipe,
- * or the arrow keys) read the next card without closing.
+ * or a controller's LB/RB) read the next card without closing.
  */
 function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; /** stepping through the deck's cards (one per name) */ inDeck: boolean; copies: number; owned: number; why: string | null; /** "Main 21/30": the deck this card goes in */ deckLine: string; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
   const { n, list } = view;
@@ -847,8 +847,14 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, o
   const canStep = list.length > 1 && i >= 0;
   /** which way the last step went, so the next card slides in from that side */
   const [dir, setDir] = useState(0);
-  /** the finger's sideways drag while swiping */
-  const [drag, setDrag] = useState(0);
+  /** the card panel, moved straight under the finger while swiping (no re-render per move) */
+  const cardEl = useRef<HTMLDivElement>(null);
+  const setDrag = (x: number) => {
+    const el = cardEl.current;
+    if (!el) return;
+    el.style.transition = x ? 'none' : '';
+    el.style.transform = x ? `translateX(${x}px)` : '';
+  };
   /** the last Add or Remove, shown as +1 / −1 on the picture */
   const [bump, setBump] = useState<{ d: 1 | -1; id: number } | null>(null);
   const step = (d: number) => {
@@ -859,16 +865,6 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, o
     setBump(null);
     onStep(next);
   };
-  const live = useRef(step);
-  live.current = step;
-  useEffect(() => {
-    const key = (ev: KeyboardEvent) => {
-      if (ev.key === 'ArrowLeft') live.current(-1);
-      else if (ev.key === 'ArrowRight') live.current(1);
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, []);
   const swipe = useRef<{ x: number; y: number; side: boolean | null } | null>(null);
   const skill = card(n)?.sub === 'Skill';
   const notReady = unplayableReason(n);
@@ -891,7 +887,8 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, o
             const dy = ev.touches[0].clientY - s.y;
             // the first real move decides: sideways steps cards, up and down scrolls the text
             if (s.side === null && Math.hypot(dx, dy) > 8) s.side = Math.abs(dx) > Math.abs(dy) * 1.2;
-            if (s.side) setDrag(dx);
+            // past the first or last card it barely moves, so the end of the list is felt
+            if (s.side) setDrag(list[i + (dx < 0 ? 1 : -1)] ? dx * 0.6 : dx * 0.15);
           }}
           onTouchEnd={(ev) => {
             const s = swipe.current;
@@ -903,7 +900,7 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, onStep, onAdd, o
           }}
           onTouchCancel={() => ((swipe.current = null), setDrag(0))}
         >
-          <div class={`dk-view-card ${dir < 0 ? 'from-left' : dir > 0 ? 'from-right' : ''}`} key={n} style={drag ? { transform: `translateX(${drag * 0.6}px)`, transition: 'none' } : undefined}>
+          <div class={`dk-view-card ${dir < 0 ? 'from-left' : dir > 0 ? 'from-right' : ''}`} key={n} ref={cardEl}>
             <CardInfoPanel name={n} />
             {!skill && (
               <i class="dk-view-own" key={bump?.id ?? 0}>
