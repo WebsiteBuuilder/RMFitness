@@ -5,7 +5,6 @@ import type { SkillDef } from '../skills';
 import type { Choice, Engine, Step } from '../engine';
 import type { Card, FieldCard, Pid, Prompt } from '../types';
 import type { EffectDef } from '../effects';
-import { setSpiritPlaceHook } from './helpers';
 import { affectable, changePos, chooseOption, discardOne, fusionPlans, fusionSummon, handField, pick, pickOne, reorder, ssOne, toHandFrom } from './skills';
 
 // ---------- local basics (copies of the skills.ts ones) ----------
@@ -259,7 +258,6 @@ export function installSkills(K: Record<string, SkillDef>) {
 
   // ----- Fear of the Dark -----
   K['Fear of the Dark'] = fearOfTheDark();
-  setSpiritPlaceHook(spiritAsMonster);
 
   // ----- As I Predicted...! -----
   K['As I Predicted...!'] = {
@@ -775,10 +773,12 @@ function* spiritAsMonster(e: Engine, p: Pid, card: Card): Generator<Prompt, bool
   e.log(p, `${card.name} is Special Summoned as a Normal Monster`);
   return true;
 }
-function fearOfTheDark(): SkillDef {
+function fearOfTheDark(): SkillDef & { spiritPlace: typeof spiritAsMonster } {
   const necrofear = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'Dark Necrofear')).length > 0;
   return {
     *startOfDuel() {},
+    // Read by helpers.placeSpiritMessage (no runtime import of helpers here: it would make the module graph circular).
+    spiritPlace: spiritAsMonster,
     eff: {
       shields: (e, _src, target, how, ctl) => how !== 'battle' && necrofear(e, ctl) && (e.isNamed(target, 'Destiny Board') || isMessage(e, target)) && ctlOf(e, target) === ctl && e.actor === other(ctl),
       guardsTarget: (e, _src, ctl, target) => !!target.tags?.noAttackTarget && ctlOf(e, target) === ctl,
