@@ -351,7 +351,11 @@ export function* placeSpiritMessage(e: Engine, p: Pid, uid: number): Gen<boolean
   let done = false;
   if (spiritPlaceHook) done = yield* spiritPlaceHook(e, p, f.card);
   // skills-2024a: a Skill can carry the hook itself (SkillDef-side `spiritPlace`: Fear of the Dark), so skill scripts need no runtime import of this module.
-  if (!done) for (const x of e.skillDefs()) { const h = (x.sk as { spiritPlace?: SpiritPlaceHook }).spiritPlace; if (!done && x.p === p && h) done = yield* h(e, p, f.card); }
+  if (!done)
+    for (const x of e.skillDefs()) {
+      const h = (x.sk as { spiritPlace?: SpiritPlaceHook }).spiritPlace;
+      if (!done && x.p === p && h) done = yield* h(e, p, f.card);
+    }
   if (!done) {
     const now = e.find(uid);
     const z = freeST(e, p);
