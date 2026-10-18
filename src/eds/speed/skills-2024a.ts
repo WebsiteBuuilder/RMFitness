@@ -640,7 +640,8 @@ export function installSkills(K: Record<string, SkillDef>) {
       },
     },
     reroll: {
-      can: (e: Engine, p: Pid) => e.oncePerTurn('skill:rolling', p),
+      // "Flip this card over when you activate this Skill ... Apply the following Skill": only once it is face-up.
+      can: (e: Engine, p: Pid) => e.player(p).skillRevealed && e.oncePerTurn('skill:rolling', p),
       use(e: Engine, p: Pid, v: number) {
         e.useOnce('skill:rolling', p);
         e.log(p, `See Me Rolling: ${e.player(p).name} re-rolls the ${v}`);

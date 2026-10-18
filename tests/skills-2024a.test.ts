@@ -377,7 +377,16 @@ T('See Me Rolling', () => {
   const t4 = roll(0);
   check(t4.length === 0 && got === 1, 'once per turn');
   // The computer re-rolls only a result that is bad for the effect being resolved.
+  // Before the Skill is flipped (used), no re-roll is offered.
+  const e0 = sd('See Me Rolling', ['Graceful Dice']);
+  (e0 as any).rand = () => 0;
+  let got0 = 0;
+  (e0 as any).run((function* () {
+    got0 = yield* e0.rollDie(0, (v) => v >= 4);
+  })());
+  check(!e0.state.prompt && got0 === 1 && !e0.player(0).skillRevealed, 'face-down: no re-roll offered, the Skill stays hidden');
   const e2 = sd('See Me Rolling', ['Graceful Dice']);
+  e2.player(0).skillRevealed = true;
   const seq2 = [0.99, 0];
   (e2 as any).rand = () => seq2.shift() ?? 0;
   (e2 as any).run((function* () {
@@ -386,6 +395,7 @@ T('See Me Rolling', () => {
   check(e2.state.prompt?.kind === 'yesno' && aiAction(e2, 0)?.type === 'NO', 'computer: a 6 for Graceful Dice is kept');
   settle(e2, 'no');
   const e3 = sd('See Me Rolling', ['Graceful Dice']);
+  e3.player(0).skillRevealed = true;
   (e3 as any).rand = () => 0;
   (e3 as any).run((function* () {
     yield* e3.rollDie(0, (v) => v >= 4);
@@ -395,6 +405,7 @@ T('See Me Rolling', () => {
   // In a duel: Graceful Dice asks its activator.
   const e4 = sd('See Me Rolling', ['Graceful Dice', 'Vorse Raider']);
   const v = place(e4, 0, 'Vorse Raider');
+  e4.player(0).skillRevealed = true;
   const seq4 = [0, 0.99];
   (e4 as any).rand = () => seq4.shift() ?? 0;
   const gd = grab(e4, 0, 'Graceful Dice');
