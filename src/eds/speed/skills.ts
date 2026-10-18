@@ -3,6 +3,8 @@
 // engine's default for `use`; Skills that have several parts each "once per Duel" track them
 // with e.oncePerDuel(key). Continuous Skills that have no activation start face-up (startOfDuel).
 import type { SkillDef } from '../skills';
+import { installSkills as installSkills2024a } from './skills-2024a';
+import { installSkills as installSkills2024b } from './skills-2024b';
 import { nameEngine } from '../names';
 import type { Choice, Engine, Step } from '../engine';
 import type { Card, FieldCard, Pid, Prompt } from '../types';
@@ -3104,3 +3106,7 @@ K['Welcome to the Jungle'] = {
     },
   },
 };
+
+// ---------- Skills from the 2024 products ----------
+installSkills2024a(K);
+installSkills2024b(K);

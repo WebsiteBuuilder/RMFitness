@@ -1841,6 +1841,7 @@ export class Engine {
       }
       if (!acted) break;
     }
+    this.state.fx.targetResolved = undefined; // b22: only the state checks right after the action read it (Spirit Reaper)
   }
 
   private resume(input: Choice) {
@@ -2802,6 +2803,8 @@ export class Engine {
     if (!this.inMainPhase() || this.state.turnPlayer !== player) return false;
     const info = this.info(card.name);
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card)) return false;
+    // b22: "This card can only be placed on the field by the effect of Destiny Board" (Spirit Message cards) cannot be Set.
+    if (this.speed && /^This card can only be placed on the field by the effect of/.test(info.desc ?? '')) return false;
     if (this.chainEnergyBlocks(player)) return false;
     if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
     // Speed Duel: a Set Field Spell replaces the one already there too
@@ -3002,17 +3005,22 @@ export class Engine {
           if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
           else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
           else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
+          this.noteTargetResolved(link);
           continue;
         }
+        // b22: "This card's activation and effect cannot be negated" (Spiritualism): the card's activate sets payload.cannotNegate.
+        if (this.speed && link.negated && (link.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate) link.negated = false;
         const stillThere = this.fieldCard(link.card.uid);
         const kind = this.info(link.card.name).kind;
-        if (!link.negated && kind === 'spell' && this.spellsNegated()) link.negated = true;
-        if (!link.negated && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
+        const cannotNegate = this.speed && !!(link.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate;
+        if (!link.negated && !cannotNegate && kind === 'spell' && this.spellsNegated()) link.negated = true;
+        if (!link.negated && !cannotNegate && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
         if (link.negated) {
           this.log(link.player, `${link.card.name}'s effect was negated`);
-        } else if (eff?.resolve && (stillThere || this.resolvesFromGrave(link))) {
+        } else if (eff?.resolve && (stillThere || cannotNegate || this.resolvesFromGrave(link))) {
           yield* this.as(link.player, eff.resolve(this, link, link.player));
         }
+        if (!link.negated) this.noteTargetResolved(link);
         yield* this.afterResolve(link);
       }
     } finally {
@@ -3064,6 +3072,16 @@ export class Engine {
         this.state.fx.inDamageWindow = false;
       }
     }
+  }
+
+  /**
+   * b22: a resolved chain link that targeted a face-up monster (link.targetUid): fx.targetResolved[uid] = 1 until the
+   * state checks after the action (Spirit Reaper: "After resolving a card effect that targets this face-up card, destroy this card").
+   */
+  private noteTargetResolved(link: ChainLink) {
+    if (!this.speed || link.negated || link.targetUid === undefined) return;
+    const m = this.fieldCard(link.targetUid);
+    if (m?.faceUp && this.find(m.uid)?.loc.zone === 'mz') ((this.state.fx.targetResolved ??= {}) as Record<number, number>)[m.uid] = 1;
   }
 
   private *afterResolve(link: ChainLink): Step {

@@ -302,3 +302,68 @@ export function searchOnSummon(title: string, test: (e: Engine, c: Card) => bool
     ...(special ? { onSpecialSummon: run } : {}),
   };
 }
+
+// ---------- Destiny Board / "Spirit Message" (b22) ----------
+/** The 4 "Spirit Message" cards, in the order Destiny Board places them (F-I-N-A-L). */
+export const SPIRIT_MESSAGES = ['Spirit Message "I"', 'Spirit Message "N"', 'Spirit Message "A"', 'Spirit Message "L"'];
+export const isSpiritMessage = (e: Engine, c: Card) => e.namesOf(c).some((nm) => SPIRIT_MESSAGES.includes(nm));
+export const isBoardCard = (e: Engine, c: Card) => e.isNamed(c, 'Destiny Board') || isSpiritMessage(e, c);
+/**
+ * "Destiny Board" and "Spirit Message" cards `p` controls face-up: in the Spell & Trap Zones, and in the Monster Zones
+ * (Fear of the Dark Special Summons a "Spirit Message" as a monster instead of placing it).
+ */
+export const boardCardsOn = (e: Engine, p: Pid): FieldCard[] => [...stOf(e, p), ...e.monsters(p)].filter((c) => c.faceUp && isBoardCard(e, c));
+/** The "Spirit Message" names `p` does not control yet, in F-I-N-A-L order. */
+export const missingMessages = (e: Engine, p: Pid) => SPIRIT_MESSAGES.filter((n) => !boardCardsOn(e, p).some((c) => e.namesOf(c).includes(n)));
+
+/**
+ * Hook for placing a "Spirit Message" "by the effect of Destiny Board" (Destiny Board, Sentence of Doom), set with
+ * setSpiritPlaceHook. Contract: hook(e, p, card) is called with `card` still in p's hand, Deck or GY, before it is put
+ * in a Spell & Trap Zone (the call is made even when no Spell & Trap Zone is free). The hook checks for itself whether
+ * it applies (Fear of the Dark: p's revealed Skill) and may prompt p. It returns true when it handled the card
+ * (Special Summoned it as a monster: then it must have moved it out of the hand/Deck/GY itself), false to place it
+ * face-up in a Spell & Trap Zone as usual. The Deck is shuffled afterwards when the card came from there either way.
+ * Kept in a module variable (not in state.fx) so a saved duel state stays plain data.
+ */
+export type SpiritPlaceHook = (e: Engine, p: Pid, card: Card) => Gen<boolean>;
+let spiritPlaceHook: SpiritPlaceHook | null = null;
+export function setSpiritPlaceHook(hook: SpiritPlaceHook | null) {
+  spiritPlaceHook = hook;
+}
+
+/** Destiny Board's win: it and all 4 "Spirit Message" cards with different names are on `p`'s field. */
+export function destinyBoardCheck(e: Engine, p: Pid): boolean {
+  if (e.state.winner !== null) return false;
+  const on = boardCardsOn(e, p);
+  if (!on.some((c) => e.isNamed(c, 'Destiny Board')) || !SPIRIT_MESSAGES.every((n) => on.some((c) => e.namesOf(c).includes(n)))) return false;
+  e.endDuel(p, 'Destiny Board spells F-I-N-A-L!');
+  return true;
+}
+
+/**
+ * Places a "Spirit Message" card from `p`'s hand, Deck or GY on the field "by the effect of Destiny Board":
+ * through the hook (Fear of the Dark), else face-up in a free Spell & Trap Zone. Then checks the Destiny Board win.
+ */
+export function* placeSpiritMessage(e: Engine, p: Pid, uid: number): Gen<boolean> {
+  const f = e.find(uid);
+  if (!f || f.loc.player !== p || !['hand', 'deck', 'gy'].includes(f.loc.zone)) return false;
+  const fromDeck = f.loc.zone === 'deck';
+  let done = false;
+  if (spiritPlaceHook) done = yield* spiritPlaceHook(e, p, f.card);
+  if (!done) {
+    const now = e.find(uid);
+    const z = freeST(e, p);
+    if (now && z >= 0 && now.loc.player === p && ['hand', 'deck', 'gy'].includes(now.loc.zone)) {
+      const ps = e.player(p);
+      const list = now.loc.zone === 'hand' ? ps.hand : now.loc.zone === 'deck' ? ps.deck : ps.gy;
+      const [c] = list.splice(now.loc.index, 1);
+      ps.sz[z] = { uid: c.uid, name: c.name, owner: c.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0, active: true };
+      e.event('set', { uid, player: p });
+      e.log(p, `${ps.name} places ${c.name} face-up`);
+      done = true;
+    }
+  }
+  if (fromDeck) e.player(p).deck = e.shuffle(e.player(p).deck);
+  if (done) destinyBoardCheck(e, p);
+  return done;
+}
