@@ -330,7 +330,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const t = yield* pickOne(e, p, 'Thunder Ball: target which card in your GY?', e.player(p).gy.slice(), true);
       if (!t) return;
       useOpt(e, TB, p, 3);
-      const r = e.roll(6);
+      const r = yield* e.rollDie(p, (v) => v === 6);
       e.log(p, `Thunder Ball: the die shows ${r}`);
       if (r === 6 && zoneOf(e, t.uid) === 'gy') {
         e.toHandOf(t.uid, p);

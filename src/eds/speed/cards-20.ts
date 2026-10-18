@@ -318,7 +318,7 @@ export function install(E: Record<string, EffectDef>, _h: SpeedHelpers) {
       yield* e.specialSummon(uid, p, 'atk', true, (fc) => void ((fc.tags ??= {}).negated = 1));
       const m = e.fieldCard(uid);
       if (!m) return;
-      const n = e.roll(6);
+      const n = yield* e.rollDie(p, () => true); // any Level will do
       tag(m).lvSet = n;
       tag(m).lvSetTurn = e.state.turn;
       e.log(p, `Re-dyce-cle: the die shows ${n}; ${m.name} is Level ${n} this turn`);

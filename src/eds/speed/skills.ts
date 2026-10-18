@@ -596,7 +596,7 @@ K['Last Gamble'] = {
       e.payLp(p, e.player(p).lp - 100);
       const cs = yield* pick(e, p, 'Last Gamble: discard 2 cards', e.player(p).hand, 2, 2);
       for (const c of cs ?? []) yield* e.discard(p, c.uid);
-      const n = e.roll(6);
+      const n = yield* e.rollDie(p, (v) => v >= 4);
       e.log(p, `Last Gamble: the die shows ${n}`);
       e.draw(p, n);
     },
@@ -1790,7 +1790,7 @@ K["Archfiend's Conscription"] = {
     oncePerDuel: false,
     can: (e, p) => e.player(p).lp > 0,
     *run(e, p) {
-      const n = e.roll(6);
+      const n = yield* e.rollDie(p, (v) => v >= 2 && v <= 4);
       e.log(p, `Archfiend's Conscription: the die shows ${n}`);
       e.payLp(p, n * 200);
       if (e.state.winner !== null || n < 2 || n > 4) return;
@@ -2305,7 +2305,7 @@ K['Grit'] = {
     *run(e, p) {
       const picks = yield* e.select(p, 'Grit: call 2 numbers', [1, 2, 3, 4, 5, 6].map((n) => ({ label: String(n), value: n })), 2, 2);
       const called = (picks ?? [0, 1]).map((i) => i + 1);
-      const n = e.roll(6);
+      const n = yield* e.rollDie(p, (v) => called.includes(v));
       e.log(p, `Grit: ${called.join(' and ')} called, the die shows ${n}`);
       if (called.includes(n)) {
         setN(e, p, 'grit', e.state.turn + 1);

@@ -513,7 +513,7 @@ export function installSkills(K: Record<string, SkillDef>) {
       },
       eff: {
         // "If all monsters you control are Mokey Mokey monsters (min. 1), Effect Monsters cannot attack the turn they are Summoned."
-        blocksAttack: (e, c, m) => !!e.player(c.owner).skillRevealed && allMokey(e, c.owner) && m.placedTurn === e.state.turn && isEffectMonster(e, m),
+        blocksAttack: (e, c, m) => !!e.player(c.owner).skillRevealed && allMokey(e, c.owner) && m.tags?.summonedTurn === e.state.turn && isEffectMonster(e, m), // engine.anySummon: any kind of Summon, incl. a Flip Summon of a monster Set earlier
       },
     } as SkillDef;
   })();

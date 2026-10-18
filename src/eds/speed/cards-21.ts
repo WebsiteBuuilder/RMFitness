@@ -445,6 +445,18 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Volcanic Eruption'] = {
     endPhaseTrap: true,
     canActivate: (e, _c, p) => e.state.phase === 'EP' && e.state.turnPlayer === p && controlsJurassic(e, p),
+    // The computer wipes the field only when the opponent loses more there than it does (its own Jurassic World included).
+    aiActivate(e, c, p) {
+      // Board value as the computer sees it (aiEval): an opponent's face-down monster is a guess.
+      const worth = (x: FieldCard, q: Pid) => {
+        if (x.uid === c.uid) return 0;
+        if (!e.monsters(q).includes(x)) return 300;
+        if (!x.faceUp && q !== p) return 900;
+        return 200 + 0.7 * Math.max(x.faceUp ? e.atkOf(x) : (info(e, x).atk ?? 0), (x.faceUp ? e.defOf(x) : (info(e, x).def ?? 0)) * 0.8);
+      };
+      const side = (q: Pid) => [...e.monsters(q), ...stOf(e, q)].reduce((n, x) => n + worth(x, q), 0);
+      return side(other(p)) > side(p);
+    },
     *resolve(e, link, p) {
       if (!controlsJurassic(e, p)) return;
       const all = [...e.monsters(0), ...e.monsters(1), ...stOf(e, 0), ...stOf(e, 1)].filter((c) => c.uid !== link.card.uid);

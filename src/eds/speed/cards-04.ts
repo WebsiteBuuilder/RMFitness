@@ -1439,7 +1439,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Dicephoon'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve(e, link, p) {
-      const r = e.roll(6);
+      const r = yield* e.rollDie(p, (v) => v >= 2 && v <= 5);
       e.log(p, `Dicephoon rolls a ${r}`);
       if (r === 1 || r === 6) return e.damage(p, 1000);
       const n = r === 5 ? 2 : 1;

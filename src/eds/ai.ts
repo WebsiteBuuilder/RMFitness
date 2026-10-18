@@ -357,6 +357,15 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
 function yesNo(e: Engine, me: Pid, title: string): boolean {
   const sk = title.match(/^Use your Skill (.*) instead of drawing\?$/);
   if (sk) return skillDrawOk(e, me, sk[1]);
+  // A die re-roll offered by a Skill (See Me Rolling): the engine marks whether the result is bad for the effect being resolved.
+  if (/: re-roll the \d\?$/.test(title)) return e.state.fx.rerollBad === 1;
+  // "Activate X?" for a Set card (End Phase Traps: Volcanic Eruption): the card's own judgement when it has one.
+  const act = title.match(/^Activate (.+)\?$/);
+  if (act) {
+    const c = e.spells(me).find((x) => !x.faceUp && x.name === act[1]);
+    const judge = c && getEffect(c.name)?.aiActivate;
+    if (c && judge) return judge(e, c, me);
+  }
   const pay = title.match(/pay (\d+) (?:LP|Life Points)/i);
   if (pay && e.player(me).lp <= Number(pay[1]) + 500) return false;
   const half = /pay half (?:your|of your) (?:LP|Life Points)/i.test(title);

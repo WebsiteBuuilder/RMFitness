@@ -195,7 +195,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
         const t = map[m.uid];
         delete map[m.uid];
         if (t === undefined) return;
-        const r = e.roll(6);
+        const r = yield* e.rollDie(p, (v) => v >= 2 && v <= 5);
         e.log(p, `Snipe Hunter rolls a ${r}`);
         if (r === 1 || r === 6) return;
         if (e.fieldCard(t)) yield* e.destroy([t]);

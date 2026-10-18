@@ -629,7 +629,8 @@ export function installSkills(K: Record<string, SkillDef>) {
   }
 
   // ----- See Me Rolling -----
-  // The re-roll is not asked (a die roll cannot wait for an answer): the Skill re-rolls a 1 or 2, once per turn.
+  // The re-roll is the player's choice: engine.rollDie asks "See Me Rolling: re-roll the N?" once per turn after a die roll
+  // for a card or effect (die rolls inside a non-generator hook, Desrook Archfiend's negation check, cannot ask and are not offered).
   K['See Me Rolling'] = {
     use: {
       phase: 'main',
@@ -638,13 +639,14 @@ export function installSkills(K: Record<string, SkillDef>) {
         if (yield* toHandFrom(e, p, 'See Me Rolling: add a card with a die roll from your Deck', inDeck(e, p, (c) => isDiceCard(e, c)), true)) yield* handToBottom(e, p, 'See Me Rolling');
       },
     },
-    reroll(e: Engine, p: Pid, v: number) {
-      if (v > 2 || !e.oncePerTurn('skill:rolling', p)) return false;
-      e.useOnce('skill:rolling', p);
-      e.log(p, `See Me Rolling: ${e.player(p).name} re-rolls the ${v}`);
-      return true;
+    reroll: {
+      can: (e: Engine, p: Pid) => e.oncePerTurn('skill:rolling', p),
+      use(e: Engine, p: Pid, v: number) {
+        e.useOnce('skill:rolling', p);
+        e.log(p, `See Me Rolling: ${e.player(p).name} re-rolls the ${v}`);
+      },
     },
-  } as SkillDef & { reroll(e: Engine, p: Pid, v: number): boolean };
+  } as SkillDef & { reroll: { can(e: Engine, p: Pid): boolean; use(e: Engine, p: Pid, v: number): void } };
 
   // ----- Battle City Bestie -----
   K['Battle City Bestie'] = {

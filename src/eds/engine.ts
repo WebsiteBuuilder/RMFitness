@@ -645,6 +645,16 @@ export class Engine {
     return this.info(m.name).race ?? '';
   }
 
+  /** skills-2024a: a card of this uid is in either player's GY (no array built: used on the hot namesOf path). */
+  private inSomeGy(uid: number | undefined): boolean {
+    if (uid === undefined || uid < 0) return false;
+    const has = (gy: Card[]) => {
+      for (let i = 0; i < gy.length; i++) if (gy[i].uid === uid) return true;
+      return false;
+    };
+    return has(this.state.players[0].gy) || has(this.state.players[1].gy);
+  }
+
   // ---------- card names ----------
   /**
    * The names a card has right now. A card keeps its printed name unless an effect changes it: its own text
@@ -658,7 +668,8 @@ export class Engine {
     const base = given.name;
     if (!this.speed || !base) return [base];
     const rule = nameRule(this.info(base));
-    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy && !this.state.fx.gyNames) return [base]; // skills-2024a: fx.gyNames
+    // skills-2024a: fx.gyNames (Tribal Unity) only matters for a card that is in a GY right now (a cheap scan of the two GYs, no allocation).
+    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy && !(this.state.fx.gyNames && this.inSomeGy(given.uid))) return [base];
     // Where the card is now (a FieldCard kept from before it left the field is the same card, now elsewhere).
     const f = given.uid !== undefined && given.uid >= 0 ? this.find(given.uid) : null;
     const card = f?.card.name === base ? f.card : given;
@@ -871,17 +882,35 @@ export class Engine {
     let v = 1 + Math.floor(this.rand() * sides);
     // Shown on screen (dice and coins are public), so nobody has to dig the result out of the log.
     if (sides === 6 || sides === 2) this.event('roll', { player: this.actor ?? this.state.turnPlayer, amount: v, to: sides === 6 ? 'die' : 'coin' });
-    // skills-2024a: a Skill may let its owner re-roll their die once (See Me Rolling: SkillDef-side `reroll(e, p, result)`).
-    if (this.speed && sides === 6) {
-      const who = this.actor ?? this.state.turnPlayer;
-      for (const x of this.skillDefs()) {
-        const rr = (x.sk as { reroll?: (e: Engine, p: Pid, v: number) => boolean }).reroll;
-        if (x.p !== who || !rr || !rr(this, who, v)) continue;
-        v = 1 + Math.floor(this.rand() * sides);
-        this.log(who, `${this.player(who).name} re-rolls the die: ${v}`);
-        this.event('roll', { player: who, amount: v, to: 'die' });
-        break;
+    return v;
+  }
+
+  /**
+   * A die rolled by player `p` for a card or effect, inside a generator so a Skill can offer that player a re-roll
+   * (See Me Rolling: "you may re-roll the result once"). `good` says which results the roller wants: only the computer
+   * reads it (as fx.rerollBad, when it answers the question). Players without such a Skill see no question and the roll
+   * is exactly roll(sides). A result decided in advance (It's My Lucky Day!) is not offered for a re-roll.
+   */
+  *rollDie(p: Pid, good: (v: number) => boolean, sides = 6): Generator<Prompt, number, Choice> {
+    const fixedBefore = this.state.fx.fixedRoll;
+    let v = this.roll(sides);
+    if (!this.speed || sides !== 6 || (fixedBefore && !this.state.fx.fixedRoll) || this.state.winner !== null) return v;
+    for (const x of this.skillDefs()) {
+      const rr = (x.sk as { reroll?: { can(e: Engine, p: Pid): boolean; use(e: Engine, p: Pid, v: number): void } }).reroll;
+      if (x.p !== p || !rr || !rr.can(this, p)) continue;
+      this.state.fx.rerollBad = good(v) ? 0 : 1;
+      let yes: boolean;
+      try {
+        yes = yield* this.yesno(p, `${this.player(p).skill}: re-roll the ${v}?`);
+      } finally {
+        this.state.fx.rerollBad = undefined;
       }
+      if (!yes) break;
+      rr.use(this, p, v);
+      v = 1 + Math.floor(this.rand() * sides);
+      this.log(p, `${this.player(p).name} re-rolls the die: ${v}`);
+      this.event('roll', { player: p, amount: v, to: 'die' });
+      break;
     }
     return v;
   }
@@ -1547,6 +1576,7 @@ export class Engine {
 
   /** Effects that watch every Summon (Mysterious Puppeteer, Kotodama). */
   *anySummon(m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step {
+    (m.tags ??= {}).summonedTurn = this.state.turn; // the turn this monster was last Summoned (Normal/Tribute, Flip or Special): Mokey Mokey Madness
     for (const p of [0, 1] as Pid[]) {
       for (const w of this.monsters(p)) {
         if (!w.faceUp || !this.fieldCard(m.uid)) continue;

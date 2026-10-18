@@ -280,7 +280,7 @@ const inBattle = (e: E9, m: FieldCard) => !!e.state.battle && (e.state.battle.at
 function dieGuard(name: string, hits: number[]): NonNullable<EffectDef['onChainLink']> {
   return function* (e, m, p, link) {
     if (link.player === p || link.targetUid !== m.uid || link.negated) return;
-    const r = e.roll(6);
+    const r = yield* e.rollDie(p, (v) => hits.includes(v));
     e.log(p, `${name} rolls a ${r}`);
     if (!hits.includes(r)) return;
     negateLink(e, link, p);
@@ -737,7 +737,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       const b = e.state.battle;
       const a = b ? e.fieldCard(b.attacker) : null;
       if (!b || !a) return;
-      const r = e.roll(6);
+      const r = yield* e.rollDie(p, (v) => v >= 2 && v <= 5);
       e.log(p, `Roulette Spider rolls a ${r}`);
       const opp = other(p);
       if (r === 1) return e.payLp(p, Math.floor(e.player(p).lp / 2));
