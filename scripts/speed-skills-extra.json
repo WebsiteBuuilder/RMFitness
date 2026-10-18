@@ -1,0 +1,386 @@
+[
+ {
+  "id": 390000001,
+  "name": "Sky God Revelation",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nWhen a Level 10 monster with ? ATK is Normal Summoned to your field, each player can draw until they have 6 cards in their hand.\nOnce per turn, during your Main Phase, you can activate 1 of these Skills:\n● Reveal 1 \"Slifer the Sky Dragon\" in your hand, place it on the bottom of the Deck, then draw 1 card.\n● Once per Duel, discard 1 card, then add 1 \"Slifer the Sky Dragon\" from your Deck to your hand.",
+  "character": "Yami Yugi",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000002,
+  "name": "Executive Privilege",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\n\"Obelisk the Tormentor\" can attack all monsters your opponent controls, once each.\nOnce per turn, during your Main Phase, you can activate 1 of these Skills:\n● Reveal 1 \"Obelisk the Tormentor\" and \"Blue-Eyes White Dragon\" in your hand, place them on the bottom of the Deck in any order, then draw 2 cards.\n● Once per Duel, discard 1 card, then add 1 \"Obelisk the Tormentor\" from your Deck to your hand.",
+  "character": "Seto Kaiba",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000003,
+  "name": "Battle City Slugger",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nAll Warrior monsters you control gain 100 ATK for each Warrior monster you control.\nOnce per turn, during your Main Phase, you can activate 1 of these Skills:\n● Reveal 1 \"Gilford the Lightning\", \"Insect Queen\", \"Jinzo\", or \"The Legendary Fisherman\" in your hand, place it on the bottom of the Deck, then draw 1 card.\n● Once per Duel, discard 1 card, then add 1 \"Gilford the Lightning\" from your Deck to your hand, then you can Tribute Summon 1 Warrior monster, in addition to your Normal Summon/Set.",
+  "character": "Joey Wheeler",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000004,
+  "name": "Advent of Ra",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nWhen you Tribute Summon \"The Winged Dragon of Ra\", its original ATK/DEF become the combined original ATK/DEF of the monsters Tributed for its Summon.\nOnce per turn, during your Main Phase, you can activate 1 of these Skills:\n● Reveal 1 \"The Winged Dragon of Ra\" monster in your hand, place it on the bottom of the Deck, then draw 1 card.\n● Once per Duel, you can discard 1 card, then add 1 \"The Winged Dragon of Ra\" monster from your Deck to your hand.",
+  "character": "Yami Marik",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000005,
+  "name": "Fear of the Dark",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nWhile \"Dark Necrofear\" is face-up on your field, \"Destiny Board\" and \"Spirit Message\" cards you control are unaffected by your opponent's card effects. If a \"Spirit Message\" card would be placed on your field with \"Destiny Board\", you can Special Summon it as a Normal Monster (Fiend/DARK/Level 1/ATK 0/DEF 0) instead. It cannot be targeted for attacks, but does not prevent your opponent from attacking you directly. Once per turn, you can reveal 1 \"Spirit Message\" card in your hand and place it on the bottom of the Deck, then draw 1 card.",
+  "character": "Yami Bakura",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000006,
+  "name": "As I Predicted...!",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nDuring your Draw Phase, instead of conducting your normal draw, you may look at the top 2 cards of your Deck, add 1 to your hand, then send the other to the GY. If you do, skip your next Battle Phase.\nApply the following Skills:\n● Only you need 15 or more cards in your GY to activate \"Exchange of the Spirit\".\n● If you have 15 or more cards in your GY, you can banish 1 \"Exchange of the Spirit\" from your GY to activate its effect.",
+  "character": "Ishizu Ishtar",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000007,
+  "name": "Royal Temple of the Kings",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, place this card in your Field Zone and flip it over.\n\"Royal Temple of the Kings\" is unaffected by your opponent's card effects. \"Mystical Beast of Serket\" cannot be destroyed by its own effect. Once per turn: You can pay 500 LP; this turn, you can activate a Continuous Trap Card with an effect that Special Summons itself as a monster, the turn it was Set.",
+  "character": "Odion",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000008,
+  "name": "Tribal Unity",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\n\"Harpie\" monsters are also treated as \"Amazoness\" monsters and vice-versa, while they are on the field or GY. Once per Duel, you can discard 1 monster to make 1 \"Harpie\" or \"Amazoness\" monster you control gain ATK equal to the Level of the discarded monster x 200.",
+  "character": "Mai Valentine",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000009,
+  "name": "Ever Faithful Companions",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nIf only your opponent controls a monster, you can Special Summon 1 \"Dark Magician\" or 1 \"Dark Magician Girl\" from your hand. Once per Duel, while you control a monster whose original name is \"Dark Magician\" or \"Dark Magician Girl\", you can add 1 \"Dark Magician\" or 1 card that mentions it from your Deck to your hand.",
+  "character": "Yami Yugi",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000010,
+  "name": "Symbol of Pride",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nDuring your Main Phase, you can Tribute Summon 1 \"Blue-Eyes White Dragon\" by Tributing 1 Tribute Summoned monster, in addition to your Normal Summon/Set. You can discard 1 Spell, then apply 1 of these Skills (but you can only use each of these Skills once per Duel):\n● If you control a \"Blue-Eyes White Dragon\", destroy all monsters your opponent controls, also \"Blue-Eyes White Dragon\" you control cannot declare an attack this turn.\n● Fusion Summon 1 \"Blue-Eyes Ultimate Dragon\" using monsters from your hand or field as material, and if you do, it is unaffected by your opponent's card effects until the end of this turn.",
+  "character": "Seto Kaiba",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000011,
+  "name": "Red-Eye Inferno",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nYou can Tribute Summon \"Red-Eyes Black Dragon\" for 1 less Tribute for each monster your opponent controls. You can discard 1 Spell, then apply 1 of these Skills (but you can only use each of these Skills once per Duel).\n● If you control a \"Red-Eyes Black Dragon\", inflict 800 damage to your opponent, also \"Red-Eyes Black Dragon\" you control cannot declare an attack this turn.\n● Fusion Summon 1 Fusion Monster that mentions \"Red-Eyes Black Dragon\" as material, using monsters from your hand or field as material, and if you do, it cannot be destroyed by your opponent's card effects until the end of this turn.",
+  "character": "Joey Wheeler",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000012,
+  "name": "Pulling the Strings",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nApply the following Skills:\n● Once per turn, you can give control of 1 face-up monster you control to your opponent, and if you do, it cannot be Tributed.\n● Once per Duel, during your opponent's End Phase, you can destroy 1 monster your opponent controls that you own, and if you do, inflict 500 damage to your opponent, also for the rest of this Duel, you take no damage from cards you own.",
+  "character": "Yami Marik",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000013,
+  "name": "Malevolence of the Millennium Ring",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nOnce per turn, if you control a Fiend monster, you can activate 1 of these Skills (but you can only use each of these Skills once per Duel):\n● Send 1 Fiend monster from your Deck to the GY, then lose LP equal to its original Level x 200.\n● Discard 1 Fiend monster, lose LP equal to its original Level x 200, then draw 1 card.",
+  "character": "Yami Bakura",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000014,
+  "name": "Keeper of the Valley",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nOnce per Duel, you can discard 1 card to add 1 Spell/Trap that mentions \"Necrovalley\" from your GY to your hand.\nApply the following Skill:\n● Your GY is unaffected by \"Necrovalley\".",
+  "character": "Ishizu Ishtar",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000015,
+  "name": "Deserts Peril",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nTwice per Duel, you can apply the following Skill:\n● Flip all monsters you control face-down and shuffle them in your Main Monster Zone, then you can change the battle position of 1 monster you control.\nThis Skill can only be used once per turn.",
+  "character": "Odion",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000016,
+  "name": "Harpie's Kaleidoscope",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\n\"Harpie Lady Sisters\" monsters you control cannot be destroyed by your opponent's Monster or Trap effects, also they gain the following effect:\n● Once per turn, during your Main Phase: You can place 2 WIND Winged Beast monsters from your GY on the bottom of the Deck in any order, then target 1 monster your opponent controls; return it to the hand.",
+  "character": "Mai Valentine",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000017,
+  "name": "See Me Rolling",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Flip this card over when you activate this Skill.\nOnce per Duel, you can add 1 card with an effect that requires a die roll from your Deck to your hand, then place 1 card from your hand on the bottom of the Deck.\nApply the following Skill:\n● Once per turn, when you roll a dice for a card or effect, you may re-roll the result once.",
+  "character": "Duke Devlin",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000018,
+  "name": "Battle City Bestie",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nApply the following Skills:\n● You take no battle damage during your turn.\n● Once per turn, during your End Phase, if your opponent activated a card or effect this turn, draw 1 card.",
+  "character": "Téa Gardner",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000019,
+  "name": "Even the Odds",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Activate this Skill only if your opponent controls exactly 3 cards and you control no cards.\nDuring your Main Phase, you can add 1 card from your Deck to your hand, then place 1 card from your hand on the bottom of the Deck. This Skill can only be used once per Duel.",
+  "character": "Tristan Taylor",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000020,
+  "name": "Noah's Arc",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nOnce per Duel, you can add 1 \"Shinato, King of a Higher Plane\" or \"Shinato's Ark\" from your Deck to your hand, then place 1 card from your hand on the bottom of the Deck.\nApply the following Skills:\n● Once per turn, if you control a Level 5 or higher Spirit monster or \"Shinato, King of a Higher Plane\", you can add 1 Spirit monster from your GY to your hand.\n● During your turn, you can Normal Summon 1 Spirit monster with the same original name as a monster that was Normal Summoned during your previous turn, in addition to your Normal Summon this turn.",
+  "character": "Noah Kaiba",
+  "img": false,
+  "sets": [
+   "SBC2"
+  ]
+ },
+ {
+  "id": 390000021,
+  "name": "Straight out of Neo Space!",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nIf only your opponent controls a monster, you can Special Summon 1 \"Elemental HERO Neos\" from your hand, also for the rest of this turn, you cannot Special Summon, except \"Elemental HERO\" or \"Neo-Spacian\" monsters. During your End Phase, if a Fusion Monster you control is returned to your Extra Deck, you can Special Summon 1 \"Elemental HERO Neos\" from your Deck.",
+  "character": "Jaden Yuki",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000022,
+  "name": "Destructive Fate",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nDuring your turn, when you would toss a coin(s) for the effect of a monster or Spell (once per turn for each card type), you may lose half your LP to declare the result(s) instead. During the End Phase of your 3rd turn, flip this card over.",
+  "character": "Sartorius",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000023,
+  "name": "Food Chain",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Flip this card over when you activate this Skill.\nOnce per turn, you can apply 1 of these Skills.\n● Destroy 1 Dinosaur or Reptile monster you control, then Special Summon 1 Dinosaur monster whose Level is 1 higher from your hand or Deck.\n● You can Tribute Summon 1 Dinosaur monster by banishing 2 Dinosaur and/or Reptile monsters from your GY instead of Tributing (it is still treated as a Tribute Summon).",
+  "character": "Tyranno Hassleberry",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000024,
+  "name": "Major in Paleontology",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nOnce per turn, you can banish 1 card from your hand face-down, then place 1 Dig Counter on this Skill (max. 1). If a face-up \"Fossil\" Fusion Monster(s) you control is destroyed by card effect, you can place 1 Dig Counter on this Skill (max. 1). Once per turn, during your Main Phase, you can remove 1 Dig Counter from this Skill to Fusion Summon 1 \"Fossil\" Fusion Monster from your Extra Deck, by banishing materials mentioned on it from any GYs (except for materials with a specific GY requirement listed.) (This is treated as a Fusion Summon with \"Fossil Fusion\".)",
+  "character": "Jim Crocodile Cook",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000025,
+  "name": "Wise Man Neos",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\n\"Elemental HERO Neos\" and Fusion Monsters that mention \"Elemental HERO Neos\" as material gain the following effect.\n● Before damage calculation, if this card battles an opponent's monster: You can inflict damage to your opponent equal to half that opponent's monster's original ATK.",
+  "character": "Jaden Yuki",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000026,
+  "name": "Magician's Scales",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Flip this card over when you activate this Skill.\nOnce per Duel, you can Tribute 1 \"Arcana Force\" monster and add 1 Normal Spell from your Deck to your hand, also for the rest of the Duel, you cannot Summon any monsters, except \"Arcana Force\" monsters.",
+  "character": "Sartorius",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000027,
+  "name": "Dino Brain Immunity",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nApply the following Skills.\n● The battle positions of Dinosaur monsters cannot be changed by Trap Cards or effects.\n● Level 7 or higher Dinosaur monsters on the field cannot be targeted by Spell Cards or effects.",
+  "character": "Tyranno Hassleberry",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000028,
+  "name": "Dig Site Inspection",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nOnce per turn, during your Draw Phase, before you draw, you can excavate the top card of your Deck, and place it on the top or bottom of the Deck. After you placed a second card to the bottom of your Deck with this Skill, flip this card over.",
+  "character": "Jim Crocodile Cook",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000029,
+  "name": "\"Invitation\" to the Society",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "At the start of the Duel, flip this card over.\nIf your opponent's monster is equipped with \"White Veil\" you control, take control of that monster while it's equipped with \"White Veil\". You can only attack with monsters equipped with \"White Veil\" the turn you activate \"White Veil\".",
+  "character": "Society of Light",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000030,
+  "name": "Mokey Mokey Madness",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Flip this card over when you activate this Skill.\nApply the following Skill.\n● If all monsters you control are \"Mokey Mokey\" monsters (min. 1), Effect Monsters cannot attack the turn they are Summoned.\nOnce per Duel, if you control 2 or more Fairy monsters, you can place 1 \"Mokey Mokey\" Continuous Spell from your Deck face-up in your Spell & Trap Zone, and if you do, destroy 1 monster you control.\nOnce per Duel, you can discard 1 card to Fusion Summon 1 \"Mokey Mokey King\" from your Extra Deck, using monsters from your hand or field as Fusion Material.",
+  "character": "Belowski",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000031,
+  "name": "Cyberdark Scheme",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "Flip this card over when you activate this Skill.\nOnce per turn, you can activate 1 of these Skills.\n● Return 1 face-up or face-down \"Cyberdark\" monster you control to the hand (reveal it if it is face-down), and if you do, immediately after this Skill resolves, you can Normal Summon 1 \"Cyberdark\" monster.\n● Once per Duel, send 1 Monster Card in your Spell & Trap Zone, equipped to a \"Cyberdark\" Fusion Monster, to the GY, then equip 1 monster your opponent controls to that monster. \"Cyberdark\" Fusion Monsters gain ATK equal to the original ATK of the monster equipped to it by this Skill.",
+  "character": "Zane Truesdale",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ },
+ {
+  "id": 390000032,
+  "name": "Shouldering a Destiny",
+  "type": "Skill Card",
+  "frame": "skill",
+  "desc": "You draw 1 less card at the beginning of the Duel. During your Main Phase, you can activate this Skill as a Continuous Spell Card.\nWhen this card is activated: You can add 1 \"Destiny HERO - Plasma\" from your Deck or GY to your hand. While you control \"Destiny HERO - Plasma\", apply the following effects.\n● You cannot draw during the Draw Phase.\n● Each \"Destiny HERO - Plasma\" you control gains 100 ATK for each monster in the GYs, cannot be destroyed by your opponent's card effects, also can make a second attack during each Battle Phase.",
+  "character": "Aster Phoenix",
+  "img": false,
+  "sets": [
+   "SGX4"
+  ]
+ }
+]

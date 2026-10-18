@@ -44,7 +44,7 @@ import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult, tooQuick } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, tooQuick } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
@@ -221,6 +221,9 @@ export function App() {
   const speedSaveOf = (id: string, settleLeft = false) => {
     const raw = loadSpeedSave(id);
     let s = migrate(raw);
+    const paid = retiredPaid(raw, s);
+    const retiredNews = paid.copies || paid.chips || paid.decks.length ? [retiredNotice(paid)] : [];
+    if (retiredNews.length) setSpeedNews(retiredNews);
     const t = ticketOf(s);
     if (settleLeft && t && !session) {
       // A duel on this phone left unfinished: ask who gave up. A Link Battle this profile
@@ -230,7 +233,7 @@ export function App() {
       else if ((!pendingJoin || pendingJoin !== t.room) && liveRoomOf(id)?.room !== t.room && !(t.room && Date.now() - t.at < 3 * 3600_000)) {
         const left = settleLeftDuel(s)!;
         s = left.save;
-        setSpeedNews(left.lines);
+        setSpeedNews([...retiredNews, ...left.lines]);
         setNewsCards([{ who: '', won: left.won, lost: left.lost }]);
       }
     }

@@ -14,6 +14,11 @@ import {
   allMonsters,
   allST,
   anyTime,
+  boardCardsOn,
+  destinyBoardCheck,
+  isSpiritMessage,
+  missingMessages,
+  placeSpiritMessage,
   attrOf,
   chooseOption,
   ctrl,
@@ -133,20 +138,6 @@ const canApply = (e: Engine, p: Pid, c: Card) => {
   const d = getDef(e, c);
   return !!d?.resolve && (!d.canActivate || d.canActivate(e, c, p, 'main', {}));
 };
-/** Places a Spell/Trap from the hand or Deck face-up in a Spell & Trap Zone. */
-function placeFaceUp(e: Engine, p: Pid, uid: number): FieldCard | null {
-  const f = e.find(uid);
-  const z = freeST(e, p);
-  if (!f || z < 0 || (f.loc.zone !== 'hand' && f.loc.zone !== 'deck')) return null;
-  const ps = e.player(f.loc.player);
-  const list = f.loc.zone === 'hand' ? ps.hand : ps.deck;
-  const [c] = list.splice(f.loc.index, 1);
-  const fc: FieldCard = { uid: c.uid, name: c.name, owner: c.owner, pos: 'atk', faceUp: true, placedTurn: e.state.turn, attacked: false, posChanged: false, atkMod: 0, defMod: 0, equips: [], counters: 0, active: true };
-  e.player(p).sz[z] = fc;
-  e.event('set', { uid, player: p });
-  e.log(p, `${e.player(p).name} places ${c.name} face-up`);
-  return fc;
-}
 
 // ---------- Fusion Summons with named materials (Dark Fusion, Dark Calling, Dyna Base...) ----------
 // A material slot with a null id is a kind of monster (EffectDef.fusionTests: Dyna Tank's "1 Machine + 1 Dinosaur"), not a named card.
@@ -1123,30 +1114,38 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     },
   };
 
-  // Spirit Message cards are not in the Speed Duel pool; the placing and the win still work if they ever are.
+  // b22: placing a "Spirit Message" and the win go through helpers.ts (placeSpiritMessage, destinyBoardCheck), shared with
+  // Sentence of Doom and the Fear of the Dark Skill. The win counts the whole field: Speed Duel has only 3 Spell & Trap
+  // Zones, so all 5 cards are only on the field together when some "Spirit Message" cards are monsters (Fear of the Dark).
   E['Destiny Board'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
-    *resolve() {},
+    *resolve(e, _l, p) {
+      destinyBoardCheck(e, p);
+    },
     *onEndPhase(e, board, p) {
-      if (e.state.turnPlayer === p || !e.fieldCard(board.uid)) return;
-      const have = new Set(stOf(e, p).map((c) => c.name));
-      const next = BOARD.find((n) => !have.has(n));
-      if (next) {
-        const c = [...e.player(p).hand, ...e.player(p).deck].find((x) => x.name === next);
-        if (c && placeFaceUp(e, p, c.uid) && e.find(c.uid)?.loc.zone !== 'hand') e.player(p).deck = e.shuffle(e.player(p).deck);
+      if (e.state.turnPlayer === p || !e.fieldCard(board.uid)?.active || !e.oncePerTurn(`Destiny Board:${board.uid}`, p)) return;
+      // "in the proper order of I, N, A and L": the first one not on the field yet.
+      const next = missingMessages(e, p)[0];
+      const c = next ? [...e.player(p).hand, ...e.player(p).deck].find((x) => e.namesOf(x).includes(next)) : undefined;
+      if (c) {
+        e.useOnce(`Destiny Board:${board.uid}`, p);
+        yield* placeSpiritMessage(e, p, c.uid);
       }
-      const now = new Set(stOf(e, p).filter((c) => c.faceUp).map((c) => c.name));
-      if (now.has('Destiny Board') && BOARD.every((n) => now.has(n))) e.endDuel(p, 'Destiny Board spells F-I-N-A-L!');
+      destinyBoardCheck(e, p);
+    },
+    // "When this card and all 4 ... are placed on your field, you win the Duel": checked after every action too.
+    *stateCheck(e, _board, p) {
+      destinyBoardCheck(e, p);
     },
     *onLeaveField(e, _fc, p) {
-      for (const c of stOf(e, p).filter((x) => e.namesOf(x).some((nm) => BOARD.includes(nm)))) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
+      for (const c of boardCardsOn(e, p).filter((x) => isSpiritMessage(e, x))) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
     },
   };
-  // A "Spirit Message" leaving the field takes the board and the other messages with it.
+  // A "Spirit Message" leaving the field takes the board and the other messages with it (face-up ones in the Monster Zones too).
   for (const n of BOARD)
     E[n] = {
       *onLeaveField(e, _fc, p) {
-        for (const c of stOf(e, p).filter((x) => boardCard(x))) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
+        for (const c of boardCardsOn(e, p)) if (e.fieldCard(c.uid)) yield* e.sendToGrave(c.uid, 'used');
       },
     };
 
@@ -1440,7 +1439,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Dicephoon'] = {
     canActivate: (_e, _c, _p, t) => anyTime(t),
     *resolve(e, link, p) {
-      const r = e.roll(6);
+      const r = yield* e.rollDie(p, (v) => v >= 2 && v <= 5);
       e.log(p, `Dicephoon rolls a ${r}`);
       if (r === 1 || r === 6) return e.damage(p, 1000);
       const n = r === 5 ? 2 : 1;

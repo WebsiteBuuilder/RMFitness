@@ -134,6 +134,15 @@ export const SKILL_AI: Record<string, SkillPolicy> = {
   'Thousand-Eyes Spell': { use: (e, p) => (attackPlan(e, p).damage === 0 ? { sim: 400 } : false) },
   'Believe in your Bro': { use: sim },
   'HERO World': { use: sim },
+  // ---- skills-2024a (Battle City Finals) ----
+  'As I Predicted...!': { draw: (e, p) => e.monsters(p).length === 0 },
+  'Malevolence of the Millennium Ring': { use: (e, p) => (lp(e, p) > 2000 ? 'sim' : false) },
+  'Pulling the Strings': { use: never },
+  'Deserts Peril': { use: never },
+  'Royal Temple of the Kings': { use: never },
+  'See Me Rolling': { use: always },
+  'Even the Odds': { use: always },
+  'Keeper of the Valley': { use: always },
 };
 
 /** The policy for a Skill's activated part (unknown Skills: the lookahead decides). */

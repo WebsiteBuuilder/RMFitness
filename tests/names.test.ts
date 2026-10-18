@@ -207,7 +207,7 @@ for (const info of SPEED) {
   if (ok) passed++;
   check(ok, `${info.name}: ${[...r.also.map((n) => `always "${n}"`), r.becomes ? `"${r.becomes.name}" on the field${r.becomes.gy ? ' and in the GY' : ''}` : ''].filter(Boolean).join(', ')}${why.length ? ` (${why.join('; ')})` : ''}`);
 }
-check(rules >= 29, `${rules} cards have a printed name rule (found by reading every card's text)`);
+check(rules >= 26, `${rules} cards have a printed name rule (found by reading every card's text)`);
 
 // Neos Alius: only while it is an Effect Monster (Gemini Summoned again).
 {

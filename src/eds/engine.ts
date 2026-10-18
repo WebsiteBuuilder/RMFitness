@@ -91,6 +91,10 @@ export class Engine {
   actor: Pid | null = null;
   /** chain links being resolved right now (Speed Duel queues Special Summon responses until they finish) */
   private resolving = 0;
+  /** b22: >0 while the duel's generator is being stepped (not while the computer or the UI only reads the state). */
+  private stepping = 0;
+  /** b22: while a monster effect without a recorded target resolves: monsters checked as legal targets, and those of them picked (Spirit Reaper). */
+  private targetScope: { cands: Set<number>; picked: Set<number> } | null = null;
   /** set while battle destruction is applied, so "destroyed by battle" effects can tell */
   private battleKill = false;
   /** Speed Duel: cards sent to the GY together (one destroy() call) are reported to watchers as one event */
@@ -610,6 +614,7 @@ export class Engine {
     let b = { atk: info.atk ?? 0, def: info.def ?? 0 };
     const set = this.effectOn(m)?.baseStats?.(this, m);
     if (set) b = set;
+    if (this.speed && m.tags?.origSet) b = { atk: m.tags.origAtk ?? 0, def: m.tags.origDef ?? 0 }; // skills-2024a: original ATK/DEF set by a Skill (Advent of Ra)
     if (this.state.fx.swapTurn === this.state.turn || (m.tags?.swapTurn !== undefined && m.tags.swapTurn === this.state.turn)) b = { atk: b.def, def: b.atk }; // audit-eds: Shield & Sword (only monsters on the field then)
     return b;
   }
@@ -644,6 +649,16 @@ export class Engine {
     return this.info(m.name).race ?? '';
   }
 
+  /** skills-2024a: a card of this uid is in either player's GY (no array built: used on the hot namesOf path). */
+  private inSomeGy(uid: number | undefined): boolean {
+    if (uid === undefined || uid < 0) return false;
+    const has = (gy: Card[]) => {
+      for (let i = 0; i < gy.length; i++) if (gy[i].uid === uid) return true;
+      return false;
+    };
+    return has(this.state.players[0].gy) || has(this.state.players[1].gy);
+  }
+
   // ---------- card names ----------
   /**
    * The names a card has right now. A card keeps its printed name unless an effect changes it: its own text
@@ -657,7 +672,8 @@ export class Engine {
     const base = given.name;
     if (!this.speed || !base) return [base];
     const rule = nameRule(this.info(base));
-    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy) return [base];
+    // skills-2024a: fx.gyNames (Tribal Unity) only matters for a card that is in a GY right now (a cheap scan of the two GYs, no allocation).
+    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy && !(this.state.fx.gyNames && this.inSomeGy(given.uid))) return [base];
     // Where the card is now (a FieldCard kept from before it left the field is the same card, now elsewhere).
     const f = given.uid !== undefined && given.uid >= 0 ? this.find(given.uid) : null;
     const card = f?.card.name === base ? f.card : given;
@@ -681,7 +697,18 @@ export class Engine {
           this.naming--;
         }
       }
-    } else if (zone === 'gy' && rule.becomes?.gy) out.push(rule.becomes.name);
+    } else if (zone === 'gy') {
+      if (rule.becomes?.gy) out.push(rule.becomes.name);
+      // skills-2024a: a Skill adding names to cards in the GY too (Tribal Unity: "Harpie" monsters are also "Amazoness" monsters).
+      if (this.state.fx.gyNames && !this.naming) {
+        this.naming++;
+        try {
+          for (const x of this.skillFx()) for (const n of x.eff.addsNames?.(this, x.c, x.p, card as FieldCard) ?? []) out.push(n);
+        } finally {
+          this.naming--;
+        }
+      }
+    }
     if (!out.length || !out.some((n) => n !== base && !rule.also.includes(n))) out.unshift(base);
     for (const n of rule.also) if (!out.includes(n)) out.push(n);
     return [...new Set(out)];
@@ -782,6 +809,13 @@ export class Engine {
 
   /** Lord of D.: Dragons cannot be targeted by card effects. */
   untargetable(m: FieldCard): boolean {
+    const r = this.untargetableNow(m);
+    // b22: a monster offered as a legal target while a monster effect resolves (Spirit Reaper; see targetScope).
+    if (!r && this.targetScope && this.stepping) this.targetScope.cands.add(m.uid);
+    return r;
+  }
+
+  private untargetableNow(m: FieldCard): boolean {
     if (m.faceUp && this.effectOn(m)?.cannotBeTargeted?.(this, m, this.actor)) return true;
     if (m.faceUp && this.speed && this.shielded(m, 'target')) return true;
     // Speed Duel: "your opponent cannot target it until the end of their turn" that outlasts its source (Abyss Prop - Wild Wagon).
@@ -856,9 +890,39 @@ export class Engine {
       this.event('roll', { player: fixed.p, amount: v, to: sides === 6 ? 'die' : 'coin' });
       return v;
     }
-    const v = 1 + Math.floor(this.rand() * sides);
+    let v = 1 + Math.floor(this.rand() * sides);
     // Shown on screen (dice and coins are public), so nobody has to dig the result out of the log.
     if (sides === 6 || sides === 2) this.event('roll', { player: this.actor ?? this.state.turnPlayer, amount: v, to: sides === 6 ? 'die' : 'coin' });
+    return v;
+  }
+
+  /**
+   * A die rolled by player `p` for a card or effect, inside a generator so a Skill can offer that player a re-roll
+   * (See Me Rolling: "you may re-roll the result once"). `good` says which results the roller wants: only the computer
+   * reads it (as fx.rerollBad, when it answers the question). Players without such a Skill see no question and the roll
+   * is exactly roll(sides). A result decided in advance (It's My Lucky Day!) is not offered for a re-roll.
+   */
+  *rollDie(p: Pid, good: (v: number) => boolean, sides = 6): Generator<Prompt, number, Choice> {
+    const fixedBefore = this.state.fx.fixedRoll;
+    let v = this.roll(sides);
+    if (!this.speed || sides !== 6 || (fixedBefore && !this.state.fx.fixedRoll) || this.state.winner !== null) return v;
+    for (const x of this.skillDefs()) {
+      const rr = (x.sk as { reroll?: { can(e: Engine, p: Pid): boolean; use(e: Engine, p: Pid, v: number): void } }).reroll;
+      if (x.p !== p || !rr || !rr.can(this, p)) continue;
+      this.state.fx.rerollBad = good(v) ? 0 : 1;
+      let yes: boolean;
+      try {
+        yes = yield* this.yesno(p, `${this.player(p).skill}: re-roll the ${v}?`);
+      } finally {
+        this.state.fx.rerollBad = undefined;
+      }
+      if (!yes) break;
+      rr.use(this, p, v);
+      v = 1 + Math.floor(this.rand() * sides);
+      this.log(p, `${this.player(p).name} re-rolls the die: ${v}`);
+      this.event('roll', { player: p, amount: v, to: 'die' });
+      break;
+    }
     return v;
   }
 
@@ -1203,6 +1267,24 @@ export class Engine {
         }
         if (kept) continue;
       }
+      // b23: another face-up monster of its controller replaces the destruction (Tiki Soul).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        const ctl = this.controller(uid) ?? m.owner;
+        const by = byBattle ? other(ctl) : this.actor;
+        let kept = false;
+        for (const s of this.monsters(ctl)) {
+          const h = s.uid !== uid && s.faceUp ? this.effectOn(s)?.allyDestroyReplace : undefined;
+          if (!h || kept || !this.fieldCard(uid)) continue;
+          const prev = this.actor;
+          this.actor = ctl;
+          try {
+            kept = yield* h(this, s, ctl, m, byBattle, by);
+          } finally {
+            this.actor = prev;
+          }
+        }
+        if (kept) continue;
+      }
       // audit-07: a card in a GY can be banished instead of this monster being destroyed (Machine Angel Ritual).
       if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
         const ctl = this.controller(uid) ?? m.owner;
@@ -1505,6 +1587,7 @@ export class Engine {
 
   /** Effects that watch every Summon (Mysterious Puppeteer, Kotodama). */
   *anySummon(m: FieldCard, controller: Pid, kind: 'normal' | 'flip' | 'special'): Step {
+    (m.tags ??= {}).summonedTurn = this.state.turn; // the turn this monster was last Summoned (Normal/Tribute, Flip or Special): Mokey Mokey Madness
     for (const p of [0, 1] as Pid[]) {
       for (const w of this.monsters(p)) {
         if (!w.faceUp || !this.fieldCard(m.uid)) continue;
@@ -1720,6 +1803,18 @@ export class Engine {
   }
 
   *select(player: Pid, title: string, options: SelectOption[], min = 1, max = 1, cancel = false): Generator<Prompt, number[] | null, Choice> {
+    const scope = this.targetScope;
+    const picks = yield* this.selectInner(player, title, options, min, max, cancel);
+    // b22: a monster chosen from a list of legal targets (checked with untargetable) while a monster effect resolves is its target.
+    if (scope && scope === this.targetScope && picks)
+      for (const i of picks) {
+        const uid = options[i]?.uid;
+        if (uid !== undefined && scope.cands.has(uid)) scope.picked.add(uid);
+      }
+    return picks;
+  }
+
+  private *selectInner(player: Pid, title: string, options: SelectOption[], min = 1, max = 1, cancel = false): Generator<Prompt, number[] | null, Choice> {
     if (options.length === 0) return min === 0 ? [] : null;
     if (options.length <= min && !cancel) return options.map((_, i) => i);
     if (this.noCancel > 0 && min > 0) cancel = false;
@@ -1841,12 +1936,19 @@ export class Engine {
       }
       if (!acted) break;
     }
+    this.state.fx.targetResolved = undefined; // b22: only the state checks right after the action read it (Spirit Reaper)
   }
 
   private resume(input: Choice) {
     const g = this.gen;
     if (!g) return;
-    const r = g.next(input);
+    let r: IteratorResult<Prompt, unknown>;
+    this.stepping++;
+    try {
+      r = g.next(input);
+    } finally {
+      this.stepping--;
+    }
     if (this.state.winner !== null) {
       this.gen = null;
       this.state.prompt = null;
@@ -2187,6 +2289,18 @@ export class Engine {
           const h = getEffect(c.name)?.onEndPhaseBanished;
           if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'removed') yield* this.trig(c.uid, p, this.as(p, h(this, c, p)));
         }
+    // b21: Set Traps activated "During your End Phase" (Volcanic Eruption) are offered to the turn player here.
+    if (this.speed)
+      for (const fc of this.spells(tp).slice()) {
+        const eff = getEffect(fc.name);
+        if (!eff?.endPhaseTrap || !eff.resolve || fc.faceUp || fc.placedTurn === this.state.turn || this.state.winner !== null || !this.fieldCard(fc.uid)) continue;
+        if (this.trapsSealed(tp) || this.activationLocked(tp, 'trap') || this.cardActivationLocked(tp, fc) || this.activationBlocked(tp, fc) || this.prohibited(fc, fc.uid)) continue;
+        if (eff.canActivate && !this.withActor(tp, () => eff.canActivate!(this, fc, tp, 'main', {}))) continue;
+        if (!(yield* this.yesno(tp, `Activate ${fc.name}?`))) continue;
+        if (!this.fieldCard(fc.uid) || fc.faceUp) continue;
+        fc.faceUp = true;
+        yield* this.startChain(tp, fc, 'main', {});
+      }
     // Delayed destruction (Zone Eater, Steel Scorpion, Swordsman from a Distant Land).
     const doomed = [...this.monsters(0), ...this.monsters(1)].filter((m) => m.doomAt !== undefined && m.doomAt <= this.state.turn);
     if (doomed.length) {
@@ -2491,7 +2605,7 @@ export class Engine {
    * this card": Gilford the Lightning, Gravekeeper's Oracle). Uses the Normal Summon; the Tributed monsters (name, Level) are kept
    * in fx.tributedFor[uid] and the monster gets tags.tribS. Returns false when it could not be Summoned.
    */
-  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk'): Generator<Prompt, boolean, Choice> {
+  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk', side: Pid = player): Generator<Prompt, boolean, Choice> {
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'hand' || this.summonBlocked(player, f.card, 'normal', 'hand')) return false;
     const ps = this.player(player);
@@ -2504,18 +2618,19 @@ export class Engine {
         self.log(player, `${ps.name} Tributed ${m.name}`);
       }
     })());
-    const zone = this.freeMonsterZone(player);
+    // b23: `side` = the field it is Summoned to (The Winged Dragon of Ra - Sphere Mode: to the opponent's side).
+    const zone = this.freeMonsterZone(side);
     if (zone < 0 || this.find(uid)?.loc.zone !== 'hand') return false;
     const fc = this.toField(this.detach(uid)!, pos, true);
     fc.tags = { tribS: used.length };
-    ps.mz[zone] = fc;
+    this.player(side).mz[zone] = fc;
     ps.normalSummoned = true;
-    this.event('summon', { uid, player });
-    this.log(player, `${ps.name} Tribute Summoned ${fc.name}`);
+    this.event('summon', { uid, player: side });
+    this.log(player, `${ps.name} Tribute Summoned ${fc.name}${side !== player ? ` to ${this.player(side).name}'s field` : ''}`);
     yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
     const eff = this.effectOn(fc);
-    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
-    if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
+    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(side, eff.onSummon(this, fc, side, 'normal'));
+    if (this.fieldCard(uid)) yield* this.anySummon(fc, side, 'normal');
     return true;
   }
 
@@ -2802,6 +2917,8 @@ export class Engine {
     if (!this.inMainPhase() || this.state.turnPlayer !== player) return false;
     const info = this.info(card.name);
     if (info.kind === 'monster' || info.sub === 'Ticket' || this.prohibited(card)) return false;
+    // b22: "This card can only be placed on the field by the effect of Destiny Board" (Spirit Message cards) cannot be Set.
+    if (this.speed && /^This card can only be placed on the field by the effect of/.test(info.desc ?? '')) return false;
     if (this.chainEnergyBlocks(player)) return false;
     if (this.speed && (this.state.fx.noSetTurn as number[] | undefined)?.[player] === this.state.turn) return false; // audit-00: "You cannot Set any cards this turn" (Absorbing Jar)
     // Speed Duel: a Set Field Spell replaces the one already there too
@@ -2989,6 +3106,7 @@ export class Engine {
     const prevSource = this.levelSource;
     try {
       while (this.state.chain.length > 0 && this.state.winner === null) {
+        this.restoreKeptPositions(); // skills-2024b
         const link = this.state.chain.pop()!;
         this.levelSource = link.card.uid;
         if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
@@ -2999,23 +3117,38 @@ export class Engine {
         if (effectLink) {
           // A monster's (or card's) activated effect, not the activation of a Spell/Trap card.
           if (!link.negated && this.liveST().some((x) => x.eff.negatesEffect?.(this, x.c, x.p, link) === true)) link.negated = true;
-          if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
-          else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
-          else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
+          // b22: monster effects mostly choose their target inside run(): targetScope sees which legal target was picked.
+          const prevScope = this.targetScope;
+          const scope = this.speed && link.targetUid === undefined ? { cands: new Set<number>(), picked: new Set<number>() } : null;
+          this.targetScope = scope;
+          try {
+            if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
+            else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
+            else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
+          } finally {
+            this.targetScope = prevScope;
+          }
+          this.noteTargetResolved(link);
+          if (scope && !link.negated) for (const uid of scope.picked) this.noteTargetResolved({ ...link, targetUid: uid });
           continue;
         }
+        // b22: "This card's activation and effect cannot be negated" (Spiritualism): the card's activate sets payload.cannotNegate.
+        if (this.speed && link.negated && (link.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate) link.negated = false;
         const stillThere = this.fieldCard(link.card.uid);
         const kind = this.info(link.card.name).kind;
-        if (!link.negated && kind === 'spell' && this.spellsNegated()) link.negated = true;
-        if (!link.negated && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
+        const cannotNegate = this.speed && !!(link.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate;
+        if (!link.negated && !cannotNegate && kind === 'spell' && this.spellsNegated()) link.negated = true;
+        if (!link.negated && !cannotNegate && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
         if (link.negated) {
           this.log(link.player, `${link.card.name}'s effect was negated`);
-        } else if (eff?.resolve && (stillThere || this.resolvesFromGrave(link))) {
+        } else if (eff?.resolve && (stillThere || cannotNegate || this.resolvesFromGrave(link))) {
           yield* this.as(link.player, eff.resolve(this, link, link.player));
         }
+        if (!link.negated) this.noteTargetResolved(link);
         yield* this.afterResolve(link);
       }
     } finally {
+      this.restoreKeptPositions(); // skills-2024b
       this.resolving--;
       this.levelSource = prevSource;
     }
@@ -3029,6 +3162,26 @@ export class Engine {
    * Speed Duel: a Normal or Quick-Play Spell, a Ritual Spell, or a Normal or Counter Trap destroyed in the
    * chain still resolves (Master Duel and the real rules); Continuous, Equip and Field cards need to stay.
    */
+  /**
+   * skills-2024b: a chain link that may not change some monsters' battle positions (Dino Brain Immunity: Trap effects and
+   * Dinosaurs). Right before it resolves, the watcher marks them with tags.keepPos (4 + 1 if Defense + 2 if face-down);
+   * once it has resolved, a monster still on the field gets that position back.
+   */
+  private restoreKeptPositions() {
+    for (const p of [0, 1] as Pid[])
+      for (const m of this.monsters(p)) {
+        const k = m.tags?.keepPos;
+        if (!k) continue;
+        delete m.tags!.keepPos;
+        const pos: Pos = k & 1 ? 'def' : 'atk';
+        const faceUp = !(k & 2);
+        if (m.pos === pos && m.faceUp === faceUp) continue;
+        m.pos = pos;
+        m.faceUp = faceUp;
+        this.log(p, `${faceUp ? m.name : 'The monster'}'s battle position cannot be changed`);
+      }
+  }
+
   private resolvesFromGrave(link: ChainLink): boolean {
     if (!this.speed || (link.payload as { effect?: string } | undefined)?.effect) return false;
     const info = this.info(link.card.name);
@@ -3064,6 +3217,16 @@ export class Engine {
         this.state.fx.inDamageWindow = false;
       }
     }
+  }
+
+  /**
+   * b22: a resolved chain link that targeted a face-up monster (link.targetUid): fx.targetResolved[uid] = 1 until the
+   * state checks after the action (Spirit Reaper: "After resolving a card effect that targets this face-up card, destroy this card").
+   */
+  private noteTargetResolved(link: ChainLink) {
+    if (!this.speed || link.negated || link.targetUid === undefined) return;
+    const m = this.fieldCard(link.targetUid);
+    if (m?.faceUp && this.find(m.uid)?.loc.zone === 'mz') ((this.state.fx.targetResolved ??= {}) as Record<number, number>)[m.uid] = 1;
   }
 
   private *afterResolve(link: ChainLink): Step {
@@ -3317,7 +3480,17 @@ export class Engine {
     }
     // EDS: effects of face-up Continuous Spells/Traps used in response (Ultimate Offering), after the set cards.
     if (!this.speed) out.push(...this.quickOptions(player, trigger, ctx, true));
+    // b22: a link that "cannot be negated" (Spiritualism) is not offered to cards that answer it by negating (Magic Jammer,
+    // Seven Tools of the Bandit, Solemn Judgment, monsters that negate an effect): their cost would be paid for nothing.
+    if (this.speed && (ctx.link?.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate) return out.filter((o) => !(o.uid !== undefined && this.negator(o.uid)));
     return out;
+  }
+
+  /** b22: a card whose text negates something (an activation, a Summon or an effect): the answers a "cannot be negated" link rules out. */
+  private negator(uid: number): boolean {
+    const c = this.find(uid)?.card;
+    const desc = (c && this.info(c.name).desc) ?? '';
+    return /\bnegates?\b/i.test(desc.replace(/cannot be negated/gi, ''));
   }
 
   /** Speed Duel: the attacking monster stops `player` from activating Spell/Trap Cards until the end of the Damage Step (Ancient Gear Golem). */
@@ -3365,12 +3538,16 @@ export class Engine {
     }
     // b19: a face-up monster's blocksAttack stops other monsters attacking (Beelzeus of the Diabolic Dragons, Cloudcastle).
     if (this.speed) for (const p of [0, 1] as Pid[]) for (const src of this.monsters(p)) if (src.faceUp && src.uid !== m.uid && this.effectOn(src)?.blocksAttack?.(this, src, m, player)) return false;
+    if (this.speed && this.skillFx().some((x) => x.eff.blocksAttack?.(this, x.c, m, player))) return false; // skills-2024b: Skills stopping either player's attacks (Mokey Mokey Madness)
     if (eff?.attackCost && !eff.attackCost.can(this, m, player)) return false;
     return true;
   }
 
   canAttackDirectly(m: FieldCard): boolean {
     if (this.speed && m.tags?.directTurn === this.state.turn) return true;
+    // skills-2024a: monsters that "cannot be targeted for attacks, but do not prevent your opponent from attacking you directly" (Fear of the Dark).
+    const atkCtl = this.speed ? this.controller(m.uid) : null;
+    if (atkCtl !== null && this.monsters(other(atkCtl)).length > 0 && this.monsters(other(atkCtl)).every((t) => t.tags?.noAttackTarget)) return true;
     const owner = this.controller(m.uid); // audit-skills: Skills letting monsters attack directly
     if (owner !== null && this.skillDefs().some((x) => x.p === owner && x.sk.canAttackDirectly?.(this, owner, m))) return true;
     const d = this.effectOn(m)?.directAttack;
@@ -3606,6 +3783,8 @@ export class Engine {
     if (tEff?.onBeingAttacked) yield* this.trig(target.uid, opp, this.as(opp, tEff.onBeingAttacked(this, target, attacker, opp)));
     // audit-04: the attacker's own "before damage calculation" effect (Drillroid, Eater of Millions).
     if (this.speed && aEff?.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.trig(attacker.uid, player, this.as(player, aEff.beforeDamageCalc(this, attacker, target, player)));
+    // skills-2024b: Skills acting before damage calculation, for either player's monster (Wise Man Neos); `controller` is the Skill's owner.
+    if (this.speed) for (const x of this.skillFx()) if (x.eff.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid) && this.state.winner === null) yield* this.trig(undefined, x.p, this.as(x.p, x.eff.beforeDamageCalc(this, attacker, target, x.p)));
     if (this.speed && aEff?.attackerDamageStep && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.trig(attacker.uid, player, this.as(player, aEff.attackerDamageStep(this, attacker, target, player))); // audit-10
     if (!this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     let atk = this.atkOf(attacker) + this.attackBonus(attacker, target);
@@ -3676,6 +3855,14 @@ export class Engine {
         hit = true;
         yield* this.as(ctl, h(this, m, ctl, foe));
       }
+      // b23: face-up monsters reacting after damage calculation of any battle (Tiki Curse).
+      for (const q of [0, 1] as Pid[])
+        for (const s of this.monsters(q)) {
+          const h = s.faceUp ? this.effectOn(s)?.anyAfterDamageCalc : undefined;
+          if (!h || this.state.winner !== null || !this.fieldCard(attacker.uid) || !this.fieldCard(target.uid)) continue;
+          hit = true;
+          yield* this.as(q, h(this, s, q, attacker, target));
+        }
       // Monsters that already left the field (banished) are no longer destroyed by this battle.
       if (hit) for (let i = destroyed.length - 1; i >= 0; i--) if (!this.fieldCard(destroyed[i])) destroyed.splice(i, 1);
     }
@@ -3729,6 +3916,13 @@ export class Engine {
       const h = l.eff.lingering?.afterAnyBattle;
       if (h && this.state.winner === null) yield* this.as(l.p, h(this, l.p, attacker, target));
     }
+    // b23: cards in a hand at the end of the Damage Step (Thunder Ball).
+    if (this.speed)
+      for (const q of [player, opp])
+        for (const c of this.player(q).hand.slice()) {
+          const h = getEffect(c.name)?.battleEndInHand;
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'hand') yield* this.trig(c.uid, q, this.as(q, h(this, c, q, attacker, target)));
+        }
     // Time Machine and other "destroyed by battle" responses.
     for (const b of before) {
       const g = this.find(b.uid);

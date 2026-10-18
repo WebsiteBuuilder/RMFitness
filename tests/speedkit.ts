@@ -47,8 +47,13 @@ for (const r of JSON.parse(readFileSync('public/cards/cards.json', 'utf8')) as a
   byId.set(info.id, info);
   if (r.alias) (DB.set(r.alias, info), DB.set(r.alias.toLowerCase(), info));
 }
-for (const r of JSON.parse(readFileSync('public/cards/speed.json', 'utf8')) as any[]) {
+// Cards once in the list that were never printed in a Speed Duel product: no longer in the game,
+// kept here only so the older script tests still find them. They are left out of SPEED.
+const retired = new Set<number>();
+const retiredList = JSON.parse(readFileSync('tests/fixtures/speed-retired.json', 'utf8')) as any[];
+for (const r of [...JSON.parse(readFileSync('public/cards/speed.json', 'utf8')), ...retiredList] as any[]) {
   const known = byId.get(r.id) ?? (r.type !== 'Skill Card' && DB.get(r.name)?.name === r.name ? DB.get(r.name) : undefined);
+  if (retiredList.includes(r)) retired.add(known && r.type !== 'Skill Card' ? known.id : r.id);
   if (known && r.type !== 'Skill Card') {
     known.speed = true;
     if (!DB.has(r.name)) (DB.set(r.name, known), DB.set(r.name.toLowerCase(), known));
@@ -65,7 +70,7 @@ const uniq = (list: CardInfo[]) => {
   return list.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
 };
 /** Every Speed Duel card (no Skills). */
-export const SPEED: CardInfo[] = uniq([...DB.values()].filter((c) => c.speed && c.sub !== 'Skill'));
+export const SPEED: CardInfo[] = uniq([...DB.values()].filter((c) => c.speed && c.sub !== 'Skill' && !retired.has(c.id)));
 export const SKILLS: CardInfo[] = uniq([...DB.values()].filter((c) => c.sub === 'Skill'));
 /** Cards the engine can summon/use at all in Speed Duel (no Tokens). */
 export const PLAYABLE = SPEED.filter((c) => !(c.kind === 'monster' && / Token$/.test(c.name)) && !(c.kind === 'monster' && c.desc.startsWith('This card cannot be used in a Duel')));

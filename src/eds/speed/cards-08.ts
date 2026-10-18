@@ -1031,7 +1031,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       can: () => true,
       *run(e, m, p) {
         if (!e.fieldCard(m.uid)) return;
-        const r = [e.roll(6), e.roll(6), e.roll(6)];
+        const r = [yield* e.rollDie(p, (v) => v >= 4), yield* e.rollDie(p, (v) => v >= 4), yield* e.rollDie(p, (v) => v >= 4)];
         e.log(p, `Orgoth rolls ${r.join(', ')}`);
         const t = tag(m);
         t.orgAtk = (r[0] + r[1] + r[2]) * 100;

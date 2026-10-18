@@ -23,6 +23,13 @@ jobs:
       - run: pip install pillow
       - run: python scripts/fetch_cards.py
       - run: python scripts/fetch_speed_cards.py
+      # The Speed Duel list must still be exactly Konami's Speed Duel cards, every Skill scripted,
+      # before anything is committed (a failure here leaves main as it was).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx tsx tests/speedpool.test.ts && npx tsx tests/audit-skills.test.ts
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
