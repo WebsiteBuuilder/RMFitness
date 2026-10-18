@@ -174,6 +174,9 @@ interface Actor {
 
 type Role = 'att' | 'def';
 
+/** A Millennium card's colors: its summon, its blows and its trail are all gold, whatever the monster. */
+const MILL_COLS: Colors = { main: 0xffc93a, accent: 0xffd56a, light: 0xfff2c0 };
+
 interface Colors {
   main: number;
   accent: number;
@@ -938,10 +941,10 @@ export class Director {
   private millenniumWindup(tl: Timeline, att: Actor, M: P3, D: number) {
     const st = this.stage;
     const U = this.U;
-    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 2.8 * U, 0x000000));
+    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 2.4 * U, 0x000000));
     // drawn before the figures: it hangs behind the attacker, never over it
     eye.mesh.renderOrder = -4;
-    eye.mesh.position.set(att.x, att.y + att.size * 0.3, att.z - 0.8);
+    eye.mesh.position.set(att.x, att.y + att.size * 0.62, att.z - 0.8);
     eye.u.uOpacity.value = 0;
     tl.span(0.15, D, (k) => {
       eye.u.uOpacity.value = 0.85 * clamp01(k * 2);
@@ -978,18 +981,18 @@ export class Director {
     eye.u.uOpacity.value = 0;
     tl.span(hitAt, hitAt + 0.5, (k) => {
       eye.u.uEye.value = Math.max(0.001, k < 0.3 ? easeOut(k / 0.3) : 1 - easeIn((k - 0.3) / 0.7));
-      eye.u.uOpacity.value = 0.6 * (1 - easeIn(k));
-      eye.mesh.scale.setScalar(lerp(0.6, 1.4, easeOut(k)));
+      eye.u.uOpacity.value = 0.35 * (1 - easeIn(k));
+      eye.mesh.scale.setScalar(lerp(0.6, 1.1, easeOut(k)));
     });
     const ring = tl.own(new Glow(4 * U, 4 * U, 'shock', 0xffd56a, 0x9b4dff));
     ring.mesh.position.set(P.x, P.y, P.z + 0.2);
     ring.u.uOpacity.value = 0;
     tl.span(hitAt, hitAt + 0.6, (k) => {
       ring.u.uK.value = easeOut(k);
-      ring.u.uOpacity.value = 0.6 * (1 - k);
+      ring.u.uOpacity.value = 0.4 * (1 - k);
     });
     tl.at(hitAt, () => {
-      st.pulse('chroma', 0.35);
+      st.pulse('chroma', 0.2);
       this.flash(0xffc93a, 0.12);
       for (const [c, n] of [[0xffd56a, 26], [0xfff6d8, 12], [0x9b4dff, 10]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
       chime(0.95);
@@ -1379,7 +1382,7 @@ export class Director {
     const info = card(c.name);
     const prof = profileFor(info, c.name);
     const [art, bm] = await Promise.all([this.art(c.name), boardModule()]);
-    const col = this.colors(prof, art);
+    const col = finishOf(c) >= FIN.MI ? MILL_COLS : this.colors(prof, art);
     const tier = prof.tier;
     const side = this.side(c.controller);
     // the summon method: the engine's word, else what the card is (an Xyz is never Normal Summoned)
@@ -1505,7 +1508,7 @@ export class Director {
       });
       // two rainbow shock rings out of the shatter
       [0, 0.12].forEach((d, i) => {
-        const g = tl.own(mill ? new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x9b4dff : 0xffd56a, i ? 0x5b1a9a : 0xfff6d8) : new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x4fe0ff : 0xff4fd0, i ? 0xa24fff : 0xffb84f));
+        const g = tl.own(mill ? new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0xc8961e : 0xffd56a, i ? 0x6a4800 : 0xfff6d8) : new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x4fe0ff : 0xff4fd0, i ? 0xa24fff : 0xffb84f));
         g.mesh.position.set(0, restY, 0.3);
         g.u.uOpacity.value = 0;
         span(0.6 + d, 1.25 + d, (k) => {
@@ -2866,7 +2869,7 @@ export class Director {
     if (!this.actors.size) this.battleSide = this.side(a.controller);
     const att = await this.actor(a, 'att');
     const tgt = t ? await this.actor(t, 'def') : null;
-    const col = this.colors(att.prof, att.art);
+    const col = finishOf(a) >= FIN.MI ? MILL_COLS : this.colors(att.prof, att.art);
     const sig = SIG_ATTACKS[att.name];
     const D = 0.72;
     const tl = new Timeline(D, st);
@@ -2932,7 +2935,7 @@ export class Director {
     const tgt = t ? (this.actors.get(t.uid) ?? (await this.actor(t, 'def'))) : null;
     for (const act of [att, tgt]) if (act && !act.entered) this.enter(act, 1);
     const prof = att?.prof ?? profileFor(undefined, 'unknown');
-    const col = this.colors(prof, att?.art ?? null);
+    const col = a && finishOf(a) >= FIN.MI ? MILL_COLS : this.colors(prof, att?.art ?? null);
     const tcol = tgt ? this.colors(tgt.prof, tgt.art) : { main: 0xff4a4a, accent: 0xffa07a, light: 0xffe0d0 };
     const sig = att ? SIG_ATTACKS[att.name] : undefined;
     const M = att ? this.muzzle(att) : { x: 0, y: -1.2 * U, z: 1.5 };
@@ -3023,7 +3026,7 @@ export class Director {
     // a Millennium blow lands in gold
     const mill = !!a && finishOf(a) >= FIN.MI;
     if (mill) this.millenniumBlow(tl, M, P, W, hitAt);
-    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)) * (mill ? 0.75 : 1), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
+    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)) * (mill ? 0.6 : 1), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow

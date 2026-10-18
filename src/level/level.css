@@ -842,7 +842,7 @@ img.cimg.lvr-MI {
 /* the art itself is cast in gold, a relief the living monster climbs out of in full color
    (only where the card has a cut-out; without one the art keeps its color) */
 .lvr-mi.has-fig > .ofx-art {
-  filter: grayscale(1) sepia(1) saturate(2.2) hue-rotate(-8deg) brightness(0.86) contrast(1.25);
+  filter: grayscale(1) contrast(1.5) sepia(1) saturate(2.6) hue-rotate(-6deg) brightness(1.02) drop-shadow(0 0 1px #fff6d8);
 }
 .lvr-mi.has-fig > .ofx-art::after {
   content: '';
@@ -1179,4 +1179,9 @@ img.cimg.lvr-MI {
   .lvr-of.lvr-of > .lvr-chip {
     display: none !important;
   }
+}
+/* the same on list rows and on the field at any size: the row's chip and the card's edge say it */
+.lv-row .lvr-of.lvr-of > .lvr-chip,
+.fcard > .lvr-of.lvr-of > .lvr-chip {
+  display: none !important;
 }
