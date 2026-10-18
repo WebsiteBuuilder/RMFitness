@@ -854,7 +854,8 @@ uniform vec3 uGlow;
 uniform float uSheen;
 varying vec2 vUv;
 void main(){
-  vec4 c = texture2D(uMap, vUv);
+  // seen from behind mid-flip, the face reads the right way round (never mirrored)
+  vec4 c = texture2D(uMap, gl_FrontFacing ? vUv : vec2(1.0 - vUv.x, vUv.y));
   float s = smoothstep(0.08, 0.0, abs(vUv.x + vUv.y * 0.6 - uSheen));
   vec3 col = mix(c.rgb, vec3(1.0), uTint) + uGlow * s * 0.9;
   float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));

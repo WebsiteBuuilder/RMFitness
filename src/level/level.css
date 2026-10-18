@@ -716,10 +716,10 @@ img.cimg.lvr-MI {
   width: 94%;
   height: 64.6%;
   background: var(--ofimg) 50% 37.5% / 131.6% 190.5% no-repeat;
-  /* the figure matte cuts the monster out; its lower body melts back into the art */
-  -webkit-mask: var(--offig) 50% 50% / 100% 100% no-repeat, linear-gradient(180deg, #000 0 58%, transparent 80%);
-  -webkit-mask-composite: source-in;
-  mask: var(--offig) 50% 50% / 100% 100% no-repeat intersect, linear-gradient(180deg, #000 0 58%, transparent 80%);
+  /* the figure matte cuts the monster out (one mask layer: a composited second layer leaves a
+     faint box around it in Chrome) */
+  -webkit-mask: var(--offig) 50% 50% / 100% 100% no-repeat;
+  mask: var(--offig) 50% 50% / 100% 100% no-repeat;
   transform-origin: 50% 80%;
   transform: translateY(-19%) scale(1.18);
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px var(--of-edge, #ff5ad8)) drop-shadow(0 5px 5px #000c);
@@ -862,9 +862,9 @@ img.cimg.lvr-MI {
 .ofx-eye {
   display: inline-block;
   vertical-align: -0.12em;
-  width: 1.7em;
+  width: 2.3em;
   height: auto;
-  margin-right: 0.3em;
+  margin: -0.2em 0.25em -0.2em 0;
   filter: drop-shadow(0 0 2px #ffc93a);
   animation: lvr-eye 2.8s ease-in-out infinite;
 }
