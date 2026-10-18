@@ -88,7 +88,11 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
         </i>
         {fx}
         <b class="lvr-spec of" />
-        {fig && <b class="lvr-pop" />}
+        {fig && (
+          <b class="lvr-popw">
+            <b class="lvr-pop" />
+          </b>
+        )}
         <i class="lvr-spk s1" />
         <i class="lvr-spk s2" />
         <i class="lvr-spk s3" />

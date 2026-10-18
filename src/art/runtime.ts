@@ -1018,10 +1018,11 @@ export class Director {
     halo.mesh.position.set(at.x, at.y, at.z - 0.05);
     halo.spinSpeed = 0.5;
     halo.u.uOpacity.value = 0;
+    // the lid: a closed gold line first, then the Eye opens wide
     tl.span(S + 0.05, S + 0.45, (k) => {
-      const e = easeOut(k);
+      const e = easeOut(clamp01((k - 0.3) / 0.7));
       eye.u.uOpacity.value = clamp01(k * 2.5);
-      eye.mesh.scale.set(lerp(0.8, 1, e), Math.max(0.04, e), 1);
+      eye.mesh.scale.set(lerp(0.8, 1, e), Math.max(0.06, e), 1);
       halo.u.uOpacity.value = 0.7 * e;
       halo.mesh.scale.setScalar(lerp(0.6, 1, e));
     });

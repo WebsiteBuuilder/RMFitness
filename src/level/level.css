@@ -713,12 +713,27 @@ img.cimg.lvr-MI {
   animation: lvr-spin 12s linear infinite;
 }
 /* the monster itself: its cut-out lifted out of the art and over the top of the card */
+/* the cut-out's holder: the card plus 30% above it (the monster rises over the top edge), its
+   lower edge fading out so the cut-out melts into the art instead of ending on a hard line
+   (its own mask, on its own element: see .lvr-pop) */
+.lvr-popw {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30%;
+  bottom: 0;
+  z-index: 3;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(180deg, #000 61%, transparent 70%);
+  mask: linear-gradient(180deg, #000 61%, transparent 70%);
+}
 .lvr-pop {
   position: absolute;
   left: 3%;
-  top: 9.5%;
+  /* the art box, in the holder's 130% height */
+  top: 30.4%;
   width: 94%;
-  height: 64.6%;
+  height: 49.7%;
   background: var(--ofimg) 50% 37.5% / 131.6% 190.5% no-repeat;
   /* the figure matte cuts the monster out (one mask layer: a composited second layer leaves a
      faint box around it in Chrome) */
@@ -894,7 +909,7 @@ img.cimg.lvr-MI {
 .lvr-mi > .ofx-bg {
   box-shadow: inset 0 0 0 max(1px, 1cqw) #ffd56a, inset 0 0 0 max(2px, 1.8cqw) #2a1a00, inset 0 0 0 max(3px, 2.3cqw) #a8740c55;
 }
-.lvr-mi > .lvr-pop {
+.lvr-mi .lvr-pop {
   transform: translateY(-26%) scale(1.22);
   filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #fff6d8) drop-shadow(0 0 4px #ffc93a) drop-shadow(0 6px 6px #000d);
   animation-name: lvr-mi-float;
