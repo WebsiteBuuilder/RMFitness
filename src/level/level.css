@@ -843,7 +843,7 @@ img.cimg.lvr-MI {
    hieroglyphs and only the monster stays in color, rising out of it in a gold glow */
 .lvr-mi.has-fig > .ofx-art {
   filter: grayscale(1) contrast(1.3) brightness(0.5) sepia(1) saturate(1.6) hue-rotate(-8deg);
-  opacity: 0.32;
+  opacity: 0.2;
 }
 .lvr-mi.has-fig > .ofx-art::after {
   content: '';
@@ -854,7 +854,31 @@ img.cimg.lvr-MI {
 .lvr-mi.has-fig > .ofx-glyphs {
   -webkit-mask: none;
   mask: none;
-  opacity: 0.55;
+  opacity: 0.45;
+}
+/* the Millennium Eye, large and glowing behind the monster */
+.ofx-sigil {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 50%;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.9;
+}
+.ofx-sigil > .ofx-eye {
+  display: block;
+  width: 100%;
+  margin: 0;
+}
+.lvr-mi:not(.has-fig) > .ofx-sigil {
+  opacity: 0.35;
+  mix-blend-mode: screen;
+}
+@container (max-width: 69px) {
+  .ofx-sigil {
+    display: none;
+  }
 }
 .lvr-mi:not(.has-fig) > .ofx-art {
   filter: saturate(1.3) contrast(1.1);

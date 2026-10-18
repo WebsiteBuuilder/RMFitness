@@ -9,23 +9,16 @@ import { spellWord } from './gameUi';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
-/** The Millennium Eye (Wedjat) on a Millennium card's plate. */
+/** The Millennium Eye (Wedjat) on a Millennium card (plain colors: a gradient id would clash between cards). */
 const EyeMark = () => (
   <svg class="ofx-eye" viewBox="0 0 100 64" aria-hidden="true">
-    <defs>
-      <linearGradient id="ofx-gold" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#fff6d8" />
-        <stop offset="0.5" stop-color="#ffd56a" />
-        <stop offset="1" stop-color="#a8740c" />
-      </linearGradient>
-    </defs>
-    <g fill="none" stroke="url(#ofx-gold)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="none" stroke="#ffd56a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
       <path d="M10 13 Q50 -4 92 10" />
       <path d="M8 30 Q50 6 92 28 Q50 46 8 30 Z" />
       <path d="M40 41 L34 60" />
       <path d="M58 40 Q66 58 80 56 Q90 54 86 46" />
     </g>
-    <circle cx="50" cy="27" r="9" fill="url(#ofx-gold)" />
+    <circle cx="50" cy="27" r="9" fill="#ffd56a" />
   </svg>
 );
 const GLINTS = (
@@ -75,6 +68,11 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
         <i class="ofx-bg" />
         {mi && <i class="ofx-glyphs" />}
         <i class="ofx-art" />
+        {mi && (
+          <i class="ofx-sigil">
+            <EyeMark />
+          </i>
+        )}
         <i class="ofx-txt">
           <b>{kind}</b>
           <span>{info?.desc}</span>
