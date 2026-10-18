@@ -183,12 +183,25 @@ async function main() {
   back.subscribe((e) => (backLog = e));
   check(await until(() => backLog.length === 2), 'a guest back after a reload gets the moves');
   await wait(14000);
-  check(back.status !== 'error' && /Waiting for them to come back/.test(back.detail), "and waits on the host's clock instead of \"no room\"");
+  check(back.status !== 'error' && /to rejoin/.test(back.detail), "and waits on the host's clock instead of \"no room\"");
   // the host took the abandoned win meanwhile: the guest is told
   await c2.set(`net/rooms/${room}/left`, 'host-phone');
   check(await until(() => back.status === 'error') && /took the win/.test(back.detail), 'the phone that walked away hears the other took the win');
   back.close();
   a.on();
+  // the host gives up while the guest is away: the guest comes back to the win
+  const room2 = 'R' + code().slice(0, 3);
+  const h2 = new FirebaseAdapter(room2, true, async () => a);
+  const g2 = new FirebaseAdapter(room2, false, async () => b);
+  check(await until(() => h2.status === 'connected' && g2.status === 'connected'), 'a second room links');
+  h2.send({ type: 'JOIN', seat: 0 } as never);
+  b.off();
+  await wait(500);
+  h2.forfeit();
+  h2.close();
+  b.on();
+  check(await until(() => /left the duel/.test(g2.detail) && g2.abandoned()), 'a host who gives up while the guest is away hands the guest the win');
+  g2.close();
   host.close();
   lost.close();
   clash.close();

@@ -191,7 +191,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const ps0Removed = (uid: number) => state.players.some((p) => p.removed.some((c) => c.uid === uid));
   const leave = () => {
     if (state.winner !== null) return finish(state.winner);
-    if (online && canAct) session.send({ type: 'SURRENDER', player: acting });
+    // only a linked room hears a surrender; offline, the app settles the leave (and an opponent who walked out loses)
+    if (online && canAct && view.status === 'connected') session.send({ type: 'SURRENDER', player: acting });
     onLeave();
   };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
@@ -605,7 +606,27 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {hotseat ? `${me.name} loses this duel.` : 'It counts as a loss.'}
         </ConfirmSheet>
       )}
-      {online && view.status !== 'connected' && state.winner === null && <div class="netwarn">{view.detail || 'Connection lost. Reconnecting…'}</div>}
+      {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock"><span>Paused · reconnecting</span></div>}
+      {online && view.status !== 'connected' && state.winner === null && (
+        <div class="netwarn">
+          <span>{view.detail || 'Connection lost. Rejoining…'}</span>
+          {session.adapter.rejoin && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && (
+            <button class="netwarn-go" onClick={() => session.adapter.rejoin!()}>
+              Rejoin now
+            </button>
+          )}
+          {/^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && (
+            <button class="netwarn-go quiet" onClick={onLeave}>
+              Leave
+            </button>
+          )}
+          {session.adapter.abandoned?.() && (
+            <button class="netwarn-go" onClick={onLeave}>
+              Take the win
+            </button>
+          )}
+        </div>
+      )}
       {pass && (
         <div class="pass" onClick={() => setPass(false)}>
           <Win title="Pass the phone">

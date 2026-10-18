@@ -17,7 +17,9 @@ import { cpuDelay, spotUid, spotlight } from './cpuPace';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
-import { FirebaseAdapter } from '../sync/firebase';
+import { FirebaseAdapter, NET_TOOK_WIN } from '../sync/firebase';
+import { cloudState } from '../sync/cloud';
+import { liveRoomOf, setLiveRoom, touchLiveRoom, type LiveRoom } from '../online/liveRoom';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
 import { useBackButton } from './backButton';
@@ -90,7 +92,8 @@ const setLastGame = (id: string, g: string) => {
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
 function makeOnline(code: string, isHost: boolean): SyncAdapter {
-  return FirebaseAdapter.available() ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
+  // rooms live on the online service whenever it can be used (still checking counts: the room waits for it)
+  return cloudState() !== 'off' ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
 }
 
 /** A copy of the save with one duel's result written in: record, totals, a day passes, a pack for a win. */
@@ -223,7 +226,8 @@ export function App() {
       // A duel on this phone left unfinished: ask who gave up. A Link Battle this profile
       // walked out of (the app was closed) counts as a loss, unless it's being rejoined.
       if (t.partner) setUnfinished({ id, t });
-      else if (!pendingJoin || pendingJoin !== t.room) {
+      // (a recent one may still be going on another phone logged in as this duelist: it settles later)
+      else if ((!pendingJoin || pendingJoin !== t.room) && liveRoomOf(id)?.room !== t.room && !(t.room && Date.now() - t.at < 3 * 3600_000)) {
         const left = settleLeftDuel(s)!;
         s = left.save;
         setSpeedNews(left.lines);
@@ -286,7 +290,62 @@ export function App() {
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
     setScreen(!s ? 'intro' : pendingJoin ? 'link' : game === 'speed' ? 'speed' : 'menu');
+    // an online duel this phone was in when the game closed (a refresh, a crash): straight back in
+    const live = s && !pendingJoin ? liveRoomOf(p.id) : null;
+    if (live && cloudState() !== 'off') resumeRoom(live);
   };
+  /** Opens the online room a duel was left in: the room kept every move, so it carries on where it was. */
+  const resumeRoom = (live: LiveRoom) => {
+    setCpu(false);
+    setHotseat(false);
+    setP2Profile(null);
+    setDuelMode(live.mode);
+    setMySeat(live.host ? 0 : 1);
+    roomCode.current = live.room;
+    setSession(new DuelSession(new FirebaseAdapter(live.room, live.host)));
+    setScreen('duel');
+  };
+  // Back too late: the other phone took the win. The duel is settled as this phone's loss, with the result screen.
+  useEffect(() => {
+    if (!session || hotseat || cpu) return;
+    const ses = session;
+    const check = () => {
+      if (ses.status !== 'error' || ses.detail !== NET_TOOK_WIN || settled.current === ses || gameOf() !== 'speed') return;
+      settled.current = ses;
+      const st = ses.engine.state;
+      const left = speedSave ? settleLeftDuel(speedSave) : null;
+      if (left) setSpeedSave(left.save);
+      const lines = left ? left.lines.map((l) => l.replace(/^(.*) left the duel against (.*), so it counted as a loss\.$/, "$1 didn't rejoin within two minutes, so the duel against $2 counted as a loss.")) : ['Your opponent took the win.'];
+      const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
+      setSpeedNews(lines);
+      setNewsCards(cards);
+      if (st.started) setSpeedResult(resultOf({ ...st, winner: other(mySeat), winReason: 'You were gone over two minutes, so the duel went to them' }, mySeat, false, speedSave, left?.save ?? null, null, lines, cards));
+      ses.close();
+      setSession(null);
+      setP2Profile(null);
+      setScreen('speed');
+    };
+    return ses.listen(check);
+  }, [session, speedSave]);
+  // The online room being played in is kept on the phone (refreshed as moves come in), so
+  // closing the game never loses the duel; leaving the duel or the room forgets it.
+  useEffect(() => {
+    if (!profile) return;
+    const id = profile.id;
+    if (!session) return setLiveRoom(id, null);
+    const skip = noResume.current;
+    noResume.current = false;
+    const room = session.adapter.kind === 'firebase' && !hotseat && !skip && !tagHost.current && !raidHost.current ? session.adapter.roomCode : null;
+    if (!room) return;
+    setLiveRoom(id, { room, host: session.adapter.isHost, mode: duelMode });
+    // kept fresh while the room is open (however long a wait); a tag duel or raid isn't reopened
+    const timer = window.setInterval(() => {
+      const st = session.engine.state;
+      if (st.tag || session.log.some((a) => (a as { type: string }).type === 'RAID_START')) setLiveRoom(id, null);
+      else touchLiveRoom(id, room);
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [session]);
   // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
   useEffect(() => {
     if (profile && (screen === 'speed' || screen === 'menu')) setLastGame(profile.id, screen);
@@ -520,6 +579,8 @@ export function App() {
   const lastSoloSpec = useRef<CpuDuelSpec | null>(null);
 
   /** `hostCode`: a room code picked in advance (a friend invite names it) */
+  /** the room about to open is a tag duel or raid (not reopened after a refresh) */
+  const noResume = useRef(false);
   const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds', hostCode?: string) => {
     session?.close();
     setCpu(false);
@@ -576,6 +637,7 @@ export function App() {
   const joinTag = (code: string) => {
     tagHost.current = null;
     setTagReport(null);
+    noResume.current = true;
     openSession({ mode: 'join', code }, 'speed');
   };
   /** Starts a raid on this phone with a computer partner, or opens a room for the brother. */
@@ -604,6 +666,7 @@ export function App() {
     raidHost.current = null;
     tagHost.current = null;
     setRaidReport(null);
+    noResume.current = true;
     openSession({ mode: 'join', code }, 'speed');
   };
   /** Files a finished (or abandoned) raid on this phone: progress, first-clear rewards, then the raid menu. */
@@ -719,14 +782,21 @@ export function App() {
       // The other phone can't hear us: leaving now is this player's loss (switching the
       // connection off never dodges a bet). Asked first, since waiting may bring them back.
       if (!hotseat && session.status !== 'connected') {
-        if (!sure) return setOfflineLeave(true);
+        // (an opponent who didn't come back: the win is taken at once, nothing to confirm)
+        if (!sure && !session.adapter.abandoned?.()) return setOfflineLeave(true);
         setOfflineLeave(false);
         // the other phone walked out long ago (online rooms say so): the win goes to the one who stayed
-        const left = speedSave ? settleLeftDuel(speedSave, session.adapter.abandoned?.() ? mySeat : undefined) : null;
+        const won = !!session.adapter.abandoned?.();
+        const left = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
         settled.current = session;
         if (left) setSpeedSave(left.save);
-        setSpeedNews(left ? left.lines : ['The connection was lost, so this friendly duel has no result.']);
-        setNewsCards(left ? [{ who: '', won: left.won, lost: left.lost }] : []);
+        const lines = left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.'];
+        const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
+        setSpeedNews(lines);
+        setNewsCards(cards);
+        // the one who stayed gets the full victory screen
+        if (!won) session.adapter.forfeit?.();
+        if (won) setSpeedResult(resultOf({ ...st, winner: mySeat, winReason: "Opponent disconnected and didn't come back" }, mySeat, false, speedSave, left?.save ?? null, null, lines, cards));
         session.close();
         setSession(null);
         setP2Profile(null);
@@ -845,7 +915,8 @@ export function App() {
     setAskLeave(false);
     const st = session?.engine.state;
     // Leaving an online duel concedes it, so your opponent isn't left waiting.
-    if (session && st?.started && st.winner === null && session.adapter.roomCode && !hotseat && !st.tag) session.send({ type: 'SURRENDER', player: mySeat });
+    // (offline, nobody would hear it: leaveDuel settles that leave instead)
+    if (session && st?.started && st.winner === null && session.adapter.roomCode && !hotseat && !st.tag && session.status === 'connected') session.send({ type: 'SURRENDER', player: mySeat });
     leaveDuel();
   };
   const closeResult = () => {
@@ -1151,16 +1222,23 @@ export function App() {
       if (offlineLeave)
         return (
           <Overlay onClose={() => setOfflineLeave(false)}>
-            <Win title="Connection lost" onClose={() => setOfflineLeave(false)}>
+            <Win title={session.adapter.abandoned?.() ? "Your opponent didn't come back" : 'Connection lost'} onClose={() => setOfflineLeave(false)}>
               {session.adapter.abandoned?.() ? (
-                <p>Your opponent has been gone for over a minute and a half. Leave now and the win is yours.</p>
+                <p>Your opponent didn't rejoin within two minutes. Leave now and the win is yours.</p>
               ) : (
-                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting keeps the duel going: it carries on as soon as you're both back.</p>
               )}
               <Menu
                 items={[
-                  { label: 'Keep waiting', onPick: () => setOfflineLeave(false) },
-                  { label: session.adapter.abandoned?.() ? 'Leave and take the win' : 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
+                  ...(session.adapter.abandoned?.()
+                    ? [
+                        { label: 'Take the win', onPick: () => leaveDuel(mySeat, true) },
+                        { label: 'Keep waiting', onPick: () => setOfflineLeave(false) },
+                      ]
+                    : [
+                        { label: 'Keep waiting', onPick: () => setOfflineLeave(false) },
+                        { label: 'Leave and take the loss', onPick: () => leaveDuel(mySeat, true) },
+                      ]),
                 ]}
               />
             </Win>
