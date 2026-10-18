@@ -842,7 +842,7 @@ img.cimg.lvr-MI {
 /* the art itself is cast in gold, a relief the living monster climbs out of in full color
    (only where the card has a cut-out; without one the art keeps its color) */
 .lvr-mi.has-fig > .ofx-art {
-  filter: grayscale(1) contrast(1.6) brightness(1.18) sepia(1) saturate(3) hue-rotate(-4deg) drop-shadow(0 0 1px #fff6d8);
+  filter: grayscale(1) contrast(0.95) brightness(0.62) sepia(1) saturate(2.4) hue-rotate(-6deg);
 }
 .lvr-mi.has-fig > .ofx-art::after {
   content: '';
@@ -875,7 +875,7 @@ img.cimg.lvr-MI {
 }
 .lvr-mi > .lvr-pop {
   transform: translateY(-26%) scale(1.22);
-  filter: drop-shadow(0 0 1px #fff6d8) drop-shadow(0 0 3px #ffc93a) drop-shadow(0 6px 6px #000d);
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #fff6d8) drop-shadow(0 0 4px #ffc93a) drop-shadow(0 6px 6px #000d);
   animation-name: lvr-mi-float;
 }
 @keyframes lvr-mi-float {

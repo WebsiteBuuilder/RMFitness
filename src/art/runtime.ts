@@ -961,7 +961,7 @@ export class Director {
     });
   }
 
-  /** Millennium's blow: a trail of gold behind it, then the Eye flashes open where it lands with a ring of gold. */
+  /** Millennium's blow: the Eye holds open over the attacker, a trail of gold follows the blow, and a ring of gold where it lands. */
   private millenniumBlow(tl: Timeline, M: P3, P: P3, W: number, hitAt: number) {
     const st = this.stage;
     const U = this.U;
@@ -982,16 +982,6 @@ export class Director {
         const f = e * Math.random();
         st.particles.emit({ x: lerp(M.x, P.x, f) + (Math.random() - 0.5) * 0.2 * U, y: lerp(M.y, P.y, f) + (Math.random() - 0.5) * 0.2 * U, z: lerp(M.z, P.z, f), life: 0.45, size: (0.05 + Math.random() * 0.05) * U, color: i % 5 ? 0xffd56a : 0xfff6d8, drag: 2 });
       }
-    });
-    const eye = tl.own(new Ring(2.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
-    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
-    eye.mesh.renderOrder = -4;
-    eye.mesh.position.set(P.x, P.y, P.z - 0.4);
-    eye.u.uOpacity.value = 0;
-    tl.span(hitAt, hitAt + 0.5, (k) => {
-      eye.u.uEye.value = Math.max(0.001, k < 0.3 ? easeOut(k / 0.3) : 1 - easeIn((k - 0.3) / 0.7));
-      eye.u.uOpacity.value = 0.35 * (1 - easeIn(k));
-      eye.mesh.scale.setScalar(lerp(0.6, 1.1, easeOut(k)));
     });
     const ring = tl.own(new Glow(4 * U, 4 * U, 'shock', 0xffd56a, 0xc8961e));
     ring.mesh.position.set(P.x, P.y, P.z + 0.2);
@@ -1503,6 +1493,8 @@ export class Director {
       });
       tl.at(S + 0.38, () => whoosh(0.5, 900, 4200, 0.45));
       tl.at(S + 0.6, () => {
+        // the shards are pieces of the art, not of the card's printed name and stats
+        if (art) flyer.retexture(art.art);
         this.panelShards(tl, flyer, mill ? 0xffd56a : 0xfff6c8, 3.4 * U);
         st.pulse('chroma', mill ? 0.15 : 0.7);
         st.pulse('flash', mill ? 0.12 : 0.4);

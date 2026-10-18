@@ -880,6 +880,14 @@ export class CardPanel implements Fx {
   get u() {
     return this.mat.uniforms as Record<string, { value: any }>;
   }
+  /** Shows another picture on the panel (the old one is freed). */
+  retexture(source: HTMLCanvasElement) {
+    this.tex.dispose();
+    this.tex = new CanvasTexture(source);
+    this.tex.minFilter = LinearFilter;
+    this.tex.generateMipmaps = false;
+    this.u.uMap.value = this.tex;
+  }
   update() {
     return this.alive;
   }
