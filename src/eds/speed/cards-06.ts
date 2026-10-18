@@ -1299,7 +1299,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Infernalqueen Archfiend'] = {
     *onChainLink(e, m, p, link) {
       if (link.player !== other(p) || link.targetUid !== m.uid || link.negated) return;
-      const r = e.roll(6);
+      const r = yield* e.rollDie(p, (v) => v === 2 || v === 5);
       e.log(p, `Infernalqueen Archfiend rolls a ${r}`);
       if (r !== 2 && r !== 5) return;
       link.negated = true;

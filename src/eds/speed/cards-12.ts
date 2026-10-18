@@ -514,7 +514,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       *run(e, _c, p, link) {
         const target = respondedTo(link);
         if (!target) return;
-        const n = e.roll(6);
+        const n = yield* e.rollDie(p, (v) => v === 3);
         e.log(p, `Vilepawn Archfiend rolls a ${n}`);
         if (n !== 3) return;
         target.negated = true;

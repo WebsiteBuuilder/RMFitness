@@ -405,7 +405,7 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
       *run(e, _c, p, link) {
         const target = (link.payload as { ctx?: ChainCtx }).ctx?.link;
         if (!target || target.negated) return;
-        const r = e.roll(6);
+        const r = yield* e.rollDie(p, (v) => v === 1 || v === 3 || v === 6);
         e.log(p, `Darkbishop Archfiend rolls a ${r}`);
         if (r !== 1 && r !== 3 && r !== 6) return;
         negateLink(e, target, p);

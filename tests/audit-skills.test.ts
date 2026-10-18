@@ -1,5 +1,5 @@
 // audit-skills: every Speed Duel Skill, one by one (run: npx tsx tests/audit-skills.test.ts)
-// Each of the 124 Skills is equippable (deck editor + duel start) and has a targeted check of what its text does:
+// Each of the 156 Skills is equippable (deck editor + duel start) and has a targeted check of what its text does:
 // its activation condition, its effect and (where it has one) its once-per-turn / once-per-Duel limit.
 import { readFileSync } from 'node:fs';
 import { Engine } from '../src/eds/engine';
@@ -169,7 +169,7 @@ const RAW = JSON.parse(readFileSync('public/cards/speed.json', 'utf8'));
 const ALL_SKILLS: string[] = (Array.isArray(RAW) ? RAW : RAW.cards ?? Object.values(RAW)).filter((c: any) => c.type === 'Skill Card').map((c: any) => c.name);
 {
   console.log('\n--- equippable');
-  check(ALL_SKILLS.length === 124, `speed.json lists 124 Skill Cards (${ALL_SKILLS.length})`);
+  check(ALL_SKILLS.length === 156, `speed.json lists 156 Skill Cards (${ALL_SKILLS.length})`);
   const playable = new Set(PLAYABLE_SKILLS());
   let ok = 0;
   for (const s of ALL_SKILLS) {
@@ -1071,7 +1071,9 @@ T('Welcome to the Jungle', () => {
 });
 
 // ======================================================================
-const missing = ALL_SKILLS.filter((s) => !tested.has(s));
+// The 32 Skills from the 2024 products have their targeted checks in tests/skills-2024a.test.ts and skills-2024b.test.ts.
+const EXTRA_2024 = new Set((JSON.parse(readFileSync('scripts/speed-skills-extra.json', 'utf8')) as { name: string }[]).map((s) => s.name));
+const missing = ALL_SKILLS.filter((s) => !tested.has(s) && !EXTRA_2024.has(s));
 check(missing.length === 0, `every Skill has a targeted check (${tested.size}; missing: ${missing.join(', ')})`);
 console.log(fails ? `\n${fails} FAILED` : '\nALL OK');
 if (fails) process.exit(1);

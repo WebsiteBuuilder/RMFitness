@@ -25,7 +25,7 @@ ok(stFam.every((f) => drawn.has(f.family)), `all ${st.length} Spells/Traps play 
 
 const effects = PLAYABLE.filter((c) => c.kind === 'monster' && !c.vanilla);
 ok(effects.every((c) => drawn.has(classify(c).family)), `all ${effects.length} monster effects have a family`);
-ok(SKILLS.length === 124 && SKILLS.every((c) => drawn.has(classify(c).family)), `all ${SKILLS.length} Skills have a family`);
+ok(SKILLS.length === 156 && SKILLS.every((c) => drawn.has(classify(c).family)), `all ${SKILLS.length} Skills have a family`);
 
 // the families spread: no single family swallows the pool
 const count = new Map<string, number>();

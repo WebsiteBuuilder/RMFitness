@@ -111,7 +111,7 @@ export const FIGURE_TUNES: Record<number, FigureTune> = {
   // Battle Ox
   5053103: { relief: 0.85, fade: 0.14 },
   // Gilford the Lightning
-  36354007: { relief: 0.85, fade: 0.13, tame: 0.3 },
+  36354008: { relief: 0.85, fade: 0.13, tame: 0.3 },
   // Harpie Queen
   75064463: { relief: 0.9, fade: 0.11 },
   // Rogue Doll: thin limbs and a cape that tear into strings seen over the shoulder; flatter, wider fade

@@ -364,9 +364,10 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
   E['Agido'] = {
     *onDestroyed(e, _c, p, byBattle) {
       if (!byBattle || !freeMZ(e, p)) return;
-      const n = e.roll(6);
+      const fits = (c: Card, v: number) => canSS(e, c) && info(e, c).race === 'Fairy' && (v === 6 ? levelOf(e, c) >= 6 : levelOf(e, c) === v);
+      const n = yield* e.rollDie(p, (v) => e.player(p).gy.some((c) => fits(c, v)));
       e.log(p, `Agido rolls a ${n}`);
-      const ok = (c: Card) => canSS(e, c) && info(e, c).race === 'Fairy' && (n === 6 ? levelOf(e, c) >= 6 : levelOf(e, c) === n);
+      const ok = (c: Card) => fits(c, n);
       const list = e.player(p).gy.filter(ok);
       if (!list.length || !(yield* e.yesno(p, 'Agido: Special Summon a Fairy monster from your GY?'))) return;
       yield* summonOneOf(e, p, 'Agido: Special Summon which Fairy?', list);

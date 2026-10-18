@@ -314,3 +314,61 @@
   background: rgba(92, 62, 8, 0.82);
   border-color: #f0b04a;
 }
+/* Rejoin now / Take the win, right on the banner */
+.netwarn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+}
+.netwarn-go {
+  font: inherit;
+  font-weight: 800;
+  color: #2a1a00;
+  background: linear-gradient(#ffd866, #e8a91c);
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  min-height: 32px;
+  cursor: pointer;
+}
+/* this phone lost the server: the board waits under a dim layer until it's back (taps can't go astray) */
+.net-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(4, 8, 20, 0.68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.net-lock span {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffd866;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(10, 16, 36, 0.9);
+  border: 1px solid #f0b04a;
+}
+/* short phones (iPhone SE): a slimmer banner that leaves the field readable */
+@media (max-height: 700px) {
+  .ui-speed .netwarn.netwarn {
+    top: calc(56px + env(safe-area-inset-top));
+    font-size: 11px;
+    padding: 3px 8px;
+    gap: 4px 8px;
+  }
+  .netwarn-go {
+    min-height: 26px;
+    padding: 3px 12px;
+  }
+}
+/* Leave beside Rejoin now: the way out for a phone with no signal */
+.netwarn-go.quiet {
+  color: #ffe9b0;
+  background: transparent;
+  border: 1px solid #f0b04a;
+}
