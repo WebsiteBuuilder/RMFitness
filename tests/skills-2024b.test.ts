@@ -320,6 +320,12 @@ T('Mokey Mokey Madness', () => {
   turnOf(e, 1);
   toBattle(e);
   check(e.canAttackWith(1, g), 'it can attack the next turn');
+  turnOf(e, 1);
+  const bp = place(e, 1, 'Black Ptera', 'def', false); // Set on an earlier turn
+  e.apply({ type: 'FLIP_SUMMON', player: 1, uid: bp.uid });
+  settle(e);
+  toBattle(e);
+  check(bp.faceUp && bp.placedTurn !== e.state.turn && !e.canAttackWith(1, bp), 'a monster Set earlier and Flip Summoned this turn cannot attack either');
   turnOf(e, 0);
   const m2 = place(e, 0, 'Mokey Mokey');
   for (const c of e.player(0).hand.filter((x) => x.name === 'Mokey Mokey Smackdown')) e.toDeckTop(c.uid);

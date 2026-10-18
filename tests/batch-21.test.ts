@@ -3,6 +3,7 @@
 import { Engine } from '../src/eds/engine';
 import type { Card, FieldCard, Pid, Pos } from '../src/eds/types';
 import { DB } from './speedkit';
+import { aiAction } from '../src/eds/ai';
 
 let fails = 0;
 const check = (ok: unknown, what: string) => {
@@ -379,6 +380,23 @@ section('Volcanic Eruption');
   check(!e.canActivateMain(0, ve.uid), 'Volcanic Eruption: cannot be activated in the Main Phase');
   endTurn(e, 'yes');
   check([jw, s, o].every((c) => zone(e, c) === 'gy') && zone(e, ve) === 'gy', 'Volcanic Eruption: activated in the End Phase with Jurassic World, destroys all cards on the field');
+}
+{
+  // The computer only wipes the field when the opponent loses more there than it does.
+  const ask = (mine: string[], theirs: string[]) => {
+    const e = duel(['Jurassic World', 'Volcanic Eruption', ...mine], theirs);
+    playSpell(e, 0, 'Jurassic World');
+    putST(e, 0, 'Volcanic Eruption');
+    for (const m of mine) place(e, 0, m);
+    for (const m of theirs) place(e, 1, m);
+    e.apply({ type: 'END_TURN', player: 0 });
+    const pr = e.state.prompt;
+    const a = pr?.kind === 'yesno' && pr.title === 'Activate Volcanic Eruption?' ? aiAction(e, 0)?.type : undefined;
+    settle(e);
+    return a;
+  };
+  check(ask(['Sabersaurus', 'Sabersaurus'], [FILL]) === 'NO', 'Volcanic Eruption (computer): not with a winning board');
+  check(ask([], ['Sabersaurus', FILL, 'Sabersaurus']) === 'YES', 'Volcanic Eruption (computer): yes when the opponent has more on the field');
 }
 
 section('Weathering Soldier');

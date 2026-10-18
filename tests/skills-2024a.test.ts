@@ -2,6 +2,7 @@
 import { Engine } from '../src/eds/engine';
 import type { Card, CardInfo, FieldCard, Pid, Pos } from '../src/eds/types';
 import { DB } from './speedkit';
+import { aiAction } from '../src/eds/ai';
 import { SKILLS, getSkill, PLAYABLE_SKILLS } from '../src/eds/skills';
 
 let fails = 0;
@@ -264,6 +265,15 @@ T('Tribal Unity', () => {
   check(e.nameHas(hl, 'Amazoness') && e.isNamed(hl, 'Harpie Lady') && e.nameHas(a, 'Harpie') && e.isNamed(a, 'Amazoness Swords Woman'), 'Harpie <-> Amazoness on the field and in the GY');
   grab(e, 0, 'Dark Magician');
   check(use(e, 0, { pick: ['Dark Magician'] }) && e.atkOf(a) === 1500 + 1400, 'discard a Level 7: +1400 ATK');
+  // Only a card in a GY takes the slow path: name checks on cards elsewhere never ask the Skill.
+  let asked = 0;
+  const fx = (e as any).skillFx.bind(e);
+  (e as any).skillFx = () => (asked++, fx());
+  const inDeck = e.player(0).deck.find((c) => c.name === FILL)!;
+  e.nameHas(inDeck, 'Amazoness');
+  e.isNamed(inDeck, FILL);
+  const deckAsks = asked;
+  check(e.nameHas(hl, 'Amazoness') && asked > deckAsks && deckAsks === 0, 'name checks on cards outside the GY skip the Skill lookup');
 });
 
 T('Ever Faithful Companions', () => {
@@ -344,10 +354,52 @@ T('See Me Rolling', () => {
   const e = sd('See Me Rolling', ['Graceful Dice']);
   const u = use(e, 0, { pick: [FILL] });
   check(u && handHas(e, 0, 'Graceful Dice') && e.player(0).hand.length === 4, 'add a die card, place 1 card on the bottom of the Deck');
-  const seq = [0, 0.99, 0];
+  // The re-roll is asked ("you may re-roll"), only of the Skill's owner, once per turn.
+  const seq = [0, 0.99, 0.99, 0, 0];
   (e as any).rand = () => seq.shift() ?? 0;
-  check(e.roll(6) === 6, 'a roll of 1 is re-rolled');
-  check(e.roll(6) === 1, 'once per turn');
+  let got = 0;
+  const roll = (p: Pid, ...ans: Ans[]) => {
+    got = 0;
+    const titles: string[] = [];
+    (e as any).run((function* () {
+      got = yield* e.rollDie(p, (v) => v >= 4);
+    })());
+    if (e.state.prompt?.kind === 'yesno') titles.push(e.state.prompt.title);
+    settle(e, ...ans);
+    return titles;
+  };
+  const t1 = roll(0, 'no');
+  check(t1[0] === 'See Me Rolling: re-roll the 1?' && got === 1, 'a 1: asked whether to re-roll; declining keeps the 1');
+  const t2 = roll(1);
+  check(t2.length === 0 && got === 6, "the opponent's roll: no question");
+  const t3 = roll(0, 'yes');
+  check(t3.length === 1 && got === 1, 'any result may be re-rolled: yes re-rolls the 6 (into a 1)');
+  const t4 = roll(0);
+  check(t4.length === 0 && got === 1, 'once per turn');
+  // The computer re-rolls only a result that is bad for the effect being resolved.
+  const e2 = sd('See Me Rolling', ['Graceful Dice']);
+  const seq2 = [0.99, 0];
+  (e2 as any).rand = () => seq2.shift() ?? 0;
+  (e2 as any).run((function* () {
+    yield* e2.rollDie(0, (v) => v >= 4);
+  })());
+  check(e2.state.prompt?.kind === 'yesno' && aiAction(e2, 0)?.type === 'NO', 'computer: a 6 for Graceful Dice is kept');
+  settle(e2, 'no');
+  const e3 = sd('See Me Rolling', ['Graceful Dice']);
+  (e3 as any).rand = () => 0;
+  (e3 as any).run((function* () {
+    yield* e3.rollDie(0, (v) => v >= 4);
+  })());
+  check(e3.state.prompt?.kind === 'yesno' && aiAction(e3, 0)?.type === 'YES', 'computer: a 1 for Graceful Dice is re-rolled');
+  settle(e3, 'no');
+  // In a duel: Graceful Dice asks its activator.
+  const e4 = sd('See Me Rolling', ['Graceful Dice', 'Vorse Raider']);
+  const v = place(e4, 0, 'Vorse Raider');
+  const seq4 = [0, 0.99];
+  (e4 as any).rand = () => seq4.shift() ?? 0;
+  const gd = grab(e4, 0, 'Graceful Dice');
+  act(e4, 0, gd.uid, 'yes');
+  check(logHas(e4, 'See Me Rolling') && e4.atkOf(v) === 1900 + 600, 'Graceful Dice: the 1 is re-rolled on request (a 6: +600 ATK)');
 });
 
 T('Battle City Bestie', () => {

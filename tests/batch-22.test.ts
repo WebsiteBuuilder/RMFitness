@@ -240,6 +240,20 @@ section('Spirit Reaper');
   check(!ss && inGy(e, 1, 'Shadow Spell'), 'Spirit Reaper: (Shadow Spell then destroys itself, its monster gone)');
 }
 {
+  // A monster effect that picks its target as it resolves (Sea Koala) is seen too; a monster it did not target is not.
+  const koala = (pickReaper: boolean) => {
+    const e = duel(['Sea Koala', 'Dark Rabbit'], ['Spirit Reaper', FILL]);
+    const r = place(e, 1, 'Spirit Reaper');
+    place(e, 1, FILL);
+    const k = place(e, 0, 'Sea Koala');
+    place(e, 0, 'Dark Rabbit');
+    effect(e, 0, k, { pick: [pickReaper ? 'Spirit Reaper' : FILL] });
+    return zone(e, r);
+  };
+  check(koala(true) === 'gy', "Spirit Reaper: destroyed after a monster effect that chose it as its target resolves (Sea Koala)");
+  check(koala(false) === 'mz', 'Spirit Reaper: not when the monster effect targeted another monster');
+}
+{
   const e = duel(['Spirit Reaper'], [], [], [], 1);
   toMain(e);
   nextTurn(e);
@@ -264,6 +278,24 @@ section('Spiritualism');
   e2.state.chain.push(link);
   run(e2, (e2 as any).resolveChain());
   check(zone(e2, s2) === 'hand', 'Spiritualism: a negated activation still resolves');
+}
+{
+  // Counter-cards are not offered against it (their cost would be wasted); against another Spell they are.
+  const offered = (spell: string) => {
+    const e = duel([spell], ['Magic Jammer', 'Sakuretsu Armor']);
+    putST(e, 1, 'Sakuretsu Armor');
+    putST(e, 1, 'Magic Jammer');
+    const c = grab(e, 0, spell);
+    e.apply({ type: 'ACTIVATE', player: 0, uid: c.uid, zone: e.player(0).sz.findIndex((z) => z === null) });
+    let seen = false;
+    for (let i = 0; i < 50 && e.state.prompt; i++) {
+      const pr = e.state.prompt;
+      if (pr.kind === 'response' && pr.player === 1 && pr.options.some((o) => o.label === 'Magic Jammer')) seen = true;
+      settle(e, 'pass');
+    }
+    return seen;
+  };
+  check(!offered('Spiritualism') && offered('Pot of Greed'), 'Spiritualism: Magic Jammer is not offered against it (it cannot be negated)');
 }
 
 section('Destiny Board / Spirit Message "I" "N" "A" "L" / Sentence of Doom');

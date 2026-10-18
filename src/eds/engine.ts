@@ -91,6 +91,10 @@ export class Engine {
   actor: Pid | null = null;
   /** chain links being resolved right now (Speed Duel queues Special Summon responses until they finish) */
   private resolving = 0;
+  /** b22: >0 while the duel's generator is being stepped (not while the computer or the UI only reads the state). */
+  private stepping = 0;
+  /** b22: while a monster effect without a recorded target resolves: monsters checked as legal targets, and those of them picked (Spirit Reaper). */
+  private targetScope: { cands: Set<number>; picked: Set<number> } | null = null;
   /** set while battle destruction is applied, so "destroyed by battle" effects can tell */
   private battleKill = false;
   /** Speed Duel: cards sent to the GY together (one destroy() call) are reported to watchers as one event */
@@ -805,6 +809,13 @@ export class Engine {
 
   /** Lord of D.: Dragons cannot be targeted by card effects. */
   untargetable(m: FieldCard): boolean {
+    const r = this.untargetableNow(m);
+    // b22: a monster offered as a legal target while a monster effect resolves (Spirit Reaper; see targetScope).
+    if (!r && this.targetScope && this.stepping) this.targetScope.cands.add(m.uid);
+    return r;
+  }
+
+  private untargetableNow(m: FieldCard): boolean {
     if (m.faceUp && this.effectOn(m)?.cannotBeTargeted?.(this, m, this.actor)) return true;
     if (m.faceUp && this.speed && this.shielded(m, 'target')) return true;
     // Speed Duel: "your opponent cannot target it until the end of their turn" that outlasts its source (Abyss Prop - Wild Wagon).
@@ -1792,6 +1803,18 @@ export class Engine {
   }
 
   *select(player: Pid, title: string, options: SelectOption[], min = 1, max = 1, cancel = false): Generator<Prompt, number[] | null, Choice> {
+    const scope = this.targetScope;
+    const picks = yield* this.selectInner(player, title, options, min, max, cancel);
+    // b22: a monster chosen from a list of legal targets (checked with untargetable) while a monster effect resolves is its target.
+    if (scope && scope === this.targetScope && picks)
+      for (const i of picks) {
+        const uid = options[i]?.uid;
+        if (uid !== undefined && scope.cands.has(uid)) scope.picked.add(uid);
+      }
+    return picks;
+  }
+
+  private *selectInner(player: Pid, title: string, options: SelectOption[], min = 1, max = 1, cancel = false): Generator<Prompt, number[] | null, Choice> {
     if (options.length === 0) return min === 0 ? [] : null;
     if (options.length <= min && !cancel) return options.map((_, i) => i);
     if (this.noCancel > 0 && min > 0) cancel = false;
@@ -1919,7 +1942,13 @@ export class Engine {
   private resume(input: Choice) {
     const g = this.gen;
     if (!g) return;
-    const r = g.next(input);
+    let r: IteratorResult<Prompt, unknown>;
+    this.stepping++;
+    try {
+      r = g.next(input);
+    } finally {
+      this.stepping--;
+    }
     if (this.state.winner !== null) {
       this.gen = null;
       this.state.prompt = null;
@@ -3088,10 +3117,19 @@ export class Engine {
         if (effectLink) {
           // A monster's (or card's) activated effect, not the activation of a Spell/Trap card.
           if (!link.negated && this.liveST().some((x) => x.eff.negatesEffect?.(this, x.c, x.p, link) === true)) link.negated = true;
-          if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
-          else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
-          else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
+          // b22: monster effects mostly choose their target inside run(): targetScope sees which legal target was picked.
+          const prevScope = this.targetScope;
+          const scope = this.speed && link.targetUid === undefined ? { cands: new Set<number>(), picked: new Set<number>() } : null;
+          this.targetScope = scope;
+          try {
+            if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
+            else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
+            else if (effectLink === 'ignition' && eff?.ignition && this.fieldCard(link.card.uid)) yield* this.as(link.player, eff.ignition.run(this, link.card as FieldCard, link.player));
+          } finally {
+            this.targetScope = prevScope;
+          }
           this.noteTargetResolved(link);
+          if (scope && !link.negated) for (const uid of scope.picked) this.noteTargetResolved({ ...link, targetUid: uid });
           continue;
         }
         // b22: "This card's activation and effect cannot be negated" (Spiritualism): the card's activate sets payload.cannotNegate.
@@ -3442,7 +3480,17 @@ export class Engine {
     }
     // EDS: effects of face-up Continuous Spells/Traps used in response (Ultimate Offering), after the set cards.
     if (!this.speed) out.push(...this.quickOptions(player, trigger, ctx, true));
+    // b22: a link that "cannot be negated" (Spiritualism) is not offered to cards that answer it by negating (Magic Jammer,
+    // Seven Tools of the Bandit, Solemn Judgment, monsters that negate an effect): their cost would be paid for nothing.
+    if (this.speed && (ctx.link?.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate) return out.filter((o) => !(o.uid !== undefined && this.negator(o.uid)));
     return out;
+  }
+
+  /** b22: a card whose text negates something (an activation, a Summon or an effect): the answers a "cannot be negated" link rules out. */
+  private negator(uid: number): boolean {
+    const c = this.find(uid)?.card;
+    const desc = (c && this.info(c.name).desc) ?? '';
+    return /\bnegates?\b/i.test(desc.replace(/cannot be negated/gi, ''));
   }
 
   /** Speed Duel: the attacking monster stops `player` from activating Spell/Trap Cards until the end of the Damage Step (Ancient Gear Golem). */
