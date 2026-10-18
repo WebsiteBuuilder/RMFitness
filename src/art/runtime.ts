@@ -1007,7 +1007,7 @@ export class Director {
     const st = this.stage;
     const U = this.U;
     const q = this.q;
-    const eye = tl.own(new Ring(3.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    const eye = tl.own(new Ring(2.9 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
     // dimmed like the Shadow Realm's eye, so it reads as an eye of light, not a solid disc
     (eye.u.uColor.value as Vector3).multiplyScalar(0.7);
     eye.mesh.renderOrder = -4;
@@ -1510,7 +1510,7 @@ export class Director {
           g.u.uOpacity.value = 1 - k;
         });
       });
-      if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.62 * size, z: -0.6 }, ground, size, E);
+      if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.45 * size, z: -0.6 }, ground, size, E);
     } else {
       // it dissolves into light as the monster's reveal starts (showAt, below)
       span(0.32, 0.5, (k) => {

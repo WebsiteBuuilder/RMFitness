@@ -9,8 +9,8 @@ import { spellWord } from './gameUi';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
-/** The Millennium Eye (Wedjat) emblem on a Millennium card. */
-const EYE = (
+/** The Millennium Eye (Wedjat) on a Millennium card's plate. */
+const EyeMark = () => (
   <svg class="ofx-eye" viewBox="0 0 100 64" aria-hidden="true">
     <defs>
       <linearGradient id="ofx-gold" x1="0" y1="0" x2="0" y2="1">
@@ -95,7 +95,7 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
         <i class="lvr-spk s2" />
         <i class="lvr-spk s3" />
         <i class="lvr-chip">
-          {mi && EYE}
+          {mi && <EyeMark />}
           {mi ? 'MILLENNIUM' : 'OVERFRAME'}
         </i>
       </span>
