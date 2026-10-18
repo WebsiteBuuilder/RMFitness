@@ -941,10 +941,10 @@ export class Director {
   private millenniumWindup(tl: Timeline, att: Actor, M: P3, D: number) {
     const st = this.stage;
     const U = this.U;
-    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 2.4 * U, 0x000000));
+    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 1.9 * U, 0x000000));
     // drawn before the figures: it hangs behind the attacker, never over it
     eye.mesh.renderOrder = -4;
-    eye.mesh.position.set(att.x, att.y + att.size * 0.62, att.z - 0.8);
+    eye.mesh.position.set(att.x, att.y + att.size * 0.78, att.z - 1.2);
     eye.u.uOpacity.value = 0;
     tl.span(0.15, D, (k) => {
       eye.u.uOpacity.value = 0.85 * clamp01(k * 2);
@@ -956,7 +956,7 @@ export class Director {
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const rr = (1 + Math.random() * 0.7) * U;
-        st.particles.emit({ x: M.x + Math.cos(a) * rr, y: M.y + Math.sin(a) * rr, z: M.z, life: 0.45, size: 0.06 * U, color: i % 4 ? 0xffd56a : 0x9b4dff, drag: 0, pull: { x: M.x, y: M.y, strength: 22 * U, swirl: 10 * U } });
+        st.particles.emit({ x: M.x + Math.cos(a) * rr, y: M.y + Math.sin(a) * rr, z: M.z, life: 0.45, size: 0.06 * U, color: i % 4 ? 0xffd56a : 0xc8961e, drag: 0, pull: { x: M.x, y: M.y, strength: 22 * U, swirl: 10 * U } });
       }
     });
   }
@@ -984,7 +984,7 @@ export class Director {
       eye.u.uOpacity.value = 0.35 * (1 - easeIn(k));
       eye.mesh.scale.setScalar(lerp(0.6, 1.1, easeOut(k)));
     });
-    const ring = tl.own(new Glow(4 * U, 4 * U, 'shock', 0xffd56a, 0x9b4dff));
+    const ring = tl.own(new Glow(4 * U, 4 * U, 'shock', 0xffd56a, 0xc8961e));
     ring.mesh.position.set(P.x, P.y, P.z + 0.2);
     ring.u.uOpacity.value = 0;
     tl.span(hitAt, hitAt + 0.6, (k) => {
@@ -994,7 +994,7 @@ export class Director {
     tl.at(hitAt, () => {
       st.pulse('chroma', 0.2);
       this.flash(0xffc93a, 0.12);
-      for (const [c, n] of [[0xffd56a, 26], [0xfff6d8, 12], [0x9b4dff, 10]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
+      for (const [c, n] of [[0xffd56a, 26], [0xfff6d8, 12], [0xc8961e, 10]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
       chime(0.95);
     });
   }
@@ -1042,7 +1042,7 @@ export class Director {
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const rr = (1.6 + Math.random() * 0.8) * U;
-        st.particles.emit({ x: at.x + Math.cos(a) * rr, y: at.y + Math.sin(a) * rr * 0.7, z: at.z + 0.3, life: 0.5, size: 0.07 * U, color: i % 5 ? 0xffd56a : 0x9b4dff, drag: 0, pull: { x: at.x, y: at.y, strength: 18 * U, swirl: 9 * U } });
+        st.particles.emit({ x: at.x + Math.cos(a) * rr, y: at.y + Math.sin(a) * rr * 0.7, z: at.z + 0.3, life: 0.5, size: 0.07 * U, color: i % 5 ? 0xffd56a : 0xc8961e, drag: 0, pull: { x: at.x, y: at.y, strength: 18 * U, swirl: 9 * U } });
       }
     });
     // the ring of hieroglyphs on the ground
@@ -1060,7 +1060,7 @@ export class Director {
     this.shafts(tl, { x: 0, y: ground, z: -0.2 }, 5 * U, 0xffd56a, S + 0.6, S + E, 4, 0.9);
     tl.span(S + 0.6, S + E - 0.2, (_k, dt) => {
       const n = Math.floor(70 * q * dt + Math.random());
-      for (let i = 0; i < n; i++) st.particles.emit({ x: (Math.random() - 0.5) * size * 0.9, y: ground + Math.random() * 0.3 * U, z: 0.25, vy: (1.4 + Math.random() * 1.6) * U, life: 0.9, size: (0.04 + Math.random() * 0.05) * U, color: i % 4 ? 0xffe9a8 : 0x9b4dff, drag: 0.4 });
+      for (let i = 0; i < n; i++) st.particles.emit({ x: (Math.random() - 0.5) * size * 0.9, y: ground + Math.random() * 0.3 * U, z: 0.25, vy: (1.4 + Math.random() * 1.6) * U, life: 0.9, size: (0.04 + Math.random() * 0.05) * U, color: i % 4 ? 0xffe9a8 : 0xc8961e, drag: 0.4 });
     });
   }
 

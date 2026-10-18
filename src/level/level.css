@@ -822,7 +822,7 @@ img.cimg.lvr-MI {
   box-shadow: 0 0 6px #ffc93acc, 0 0 16px #ffc93a77, 0 0 26px #a8740c66;
 }
 .lvr-mi > .lvr-ofrim::before {
-  background: conic-gradient(#c8961e, #ffd56a, #fff6d8, #ffc93a, #a8740c, #ffd56a, #fff6d8, #e0a82a, #c8961e);
+  background: conic-gradient(#ffc93a, #ffe58a, #fffbe8, #ffd56a, #e0a82a, #ffe58a, #fffbe8, #ffd56a, #ffc93a);
   animation-duration: 5s;
 }
 /* the spread art turns to dark bronze, so the sharp art in its gold cartouche stands out */
@@ -842,7 +842,7 @@ img.cimg.lvr-MI {
 /* the art itself is cast in gold, a relief the living monster climbs out of in full color
    (only where the card has a cut-out; without one the art keeps its color) */
 .lvr-mi.has-fig > .ofx-art {
-  filter: grayscale(1) contrast(1.5) sepia(1) saturate(2.6) hue-rotate(-6deg) brightness(1.02) drop-shadow(0 0 1px #fff6d8);
+  filter: grayscale(1) contrast(1.6) brightness(1.18) sepia(1) saturate(3) hue-rotate(-4deg) drop-shadow(0 0 1px #fff6d8);
 }
 .lvr-mi.has-fig > .ofx-art::after {
   content: '';

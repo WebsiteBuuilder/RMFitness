@@ -207,7 +207,7 @@
 }
 /* clear of the Life Points bars and the hand (bottom) and of the opponent's bar (top) */
 .art-banner.pos-bottom {
-  bottom: calc(21% + env(safe-area-inset-bottom));
+  bottom: calc(max(21%, 212px) + env(safe-area-inset-bottom));
 }
 .art-banner.pos-top {
   top: calc(11% + env(safe-area-inset-top));

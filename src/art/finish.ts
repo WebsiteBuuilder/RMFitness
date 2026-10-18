@@ -29,7 +29,7 @@ export const GLOSSY = [0xff7ae6, 0xffffff, 0xb58cff, 0x6ce3ff];
 export const ROYAL = [0xffd56a, 0xfff6d8, 0xffc94a];
 export const UR_GOLD = [0xffd56a, 0xfff3c2];
 /** Millennium: gold, white-gold and a shadow violet. */
-export const MILLENNIUM = [0xffd56a, 0xfff6d8, 0xffc93a, 0x9b4dff];
+export const MILLENNIUM = [0xffd56a, 0xfff6d8, 0xffc93a, 0xe0a82a];
 
 /** The particle colors of a finish (null: the card's own colors). */
 export function finishPalette(fin: number): number[] | null {
