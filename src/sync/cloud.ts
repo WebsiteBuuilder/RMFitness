@@ -34,6 +34,8 @@ export interface Db {
   readonly now: unknown;
   /** the server's clock as best this phone knows it */
   serverNow(): number;
+  /** drops the connection and opens it again at once (after a phone wakes up, or Rejoin) */
+  kick?(): void;
 }
 
 /** The service said no (the database rules don't allow it yet). */
@@ -176,6 +178,10 @@ export async function makeDb(db: Database, uid: string, relay: string): Promise<
     cancelOnDisconnect: (p) => fb.onDisconnect(r(p)).cancel(),
     transaction: async (p, fn) => (await fb.runTransaction(r(p), (cur) => fn(cur), { applyLocally: false })).committed,
     connected: (cb) => fb.onValue(r('.info/connected'), (s) => cb(s.val() === true)),
+    kick: () => {
+      fb.goOffline(db);
+      fb.goOnline(db);
+    },
   };
 }
 

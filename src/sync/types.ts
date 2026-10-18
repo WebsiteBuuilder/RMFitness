@@ -16,6 +16,8 @@ export interface SyncAdapter {
   close(): void;
   /** starts over after an 'error' status (online rooms) */
   retry?(): void;
+  /** online rooms: wake the connection and open the room again now (the duel carries on) */
+  rejoin?(): void;
   /** the host empties the log for a rematch in the same room (every phone in it follows) */
   restart?(): void;
   /** the other phone has been gone so long that leaving wins the duel (this phone is still online) */

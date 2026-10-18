@@ -1,5 +1,6 @@
 // Link Battle: create or join an online room, or play on one phone.
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { NET_HOST_LEFT, NET_TOOK_WIN } from '../sync/firebase';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { Action, GameMode, Pid } from '../eds/types';
 import { speedDeckProblems, type SpeedDeck } from '../eds/speedSave';
@@ -287,7 +288,7 @@ export function Lobby({
               <button class="gbtn" onClick={onLeave}>
                 Back
               </button>
-              {session.adapter.retry && (
+              {session.adapter.retry && detail !== NET_TOOK_WIN && detail !== NET_HOST_LEFT && (
                 <button class="gbtn" onClick={() => session.adapter.retry?.()}>
                   Retry
                 </button>

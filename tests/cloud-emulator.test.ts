@@ -183,7 +183,7 @@ async function main() {
   back.subscribe((e) => (backLog = e));
   check(await until(() => backLog.length === 2), 'a guest back after a reload gets the moves');
   await wait(14000);
-  check(back.status !== 'error' && /Waiting for them to come back/.test(back.detail), "and waits on the host's clock instead of \"no room\"");
+  check(back.status !== 'error' && /to rejoin/.test(back.detail), "and waits on the host's clock instead of \"no room\"");
   // the host took the abandoned win meanwhile: the guest is told
   await c2.set(`net/rooms/${room}/left`, 'host-phone');
   check(await until(() => back.status === 'error') && /took the win/.test(back.detail), 'the phone that walked away hears the other took the win');

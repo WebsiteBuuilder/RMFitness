@@ -7,14 +7,16 @@ export const NET_UNREACHABLE = "Can't reach the online server. Check your Wi-Fi 
 export const NET_HOST_LEFT = 'Your opponent left the room.';
 export const NET_TAKEN = 'That room code is already in use. Create a new room.';
 
+export const NET_TOOK_WIN = 'Your opponent took the win. You were gone over two minutes, so the duel went to them.';
 /** How long a guest looks for a room (the host may still be opening it) before saying it doesn't exist. */
-export const NET_TOOK_WIN = 'Your opponent waited and took the win. Leave from the menu.';
 export const FIND_MS = 12_000;
 const LOOK_MS = 1_500;
 /** How long the first connection gets before the room counts as unreachable. */
 const OPEN_MS = 20_000;
-/** The other phone gone this long mid-duel: leaving wins it. */
-export const ABANDON_MS = 90_000;
+/** The other phone gone this long mid-duel: leaving wins it (until then, coming back carries on). */
+export const ABANDON_MS = 120_000;
+/** A dropped room tries again by itself this often. */
+const REJOIN_MS = 3_000;
 
 type Meta = { host?: string; at?: number } | null;
 
@@ -55,7 +57,13 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     this.isHost = isHost;
     this.setStatus('connecting', 'Connecting…');
     void this.start();
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onWake);
   }
+
+  /** The phone comes back to the game (screen on, app switched back): rejoin at once if it lost the room. */
+  private onWake = () => {
+    if (document.visibilityState === 'visible' && !this.closed && !this.online && this.everLinked) this.rejoin();
+  };
 
   /** Rooms go through the service once this phone has checked it can use it (src/sync/cloud.ts). */
   static available(): boolean {
@@ -86,13 +94,26 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
 
   private fail(detail: string) {
     this.stopAll();
+    // a duel already under way never ends on a bad connection: it keeps rejoining by itself
+    if (detail === NET_UNREACHABLE && this.everLinked && !this.closed) {
+      this.setStatus('connecting', 'Connection lost. Rejoining…');
+      this.later(REJOIN_MS, () => this.retry());
+      return;
+    }
     this.setStatus('error', detail);
+  }
+
+  /** Rejoin now: wakes the connection and opens the room again (the duel carries on where it was). */
+  rejoin() {
+    if (this.closed) return;
+    this.db?.kick?.();
+    this.retry();
   }
 
   retry() {
     if (this.closed) return;
     this.stopAll();
-    this.setStatus('connecting', 'Connecting…');
+    this.setStatus('connecting', this.everLinked ? 'Rejoining the duel…' : 'Connecting…');
     void this.start();
   }
 
@@ -175,10 +196,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     if (!this.goneSince) this.goneSince = Date.now();
     const say = () => {
       const s = Math.floor((Date.now() - this.goneSince) / 1000);
-      const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-      const who = this.isHost ? 'Opponent disconnected' : 'Lost the host';
-      const tail = s * 1000 >= ABANDON_MS ? " They haven't come back: leave from the menu and the win is yours." : '';
-      this.setStatus(this.isHost ? 'waiting' : 'connecting', `${who} · ${clock}. Waiting for them to come back…${tail}`);
+      const left = Math.max(0, Math.ceil(ABANDON_MS / 1000) - s);
+      const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+      const who = this.isHost ? 'Opponent disconnected' : 'The host disconnected';
+      const msg = left > 0 ? `${who}. They have ${clock} to rejoin.` : `${who} and didn't come back in time. The win is yours.`;
+      this.setStatus(this.isHost ? 'waiting' : 'connecting', msg);
     };
     say();
     this.goneTimer ??= setInterval(() => (this.closed || this.otherHere || !this.online ? undefined : say()), 1000);
@@ -281,10 +303,13 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   /** The guest mirrors the host's log (a new rematch number starts it over). */
   private followLog(db: Db, ep: number) {
     if (ep === this.ep && this.logUnsub) return;
-    this.ep = ep;
     this.logUnsub?.();
-    this.events = [];
-    this.emit();
+    // a rematch starts the log over; the same duel followed again (a rejoin) keeps what it has
+    if (ep !== this.ep) {
+      this.ep = ep;
+      this.events = [];
+      this.emit();
+    }
     this.logUnsub = db.onChildAdded(`${this.base}/log/${ep}`, (_k, v) => {
       if (typeof v !== 'string' || ep !== this.ep) return;
       try {
@@ -337,6 +362,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     if (this.closed) return;
     const tookWin = this.abandoned();
     this.closed = true;
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onWake);
     this.stopAll();
     const db = this.db;
     if (db && tookWin) {

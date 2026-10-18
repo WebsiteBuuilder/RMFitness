@@ -18,6 +18,8 @@ import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
 import { FirebaseAdapter } from '../sync/firebase';
+import { cloudState } from '../sync/cloud';
+import { liveRoomOf, setLiveRoom, touchLiveRoom, type LiveRoom } from '../online/liveRoom';
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
 import { useBackButton } from './backButton';
@@ -90,7 +92,8 @@ const setLastGame = (id: string, g: string) => {
 type Screen = 'title' | 'profiles' | 'intro' | 'menu' | 'campaign' | 'link' | 'duel' | 'deck' | 'record' | 'calendar' | 'password' | 'pack' | 'speed';
 
 function makeOnline(code: string, isHost: boolean): SyncAdapter {
-  return FirebaseAdapter.available() ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
+  // rooms live on the online service whenever it can be used (still checking counts: the room waits for it)
+  return cloudState() !== 'off' ? new FirebaseAdapter(code, isHost) : new PeerAdapter(code, isHost);
 }
 
 /** A copy of the save with one duel's result written in: record, totals, a day passes, a pack for a win. */
@@ -223,7 +226,7 @@ export function App() {
       // A duel on this phone left unfinished: ask who gave up. A Link Battle this profile
       // walked out of (the app was closed) counts as a loss, unless it's being rejoined.
       if (t.partner) setUnfinished({ id, t });
-      else if (!pendingJoin || pendingJoin !== t.room) {
+      else if ((!pendingJoin || pendingJoin !== t.room) && liveRoomOf(id)?.room !== t.room) {
         const left = settleLeftDuel(s)!;
         s = left.save;
         setSpeedNews(left.lines);
@@ -286,7 +289,37 @@ export function App() {
     setSpeedSaveState(speedSaveOf(p.id, true));
     online.setProfile(p);
     setScreen(!s ? 'intro' : pendingJoin ? 'link' : game === 'speed' ? 'speed' : 'menu');
+    // an online duel this phone was in when the game closed (a refresh, a crash): straight back in
+    const live = s && !pendingJoin ? liveRoomOf(p.id) : null;
+    if (live && cloudState() !== 'off') resumeRoom(live);
   };
+  /** Opens the online room a duel was left in: the room kept every move, so it carries on where it was. */
+  const resumeRoom = (live: LiveRoom) => {
+    setCpu(false);
+    setHotseat(false);
+    setP2Profile(null);
+    setDuelMode(live.mode);
+    setMySeat(live.host ? 0 : 1);
+    roomCode.current = live.room;
+    setSession(new DuelSession(new FirebaseAdapter(live.room, live.host)));
+    setScreen('duel');
+  };
+  // The online room being played in is kept on the phone (refreshed as moves come in), so
+  // closing the game never loses the duel; leaving the duel or the room forgets it.
+  useEffect(() => {
+    if (!profile) return;
+    const id = profile.id;
+    if (!session) return setLiveRoom(id, null);
+    const room = session.adapter.kind === 'firebase' && !hotseat && !tagHost.current && !raidHost.current ? session.adapter.roomCode : null;
+    if (!room) return;
+    setLiveRoom(id, { room, host: session.adapter.isHost, mode: duelMode });
+    let last = Date.now();
+    return session.listen(() => {
+      if (Date.now() - last < 10_000) return;
+      last = Date.now();
+      touchLiveRoom(id, room);
+    });
+  }, [session]);
   // Remembers which game this duelist was in, so a stay-logged-in visit opens straight into it.
   useEffect(() => {
     if (profile && (screen === 'speed' || screen === 'menu')) setLastGame(profile.id, screen);
@@ -1153,9 +1186,9 @@ export function App() {
           <Overlay onClose={() => setOfflineLeave(false)}>
             <Win title="Connection lost" onClose={() => setOfflineLeave(false)}>
               {session.adapter.abandoned?.() ? (
-                <p>Your opponent has been gone for over a minute and a half. Leave now and the win is yours.</p>
+                <p>Your opponent didn't rejoin within two minutes. Leave now and the win is yours.</p>
               ) : (
-                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting gives them a chance to come back.</p>
+                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting keeps the duel going: it carries on as soon as you're both back.</p>
               )}
               <Menu
                 items={[
