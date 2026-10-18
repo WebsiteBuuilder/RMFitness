@@ -648,7 +648,7 @@ img.cimg.lvr-MI {
 /* the turning edge: a spinning conic gradient behind the card, showing only at its rim */
 .lvr-ofrim {
   position: absolute;
-  inset: -3px;
+  inset: -4px;
   border-radius: 6px;
   overflow: hidden;
   pointer-events: none;
@@ -858,6 +858,15 @@ img.cimg.lvr-MI {
   }
   to {
     background-position: -50% 0;
+  }
+}
+.lvr-mi:not(.has-fig) > .ofx-art {
+  filter: saturate(1.3) contrast(1.1);
+}
+/* too small to read a relief: the art keeps its color, the gold edge and the MIL chip say it */
+@container (max-width: 69px) {
+  .lvr-mi.has-fig > .ofx-art {
+    filter: saturate(1.15) contrast(1.1);
   }
 }
 /* a carved gold edge inside the card */

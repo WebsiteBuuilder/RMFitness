@@ -175,7 +175,7 @@ interface Actor {
 type Role = 'att' | 'def';
 
 /** A Millennium card's colors: its summon, its blows and its trail are all gold, whatever the monster. */
-const MILL_COLS: Colors = { main: 0xf0b020, accent: 0xffcf4a, light: 0xffe08a };
+const MILL_COLS: Colors = { main: 0xe09a18, accent: 0xffc23a, light: 0xffd36a };
 
 interface Colors {
   main: number;
@@ -941,10 +941,10 @@ export class Director {
   private millenniumWindup(tl: Timeline, att: Actor, M: P3, D: number) {
     const st = this.stage;
     const U = this.U;
-    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 1.9 * U, 0x000000));
+    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 2.6 * U, 0x000000));
     // drawn before the figures: it hangs behind the attacker, never over it
     eye.mesh.renderOrder = -4;
-    eye.mesh.position.set(att.x, att.y + att.size * 0.78, att.z - 1.2);
+    eye.mesh.position.set(M.x, M.y + 1.1 * U, M.z - 1.2);
     eye.u.uOpacity.value = 0;
     tl.span(0.15, D, (k) => {
       eye.u.uOpacity.value = 0.85 * clamp01(k * 2);
@@ -966,6 +966,15 @@ export class Director {
     const st = this.stage;
     const U = this.U;
     const q = this.q;
+    // the Eye stays open over the attacker until the blow lands, then closes
+    const held = tl.own(new CardPanel(millenniumEyeCanvas(), 2.6 * U, 0x000000));
+    held.mesh.renderOrder = -4;
+    held.mesh.position.set(M.x, M.y + 1.1 * U, M.z - 1.2);
+    held.u.uOpacity.value = 0.85;
+    tl.span(hitAt, hitAt + 0.35, (k) => {
+      held.u.uOpacity.value = 0.85 * (1 - k);
+      held.mesh.scale.set(1, Math.max(0.04, 1 - easeIn(k)), 1);
+    });
     tl.span(W, hitAt, (k, dt) => {
       const n = Math.floor(240 * q * dt + Math.random());
       const e = easeIn(k);

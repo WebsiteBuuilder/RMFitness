@@ -1033,8 +1033,7 @@
   text-shadow:
     0 0 2px #fff6d8,
     0 2px 0 #a8740c,
-    0 0 16px #ffc93a,
-    0 0 30px #9b4dff,
+    0 0 10px #ffc93a,
     0 4px 4px #000;
 }
 .art-caption.art-over.art-mill::before,
