@@ -248,7 +248,24 @@
     "Unbreakable Spirit",
     "United We Stand",
     "Vampire Awakening"
-   ]
+   ],
+   "rarity": {
+    "Birthright": "Super Rare",
+    "Brain Crusher": "Ultra Rare",
+    "Command Knight": "Super Rare",
+    "Foolish Burial": "Ultra Rare",
+    "Gaia The Fierce Knight": "Super Rare",
+    "Gearfried the Red-Eyes Iron Knight": "Ultra Rare",
+    "Insect Princess": "Super Rare",
+    "Jinzo": "Super Rare",
+    "Metal Reflect Slime": "Super Rare",
+    "Relinquished": "Super Rare",
+    "Skilled Dark Magician": "Super Rare",
+    "Spell Shattering Arrow": "Super Rare",
+    "Thousand-Eyes Restrict": "Ultra Rare",
+    "United We Stand": "Super Rare",
+    "Vampire Awakening": "Ultra Rare"
+   }
   },
   {
    "name": "Speed Duel GX: Midterm Destruction",

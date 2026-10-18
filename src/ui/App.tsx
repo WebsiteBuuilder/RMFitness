@@ -44,7 +44,7 @@ import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, rivalResult, tooQuick } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredPaid, rivalResult, tooQuick } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
@@ -221,6 +221,8 @@ export function App() {
   const speedSaveOf = (id: string, settleLeft = false) => {
     const raw = loadSpeedSave(id);
     let s = migrate(raw);
+    const paid = retiredPaid(raw, s);
+    if (paid) setSpeedNews([`${paid} card${paid === 1 ? '' : 's'} you owned ${paid === 1 ? 'was' : 'were'} never printed for Speed Duel, so ${paid === 1 ? 'it is' : 'they are'} gone from the game. You got ${paid} Duel Chip${paid === 1 ? '' : 's'} worth back.`]);
     const t = ticketOf(s);
     if (settleLeft && t && !session) {
       // A duel on this phone left unfinished: ask who gave up. A Link Battle this profile

@@ -15,6 +15,7 @@ import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { rollFinishes, withFinishes } from './finish';
+import { RETIRED, dropRetired } from './retired';
 import { openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
@@ -64,6 +65,8 @@ export type EconSave = SpeedSave & {
   giftPacks?: number;
   /** the one-time gifts this profile already got (see GIFT) */
   gifts?: string[];
+  /** retired cards paid back so far (copies), for the one-time notice */
+  retiredRefund?: number;
 };
 
 const E = (s: SpeedSave) => s as EconSave;
@@ -102,13 +105,42 @@ const deckCards = (d: SpeedDeck) => [...d.main, ...d.extra, ...(d.skill ? [d.ski
  * copy their decks already use (so no deck breaks) and everyone gets the welcome packs.
  */
 export function migrate(s: SpeedSave): SpeedSave {
-  if (E(s).econ) return s;
+  if (E(s).econ) return retireCards(s);
   const collection = { ...(s.collection ?? {}) };
   for (const d of s.decks) {
     if (d.open) continue;
     for (const [n, c] of Object.entries(countsOf(deckCards(d)))) collection[n] = Math.max(collection[n] ?? 0, Math.min(c, COPIES));
   }
-  return { ...s, collection, econ: 1, packs: ownPacks(s) + (claimWelcome() ? WELCOME_PACKS : 0) } as EconSave;
+  return retireCards({ ...s, collection, econ: 1, packs: ownPacks(s) + (claimWelcome() ? WELCOME_PACKS : 0) } as EconSave);
+}
+
+/** Copies of retired cards paid back between two versions of a save (0 when none). */
+export const retiredPaid = (before: SpeedSave, after: SpeedSave) => (E(after).retiredRefund ?? 0) - (E(before).retiredRefund ?? 0);
+
+/** What each retired copy pays back: its old crafting price, as shards (they turn into chips up to the cap and keep the rest). */
+export const RETIRED_REFUND_SHARDS = SHARDS_PER_CHIP;
+
+/**
+ * Takes the cards that were never Speed Duel cards (RETIRED) out of a profile: every owned
+ * copy pays back RETIRED_REFUND_SHARDS, they leave its decks, and their looks go too.
+ * Returns the same save when there is nothing to do.
+ */
+export function retireCards(s: SpeedSave): SpeedSave {
+  const owned = Object.entries(s.collection ?? {}).filter(([n]) => RETIRED.has(n));
+  const decks = s.decks.map(dropRetired);
+  const levels = E(s).levels;
+  const looks = levels ? Object.keys(levels).filter((n) => RETIRED.has(n)) : [];
+  if (!owned.length && !looks.length && decks.every((d, i) => d === s.decks[i])) return s;
+  const collection = { ...(s.collection ?? {}) };
+  let copies = 0;
+  for (const [n, c] of owned) (copies += c), delete collection[n];
+  const next = { ...s, collection, decks } as EconSave;
+  if (levels && looks.length) {
+    next.levels = { ...levels };
+    for (const n of looks) delete next.levels[n];
+  }
+  next.retiredRefund = (E(s).retiredRefund ?? 0) + copies;
+  return cashShards({ ...next, shards: shardsOf(next) + copies * RETIRED_REFUND_SHARDS } as EconSave);
 }
 
 /** Welcome packs go to the first 2 profiles on a phone, so new profiles aren't a pack farm. */
