@@ -17,6 +17,7 @@ import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, 
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
+import { fullArtCard } from './fullArt';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
@@ -1008,7 +1009,7 @@ export class Director {
     const q = this.q;
     const eye = tl.own(new Ring(3.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
     // dimmed like the Shadow Realm's eye, so it reads as an eye of light, not a solid disc
-    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
+    (eye.u.uColor.value as Vector3).multiplyScalar(0.7);
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(at.x, at.y, at.z);
     eye.spinSpeed = 0.25;
@@ -1024,7 +1025,7 @@ export class Director {
       boom(0.5);
     });
     // it closes as the card bursts, so it never sits over the monster
-    tl.span(S + 0.6, S + 0.95, (k) => {
+    tl.span(S + 0.75, S + 1.1, (k) => {
       eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k));
       eye.u.uOpacity.value = 0.8 * (1 - k);
       eye.mesh.scale.setScalar(lerp(1, 1.5, easeOut(k)));
@@ -1450,7 +1451,8 @@ export class Director {
     span(E, E + LAND, (k) => this.setShot((sEnd ??= this.shot()), REST, easeInOut(k)));
 
     // the card flies up from its zone and flips
-    const flyer = tl.own(new CardPanel(art?.full ?? null, 1.2 * U, col.main));
+    // an Overframe or Millennium card flies out as its full-art face
+    const flyer = tl.own(new CardPanel(art ? (over ? fullArtCard(art.full, c.name, fin) : art.full) : null, 1.2 * U, col.main));
     flyer.u.uOpacity.value = 0;
     span(0, 0.32, (k) => {
       const e = easeOut(k);
@@ -1508,7 +1510,7 @@ export class Director {
           g.u.uOpacity.value = 1 - k;
         });
       });
-      if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.25 * size, z: -0.6 }, ground, size, E);
+      if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.62 * size, z: -0.6 }, ground, size, E);
     } else {
       // it dissolves into light as the monster's reveal starts (showAt, below)
       span(0.32, 0.5, (k) => {
@@ -2893,7 +2895,8 @@ export class Director {
     }
     // wind-up: the attacker leans back while energy converges on it
     const M = this.muzzle(att);
-    const charge = tl.own(new Glow(1.2 * U * (sig?.charge ?? 1), 1.2 * U * (sig?.charge ?? 1), 'flare', col.main, col.light));
+    const goldBlow = finishOf(a) >= FIN.MI;
+    const charge = tl.own(new Glow(1.2 * U * (sig?.charge ?? 1), 1.2 * U * (sig?.charge ?? 1), 'flare', goldBlow ? 0xffc93a : col.main, goldBlow ? 0xffe9a8 : col.light));
     charge.mesh.position.set(M.x, M.y, M.z);
     tl.span(0.4, D, (k, dt) => {
       att.lean = -0.3 * easeOut(k);

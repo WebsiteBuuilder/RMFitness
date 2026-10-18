@@ -543,7 +543,7 @@ img.cimg.lvr-MI {
   height: 21.6%;
   display: flex;
   flex-direction: column;
-  padding: 3cqw 3cqw 1.6cqw;
+  padding: 5.4cqw 3cqw 1.6cqw;
   box-sizing: border-box;
   border-radius: 3cqw;
   background: linear-gradient(180deg, #10142acc, #05060ee6);
@@ -553,8 +553,9 @@ img.cimg.lvr-MI {
   z-index: 2;
 }
 .lvr-of .ofx-txt > b {
-  font: 800 3.9cqw/1.2 system-ui, sans-serif;
-  color: #ffd56a;
+  font: 800 4.4cqw/1.2 system-ui, sans-serif;
+  color: #ffe9a8;
+  text-shadow: 0 1px 2px #000;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -592,6 +593,10 @@ img.cimg.lvr-MI {
 }
 .lvr-of .ofx-name > b {
   display: block;
+  margin: 0 -2cqw;
+  padding: 0.4cqw 2cqw;
+  border-radius: 1.6cqw;
+  background: linear-gradient(90deg, #000b, #0008 70%, #0000);
   font: inherit;
   color: inherit;
   overflow: hidden;
@@ -614,7 +619,8 @@ img.cimg.lvr-MI {
     display: none;
   }
   .ofx-txt {
-    height: 13%;
+    height: 14.5%;
+    padding-top: 6cqw;
     justify-content: space-between;
   }
   .lvr-of .ofx-txt > b {
@@ -624,7 +630,7 @@ img.cimg.lvr-MI {
     font-size: 5.2cqw;
   }
   .lvr-of > .lvr-chip {
-    bottom: 15.4% !important;
+    bottom: 16.4% !important;
   }
 }
 @container (max-width: 79px) {
@@ -1062,7 +1068,6 @@ img.cimg.lvr-MI {
   background: radial-gradient(circle at 50% 50%, #ffffffb0 0, #ff9df440 10%, transparent 22%);
   mix-blend-mode: screen;
   opacity: 0.35;
-  clip-path: inset(25% 25% round 4px);
 }
 /* Overframe's rising art follows the light too (parallax over the frame) */
 .lvr-pop {
