@@ -4,225 +4,597 @@
   "code": "SS01",
   "date": "2019-01-24",
   "cards": 63,
-  "addedBySet": [
-   "Dark Magician",
-   "Dark Magician Girl"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Starter Decks: Duelists of Tomorrow",
   "code": "SS02",
   "date": "2019-01-24",
   "cards": 69,
-  "addedBySet": [
-   "Blue-Eyes White Dragon",
-   "Kunai with Chain",
-   "Polymerization",
-   "Red-Eyes Black Dragon",
-   "Thousand Dragon"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Arena of Lost Souls",
   "code": "SBLS",
   "date": "2019-03-28",
   "cards": 50,
-  "addedBySet": [
-   "Arcana Knight Joker",
-   "Blue-Eyes Ultimate Dragon",
-   "Buster Blader"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 1",
   "code": "STP1",
   "date": "2019-04-18",
   "cards": 18,
-  "addedBySet": [
-   "Red-Eyes Black Dragon"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Attack from the Deep",
   "code": "SBAD",
   "date": "2019-05-30",
   "cards": 50,
-  "addedBySet": [
-   "Gilford the Lightning"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Demo Deck",
   "code": "DEM5",
   "date": "2019-06-08",
   "cards": 11,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Event Pack Speed Duel",
   "code": "EVSD",
   "date": "2019-08-01",
   "cards": 6,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Starter Decks: Ultimate Predators",
   "code": "SS03",
   "date": "2019-08-01",
   "cards": 62,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Scars of Battle",
   "code": "SBSC",
   "date": "2019-08-01",
   "cards": 50,
-  "addedBySet": [
-   "Barrel Dragon",
-   "Launcher Spider",
-   "Metalmorph"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Scars of Battle Launch Event participation card",
   "code": "EVSD",
   "date": "2019-08-17",
   "cards": 1,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 2",
   "code": "STP2",
   "date": "2019-10-10",
   "cards": 18,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Trials of the Kingdom Sneak Peek participation cards",
   "code": "SBTK",
   "date": "2019-11-30",
   "cards": 10,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Trials of the Kingdom",
   "code": "SBTK",
   "date": "2019-12-05",
   "cards": 51,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Demo Deck 2020",
   "code": "DEM6",
   "date": "2020-01-01",
   "cards": 21,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Starter Decks: Match of the Millennium",
   "code": "SS04",
   "date": "2020-05-15",
   "cards": 66,
-  "addedBySet": [
-   "Celtic Guardian",
-   "Dark Magician",
-   "Senju of the Thousand Hands",
-   "Spellbinding Circle",
-   "Toon World"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Starter Decks: Twisted Nightmares",
   "code": "SS05",
   "date": "2020-05-15",
   "cards": 66,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Battle City Box",
   "code": "SBCB",
   "date": "2020-11-26",
   "cards": 224,
-  "addedBySet": [
-   "Dark Magician",
-   "Falchion Beta"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Trials of the Pharaoh - Speed Duel: Battle City Box promotional card",
   "code": "OPTP",
   "date": "2020-11-26",
   "cards": 1,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel GX: Duel Academy Box",
   "code": "SGX1",
   "date": "2022-03-17",
   "cards": 214,
-  "addedBySet": [
-   "Destiny HERO - Plasma"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 3",
   "code": "STP3",
   "date": "2022-03-24",
   "cards": 34,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 4",
   "code": "STP4",
   "date": "2022-09-29",
   "cards": 35,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel GX: Midterm Paradox",
   "code": "SGX2",
   "date": "2022-10-06",
   "cards": 110,
-  "addedBySet": [
-   "Whirlwind Prodigy",
-   "White Magician Pikeru"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 5",
   "code": "STP5",
   "date": "2023-03-09",
   "cards": 35,
-  "addedBySet": []
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel GX: Duelists of Shadows",
   "code": "SGX3",
   "date": "2023-03-30",
   "cards": 219,
-  "addedBySet": [
-   "Red-Eyes Black Dragon",
-   "Zure, Knight of Dark World"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel: Streets of Battle City",
   "code": "SBC1",
   "date": "2023-08-24",
   "cards": 191,
-  "addedBySet": [
-   "Voltic Kong",
-   "Warrior of Atlantis",
-   "Worm Drake",
-   "Zera Ritual",
-   "Zera the Mant"
-  ]
+  "source": "YGOPRODeck"
  },
  {
   "name": "Speed Duel Tournament Pack 6",
   "code": "STP6",
   "date": "2023-09-06",
   "cards": 35,
+  "source": "YGOPRODeck"
+ },
+ {
+  "name": "Speed Duel: Battle City Finals",
+  "code": "SBC2",
+  "date": "2024-12-13",
+  "cards": 198,
+  "source": "Konami",
+  "addedBySet": [
+   "Absolute Crusader",
+   "Agido",
+   "Amazoness Call",
+   "Amazoness Onslaught",
+   "Amazoness Princess",
+   "Ancient Lamp",
+   "Angel O1",
+   "Arcana Triumph Joker",
+   "Asura Priest",
+   "Big Shield Gardna",
+   "Blue Flame Swordsman",
+   "Breakthrough Skill",
+   "Cataclysmic Crusted Calcifida",
+   "Court of Cards",
+   "Curse of Anubis",
+   "D.D. Warrior",
+   "Dark Spirit's Mastery",
+   "Des Feral Imp",
+   "Destiny Board",
+   "Doomcaliber Knight",
+   "Doomdog Octhros",
+   "Double Snare",
+   "Dragged Down into the Grave",
+   "Dragon Revival Rhapsody",
+   "Enemy Controller",
+   "Exchange of the Spirit",
+   "Fairy Box",
+   "Fiendish Rhino Warrior",
+   "Fire Sorcerer",
+   "Fissure",
+   "Flying Kamakiri #1",
+   "Fusion Devourer",
+   "Granadora",
+   "Gravekeeper's Commandant",
+   "Gravekeeper's Descendant",
+   "Gravekeeper's Guard",
+   "Gravekeeper's Spy",
+   "Gravekeeper's Trap",
+   "Guardian Sphinx",
+   "Guiding Light",
+   "Harpie Channeler",
+   "Harpie Dancer",
+   "Harpie Queen",
+   "Harpie's Pet Dragon - Fearsome Fire Blast",
+   "Hidden Soldiers",
+   "Hino-Kagu-Tsuchi",
+   "Holding Arms",
+   "Hysteric Party",
+   "Hysteric Sign",
+   "Imperial Bower",
+   "Injection Fairy Lily",
+   "Invader of Darkness",
+   "Invader of the Throne",
+   "Joker's Knight",
+   "Joker's Wild",
+   "Jowls of Dark Demise",
+   "King of the Swamp",
+   "Lekunga",
+   "Loop of Destruction",
+   "Lord Poison",
+   "Magician's Valkyria",
+   "Magikuriboh",
+   "Makyura the Destructor",
+   "Malevolent Catastrophe",
+   "Maxx \"C\"",
+   "Millennium Revelation",
+   "Mirage of Nightmare",
+   "Mobius the Frost Monarch",
+   "Monster Reborn",
+   "Mudora the Sword Oracle",
+   "Mystic Tomato",
+   "Mystical Beast of Serket",
+   "Mystical Space Typhoon",
+   "Necrovalley",
+   "Nightmare Penguin",
+   "Obnoxious Celtic Guard",
+   "Ordeal of a Traveler",
+   "Orgoth the Relentless",
+   "Otohime",
+   "Owner's Seal",
+   "Penguin Soldier",
+   "Premature Burial",
+   "Prime Material Dragon",
+   "Quaking Mirror Force",
+   "Remove Trap",
+   "Sakuretsu Armor",
+   "Sangan",
+   "Sentence of Doom",
+   "Shadow Spell",
+   "Shinato's Ark",
+   "Shinato, King of a Higher Plane",
+   "Shining Angel",
+   "Snipe Hunter",
+   "Sol and Luna",
+   "Spirit Message \"A\"",
+   "Spirit Message \"I\"",
+   "Spirit Message \"L\"",
+   "Spirit Message \"N\"",
+   "Spirit Reaper",
+   "Spiritualism",
+   "Swarm of Centipedes",
+   "Sword of Kusanagi",
+   "Swords of Revealing Light",
+   "The End of Anubis",
+   "The King of D.",
+   "The Melody of Awakening Dragon",
+   "The Winged Dragon of Ra - Immortal Phoenix",
+   "The Winged Dragon of Ra - Sphere Mode",
+   "Thunder Ball",
+   "Thunderspeed Summon",
+   "Tiki Curse",
+   "Tiki Soul",
+   "Total Defense Shogun",
+   "Trade-In",
+   "Trap Hole of Spikes",
+   "Tribe-Infecting Virus",
+   "Valkyrian Knight",
+   "Winged Minion",
+   "Witch of the Black Forest"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 7",
+  "code": "STP7",
+  "date": "2024-04-03",
+  "cards": 33,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Midterm Destruction",
+  "code": "SGX4",
+  "date": "2024-03-29",
+  "cards": 100,
+  "source": "Konami",
+  "addedBySet": [
+   "A Feint Plan",
+   "Animadorned Archosaur",
+   "Arcana Call",
+   "Arcana Force 0 - The Fool",
+   "Arcana Force EX - The Light Ruler",
+   "Arcana Force I - The Magician",
+   "Arcana Force III - The Empress",
+   "Arcana Force IV - The Emperor",
+   "Arcana Force VI - The Lovers",
+   "Arcana Force VII - The Chariot",
+   "Arcana Force XIV - Temperance",
+   "Arcana Force XVIII - The Moon",
+   "Arcana Force XXI - The World",
+   "Arcana Reading",
+   "Armed Dragon LV10 White",
+   "Babycerasaurus",
+   "Big Evolution Pill",
+   "Big-Tusked Mammoth",
+   "Black Veloci",
+   "Blasting Fuse",
+   "By Order of the Emperor",
+   "Card Trooper",
+   "Contact Gate",
+   "Convert Contact",
+   "Cross Porter",
+   "Cup of Ace",
+   "Cyberdark Cannon",
+   "Dandylion",
+   "Destroyersaurus",
+   "Divine Wrath",
+   "Dyna Base",
+   "Dyna Tank",
+   "EN Shuffle",
+   "Elemental HERO Aqua Neos",
+   "Elemental HERO Brave Neos",
+   "Elemental HERO Dark Neos",
+   "Elemental HERO Glow Neos",
+   "Elemental HERO Grand Neos",
+   "Elemental HERO Neos",
+   "Elemental HERO Neos Alius",
+   "Elemental HERO Prisma",
+   "Elemental HERO Storm Neos",
+   "Elemental HERO Wildedge",
+   "Flint Cragger",
+   "Fossil Dig",
+   "Fossil Dragon Skullgios",
+   "Fossil Dyna Pachycephalo",
+   "Fossil Machine Skull Buggy",
+   "Fossil Tusker",
+   "Fossil Warrior Skull Bone",
+   "Fossil Warrior Skull Knight",
+   "Gaia Plate the Earth Giant",
+   "Generation Next",
+   "Hero Blast",
+   "Inverse Universe",
+   "Jurassic World",
+   "Light Barrier",
+   "Limit Reverse",
+   "Medusa Worm",
+   "Megarock Dragon",
+   "Miracle Fusion",
+   "Mokey Mokey Adrift",
+   "Mokey Mokey King",
+   "NEXT",
+   "Neo Space",
+   "Neo-Spacian Air Hummingbird",
+   "Neo-Spacian Aqua Dolphin",
+   "Neo-Spacian Dark Panther",
+   "Neo-Spacian Glow Moss",
+   "Neo-Spacian Grand Mole",
+   "O - Oversoul",
+   "Paleozoic Canadia",
+   "Pot of Avarice",
+   "Re-Fusion",
+   "Release from Stone",
+   "Reversal of Fate",
+   "Revival Golem",
+   "Sabersaurus",
+   "Sauropod Brachion",
+   "Shell Knight",
+   "Spiritual Earth Art - Kurogane",
+   "Survival Instinct",
+   "Survival's End",
+   "The Fountain in the Sky",
+   "Time Stream",
+   "Typhoon",
+   "Tyranno Infinity",
+   "Ultimate Tyranno",
+   "Volcanic Eruption",
+   "Weathering Soldier",
+   "White Veil"
+  ]
+ },
+ {
+  "name": "Speed Duel Tournament Pack 6",
+  "code": "STP6",
+  "date": "2023-09-06",
+  "cards": 30,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Streets of Battle City",
+  "code": "SBC1",
+  "date": "2023-08-25",
+  "cards": 191,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Duelists of Shadows",
+  "code": "SGX3",
+  "date": "2023-03-31",
+  "cards": 199,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 5",
+  "code": "STP5",
+  "date": "2023-03-08",
+  "cards": 35,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Midterm Paradox",
+  "code": "SGX2",
+  "date": "2022-10-10",
+  "cards": 98,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 4",
+  "code": "STP4",
+  "date": "2022-09-16",
+  "cards": 29,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel GX: Duel Academy Box",
+  "code": "SGX1",
+  "date": "2022-03-18",
+  "cards": 194,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 3",
+  "code": "STP3",
+  "date": "2022-03-10",
+  "cards": 31,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Battle City Box",
+  "code": "SBCB",
+  "date": "2020-11-26",
+  "cards": 203,
+  "source": "Konami",
+  "addedBySet": [
+   "Gamma The Magnet Warrior"
+  ]
+ },
+ {
+  "name": "Speed Duel Starter Decks: Match of the Millennium",
+  "code": "SS04",
+  "date": "2020-05-15",
+  "cards": 62,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Twisted Nightmares",
+  "code": "SS05",
+  "date": "2020-05-15",
+  "cards": 62,
+  "source": "Konami",
+  "addedBySet": [
+   "Tribute to The Doomed"
+  ]
+ },
+ {
+  "name": "Speed Duel: Trials of the Kingdom",
+  "code": "SBTK",
+  "date": "2019-12-06",
+  "cards": 46,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Trials of the Kingdom Sneak Peek participation cards",
+  "code": "SBTK",
+  "date": "2019-11-30",
+  "cards": 5,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 2",
+  "code": "STP2",
+  "date": "2019-10-11",
+  "cards": 18,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Event Pack Speed Duel",
+  "code": "EVSD",
+  "date": "2019-08-02",
+  "cards": 5,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Scars of Battle",
+  "code": "SBSC",
+  "date": "2019-08-02",
+  "cards": 45,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Ultimate Predators",
+  "code": "SS03",
+  "date": "2019-08-02",
+  "cards": 58,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Attack from the Deep",
+  "code": "SBAD",
+  "date": "2019-05-31",
+  "cards": 45,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Tournament Pack 1",
+  "code": "STP1",
+  "date": "2019-04-18",
+  "cards": 18,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel: Arena of Lost Souls",
+  "code": "SBLS",
+  "date": "2019-03-29",
+  "cards": 45,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Destiny Masters",
+  "code": "SS01",
+  "date": "2019-01-25",
+  "cards": 54,
+  "source": "Konami",
+  "addedBySet": []
+ },
+ {
+  "name": "Speed Duel Starter Decks: Duelists of Tomorrow",
+  "code": "SS02",
+  "date": "2019-01-25",
+  "cards": 60,
+  "source": "Konami",
   "addedBySet": []
  }
 ]
