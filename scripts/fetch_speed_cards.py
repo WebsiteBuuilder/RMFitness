@@ -2,7 +2,12 @@
 """
 Builds the Speed Duel card list for the Speed Duel game (public/cards/speed.json).
 
-- Pulls every Speed Duel card and every Skill Card from the YGOPRODeck API.
+- The pool is every card printed in a Speed Duel product, and nothing else: Konami's own product
+  lists (scripts/speed-products.json, from the official card database) plus YGOPRODeck's Speed Duel
+  set lists (promos, demo decks), and every Skill Card (YGOPRODeck, plus the newer Skills it lacks in
+  scripts/speed-skills-extra.json). YGOPRODeck's "speed duel" format tag is NOT used: it lists
+  hundreds of cards Konami never printed for Speed Duel and misses the 2024 products.
+- Card data and images come from the YGOPRODeck API.
 - Downloads each new card image ONCE (the API asks apps to re-host) as a small WebP
   next to the EDS images in public/cards/img/<id>.webp.
 - Never touches public/cards/cards.json (the EDS list).
@@ -27,6 +32,12 @@ OUT = ROOT / "public" / "cards" / "speed.json"
 SETS_OUT = ROOT / "public" / "cards" / "speedSets.json"
 IMG_DIR = ROOT / "public" / "cards" / "img"
 REPORT_OUT = ROOT / "public" / "cards" / "speed-sets.json"
+PRODUCTS = ROOT / "scripts" / "speed-products.json"
+EXTRA_SKILLS = ROOT / "scripts" / "speed-skills-extra.json"
+# Konami's spelling -> YGOPRODeck's.
+ALIASES = {"Falchionβ": "Falchion Beta"}
+# Tokens a Speed Duel card creates (kept for their picture): The Golden Apples.
+TOKENS = ["Malus Token"]
 IMG_WIDTH = 300
 IMG_QUALITY = 72
 DELAY = 0.2
@@ -72,7 +83,7 @@ def compact(c: dict) -> dict:
     return out
 
 
-def speed_sets(cards: list[dict]) -> list[dict]:
+def speed_sets(cards: list[dict], products: list[dict] = (), extra: list[dict] = ()) -> list[dict]:
     """Every real Speed Duel product and the cards printed in it, with their rarity, oldest first."""
     dates = {}
     try:
@@ -92,6 +103,19 @@ def speed_sets(cards: list[dict]) -> list[dict]:
             # A card printed twice in one set keeps its lower rarity.
             if prev is None or RARITY_ORDER.get(rarity, 9) < RARITY_ORDER.get(prev, 9):
                 st["cards"][c["name"]] = rarity
+    # Products YGOPRODeck has no set list for (2024 onward): Konami's list, rarities from the product file.
+    codes = {st["code"] for st in sets.values()}
+    for p in products:
+        if p["code"] in codes:
+            continue
+        rar = p.get("rarity", {})
+        st = sets.setdefault(p["name"], {"name": p["name"], "code": p["code"], "date": p["date"], "cards": {}})
+        for raw in p["cards"]:
+            nm = ALIASES.get(raw, raw)
+            st["cards"][nm] = rar.get(raw, "Common")
+        for s in extra:
+            if p["code"] in s.get("sets", []):
+                st["cards"][s["name"] + " (Skill Card)"] = "Common"
     out = []
     for st in sets.values():
         st["cards"] = sorted(st["cards"].items())
@@ -104,13 +128,13 @@ RARITY_ORDER = {"Common": 0, "Rare": 1, "Super Rare": 2, "Ultra Rare": 3, "Secre
 
 
 def main() -> int:
-    speed = api("format=speed%20duel")
+    products = json.loads(PRODUCTS.read_text())["products"]
     skills = api("type=Skill%20Card")
-    print(f"{len(speed)} Speed Duel cards, {len(skills)} Skills")
-    cards = {c["id"]: c for c in speed + skills}
-    # Every card printed in a Speed Duel product, even if the API's "speed duel" format misses it.
+    print(f"{len(skills)} Skills, {len(products)} Konami products")
+    cards = {c["id"]: c for c in skills}
     set_report = []
     in_set: dict[int, list[str]] = {}
+    # 1. YGOPRODeck's Speed Duel set lists (they carry rarities, promos and demo decks).
     for st in set_list():
         name = st["set_name"]
         try:
@@ -118,21 +142,57 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"  could not list {name}: {e}", file=sys.stderr)
             members = []
-        added = [c["name"] for c in members if c["id"] not in cards]
         for c in members:
             cards.setdefault(c["id"], c)
             in_set.setdefault(c["id"], []).append(st.get("set_code") or name)
-        set_report.append({"name": name, "code": st.get("set_code"), "date": st.get("tcg_date"), "cards": len(members), "addedBySet": added})
-        print(f"  {name} ({st.get('set_code')}, {st.get('tcg_date')}): {len(members)} cards, {len(added)} not in the format list")
+        set_report.append({"name": name, "code": st.get("set_code"), "date": st.get("tcg_date"), "cards": len(members), "source": "YGOPRODeck"})
+        print(f"  {name} ({st.get('set_code')}, {st.get('tcg_date')}): {len(members)} cards")
         time.sleep(DELAY)
+    # 2. Konami's product lists: every card in them, looked up by name when YGOPRODeck's sets miss it.
+    by_name = {c["name"]: c for c in cards.values()}
+    missing = []
+    for p in products:
+        added = []
+        for raw in p["cards"]:
+            nm = ALIASES.get(raw, raw)
+            c = by_name.get(nm)
+            if c is None:
+                try:
+                    hit = api("name=" + urllib.parse.quote(nm))
+                except Exception as e:  # noqa: BLE001
+                    print(f"  no card data for {nm}: {e}", file=sys.stderr)
+                    hit = []
+                time.sleep(DELAY)
+                if not hit:
+                    missing.append(nm)
+                    continue
+                c = hit[0]
+                cards[c["id"]] = c
+                by_name[nm] = c
+                added.append(nm)
+            codes = in_set.setdefault(c["id"], [])
+            if p["code"] not in codes:
+                codes.append(p["code"])
+        set_report.append({"name": p["name"], "code": p["code"], "date": p["date"], "cards": len(p["cards"]), "source": "Konami", "addedBySet": added})
+    for nm in TOKENS:
+        for c in api("name=" + urllib.parse.quote(nm)):
+            cards.setdefault(c["id"], c)
+    if missing:
+        print(f"Konami cards YGOPRODeck has no data for: {missing}", file=sys.stderr)
     REPORT_OUT.write_text(json.dumps(set_report, ensure_ascii=False, indent=1))
     prev = json.loads(OUT.read_text()) if OUT.exists() else []
-    if prev and len(cards) < len(prev) * 0.95:
-        print(f"Card count dropped from {len(prev)} to {len(cards)}: keeping the old list.", file=sys.stderr)
+    konami = {ALIASES.get(n, n) for p in products for n in p["cards"]}
+    got = {c["name"] for c in cards.values()}
+    if len(konami - got) > 5:
+        print(f"{len(konami - got)} Konami cards missing from the fetch: keeping the old list.", file=sys.stderr)
         return 0
+    # Skills keep the name they already have in the game (saves and scripts use it).
+    prev_names = {c["id"]: c["name"] for c in prev if c.get("type") == "Skill Card"}
     out, fetched = [], 0
     for cid, c in cards.items():
         entry = compact(c)
+        if cid in prev_names:
+            entry["name"] = prev_names[cid]
         target = IMG_DIR / f"{cid}.webp"
         if not target.exists():
             try:
@@ -146,8 +206,11 @@ def main() -> int:
         if cid in in_set:
             entry["sets"] = sorted(set(in_set[cid]))
         out.append(entry)
+    extra = json.loads(EXTRA_SKILLS.read_text()) if EXTRA_SKILLS.exists() else []
+    have = {c["name"] for c in out}
+    out += [s for s in extra if s["name"] not in have]
     out.sort(key=lambda c: c["name"])
-    sets = speed_sets(list(cards.values()))
+    sets = speed_sets(list(cards.values()), products, extra)
     if sets:
         SETS_OUT.write_text(json.dumps(sets, ensure_ascii=False, separators=(",", ":")))
         print(f"wrote {len(sets)} Speed Duel sets")

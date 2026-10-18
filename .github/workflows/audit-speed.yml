@@ -1,19 +1,21 @@
-name: Speed pool audit (temporary)
+name: Speed pool rebuild (temporary)
 on:
   push:
     branches: [claude/project-thread-jo021m]
-    paths: [scripts/audit_speed_pool.py, .github/workflows/audit-speed.yml]
+    paths: [scripts/fetch_speed_cards.py, scripts/speed-products.json, scripts/speed-skills-extra.json, .github/workflows/audit-speed.yml]
 permissions:
   contents: write
 jobs:
-  audit:
+  rebuild:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: python scripts/audit_speed_pool.py
+      - run: pip install pillow
+      - run: python scripts/fetch_speed_cards.py 2>&1 | tee fetch-log.txt
       - run: |
+          mkdir -p audit && mv fetch-log.txt audit/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add audit && git commit -m "Speed pool audit dump" && git push
+          git add public/cards audit && git commit -m "Rebuild Speed Duel card list from the product lists" && git push
