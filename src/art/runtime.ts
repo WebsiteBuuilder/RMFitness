@@ -818,7 +818,7 @@ export class Director {
     const fin = finishOf(c);
     if (fin < FIN.UR) return;
     rimColor(finishGlow(fin, c.uid * 0.37), fig.u.uRim.value as Vector3);
-    fig.u.uRimAmt.value = fin >= FIN.MI ? 2 : fin >= FIN.OF ? 1.7 : fin >= FIN.GL ? 1.35 : 1.15;
+    fig.u.uRimAmt.value = fin >= FIN.MI ? 1.75 : fin >= FIN.OF ? 1.7 : fin >= FIN.GL ? 1.35 : 1.15;
   }
 
   private dropActor(a: Actor) {
@@ -938,6 +938,7 @@ export class Director {
     const st = this.stage;
     const U = this.U;
     const eye = tl.own(new Ring(3 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
     // drawn before the figures: it hangs behind the attacker, never over it
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(att.x, att.y + att.size * 0.3, att.z - 0.8);
@@ -972,6 +973,7 @@ export class Director {
       }
     });
     const eye = tl.own(new Ring(2.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(P.x, P.y, P.z - 0.4);
     eye.u.uOpacity.value = 0;
@@ -989,7 +991,7 @@ export class Director {
     });
     tl.at(hitAt, () => {
       st.pulse('chroma', 0.5);
-      this.flash(0xffd56a, 0.28);
+      this.flash(0xffc93a, 0.2);
       for (const [c, n] of [[0xffd56a, 40], [0xfff6d8, 24], [0x9b4dff, 16]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
       chime(0.95);
     });
@@ -1005,6 +1007,8 @@ export class Director {
     const U = this.U;
     const q = this.q;
     const eye = tl.own(new Ring(3.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    // dimmed like the Shadow Realm's eye, so it reads as an eye of light, not a solid disc
+    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(at.x, at.y, at.z);
     eye.spinSpeed = 0.25;
@@ -1720,7 +1724,7 @@ export class Director {
       span(showAt, E + LAND, (k) => {
         const g = finishGlow(fin, S + showAt + k * (E + LAND - showAt));
         rimColor(g, fig.u.uRim.value as Vector3);
-        fig.u.uRimAmt.value = mill ? 2.1 : over ? 1.8 : fin >= FIN.GL ? 1.4 : 1.15;
+        fig.u.uRimAmt.value = mill ? 1.7 : over ? 1.8 : fin >= FIN.GL ? 1.4 : 1.15;
       });
     }
     if (finPal && fin >= FIN.GL) {
@@ -3010,8 +3014,10 @@ export class Director {
       });
     }
     const debris = [tcol.main, tcol.accent];
-    if (a && finishOf(a) >= FIN.MI) this.millenniumBlow(tl, M, P, W, hitAt);
-    this.impact(tl, hitAt, P, { color: col.main, light: col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
+    // a Millennium blow lands in gold
+    const mill = !!a && finishOf(a) >= FIN.MI;
+    if (mill) this.millenniumBlow(tl, M, P, W, hitAt);
+    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow

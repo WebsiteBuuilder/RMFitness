@@ -64,7 +64,9 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
     const info = card(name);
     const fig = figUrl(name);
     const mark = info?.kind === 'monster' ? (info.level ? '★'.repeat(Math.min(info.level, 12)) : '') : info?.kind === 'spell' ? spellWord().toUpperCase() : info?.kind === 'trap' ? 'TRAP' : '';
-    const vars = { '--ofimg': `url("${url}")`, ...(fig ? { '--offig': `url("${fig}")` } : {}) } as Record<string, string>;
+    const kind = !info ? '' : info.kind === 'monster' ? `${info.race ?? ''}${info.sub && info.sub !== 'Normal' ? ` / ${info.sub}` : ''}` : `${info.sub ?? ''} ${info.kind === 'spell' ? spellWord() : 'Trap'}`;
+    // the name is sized to fit the card's width (long names shrink instead of being cut off)
+    const vars = { '--ofimg': `url("${url}")`, '--ofname': `${Math.min(6.6, 92 / (name.length * 0.56)).toFixed(2)}cqw`, ...(fig ? { '--offig': `url("${fig}")` } : {}) } as Record<string, string>;
     return (
       <span class={`lvr-of ${mi ? 'lvr-mi' : ''} ${cls.replace(/\blvr(-OF|-MI)?\b/g, '')}`} style={vars}>
         <i class="lvr-rays" />
@@ -73,7 +75,15 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
         <i class="ofx-bg" />
         {mi && <i class="ofx-glyphs" />}
         <i class="ofx-art" />
-        <i class="ofx-txt" />
+        <i class="ofx-txt">
+          <b>{kind}</b>
+          <span>{info?.desc}</span>
+          {info?.kind === 'monster' && (
+            <em>
+              ATK/{info.atk ?? '?'} DEF/{info.def ?? '?'}
+            </em>
+          )}
+        </i>
         <i class="ofx-name">
           <b>{name}</b>
           {mark && <i>{mark}</i>}
@@ -81,11 +91,13 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
         {fx}
         <b class="lvr-spec of" />
         {fig && <b class="lvr-pop" />}
-        {mi && EYE}
         <i class="lvr-spk s1" />
         <i class="lvr-spk s2" />
         <i class="lvr-spk s3" />
-        <i class="lvr-chip">{mi ? 'MILLENNIUM' : 'OVERFRAME'}</i>
+        <i class="lvr-chip">
+          {mi && EYE}
+          {mi ? 'MILLENNIUM' : 'OVERFRAME'}
+        </i>
       </span>
     );
   }

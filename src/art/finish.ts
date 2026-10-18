@@ -2,7 +2,7 @@
 // from the hand into its summon cinematic and onto the field. Plain cards and the lower
 // finishes keep the engine's own colors; Ultra Rare and up get gold, Glossy a rolling
 // pink-violet-cyan sheen, Royal a pulsing gold, Overframe the full turning rainbow, and
-// Millennium deep gold with a shadow-violet pulse (and its own summon and attack scenes).
+// Millennium deep gold flaring to white-gold (and its own summon and attack scenes).
 import type { Pid } from '../eds/types';
 import { rarityFor } from '../level/duelRarity';
 
@@ -60,11 +60,8 @@ function hsv(h: number, s: number, v: number): number {
  * Ultra Rare are gold (Royal breathes toward white).
  */
 export function finishGlow(fin: number, t: number): number {
-  if (fin >= FIN.MI) {
-    // gold that dips toward violet once every few seconds, like the Eye blinking
-    const k = Math.pow(0.5 + 0.5 * Math.sin(t * 1.3), 12);
-    return hsv(0.12 - 0.36 * k, 0.7 + 0.1 * k, 1);
-  }
+  // Millennium: deep gold that flares toward white-gold, slower than Royal
+  if (fin >= FIN.MI) return hsv(0.115, 0.78 - 0.3 * Math.pow(0.5 + 0.5 * Math.sin(t * 1.4), 3), 1);
   if (fin === FIN.OF) return hsv(t * 0.35, 0.72, 1);
   if (fin === FIN.GL) return hsv(0.75 + 0.27 * Math.sin(t * 1.6), 0.55, 1);
   if (fin === FIN.RO) return hsv(0.12, 0.6 - 0.25 * (0.5 + 0.5 * Math.sin(t * 2.2)), 1);
