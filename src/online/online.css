@@ -338,7 +338,20 @@
   position: fixed;
   inset: 0;
   z-index: 59;
-  background: rgba(4, 8, 20, 0.45);
+  background: rgba(4, 8, 20, 0.68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.net-lock span {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffd866;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(10, 16, 36, 0.9);
+  border: 1px solid #f0b04a;
 }
 /* short phones (iPhone SE): a slimmer banner that leaves the field readable */
 @media (max-height: 700px) {
@@ -352,4 +365,10 @@
     min-height: 26px;
     padding: 3px 12px;
   }
+}
+/* Leave beside Rejoin now: the way out for a phone with no signal */
+.netwarn-go.quiet {
+  color: #ffe9b0;
+  background: transparent;
+  border: 1px solid #f0b04a;
 }

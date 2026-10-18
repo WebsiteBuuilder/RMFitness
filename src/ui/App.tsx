@@ -17,7 +17,7 @@ import { cpuDelay, spotUid, spotlight } from './cpuPace';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
-import { FirebaseAdapter } from '../sync/firebase';
+import { FirebaseAdapter, NET_TOOK_WIN } from '../sync/firebase';
 import { cloudState } from '../sync/cloud';
 import { liveRoomOf, setLiveRoom, touchLiveRoom, type LiveRoom } from '../online/liveRoom';
 import type { SyncAdapter } from '../sync/types';
@@ -227,7 +227,7 @@ export function App() {
       // walked out of (the app was closed) counts as a loss, unless it's being rejoined.
       if (t.partner) setUnfinished({ id, t });
       // (a recent one may still be going on another phone logged in as this duelist: it settles later)
-      else if ((!pendingJoin || pendingJoin !== t.room) && liveRoomOf(id)?.room !== t.room && !(t.room && Date.now() - t.at < 15 * 60_000)) {
+      else if ((!pendingJoin || pendingJoin !== t.room) && liveRoomOf(id)?.room !== t.room && !(t.room && Date.now() - t.at < 3 * 3600_000)) {
         const left = settleLeftDuel(s)!;
         s = left.save;
         setSpeedNews(left.lines);
@@ -305,13 +305,37 @@ export function App() {
     setSession(new DuelSession(new FirebaseAdapter(live.room, live.host)));
     setScreen('duel');
   };
+  // Back too late: the other phone took the win. The duel is settled as this phone's loss, with the result screen.
+  useEffect(() => {
+    if (!session || hotseat || cpu) return;
+    const ses = session;
+    const check = () => {
+      if (ses.status !== 'error' || ses.detail !== NET_TOOK_WIN || settled.current === ses || gameOf() !== 'speed') return;
+      settled.current = ses;
+      const st = ses.engine.state;
+      const left = speedSave ? settleLeftDuel(speedSave) : null;
+      if (left) setSpeedSave(left.save);
+      const lines = left ? left.lines.map((l) => l.replace(/^(.*) left the duel against (.*), so it counted as a loss\.$/, "$1 didn't rejoin within two minutes, so the duel against $2 counted as a loss.")) : ['Your opponent took the win.'];
+      const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
+      setSpeedNews(lines);
+      setNewsCards(cards);
+      if (st.started) setSpeedResult(resultOf({ ...st, winner: other(mySeat), winReason: 'You were gone over two minutes, so the duel went to them' }, mySeat, false, speedSave, left?.save ?? null, null, lines, cards));
+      ses.close();
+      setSession(null);
+      setP2Profile(null);
+      setScreen('speed');
+    };
+    return ses.listen(check);
+  }, [session, speedSave]);
   // The online room being played in is kept on the phone (refreshed as moves come in), so
   // closing the game never loses the duel; leaving the duel or the room forgets it.
   useEffect(() => {
     if (!profile) return;
     const id = profile.id;
     if (!session) return setLiveRoom(id, null);
-    const room = session.adapter.kind === 'firebase' && !hotseat && !tagHost.current && !raidHost.current ? session.adapter.roomCode : null;
+    const skip = noResume.current;
+    noResume.current = false;
+    const room = session.adapter.kind === 'firebase' && !hotseat && !skip && !tagHost.current && !raidHost.current ? session.adapter.roomCode : null;
     if (!room) return;
     setLiveRoom(id, { room, host: session.adapter.isHost, mode: duelMode });
     // kept fresh while the room is open (however long a wait); a tag duel or raid isn't reopened
@@ -555,6 +579,8 @@ export function App() {
   const lastSoloSpec = useRef<CpuDuelSpec | null>(null);
 
   /** `hostCode`: a room code picked in advance (a friend invite names it) */
+  /** the room about to open is a tag duel or raid (not reopened after a refresh) */
+  const noResume = useRef(false);
   const openSession = (c: LinkChoice | SpeedLinkChoice, mode: GameMode = 'eds', hostCode?: string) => {
     session?.close();
     setCpu(false);
@@ -611,6 +637,7 @@ export function App() {
   const joinTag = (code: string) => {
     tagHost.current = null;
     setTagReport(null);
+    noResume.current = true;
     openSession({ mode: 'join', code }, 'speed');
   };
   /** Starts a raid on this phone with a computer partner, or opens a room for the brother. */
@@ -639,6 +666,7 @@ export function App() {
     raidHost.current = null;
     tagHost.current = null;
     setRaidReport(null);
+    noResume.current = true;
     openSession({ mode: 'join', code }, 'speed');
   };
   /** Files a finished (or abandoned) raid on this phone: progress, first-clear rewards, then the raid menu. */
@@ -762,7 +790,7 @@ export function App() {
         const left = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
         settled.current = session;
         if (left) setSpeedSave(left.save);
-        const lines = left ? left.lines : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.'];
+        const lines = left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.'];
         const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
         setSpeedNews(lines);
         setNewsCards(cards);

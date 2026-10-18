@@ -204,7 +204,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   /** the other phone waited out this one and took the win: say so, the duel is over */
   private onLeft(v: unknown, me: string) {
     this.otherWon = !!v && v !== me;
-    if (this.otherWon && !this.closed) this.fail(NET_TOOK_WIN);
+    // (a beat first, so a phone just back has the duel's moves to show the result with)
+    if (this.otherWon && !this.closed) this.later(1500, () => this.fail(NET_TOOK_WIN));
   }
 
   abandoned(): boolean {

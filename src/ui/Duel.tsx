@@ -606,13 +606,18 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {hotseat ? `${me.name} loses this duel.` : 'It counts as a loss.'}
         </ConfirmSheet>
       )}
-      {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock" />}
+      {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock"><span>Paused · reconnecting</span></div>}
       {online && view.status !== 'connected' && state.winner === null && (
         <div class="netwarn">
           <span>{view.detail || 'Connection lost. Rejoining…'}</span>
           {session.adapter.rejoin && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && (
             <button class="netwarn-go" onClick={() => session.adapter.rejoin!()}>
               Rejoin now
+            </button>
+          )}
+          {/^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && (
+            <button class="netwarn-go quiet" onClick={onLeave}>
+              Leave
             </button>
           )}
           {session.adapter.abandoned?.() && (
