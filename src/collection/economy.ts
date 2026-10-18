@@ -13,7 +13,7 @@
 // - Chips craft a card (1 to 8 by rarity) or lift a card's look one rarity step (3).
 import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
-import { TIERS, cardLevels, tierIndex } from '../level/leveling';
+import { OF_TIER, TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { rollFinishes, withFinishes } from './finish';
 import { RETIRED, RETIRED_PRICE, dropRetired } from './retired';
 import { openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
@@ -285,7 +285,7 @@ export function craft(s: SpeedSave, name: string): SpeedSave | null {
 /** Why a card's look can't be lifted one rarity step, or null. */
 export function cantLookUp(s: SpeedSave, name: string): string | null {
   if (owned(s, name) < 1) return "you don't own it";
-  if (tierIndex(cardLevels(s)[name] ?? 0) >= TIERS.length - 1) return 'already Overframe';
+  if (tierIndex(cardLevels(s)[name] ?? 0) >= OF_TIER) return 'already Overframe';
   if (chipsOf(s) < LOOK_UP_COST) return `needs ${LOOK_UP_COST} Duel Chips`;
   return null;
 }

@@ -5,7 +5,7 @@ import type { SpeedSave } from '../eds/speedSave';
 import { card } from '../eds/db';
 import { CardImg } from '../ui/CardImg';
 import { Overlay, Win } from '../ui/Window';
-import { TIERS, XP, cardLevels, lastLevelReport, meterOf, tierIndex, tierOf, type LevelRow } from './leveling';
+import { MI_TIER, OF_TIER, TIERS, XP, cardLevels, lastLevelReport, meterOf, tierIndex, tierOf, type LevelRow } from './leveling';
 
 /** The short label on a rarity chip. */
 export const chipText = (id: string) => (id === 'GL' ? 'UR✦' : id === 'RO' ? 'UR♛' : TIERS.find((t) => t.id === id)!.short);
@@ -77,7 +77,7 @@ function CardSheet({ name, xp, onClose }: { name: string; xp: number; onClose: (
   const i = tierIndex(xp);
   const t = TIERS[i];
   const next = TIERS[i + 1];
-  const top = TIERS[TIERS.length - 1];
+  const of = TIERS[OF_TIER];
   return (
     <Overlay onClose={onClose}>
       <Win title={name} onClose={onClose} class="lv-sheet">
@@ -92,7 +92,11 @@ function CardSheet({ name, xp, onClose }: { name: string; xp: number; onClose: (
             <Meter xp={xp} />
             <div class="lv-why">{toNext(xp)}</div>
             <p class="hint">
-              {next ? `${next.at - xp} more pts to ${next.name}${next.id !== 'OF' ? `, ${top.at - xp} to Overframe` : ''}.` : 'Top rarity: its art breaks out of the card.'}
+              {!next
+                ? 'Top rarity: the Millennium Eye opens when it is summoned, and its attacks strike in gold.'
+                : next.id === 'MI'
+                  ? `${next.at - xp} more pts to Millennium. Only duels with your own deck against the computer, or duels with stakes, fill it.`
+                  : `${next.at - xp} more pts to ${next.name}${next.id !== 'OF' ? `, ${of.at - xp} to Overframe` : ''}.`}
             </p>
           </div>
         </div>
@@ -109,12 +113,13 @@ function CardSheet({ name, xp, onClose }: { name: string; xp: number; onClose: (
 
 /** "What do ranks look like?": one card at every rank, with the points each takes. */
 function RanksPreview({ name, onClose }: { name: string; onClose: () => void }) {
-  const top = TIERS[TIERS.length - 1];
+  const top = TIERS[OF_TIER];
+  const mi = TIERS[MI_TIER];
   return (
     <Overlay onClose={onClose}>
       <Win title="What do ranks look like?" onClose={onClose} class="lv-sheet">
         <p class="hint">
-          Every card climbs the same ladder. A card you play and win fights with every duel earns about {PTS_PER_DUEL} points a duel, so Overframe ({top.at} pts) takes around {Math.round(top.at / PTS_PER_DUEL)} duels. Tap a card in the list to see its own progress.
+          Every card climbs the same ladder. A card you play and win fights with every duel earns about {PTS_PER_DUEL} points a duel, so Overframe ({top.at} pts) takes around {Math.round(top.at / PTS_PER_DUEL)} duels. Millennium ({mi.at} pts) is earned only in duels: no pack, chip or prize gives it. Tap a card in the list to see its own progress.
         </p>
         <div class="lv-ladder">
           {TIERS.map((_, j) => (
@@ -143,7 +148,7 @@ export function CardLevels({ save, deckNames, onBack }: { save: SpeedSave; deckN
         </button>
         <details class="howto">
           <summary>How card levels work</summary>
-          Every card ranks up the more you duel with it: N, R, SR, UR, the Glossy and Royal finishes, and finally Overframe, where its art breaks out of the card. Destroying monsters, battle damage, direct attacks and burn fill the meter fast (+{XP.kill} a kill, +{XP.direct} a direct hit). Playing it fills a little. Dying or getting banished drains a little, but a card never loses a rarity it reached. Rarity is a look only: ATK, DEF and effects stay the same.
+          Every card ranks up the more you duel with it: N, R, SR, UR, the Glossy and Royal finishes, Overframe (full art, the monster steps out of the card), and finally Millennium, which changes how it summons and attacks in a duel. Destroying monsters, battle damage, direct attacks and burn fill the meter fast (+{XP.kill} a kill, +{XP.direct} a direct hit). Playing it fills a little. Dying or getting banished drains a little, but a card never loses a rarity it reached. Past Overframe, only duels with your own deck against the computer, or duels with stakes, fill the meter. Rarity is a look only: ATK, DEF and effects stay the same.
         </details>
         <p class="hint">Tap a card to see it at every rank.</p>
         <div class="lv-filter">

@@ -6,7 +6,7 @@
 import { card } from '../eds/db';
 import { rng } from '../eds/rng';
 import { COPIES, owned, unplayableReason, withCards, withChips, type SpeedSave } from '../eds/speedSave';
-import { TIERS, cardLevels } from '../level/leveling';
+import { OF_TIER, TIERS, cardLevels } from '../level/leveling';
 import { withPacks } from './economy';
 import { RARITIES, boosterSets, type Rarity, type SpeedSet } from './sets';
 
@@ -94,7 +94,7 @@ export function claimStamp(s: SpeedSave, code: string, pick?: string): Claimed |
     return { save: withCards(save, [pick]), line: `${short} stamp 2: ${pick} is yours`, cards: [pick] };
   }
   const top = topCard(set);
-  if (top) save = { ...save, levels: { ...cardLevels(save), [top]: Math.max(cardLevels(save)[top] ?? 0, TIERS[TIERS.length - 1].at) } } as SpeedSave;
+  if (top) save = { ...save, levels: { ...cardLevels(save), [top]: Math.max(cardLevels(save)[top] ?? 0, TIERS[OF_TIER].at) } } as SpeedSave;
   save = withChips(save, STAMP_CHIPS);
   return { save, line: `${short} complete! ${top ? `${top} shines at Overframe, and ` : ''}${STAMP_CHIPS} Duel Chips`, cards: top ? [top] : [] };
 }

@@ -4,7 +4,7 @@ import { Engine } from '../src/eds/engine';
 import { DB as APP_DB } from '../src/eds/db';
 import type { Pid } from '../src/eds/types';
 import { newSpeedSave } from '../src/eds/speedSave';
-import { TIERS, XP, addXp, cardLevels, meterOf, rarityMap, scoreDeeds, tierIndex, tierOf, withLevels, type Deeds } from '../src/level/leveling';
+import { MI_TIER, OF_TIER, TIERS, XP, addXp, cardLevels, meterOf, rarityMap, scoreDeeds, tierIndex, tierOf, withLevels, type Deeds } from '../src/level/leveling';
 import { DB, PLAYABLE, SPEED, aiAction, pick, playDuel, setSeed, shuffle } from './speedkit';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
@@ -17,8 +17,9 @@ const ok = (c: boolean, msg: string) => {
 const deedsOf = (e: Engine, p: Pid, name: string): Deeds | undefined => e.state.fx.lvl?.s[p][name];
 
 // ---------- rarities ----------
-ok(TIERS.map((t) => t.id).join() === 'N,R,SR,UR,GL,RO,OF', 'rarities climb N → R → SR → UR → Glossy → Royal → Overframe');
-ok(tierOf(0).id === 'N' && tierOf(59).id === 'N' && tierOf(60).id === 'R' && tierOf(3999).id === 'RO' && tierOf(99999).id === 'OF', 'the meter maps to the right rarity');
+ok(TIERS.map((t) => t.id).join() === 'N,R,SR,UR,GL,RO,OF,MI', 'rarities climb N → R → SR → UR → Glossy → Royal → Overframe → Millennium');
+ok(TIERS[OF_TIER].id === 'OF' && TIERS[MI_TIER].id === 'MI' && MI_TIER === TIERS.length - 1, 'Millennium is the top, Overframe just under it');
+ok(tierOf(0).id === 'N' && tierOf(59).id === 'N' && tierOf(60).id === 'R' && tierOf(3999).id === 'RO' && tierOf(7999).id === 'OF' && tierOf(99999).id === 'MI', 'the meter maps to the right rarity');
 ok(meterOf(130) === 0.5 && meterOf(99999) === 1, 'the meter shows progress to the next rarity');
 ok(addXp(70, 0, 50) === 60, 'drains stop at the start of the rarity already reached');
 ok(addXp(40, 0, 50) === 0, 'and never go below zero');
@@ -71,6 +72,15 @@ function setup(): Engine {
   const lost = withLevels(newSpeedSave(), e.state, 1, 1).report.rows.find((r) => r.name === small.name)!;
   ok(lost.lost === -XP.died && lost.gained === XP.inDeck + XP.play, `the destroyed card drains a little (${lost.gained} − ${lost.lost})`);
   ok(rarityMap(save, [big.name, small.name])[big.name] === tierIndex(want) && !(small.name in rarityMap(save, [small.name])), 'the rarity map lists ranked cards only');
+
+  // Millennium: only a duel that counts (your own deck against the computer, or stakes) climbs past Overframe
+  const near = { ...newSpeedSave(), levels: { [big.name]: TIERS[MI_TIER].at - 20 } } as ReturnType<typeof newSpeedSave>;
+  const casual = cardLevels(withLevels(near, e.state, 0, 1).save)[big.name];
+  ok(casual === TIERS[MI_TIER].at - 1, `a duel that doesn't count stops just short of Millennium (${casual})`);
+  const counts = cardLevels(withLevels(near, e.state, 0, 1, true).save)[big.name];
+  ok(tierIndex(counts) === MI_TIER, `a duel that counts takes it to Millennium (${counts})`);
+  const already = { ...newSpeedSave(), levels: { [big.name]: TIERS[MI_TIER].at + 500 } } as ReturnType<typeof newSpeedSave>;
+  ok(cardLevels(withLevels(already, e.state, 0, 1).save)[big.name] === TIERS[MI_TIER].at + 500, 'a casual duel never takes points off a card that is already Millennium');
 }
 
 // ---------- effect kills and banishes ----------

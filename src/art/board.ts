@@ -517,8 +517,8 @@ export class BoardLayer {
       const breath = 1 + Math.sin(t * 1.9 + p.seed) * 0.006;
       const grow = p.quick ? 1 : lerp(0.75, 1, k);
       // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
-      // an Overframe monster stands a little taller than the rest
-      const s = pose.size * grow * breath * (p.finish >= FIN.OF ? 1.1 : 1);
+      // an Overframe monster stands a little taller than the rest, a Millennium one taller still
+      const s = pose.size * grow * breath * (p.finish >= FIN.MI ? 1.08 : p.finish >= FIN.OF ? 1.05 : 1);
       const sy = lerp(1, 0.85, p.kneel) * (1 - squash * 0.08);
       const sx = 1 + squash * 0.05;
       // pivot at the feet on the card; the figure hangs from it
@@ -554,7 +554,7 @@ export class BoardLayer {
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
-      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
+      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
     }
   }

@@ -23,6 +23,7 @@ const FINISHES: [string, number | null][] = [
   ['Glossy', 4],
   ['Royal', 5],
   ['Overframe', 6],
+  ['Millennium', 7],
 ];
 export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);

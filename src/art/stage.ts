@@ -854,12 +854,14 @@ uniform vec3 uGlow;
 uniform float uSheen;
 varying vec2 vUv;
 void main(){
-  vec4 c = texture2D(uMap, vUv);
+  // seen from behind mid-flip, the face reads the right way round (never mirrored)
+  vec4 c = texture2D(uMap, gl_FrontFacing ? vUv : vec2(1.0 - vUv.x, vUv.y));
   float s = smoothstep(0.08, 0.0, abs(vUv.x + vUv.y * 0.6 - uSheen));
   vec3 col = mix(c.rgb, vec3(1.0), uTint) + uGlow * s * 0.9;
   float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
   col += uGlow * (1.0 - smoothstep(0.0, 0.035, e)) * 0.8;
-  gl_FragColor = vec4(col * uOpacity, uOpacity);
+  // a card is opaque; a drawing on a clear canvas (the Millennium Eye) shows only its strokes
+  gl_FragColor = vec4(col * uOpacity * c.a, uOpacity * c.a);
 }`;
 const BASIC_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
@@ -877,6 +879,14 @@ export class CardPanel implements Fx {
   }
   get u() {
     return this.mat.uniforms as Record<string, { value: any }>;
+  }
+  /** Shows another picture on the panel (the old one is freed). */
+  retexture(source: HTMLCanvasElement) {
+    this.tex.dispose();
+    this.tex = new CanvasTexture(source);
+    this.tex.minFilter = LinearFilter;
+    this.tex.generateMipmaps = false;
+    this.u.uMap.value = this.tex;
   }
   update() {
     return this.alive;
