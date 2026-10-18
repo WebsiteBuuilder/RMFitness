@@ -175,7 +175,7 @@ interface Actor {
 type Role = 'att' | 'def';
 
 /** A Millennium card's colors: its summon, its blows and its trail are all gold, whatever the monster. */
-const MILL_COLS: Colors = { main: 0xffc93a, accent: 0xffd56a, light: 0xfff2c0 };
+const MILL_COLS: Colors = { main: 0xf0b020, accent: 0xffcf4a, light: 0xffe08a };
 
 interface Colors {
   main: number;
@@ -1495,9 +1495,9 @@ export class Director {
       tl.at(S + 0.38, () => whoosh(0.5, 900, 4200, 0.45));
       tl.at(S + 0.6, () => {
         this.panelShards(tl, flyer, mill ? 0xffd56a : 0xfff6c8, 3.4 * U);
-        st.pulse('chroma', 0.7);
-        st.pulse('flash', mill ? 0.22 : 0.4);
-        this.flash(mill ? 0xffc93a : 0xffffff, mill ? 0.2 : 0.34);
+        st.pulse('chroma', mill ? 0.15 : 0.7);
+        st.pulse('flash', mill ? 0.12 : 0.4);
+        this.flash(mill ? 0xffc93a : 0xffffff, mill ? 0.12 : 0.34);
         st.shake(0.55);
         st.hitStop(0.1);
         boom(0.8);

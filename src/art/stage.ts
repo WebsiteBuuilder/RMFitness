@@ -860,7 +860,8 @@ void main(){
   vec3 col = mix(c.rgb, vec3(1.0), uTint) + uGlow * s * 0.9;
   float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
   col += uGlow * (1.0 - smoothstep(0.0, 0.035, e)) * 0.8;
-  gl_FragColor = vec4(col * uOpacity, uOpacity);
+  // a card is opaque; a drawing on a clear canvas (the Millennium Eye) shows only its strokes
+  gl_FragColor = vec4(col * uOpacity * c.a, uOpacity * c.a);
 }`;
 const BASIC_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
