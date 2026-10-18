@@ -17,7 +17,7 @@ import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, 
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
-import { fullArtCard, millenniumEyeCanvas } from './fullArt';
+import { fullArtCard, goldArt, millenniumEyeCanvas } from './fullArt';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
@@ -1422,7 +1422,7 @@ export class Director {
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
-      const ci = tl.own(new CutIn(art.art, c.name, (over ? [mill ? '◈ MILLENNIUM ◈' : '✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), mill ? 0x2a1a00 : over ? 0xff4fd0 : col.main, mill ? 0xffd56a : over ? 0x4fe0ff : GOLD));
+      const ci = tl.own(new CutIn(mill ? goldArt(art.art) : art.art, c.name, (over ? [mill ? '◈ MILLENNIUM ◈' : '✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), mill ? 0x2a1a00 : over ? 0xff4fd0 : col.main, mill ? 0xffd56a : over ? 0x4fe0ff : GOLD));
       tl.span(0, C, (k) => {
         ci.u.uK.value = k;
         ci.u.uAspect.value = st.camera.aspect;

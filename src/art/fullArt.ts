@@ -76,7 +76,10 @@ export function fullArtCard(src: HTMLCanvasElement, name: string, fin: number): 
   fy.addColorStop(1, 'rgba(0,0,0,0)');
   wg.fillStyle = fy;
   wg.fillRect(0, 0, win.width, win.height);
+  // Millennium: the art is cast in gold (the monster comes out of it in color when the card shatters)
+  if (mi) g.filter = 'grayscale(1) contrast(1.3) sepia(1) saturate(1.8) hue-rotate(-8deg) brightness(0.8)';
   g.drawImage(win, wx, wy);
+  g.filter = 'none';
   // a dark band under the name
   const top = g.createLinearGradient(0, 0, 0, H * 0.18);
   top.addColorStop(0, 'rgba(0,0,0,0.85)');
@@ -187,4 +190,18 @@ export function millenniumEyeCanvas(): HTMLCanvasElement {
   g.fill();
   eyeCanvas = c;
   return c;
+}
+
+const goldCache = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+/** The art cast in gold (for Millennium's cut-in); where canvas filters are missing it stays as is. */
+export function goldArt(src: HTMLCanvasElement): HTMLCanvasElement {
+  const hit = goldCache.get(src);
+  if (hit) return hit;
+  const out = canvas(src.width, src.height);
+  const g = out.getContext('2d');
+  if (!g) return src;
+  g.filter = 'grayscale(1) contrast(1.25) sepia(1) saturate(2.2) hue-rotate(-8deg) brightness(0.95)';
+  g.drawImage(src, 0, 0);
+  goldCache.set(src, out);
+  return out;
 }

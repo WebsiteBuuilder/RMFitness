@@ -839,34 +839,31 @@ img.cimg.lvr-MI {
   mask: radial-gradient(ellipse 48% 44% at 50% 42%, transparent 70%, #000 100%);
   mix-blend-mode: screen;
 }
-/* the art itself is cast in gold, a relief the living monster climbs out of in full color
-   (only where the card has a cut-out; without one the art keeps its color) */
+/* where the card has a cut-out, the scene behind the monster sinks into a black field of gold
+   hieroglyphs and only the monster stays in color, rising out of it in a gold glow */
 .lvr-mi.has-fig > .ofx-art {
-  filter: grayscale(1) contrast(0.95) brightness(0.62) sepia(1) saturate(2.4) hue-rotate(-6deg);
+  filter: grayscale(1) contrast(1.3) brightness(0.5) sepia(1) saturate(1.6) hue-rotate(-8deg);
+  opacity: 0.32;
 }
 .lvr-mi.has-fig > .ofx-art::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 30%, #fff6d855 46%, transparent 60%) 0 0 / 300% 100%;
-  animation: lvr-mi-sheen 4.5s linear infinite;
-  mix-blend-mode: overlay;
+  background: radial-gradient(ellipse 46% 40% at 50% 46%, #ffc93a66, #ffc93a22 55%, transparent 75%);
 }
-@keyframes lvr-mi-sheen {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -50% 0;
-  }
+.lvr-mi.has-fig > .ofx-glyphs {
+  -webkit-mask: none;
+  mask: none;
+  opacity: 0.55;
 }
 .lvr-mi:not(.has-fig) > .ofx-art {
   filter: saturate(1.3) contrast(1.1);
 }
-/* too small to read a relief: the art keeps its color, the gold edge and the MIL chip say it */
+/* too small for the glyph field: the art keeps its color, the gold edge and the MIL chip say it */
 @container (max-width: 69px) {
   .lvr-mi.has-fig > .ofx-art {
     filter: saturate(1.15) contrast(1.1);
+    opacity: 1;
   }
 }
 /* a carved gold edge inside the card */
