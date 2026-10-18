@@ -18,6 +18,7 @@ import { online } from '../online/controller';
 import { ConfirmSheet } from './ConfirmSheet';
 import { anteProblem, betsLocked, noAnte, staked, type Ante } from '../collection/stakes';
 import { other } from '../eds/engine';
+import { card, speedDbLoaded } from '../eds/db';
 import type { TossHow } from '../eds/toss';
 
 export type LinkChoice = { mode: 'host' } | { mode: 'join'; code: string } | { mode: 'hotseat' };
@@ -213,7 +214,10 @@ export function Lobby({
     return roomMode === 'speed' ? `${e.deck.length} cards${e.skill ? ` · ${e.skill}` : ''}` : `${e.deck.length} cards · W ${o.save?.wins ?? 0} L ${o.save?.losses ?? 0}`;
   };
   // Rock-paper-scissors (a coin on one phone) decides who goes first; a tag room keeps its own start.
-  const start = () => (tag ? session.send(tag.start(seats)) : !view.toss && session.send(tossFor(view, hotseat)));
+  // A phone on an older version of the game may still bring a card that isn't a Speed Duel card: no duel until it updates.
+  const oldCards = roomMode === 'speed' && speedDbLoaded() ? ([0, 1] as Pid[]).flatMap((p) => (seats[p].ready ? [...seats[p].deck, ...seats[p].fusion] : [])).filter((n) => !card(n)?.speed) : [];
+  const outdated = oldCards.length > 0;
+  const start = () => !outdated && (tag ? session.send(tag.start(seats)) : !view.toss && session.send(tossFor(view, hotseat)));
 
   // A rematch: everybody sits back down with the same decks and bets, no taps needed.
   const rematch = view.round > 0 && !tag;
@@ -237,7 +241,7 @@ export function Lobby({
     }
     if (bothReady && sameGame && staked(seats[0].stakes, seats[1].stakes) && !betsLocked(seats) && ([0, 1] as Pid[]).every((p) => withinBet(seats[p].stakes?.ante, session.prevSeats?.[p].stakes?.ante)))
       for (const p of hotseat ? ([0, 1] as Pid[]) : [mySeat]) if (!seats[p].accepted) session.send({ type: 'ACCEPT', player: p });
-    if (session.adapter.isHost && bothReady && sameGame && betsLocked(seats) && !view.toss) session.send(tossFor(view, hotseat));
+    if (session.adapter.isHost && bothReady && sameGame && !outdated && betsLocked(seats) && !view.toss) session.send(tossFor(view, hotseat));
   }, [rematch, view.log.length, status]);
 
   // A room Find a Match opened: both sit down with their active deck as soon as the phones link.
@@ -248,7 +252,7 @@ export function Lobby({
   }, [matched?.room, status, view.log.length]);
 
   // ...and the host's phone starts it by itself a few seconds later, unless someone puts up a bet.
-  const autoGo = !!matched && !rematch && bothReady && sameGame && !view.toss && status === 'connected' && stakesReady(view) && noAnte(seats[0].stakes?.ante) && noAnte(seats[1].stakes?.ante);
+  const autoGo = !!matched && !rematch && bothReady && sameGame && !outdated && !view.toss && status === 'connected' && stakesReady(view) && noAnte(seats[0].stakes?.ante) && noAnte(seats[1].stakes?.ante);
   const [goIn, setGoIn] = useState(0);
   const viewNow = useRef(view);
   viewNow.current = view;
@@ -388,7 +392,8 @@ export function Lobby({
             <Menu items={[{ label: 'Give Player 2 a random Starter Deck', onPick: readyGuest }]} />
           </div>
         )}
-        {bothReady && sameGame && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: goIn > 0 ? `Starting in ${goIn}… tap to start` : 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? 'place a bet to wait' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">{goIn > 0 ? `Starting in ${goIn}… place a bet to wait` : 'Waiting for the host to start…'}</p>)}
+        {bothReady && sameGame && outdated && <p class="hint">A deck here has cards that were never printed for Speed Duel ({[...new Set(oldCards)].slice(0, 3).join(', ')}). Close and reopen the game on both phones to update, then sit down again.</p>}
+        {bothReady && sameGame && !outdated && (session.adapter.isHost ? <Menu class={roomMode === 'speed' ? 'start-duel' : ''} items={[{ label: goIn > 0 ? `Starting in ${goIn}… tap to start` : 'Start Duel', disabled: roomMode === 'speed' && !stakesReady(view), note: roomMode === 'speed' && !stakesReady(view) ? 'both players accept the bets first' : goIn > 0 ? 'place a bet to wait' : tag ? undefined : tossFor(view, hotseat).how === 'loser' ? "the last duel's loser picks who goes first" : hotseat ? 'a coin toss decides who goes first' : 'rock-paper-scissors decides who goes first', onPick: start }]} /> : <p class="hint">{goIn > 0 ? `Starting in ${goIn}… place a bet to wait` : 'Waiting for the host to start…'}</p>)}
       </Win>
       {linkToCopy && (
         <ConfirmSheet look={roomMode === 'speed' ? 'md' : 'gba'} title="Copy this invite link" cancelLabel="Done" onCancel={() => setLinkToCopy(null)}>

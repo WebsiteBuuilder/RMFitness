@@ -15,7 +15,7 @@ import { card } from '../eds/db';
 import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedDeck, type SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { rollFinishes, withFinishes } from './finish';
-import { RETIRED, dropRetired } from './retired';
+import { RETIRED, RETIRED_PRICE, dropRetired } from './retired';
 import { openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
@@ -65,8 +65,9 @@ export type EconSave = SpeedSave & {
   giftPacks?: number;
   /** the one-time gifts this profile already got (see GIFT) */
   gifts?: string[];
-  /** retired cards paid back so far (copies), for the one-time notice */
+  /** retired cards paid back so far (copies) and the Duel Chips they were worth, for the one-time notice */
   retiredRefund?: number;
+  retiredChips?: number;
 };
 
 const E = (s: SpeedSave) => s as EconSave;
@@ -115,15 +116,25 @@ export function migrate(s: SpeedSave): SpeedSave {
 }
 
 /** Copies of retired cards paid back between two versions of a save (0 when none). */
-export const retiredPaid = (before: SpeedSave, after: SpeedSave) => (E(after).retiredRefund ?? 0) - (E(before).retiredRefund ?? 0);
+export const retiredPaid = (before: SpeedSave, after: SpeedSave) => ({
+  copies: (E(after).retiredRefund ?? 0) - (E(before).retiredRefund ?? 0),
+  chips: (E(after).retiredChips ?? 0) - (E(before).retiredChips ?? 0),
+  decks: after.decks.filter((d, i) => d !== before.decks[i]).map((d) => d.name),
+});
 
-/** What each retired copy pays back: its old crafting price, as shards (they turn into chips up to the cap and keep the rest). */
-export const RETIRED_REFUND_SHARDS = SHARDS_PER_CHIP;
+/** The one-time notice for a save that just lost its retired cards. */
+export function retiredNotice(p: { copies: number; chips: number; decks: string[] }): string {
+  const parts = ['Some cards were never printed for Speed Duel, so they are gone from the game.'];
+  if (p.chips) parts.push(`You owned ${p.copies} cop${p.copies === 1 ? 'y' : 'ies'} of them: you got ${p.chips} Duel Chip${p.chips === 1 ? '' : 's'} worth back.`);
+  if (p.decks.length) parts.push(`They left ${p.decks.length === 1 ? 'your deck' : 'your decks'} ${p.decks.map((n) => `"${n}"`).join(', ')}: check ${p.decks.length === 1 ? 'it' : 'them'} in Deck Edit.`);
+  return parts.join(' ');
+}
 
 /**
  * Takes the cards that were never Speed Duel cards (RETIRED) out of a profile: every owned
- * copy pays back RETIRED_REFUND_SHARDS, they leave its decks, and their looks go too.
- * Returns the same save when there is nothing to do.
+ * copy pays back what it cost to craft, every rarity step its look was lifted pays back
+ * LOOK_UP_COST, they leave its decks, and their looks go. The payback comes as shards, so
+ * past the chip cap nothing is lost. Returns the same save when there is nothing to do.
  */
 export function retireCards(s: SpeedSave): SpeedSave {
   const owned = Object.entries(s.collection ?? {}).filter(([n]) => RETIRED.has(n));
@@ -133,14 +144,23 @@ export function retireCards(s: SpeedSave): SpeedSave {
   if (!owned.length && !looks.length && decks.every((d, i) => d === s.decks[i])) return s;
   const collection = { ...(s.collection ?? {}) };
   let copies = 0;
-  for (const [n, c] of owned) (copies += c), delete collection[n];
+  let chips = 0;
+  for (const [n, c] of owned) {
+    copies += c;
+    chips += c * (RETIRED_PRICE.get(n) ?? 1);
+    delete collection[n];
+  }
   const next = { ...s, collection, decks } as EconSave;
   if (levels && looks.length) {
     next.levels = { ...levels };
-    for (const n of looks) delete next.levels[n];
+    for (const n of looks) {
+      chips += tierIndex(levels[n]) * LOOK_UP_COST;
+      delete next.levels[n];
+    }
   }
   next.retiredRefund = (E(s).retiredRefund ?? 0) + copies;
-  return cashShards({ ...next, shards: shardsOf(next) + copies * RETIRED_REFUND_SHARDS } as EconSave);
+  next.retiredChips = (E(s).retiredChips ?? 0) + chips;
+  return cashShards({ ...next, shards: shardsOf(next) + chips * SHARDS_PER_CHIP } as EconSave);
 }
 
 /** Welcome packs go to the first 2 profiles on a phone, so new profiles aren't a pack farm. */

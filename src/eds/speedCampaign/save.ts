@@ -2,7 +2,7 @@
 // Cards earned anywhere go to the profile's Speed Duel collection (speedSave.ts), not here:
 // this file only remembers where you are on the road, your stars and your runs.
 import type { SpeedDeck } from '../speedSave';
-import { dropRetired } from '../../collection/retired';
+import { dropRetired, dropRetiredPending } from '../../collection/retired';
 import type { Run, RunSummary } from './labyrinth';
 import type { LegendsProgress } from './legends';
 
@@ -105,7 +105,7 @@ export function loadSolo(profileId: string): SoloSave {
       const labyrinth = { ...base.labyrinth, ...s.labyrinth };
       // Cards that were never Speed Duel cards are gone from the game: they leave the road and run decks.
       if (campaign.deck) campaign.deck = dropRetired(campaign.deck);
-      if (labyrinth.run) labyrinth.run = dropRetired(labyrinth.run);
+      if (labyrinth.run) labyrinth.run = { ...dropRetired(labyrinth.run), pending: dropRetiredPending(labyrinth.run.pending) };
       return { ...base, ...s, campaign, labyrinth, practice: { ...base.practice, ...s.practice } };
     }
   } catch {

@@ -16,12 +16,20 @@ function packList(names: string[]): string {
 }
 
 let byId: Map<number, string> | null = null;
+/** Picture ids older codes may carry that the card list no longer uses (the card itself is still in the game). */
+const OLD_IDS: Record<number, string> = {
+  36354007: 'Gilford the Lightning',
+  83965310: 'Destiny HERO - Plasma',
+  23995346: 'Blue-Eyes Ultimate Dragon',
+  91152256: 'Celtic Guardian',
+  87322377: 'Launcher Spider',
+};
 function nameOf(id: number): string | undefined {
   if (!byId) {
     byId = new Map();
     for (const c of speedCards()) if (!byId.has(c.id)) byId.set(c.id, c.name);
   }
-  return byId.get(id);
+  return byId.get(id) ?? OLD_IDS[id];
 }
 
 function unpackList(text: string): string[] {

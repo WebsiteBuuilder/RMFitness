@@ -13,7 +13,9 @@ import { LEGENDS } from '../src/eds/speedCampaign/legends';
 import { TAG_CHAPTERS } from '../src/eds/speedCampaign/tagRoad';
 import { RAIDS } from '../src/eds/raid';
 import { boosterSets, openPack, setSets } from '../src/collection/sets';
-import { RETIRED } from '../src/collection/retired';
+import { RETIRED, RETIRED_PRICE, dropRetiredPending } from '../src/collection/retired';
+import { tierIndex } from '../src/level/leveling';
+import { readDeckCode } from '../src/eds/speedCampaign/deckCode';
 import { migrate, retireCards, shardsOf, chipsOf } from '../src/collection/economy';
 
 let fails = 0;
@@ -94,12 +96,23 @@ setSets(JSON.parse(readFileSync('public/cards/speedSets.json', 'utf8')));
   s = { ...s, econ: 1, decks: [{ id: 'd', name: 'Old', main: [gone[0], 'Blue-Eyes White Dragon', gone[2]], extra: [], skill: null }], levels: { [gone[1]]: 50 } } as typeof s;
   const r = retireCards(s) as typeof s & { levels?: Record<string, number>; retiredRefund?: number };
   ok(!Object.keys(r.collection ?? {}).some((n) => RETIRED.has(n)) && r.collection?.['Blue-Eyes White Dragon'] === 1, 'retired cards leave the collection, others stay');
-  ok(chipsOf(r) * 10 + shardsOf(r) === 30, `3 retired copies pay back 3 Duel Chips' worth (${chipsOf(r)} chips, ${shardsOf(r)} shards)`);
+  const want = 2 * RETIRED_PRICE.get(gone[0])! + RETIRED_PRICE.get(gone[1])! + tierIndex(50) * 3;
+  ok(chipsOf(r) * 10 + shardsOf(r) === want * 10, `3 retired copies and a lifted look pay back what they cost: ${want} Duel Chips' worth (${chipsOf(r)} chips, ${shardsOf(r)} shards)`);
   ok(r.decks[0].main.join() === 'Blue-Eyes White Dragon', 'retired cards leave saved decks');
   ok(!r.levels?.[gone[1]], "retired cards' looks are dropped");
   ok(r.retiredRefund === 3, 'the refund is counted for the notice');
   ok(retireCards(r) === r, 'a second pass pays nothing');
   ok(migrate(r) === r, 'loading the save again changes nothing');
+}
+
+// ---------- old deck codes and Labyrinth offers ----------
+{
+  // A code made before the update carries Gilford the Lightning's old picture id (36354007).
+  const d = readDeckCode('SD1.Old..' + (36354007).toString(36) + '_2-' + (89631139).toString(36) + '.');
+  ok(!!d && d.main.filter((n) => n === 'Gilford the Lightning').length === 2, `an old deck code keeps Gilford the Lightning (${d?.main.join(', ')})`);
+  const gone = [...RETIRED][0];
+  const draft = dropRetiredPending({ kind: 'draft', options: [gone, 'Blue-Eyes White Dragon'], dp: 0 } as { kind: 'draft'; options: string[]; dp: number });
+  ok(draft?.options.join() === 'Blue-Eyes White Dragon', 'a Labyrinth draft offered before the update loses its retired cards');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');

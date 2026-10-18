@@ -179,13 +179,21 @@ def main() -> int:
             cards.setdefault(c["id"], c)
     if missing:
         print(f"Konami cards YGOPRODeck has no data for: {missing}", file=sys.stderr)
-    REPORT_OUT.write_text(json.dumps(set_report, ensure_ascii=False, indent=1))
     prev = json.loads(OUT.read_text()) if OUT.exists() else []
     konami = {ALIASES.get(n, n) for p in products for n in p["cards"]}
     got = {c["name"] for c in cards.values()}
     if len(konami - got) > 5:
         print(f"{len(konami - got)} Konami cards missing from the fetch: keeping the old list.", file=sys.stderr)
         return 0
+    REPORT_OUT.write_text(json.dumps(set_report, ensure_ascii=False, indent=1))
+    # Only Konami's cards (and Skills, and the Tokens above) make the pool: a card YGOPRODeck lists
+    # in a Speed Duel set by mistake never gets in.
+    konami_low = {n.lower() for n in konami}
+    tokens = set(TOKENS)
+    dropped = sorted(c["name"] for c in cards.values() if c.get("type") != "Skill Card" and c["name"] not in tokens and c["name"].lower() not in konami_low)
+    if dropped:
+        print(f"Left out (in a YGOPRODeck Speed Duel set but not in Konami's lists): {dropped}", file=sys.stderr)
+    cards = {cid: c for cid, c in cards.items() if c.get("type") == "Skill Card" or c["name"] in tokens or c["name"].lower() in konami_low}
     # Skills keep the name they already have in the game (saves and scripts use it).
     prev_names = {c["id"]: c["name"] for c in prev if c.get("type") == "Skill Card"}
     out, fetched = [], 0
@@ -206,9 +214,18 @@ def main() -> int:
         if cid in in_set:
             entry["sets"] = sorted(set(in_set[cid]))
         out.append(entry)
+    # The newer Skills YGOPRODeck lacks. If it adds one later (any spelling), its entry takes the
+    # name the game's script uses instead of becoming a second copy.
     extra = json.loads(EXTRA_SKILLS.read_text()) if EXTRA_SKILLS.exists() else []
-    have = {c["name"] for c in out}
-    out += [s for s in extra if s["name"] not in have]
+    key = lambda n: "".join(ch for ch in n.lower().replace(" (skill card)", "") if ch.isalnum())
+    have = {key(c["name"]): c for c in out if c.get("type") == "Skill Card"}
+    for s in extra:
+        hit = have.get(key(s["name"]))
+        if hit:
+            hit["name"] = s["name"]
+            hit["sets"] = sorted(set(hit.get("sets", [])) | set(s.get("sets", [])))
+        else:
+            out.append(s)
     out.sort(key=lambda c: c["name"])
     sets = speed_sets(list(cards.values()), products, extra)
     if sets:
