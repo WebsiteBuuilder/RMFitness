@@ -4,8 +4,11 @@
 // attack, effect damage, the finishing blow). Dying on the field or being
 // banished drains a little, but never below the rarity the card already reached.
 // The meter climbs through Master Duel's rarities: N, R, SR, UR, then the
-// Glossy and Royal finishes, and tops out at Overframe, where the card's art
-// breaks out of its frame. It is a look only: ATK, DEF and effects never change.
+// Glossy and Royal finishes, then Overframe, where the card goes full-art and the
+// monster steps out of it. Above that sits Millennium, the deepest rarity: only
+// duels with something at stake fill the meter past Overframe (no pack, chip,
+// stamp or gift ever grants it), and it changes how the card summons, stands and
+// attacks on the field. It is a look only: ATK, DEF and effects never change.
 //
 // The engine calls noteLevelEvent for every event of a Speed Duel, so the tally
 // lives in the duel state (state.fx.lvl) and both phones in a Link Battle count
@@ -16,7 +19,7 @@ import type { SpeedSave } from '../eds/speedSave';
 
 // ---------- rarities ----------
 export interface Tier {
-  id: 'N' | 'R' | 'SR' | 'UR' | 'GL' | 'RO' | 'OF';
+  id: 'N' | 'R' | 'SR' | 'UR' | 'GL' | 'RO' | 'OF' | 'MI';
   short: string;
   name: string;
   /** meter points needed to reach it */
@@ -31,7 +34,13 @@ export const TIERS: Tier[] = [
   { id: 'GL', short: 'UR', name: 'Glossy Ultra Rare', at: 1100 },
   { id: 'RO', short: 'UR', name: 'Royal Ultra Rare', at: 2200 },
   { id: 'OF', short: 'OVER', name: 'Overframe', at: 4000 },
+  { id: 'MI', short: 'MIL', name: 'Millennium', at: 8000 },
 ];
+
+/** Overframe's place on the ladder: the highest rarity packs, chips, stamps and gifts can give. */
+export const OF_TIER = 6;
+/** Millennium's place on the ladder: earned only in duels that count (see withLevels). */
+export const MI_TIER = 7;
 
 export function tierIndex(xp: number): number {
   let i = 0;
@@ -276,8 +285,10 @@ export function addXp(xp: number, gained: number, lost: number): number {
   return Math.max(floor, up - lost);
 }
 
-/** Writes one duel's card levels for the player in `seat` into their save. */
-export function withLevels(s: SpeedSave, state: DuelState, seat: Pid, now = Date.now()): { save: SpeedSave; report: LevelReport } {
+/** Writes one duel's card levels for the player in `seat` into their save.
+ *  `deep`: the duel counts toward Millennium (your own deck against the computer, or a duel with
+ *  stakes). Other duels still fill the meter, but never past the point just short of Millennium. */
+export function withLevels(s: SpeedSave, state: DuelState, seat: Pid, now = Date.now(), deep = false): { save: SpeedSave; report: LevelReport } {
   const levels = { ...cardLevels(s) };
   const t = state.fx?.lvl as Tally | undefined;
   const won = state.winner === seat;
@@ -286,7 +297,8 @@ export function withLevels(s: SpeedSave, state: DuelState, seat: Pid, now = Date
     for (const name of namesOwnedBy(state, seat)) {
       const { gained, lost, why } = scoreDeeds(t?.s[seat][name], won);
       const before = levels[name] ?? 0;
-      const after = addXp(before, gained, lost);
+      let after = addXp(before, gained, lost);
+      if (!deep) after = Math.min(after, Math.max(before, TIERS[MI_TIER].at - 1));
       levels[name] = after;
       rows.push({ name, before, after, gained, lost, why });
     }

@@ -763,7 +763,10 @@ export function App() {
       const lv = (s: SpeedSave, seat: Pid) => {
         // A surrender before the duel got going teaches the cards nothing (no free level points).
         if (!st || tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) })) return s;
-        const r = withLevels(s, st, seat);
+        // Past Overframe only duels that count move the meter: your own deck against the computer, or a duel with stakes.
+        const two = session?.seats;
+        const deep = cpu ? !activeDeck(s)?.open : !!two && staked(two[0].stakes, two[1].stakes);
+        const r = withLevels(s, st, seat, Date.now(), deep);
         if (seat === mySeat) myLevels = r.report;
         return r.save;
       };

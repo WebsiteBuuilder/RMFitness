@@ -17,6 +17,7 @@ import {
   craft,
   crownHolder,
   lookUp,
+  cantLookUp,
   migrate,
   openOwnedPack,
   ownedOnly,
@@ -29,7 +30,7 @@ import {
 import { PACK_SIZE, boosterSets, openPack, rarityIn, rarityOf, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
 import { anteProblem, rescueFirst, settleStakes, settleTicket, staked, stakesFor, withTicket, type StakeSeat } from '../src/collection/stakes';
 import { sealedCards, withShadow } from '../src/art/shadow';
-import { cardLevels, tierIndex } from '../src/level/leveling';
+import { OF_TIER, TIERS, cardLevels, tierIndex } from '../src/level/leveling';
 import { DB, PLAYABLE } from './speedkit';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
@@ -117,6 +118,8 @@ ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlo
   s = { ...withChips(newSpeedSave(), 3), collection: { [A]: 1 } };
   const up = lookUp(s, A)!;
   ok(tierIndex(cardLevels(up)[A]) === 1 && chipsOf(up) === 0, "3 chips lift a card's look one rarity");
+  const atOver = { ...withChips(newSpeedSave(), 30), collection: { [A]: 1 }, levels: { [A]: TIERS[OF_TIER].at } } as SpeedSave;
+  ok(lookUp(atOver, A) === null && cantLookUp(atOver, A) === 'already Overframe', 'chips never buy Millennium: they stop at Overframe');
   let sh = { ...newSpeedSave(), collection: { [names[21]]: 3 } } as SpeedSave;
   sh = breakCopy(sh, names[21])!;
   sh = breakCopy(sh, names[21])!;

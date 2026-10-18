@@ -3,11 +3,31 @@ import { memo } from 'preact/compat';
 import { card, imageUrl } from '../eds/db';
 import type { Pid } from '../eds/types';
 import { TIERS, meterOf, tierIndex } from '../level/leveling';
+import { figUrl, useFigs } from '../level/figs';
 import { profileXpOf, rarityFor } from '../level/view';
 import { spellWord } from './gameUi';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
+/** The Millennium Eye (Wedjat) emblem on a Millennium card. */
+const EYE = (
+  <svg class="ofx-eye" viewBox="0 0 100 64" aria-hidden="true">
+    <defs>
+      <linearGradient id="ofx-gold" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff6d8" />
+        <stop offset="0.5" stop-color="#ffd56a" />
+        <stop offset="1" stop-color="#a8740c" />
+      </linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#ofx-gold)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13 Q50 -4 92 10" />
+      <path d="M8 30 Q50 6 92 28 Q50 46 8 30 Z" />
+      <path d="M40 41 L34 60" />
+      <path d="M58 40 Q66 58 80 56 Q90 54 86 46" />
+    </g>
+    <circle cx="50" cy="27" r="9" fill="url(#ofx-gold)" />
+  </svg>
+);
 const GLINTS = (
   <>
     <b class="lvr-spec" />
@@ -24,9 +44,11 @@ export const CardImg = memo(CardImgView);
 function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
   const [broken, setBroken] = useState<string | null>(null);
-  if (back) return <div class={`cimg cback ${cls}`} />;
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
-  const tier = TIERS[forceTier ?? rarityFor(name, owner)];
+  const tier = TIERS[back ? 0 : (forceTier ?? rarityFor(name, owner))];
+  const full = tier.id === 'OF' || tier.id === 'MI';
+  useFigs(full);
+  if (back) return <div class={`cimg cback ${cls}`} />;
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
   const fx = tier.id !== 'N' && (
     <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={CHIP[tier.id] ?? tier.short}>
@@ -35,22 +57,38 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
     </i>
   );
   const url = broken === name ? null : imageUrl(name);
-  // Overframe: the picture gets its own box so the art can break out of the frame anywhere it shows.
-  if (url && tier.id === 'OF')
+  // Overframe and Millennium: full-art cards. The art fills the card, and the monster's own cut-out
+  // (where it has one) steps out over the top of it, anywhere the card shows.
+  if (url && full) {
+    const mi = tier.id === 'MI';
+    const info = card(name);
+    const fig = figUrl(name);
+    const mark = info?.kind === 'monster' ? (info.level ? '★'.repeat(Math.min(info.level, 12)) : '') : info?.kind === 'spell' ? spellWord().toUpperCase() : info?.kind === 'trap' ? 'TRAP' : '';
+    const vars = { '--ofimg': `url("${url}")`, ...(fig ? { '--offig': `url("${fig}")` } : {}) } as Record<string, string>;
     return (
-      <span class={`lvr-of ${cls.replace(/\blvr(-OF)?\b/g, '')}`}>
+      <span class={`lvr-of ${mi ? 'lvr-mi' : ''} ${cls.replace(/\blvr(-OF|-MI)?\b/g, '')}`} style={vars}>
         <i class="lvr-rays" />
         <i class="lvr-ofrim" />
-        <img class="cimg lvr lvr-OF" src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
+        <img class={`cimg lvr lvr-${tier.id}`} src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
+        <i class="ofx-bg" />
+        {mi && <i class="ofx-glyphs" />}
+        <i class="ofx-art" />
+        <i class="ofx-txt" />
+        <i class="ofx-name">
+          <b>{name}</b>
+          {mark && <i>{mark}</i>}
+        </i>
         {fx}
         <b class="lvr-spec of" />
-        <b class="lvr-pop" style={{ backgroundImage: `url("${url}")` }} />
+        {fig && <b class="lvr-pop" />}
+        {mi && EYE}
         <i class="lvr-spk s1" />
         <i class="lvr-spk s2" />
         <i class="lvr-spk s3" />
-        <i class="lvr-chip">OVERFRAME</i>
+        <i class="lvr-chip">{mi ? 'MILLENNIUM' : 'OVERFRAME'}</i>
       </span>
     );
+  }
   if (url)
     return (
       <>

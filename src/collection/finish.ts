@@ -1,5 +1,6 @@
 // Pack finishes: every card pulled from a pack rolls the rarity it comes out at, on the
 // card-leveling ladder (Normal, Rare, Super Rare, Ultra Rare, Glossy, Royal, Overframe).
+// Millennium, above Overframe, never comes out of a pack: only duels earn it.
 // The odds are fixed and shown on the packs. A card never comes out below the rarity
 // its set prints it at, and a pull lifts the card's rarity meter to at least the tier
 // it came out at (a card already sitting higher keeps its rarity).
@@ -9,8 +10,8 @@ import type { SpeedSave } from '../eds/speedSave';
 import { TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { PACK_SIZE, rarityIn, type Rarity } from './sets';
 
-/** Each card's finish odds, in parts per 10,000, by TIERS index (N, R, SR, UR, Glossy, Royal, Overframe). */
-export const FINISH_ODDS = [5000, 2800, 1300, 600, 200, 75, 25];
+/** Each card's finish odds, in parts per 10,000, by TIERS index (N, R, SR, UR, Glossy, Royal, Overframe, Millennium). */
+export const FINISH_ODDS = [5000, 2800, 1300, 600, 200, 75, 25, 0];
 
 /** The lowest finish a card comes out at, from the rarity its set prints it at. */
 export const PRINTED_FLOOR: Record<Rarity, number> = { Common: 0, Rare: 1, 'Super Rare': 2, 'Ultra Rare': 3, 'Secret Rare': 3 };
@@ -62,9 +63,10 @@ export interface OddsRow {
 
 /** The odds table shown on the packs, rarest last. */
 export function oddsTable(): OddsRow[] {
-  return FINISH_ODDS.map((w, tier) => {
+  return FINISH_ODDS.flatMap((w, tier) => {
+    if (!w) return [];
     const orBetter = FINISH_ODDS.slice(tier).reduce((a, b) => a + b, 0) / 10000;
     const perPack = 1 - Math.pow(1 - orBetter, PACK_SIZE);
-    return { tier, name: TIERS[tier].name, perCard: w / 100, perPack: Math.round(perPack * 1000) / 10, oneIn: Math.max(1, Math.round(1 / perPack)) };
+    return [{ tier, name: TIERS[tier].name, perCard: w / 100, perPack: Math.round(perPack * 1000) / 10, oneIn: Math.max(1, Math.round(1 / perPack)) }];
   });
 }

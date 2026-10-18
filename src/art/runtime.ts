@@ -818,7 +818,7 @@ export class Director {
     const fin = finishOf(c);
     if (fin < FIN.UR) return;
     rimColor(finishGlow(fin, c.uid * 0.37), fig.u.uRim.value as Vector3);
-    fig.u.uRimAmt.value = fin >= FIN.OF ? 1.7 : fin >= FIN.GL ? 1.35 : 1.15;
+    fig.u.uRimAmt.value = fin >= FIN.MI ? 2 : fin >= FIN.OF ? 1.7 : fin >= FIN.GL ? 1.35 : 1.15;
   }
 
   private dropActor(a: Actor) {
@@ -933,6 +933,126 @@ export class Director {
   }
 
   /** Light shafts in the attribute color rising behind a subject (feet at `foot`). */
+  /** Millennium's attack wind-up: the Eye opens behind the attacker and gold sand pours into the blow. */
+  private millenniumWindup(tl: Timeline, att: Actor, M: P3, D: number) {
+    const st = this.stage;
+    const U = this.U;
+    const eye = tl.own(new Ring(3 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    // drawn before the figures: it hangs behind the attacker, never over it
+    eye.mesh.renderOrder = -4;
+    eye.mesh.position.set(att.x, att.y + att.size * 0.3, att.z - 0.8);
+    eye.spinSpeed = 0.4;
+    eye.u.uOpacity.value = 0;
+    tl.span(0.15, D, (k) => {
+      eye.u.uEye.value = Math.max(0.001, easeOut(k));
+      eye.u.uOpacity.value = 0.8 * clamp01(k * 2);
+    });
+    tl.at(0.15, () => (this.dimTarget = 0.92));
+    tl.span(0.3, D, (_k, dt) => {
+      const n = Math.floor(110 * this.q * dt + Math.random());
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = (1 + Math.random() * 0.7) * U;
+        st.particles.emit({ x: M.x + Math.cos(a) * rr, y: M.y + Math.sin(a) * rr, z: M.z, life: 0.45, size: 0.06 * U, color: i % 4 ? 0xffd56a : 0x9b4dff, drag: 0, pull: { x: M.x, y: M.y, strength: 22 * U, swirl: 10 * U } });
+      }
+    });
+  }
+
+  /** Millennium's blow: a trail of gold behind it, then the Eye flashes open where it lands with a ring of gold. */
+  private millenniumBlow(tl: Timeline, M: P3, P: P3, W: number, hitAt: number) {
+    const st = this.stage;
+    const U = this.U;
+    const q = this.q;
+    tl.span(W, hitAt, (k, dt) => {
+      const n = Math.floor(240 * q * dt + Math.random());
+      const e = easeIn(k);
+      for (let i = 0; i < n; i++) {
+        const f = e * Math.random();
+        st.particles.emit({ x: lerp(M.x, P.x, f) + (Math.random() - 0.5) * 0.2 * U, y: lerp(M.y, P.y, f) + (Math.random() - 0.5) * 0.2 * U, z: lerp(M.z, P.z, f), life: 0.45, size: (0.05 + Math.random() * 0.05) * U, color: i % 5 ? 0xffd56a : 0xfff6d8, drag: 2 });
+      }
+    });
+    const eye = tl.own(new Ring(2.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    eye.mesh.renderOrder = -4;
+    eye.mesh.position.set(P.x, P.y, P.z - 0.4);
+    eye.u.uOpacity.value = 0;
+    tl.span(hitAt, hitAt + 0.5, (k) => {
+      eye.u.uEye.value = Math.max(0.001, k < 0.3 ? easeOut(k / 0.3) : 1 - easeIn((k - 0.3) / 0.7));
+      eye.u.uOpacity.value = 0.6 * (1 - easeIn(k));
+      eye.mesh.scale.setScalar(lerp(0.6, 1.4, easeOut(k)));
+    });
+    const ring = tl.own(new Glow(5 * U, 5 * U, 'shock', 0xffd56a, 0x9b4dff));
+    ring.mesh.position.set(P.x, P.y, P.z + 0.2);
+    ring.u.uOpacity.value = 0;
+    tl.span(hitAt, hitAt + 0.6, (k) => {
+      ring.u.uK.value = easeOut(k);
+      ring.u.uOpacity.value = 1 - k;
+    });
+    tl.at(hitAt, () => {
+      st.pulse('chroma', 0.5);
+      this.flash(0xffd56a, 0.28);
+      for (const [c, n] of [[0xffd56a, 40], [0xfff6d8, 24], [0x9b4dff, 16]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
+      chime(0.95);
+    });
+  }
+
+  /**
+   * Millennium's summon (S: the summon's start; E: its length before the landing): the Millennium Eye
+   * opens behind the hanging card while gold sand spirals into it, a ring of hieroglyphs turns on the
+   * ground, and when the card shatters a pillar of gold light holds the monster until it lands.
+   */
+  private millenniumEye(tl: Timeline, S: number, at: P3, ground: number, size: number, E: number) {
+    const st = this.stage;
+    const U = this.U;
+    const q = this.q;
+    const eye = tl.own(new Ring(3.4 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
+    eye.mesh.renderOrder = -4;
+    eye.mesh.position.set(at.x, at.y, at.z);
+    eye.spinSpeed = 0.25;
+    eye.u.uOpacity.value = 0;
+    tl.span(S + 0.05, S + 0.5, (k) => {
+      eye.u.uEye.value = Math.max(0.001, easeOut(k));
+      eye.u.uOpacity.value = clamp01(k * 2) * 0.8;
+      eye.mesh.scale.setScalar(lerp(0.7, 1, easeOut(k)));
+    });
+    tl.at(S + 0.45, () => {
+      st.pulse('flash', 0.22);
+      this.flash(0xffd56a, 0.2);
+      boom(0.5);
+    });
+    // it closes as the card bursts, so it never sits over the monster
+    tl.span(S + 0.6, S + 0.95, (k) => {
+      eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k));
+      eye.u.uOpacity.value = 0.8 * (1 - k);
+      eye.mesh.scale.setScalar(lerp(1, 1.5, easeOut(k)));
+    });
+    // gold sand pulled into the pupil
+    tl.span(S + 0.05, S + 0.6, (_k, dt) => {
+      const n = Math.floor(150 * q * dt + Math.random());
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = (1.6 + Math.random() * 0.8) * U;
+        st.particles.emit({ x: at.x + Math.cos(a) * rr, y: at.y + Math.sin(a) * rr * 0.7, z: at.z + 0.3, life: 0.5, size: 0.07 * U, color: i % 5 ? 0xffd56a : 0x9b4dff, drag: 0, pull: { x: at.x, y: at.y, strength: 18 * U, swirl: 9 * U } });
+      }
+    });
+    // the ring of hieroglyphs on the ground
+    const glyphs = tl.own(new Ring(3.8 * U, 0xffc93a, 777, { inner: 0.8, outer: 0.95 }));
+    glyphs.mesh.rotation.x = -1.2;
+    glyphs.mesh.position.set(0, ground, 0.02);
+    glyphs.spinSpeed = 0.35;
+    glyphs.u.uOpacity.value = 0;
+    tl.span(S + 0.1, S + 0.6, (k) => {
+      glyphs.mesh.scale.setScalar(lerp(0.5, 1, easeOut(k)));
+      glyphs.u.uOpacity.value = k * 0.9;
+    });
+    tl.span(S + E - 0.4, S + E, (k) => (glyphs.u.uOpacity.value = 0.9 * (1 - k)));
+    // the pillar of gold light, with gold dust rising through it
+    this.shafts(tl, { x: 0, y: ground, z: -0.2 }, 5 * U, 0xffd56a, S + 0.6, S + E, 4, 0.9);
+    tl.span(S + 0.6, S + E - 0.2, (_k, dt) => {
+      const n = Math.floor(70 * q * dt + Math.random());
+      for (let i = 0; i < n; i++) st.particles.emit({ x: (Math.random() - 0.5) * size * 0.9, y: ground + Math.random() * 0.3 * U, z: 0.25, vy: (1.4 + Math.random() * 1.6) * U, life: 0.9, size: (0.04 + Math.random() * 0.05) * U, color: i % 4 ? 0xffe9a8 : 0x9b4dff, drag: 0.4 });
+    });
+  }
+
   private shafts(tl: Timeline, foot: P3, h: number, color: number, t0: number, t1: number, n = 3, peak = 0.85) {
     const U = this.U;
     for (let i = 0; i < n; i++) {
@@ -1264,18 +1384,22 @@ export class Director {
     // cut-in and its own entrance, the card's frame shattering as the monster leaps out
     const fin = finishOf(c);
     const over = fin >= FIN.OF;
+    // Millennium (above Overframe): the Millennium Eye opens over a darkened field before the
+    // card shatters, and the monster rises in a pillar of gold over a ring of hieroglyphs
+    const mill = fin >= FIN.MI;
     const finPal = finishPalette(fin);
     const C = (big || over) && art ? 0.62 : 0;
-    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0);
+    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0) + (mill ? 0.35 : 0);
     const LAND = 0.42;
     // the summon starts under the cut-in's exit (no dead air between them)
     const S = C ? C - 0.3 : 0;
     const D = S + E + LAND;
     const tl = new Timeline(D, st);
     this.bgTarget = 0.4 + tier * 0.08;
-    this.dimTarget = 0.84;
+    this.dimTarget = mill ? 0.93 : 0.84;
     this.focus.set(0.5, 0.5);
-    this.stage.backdrop.u.uColor.value.set(((col.main >> 16) & 255) / 900, ((col.main >> 8) & 255) / 900, (col.main & 255) / 900);
+    if (mill) this.stage.backdrop.u.uColor.value.set(0.09, 0.06, 0.02);
+    else this.stage.backdrop.u.uColor.value.set(((col.main >> 16) & 255) / 900, ((col.main >> 8) & 255) / 900, (col.main & 255) / 900);
     const r = rand(prof.seed);
     const from = this.anchor(c, side);
     const size = (1.3 + tier * 0.1) * U;
@@ -1288,7 +1412,7 @@ export class Director {
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
-      const ci = tl.own(new CutIn(art.art, c.name, (over ? ['✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), over ? 0xff4fd0 : col.main, over ? 0x4fe0ff : GOLD));
+      const ci = tl.own(new CutIn(art.art, c.name, (over ? [mill ? '◈ MILLENNIUM ◈' : '✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), mill ? 0x2a1a00 : over ? 0xff4fd0 : col.main, mill ? 0xffd56a : over ? 0x4fe0ff : GOLD));
       tl.span(0, C, (k) => {
         ci.u.uK.value = k;
         ci.u.uAspect.value = st.camera.aspect;
@@ -1358,7 +1482,7 @@ export class Director {
       });
       tl.at(S + 0.38, () => whoosh(0.5, 900, 4200, 0.45));
       tl.at(S + 0.6, () => {
-        this.panelShards(tl, flyer, 0xfff6c8, 3.4 * U);
+        this.panelShards(tl, flyer, mill ? 0xffd56a : 0xfff6c8, 3.4 * U);
         st.pulse('chroma', 0.7);
         st.pulse('flash', 0.4);
         this.flash(0xffffff, 0.34);
@@ -1368,11 +1492,11 @@ export class Director {
         chime(r());
         const p = flyer.mesh.position;
         finPal!.forEach((fc, i) => st.particles.emit({ x: p.x, y: p.y, z: p.z + 0.2, burst: (3.5 + i * 0.4) * U, life: 0.9, size: 0.11 * U, color: fc, drag: 1.6 }, Math.round(22 * this.q)));
-        this.ui.caption('OVERFRAME', 1.1, 'art-over');
+        this.ui.caption(mill ? 'MILLENNIUM' : 'OVERFRAME', mill ? 1.3 : 1.1, mill ? 'art-over art-mill' : 'art-over');
       });
       // two rainbow shock rings out of the shatter
       [0, 0.12].forEach((d, i) => {
-        const g = tl.own(new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x4fe0ff : 0xff4fd0, i ? 0xa24fff : 0xffb84f));
+        const g = tl.own(mill ? new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x9b4dff : 0xffd56a, i ? 0x5b1a9a : 0xfff6d8) : new Glow(5.2 * U, 5.2 * U, 'shock', i ? 0x4fe0ff : 0xff4fd0, i ? 0xa24fff : 0xffb84f));
         g.mesh.position.set(0, restY, 0.3);
         g.u.uOpacity.value = 0;
         span(0.6 + d, 1.25 + d, (k) => {
@@ -1380,6 +1504,7 @@ export class Director {
           g.u.uOpacity.value = 1 - k;
         });
       });
+      if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.25 * size, z: -0.6 }, ground, size, E);
     } else {
       // it dissolves into light as the monster's reveal starts (showAt, below)
       span(0.32, 0.5, (k) => {
@@ -1595,7 +1720,7 @@ export class Director {
       span(showAt, E + LAND, (k) => {
         const g = finishGlow(fin, S + showAt + k * (E + LAND - showAt));
         rimColor(g, fig.u.uRim.value as Vector3);
-        fig.u.uRimAmt.value = over ? 1.8 : fin >= FIN.GL ? 1.4 : 1.15;
+        fig.u.uRimAmt.value = mill ? 2.1 : over ? 1.8 : fin >= FIN.GL ? 1.4 : 1.15;
       });
     }
     if (finPal && fin >= FIN.GL) {
@@ -2782,7 +2907,9 @@ export class Director {
     });
     tl.at(0.4, () => (att.prof.tier >= 2 ? swell(0.6) : whoosh(0.45, 200, 1600, 0.15)));
     sig?.windup?.({ d: this, st, tl, U, at: att, M, col, t0: 0.3, t1: D });
-    tl.at(0.3, () => this.ui.banner({ title: `${att.prof.attackName}!`, sub: a.name, color: col.main, big: true, dur: 1.2, pos: 'bottom' }));
+    const mill = finishOf(a) >= FIN.MI;
+    if (mill) this.millenniumWindup(tl, att, M, D);
+    tl.at(0.3, () => this.ui.banner({ title: `${att.prof.attackName}!`, sub: mill ? `◈ ${a.name} ◈` : a.name, color: mill ? 0xffd56a : col.main, big: true, dur: 1.2, pos: 'bottom', finish: mill ? 'MI' : undefined }));
     return tl;
   }
 
@@ -2883,6 +3010,7 @@ export class Director {
       });
     }
     const debris = [tcol.main, tcol.accent];
+    if (a && finishOf(a) >= FIN.MI) this.millenniumBlow(tl, M, P, W, hitAt);
     this.impact(tl, hitAt, P, { color: col.main, light: col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));

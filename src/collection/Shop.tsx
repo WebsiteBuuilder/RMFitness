@@ -7,7 +7,7 @@ import { CardImg, CardInfoPanel } from '../ui/CardImg';
 import { Menu, Overlay, Win } from '../ui/Window';
 import { playBlip, playHit, playSummon, playWin } from '../ui/sound';
 import { RarityChip, chipText } from '../level/CardLevels';
-import { TIERS, cardLevels, tierIndex } from '../level/leveling';
+import { OF_TIER, TIERS, cardLevels, tierIndex } from '../level/leveling';
 import {
   BREAK_SHARDS,
   LOOK_UP_COST,
@@ -339,8 +339,8 @@ function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: n
     const f = fin[i];
     if (f >= BIG_FINISH) {
       setFlash(`fin-${TIERS[f].id}`);
-      window.setTimeout(() => setFlash(null), f === TIERS.length - 1 ? 1600 : 1100);
-      buzz(f === TIERS.length - 1 ? [80, 40, 80, 40, 200] : [60, 40, 120]);
+      window.setTimeout(() => setFlash(null), f === OF_TIER ? 1600 : 1100);
+      buzz(f === OF_TIER ? [80, 40, 80, 40, 200] : [60, 40, 120]);
       playWin();
       window.setTimeout(playSummon, 250);
     } else if (isHit(r) || f === 3) {
@@ -656,7 +656,7 @@ function CardSheet({ save, name, onSave, onClose }: { save: SpeedSave; name: str
   const noCraft = cantCraft(save, name);
   const noLook = cantLookUp(save, name);
   const cost = craftCost(name);
-  const nextLook = TIERS[Math.min(t + 1, TIERS.length - 1)].name;
+  const nextLook = TIERS[Math.min(t + 1, OF_TIER)].name;
   return (
     <Overlay onClose={onClose}>
       <Win title={name} onClose={onClose}>

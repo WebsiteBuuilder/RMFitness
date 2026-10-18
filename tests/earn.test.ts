@@ -7,7 +7,7 @@ import { packsOf, chipsOf } from '../src/collection/economy';
 import { PER_DAY, TEMPLATES, allGivers, boardOf, giverByName, noteRequests, rewardPool, summaryOf, swapRequest, type DuelSummary } from '../src/collection/requests';
 import { claimStamp, setCardNames, stampCard, stampOffer, stampsToClaim, topCard } from '../src/collection/stamps';
 import { RARITIES, boosterSets, rarityOf, setSets, type SpeedSet } from '../src/collection/sets';
-import { TIERS, cardLevels, tierIndex } from '../src/level/leveling';
+import { OF_TIER, TIERS, cardLevels, tierIndex } from '../src/level/leveling';
 import type { Deeds } from '../src/level/leveling';
 import { DB, playDuel, randomAction, aiAction, setSeed } from './speedkit';
 
@@ -140,7 +140,7 @@ const blank = (): Deeds => ({ p: 0, k: 0, b: 0, bd: 0, d: 0, dd: 0, e: 0, ed: 0,
   const top = topCard(set)!;
   const chips = chipsOf(s);
   const three = claimStamp(s, set.code)!;
-  ok(!!three && tierIndex(cardLevels(three.save)[top] ?? 0) === TIERS.length - 1, `stamp 3 puts ${top} at Overframe`);
+  ok(!!three && tierIndex(cardLevels(three.save)[top] ?? 0) === OF_TIER, `stamp 3 puts ${top} at Overframe`);
   ok(chipsOf(three.save) === Math.min(30, chips + 2), 'stamp 3 pays 2 Duel Chips');
   ok(claimStamp(three.save, set.code) === null && stampCard(three.save, set).claimed === 3, 'a full stamp card pays nothing more');
   ok(boosterSets().every((x) => setCardNames(x).length > 0 && topCard(x)), `every one of the ${boosterSets().length} booster sets has a stamp card and a top card`);
