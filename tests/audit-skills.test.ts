@@ -169,7 +169,7 @@ const RAW = JSON.parse(readFileSync('public/cards/speed.json', 'utf8'));
 const ALL_SKILLS: string[] = (Array.isArray(RAW) ? RAW : RAW.cards ?? Object.values(RAW)).filter((c: any) => c.type === 'Skill Card').map((c: any) => c.name);
 {
   console.log('\n--- equippable');
-  check(ALL_SKILLS.length === 124, `speed.json lists 124 Skill Cards (${ALL_SKILLS.length})`);
+  check(ALL_SKILLS.length === 156, `speed.json lists 156 Skill Cards (${ALL_SKILLS.length})`);
   const playable = new Set(PLAYABLE_SKILLS());
   let ok = 0;
   for (const s of ALL_SKILLS) {

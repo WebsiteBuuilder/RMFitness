@@ -195,7 +195,7 @@ export function installSkills(K: Record<string, SkillDef>) {
                 setN(e, p, 'foodChainUid', c.uid + 1);
                 try {
                   const fc = yield* normalSummonNow(e, p, c);
-                  if (fc) tag(fc).tribS = 2; // it is still treated as a Tribute Summon
+                  if (fc) tag(fc).tribS = Math.max(1, e.tributesNeeded(levelOf(e, c))); // it is still treated as a Tribute Summon
                 } finally {
                   setN(e, p, 'foodChainUid', 0);
                 }
@@ -250,7 +250,17 @@ export function installSkills(K: Record<string, SkillDef>) {
       for (const a of gys.filter(sl[0])) for (const b of gys.filter(sl[1])) if (a !== b) out.push([a, b]);
       return out;
     };
-    const plans = (e: Engine, p: Pid) => (freeMZ(e, p) ? fossils(e, p).filter((f) => combos(e, p, f).length > 0 && !e.summonBlocked(p, f, 'special', 'fusion')) : []);
+    /** Blocked from the Extra Deck by something else than its "Fossil Fusion" Summoning condition (which this Skill meets). */
+    const blocked = (e: Engine, p: Pid, f: Card) => {
+      const prev = e.state.fx.ignoreCond;
+      e.state.fx.ignoreCond = f.uid;
+      try {
+        return e.summonBlocked(p, f, 'special', 'fusion');
+      } finally {
+        e.state.fx.ignoreCond = prev;
+      }
+    };
+    const plans = (e: Engine, p: Pid) => (freeMZ(e, p) ? fossils(e, p).filter((f) => combos(e, p, f).length > 0 && !blocked(e, p, f)) : []);
     const canBanish = (e: Engine, p: Pid) => getN(e, p, 'dig') < 1 && e.player(p).hand.length > 0 && opt(e, p, 'mipBanish');
     const canFuse = (e: Engine, p: Pid) => getN(e, p, 'dig') >= 1 && e.inMainPhase() && opt(e, p, 'mipFuse') && plans(e, p).length > 0;
     const addCounter = (e: Engine, p: Pid) => {

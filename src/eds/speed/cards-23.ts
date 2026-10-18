@@ -165,12 +165,29 @@ export function install(E: Record<string, EffectDef>, h: SpeedHelpers) {
     // "When it attacks a Defense Position monster whose DEF is lower than the ATK of the equipped monster, inflict the difference as Battle Damage."
     grantsPiercing: (_e, card, _p, attacker) => card.equippedTo === attacker.uid,
     // "When the equipped monster you control is returned to the hand and this card is sent to the GY, return this card to your hand."
-    *onLeaveField(e, fc, controller) {
+    // Scripts usually send a monster's equips to the GY just before it leaves the field, so the Sword (in the GY) remembers its
+    // host and watches it leave (watchLeave); if the host is already back in the hand, it returns at once.
+    *onLeaveField(e, fc, controller, reason) {
       const host = fc.equippedTo;
-      if (host === undefined || zoneOf(e, host) !== 'hand' || e.find(host)?.loc.player !== controller) return;
-      if (zoneOf(e, fc.uid) !== 'gy') return;
+      if (host === undefined || zoneOf(e, fc.uid) !== 'gy' || reason !== 'used') return;
+      const hostCard = e.fieldCard(host);
+      if (hostCard && e.controller(host) === controller) {
+        ((e.state.fx.kusanagi ??= {}) as Record<number, { host: number; turn: number }>)[fc.uid] = { host, turn: e.state.turn };
+        return;
+      }
+      if (zoneOf(e, host) !== 'hand' || e.find(host)?.loc.player !== controller) return;
       e.toHandOf(fc.uid, controller);
       e.log(controller, 'Sword of Kusanagi returns to the hand');
+    },
+    *watchLeave(e, card, owner, fc, controller) {
+      const map = (e.state.fx.kusanagi ?? {}) as Record<number, { host: number; turn: number }>;
+      const w = map[card.uid];
+      if (!w || w.host !== fc.uid) return;
+      delete map[card.uid];
+      // (the leave can be reported after the turn moved on: an End Phase return of a Spirit monster)
+      if (controller !== owner || zoneOf(e, fc.uid) !== 'hand' || zoneOf(e, card.uid) !== 'gy') return;
+      e.toHandOf(card.uid, owner);
+      e.log(owner, 'Sword of Kusanagi returns to the hand');
     },
   });
 

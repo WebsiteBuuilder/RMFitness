@@ -3467,6 +3467,9 @@ export class Engine {
 
   canAttackDirectly(m: FieldCard): boolean {
     if (this.speed && m.tags?.directTurn === this.state.turn) return true;
+    // skills-2024a: monsters that "cannot be targeted for attacks, but do not prevent your opponent from attacking you directly" (Fear of the Dark).
+    const atkCtl = this.speed ? this.controller(m.uid) : null;
+    if (atkCtl !== null && this.monsters(other(atkCtl)).length > 0 && this.monsters(other(atkCtl)).every((t) => t.tags?.noAttackTarget)) return true;
     const owner = this.controller(m.uid); // audit-skills: Skills letting monsters attack directly
     if (owner !== null && this.skillDefs().some((x) => x.p === owner && x.sk.canAttackDirectly?.(this, owner, m))) return true;
     const d = this.effectOn(m)?.directAttack;

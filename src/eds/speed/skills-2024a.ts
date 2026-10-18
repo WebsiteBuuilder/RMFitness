@@ -2,10 +2,11 @@
 // Speed Duel: Battle City Finals. installSkills runs at the end of skills.ts, so the helpers imported from it are
 // defined by then (they are only used inside Skill hooks, never at module top level).
 import type { SkillDef } from '../skills';
-import type { Engine, Step } from '../engine';
-import type { Card, FieldCard, Pid } from '../types';
+import type { Choice, Engine, Step } from '../engine';
+import type { Card, FieldCard, Pid, Prompt } from '../types';
 import type { EffectDef } from '../effects';
-import { affectable, changePos, chooseOption, discardOne, fusionPlans, fusionSummon, handField, pick, pickOne, reorder, ss, ssOne, toHandFrom } from './skills';
+import { setSpiritPlaceHook } from './helpers';
+import { affectable, changePos, chooseOption, discardOne, fusionPlans, fusionSummon, handField, pick, pickOne, reorder, ssOne, toHandFrom } from './skills';
 
 // ---------- local basics (copies of the skills.ts ones) ----------
 const other = (p: Pid): Pid => (p === 0 ? 1 : 0);
@@ -258,6 +259,7 @@ export function installSkills(K: Record<string, SkillDef>) {
 
   // ----- Fear of the Dark -----
   K['Fear of the Dark'] = fearOfTheDark();
+  setSpiritPlaceHook(spiritAsMonster);
 
   // ----- As I Predicted...! -----
   K['As I Predicted...!'] = {
@@ -749,14 +751,37 @@ function exchangeEffect(e: Engine) {
 }
 
 // ---------- Fear of the Dark ----------
+const MESSAGES = ['Spirit Message "I"', 'Spirit Message "N"', 'Spirit Message "A"', 'Spirit Message "L"'];
+const isMessage = (e: Engine, c: Card) => e.namesOf(c).some((n) => MESSAGES.includes(n));
+/**
+ * helpers.placeSpiritMessage hook: "If a "Spirit Message" card would be placed on your field with "Destiny Board", you can Special
+ * Summon it as a Normal Monster (Fiend/DARK/Level 1/ATK 0/DEF 0) instead." A no-op unless `p`'s Skill is Fear of the Dark.
+ */
+function* spiritAsMonster(e: Engine, p: Pid, card: Card): Generator<Prompt, boolean, Choice> {
+  const ps = e.player(p);
+  if (ps.skill !== 'Fear of the Dark' || !ps.skillRevealed || !freeMZ(e, p) || !stOf(e, p).some((c) => c.faceUp && e.isNamed(c, 'Destiny Board'))) return false;
+  if (!(yield* e.yesno(p, `Fear of the Dark: Special Summon ${card.name} as a monster instead of placing it?`))) return false;
+  ((e.state.fx.trapMonster ??= {}) as Record<number, unknown>)[card.uid] = { race: 'Fiend', attribute: 'DARK', level: 1 };
+  e.state.fx.ignoreCond = card.uid;
+  try {
+    yield* e.specialSummon(card.uid, p, 'atk');
+  } finally {
+    e.state.fx.ignoreCond = undefined;
+  }
+  const m = e.fieldCard(card.uid);
+  if (!m) return false;
+  // "It cannot be targeted for attacks, but does not prevent your opponent from attacking you directly" (engine.canAttackDirectly).
+  Object.assign(tag(m), { noAttackTarget: 1 });
+  e.log(p, `${card.name} is Special Summoned as a Normal Monster`);
+  return true;
+}
 function fearOfTheDark(): SkillDef {
-  const MESSAGES = ['Spirit Message "I"', 'Spirit Message "N"', 'Spirit Message "A"', 'Spirit Message "L"'];
-  const isMessage = (e: Engine, c: Card) => e.namesOf(c).some((n) => MESSAGES.includes(n));
   const necrofear = (e: Engine, p: Pid) => faceUp(e, p, (m) => e.isNamed(m, 'Dark Necrofear')).length > 0;
   return {
     *startOfDuel() {},
     eff: {
       shields: (e, _src, target, how, ctl) => how !== 'battle' && necrofear(e, ctl) && (e.isNamed(target, 'Destiny Board') || isMessage(e, target)) && ctlOf(e, target) === ctl && e.actor === other(ctl),
+      guardsTarget: (e, _src, ctl, target) => !!target.tags?.noAttackTarget && ctlOf(e, target) === ctl,
     },
     use: {
       oncePerDuel: false,
@@ -771,4 +796,3 @@ function fearOfTheDark(): SkillDef {
     },
   };
 }
-void ss;
