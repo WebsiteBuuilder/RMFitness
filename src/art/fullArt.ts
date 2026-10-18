@@ -146,3 +146,47 @@ export function fullArtCard(src: HTMLCanvasElement, name: string, fin: number): 
   cache.set(key, out);
   return out;
 }
+
+let eyeCanvas: HTMLCanvasElement | null = null;
+/** The Millennium Eye (Wedjat) in gold on black, for an additive card panel (black shows nothing).
+ *  Drawn on a card-shaped canvas (CardPanel's 0.686 aspect), the eye across its middle. */
+export function millenniumEyeCanvas(): HTMLCanvasElement {
+  if (eyeCanvas) return eyeCanvas;
+  const W = 343;
+  const H = 500;
+  const c = canvas(W, H);
+  const g = c.getContext('2d');
+  if (!g) return c;
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, W, H);
+  g.translate(W / 2, H / 2);
+  const k = W / 110;
+  g.scale(k, k);
+  g.translate(-50, -32);
+  const gold = g.createLinearGradient(0, 0, 0, 64);
+  gold.addColorStop(0, '#fff6d8');
+  gold.addColorStop(0.5, '#ffd56a');
+  gold.addColorStop(1, '#c8961e');
+  g.shadowColor = '#ffc93a';
+  g.shadowBlur = 6;
+  g.strokeStyle = gold;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.lineWidth = 5;
+  const path = (d: string) => g.stroke(new Path2D(d));
+  path('M10 13 Q50 -4 92 10');
+  path('M8 30 Q50 6 92 28 Q50 46 8 30 Z');
+  path('M40 41 L34 60');
+  path('M58 40 Q66 58 80 56 Q90 54 86 46');
+  // the iris: a gold ring around a dark pupil (dark is see-through on an additive panel)
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(50, 27, 9, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = '#ffd56a';
+  g.beginPath();
+  g.arc(50, 27, 4.2, 0, Math.PI * 2);
+  g.fill();
+  eyeCanvas = c;
+  return c;
+}

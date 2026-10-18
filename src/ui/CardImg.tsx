@@ -68,7 +68,7 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
     // the name is sized to fit the card's width (long names shrink instead of being cut off)
     const vars = { '--ofimg': `url("${url}")`, '--ofname': `${Math.min(6.6, 92 / (name.length * 0.56)).toFixed(2)}cqw`, ...(fig ? { '--offig': `url("${fig}")` } : {}) } as Record<string, string>;
     return (
-      <span class={`lvr-of ${mi ? 'lvr-mi' : ''} ${cls.replace(/\blvr(-OF|-MI)?\b/g, '')}`} style={vars}>
+      <span class={`lvr-of ${mi ? 'lvr-mi' : ''} ${fig ? 'has-fig' : ''} ${cls.replace(/\blvr(-OF|-MI)?\b/g, '')}`} style={vars}>
         <i class="lvr-rays" />
         <i class="lvr-ofrim" />
         <img class={`cimg lvr lvr-${tier.id}`} src={url} alt={name} draggable={false} onError={() => setBroken(name)} />

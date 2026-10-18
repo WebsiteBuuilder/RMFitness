@@ -17,7 +17,7 @@ import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, 
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
-import { fullArtCard } from './fullArt';
+import { fullArtCard, millenniumEyeCanvas } from './fullArt';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
@@ -938,16 +938,14 @@ export class Director {
   private millenniumWindup(tl: Timeline, att: Actor, M: P3, D: number) {
     const st = this.stage;
     const U = this.U;
-    const eye = tl.own(new Ring(3 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
-    (eye.u.uColor.value as Vector3).multiplyScalar(0.55);
+    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 2.8 * U, 0x000000));
     // drawn before the figures: it hangs behind the attacker, never over it
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(att.x, att.y + att.size * 0.3, att.z - 0.8);
-    eye.spinSpeed = 0.4;
     eye.u.uOpacity.value = 0;
     tl.span(0.15, D, (k) => {
-      eye.u.uEye.value = Math.max(0.001, easeOut(k));
-      eye.u.uOpacity.value = 0.8 * clamp01(k * 2);
+      eye.u.uOpacity.value = 0.85 * clamp01(k * 2);
+      eye.mesh.scale.set(1, Math.max(0.04, easeOut(k)), 1);
     });
     tl.at(0.15, () => (this.dimTarget = 0.92));
     tl.span(0.3, D, (_k, dt) => {
@@ -983,17 +981,17 @@ export class Director {
       eye.u.uOpacity.value = 0.6 * (1 - easeIn(k));
       eye.mesh.scale.setScalar(lerp(0.6, 1.4, easeOut(k)));
     });
-    const ring = tl.own(new Glow(5 * U, 5 * U, 'shock', 0xffd56a, 0x9b4dff));
+    const ring = tl.own(new Glow(4 * U, 4 * U, 'shock', 0xffd56a, 0x9b4dff));
     ring.mesh.position.set(P.x, P.y, P.z + 0.2);
     ring.u.uOpacity.value = 0;
     tl.span(hitAt, hitAt + 0.6, (k) => {
       ring.u.uK.value = easeOut(k);
-      ring.u.uOpacity.value = 1 - k;
+      ring.u.uOpacity.value = 0.6 * (1 - k);
     });
     tl.at(hitAt, () => {
-      st.pulse('chroma', 0.5);
-      this.flash(0xffc93a, 0.2);
-      for (const [c, n] of [[0xffd56a, 40], [0xfff6d8, 24], [0x9b4dff, 16]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
+      st.pulse('chroma', 0.35);
+      this.flash(0xffc93a, 0.12);
+      for (const [c, n] of [[0xffd56a, 26], [0xfff6d8, 12], [0x9b4dff, 10]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
       chime(0.95);
     });
   }
@@ -1007,28 +1005,33 @@ export class Director {
     const st = this.stage;
     const U = this.U;
     const q = this.q;
-    const eye = tl.own(new Ring(2.9 * U, 0xffd56a, 4242, { inner: 0.9, outer: 0.97, eye: true }));
-    // dimmed like the Shadow Realm's eye, so it reads as an eye of light, not a solid disc
-    (eye.u.uColor.value as Vector3).multiplyScalar(0.7);
+    // the Wedjat itself, drawn in gold (an additive panel: its black is see-through), opening
+    // from a closed line, with a gold ring turning behind it
+    const eye = tl.own(new CardPanel(millenniumEyeCanvas(), 3.2 * U, 0x000000));
     eye.mesh.renderOrder = -4;
     eye.mesh.position.set(at.x, at.y, at.z);
-    eye.spinSpeed = 0.25;
     eye.u.uOpacity.value = 0;
-    tl.span(S + 0.05, S + 0.5, (k) => {
-      eye.u.uEye.value = Math.max(0.001, easeOut(k));
-      eye.u.uOpacity.value = clamp01(k * 2) * 0.8;
-      eye.mesh.scale.setScalar(lerp(0.7, 1, easeOut(k)));
+    const halo = tl.own(new Ring(2.6 * U, 0xffc93a, 4242, { inner: 0.86, outer: 0.95 }));
+    halo.mesh.renderOrder = -5;
+    halo.mesh.position.set(at.x, at.y, at.z - 0.05);
+    halo.spinSpeed = 0.5;
+    halo.u.uOpacity.value = 0;
+    tl.span(S + 0.05, S + 0.45, (k) => {
+      const e = easeOut(k);
+      eye.u.uOpacity.value = clamp01(k * 2.5);
+      eye.mesh.scale.set(lerp(0.8, 1, e), Math.max(0.04, e), 1);
+      halo.u.uOpacity.value = 0.7 * e;
+      halo.mesh.scale.setScalar(lerp(0.6, 1, e));
     });
-    tl.at(S + 0.45, () => {
-      st.pulse('flash', 0.22);
-      this.flash(0xffd56a, 0.2);
+    tl.at(S + 0.4, () => {
+      st.pulse('flash', 0.18);
       boom(0.5);
     });
     // it closes as the card bursts, so it never sits over the monster
-    tl.span(S + 0.75, S + 1.1, (k) => {
-      eye.u.uEye.value = Math.max(0.001, 1 - easeIn(k));
-      eye.u.uOpacity.value = 0.8 * (1 - k);
-      eye.mesh.scale.setScalar(lerp(1, 1.5, easeOut(k)));
+    tl.span(S + 0.75, S + 1.05, (k) => {
+      eye.mesh.scale.set(1 + 0.2 * k, Math.max(0.04, 1 - easeIn(k)), 1);
+      eye.u.uOpacity.value = 1 - easeIn(k);
+      halo.u.uOpacity.value = 0.7 * (1 - k);
     });
     // gold sand pulled into the pupil
     tl.span(S + 0.05, S + 0.6, (_k, dt) => {
@@ -1490,8 +1493,8 @@ export class Director {
       tl.at(S + 0.6, () => {
         this.panelShards(tl, flyer, mill ? 0xffd56a : 0xfff6c8, 3.4 * U);
         st.pulse('chroma', 0.7);
-        st.pulse('flash', 0.4);
-        this.flash(0xffffff, 0.34);
+        st.pulse('flash', mill ? 0.22 : 0.4);
+        this.flash(mill ? 0xffc93a : 0xffffff, mill ? 0.2 : 0.34);
         st.shake(0.55);
         st.hitStop(0.1);
         boom(0.8);
@@ -3020,7 +3023,7 @@ export class Director {
     // a Millennium blow lands in gold
     const mill = !!a && finishOf(a) >= FIN.MI;
     if (mill) this.millenniumBlow(tl, M, P, W, hitAt);
-    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
+    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)) * (mill ? 0.75 : 1), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
       boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
       // the battle damage lands with the blow

@@ -839,6 +839,27 @@ img.cimg.lvr-MI {
   mask: radial-gradient(ellipse 48% 44% at 50% 42%, transparent 70%, #000 100%);
   mix-blend-mode: screen;
 }
+/* the art itself is cast in gold, a relief the living monster climbs out of in full color
+   (only where the card has a cut-out; without one the art keeps its color) */
+.lvr-mi.has-fig > .ofx-art {
+  filter: grayscale(1) sepia(1) saturate(2.2) hue-rotate(-8deg) brightness(0.86) contrast(1.25);
+}
+.lvr-mi.has-fig > .ofx-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, #fff6d855 46%, transparent 60%) 0 0 / 300% 100%;
+  animation: lvr-mi-sheen 4.5s linear infinite;
+  mix-blend-mode: overlay;
+}
+@keyframes lvr-mi-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
 /* a carved gold edge inside the card */
 .lvr-mi > .ofx-bg {
   box-shadow: inset 0 0 0 max(1px, 1cqw) #ffd56a, inset 0 0 0 max(2px, 1.8cqw) #2a1a00, inset 0 0 0 max(3px, 2.3cqw) #a8740c55;
@@ -1152,3 +1173,10 @@ img.cimg.lvr-MI {
   display: none;
 }
 
+
+/* a list-row thumbnail is too small for the plate: the edge and the tier chip beside it say it */
+@container (max-width: 69px) {
+  .lvr-of.lvr-of > .lvr-chip {
+    display: none !important;
+  }
+}
