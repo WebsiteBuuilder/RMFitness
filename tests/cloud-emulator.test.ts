@@ -189,6 +189,19 @@ async function main() {
   check(await until(() => back.status === 'error') && /took the win/.test(back.detail), 'the phone that walked away hears the other took the win');
   back.close();
   a.on();
+  // the host gives up while the guest is away: the guest comes back to the win
+  const room2 = 'R' + code().slice(0, 3);
+  const h2 = new FirebaseAdapter(room2, true, async () => a);
+  const g2 = new FirebaseAdapter(room2, false, async () => b);
+  check(await until(() => h2.status === 'connected' && g2.status === 'connected'), 'a second room links');
+  h2.send({ type: 'JOIN', seat: 0 } as never);
+  b.off();
+  await wait(500);
+  h2.forfeit();
+  h2.close();
+  b.on();
+  check(await until(() => /left the duel/.test(g2.detail) && g2.abandoned()), 'a host who gives up while the guest is away hands the guest the win');
+  g2.close();
   host.close();
   lost.close();
   clash.close();

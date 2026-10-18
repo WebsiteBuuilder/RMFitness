@@ -606,6 +606,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {hotseat ? `${me.name} loses this duel.` : 'It counts as a loss.'}
         </ConfirmSheet>
       )}
+      {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock" />}
       {online && view.status !== 'connected' && state.winner === null && (
         <div class="netwarn">
           <span>{view.detail || 'Connection lost. Rejoining…'}</span>
