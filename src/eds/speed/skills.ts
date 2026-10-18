@@ -40,17 +40,17 @@ function boostPerm(m: FieldCard, atk: number, def = 0) {
 function noBattleDamage(e: Engine, p: Pid) {
   (e.state.fx.noBattleDamage ??= [-1, -1])[p] = e.state.turn;
 }
-function* pick<T extends Card>(e: Engine, p: Pid, title: string, cards: T[], min = 1, max = 1): Gen<T[] | null> {
+export function* pick<T extends Card>(e: Engine, p: Pid, title: string, cards: T[], min = 1, max = 1): Gen<T[] | null> {
   if (cards.length === 0) return min === 0 ? [] : null;
   const picks = yield* e.select(p, title, e.optionsFor(cards, true), min, max, false);
   if (!picks) return null;
   return picks.map((i) => cards[i]).filter((c): c is T => !!c);
 }
-function* pickOne<T extends Card>(e: Engine, p: Pid, title: string, cards: T[]): Gen<T | null> {
+export function* pickOne<T extends Card>(e: Engine, p: Pid, title: string, cards: T[]): Gen<T | null> {
   const r = yield* pick(e, p, title, cards, 1, 1);
   return r && r.length ? r[0] : null;
 }
-function* chooseOption(e: Engine, p: Pid, title: string, labels: string[]): Gen<number | null> {
+export function* chooseOption(e: Engine, p: Pid, title: string, labels: string[]): Gen<number | null> {
   if (labels.length === 0) return null;
   const choice = yield { kind: 'select', player: p, title, options: labels.map((l) => ({ label: l })), min: 1, max: 1, cancel: false };
   if (typeof choice === 'object' && 'picks' in choice && choice.picks.length) return choice.picks[0];
@@ -84,9 +84,9 @@ const inDeck = (e: Engine, p: Pid, test: (c: Card) => boolean) => e.player(p).de
 const inHand = (e: Engine, p: Pid, test: (c: Card) => boolean) => e.player(p).hand.filter(test);
 const faceDownST = (e: Engine, p: Pid) => e.spells(p).filter((c) => !c.faceUp);
 /** "It's Jinzo!": "Jinzo" monsters are unaffected by the opponent's Skills. Filters what a Skill of `p` may affect. */
-const affectable = <T extends FieldCard>(e: Engine, p: Pid, list: T[]) => list.filter((m) => !(e.isNamed(m, 'Jinzo') && e.controller(m.uid) === other(p) && e.player(other(p)).skill === "It's Jinzo!"));
+export const affectable = <T extends FieldCard>(e: Engine, p: Pid, list: T[]) => list.filter((m) => !(e.isNamed(m, 'Jinzo') && e.controller(m.uid) === other(p) && e.player(other(p)).skill === "It's Jinzo!"));
 
-function* toHandFrom(e: Engine, p: Pid, title: string, cards: Card[], reveal = false): Gen<Card | null> {
+export function* toHandFrom(e: Engine, p: Pid, title: string, cards: Card[], reveal = false): Gen<Card | null> {
   const c = yield* pickOne(e, p, title, cards);
   if (!c) return null;
   const from = e.find(c.uid)?.loc.zone;
@@ -111,7 +111,7 @@ function* shuffleIn(e: Engine, uids: number[]): Step {
   for (const o of owners) e.player(o).deck = e.shuffle(e.player(o).deck);
 }
 /** Special Summons a card, then shuffles the Deck if it came from there. `ignoreCond`: ignoring its Summoning conditions. */
-function* ss(e: Engine, p: Pid, c: Card, pos: 'atk' | 'def' = 'atk', ignoreCond = false): Gen<FieldCard | null> {
+export function* ss(e: Engine, p: Pid, c: Card, pos: 'atk' | 'def' = 'atk', ignoreCond = false): Gen<FieldCard | null> {
   if (!freeMZ(e, p)) return null;
   const fromDeck = e.find(c.uid)?.loc.zone === 'deck';
   if (ignoreCond) e.state.fx.ignoreCond = c.uid;
@@ -123,12 +123,12 @@ function* ss(e: Engine, p: Pid, c: Card, pos: 'atk' | 'def' = 'atk', ignoreCond 
   if (fromDeck) e.player(p).deck = e.shuffle(e.player(p).deck);
   return e.fieldCard(c.uid);
 }
-function* ssOne(e: Engine, p: Pid, title: string, cards: Card[], pos: 'atk' | 'def' = 'atk', ignoreCond = false): Gen<FieldCard | null> {
+export function* ssOne(e: Engine, p: Pid, title: string, cards: Card[], pos: 'atk' | 'def' = 'atk', ignoreCond = false): Gen<FieldCard | null> {
   if (!freeMZ(e, p) || !cards.length) return null;
   const c = yield* pickOne(e, p, title, cards);
   return c ? yield* ss(e, p, c, pos, ignoreCond) : null;
 }
-function* discardOne(e: Engine, p: Pid, title: string, cands: Card[]): Gen<Card | null> {
+export function* discardOne(e: Engine, p: Pid, title: string, cands: Card[]): Gen<Card | null> {
   const c = yield* pickOne(e, p, title, cands);
   if (!c) return null;
   yield* e.discard(p, c.uid);
@@ -143,7 +143,7 @@ function banishAll(e: Engine, p: Pid, cards: Card[]) {
   if (cards.length) e.log(p, `${e.player(p).name} banishes ${cards.map((c) => c.name).join(', ')}`);
 }
 /** Lets the player put the given Deck cards back on the top or bottom of the Deck in any order. */
-function* reorder(e: Engine, chooser: Pid, owner: Pid, cards: Card[], where: 'top' | 'bottom'): Step {
+export function* reorder(e: Engine, chooser: Pid, owner: Pid, cards: Card[], where: 'top' | 'bottom'): Step {
   const ps = e.player(owner);
   const left = cards.filter((c) => ps.deck.some((d) => d.uid === c.uid));
   const ordered: Card[] = [];
@@ -179,7 +179,7 @@ function placeFaceUp(e: Engine, c: Card, p: Pid): FieldCard | null {
   return fc;
 }
 /** Changes a monster's battle position (face-down Defense -> face-up Attack flips it). */
-function* changePos(e: Engine, m: FieldCard): Step {
+export function* changePos(e: Engine, m: FieldCard): Step {
   const ctl = e.controller(m.uid);
   if (ctl === null) return;
   if (!m.faceUp) {
@@ -219,8 +219,8 @@ function combos(e: Engine, fusion: Card, pool: Card[]): Card[][] {
   walk(0, []);
   return out;
 }
-type FusionPlan = { fusion: Card; combos: Card[][] };
-function fusionPlans(e: Engine, p: Pid, test: (f: Card) => boolean, pool: (f: Card) => Card[], ok: (f: Card, mats: Card[]) => boolean = () => true): FusionPlan[] {
+export type FusionPlan = { fusion: Card; combos: Card[][] };
+export function fusionPlans(e: Engine, p: Pid, test: (f: Card) => boolean, pool: (f: Card) => Card[], ok: (f: Card, mats: Card[]) => boolean = () => true): FusionPlan[] {
   const out: FusionPlan[] = [];
   for (const f of e.player(p).fusion) {
     if (!test(f)) continue;
@@ -229,9 +229,9 @@ function fusionPlans(e: Engine, p: Pid, test: (f: Card) => boolean, pool: (f: Ca
   }
   return out;
 }
-const handField = (e: Engine, p: Pid) => [...e.player(p).hand.filter((c) => mon(e, c)), ...e.monsters(p)];
+export const handField = (e: Engine, p: Pid) => [...e.player(p).hand.filter((c) => mon(e, c)), ...e.monsters(p)];
 /** Asks which Fusion Monster and which materials, sends the materials to the GY (or banishes them) and Summons it. */
-function* fusionSummon(e: Engine, p: Pid, label: string, plans: FusionPlan[], banish = false, ignoreCond = false): Gen<FieldCard | null> {
+export function* fusionSummon(e: Engine, p: Pid, label: string, plans: FusionPlan[], banish = false, ignoreCond = false): Gen<FieldCard | null> {
   if (!plans.length) return null;
   const f = yield* pickOne(e, p, `${label}: Summon which Fusion Monster?`, plans.map((x) => x.fusion));
   if (!f) return null;

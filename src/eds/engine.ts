@@ -610,6 +610,7 @@ export class Engine {
     let b = { atk: info.atk ?? 0, def: info.def ?? 0 };
     const set = this.effectOn(m)?.baseStats?.(this, m);
     if (set) b = set;
+    if (this.speed && m.tags?.origSet) b = { atk: m.tags.origAtk ?? 0, def: m.tags.origDef ?? 0 }; // skills-2024a: original ATK/DEF set by a Skill (Advent of Ra)
     if (this.state.fx.swapTurn === this.state.turn || (m.tags?.swapTurn !== undefined && m.tags.swapTurn === this.state.turn)) b = { atk: b.def, def: b.atk }; // audit-eds: Shield & Sword (only monsters on the field then)
     return b;
   }
@@ -657,7 +658,7 @@ export class Engine {
     const base = given.name;
     if (!this.speed || !base) return [base];
     const rule = nameRule(this.info(base));
-    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy) return [base];
+    if (!('faceUp' in given) && !rule.also.length && !rule.becomes?.gy && !this.state.fx.gyNames) return [base]; // skills-2024a: fx.gyNames
     // Where the card is now (a FieldCard kept from before it left the field is the same card, now elsewhere).
     const f = given.uid !== undefined && given.uid >= 0 ? this.find(given.uid) : null;
     const card = f?.card.name === base ? f.card : given;
@@ -681,7 +682,18 @@ export class Engine {
           this.naming--;
         }
       }
-    } else if (zone === 'gy' && rule.becomes?.gy) out.push(rule.becomes.name);
+    } else if (zone === 'gy') {
+      if (rule.becomes?.gy) out.push(rule.becomes.name);
+      // skills-2024a: a Skill adding names to cards in the GY too (Tribal Unity: "Harpie" monsters are also "Amazoness" monsters).
+      if (this.state.fx.gyNames && !this.naming) {
+        this.naming++;
+        try {
+          for (const x of this.skillFx()) for (const n of x.eff.addsNames?.(this, x.c, x.p, card as FieldCard) ?? []) out.push(n);
+        } finally {
+          this.naming--;
+        }
+      }
+    }
     if (!out.length || !out.some((n) => n !== base && !rule.also.includes(n))) out.unshift(base);
     for (const n of rule.also) if (!out.includes(n)) out.push(n);
     return [...new Set(out)];
@@ -856,9 +868,21 @@ export class Engine {
       this.event('roll', { player: fixed.p, amount: v, to: sides === 6 ? 'die' : 'coin' });
       return v;
     }
-    const v = 1 + Math.floor(this.rand() * sides);
+    let v = 1 + Math.floor(this.rand() * sides);
     // Shown on screen (dice and coins are public), so nobody has to dig the result out of the log.
     if (sides === 6 || sides === 2) this.event('roll', { player: this.actor ?? this.state.turnPlayer, amount: v, to: sides === 6 ? 'die' : 'coin' });
+    // skills-2024a: a Skill may let its owner re-roll their die once (See Me Rolling: SkillDef-side `reroll(e, p, result)`).
+    if (this.speed && sides === 6) {
+      const who = this.actor ?? this.state.turnPlayer;
+      for (const x of this.skillDefs()) {
+        const rr = (x.sk as { reroll?: (e: Engine, p: Pid, v: number) => boolean }).reroll;
+        if (x.p !== who || !rr || !rr(this, who, v)) continue;
+        v = 1 + Math.floor(this.rand() * sides);
+        this.log(who, `${this.player(who).name} re-rolls the die: ${v}`);
+        this.event('roll', { player: who, amount: v, to: 'die' });
+        break;
+      }
+    }
     return v;
   }
 
@@ -1200,6 +1224,24 @@ export class Engine {
           kept = yield* repl(this, m, byBattle);
         } finally {
           this.actor = prev;
+        }
+        if (kept) continue;
+      }
+      // b23: another face-up monster of its controller replaces the destruction (Tiki Soul).
+      if (m && m.faceUp && this.speed && this.find(uid)?.loc.zone === 'mz') {
+        const ctl = this.controller(uid) ?? m.owner;
+        const by = byBattle ? other(ctl) : this.actor;
+        let kept = false;
+        for (const s of this.monsters(ctl)) {
+          const h = s.uid !== uid && s.faceUp ? this.effectOn(s)?.allyDestroyReplace : undefined;
+          if (!h || kept || !this.fieldCard(uid)) continue;
+          const prev = this.actor;
+          this.actor = ctl;
+          try {
+            kept = yield* h(this, s, ctl, m, byBattle, by);
+          } finally {
+            this.actor = prev;
+          }
         }
         if (kept) continue;
       }
@@ -2188,6 +2230,18 @@ export class Engine {
           const h = getEffect(c.name)?.onEndPhaseBanished;
           if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'removed') yield* this.trig(c.uid, p, this.as(p, h(this, c, p)));
         }
+    // b21: Set Traps activated "During your End Phase" (Volcanic Eruption) are offered to the turn player here.
+    if (this.speed)
+      for (const fc of this.spells(tp).slice()) {
+        const eff = getEffect(fc.name);
+        if (!eff?.endPhaseTrap || !eff.resolve || fc.faceUp || fc.placedTurn === this.state.turn || this.state.winner !== null || !this.fieldCard(fc.uid)) continue;
+        if (this.trapsSealed(tp) || this.activationLocked(tp, 'trap') || this.cardActivationLocked(tp, fc) || this.activationBlocked(tp, fc) || this.prohibited(fc, fc.uid)) continue;
+        if (eff.canActivate && !this.withActor(tp, () => eff.canActivate!(this, fc, tp, 'main', {}))) continue;
+        if (!(yield* this.yesno(tp, `Activate ${fc.name}?`))) continue;
+        if (!this.fieldCard(fc.uid) || fc.faceUp) continue;
+        fc.faceUp = true;
+        yield* this.startChain(tp, fc, 'main', {});
+      }
     // Delayed destruction (Zone Eater, Steel Scorpion, Swordsman from a Distant Land).
     const doomed = [...this.monsters(0), ...this.monsters(1)].filter((m) => m.doomAt !== undefined && m.doomAt <= this.state.turn);
     if (doomed.length) {
@@ -2492,7 +2546,7 @@ export class Engine {
    * this card": Gilford the Lightning, Gravekeeper's Oracle). Uses the Normal Summon; the Tributed monsters (name, Level) are kept
    * in fx.tributedFor[uid] and the monster gets tags.tribS. Returns false when it could not be Summoned.
    */
-  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk'): Generator<Prompt, boolean, Choice> {
+  *tributeSummonWith(player: Pid, uid: number, tributes: number[], pos: Pos = 'atk', side: Pid = player): Generator<Prompt, boolean, Choice> {
     const f = this.find(uid);
     if (!f || f.loc.zone !== 'hand' || this.summonBlocked(player, f.card, 'normal', 'hand')) return false;
     const ps = this.player(player);
@@ -2505,18 +2559,19 @@ export class Engine {
         self.log(player, `${ps.name} Tributed ${m.name}`);
       }
     })());
-    const zone = this.freeMonsterZone(player);
+    // b23: `side` = the field it is Summoned to (The Winged Dragon of Ra - Sphere Mode: to the opponent's side).
+    const zone = this.freeMonsterZone(side);
     if (zone < 0 || this.find(uid)?.loc.zone !== 'hand') return false;
     const fc = this.toField(this.detach(uid)!, pos, true);
     fc.tags = { tribS: used.length };
-    ps.mz[zone] = fc;
+    this.player(side).mz[zone] = fc;
     ps.normalSummoned = true;
-    this.event('summon', { uid, player });
-    this.log(player, `${ps.name} Tribute Summoned ${fc.name}`);
+    this.event('summon', { uid, player: side });
+    this.log(player, `${ps.name} Tribute Summoned ${fc.name}${side !== player ? ` to ${this.player(side).name}'s field` : ''}`);
     yield* this.responseWindow('summon', { uid, summonKind: 'normal' });
     const eff = this.effectOn(fc);
-    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(player, eff.onSummon(this, fc, player, 'normal'));
-    if (this.fieldCard(uid)) yield* this.anySummon(fc, player, 'normal');
+    if (eff?.onSummon && this.fieldCard(uid)) yield* this.as(side, eff.onSummon(this, fc, side, 'normal'));
+    if (this.fieldCard(uid)) yield* this.anySummon(fc, side, 'normal');
     return true;
   }
 
@@ -2992,6 +3047,7 @@ export class Engine {
     const prevSource = this.levelSource;
     try {
       while (this.state.chain.length > 0 && this.state.winner === null) {
+        this.restoreKeptPositions(); // skills-2024b
         const link = this.state.chain.pop()!;
         this.levelSource = link.card.uid;
         if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
@@ -3024,6 +3080,7 @@ export class Engine {
         yield* this.afterResolve(link);
       }
     } finally {
+      this.restoreKeptPositions(); // skills-2024b
       this.resolving--;
       this.levelSource = prevSource;
     }
@@ -3037,6 +3094,26 @@ export class Engine {
    * Speed Duel: a Normal or Quick-Play Spell, a Ritual Spell, or a Normal or Counter Trap destroyed in the
    * chain still resolves (Master Duel and the real rules); Continuous, Equip and Field cards need to stay.
    */
+  /**
+   * skills-2024b: a chain link that may not change some monsters' battle positions (Dino Brain Immunity: Trap effects and
+   * Dinosaurs). Right before it resolves, the watcher marks them with tags.keepPos (4 + 1 if Defense + 2 if face-down);
+   * once it has resolved, a monster still on the field gets that position back.
+   */
+  private restoreKeptPositions() {
+    for (const p of [0, 1] as Pid[])
+      for (const m of this.monsters(p)) {
+        const k = m.tags?.keepPos;
+        if (!k) continue;
+        delete m.tags!.keepPos;
+        const pos: Pos = k & 1 ? 'def' : 'atk';
+        const faceUp = !(k & 2);
+        if (m.pos === pos && m.faceUp === faceUp) continue;
+        m.pos = pos;
+        m.faceUp = faceUp;
+        this.log(p, `${faceUp ? m.name : 'The monster'}'s battle position cannot be changed`);
+      }
+  }
+
   private resolvesFromGrave(link: ChainLink): boolean {
     if (!this.speed || (link.payload as { effect?: string } | undefined)?.effect) return false;
     const info = this.info(link.card.name);
@@ -3383,6 +3460,7 @@ export class Engine {
     }
     // b19: a face-up monster's blocksAttack stops other monsters attacking (Beelzeus of the Diabolic Dragons, Cloudcastle).
     if (this.speed) for (const p of [0, 1] as Pid[]) for (const src of this.monsters(p)) if (src.faceUp && src.uid !== m.uid && this.effectOn(src)?.blocksAttack?.(this, src, m, player)) return false;
+    if (this.speed && this.skillFx().some((x) => x.eff.blocksAttack?.(this, x.c, m, player))) return false; // skills-2024b: Skills stopping either player's attacks (Mokey Mokey Madness)
     if (eff?.attackCost && !eff.attackCost.can(this, m, player)) return false;
     return true;
   }
@@ -3624,6 +3702,8 @@ export class Engine {
     if (tEff?.onBeingAttacked) yield* this.trig(target.uid, opp, this.as(opp, tEff.onBeingAttacked(this, target, attacker, opp)));
     // audit-04: the attacker's own "before damage calculation" effect (Drillroid, Eater of Millions).
     if (this.speed && aEff?.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.trig(attacker.uid, player, this.as(player, aEff.beforeDamageCalc(this, attacker, target, player)));
+    // skills-2024b: Skills acting before damage calculation, for either player's monster (Wise Man Neos); `controller` is the Skill's owner.
+    if (this.speed) for (const x of this.skillFx()) if (x.eff.beforeDamageCalc && this.fieldCard(target.uid) && this.fieldCard(attacker.uid) && this.state.winner === null) yield* this.trig(undefined, x.p, this.as(x.p, x.eff.beforeDamageCalc(this, attacker, target, x.p)));
     if (this.speed && aEff?.attackerDamageStep && this.fieldCard(target.uid) && this.fieldCard(attacker.uid)) yield* this.trig(attacker.uid, player, this.as(player, aEff.attackerDamageStep(this, attacker, target, player))); // audit-10
     if (!this.fieldCard(target.uid) || !this.fieldCard(attacker.uid)) return;
     let atk = this.atkOf(attacker) + this.attackBonus(attacker, target);
@@ -3694,6 +3774,14 @@ export class Engine {
         hit = true;
         yield* this.as(ctl, h(this, m, ctl, foe));
       }
+      // b23: face-up monsters reacting after damage calculation of any battle (Tiki Curse).
+      for (const q of [0, 1] as Pid[])
+        for (const s of this.monsters(q)) {
+          const h = s.faceUp ? this.effectOn(s)?.anyAfterDamageCalc : undefined;
+          if (!h || this.state.winner !== null || !this.fieldCard(attacker.uid) || !this.fieldCard(target.uid)) continue;
+          hit = true;
+          yield* this.as(q, h(this, s, q, attacker, target));
+        }
       // Monsters that already left the field (banished) are no longer destroyed by this battle.
       if (hit) for (let i = destroyed.length - 1; i >= 0; i--) if (!this.fieldCard(destroyed[i])) destroyed.splice(i, 1);
     }
@@ -3747,6 +3835,13 @@ export class Engine {
       const h = l.eff.lingering?.afterAnyBattle;
       if (h && this.state.winner === null) yield* this.as(l.p, h(this, l.p, attacker, target));
     }
+    // b23: cards in a hand at the end of the Damage Step (Thunder Ball).
+    if (this.speed)
+      for (const q of [player, opp])
+        for (const c of this.player(q).hand.slice()) {
+          const h = getEffect(c.name)?.battleEndInHand;
+          if (h && this.state.winner === null && this.find(c.uid)?.loc.zone === 'hand') yield* this.trig(c.uid, q, this.as(q, h(this, c, q, attacker, target)));
+        }
     // Time Machine and other "destroyed by battle" responses.
     for (const b of before) {
       const g = this.find(b.uid);

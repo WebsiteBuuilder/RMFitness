@@ -354,6 +354,16 @@ export interface EffectDef {
   locksGraveST?(e: Engine, src: FieldCard, srcController: Pid, card: Card): boolean;
   /** audit-02: this card, in its owner's GY, sees a card leave the field without going to the GY (returned to the hand/Extra Deck, banished): Contact Gate. */
   watchLeave?(e: Engine, card: Card, owner: Pid, fc: FieldCard, controller: Pid, reason: string): Step;
+  // ---------- b21 hooks ----------
+  /** b21: a Set Trap that is activated during its controller's End Phase ("During your End Phase": Volcanic Eruption); the engine offers it there (canActivate gets trigger 'main'). */
+  endPhaseTrap?: boolean;
+  // ---------- b23 hooks ----------
+  /** b23: this face-up monster can replace the destruction of another face-up monster `m` (`by`: whose card destroys it; for battle, the opponent of m's controller). True = replaced (Tiki Soul). */
+  allyDestroyReplace?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard, byBattle: boolean, by: Pid | null): Generator<Prompt, boolean, Choice>;
+  /** b23: this face-up monster, after damage calculation of every monster-vs-monster battle, before battle destruction (Tiki Curse). */
+  anyAfterDamageCalc?(e: Engine, src: FieldCard, srcController: Pid, attacker: FieldCard, target: FieldCard): Step;
+  /** b23: this card in its owner's hand, at the end of the Damage Step of every monster-vs-monster battle (Thunder Ball). */
+  battleEndInHand?(e: Engine, card: Card, owner: Pid, attacker: FieldCard, target: FieldCard): Step;
 }
 
 export type SummonHow = 'normal' | 'set' | 'flip' | 'special';
