@@ -367,8 +367,17 @@ export const BONUS_GIFT: Gift = {
   note: 'More cards for your decks: a bonus present for every duelist.',
   madeBefore: Date.UTC(2026, 9, 21),
 };
+export const BONUS_GIFT_2: Gift = {
+  id: 'bonus-drop-2',
+  packs: 200,
+  title: 'Mega drop!',
+  heading: 'A mega present',
+  opened: 'Any set, any rarity, Overframe included. Hit Random deck after for fresh builds.',
+  note: 'Another round of cards for every duelist.',
+  madeBefore: Date.UTC(2026, 9, 31),
+};
 /** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
-export const GIFTS: Gift[] = [GIFT, BONUS_GIFT];
+export const GIFTS: Gift[] = [GIFT, BONUS_GIFT, BONUS_GIFT_2];
 /** A phone hands each gift to at most this many profiles (like the welcome packs). */
 export const GIFT_PROFILES = 2;
 
