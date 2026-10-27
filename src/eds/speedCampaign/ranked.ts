@@ -133,6 +133,11 @@ export interface RankedProgress {
 /** The season a date falls in: its local calendar month. */
 export const seasonOf = (now = new Date()) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** The season after this one: "2026-12" -> "2027-01". */
+export function nextSeason(season: string): string {
+  const [y, m] = season.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
 /** "October 2026" */
 export function seasonName(season: string): string {
   const [y, m] = season.split('-').map(Number);
@@ -209,7 +214,8 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     const last: SeasonRecord = { season: p.season, peak: p.peak, w: p.w, l: p.l, ...(p.kp ? { kp: p.kp } : {}) };
     const played = p.w + p.l + (p.d ?? 0) > 0;
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
-    const start = p.w >= SEASON_MIN_WINS ? seasonStart(p.peak) : 0;
+    // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
+    const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
     const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
@@ -265,6 +271,8 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
       else if (stars > 0) (stars--, (gained = -1));
       else if (step > tierFloor(t)) (step--, (stars = starsAt(step) - 1), (gained = -1));
     }
+    // leaving with nothing to take still costs something: today's first-win bonus star
+    if (forfeit && gained === 0) bonusDay = today;
   } else streak = 0;
   const next: RankedProgress = {
     ...p,

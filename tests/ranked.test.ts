@@ -153,6 +153,12 @@ ok(!r.kingPaid, 'no more milestone packs after 3');
 const pf = rankedProgress(newSoloSave(), day(1));
 ok(rankedFirst(pf) === rankedFirst(pf) && new Set(Array.from({ length: 20 }, (_, i) => rankedFirst({ ...pf, played: i }))).size === 2, 'turn order is fixed per duel and varies between duels');
 
+// Skipping a month (or jumping the clock two months ahead) starts fresh at Rookie with no starting prizes.
+opened = openRanked(speed, at(newSoloSave(), { season: '2026-10', step: 13, peak: 13, w: 20, l: 0, paid: [0, 1, 2, 3, 4, 5] }), new Date(2026, 11, 2));
+ok(rankedProgress(opened.solo, new Date(2026, 11, 2)).step === 0 && opened.speed === speed, 'a skipped month restarts at Rookie with no starting prizes');
+// Leaving with nothing to take costs today's bonus star.
+const rookieLeft = settleRanked(speed, at(newSoloSave(), { step: 0, stars: 0 }), LEFT, day(11));
+ok(rookieLeft.gained === 0 && rankedProgress(rookieLeft.solo).bonusDay === '2026-10-11', 'leaving with no stars to lose uses up the daily bonus star');
 // A thin season (under 10 wins) restarts at Rookie and pays no starting prizes.
 opened = openRanked(speed, at(newSoloSave(), { season: '2026-10', step: 13, peak: 13, w: 3, l: 0, paid: [0, 1, 2, 3, 4, 5] }), new Date(2026, 10, 2));
 ok(rankedProgress(opened.solo, new Date(2026, 10, 2)).step === 0 && opened.speed === speed, 'a season under 10 wins restarts at Rookie with no starting prizes');
