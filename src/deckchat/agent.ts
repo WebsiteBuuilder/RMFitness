@@ -122,8 +122,8 @@ export function claudeModel(apiKey: string): Model {
 export async function chatError(e: unknown): Promise<string> {
   const { default: Sdk } = await import('@anthropic-ai/sdk');
   if (e instanceof Sdk.APIUserAbortError) return 'Stopped.';
-  if (e instanceof Sdk.AuthenticationError) return "That key didn't work. Check it in Chat key.";
-  if (e instanceof Sdk.PermissionDeniedError) return "That key isn't allowed to use Claude. Check it in Chat key.";
+  if (e instanceof Sdk.AuthenticationError) return "That key didn't work. Tap Key at the top of the chat to fix it.";
+  if (e instanceof Sdk.PermissionDeniedError) return "That key isn't allowed to use Claude. Tap Key at the top of the chat to fix it.";
   if (e instanceof Sdk.RateLimitError) return 'Claude is busy for this key right now. Wait a minute and try again.';
   if (e instanceof Sdk.BadRequestError) return /credit/i.test(e.message) ? 'The key has no credit left. Add some at console.anthropic.com.' : `Claude couldn't read that request (${e.message.slice(0, 120)}).`;
   if (e instanceof Sdk.APIConnectionError) return 'No connection to Claude. Check the internet and try again.';

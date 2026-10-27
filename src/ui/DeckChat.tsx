@@ -205,7 +205,7 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
         <textarea
           rows={1}
           value={text}
-          placeholder={key || testModel() ? 'Ask for a deck, a change or a card…' : 'Add your key first'}
+          placeholder={key || testModel() ? 'Ask for a deck or a change…' : 'Add your key first'}
           aria-label="Message"
           maxLength={800}
           onInput={(ev) => setText((ev.target as HTMLTextAreaElement).value)}
