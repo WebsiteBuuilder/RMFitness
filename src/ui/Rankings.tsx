@@ -21,7 +21,7 @@ export const shadowSends = (name: string) => shadowLog().filter((e) => e.winner 
 export function boardStatsOf(name: string, speed: SpeedSave | null, eds: SaveFile | null, profileId?: string): BoardStats {
   const out = linkStats(speed, eds, shadowSends(name));
   const rp = profileId ? loadSolo(profileId).ranked : undefined;
-  return rp && rp.w + rp.l > 0 ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp } } : out;
+  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp } } : out;
 }
 
 /** This season's Ranked ladder: everyone who has played it this month, highest rank first. */

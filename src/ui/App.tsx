@@ -800,10 +800,24 @@ export function App() {
         setOfflineLeave(false);
         // the other phone walked out long ago (online rooms say so): the win goes to the one who stayed
         const won = !!session.adapter.abandoned?.();
-        const left = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
+        const left0 = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
         settled.current = session;
+        // a duel that got going still moves the Ranked ladder: dropping out can't dodge a lost star
+        let left = left0;
+        let rankedLine: string | null = null;
+        const base = left0?.save ?? speedSave;
+        if (base && profile && st.turn >= RIVAL_MIN_TURNS && !activeDeck(base)?.open) {
+          const lr = settleLinkRanked(base, loadSolo(profile.id), won ? 'w' : 'l', st.players[other(mySeat)].name);
+          writeSolo(profile.id, lr.solo);
+          rankedLine = lr.line;
+          if (left0) left = { ...left0, save: lr.speed };
+          else setSpeedSave(lr.speed);
+        }
         if (left) setSpeedSave(left.save);
-        const lines = left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.'];
+        const lines = [
+          ...(left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.']),
+          ...(rankedLine ? [rankedLine] : []),
+        ];
         const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
         setSpeedNews(lines);
         setNewsCards(cards);
