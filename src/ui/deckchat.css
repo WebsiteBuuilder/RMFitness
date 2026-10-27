@@ -39,6 +39,7 @@
 .dc-grip {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   white-space: nowrap;
   overflow: hidden;
   min-height: 36px;
@@ -54,7 +55,7 @@
 }
 .dc-head .chip {
   flex: none;
-  min-height: 34px;
+  min-height: 40px;
   white-space: nowrap;
 }
 @media (max-width: 380px) {
@@ -70,6 +71,9 @@
   min-width: 40px;
   min-height: 40px;
   font-size: 22px;
+}
+.dc-list > :first-child {
+  margin-top: auto; /* the chat sits by the input, like a messenger */
 }
 .dc-list {
   flex: 1;
@@ -169,8 +173,7 @@
 }
 .dc-change {
   margin-top: 5px;
-  max-width: 88%;
-  min-width: 60%;
+  width: 100%;
   border: 2px solid var(--gold);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.35);
@@ -178,7 +181,9 @@
 }
 .dc-change.undone {
   border-color: var(--dim);
-  opacity: 0.6;
+}
+.dc-change.undone ul {
+  opacity: 0.5;
 }
 .dc-change-head {
   display: flex;
@@ -203,7 +208,7 @@
 }
 .dc-sum {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
 }
 .dc-sum s {
@@ -403,7 +408,7 @@ button.dc-card:active {
 .dc-cost {
   margin: 2px 0 0 6px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 .sd-chat {
   flex: none;

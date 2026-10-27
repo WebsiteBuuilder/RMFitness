@@ -114,6 +114,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const [keyOpen, setKeyOpen] = useState(!chatKey() && !testModel());
   const [tall, setTall] = useState(false);
   const stop = useRef<AbortController | null>(null);
+  const running = useRef(false);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const deckRef = useRef(deck);
@@ -153,9 +154,11 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
 
   const send = async (raw: string) => {
     const msg = raw.trim();
-    if (!msg || busy) return;
+    // a ref, not state: two quick taps must not start two paid turns
+    if (!msg || busy || running.current) return;
     const model = testModel() ?? (key ? claudeModel(key) : null);
     if (!model) return setKeyOpen(true);
+    running.current = true;
     playBlip();
     setText('');
     const before = deckRef.current;
@@ -166,14 +169,14 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     setLive('');
     const ac = new AbortController();
     stop.current = ac;
+    let history = chat.messages;
     try {
       const hooks = {
         signal: ac.signal,
         onText: (d: string) => (setLive((t) => t + d), setBusy(null)),
         onTool: (n: string, i: unknown) => (setBusy(toolLine(n, i)), setLive('')),
-        onDeck: (d: SpeedDeck, prev: SpeedDeck) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added))),
+        onDeck: (d: SpeedDeck, prev: SpeedDeck) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added)), setTall(false)),
       };
-      let history = chat.messages;
       const r = await runTurn(model, history, msg, { deck: before, collection }, hooks).catch((e) => {
         // the chat outgrew the model: start the history over once and ask again
         if (!tooLong(e) || !history.length) throw e;
@@ -192,12 +195,13 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       const why = await chatError(e);
       if (!diffEmpty(diff)) turns = [...turns, { id: Date.now() + 1, who: 'claude', text: 'I changed the deck before this stopped.', diff, before }];
       // Claude keeps the request in mind (the history stays append-only)
-      const messages: Msg[] = [...chat.messages, { role: 'user', content: [{ type: 'text', text: msg }] }, { role: 'assistant', content: [{ type: 'text', text: `(I was stopped before I finished${diffEmpty(diff) ? '' : ', after changing the deck'}.)` }] }];
+      const messages: Msg[] = [...history, { role: 'user', content: [{ type: 'text', text: msg }] }, { role: 'assistant', content: [{ type: 'text', text: `(I was stopped before I finished${diffEmpty(diff) ? '' : ', after changing the deck'}.)` }] }];
       setChat({ messages, turns: [...turns, { id: Date.now() + 2, who: 'note', text: why }] });
-      if (/key/i.test(why)) setKeyOpen(true);
+      if (/didn't work|isn't allowed|no credit/.test(why)) setKeyOpen(true);
       buzz(30);
     } finally {
       stop.current = null;
+      running.current = false;
       onBusy?.(false);
       setBusy(null);
       setLive('');
@@ -230,8 +234,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
 
   const changes = chat.turns.filter((t) => t.diff);
   const lastChange = [...changes].reverse().find((t) => !t.undone);
-  // Redo only for the newest change, so it never lands on top of a later one
-  const redoable = changes.length && changes[changes.length - 1].undone ? changes[changes.length - 1] : null;
+  // Redo puts back the oldest undone change first, the reverse of the Undo order
+  const redoable = changes.slice(lastChange ? changes.indexOf(lastChange) + 1 : 0).find((t) => t.undone) ?? null;
   const asked = new Set(chat.turns.filter((t) => t.who === 'me').map((t) => t.text));
   const ideas = (deck.main.length ? IDEAS_DECK : IDEAS_EMPTY).filter((s) => !asked.has(s));
 
@@ -243,7 +247,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           <span>{tall ? '▾' : '▴'}</span>
         </button>
         <button class={`chip dc-keybtn ${key ? '' : 'on'}`} hidden={keyOpen} onClick={() => setKeyOpen(true)} aria-label="Claude key settings">
-          {key ? '⚙' : 'Add key'}
+          {key ? 'Key' : 'Add key'}
         </button>
         {chat.turns.length > 0 && !busy && (
           <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
@@ -265,7 +269,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       )}
 
       <div class="dc-list" ref={list} aria-live="polite">
-        {chat.turns.length === 0 && (
+        {chat.turns.length === 0 && !keyOpen && (
           <div class="dc-hello">
             <p>
               Tell me what you want and I'll {deck.main.length ? 'change this deck' : 'build the deck'} from {collection ? 'the cards you own' : 'every Speed Duel card'}. I can answer questions about cards and rules too.
@@ -365,11 +369,12 @@ function Changes({ diff, undone, canUndo, canRedo, onUndo, onRedo, onRead }: { d
       <div class="dc-change-head">
         <button class="dc-change-sum" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? 'Hide the changes' : 'Show the changes'}>
           <span class="dc-sum">
-            {undone && <s>Undone</s>}
+            {undone && <span class="dc-dim">Undone:</span>}
             {add.length > 0 && <span class="dc-plus">+{total(add)}</span>}
             {rem.length > 0 && <span class="dc-minus">−{total(rem)}</span>}
-            {diff.skill && <span class="dc-sum-skill">✦ {diff.skill.to ? bare(diff.skill.to) : 'no Skill'}</span>}
-            {diff.renamed && !diff.skill && <span>✎ Name</span>}
+            {(add.length > 0 || rem.length > 0) && <span>cards</span>}
+            {diff.skill && <span>· Skill</span>}
+            {diff.renamed && <span>· Renamed</span>}
           </span>
           <span class="dc-chev">{open ? '▾' : '▸'}</span>
         </button>
