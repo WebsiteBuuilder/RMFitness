@@ -61,7 +61,7 @@ function storeChat(deckId: string, c: Chat) {
     // a long chat keeps its last 60 lines on screen; the model history is dropped (not cut) when it gets too big
     const keep: Chat = { turns: c.turns.slice(-60), messages: c.messages };
     let raw = JSON.stringify(keep);
-    if (raw.length > 400_000) raw = JSON.stringify({ turns: keep.turns, messages: [] });
+    if (raw.length > 120_000) raw = JSON.stringify({ turns: keep.turns, messages: keep.messages.slice(-20) });
     localStorage.setItem(STORE(deckId), raw);
   } catch {
     /* storage full or blocked: it lasts until the game closes */
@@ -330,7 +330,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
         )}
       </div>
 
-      {!working && (
+      {!working && !chat.turns[chat.turns.length - 1]?.diff && (
         <div class={`dc-ideas ${chat.turns.length ? 'dc-ideas-one' : ''}`}>
           {(chat.turns.length ? ideas.slice(0, 2) : ideas).map((s) => (
             <button key={s} class="chip" onClick={() => send(s)}>

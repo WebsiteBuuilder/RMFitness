@@ -40,6 +40,8 @@ export type Model = (req: ModelRequest, onText?: (delta: string) => void, signal
 
 export const MODEL_ID = 'claude-opus-5-5';
 const MAX_STEPS = 25;
+/** a turn stops once it has spent this much of the player's credit (US dollars) */
+export const TURN_CAP = 1;
 
 export const SYSTEM = `You are the deck builder inside a Speed Duel game (Yu-Gi-Oh! Speed Duel, like Master Duel's deck editor). You talk with the duelist on their phone while they edit one deck, and you can read their cards and change that deck with tools.
 
@@ -96,6 +98,7 @@ export async function runTurn(model: Model, history: Msg[], userText: string, wo
   for (let step = 0; step < MAX_STEPS; step++) {
     const reply = await model({ system: SYSTEM, tools: TOOLS, messages }, hooks.onText, hooks.signal);
     if (reply.usage) usage.push(reply.usage);
+    const overCap = costOf(usage) >= TURN_CAP;
     messages.push({ role: 'assistant', content: reply.content as Anthropic.Beta.BetaContentBlockParam[] });
     const said = reply.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join('');
     if (said) text += (text ? '\n\n' : '') + said.trim();
@@ -106,6 +109,10 @@ export async function runTurn(model: Model, history: Msg[], userText: string, wo
       if (calls.length) messages.push({ role: 'user', content: calls.map((c) => ({ type: 'tool_result' as const, tool_use_id: c.id, content: 'Not run: your reply was cut off.', is_error: true })) });
       if (reply.stop_reason === 'max_tokens') return { messages, text, deck, usage, stopped: 'The answer was cut off. Ask it to go on.' };
       return { messages, text, deck, usage };
+    }
+    if (overCap) {
+      messages.push({ role: 'user', content: calls.map((c) => ({ type: 'tool_result' as const, tool_use_id: c.id, content: 'Not run: this answer reached its spending limit.', is_error: true })) });
+      return { messages, text, deck, usage, stopped: `Stopped at about $${TURN_CAP} for this answer to keep your credit safe. Ask it to go on if you want more.` };
     }
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const call of calls) {

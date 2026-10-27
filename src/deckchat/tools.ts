@@ -178,8 +178,11 @@ function summonHints(d: SpeedDeck): string[] {
   const out: string[] = [];
   const main = new Set(d.main);
   const fuses = d.main.some((n) => /Fusion Summon/i.test(card(n)?.desc ?? '') && card(n)?.kind !== 'monster');
+  const mons = d.main.map((n) => card(n)).filter((c): c is CardInfo => c?.kind === 'monster');
   for (const n of new Set(d.extra)) {
     const c = card(n);
+    if (c?.sub === 'Xyz' && mons.filter((m) => m.level === c.rank).length < 4) out.push(`Hint: ${n} needs 2 Level ${c.rank} monsters on the field; the deck has only ${mons.filter((m) => m.level === c.rank).length} Level ${c.rank} monsters`);
+    if (c?.sub === 'Synchro' && !mons.some((m) => m.tuner)) out.push(`Hint: ${n} needs a Tuner in the Main Deck`);
     if (!c || c.sub !== 'Fusion') continue;
     const mats = c.desc.match(/^"[^"]+"(?:\s*\+\s*"[^"]+")+/);
     const missing = mats ? [...mats[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).filter((m) => !main.has(m)) : [];
