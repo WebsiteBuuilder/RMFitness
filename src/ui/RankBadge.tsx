@@ -1,6 +1,6 @@
 // The Ranked Duel badge: the tier's shield, the rank's stars and the one-line summary, shared by
 // the Ranked screen and the home screen's tile.
-import { TOP, daysLeft, starsAt, stepName, tierOf, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { TOP, daysLeft, ladderClock, starsAt, stepName, tierOf, type RankedProgress } from '../eds/speedCampaign/ranked';
 import './ranked.css';
 
 /** The tier's badge: a shield in the tier's colors with its first letter (a crown at the top). */
@@ -33,5 +33,5 @@ export function RankStars({ p, fresh = 0 }: { p: Pick<RankedProgress, 'step' | '
 
 /** The short line under the rank on the home tile. */
 export function rankedNote(p: RankedProgress): string {
-  return `${stepName(p.step)} · ${p.step === TOP ? `${p.kp} King points` : `${p.stars}/${starsAt(p.step)} stars`} · ${daysLeft()} day${daysLeft() === 1 ? '' : 's'} left`;
+  return `${stepName(p.step)} · ${p.step === TOP ? `${p.kp} King points` : `${p.stars}/${starsAt(p.step)} stars`} · ${daysLeft(ladderClock(p))} day${daysLeft(ladderClock(p)) === 1 ? '' : 's'} left`;
 }

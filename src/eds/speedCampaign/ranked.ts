@@ -48,7 +48,7 @@ export interface RankedTier {
 
 
 export const RANKED_TIERS: RankedTier[] = [
-  { id: 'rookie', name: 'Rookie', ranks: 1, stars: 3, loses: false, level: 'easy', chapters: [1], wander: 0, prize: [] },
+  { id: 'rookie', name: 'Rookie', ranks: 1, stars: 3, loses: false, level: 'easy', chapters: [1, 2], wander: 0, prize: [] },
   { id: 'bronze', name: 'Bronze', ranks: 2, stars: 3, loses: false, level: 'easy', chapters: [1, 2], wander: 0, prize: [{ kind: 'pack' }] },
   { id: 'silver', name: 'Silver', ranks: 3, stars: 3, loses: true, level: 'normal', chapters: [2, 3], wander: 0, prize: [{ kind: 'pack' }] },
   { id: 'gold', name: 'Gold', ranks: 3, stars: 4, loses: true, level: 'normal', chapters: [3, 4], wander: 0.25, prize: [{ kind: 'pack' }, { kind: 'pack' }] },
@@ -152,6 +152,9 @@ export function newRanked(season: string): RankedProgress {
 export const ladderClock = (p: Pick<RankedProgress, 'seen'> | undefined, now = new Date()) => new Date(Math.max(now.getTime(), p?.seen ?? 0));
 export const rankedProgress = (solo: SoloSave, now = new Date()): RankedProgress => solo.ranked ?? newRanked(seasonOf(now));
 
+/** Wins a season needs before the next one starts you higher than Rookie (and pays those tiers). */
+export const SEASON_MIN_WINS = 10;
+
 /** Where a new season starts you: two tiers below last season's best, at that tier's floor. */
 export const seasonStart = (peak: number) => tierFloor(Math.max(0, Math.min(KING - 1, tierIndexOf(peak) - 2)));
 
@@ -161,7 +164,7 @@ export function prizeText(prize: Reward[]): string {
   const chips = prize.reduce((a, r) => a + (r.kind === 'chips' ? r.n : 0), 0);
   const out: string[] = [];
   if (packs) out.push(`${packs} pack${packs === 1 ? '' : 's'}`);
-  if (chips) out.push(`${chips} Duel Chip${chips === 1 ? '' : 's'}`);
+  if (chips) out.push(`${chips} chip${chips === 1 ? '' : 's'}`);
   return out.join(' + ') || 'nothing';
 }
 
@@ -198,14 +201,15 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
   let p: RankedProgress = { ...rankedProgress(solo, now), seen: now.getTime() };
   let forfeited = false;
   if (p.pending) {
-    p = applyResult(p, 'l', now).p;
+    p = applyResult(p, 'l', now, true).p;
     forfeited = true;
   }
   const season = seasonOf(now);
   if (season > p.season) {
     const last: SeasonRecord = { season: p.season, peak: p.peak, w: p.w, l: p.l, ...(p.kp ? { kp: p.kp } : {}) };
     const played = p.w + p.l + (p.d ?? 0) > 0;
-    const start = played ? seasonStart(p.peak) : 0;
+    // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
+    const start = p.w >= SEASON_MIN_WINS ? seasonStart(p.peak) : 0;
     const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
@@ -235,7 +239,7 @@ export function cancelRanked(solo: SoloSave): SoloSave {
 }
 
 /** What a result does to the ladder (no prizes): stars, ranks, the streak and the record. */
-function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date) {
+function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forfeit = false) {
   let { step, stars, kp, streak } = p;
   let gained = 0;
   let bonus = false;
@@ -254,11 +258,12 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date) {
   } else if (result === 'l') {
     streak = 0;
     const t = tierIndexOf(step);
-    if (RANKED_TIERS[t].loses) {
-      if (step === TOP) kp = Math.max(0, kp - 1);
-      else if (stars > 0) stars--;
-      else if (step > tierFloor(t)) (step--, (stars = starsAt(step) - 1));
-      gained = -1;
+    // leaving costs a star even in the tiers where losing doesn't, so quitting can't redraw a bad start
+    if (RANKED_TIERS[t].loses || forfeit) {
+      // -1 only when a star (or King point) was really taken: at a tier's floor with none left, nothing goes
+      if (step === TOP) kp > 0 && (kp--, (gained = -1));
+      else if (stars > 0) (stars--, (gained = -1));
+      else if (step > tierFloor(t)) (step--, (stars = starsAt(step) - 1), (gained = -1));
     }
   } else streak = 0;
   const next: RankedProgress = {
@@ -309,7 +314,7 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
   seed += 101;
   const p = rankedProgress(solo, now);
   const before = { step: p.step, stars: p.stars, kp: p.kp };
-  const r = applyResult(p, o.forfeit ? 'l' : o.result, now);
+  const r = applyResult(p, o.forfeit ? 'l' : o.result, now, !!o.forfeit);
   const tierNow = tierIndexOf(r.p.step);
   let newTier: RankedTier | null = null;
   let lines: string[] = [];

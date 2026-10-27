@@ -232,12 +232,12 @@
 }
 .rk-prize > b,
 .rk-past > b {
-  width: 84px;
+  width: 78px;
   flex: none;
   font-size: 14px;
 }
-.rk-prize span,
-.rk-past span {
+.rk-prize > span:not(.rk-emblem),
+.rk-past > span:not(.rk-emblem) {
   flex: 1;
   font-size: 13px;
   color: var(--so-dim);

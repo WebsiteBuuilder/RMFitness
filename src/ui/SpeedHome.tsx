@@ -17,7 +17,7 @@ import { chipsOf, packsOf, type Rival } from '../collection/economy';
 import { stampsToClaim } from '../collection/stamps';
 import { online } from '../online/controller';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
+import { ladderClock, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
 import './speedhome.css';
@@ -174,8 +174,9 @@ function MatchTile() {
 function RankedTile({ profileId, onPick }: { profileId: string; onPick: () => void }) {
   const rp = rankedProgress(loadSolo(profileId));
   // a new month: the old rank is about to roll over, so show a fresh start
-  const fresh = rp.season < seasonOf();
-  const bonus = rp.bonusDay !== todayString();
+  const now = ladderClock(rp);
+  const fresh = rp.season < seasonOf(now);
+  const bonus = rp.bonusDay !== todayString(now);
   return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
 }
 

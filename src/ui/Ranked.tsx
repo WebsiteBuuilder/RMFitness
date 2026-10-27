@@ -1,7 +1,7 @@
 // Ranked Duel: the monthly ladder against the computer. The emblem and stars up top, the next
 // opponent, one big Duel! button; the ladder's prizes and past seasons below. Rules and
 // numbers live in speedCampaign/ranked.ts.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
 import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import { DIFFICULTY_LABEL } from '../eds/difficulty';
@@ -58,7 +58,9 @@ export function Ranked(p: Ctx) {
   const [help, setHelp] = useState(false);
   const rep = p.report?.kind === 'ranked' ? p.report : null;
   const tier = tierOf(rp.step);
-  const foe = rankedFoe(rp);
+  // the next opponent (a Wandering Duelist's deck is built once, not on every render)
+  const foe = useMemo(() => rankedFoe(rp), [rp.season, rp.played, rp.step]);
+  const lastFoe = useMemo(() => (rep ? rankedFoe({ ...rp, step: rep.settled.before.step, played: Math.max(0, rp.played - 1) }).duelist : null), [rep]);
   const today = ladderClock(rp);
   const bonusLeft = rp.bonusDay !== todayString(today);
   const won = winsToday(rp, today);
@@ -75,7 +77,7 @@ export function Ranked(p: Ctx) {
       rankedFirst(rp) === 'me' ? 'You go first.' : `${foe.duelist.name} goes first.`,
       ...(foe.wandering ? ['Wandering Duelist: a deck shuffled together for this one duel.'] : []),
       ...(lp || hand ? [`${tier.name} rule: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
-      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Leaving counts as a loss.`,
+      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Leaving costs a star.`,
     ];
     p.onDuel({
       me: { name: p.name, main: deck.main, extra: deck.extra, skill: deck.skill },
@@ -100,7 +102,7 @@ export function Ranked(p: Ctx) {
     <div class="screen so road rk">
       <Top
         title="Ranked Duel"
-        sub={`${seasonName(rp.season)} · ${daysLeft()} day${daysLeft() === 1 ? '' : 's'} left`}
+        sub={`${seasonName(rp.season)} · ${daysLeft(today)} day${daysLeft(today) === 1 ? '' : 's'} left`}
         onBack={p.onExit}
         right={
           <button class="so-chip" onClick={() => setHelp(true)}>
@@ -183,7 +185,7 @@ export function Ranked(p: Ctx) {
             ),
           )}
         </div>
-        <p class="so-dim">Each prize pays once a season, the first time you reach the tier. A new season starts you two tiers below your best and pays those tiers again.</p>
+        <p class="so-dim">Each prize pays once a season, the first time you reach the tier. After a season of 10+ wins, the next starts you two tiers below your best and pays those tiers again.</p>
 
         {rp.history.length > 0 && (
           <>
@@ -193,7 +195,8 @@ export function Ranked(p: Ctx) {
                 <RankEmblem step={h.peak} size="s" />
                 <b>{seasonName(h.season)}</b>
                 <span>
-                  best {stepName(h.peak)} · {h.w}W {h.l}L
+                  best {stepName(h.peak)}
+                  {h.kp ? ` (${h.kp} King points)` : ''} · {h.w}W {h.l}L
                 </span>
               </div>
             ))}
@@ -220,7 +223,7 @@ export function Ranked(p: Ctx) {
           <div class="so-reward">Higher tiers bring later Millennium Road duelists, a sharper computer and, from Gold, Wandering Duelists with brand-new decks.</div>
           <div class="so-reward">From Silver up, the day's {DAILY_GOAL}rd Ranked win pays a pack.</div>
           <div class="so-reward">Duel King is the top: every win there is a King point, and every {KING_MILESTONE} points pays a pack ({KING_MILESTONES} a season).</div>
-          <p class="so-dim">Seasons run a calendar month. Leaving a Ranked Duel, or closing the game during one, counts as a loss. Own decks only.</p>
+          <p class="so-dim">Seasons run a calendar month; with 10+ wins, the next one starts you two tiers below your best. Leaving a Ranked Duel, or closing the game during one, is a loss and costs a star in any tier. Own decks only.</p>
         </Sheet>
       )}
       {forfeited && !rep && (
@@ -232,7 +235,7 @@ export function Ranked(p: Ctx) {
         </Sheet>
       )}
       {!rep && !forfeited && rp.news && <SeasonSheet p={rp} onDone={() => setSolo({ ...solo, ranked: { ...rp, news: null } })} own={(n) => ownedCopies(speed, n)} />}
-      {rep && <ResultSheet rep={rep} foe={rankedFoe({ ...rp, step: rep.settled.before.step, played: Math.max(0, rp.played - 1) }).duelist} onNext={() => (p.onReportSeen(), duel())} onDone={p.onReportSeen} own={(n) => ownedCopies(speed, n)} canGo={!problems.length} />}
+      {rep && lastFoe && <ResultSheet rep={rep} foe={lastFoe} onNext={() => (p.onReportSeen(), duel())} onDone={p.onReportSeen} own={(n) => ownedCopies(speed, n)} canGo={!problems.length} />}
     </div>
   );
 }
@@ -288,7 +291,7 @@ function ResultSheet({ rep, foe, onNext, onDone, own, canGo }: { rep: Extract<No
         <b>{stepName(s.after.step)}</b>
         <RankStars p={s.after} fresh={fresh} />
         <span class="rk-delta">
-          {s.gained > 0 ? `+${s.gained} star${s.gained === 1 ? '' : 's'}` : s.gained < 0 ? '−1 star' : won ? '' : 'No star lost in this tier'}
+          {s.gained > 0 ? `+${s.gained} star${s.gained === 1 ? '' : 's'}` : s.gained < 0 ? '−1 star' : won ? '' : s.forfeit || tierOf(s.before.step).loses ? 'No stars to lose at this rank' : 'No star lost in this tier'}
           {s.bonus ? ' · daily bonus' : ''}
           {s.streakBonus ? ` · 🔥 ${s.streak} in a row` : ''}
         </span>

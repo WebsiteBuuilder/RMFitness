@@ -55,6 +55,8 @@ r = settleRanked(r.speed, r.solo, LOSS, day(3, 13));
 r = settleRanked(r.speed, r.solo, LOSS, day(3, 14));
 r = settleRanked(r.speed, r.solo, LOSS, day(3, 15));
 ok(r.after.step === 3 && r.after.stars === 0, `Silver II at 0 stars stays in Silver (${stepName(r.after.step)} ${r.after.stars})`);
+r = settleRanked(r.speed, r.solo, LOSS, day(3, 16));
+ok(r.gained === 0 && r.after.step === 3, 'a loss at the floor with no stars takes nothing and says so');
 ok(rankedProgress(r.solo).peak === 4, 'peak keeps the best rank');
 // Climbing back to Silver I pays nothing again; Gold pays its prize once.
 const paidBefore = rankedProgress(r.solo).paid.length;
@@ -83,6 +85,8 @@ ok(chipsSeason === 7, `a whole season pays 7 chips at most (${chipsSeason})`);
 solo = at(newSoloSave(), { step: 4, stars: 1, peak: 4, paid: [0, 1, 2] });
 const viaSettle = settleSolo({ kind: 'ranked', season: '2026-10' }, LEFT, speed, solo);
 ok(viaSettle.report.kind === 'ranked' && rankedProgress(viaSettle.solo).stars === 0 && rankedProgress(viaSettle.solo).l === 1, 'leaving a Ranked Duel is a loss');
+const bronzeLeft = settleRanked(speed, at(newSoloSave(), { step: 2, stars: 1, peak: 2, paid: [0, 1] }), LEFT, day(7));
+ok(bronzeLeft.after.stars === 0 && bronzeLeft.gained === -1, 'leaving costs a star even in Bronze');
 // Closing the game mid-duel: the next visit files it as a loss.
 let started = startRanked(solo, day(7));
 ok(!!rankedProgress(started).pending && rankedProgress(started).played === 1, 'starting a duel marks it pending and deals the next foe');
@@ -148,6 +152,10 @@ ok(!r.kingPaid, 'no more milestone packs after 3');
 // Who goes first is fixed with the opponent.
 const pf = rankedProgress(newSoloSave(), day(1));
 ok(rankedFirst(pf) === rankedFirst(pf) && new Set(Array.from({ length: 20 }, (_, i) => rankedFirst({ ...pf, played: i }))).size === 2, 'turn order is fixed per duel and varies between duels');
+
+// A thin season (under 10 wins) restarts at Rookie and pays no starting prizes.
+opened = openRanked(speed, at(newSoloSave(), { season: '2026-10', step: 13, peak: 13, w: 3, l: 0, paid: [0, 1, 2, 3, 4, 5] }), new Date(2026, 10, 2));
+ok(rankedProgress(opened.solo, new Date(2026, 10, 2)).step === 0 && opened.speed === speed, 'a season under 10 wins restarts at Rookie with no starting prizes');
 
 // ---------- opponents ----------
 const p0 = rankedProgress(newSoloSave(), day(1));
