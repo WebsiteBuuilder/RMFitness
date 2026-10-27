@@ -536,7 +536,8 @@ export function settleLegend(speed: SpeedSave, solo: SoloSave, duelId: string, o
   const rewards: Reward[] = [];
   let rematchPaid = false;
   if (firstWin) {
-    rewards.push({ kind: 'chips', n: LEGEND_DUEL_CHIPS });
+    // Every first win also opens a booster pack (the finale adds one more).
+    rewards.push({ kind: 'chips', n: LEGEND_DUEL_CHIPS }, { kind: 'pack' });
     if (index === legend.duels.length - 1) {
       if (owned(speed, legend.card) < COPIES) rewards.push({ kind: 'card', name: legend.card });
       rewards.push({ kind: 'chips', n: LEGEND_FINISH_CHIPS }, { kind: 'pack' }, { kind: 'title', name: legend.title_reward });

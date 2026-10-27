@@ -47,6 +47,10 @@ export interface LabyrinthProgress {
   chipDay?: string;
   /** the deck a new run last started from (null: a Starter Deck) */
   deckId?: string | null;
+  /** the last day a cleared run paid its booster pack (one a day) */
+  packDay?: string;
+  /** Curse levels whose first clear already paid a pack */
+  packCurses?: number[];
 }
 
 export interface PracticePrefs {

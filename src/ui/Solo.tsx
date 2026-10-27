@@ -13,7 +13,7 @@ import { CURSES, EVENTS, UPGRADES, afterDuel, choose, stake, dailySeed, dailySta
 import { STAR_TEXT } from '../eds/speedCampaign/outcome';
 import { relic } from '../eds/speedCampaign/relics';
 import { loadSolo, writeSolo, type SoloSave, type WatchPrefs } from '../eds/speedCampaign/save';
-import { endRun, type SoloReport } from '../eds/speedCampaign/settle';
+import { endRunPaid, type SoloReport } from '../eds/speedCampaign/settle';
 import type { CpuDuelSpec, CpuDuelist, VsInfo } from '../eds/speedCampaign/types';
 import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
@@ -1267,7 +1267,8 @@ function Labyrinth(p: Ctx) {
   }, []);
   const setRun = (r: Run) => {
     if (r.over) {
-      const done = endRun(solo, r);
+      const done = endRunPaid(p.speed, solo, r);
+      if (done.speed !== p.speed) p.onSpeed(done.speed);
       setSolo(done.solo);
       setEnded(done.summary);
       return;
@@ -1308,7 +1309,7 @@ function LabyrinthStart(p: Ctx) {
       <div class="so-body">
         <div class="so-prologue">
           <span class="so-label">THE LABYRINTH</span>
-          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck or one of your own decks, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart.</p>
+          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck or one of your own decks, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart. Clear all three floors for a booster pack: the first clear at each Curse, then one clear a day.</p>
         </div>
         <Btn kind="gold" onClick={() => setSheet('new')}>
           New run
@@ -1838,7 +1839,13 @@ function RunEnd(p: Ctx & { s: RunSummary; onDone: () => void }) {
             {s.wins} wins with {s.starter}
             {s.curse ? ` at Curse ${s.curse}` : ''}.
           </p>
-          {s.open ? <p class="so-dim">Anything goes deck: no Soul Fragments or chips for this run.</p> : <p class="so-reward">+{s.fragments} Soul Fragments</p>}
+          {s.open ? <p class="so-dim">Anything goes deck: no Soul Fragments, chips or packs for this run.</p> : <p class="so-reward">+{s.fragments} Soul Fragments</p>}
+          {s.pack && s.pack.length > 0 && (
+            <>
+              <div class="so-group">Clear prize: a booster pack</div>
+              <CardRow names={s.pack} reveal own={(n) => ownedCopies(p.speed, n)} />
+            </>
+          )}
           {s.won && s.curse < 10 && <p>Curse {s.curse + 1} is now open.</p>}
         </div>
         {code && (
