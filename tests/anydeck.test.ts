@@ -102,6 +102,8 @@ ok(own.ownDeck === true && !own.open && fragmentsFor({ ...own, wins: 5, floor: 2
   ok(cards(d.speed) > cards(a.speed), 'labyrinth: the first clear at a new Curse pays a pack');
   const e = endRunPaid(sp, newSoloSave(), { ...run, over: 'won', wins: 9 }, '2026-10-27');
   ok(e.speed === sp, 'labyrinth: an Anything goes clear pays no pack');
+  const dly = endRunPaid(sp, newSoloSave(), { ...won, daily: '2026-10-27' }, '2026-10-27');
+  ok(dly.speed === sp, 'labyrinth: the Daily pays no pack');
   const f = endRunPaid(sp, newSoloSave(), { ...own, over: 'lost', wins: 2 }, '2026-10-27');
   ok(f.speed === sp, 'labyrinth: a lost run pays no pack');
   const lg = settleSolo({ kind: 'legend', duelId: LEGENDS[0].duels[0].id }, WIN, sp, newSoloSave());

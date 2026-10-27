@@ -1309,7 +1309,7 @@ function LabyrinthStart(p: Ctx) {
       <div class="so-body">
         <div class="so-prologue">
           <span class="so-label">THE LABYRINTH</span>
-          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck or one of your own decks, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart. Clear all three floors for a booster pack: the first clear at each Curse, then one clear a day.</p>
+          <p>Three floors of duels, shops, wagers and treasure. Start from a Starter Deck or one of your own decks, pick a new card after every win and hunt Millennium relics. You have 3 hearts: lose a duel, lose a heart. Clear all three floors for a booster pack: the first clear at each Curse, then one clear a day. The Daily and Anything goes decks pay no pack.</p>
         </div>
         <Btn kind="gold" onClick={() => setSheet('new')}>
           New run
@@ -1840,6 +1840,7 @@ function RunEnd(p: Ctx & { s: RunSummary; onDone: () => void }) {
             {s.curse ? ` at Curse ${s.curse}` : ''}.
           </p>
           {s.open ? <p class="so-dim">Anything goes deck: no Soul Fragments, chips or packs for this run.</p> : <p class="so-reward">+{s.fragments} Soul Fragments</p>}
+          {s.won && !s.open && !s.daily && !s.pack?.length && <p class="so-dim">No pack this time: clears pay one for a new Curse level, then one a day.</p>}
           {s.pack && s.pack.length > 0 && (
             <>
               <div class="so-group">Clear prize: a booster pack</div>
