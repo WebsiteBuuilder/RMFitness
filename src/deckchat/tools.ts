@@ -65,6 +65,7 @@ export const TOOLS: ToolDef[] = [
         min_atk: int,
         sort: { type: 'string', enum: ['atk', 'name', 'level'], description: 'default atk (strongest first)' },
         full_text: { type: 'boolean' },
+        include_unowned: { type: 'boolean', description: 'also list Speed Duel cards they do not own ("use 0"), to suggest what to get from packs or the Card Shop; those cannot go in the deck' },
         limit: { ...int, description: 'how many cards, default 30, at most 80' },
       },
       required: [],
@@ -242,7 +243,7 @@ type Input = Record<string, unknown>;
 const num = (v: unknown, dflt: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : dflt);
 
 function searchCards(w: ChatWorld, i: Input): string {
-  let list = poolOf(w);
+  let list = i.include_unowned === true ? speedCards().filter((c) => !unplayableReason(c.name)) : poolOf(w);
   const has = (s: unknown) => typeof s === 'string' && s.trim() !== '';
   if (has(i.name)) {
     const q = norm(String(i.name));
