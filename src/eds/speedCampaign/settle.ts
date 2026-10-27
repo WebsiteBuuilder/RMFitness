@@ -34,6 +34,21 @@ export function endRun(solo: SoloSave, run: Run): { solo: SoloSave; summary: Run
   };
 }
 
+/**
+ * Ends a run and pays its clear prize: clearing all three floors opens a booster pack, the
+ * first clear at each Curse and otherwise one clear a day (so runs can't be farmed).
+ * Anything goes runs and the Daily (a shared, fair race) pay nothing.
+ */
+export function endRunPaid(speed: SpeedSave, solo: SoloSave, run: Run, today = todayString()): { speed: SpeedSave; solo: SoloSave; summary: RunSummary } {
+  const done = endRun(solo, run);
+  const lab = done.solo.labyrinth;
+  const firstAtCurse = !(lab.packCurses ?? []).includes(run.curse);
+  if (run.over !== 'won' || run.open || run.daily || (!firstAtCurse && lab.packDay === today)) return { speed, ...done };
+  const g = grant(speed, done.solo, [{ kind: 'pack' }]);
+  const paid = { ...g.solo.labyrinth, packDay: today, ...(firstAtCurse ? { packCurses: [...(lab.packCurses ?? []), run.curse] } : {}) };
+  return { speed: g.speed, solo: { ...g.solo, labyrinth: paid }, summary: { ...done.summary, pack: g.cards } };
+}
+
 export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, solo: SoloSave): { speed: SpeedSave; solo: SoloSave; report: SoloReport } {
   if (ctx.kind === 'practice') return { speed, solo, report: { kind: 'practice', outcome: o, ctx } };
   if (ctx.kind === 'campaign') {
@@ -63,8 +78,8 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
     if (paid && next.pending?.kind === 'draft') next.pending = { ...next.pending, chip: true };
   }
   if (next.over) {
-    const done = endRun(solo, next);
-    return { speed, solo: done.solo, report: { kind: 'labyrinth', outcome: o, run: next, ended: done.summary } };
+    const done = endRunPaid(speed, solo, next);
+    return { speed: done.speed, solo: done.solo, report: { kind: 'labyrinth', outcome: o, run: next, ended: done.summary } };
   }
   return { speed, solo: { ...solo, labyrinth: { ...solo.labyrinth, run: next } }, report: { kind: 'labyrinth', outcome: o, run: next, ended: null } };
 }
