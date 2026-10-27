@@ -7,6 +7,7 @@ import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import { DIFFICULTY_LABEL } from '../eds/difficulty';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import {
+  LINK_STARS_PER_DAY,
   SEASON_MIN_WINS,
   ladderClock,
   rankedFirst,
@@ -67,6 +68,7 @@ export function Ranked(p: Ctx) {
   const won = winsToday(rp, today);
   const goalDone = rp.goalDay === todayString(today);
   const toNext = starsToNext(rp);
+  const linkUsed = rp.linkDay?.[0] === todayString(today) ? rp.linkDay[1] : 0;
   const nextName = rp.step === TOP ? null : stepName(rp.step + 1);
 
   const duel = () => {
@@ -144,6 +146,7 @@ export function Ranked(p: Ctx) {
           <span class={bonusLeft ? 'on' : ''}>{bonusLeft ? '★ First win: +1 star' : '✓ Bonus star used'}</span>
           <span class={rp.streak >= 2 ? 'on' : ''}>{rp.streak >= 2 ? '🔥 Streak: +1 star' : '🔥 3 in a row: +1'}</span>
           <span class={goalDone || !tier.loses ? '' : 'on'}>{goalDone ? '✓ Daily pack won' : tier.loses ? `🎁 ${Math.min(won, DAILY_GOAL)}/${DAILY_GOAL} wins: a pack` : '🎁 Daily pack from Silver'}</span>
+          <span class={linkUsed < LINK_STARS_PER_DAY ? 'on' : ''}>⚔ Online wins: +1 ({linkUsed}/{LINK_STARS_PER_DAY})</span>
         </div>
 
         <div class="rk-foe">
@@ -225,6 +228,7 @@ export function Ranked(p: Ctx) {
           <div class="so-reward">From Silver up a loss takes a star back and can drop a rank, but never out of a tier you've reached.</div>
           <div class="so-reward">Higher tiers bring later Millennium Road duelists, a sharper computer and, from Gold, Wandering Duelists with brand-new decks.</div>
           <div class="so-reward">From Silver up, the day's {DAILY_GOAL}rd Ranked win pays a pack.</div>
+          <div class="so-reward">Online link battles with a friend count too: +1 star a win (up to {LINK_STARS_PER_DAY} a day), and a loss costs a star where Ranked losses do.</div>
           <div class="so-reward">Duel King is the top: every win there is a King point, and every {KING_MILESTONE} points pays a pack ({KING_MILESTONES} a season).</div>
           <p class="so-dim">Seasons run a calendar month; with 10+ wins, the next one starts you two tiers below your best. Leaving a Ranked Duel, or closing the game during one, is a loss and costs a star in any tier. Own decks only.</p>
         </Sheet>

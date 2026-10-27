@@ -120,6 +120,8 @@ export interface RankedProgress {
   goalDay?: string;
   /** King point milestones paid this season */
   kingPaid?: number;
+  /** link-battle Ranked wins today, for the daily cap: [day, wins] */
+  linkDay?: [string, number];
   /** the latest clock time the ladder has seen: days and seasons never run backwards from it */
   seen?: number;
   /** a Ranked Duel was started and not filed yet (closing the game mid-duel = a loss) */
@@ -245,7 +247,7 @@ export function cancelRanked(solo: SoloSave): SoloSave {
 }
 
 /** What a result does to the ladder (no prizes): stars, ranks, the streak and the record. */
-function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forfeit = false) {
+function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forfeit = false, link = false) {
   let { step, stars, kp, streak } = p;
   let gained = 0;
   let bonus = false;
@@ -253,16 +255,19 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
   const today = todayString(now);
   let bonusDay = p.bonusDay;
   if (result === 'w') {
-    streak += 1;
     gained = 1;
-    if (bonusDay !== today) (gained++, (bonus = true), (bonusDay = today));
-    if (streak >= 3) (gained++, (streakBonus = true));
+    // a link battle is one plain star: the daily bonus and the streak belong to Ranked Duels
+    if (!link) {
+      streak += 1;
+      if (bonusDay !== today) (gained++, (bonus = true), (bonusDay = today));
+      if (streak >= 3) (gained++, (streakBonus = true));
+    }
     for (let i = 0; i < gained; i++) {
       if (step === TOP) kp++;
       else if (++stars >= starsAt(step)) (step++, (stars = 0));
     }
   } else if (result === 'l') {
-    streak = 0;
+    if (!link) streak = 0;
     const t = tierIndexOf(step);
     // leaving costs a star even in the tiers where losing doesn't, so quitting can't redraw a bad start
     if (RANKED_TIERS[t].loses || forfeit) {
@@ -273,7 +278,7 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     }
     // leaving with nothing to take still costs something: today's first-win bonus star
     if (forfeit && gained === 0) bonusDay = today;
-  } else streak = 0;
+  } else if (!link) streak = 0;
   const next: RankedProgress = {
     ...p,
     step,
@@ -434,4 +439,55 @@ export function rankedFoe(p: RankedProgress): RankedFoe {
   const pool = CHAPTERS.filter((c) => t.chapters.includes(c.n)).flatMap((c) => c.nodes.map((n) => n.duelist));
   const duelist = pool[Math.floor(next() * pool.length)];
   return { duelist, ...deckOf(duelist), wandering: false };
+}
+
+// ---------- link battles ----------
+
+/** Link-battle wins that can earn a Ranked star each day (so two phones can't farm the ladder). */
+export const LINK_STARS_PER_DAY = 3;
+
+export interface LinkRanked {
+  speed: SpeedSave;
+  solo: SoloSave;
+  /** what to tell the player, or null when the duel didn't touch the ladder */
+  line: string | null;
+  /** tier prize lines and cards, when a link win reached a new tier */
+  lines: string[];
+  cards: string[];
+}
+
+/**
+ * A finished online link battle against a rival also counts on the Ranked ladder: a win is one
+ * star (up to LINK_STARS_PER_DAY a day), a loss takes one where Ranked losses do. No bonus or
+ * streak stars, no daily pack; a new tier still pays its season prize once. The caller only sends
+ * real duels (online, a few turns, not a quick surrender).
+ */
+export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' | 'l' | 'd', opp: string, now = new Date(), seed = now.getTime()): LinkRanked {
+  const opened = openRanked(speed, solo, now, seed);
+  speed = opened.speed;
+  solo = opened.solo;
+  now = ladderClock(solo.ranked, now);
+  const p = rankedProgress(solo, now);
+  const day = todayString(now);
+  const used = p.linkDay?.[0] === day ? p.linkDay[1] : 0;
+  if (result === 'd' || (result === 'w' && used >= LINK_STARS_PER_DAY)) {
+    return { speed, solo, line: result === 'w' ? `Ranked: today's ${LINK_STARS_PER_DAY} link-battle stars are already won` : null, lines: [], cards: [] };
+  }
+  const r = applyResult(p, result, now, false, true);
+  let next: RankedProgress = { ...r.p, w: p.w, l: p.l, ...(result === 'w' ? { linkDay: [day, used + 1] as [string, number] } : {}) };
+  let lines: string[] = [];
+  let cards: string[] = [];
+  const tierNow = tierIndexOf(next.step);
+  if (tierNow > 0 && !p.paid.includes(tierNow)) {
+    const pay = payTiers(speed, solo, next, tierNow, seed + 31, next.season);
+    speed = pay.speed;
+    solo = pay.solo;
+    lines = pay.lines;
+    cards = pay.cards;
+    next = { ...next, paid: pay.paid };
+  }
+  const where = next.step === TOP ? `${next.kp} King points` : `${stepName(next.step)}, ${next.stars}/${starsAt(next.step)} stars`;
+  const line =
+    r.gained > 0 ? `Ranked: +1 star for beating ${opp} (${where})${next.step > p.step ? ' · rank up!' : ''}` : r.gained < 0 ? `Ranked: −1 star for losing to ${opp} (${where})` : null;
+  return { speed, solo: { ...solo, ranked: next }, line, lines, cards };
 }

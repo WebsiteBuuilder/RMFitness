@@ -37,7 +37,7 @@ import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
-import { cancelRanked } from '../eds/speedCampaign/ranked';
+import { cancelRanked, settleLinkRanked } from '../eds/speedCampaign/ranked';
 import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
 import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
@@ -45,7 +45,7 @@ import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, tooQuick } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, tooQuick, RIVAL_MIN_TURNS } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
@@ -868,6 +868,18 @@ export function App() {
         const bet = settleStakes(s, seat, st, [seats[0], seats[1]], winner);
         const before = crownHolder(s, opp);
         const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes), online: !hotseat, surrender: /surrendered$/.test(st.winReason), damage: lpLostIn(st) });
+        // Online link battles that count also move this duelist's Ranked ladder (on their own phone).
+        let save2 = rv.save;
+        const realDuel = !hotseat && seat === mySeat && profile && st.turn >= RIVAL_MIN_TURNS && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
+        if (realDuel && !activeDeck(s)?.open) {
+          const lr = settleLinkRanked(save2, loadSolo(profile.id), result, opp);
+          writeSolo(profile.id, lr.solo);
+          save2 = lr.speed;
+          if (lr.line) rv.lines.push(lr.line);
+          if (lr.lines.length) rv.lines.push(...lr.lines.filter((l) => !l.includes(': ') || l.startsWith('Title')));
+          if (lr.cards.length) cards.push({ who: seats[seat].name, won: lr.cards, lost: [] });
+        }
+        rv.save = save2;
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         cards.push({ who: seats[seat].name, won: bet.won, lost: bet.lost });

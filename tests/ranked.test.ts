@@ -7,7 +7,7 @@ import { DB } from '../src/eds/db';
 import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
-import { cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, KING_MILESTONE, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, KING_MILESTONE, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
 import { cleanStats } from '../src/collection/rankings';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
@@ -168,6 +168,21 @@ ok(rankedProgress(opened.solo, new Date(2026, 10, 2)).step === 0 && opened.speed
 ok(cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: '2026-10', step: 7, kp: 0 } })?.rk?.step === 7, 'a shared Ranked rank survives cleaning');
 ok(!cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: 'evil', step: 7, kp: 0 } })?.rk, 'a malformed shared rank is dropped');
 ok(cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: '2026-10', step: 999, kp: -4 } })?.rk?.step === 30, 'a shared rank is clamped');
+
+// Link battles with a rival: one plain star a win (no bonus or streak), capped per day; losses cost where Ranked losses do.
+solo = at(newSoloSave(), { step: 3, stars: 0, peak: 3, paid: [0, 1, 2], streak: 2 });
+let lk = settleLinkRanked(speed, solo, 'w', 'Brother', day(12, 10));
+ok(rankedProgress(lk.solo).stars === 1 && rankedProgress(lk.solo).streak === 2 && rankedProgress(lk.solo).bonusDay !== '2026-10-12' && !!lk.line, `a link win is one star, no bonus, streak untouched (${lk.line})`);
+for (let i = 0; i < 5; i++) lk = settleLinkRanked(lk.speed, lk.solo, 'w', 'Brother', day(12, 11 + i));
+const linkStars = rankedProgress(lk.solo).step * 10 + rankedProgress(lk.solo).stars;
+ok(linkStars === 3 * 10 + LINK_STARS_PER_DAY || rankedProgress(lk.solo).step > 3, `link wins stop at ${LINK_STARS_PER_DAY} a day (${stepName(rankedProgress(lk.solo).step)} ${rankedProgress(lk.solo).stars})`);
+ok(rankedProgress(lk.solo).linkDay?.[1] === LINK_STARS_PER_DAY, 'the link cap is recorded');
+lk = settleLinkRanked(lk.speed, at(lk.solo, { step: 4, stars: 1 }), 'l', 'Brother', day(12, 20));
+ok(rankedProgress(lk.solo).stars === 0 && /−1 star/.test(lk.line ?? ''), 'a link loss in Silver costs a star');
+lk = settleLinkRanked(speed, at(newSoloSave(), { step: 1, stars: 1 }), 'l', 'Brother', day(12, 21));
+ok(rankedProgress(lk.solo).stars === 1 && lk.line === null, 'a link loss in Bronze costs nothing');
+lk = settleLinkRanked(speed, at(newSoloSave(), { step: 5, stars: 2, peak: 5, paid: [0, 1, 2] }), 'w', 'Brother', day(13));
+ok(rankedProgress(lk.solo).step === 6 && rankedProgress(lk.solo).paid.includes(3) && lk.lines.length > 0, 'a link win into Gold pays the Gold prize once');
 
 // ---------- opponents ----------
 const p0 = rankedProgress(newSoloSave(), day(1));
