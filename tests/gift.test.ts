@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../src/eds/speedSave';
-import { BONUS_GIFT, GIFT, GIFTS, GIFT_PROFILES, claimGift, nextGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
+import { BONUS_GIFT, BONUS_GIFT_2, GIFT, GIFTS, GIFT_PROFILES, claimGift, nextGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
 import { boosterSets, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
 import { randomSpeedDeck } from '../src/eds/speedRandom';
 import { DB } from './speedkit';
@@ -37,17 +37,21 @@ const before = GIFT.madeBefore - 86_400_000;
 // ---------- the bonus drop: a second present on top ----------
 {
   const s = migrate(newSpeedSave());
-  ok(BONUS_GIFT.packs === 145 && GIFTS.length === 2 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'a second gift of 145 packs, with its own id');
+  ok(BONUS_GIFT.packs === 145 && BONUS_GIFT_2.packs === 200 && GIFTS.length === 3 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'bonus gifts of 145 and 200 packs, each with its own id');
   ok(nextGift(s, before)?.id === GIFT.id, 'the welcome present comes first');
   const one = claimGift(s, before, GIFT)!;
   ok(nextGift(one, before)?.id === BONUS_GIFT.id, 'then the bonus drop');
   const both = claimGift(one, before, BONUS_GIFT)!;
-  ok(giftPacksOf(both) === GIFT.packs + BONUS_GIFT.packs && nextGift(both, before) === null, `both gifts give ${GIFT.packs + BONUS_GIFT.packs} packs, then nothing more`);
-  ok(claimGift(both, before, BONUS_GIFT) === null, 'the bonus can be claimed only once');
+  ok(nextGift(both, before)?.id === BONUS_GIFT_2.id, 'then the 200-pack mega drop');
+  const all = claimGift(both, before, BONUS_GIFT_2)!;
+  const total = GIFT.packs + BONUS_GIFT.packs + BONUS_GIFT_2.packs;
+  ok(giftPacksOf(all) === total && nextGift(all, before) === null, `all three gifts give ${total} packs, then nothing more`);
+  ok(claimGift(both, before, BONUS_GIFT) === null && claimGift(all, before, BONUS_GIFT_2) === null, 'each bonus can be claimed only once');
   const late = Date.UTC(2026, 9, 19);
   ok(nextGift(s, late)?.id === BONUS_GIFT.id, 'a profile made after the welcome cutoff still gets the bonus');
-  ok(nextGift(s, BONUS_GIFT.madeBefore) === null, 'a profile made after the bonus cutoff gets nothing');
-  ok(nextGift(s, before, undefined, [GIFT.id])?.id === BONUS_GIFT.id && nextGift(s, before, undefined, [GIFT.id, BONUS_GIFT.id]) === null, '"Not now" skips a gift for now');
+  ok(nextGift(s, BONUS_GIFT.madeBefore)?.id === BONUS_GIFT_2.id, 'a profile made after the first bonus cutoff still gets the mega drop');
+  ok(nextGift(s, BONUS_GIFT_2.madeBefore) === null, 'a profile made after the last cutoff gets nothing');
+  ok(nextGift(s, before, undefined, [GIFT.id])?.id === BONUS_GIFT.id && nextGift(s, before, undefined, GIFTS.map((g) => g.id)) === null, 'skipped gifts are passed over');
 }
 
 // ---------- one phone hands it to at most GIFT_PROFILES profiles, each once ----------
