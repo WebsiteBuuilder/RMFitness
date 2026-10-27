@@ -124,7 +124,7 @@ export function SpeedHub({
   controls: ControlStyle;
   onControls: () => void;
   /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
-  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends') => void;
+  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends' | 'ranked') => void;
   /** 2v2 Tag Duels and the Tag Road */
   onTag?: () => void;
   /** Boss Raid: you and your brother against the bosses */

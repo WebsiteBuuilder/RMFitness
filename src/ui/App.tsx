@@ -37,6 +37,7 @@ import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
+import { cancelRanked } from '../eds/speedCampaign/ranked';
 import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
 import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
@@ -558,6 +559,15 @@ export function App() {
     const o = !left && session ? outcomeOf(session.engine.state, 0, sd.startLp) : forfeit(sd.startLp);
     const speedNow = speedSave ?? loadSpeedSave(profile.id);
     const soloBefore = loadSolo(profile.id);
+    // Backing out of a Ranked Duel before it starts (at the toss) costs nothing; the same opponent waits.
+    if (left && sd.ctx.kind === 'ranked' && !session?.engine.state.started) {
+      writeSolo(profile.id, cancelRanked(soloBefore));
+      setSoloReport(null);
+      session?.close();
+      setSession(null);
+      setScreen('speed');
+      return true;
+    }
     // An Anything goes deck moves the solo modes on but earns nothing, Duelist Requests included.
     const anyGoes = sd.ctx.kind === 'labyrinth' ? !!soloBefore.labyrinth.run?.open : sd.ctx.kind !== 'practice' && !!sd.ctx.open;
     const r = settleSolo(sd.ctx, o, speedNow, soloBefore);
@@ -571,7 +581,7 @@ export function App() {
     }
     const speedOut = req ? req.save : r.speed;
     if (speedOut !== speedNow) setSpeedSave(speedOut);
-    setSoloReport(left && sd.ctx.kind !== 'labyrinth' ? null : r.report);
+    setSoloReport(left && sd.ctx.kind !== 'labyrinth' && sd.ctx.kind !== 'ranked' ? null : r.report);
     lastSoloSpec.current = sd.spec;
     session?.close();
     setSession(null);
@@ -1273,7 +1283,7 @@ export function App() {
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
             <ConfirmSheet look={gameOf() === 'speed' ? 'md' : 'gba'} title="Leave this duel?" confirmLabel="Leave" cancelLabel="Keep dueling" danger onCancel={() => setAskLeave(false)} onConfirm={confirmLeave}>
-              {soloDuel.current?.ctx.kind === 'labyrinth' ? 'It counts as a loss and costs a heart.' : session.adapter.roomCode && !hotseat ? 'Leaving concedes the duel: it counts as your loss.' : 'This duel will end here.'}
+              {soloDuel.current?.ctx.kind === 'labyrinth' ? 'It counts as a loss and costs a heart.' : soloDuel.current?.ctx.kind === 'ranked' ? 'It counts as a Ranked loss.' : session.adapter.roomCode && !hotseat ? 'Leaving concedes the duel: it counts as your loss.' : 'This duel will end here.'}
             </ConfirmSheet>
           )}
         </>
