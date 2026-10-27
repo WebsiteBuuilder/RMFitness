@@ -4,8 +4,8 @@
 // card list so the deck stays in view above it.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SpeedDeck } from '../eds/speedSave';
-import { chatError, checkKey, claudeModel, runTurn, type Model, type Msg } from '../deckchat/agent';
-import { diffDecks, diffEmpty, undoDiff, type DeckDiff } from '../deckchat/tools';
+import { chatError, checkKey, claudeModel, costOf, keepTurn, runTurn, tooLong, type Model, type Msg } from '../deckchat/agent';
+import { diffDecks, diffEmpty, redoDiff, undoDiff, type DeckDiff } from '../deckchat/tools';
 import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
 import { buzz, playBlip } from './sound';
 import { card, imageUrl } from '../eds/db';
@@ -19,6 +19,8 @@ interface Turn {
   diff?: DeckDiff;
   before?: SpeedDeck;
   undone?: boolean;
+  /** what the answer cost on the player's key, in dollars */
+  cost?: number;
 }
 
 interface Chat {
@@ -40,6 +42,16 @@ function loadChat(deckId: string): Chat {
     /* none saved */
   }
   return { messages: [], turns: [] };
+}
+
+/** A deleted deck's chat goes with it. */
+export function forgetDeckChat(deckId: string) {
+  chats.delete(deckId);
+  try {
+    localStorage.removeItem(STORE(deckId));
+  } catch {
+    /* nothing saved */
+  }
 }
 
 function storeChat(deckId: string, c: Chat) {
@@ -85,9 +97,13 @@ function toolLine(name: string, input: unknown): string {
 }
 
 /** Only for tests and screenshots: a model to use instead of Claude (window.__deckChatModel). */
+/** Stops the chat's running turn (Android back / pad B press it first). true when one was running. */
+let stopRunning: (() => boolean) | null = null;
+export const stopDeckChat = () => stopRunning?.() ?? false;
+
 const testModel = () => (globalThis as { __deckChatModel?: Model }).__deckChatModel;
 
-export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, onClose }: { deck: SpeedDeck; collection?: Record<string, number>; onChange: (d: SpeedDeck) => void; /** cards that just came in, so their tiles can glow */ onFresh?: (names: string[]) => void; /** Claude is working: the editor holds still */ onBusy?: (busy: boolean) => void; onRead: (name: string) => void; onClose: () => void }) {
+export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, onClose }: { deck: SpeedDeck; collection?: Record<string, number>; onChange: (d: SpeedDeck) => void; /** cards that just came in, so their tiles can glow */ onFresh?: (names: string[]) => void; /** Claude is working: the editor holds still */ onBusy?: (busy: boolean) => void; onRead: (name: string, list: string[]) => void; onClose: () => void }) {
   const [chat, setChatState] = useState<Chat>(() => loadChat(deck.id));
   const setChat = (c: Chat) => (storeChat(deck.id, c), setChatState(c));
   const [sureNew, setSureNew] = useState(false);
@@ -110,7 +126,13 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat.turns.length, live, busy]);
-  useEffect(() => () => stop.current?.abort(), []);
+  useEffect(() => {
+    stopRunning = () => (stop.current ? (stop.current.abort(), true) : false);
+    return () => {
+      stop.current?.abort();
+      stopRunning = null;
+    };
+  }, []);
   // iPhones put the keyboard over fixed sheets: keep the sheet above it
   const [lift, setLift] = useState<{ bottom: number; height: number } | null>(null);
   useEffect(() => {
@@ -145,16 +167,25 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const ac = new AbortController();
     stop.current = ac;
     try {
-      const r = await runTurn(model, chat.messages, msg, { deck: before, collection }, {
+      const hooks = {
         signal: ac.signal,
-        onText: (d) => (setLive((t) => t + d), setBusy(null)),
-        onTool: (n, i) => (setBusy(toolLine(n, i)), setLive('')),
-        onDeck: (d, prev) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added))),
+        onText: (d: string) => (setLive((t) => t + d), setBusy(null)),
+        onTool: (n: string, i: unknown) => (setBusy(toolLine(n, i)), setLive('')),
+        onDeck: (d: SpeedDeck, prev: SpeedDeck) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added))),
+      };
+      let history = chat.messages;
+      const r = await runTurn(model, history, msg, { deck: before, collection }, hooks).catch((e) => {
+        // the chat outgrew the model: start the history over once and ask again
+        if (!tooLong(e) || !history.length) throw e;
+        history = [];
+        return runTurn(model, history, msg, { deck: before, collection }, hooks);
       });
       const diff = diffDecks(before, r.deck);
-      turns = [...turns, { id: Date.now() + 1, who: 'claude', text: r.text || (diffEmpty(diff) ? 'Done.' : 'Here you go.'), ...(diffEmpty(diff) ? {} : { diff, before }) }];
+      const cost = r.usage.length ? costOf(r.usage) : undefined;
+      turns = [...turns, { id: Date.now() + 1, who: 'claude', text: r.text || (diffEmpty(diff) ? 'Done.' : 'Here you go.'), cost, ...(diffEmpty(diff) ? {} : { diff, before }) }];
       if (r.stopped) turns.push({ id: Date.now() + 2, who: 'note', text: r.stopped });
-      setChat({ messages: r.messages, turns });
+      // a refused turn leaves no trace in the history, so it can't sour later answers
+      setChat({ messages: r.refused ? history : keepTurn(history, msg, r.text), turns });
     } catch (e) {
       // the deck may already have changed in this turn: keep the Undo for it
       const diff = diffDecks(before, deckRef.current);
@@ -186,8 +217,23 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     });
   };
 
-  const lastChange = [...chat.turns].reverse().find((t) => t.diff && !t.undone);
-  const ideas = deck.main.length ? IDEAS_DECK : IDEAS_EMPTY;
+  const redo = (t: Turn) => {
+    if (!t.diff) return;
+    playBlip();
+    onChange(redoDiff(deckRef.current, t.diff));
+    onFresh?.(Object.keys(t.diff.added));
+    setChat({
+      messages: chat.messages.length ? [...chat.messages, { role: 'user', content: [{ type: 'text', text: '(I pressed Redo, so your change is back in the deck.)' }] }, { role: 'assistant', content: [{ type: 'text', text: 'Got it.' }] }] : chat.messages,
+      turns: chat.turns.map((x) => (x === t ? { ...x, undone: false } : x)),
+    });
+  };
+
+  const changes = chat.turns.filter((t) => t.diff);
+  const lastChange = [...changes].reverse().find((t) => !t.undone);
+  // Redo only for the newest change, so it never lands on top of a later one
+  const redoable = changes.length && changes[changes.length - 1].undone ? changes[changes.length - 1] : null;
+  const asked = new Set(chat.turns.filter((t) => t.who === 'me').map((t) => t.text));
+  const ideas = (deck.main.length ? IDEAS_DECK : IDEAS_EMPTY).filter((s) => !asked.has(s));
 
   return (
     <div class={`dc ${tall ? 'dc-tall' : ''}`} role="dialog" aria-label="Deck chat" style={lift ? { bottom: `${lift.bottom}px`, height: `${lift.height}px` } : undefined}>
@@ -196,14 +242,9 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           <b>✦ Deck chat</b>
           <span>{tall ? '▾' : '▴'}</span>
         </button>
-        <button class={`chip dc-keybtn ${key ? '' : 'on'}`} onClick={() => setKeyOpen(!keyOpen)} aria-label="Claude key settings">
+        <button class={`chip dc-keybtn ${key ? '' : 'on'}`} hidden={keyOpen} onClick={() => setKeyOpen(true)} aria-label="Claude key settings">
           {key ? '⚙' : 'Add key'}
         </button>
-        {lastChange && !busy && (
-          <button class="chip dc-undo" onClick={() => undo(lastChange)} aria-label="Undo the last chat change">
-            ↶ Undo
-          </button>
-        )}
         {chat.turns.length > 0 && !busy && (
           <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
             {sureNew ? 'Clear chat?' : 'New'}
@@ -235,7 +276,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
         {chat.turns.map((t) => (
           <div key={t.id} class={`dc-msg dc-${t.who}`}>
             <div class="dc-bubble">{t.text}</div>
-            {t.diff && <Changes diff={t.diff} undone={!!t.undone} canUndo={t === lastChange && !busy} onUndo={() => undo(t)} onRead={onRead} />}
+            {t.cost !== undefined && <span class="dc-cost">{t.cost < 0.01 ? 'under 1¢' : `about ${Math.round(t.cost * 100)}¢`} of credit</span>}
+            {t.diff && <Changes diff={t.diff} undone={!!t.undone} canUndo={t === lastChange && !busy} canRedo={t === redoable && !busy} onUndo={() => undo(t)} onRedo={() => redo(t)} onRead={onRead} />}
           </div>
         ))}
         {(busy || live) && (
@@ -256,7 +298,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       </div>
 
       {!busy && (
-        <div class="dc-ideas">
+        <div class={`dc-ideas ${chat.turns.length ? 'dc-ideas-one' : ''}`}>
           {(chat.turns.length ? ideas.slice(0, 2) : ideas).map((s) => (
             <button key={s} class="chip" onClick={() => send(s)}>
               {s}
@@ -299,14 +341,16 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
 }
 
 /** What one answer changed: tap a card to read it; Undo puts the deck back. */
-function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; undone: boolean; canUndo: boolean; onUndo: () => void; onRead: (n: string) => void }) {
+function Changes({ diff, undone, canUndo, canRedo, onUndo, onRedo, onRead }: { diff: DeckDiff; undone: boolean; canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void; onRead: (n: string, list: string[]) => void }) {
   const add = Object.entries(diff.added);
   const rem = Object.entries(diff.removed);
   const total = (l: [string, number][]) => l.reduce((a, [, k]) => a + k, 0);
   const [open, setOpen] = useState(add.length + rem.length <= 6);
+  // the card reader steps through every card this change touched
+  const touched = [...add, ...rem].map(([n]) => n);
   const row = (n: string, k: number, plus: boolean) => (
     <li key={`${plus ? '+' : '-'}${n}`}>
-      <button class={`dc-card ${plus ? 'dc-plus' : 'dc-minus'}`} onClick={() => onRead(n)} aria-label={`${plus ? 'Added' : 'Took out'} ${k} ${n}: tap to read`}>
+      <button class={`dc-card ${plus ? 'dc-plus' : 'dc-minus'}`} onClick={() => onRead(n, touched)} aria-label={`${plus ? 'Added' : 'Took out'} ${k} ${n}: tap to read`}>
         {imageUrl(n) ? <img class="dc-thumb" src={imageUrl(n)!} alt="" loading="lazy" draggable={false} /> : <i class={`dc-thumb dc-k-${card(n)?.kind ?? 'monster'}`} />}
         <b>
           {plus ? '+' : '−'}
@@ -324,8 +368,8 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
             {undone && <s>Undone</s>}
             {add.length > 0 && <span class="dc-plus">+{total(add)}</span>}
             {rem.length > 0 && <span class="dc-minus">−{total(rem)}</span>}
-            {diff.skill && <span>✦ Skill</span>}
-            {diff.renamed && <span>✎ Name</span>}
+            {diff.skill && <span class="dc-sum-skill">✦ {diff.skill.to ? bare(diff.skill.to) : 'no Skill'}</span>}
+            {diff.renamed && !diff.skill && <span>✎ Name</span>}
           </span>
           <span class="dc-chev">{open ? '▾' : '▸'}</span>
         </button>
@@ -334,11 +378,14 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
             ↶ Undo
           </button>
         )}
+        {canRedo && undone && (
+          <button class="chip dc-undo" onClick={onRedo}>
+            ↷ Redo
+          </button>
+        )}
       </div>
       {open && (
         <ul>
-          {add.map(([n, k]) => row(n, k, true))}
-          {rem.map(([n, k]) => row(n, k, false))}
           {diff.skill && (
             <li>
               <span class="dc-card dc-line">✦ Skill: {diff.skill.to ? bare(diff.skill.to) : 'none'}</span>
@@ -349,6 +396,8 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
               <span class="dc-card dc-line">✎ Named "{diff.renamed}"</span>
             </li>
           )}
+          {add.map(([n, k]) => row(n, k, true))}
+          {rem.map(([n, k]) => row(n, k, false))}
         </ul>
       )}
     </div>
@@ -376,7 +425,7 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
   return (
     <div class="dc-key">
       <p>
-        <b>Deck chat runs on Claude</b> with your own Anthropic API key (about 2-5¢ of credit per deck build). It stays on this phone only.{' '}
+        <b>Deck chat runs on Claude</b> with your own Anthropic API key (a deck build is usually 10-30¢ of credit, a question a cent or two; each answer shows what it cost). It stays on this phone only.{' '}
         <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
           Get a key
         </a>
@@ -389,6 +438,13 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
           </button>
         )}
       </div>
+      {!has && (
+        <ol class="dc-steps">
+          <li>Sign in at console.anthropic.com (tap Get a key)</li>
+          <li>Add a little credit under Billing ($5 lasts a long time)</li>
+          <li>Create a key, copy it, and paste it here</li>
+        </ol>
+      )}
       {bad && !check && <p class="dc-warn">That doesn't look like a key. It starts with sk-ant-.</p>}
       {check && <p class={check.state === 'bad' ? 'dc-warn' : 'dc-dim'}>{check.text}</p>}
       <div class="dc-key-acts">
@@ -401,7 +457,7 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
           {has ? 'Close' : 'Later'}
         </button>
         <button class="gbtn gold" disabled={!looksLikeKey(k) || check?.state === 'busy'} onClick={save}>
-          Save key
+          {check?.state === 'busy' ? 'Checking…' : 'Save key'}
         </button>
       </div>
     </div>

@@ -12,6 +12,21 @@ type Block = Anthropic.Beta.BetaContentBlock;
 export interface ModelReply {
   content: Block[];
   stop_reason: string | null;
+  usage?: Usage;
+}
+
+export interface Usage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+/** What a turn cost in US dollars at Claude Opus 5.5's prices ($4 in, $20 out, cache write $5, cache read $0.20 per million tokens). */
+export function costOf(u: Usage[]): number {
+  let c = 0;
+  for (const x of u) c += (x.input_tokens * 4 + (x.cache_creation_input_tokens ?? 0) * 5 + (x.cache_read_input_tokens ?? 0) * 0.2 + x.output_tokens * 20) / 1e6;
+  return c;
 }
 
 export interface ModelRequest {
@@ -57,6 +72,18 @@ export interface TurnResult {
   deck: SpeedDeck;
   /** the model refused or stopped early: shown as a note, not a reply */
   stopped?: string;
+  refused?: boolean;
+  usage: Usage[];
+}
+
+/**
+ * The history to keep after a turn: each earlier turn as plain text (what was asked, what
+ * Claude answered). Old tool calls and search results aren't sent again, so long chats stay
+ * cheap and never outgrow the model. No thinking blocks are kept from finished turns, so
+ * nothing replayed was made against a different history.
+ */
+export function keepTurn(history: Msg[], userText: string, answer: string): Msg[] {
+  return [...history, { role: 'user', content: [{ type: 'text', text: userText }] }, { role: 'assistant', content: [{ type: 'text', text: answer.trim() || '(done)' }] }];
 }
 
 /** One duelist message, answered: runs tools until the model is done. */
@@ -65,18 +92,20 @@ export async function runTurn(model: Model, history: Msg[], userText: string, wo
   const messages: Msg[] = [...history, { role: 'user', content: [{ type: 'text', text: `${userText}\n\n<current_deck>\n${deckReport(world)}\n</current_deck>` }] }];
   let deck = world.deck;
   let text = '';
+  const usage: Usage[] = [];
   for (let step = 0; step < MAX_STEPS; step++) {
     const reply = await model({ system: SYSTEM, tools: TOOLS, messages }, hooks.onText, hooks.signal);
+    if (reply.usage) usage.push(reply.usage);
     messages.push({ role: 'assistant', content: reply.content as Anthropic.Beta.BetaContentBlockParam[] });
     const said = reply.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join('');
     if (said) text += (text ? '\n\n' : '') + said.trim();
-    if (reply.stop_reason === 'refusal') return { messages, text, deck, stopped: "Claude can't help with that one. Try asking another way." };
+    if (reply.stop_reason === 'refusal') return { messages, text, deck, usage, refused: true, stopped: "Claude can't help with that one. Try asking another way." };
     const calls = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
     if (reply.stop_reason !== 'tool_use' || !calls.length) {
       // a reply cut off mid tool call still needs its results, or every later request is refused
       if (calls.length) messages.push({ role: 'user', content: calls.map((c) => ({ type: 'tool_result' as const, tool_use_id: c.id, content: 'Not run: your reply was cut off.', is_error: true })) });
-      if (reply.stop_reason === 'max_tokens') return { messages, text, deck, stopped: 'The answer was cut off. Ask it to go on.' };
-      return { messages, text, deck };
+      if (reply.stop_reason === 'max_tokens') return { messages, text, deck, usage, stopped: 'The answer was cut off. Ask it to go on.' };
+      return { messages, text, deck, usage };
     }
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const call of calls) {
@@ -91,7 +120,7 @@ export async function runTurn(model: Model, history: Msg[], userText: string, wo
     }
     messages.push({ role: 'user', content: results });
   }
-  return { messages, text, deck, stopped: 'That took too many steps. Ask again with a smaller change.' };
+  return { messages, text, deck, usage, stopped: 'That took too many steps. Ask again with a smaller change.' };
 }
 
 /** The real model: Claude, called from the phone with the duelist's own API key. */
@@ -119,9 +148,12 @@ export function claudeModel(apiKey: string): Model {
     );
     if (onText) stream.on('text', (d) => onText(d));
     const m = await stream.finalMessage();
-    return { content: m.content, stop_reason: m.stop_reason };
+    return { content: m.content, stop_reason: m.stop_reason, usage: m.usage };
   };
 }
+
+/** The request didn't fit the model: start the history over. */
+export const tooLong = (e: unknown) => /too long|too many tokens|context window/i.test((e as Error)?.message ?? '');
 
 /** Tries a key without spending credit (looks up the model). null when it works, else why not. */
 export async function checkKey(apiKey: string): Promise<string | null> {
@@ -142,6 +174,7 @@ export async function chatError(e: unknown): Promise<string> {
   if (e instanceof Sdk.AuthenticationError) return "That key didn't work. Tap Key at the top of the chat to fix it.";
   if (e instanceof Sdk.PermissionDeniedError) return "That key isn't allowed to use Claude. Tap Key at the top of the chat to fix it.";
   if (e instanceof Sdk.RateLimitError) return 'Claude is busy for this key right now. Wait a minute and try again.';
+  if (e instanceof Sdk.BadRequestError && tooLong(e)) return 'This chat got too long. Tap New to start a fresh one.';
   if (e instanceof Sdk.BadRequestError) return /credit/i.test(e.message) ? 'The key has no credit left. Add some at console.anthropic.com.' : `Claude couldn't read that request (${e.message.slice(0, 120)}).`;
   if (e instanceof Sdk.APIConnectionError) return 'No connection to Claude. Check the internet and try again.';
   if (e instanceof Sdk.APIError) return `Claude had a problem (${e.status ?? 'error'}). Try again.`;

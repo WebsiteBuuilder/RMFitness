@@ -30,7 +30,7 @@ import {
 import { CardImg, CardInfoPanel } from './CardImg';
 import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
-import { DeckChat } from './DeckChat';
+import { DeckChat, forgetDeckChat, stopDeckChat } from './DeckChat';
 import { DeckSwitch } from './DeckPick';
 import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
@@ -346,6 +346,7 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
                     label: `Delete ${sel.name}`,
                     onPick: () => {
                       const decks = save.decks.filter((d) => d.id !== sel.id);
+                      forgetDeckChat(sel.id);
                       onSave({ ...save, decks, active: save.active === sel.id ? (decks[0]?.id ?? null) : save.active });
                       setSel(null);
                     },
@@ -513,7 +514,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
       if (skillPick) return (setSkillPick(false), true);
       if (renaming) return (setRenaming(false), true);
       if (random) return (setRandom(false), true);
-      if (chat) return (setChat(false), true);
+      if (chat) return (stopDeckChat() || setChat(false), true);
       return false;
     };
     return () => {
@@ -791,10 +792,11 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
         <DeckChat
           deck={deck}
           collection={collection}
-          onChange={onChange}
+          // the random maker's Undo is a snapshot: it would wipe the chat's changes, so it goes
+          onChange={(d) => (setUndo(null), onChange(d))}
           onFresh={(names) => names.length && setChatNew({ names: new Set(names), id: Date.now() })}
           onBusy={setChatBusy}
-          onRead={(n) => (playBlip(), setViewFromDeck(copies(n) > 0), setView({ n, list: [n] }))}
+          onRead={(n, list) => (playBlip(), setViewFromDeck(copies(n) > 0), setView({ n, list }))}
           onClose={() => setChat(false)}
         />
       )}

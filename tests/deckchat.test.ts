@@ -6,7 +6,7 @@ import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, limitStatus, newSpeedSave, speedDeckProblems, isExtraCard, type SpeedDeck } from '../src/eds/speedSave';
 import { withStarter } from '../src/collection/economy';
 import { TOOLS, diffDecks, resolveName, runTool, undoDiff, type ChatWorld } from '../src/deckchat/tools';
-import { runTurn, type Model, type ModelReply } from '../src/deckchat/agent';
+import { costOf, keepTurn, runTurn, type Model, type ModelReply } from '../src/deckchat/agent';
 import { DB, PLAYABLE, SKILLS } from './speedkit';
 import { getSkill } from '../src/eds/skills';
 import { readFileSync } from 'node:fs';
@@ -99,6 +99,8 @@ const owned: ChatWorld = { deck: empty(), collection: save.collection };
       ok(!!runTool({ deck: withSkill }, 'edit_deck', { add: [{ name: cardName, count: 1 }] }).text.match(/Limited/), `a Limited 1 Skill (${sk.name}) blocks its group's cards`);
       const withCard = runTool({ deck: empty(true) }, 'edit_deck', { add: [{ name: cardName, count: 1 }] }).deck!;
       ok(runTool({ deck: withCard }, 'edit_deck', { skill: sk.name }).deck!.skill === null, "and the Skill can't join a deck holding one");
+      const swap = runTool({ deck: withSkill }, 'edit_deck', { clear: true, skill: null, add: [{ name: cardName, count: 1 }] }).deck!;
+      ok(swap.skill === null && swap.main.length + swap.extra.length === 1, 'changing the Skill in the same call frees its Limited group for the adds');
     } else console.log('skip: no Limited 1 group with a Skill and a card');
   }
 }
@@ -150,8 +152,12 @@ await (async () => {
   const first = r.messages[0].content as { text: string }[];
   ok(/<current_deck>/.test(first[0].text), 'the current deck goes with the message');
 
+  const kept = keepTurn([], 'build me a deck', r.text);
+  ok(kept.length === 2 && JSON.stringify(kept).indexOf('tool_use') < 0 && JSON.stringify(kept).indexOf('<current_deck>') < 0, 'a finished turn is kept as plain text');
+  ok(Math.abs(costOf([{ input_tokens: 1e6, output_tokens: 1e5, cache_read_input_tokens: 1e6, cache_creation_input_tokens: 0 }]) - 6.2) < 1e-9, 'cost uses Opus 5.5 prices');
   const refuse: Model = async () => ({ stop_reason: 'refusal', content: [] });
-  ok(!!(await runTurn(refuse, [], 'x', owned)).stopped, 'a refusal becomes a note');
+  const rf = await runTurn(refuse, [], 'x', owned);
+  ok(!!rf.stopped && rf.refused === true, 'a refusal becomes a note and is marked refused');
   // cut off in the middle of a tool call: the history must still pair every tool_use with a result
   const cut: Model = async () => ({ stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'cut1', name: 'view_deck', input: {} }] as never });
   const c = await runTurn(cut, [], 'x', owned);

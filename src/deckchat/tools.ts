@@ -95,7 +95,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'edit_deck',
     description:
-      `Change the deck. Steps run in this order: clear (empty Main and Extra Deck), remove, add, then skill and name. Fusion/Synchro/Xyz/Link monsters go to the Extra Deck by themselves. Each card is checked like the Add button: copies owned, ${COPIES} per name, the ${LIMITED_LIST_NAME}, Main Deck at most ${MAIN_MAX}, Extra Deck at most ${EXTRA_MAX}. Anything refused is listed with the reason; the rest still applies. Returns the deck after the change. The duelist sees every change and can undo it.`,
+      `Change the deck. Steps run in this order: clear (empty Main and Extra Deck), remove, skill, add, then name. Fusion/Synchro/Xyz/Link monsters go to the Extra Deck by themselves. Each card is checked like the Add button: copies owned, ${COPIES} per name, the ${LIMITED_LIST_NAME}, Main Deck at most ${MAIN_MAX}, Extra Deck at most ${EXTRA_MAX}. Anything refused is listed with the reason; the rest still applies. Returns the deck after the change. The duelist sees every change and can undo it.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -315,7 +315,7 @@ function collectionOverview(w: ChatWorld): string {
   const mons = pool.filter((c) => c.kind === 'monster' && !isExtraCard(c.name));
   // archetype words: name words shared by 3+ different cards ("Harpie", "Blue-Eyes", "Gearfried")
   const words = new Map<string, Set<string>>();
-  for (const c of pool) for (const word of new Set(c.name.split(/[\s,]+/).filter((x) => x.length > 3 && !/^(the|of|and|with|from|dragon|monster|card|lady|magician|warrior)$/i.test(x)))) (words.get(word) ?? words.set(word, new Set()).get(word)!).add(c.name);
+  for (const c of pool) for (const word of new Set(c.name.split(/[\s,]+/).filter((x) => x.length > 3 && !/^(the|of|and|with|from|monster|card)$/i.test(x)))) (words.get(word) ?? words.set(word, new Set()).get(word)!).add(c.name);
   const themes = [...words].filter(([, s]) => s.size >= 3).sort((a, b) => b[1].size - a[1].size).slice(0, 15).map(([k, s]) => `${k} (${s.size})`);
   return [
     w.collection ? `Owns ${pool.length} different playable cards (${copies(pool)} usable copies, at most ${COPIES} each).` : `Anything goes deck: all ${pool.length} playable Speed Duel cards, ${COPIES} copies each.`,
@@ -351,6 +351,16 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
     if (took) done.push(`-${took} ${r.name}`);
     else refused.push(`${r.name}: not in the deck`);
   }
+  if (i.skill === null) (d.skill = null), done.push('no Skill');
+  else if (typeof i.skill === 'string' && i.skill.trim()) {
+    const r = resolveName(i.skill, true);
+    if ('error' in r) refused.push(r.error);
+    else if (!getSkill(r.name)) refused.push(`${bare(r.name)}: this Skill isn't in the game yet`);
+    else if (w.collection && !(w.collection[r.name] ?? 0)) refused.push(`${bare(r.name)}: you don't own this Skill`);
+    else if (limitStatus(r.name) === 'Forbidden') refused.push(`${bare(r.name)}: Forbidden`);
+    else if (limitedGroupFull([...d.main, ...d.extra], r.name)) refused.push(`${bare(r.name)}: ${limitedGroupFull([...d.main, ...d.extra], r.name)} (the deck already has a card from its Limited group)`);
+    else (d.skill = r.name), done.push(`Skill ${bare(r.name)}`);
+  }
   for (const it of items(i.add)) {
     const r = resolveName(it.name);
     if ('error' in r) {
@@ -368,16 +378,6 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
     }
     if (put) done.push(`+${put} ${r.name}`);
     if (why) refused.push(`${r.name}: ${put ? `only ${put} of ${want} went in, ` : ''}${why}`);
-  }
-  if (i.skill === null) (d.skill = null), done.push('no Skill');
-  else if (typeof i.skill === 'string' && i.skill.trim()) {
-    const r = resolveName(i.skill, true);
-    if ('error' in r) refused.push(r.error);
-    else if (!getSkill(r.name)) refused.push(`${bare(r.name)}: this Skill isn't in the game yet`);
-    else if (w.collection && !(w.collection[r.name] ?? 0)) refused.push(`${bare(r.name)}: you don't own this Skill`);
-    else if (limitStatus(r.name) === 'Forbidden') refused.push(`${bare(r.name)}: Forbidden`);
-    else if (limitedGroupFull([...d.main, ...d.extra], r.name)) refused.push(`${bare(r.name)}: ${limitedGroupFull([...d.main, ...d.extra], r.name)} (the deck already has a card from its Limited group)`);
-    else (d.skill = r.name), done.push(`Skill ${bare(r.name)}`);
   }
   if (typeof i.name === 'string' && i.name.trim()) (d = { ...d, name: i.name.trim().slice(0, 20) }), done.push(`renamed "${d.name}"`);
   const text = [done.length ? `Done: ${done.join(', ')}.` : 'Nothing changed.', refused.length ? `Refused: ${refused.join(' | ')}` : '', '', deckReport({ ...w, deck: d })].filter((x, k) => x || k === 2).join('\n');
@@ -426,5 +426,19 @@ export function undoDiff(now: SpeedDeck, diff: DeckDiff, before: SpeedDeck): Spe
   for (const [n, k] of Object.entries(diff.removed)) for (let j = 0; j < k; j++) (isExtraCard(n) ? d.extra : d.main).push(n);
   if (diff.skill) d.skill = diff.skill.from;
   if (diff.renamed) d.name = before.name;
+  return d;
+}
+
+/** Puts an undone change back on the deck as it is now. */
+export function redoDiff(now: SpeedDeck, diff: DeckDiff): SpeedDeck {
+  const d: SpeedDeck = { ...now, main: [...now.main], extra: [...now.extra] };
+  for (const [n, k] of Object.entries(diff.removed))
+    for (let j = 0; j < k; j++) {
+      const from = d.extra.includes(n) ? d.extra : d.main.includes(n) ? d.main : null;
+      if (from) from.splice(from.lastIndexOf(n), 1);
+    }
+  for (const [n, k] of Object.entries(diff.added)) for (let j = 0; j < k; j++) (isExtraCard(n) ? d.extra : d.main).push(n);
+  if (diff.skill) d.skill = diff.skill.to;
+  if (diff.renamed) d.name = diff.renamed;
   return d;
 }

@@ -112,7 +112,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.4;
 }
 .dc-me .dc-bubble {
@@ -259,9 +259,17 @@ button.dc-card:active {
 .dc-ideas::-webkit-scrollbar {
   display: none;
 }
+.dc-ideas-one {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dc-ideas-one .chip {
+  white-space: nowrap;
+}
 .dc-ideas .chip {
   flex: none;
-  min-height: 32px;
+  min-height: 38px;
   font-size: 13px;
   text-align: left;
 }
@@ -380,6 +388,22 @@ button.dc-card:active {
 .dc-key-row .chip {
   flex: none;
   min-height: 42px;
+}
+.dc-sum-skill {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dc-steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: var(--dim);
+  font-size: 13px;
+}
+.dc-cost {
+  margin: 2px 0 0 6px;
+  color: var(--dim);
+  font-size: 11px;
 }
 .sd-chat {
   flex: none;
