@@ -1,0 +1,397 @@
+/* Ranked Duel: tier shields, stars, the ladder and the result. Uses the solo modes' navy and gold. */
+.rk-emblem {
+  --t1: #8aa0b8;
+  --t2: #4c5f7a;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 50px;
+}
+.rk-emblem.s {
+  width: 28px;
+  height: 32px;
+}
+.rk-emblem.l {
+  width: 78px;
+  height: 88px;
+}
+.rk-emblem svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+.rk-shield {
+  fill: var(--t2);
+  stroke: var(--t1);
+  stroke-width: 3;
+}
+.rk-shine {
+  fill: var(--t1);
+  opacity: 0.35;
+}
+.rk-emblem b {
+  position: relative;
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  margin-top: -4px;
+}
+.rk-emblem.s b {
+  font-size: 13px;
+  margin-top: -2px;
+}
+.rk-emblem.l b {
+  font-size: 38px;
+  margin-top: -6px;
+}
+.t-rookie {
+  --t1: #a9b8cc;
+  --t2: #4c5f7a;
+}
+.t-bronze {
+  --t1: #e09a62;
+  --t2: #7a4322;
+}
+.t-silver {
+  --t1: #e6edf5;
+  --t2: #7d8a99;
+}
+.t-gold {
+  --t1: #ffd86b;
+  --t2: #a5741a;
+}
+.t-platinum {
+  --t1: #7af0df;
+  --t2: #1f7f78;
+}
+.t-diamond {
+  --t1: #a7d3ff;
+  --t2: #2d5fb8;
+}
+.t-master {
+  --t1: #d6a8ff;
+  --t2: #6b2fa8;
+}
+.t-king {
+  --t1: #ffd86b;
+  --t2: #b0213f;
+}
+.rk-emblem.t-king svg {
+  filter: drop-shadow(0 0 10px rgba(255, 216, 107, 0.6));
+}
+
+.rk-stars {
+  display: inline-flex;
+  gap: 4px;
+  font-size: 22px;
+  line-height: 1;
+}
+.rk-stars span {
+  color: #34446f;
+  text-shadow: 0 1px 2px #000;
+}
+.rk-stars span.on {
+  color: var(--so-gold);
+  text-shadow: 0 0 8px rgba(242, 193, 78, 0.6);
+}
+.rk-stars span.fresh {
+  animation: rk-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes rk-pop {
+  from {
+    transform: scale(0.2) rotate(-40deg);
+    opacity: 0;
+  }
+}
+.rk-kp {
+  color: var(--so-gold);
+  font-weight: 800;
+}
+
+/* the hero card with your rank */
+.rk-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--t1);
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--t2) 70%, transparent), var(--so-card) 70%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--t1) 25%, transparent);
+}
+.rk-hero-t {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.rk-hero-t > b {
+  font-size: 24px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.rk-rec {
+  font-size: 13px;
+  color: var(--so-dim);
+}
+.rk-ladder {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin: 10px 2px 8px;
+}
+.rk-pip {
+  position: relative;
+  height: 6px;
+  margin-bottom: 14px;
+  border-radius: 3px;
+  background: #23315a;
+}
+.rk-pip i {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #5d6c95;
+}
+.rk-pip.now i,
+.rk-pip.past i {
+  color: var(--t1);
+}
+.rk-pip.past {
+  background: var(--t1);
+  opacity: 0.6;
+}
+.rk-pip.now {
+  background: var(--t1);
+  box-shadow: 0 0 8px var(--t1);
+}
+.rk-bonus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.rk-bonus span {
+  flex: 1 1 140px;
+  padding: 6px 9px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--so-dim);
+  background: var(--so-card);
+  border: 1px solid var(--so-line);
+}
+.rk-bonus span.on {
+  color: var(--so-gold);
+  border-color: var(--so-gold2);
+}
+
+.rk-foe {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--so-card2), var(--so-card));
+  border: 1px solid var(--so-line);
+}
+.rk-foe > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rk-foe b {
+  font-size: 17px;
+}
+.rk-foe span:not(.so-label) {
+  font-size: 13px;
+  color: var(--so-dim);
+  overflow-wrap: anywhere;
+}
+.rk-foe em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--so-blue);
+}
+.so-btn.rk-go {
+  width: 100%;
+  margin: 12px 0;
+  font-size: 19px;
+  padding: 14px;
+}
+
+.rk-prizes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rk-prize,
+.rk-past {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--so-card);
+  border: 1px solid var(--so-line);
+}
+.rk-prize > b,
+.rk-past > b {
+  width: 78px;
+  flex: none;
+  font-size: 14px;
+}
+.rk-prize > span:not(.rk-emblem),
+.rk-past > span:not(.rk-emblem) {
+  flex: 1;
+  font-size: 13px;
+  color: var(--so-dim);
+  min-width: 0;
+}
+.rk-prize i {
+  font-style: normal;
+  color: var(--so-gold);
+  font-weight: 900;
+  width: 16px;
+  text-align: center;
+}
+.rk-prize.got {
+  opacity: 0.6;
+}
+.rk-prize.now {
+  border-color: var(--so-gold2);
+}
+
+/* after a duel */
+.rk-change {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.rk-change > b {
+  font-size: 22px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.rk-change.up .rk-emblem {
+  animation: rk-rise 0.8s ease-out both;
+}
+@keyframes rk-rise {
+  from {
+    transform: translateY(16px) scale(0.6);
+    opacity: 0;
+  }
+}
+.rk-flash {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: var(--so-gold);
+  text-shadow: 0 0 12px rgba(242, 193, 78, 0.8);
+  animation: rk-pop 0.6s 0.2s both;
+}
+.rk-flash.down {
+  color: var(--so-red);
+  text-shadow: none;
+}
+.rk-delta {
+  font-size: 13px;
+  color: var(--so-dim);
+  text-align: center;
+}
+.rk .so-clear .rk-emblem,
+.so-clear .rk-emblem {
+  margin: 8px auto;
+}
+
+/* the home screen's Ranked tile carries the shield */
+.sdh-tile-ic {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  margin-left: 12px;
+  margin-right: -4px;
+}
+
+/* a new tier: a burst of the tier's colour behind the shield */
+.rk-change.tier {
+  padding-top: 6px;
+}
+.rk-burst {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 240px;
+  height: 240px;
+  margin-left: -120px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--t1) 55%, transparent) 0deg 8deg, transparent 8deg 24deg);
+  -webkit-mask: radial-gradient(circle, #000 20%, transparent 68%);
+  mask: radial-gradient(circle, #000 20%, transparent 68%);
+  animation: rk-burst 1.2s ease-out both, rk-spin 14s linear infinite;
+}
+@keyframes rk-burst {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+@keyframes rk-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+.rk-change.tier > :not(.rk-burst) {
+  position: relative;
+}
+.rk-change.tier .rk-emblem {
+  animation: rk-rise 0.8s ease-out both, rk-glow 1.6s 0.8s ease-in-out infinite alternate;
+}
+@keyframes rk-glow {
+  to {
+    filter: drop-shadow(0 0 14px var(--t1));
+  }
+}
+.rk-next {
+  font-size: 13px;
+  color: var(--so-gold);
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rk-burst,
+  .rk-change .rk-emblem,
+  .rk-stars span.fresh,
+  .rk-flash {
+    animation: none !important;
+  }
+}
+
+.sdh-toprank {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.sdh-toprank .rk-emblem.s {
+  width: 18px;
+  height: 21px;
+}
+.sdh-toprank .rk-emblem.s b {
+  font-size: 9px;
+}

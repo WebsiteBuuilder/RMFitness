@@ -37,6 +37,7 @@ import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
+import { cancelRanked, settleLinkRanked } from '../eds/speedCampaign/ranked';
 import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
 import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
@@ -44,7 +45,7 @@ import { getAnimSpeed } from '../art/settings';
 import { recordShadow, shadowRealmOf, unsealedCpuMain, unsealedDeck, withShadow } from '../art/shadow';
 import { rarityMap, TIERS, tierIndex, withLevels, type Deeds, type LevelReport } from '../level/leveling';
 import { showDuelRarity } from '../level/view';
-import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, tooQuick } from '../collection/economy';
+import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, tooQuick, RIVAL_MIN_TURNS } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
@@ -558,6 +559,15 @@ export function App() {
     const o = !left && session ? outcomeOf(session.engine.state, 0, sd.startLp) : forfeit(sd.startLp);
     const speedNow = speedSave ?? loadSpeedSave(profile.id);
     const soloBefore = loadSolo(profile.id);
+    // Backing out of a Ranked Duel before it starts (at the toss) costs nothing; the same opponent waits.
+    if (left && sd.ctx.kind === 'ranked' && !session?.engine.state.started) {
+      writeSolo(profile.id, cancelRanked(soloBefore));
+      setSoloReport(null);
+      session?.close();
+      setSession(null);
+      setScreen('speed');
+      return true;
+    }
     // An Anything goes deck moves the solo modes on but earns nothing, Duelist Requests included.
     const anyGoes = sd.ctx.kind === 'labyrinth' ? !!soloBefore.labyrinth.run?.open : sd.ctx.kind !== 'practice' && !!sd.ctx.open;
     const r = settleSolo(sd.ctx, o, speedNow, soloBefore);
@@ -571,7 +581,7 @@ export function App() {
     }
     const speedOut = req ? req.save : r.speed;
     if (speedOut !== speedNow) setSpeedSave(speedOut);
-    setSoloReport(left && sd.ctx.kind !== 'labyrinth' ? null : r.report);
+    setSoloReport(left && sd.ctx.kind !== 'labyrinth' && sd.ctx.kind !== 'ranked' ? null : r.report);
     lastSoloSpec.current = sd.spec;
     session?.close();
     setSession(null);
@@ -748,7 +758,7 @@ export function App() {
   useEffect(() => online.watchSession(screen === 'duel' ? session : null, duelMode, screen === 'duel'), [session, screen, duelMode]);
   // Duelist Rankings: friends see this profile's link-battle record.
   useEffect(() => {
-    if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save));
+    if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save, profile.id));
   }, [profile, save, speedSave, screen]);
   // The floating Friends button only shows on menus with no buttons along the bottom; the
   // Speed Duel side has its own Friends row on the Duel tab, and invites still pop up anywhere.
@@ -790,10 +800,24 @@ export function App() {
         setOfflineLeave(false);
         // the other phone walked out long ago (online rooms say so): the win goes to the one who stayed
         const won = !!session.adapter.abandoned?.();
-        const left = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
+        const left0 = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
         settled.current = session;
+        // a duel that got going still moves the Ranked ladder: dropping out can't dodge a lost star
+        let left = left0;
+        let rankedLine: string | null = null;
+        const base = left0?.save ?? speedSave;
+        if (base && profile && st.turn >= RIVAL_MIN_TURNS && !activeDeck(base)?.open) {
+          const lr = settleLinkRanked(base, loadSolo(profile.id), won ? 'w' : 'l', st.players[other(mySeat)].name);
+          writeSolo(profile.id, lr.solo);
+          rankedLine = lr.line;
+          if (left0) left = { ...left0, save: lr.speed };
+          else setSpeedSave(lr.speed);
+        }
         if (left) setSpeedSave(left.save);
-        const lines = left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.'];
+        const lines = [
+          ...(left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.']),
+          ...(rankedLine ? [rankedLine] : []),
+        ];
         const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
         setSpeedNews(lines);
         setNewsCards(cards);
@@ -858,6 +882,18 @@ export function App() {
         const bet = settleStakes(s, seat, st, [seats[0], seats[1]], winner);
         const before = crownHolder(s, opp);
         const rv = rivalResult(bet.save, { result, opp, turns: st.turn, counts: staked(seats[0].stakes, seats[1].stakes), online: !hotseat, surrender: /surrendered$/.test(st.winReason), damage: lpLostIn(st) });
+        // Online link battles that count also move this duelist's Ranked ladder (on their own phone).
+        let save2 = rv.save;
+        const realDuel = !hotseat && seat === mySeat && profile && st.turn >= RIVAL_MIN_TURNS && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
+        if (realDuel && !activeDeck(s)?.open) {
+          const lr = settleLinkRanked(save2, loadSolo(profile.id), result, opp);
+          writeSolo(profile.id, lr.solo);
+          save2 = lr.speed;
+          if (lr.line) rv.lines.push(lr.line);
+          if (lr.lines.length) rv.lines.push(...lr.lines.filter((l) => !l.includes(': ') || l.startsWith('Title')));
+          if (lr.cards.length) cards.push({ who: seats[seat].name, won: lr.cards, lost: [] });
+        }
+        rv.save = save2;
         const after = crownHolder(rv.save, opp);
         if (after === 'me' && before !== 'me') rv.lines.unshift(`👑 ${seats[seat].name} takes the King of Games crown from ${opp}!`);
         cards.push({ who: seats[seat].name, won: bet.won, lost: bet.lost });
@@ -1273,7 +1309,7 @@ export function App() {
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
             <ConfirmSheet look={gameOf() === 'speed' ? 'md' : 'gba'} title="Leave this duel?" confirmLabel="Leave" cancelLabel="Keep dueling" danger onCancel={() => setAskLeave(false)} onConfirm={confirmLeave}>
-              {soloDuel.current?.ctx.kind === 'labyrinth' ? 'It counts as a loss and costs a heart.' : session.adapter.roomCode && !hotseat ? 'Leaving concedes the duel: it counts as your loss.' : 'This duel will end here.'}
+              {soloDuel.current?.ctx.kind === 'labyrinth' ? 'It counts as a loss and costs a heart.' : soloDuel.current?.ctx.kind === 'ranked' ? 'It counts as a Ranked loss.' : session.adapter.roomCode && !hotseat ? 'Leaving concedes the duel: it counts as your loss.' : 'This duel will end here.'}
             </ConfirmSheet>
           )}
         </>

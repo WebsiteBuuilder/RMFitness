@@ -5,13 +5,15 @@ import { afterDuel, better, stopById, summaryOf, todayString, type Run, type Run
 import type { SoloSave } from './save';
 import { grant } from './rewards';
 import { settleLegend, type LegendSettled } from './legends';
+import { settleRanked, type RankedSettled } from './ranked';
 import type { DuelContext, DuelOutcome } from './types';
 
 export type SoloReport =
   | { kind: 'practice'; outcome: DuelOutcome; ctx: Extract<DuelContext, { kind: 'practice' }> }
   | { kind: 'campaign'; outcome: DuelOutcome; nodeId: string; settled: Settled }
   | { kind: 'labyrinth'; outcome: DuelOutcome; run: Run | null; ended: RunSummary | null }
-  | { kind: 'legend'; outcome: DuelOutcome; duelId: string; rematch: boolean; settled: LegendSettled };
+  | { kind: 'legend'; outcome: DuelOutcome; duelId: string; rematch: boolean; settled: LegendSettled }
+  | { kind: 'ranked'; outcome: DuelOutcome; settled: RankedSettled };
 
 /** Ends a run: pays its Soul Fragments, files it in the history, unlocks the next Curse. */
 export function endRun(solo: SoloSave, run: Run): { solo: SoloSave; summary: RunSummary } {
@@ -45,6 +47,11 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   if (ctx.kind === 'legend') {
     const settled = settleLegend(speed, solo, ctx.duelId, o, !!ctx.rematch, Date.now(), !!ctx.open);
     return { speed: settled.speed, solo: settled.solo, report: { kind: 'legend', outcome: o, duelId: ctx.duelId, rematch: !!ctx.rematch, settled } };
+  }
+  if (ctx.kind === 'ranked') {
+    // Leaving a Ranked Duel counts as a loss.
+    const settled = settleRanked(speed, solo, o);
+    return { speed: settled.speed, solo: settled.solo, report: { kind: 'ranked', outcome: o, settled } };
   }
   const run = solo.labyrinth.run;
   if (!run || run.id !== ctx.runId) return { speed, solo, report: { kind: 'labyrinth', outcome: o, run, ended: null } };

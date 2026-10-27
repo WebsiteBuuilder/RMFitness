@@ -5,6 +5,7 @@ import type { SpeedDeck } from '../speedSave';
 import { dropRetired, dropRetiredPending } from '../../collection/retired';
 import type { Run, RunSummary } from './labyrinth';
 import type { LegendsProgress } from './legends';
+import type { RankedProgress } from './ranked';
 
 export interface CampaignProgress {
   /** the Starter Deck character the road started with (null until picked) */
@@ -80,6 +81,8 @@ export interface SoloSave {
   tagRoad?: { wins: Record<string, number>; losses: number; openWins?: Record<string, number> };
   /** Card Legends: the story duels won and the daily rematch */
   legends?: LegendsProgress;
+  /** Ranked Duel: this season's ladder and past seasons */
+  ranked?: RankedProgress;
 }
 
 export function newSoloSave(): SoloSave {
