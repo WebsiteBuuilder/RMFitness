@@ -513,3 +513,33 @@
     overflow: hidden;
   }
 }
+/* cards deck chat just put in: a gold glow that fades, so you can see what changed */
+.dk-chatnew {
+  position: relative;
+  animation: dk-in 0.35s ease-out;
+}
+.dk-chatnew::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--gold), 0 0 10px 2px rgba(247, 201, 72, 0.8);
+  pointer-events: none;
+  animation: dk-glow 3.2s ease-out forwards;
+}
+@keyframes dk-glow {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* deck chat is changing the deck: hands off until it's done */
+.dk-held .dk-deck,
+.dk-held .dk-pool,
+.dk-held .dk-head {
+  pointer-events: none;
+  opacity: 0.85;
+}

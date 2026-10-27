@@ -39,6 +39,8 @@
 .dc-grip {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
   min-height: 36px;
   display: flex;
   align-items: center;
@@ -51,7 +53,17 @@
   color: var(--dim);
 }
 .dc-head .chip {
-  min-height: 32px;
+  flex: none;
+  min-height: 34px;
+  white-space: nowrap;
+}
+@media (max-width: 380px) {
+  .dc-grip b {
+    font-size: 13px;
+  }
+  .dc-head {
+    gap: 4px;
+  }
 }
 .dc-x {
   flex: none;
@@ -80,7 +92,7 @@
 }
 .dc-dim {
   color: var(--dim);
-  font-size: 11px;
+  font-size: 13px;
 }
 .dc-msg {
   display: flex;
@@ -115,7 +127,7 @@
   background: none;
   border: 1px dashed rgba(232, 232, 255, 0.35);
   color: var(--dim);
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
 }
 .dc-busy {
@@ -124,7 +136,7 @@
   gap: 8px;
   padding: 6px 4px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: 13px;
 }
 .dc-dots {
   display: inline-flex;
@@ -184,9 +196,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   text-align: left;
+  white-space: nowrap;
+}
+.dc-sum {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.dc-sum s {
+  color: var(--dim);
+}
+.dc-chev {
+  margin-left: auto;
+  color: var(--dim);
 }
 .dc-plus {
   color: var(--green);
@@ -206,17 +231,18 @@
   padding: 0 6px 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 30dvh;
-  overflow-y: auto;
+  gap: 3px;
 }
 .dc-card {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+  min-height: 40px;
   text-align: left;
-  padding: 5px 6px;
+  padding: 3px 6px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 14px;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   background: rgba(255, 255, 255, 0.05);
 }
@@ -226,10 +252,9 @@ button.dc-card:active {
 .dc-ideas {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
   padding: 4px 10px;
-  scrollbar-width: none;
 }
 .dc-ideas::-webkit-scrollbar {
   display: none;
@@ -237,8 +262,8 @@ button.dc-card:active {
 .dc-ideas .chip {
   flex: none;
   min-height: 32px;
-  white-space: nowrap;
-  font-size: 11px;
+  font-size: 13px;
+  text-align: left;
 }
 .dc-input {
   flex: none;
@@ -290,6 +315,8 @@ button.dc-card:active {
   color: var(--gold);
 }
 .dc-key input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 42px;
   font-size: 16px;
@@ -318,6 +345,41 @@ button.dc-card:active {
   background: linear-gradient(#f3d27a, #c9962e);
   color: #2a1a00;
   border-color: #8a6416;
+}
+.dc-thumb {
+  flex: none;
+  width: 24px;
+  height: 35px;
+  border-radius: 2px;
+  object-fit: cover;
+  background: #6b4a1f;
+}
+.dc-k-spell {
+  background: #1d8a7a;
+}
+.dc-k-trap {
+  background: #a3367c;
+}
+.dc-card b {
+  flex: none;
+  min-width: 22px;
+}
+.dc-card span {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-line {
+  color: var(--ink);
+}
+.dc-key-row {
+  display: flex;
+  gap: 6px;
+}
+.dc-key-row .chip {
+  flex: none;
+  min-height: 42px;
 }
 .sd-chat {
   flex: none;

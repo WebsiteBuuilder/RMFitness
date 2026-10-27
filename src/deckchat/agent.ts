@@ -24,7 +24,7 @@ export interface ModelRequest {
 export type Model = (req: ModelRequest, onText?: (delta: string) => void, signal?: AbortSignal) => Promise<ModelReply>;
 
 export const MODEL_ID = 'claude-opus-5-5';
-const MAX_STEPS = 14;
+const MAX_STEPS = 25;
 
 export const SYSTEM = `You are the deck builder inside a Speed Duel game (Yu-Gi-Oh! Speed Duel, like Master Duel's deck editor). You talk with the duelist on their phone while they edit one deck, and you can read their cards and change that deck with tools.
 
@@ -33,6 +33,7 @@ ${DECK_RULES}
 How to work:
 - Only use cards the tools show. Never invent cards or effects; check card text with get_cards before you explain what a card does.
 - Unless the deck is an Anything goes deck, the duelist can only use cards they own (search_cards and list_skills only show those).
+- Call several tools at once when they don't depend on each other (for example a few searches in one go).
 - To build a full deck: call collection_overview, pick a plan that fits what they own (a theme, Attribute or Type with enough monsters), search for the pieces, then build it with as few edit_deck calls as you can (clear plus all adds in one call is best). Aim for a legal 20-card Main Deck unless they ask for more: roughly 11-13 monsters (mostly Level 4 or lower, a few strong Level 5-6 tributes at most), with the rest spells and traps that support them, a fitting Skill, and Extra Deck monsters only when the deck can actually summon them (it has the materials and Polymerization or the right Levels). Check the result and fix anything refused.
 - For edits, make exactly what they asked and keep the rest of the deck.
 - Every change shows up in the deck at once with an Undo button, so just do it; don't ask for permission first. Ask a short question only when the request really could mean very different decks.
@@ -43,9 +44,9 @@ How to answer: the screen is small. Reply in plain short sentences, no tables or
 export interface TurnHooks {
   onText?: (delta: string) => void;
   /** a tool is running ("search_cards"...) */
-  onTool?: (name: string) => void;
+  onTool?: (name: string, input: unknown) => void;
   /** the deck changed (after every edit_deck that changed something) */
-  onDeck?: (deck: SpeedDeck) => void;
+  onDeck?: (deck: SpeedDeck, prev: SpeedDeck) => void;
   signal?: AbortSignal;
 }
 
@@ -71,16 +72,19 @@ export async function runTurn(model: Model, history: Msg[], userText: string, wo
     if (reply.stop_reason === 'refusal') return { messages, text, deck, stopped: "Claude can't help with that one. Try asking another way." };
     const calls = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
     if (reply.stop_reason !== 'tool_use' || !calls.length) {
+      // a reply cut off mid tool call still needs its results, or every later request is refused
+      if (calls.length) messages.push({ role: 'user', content: calls.map((c) => ({ type: 'tool_result' as const, tool_use_id: c.id, content: 'Not run: your reply was cut off.', is_error: true })) });
       if (reply.stop_reason === 'max_tokens') return { messages, text, deck, stopped: 'The answer was cut off. Ask it to go on.' };
       return { messages, text, deck };
     }
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const call of calls) {
-      hooks.onTool?.(call.name);
+      hooks.onTool?.(call.name, call.input);
       const r = runTool({ ...world, deck }, call.name, call.input);
       if (r.deck && JSON.stringify(r.deck) !== JSON.stringify(deck)) {
+        const prev = deck;
         deck = r.deck;
-        hooks.onDeck?.(deck);
+        hooks.onDeck?.(deck, prev);
       }
       results.push({ type: 'tool_result', tool_use_id: call.id, content: r.text, ...(r.error ? { is_error: true } : {}) });
     }
@@ -101,7 +105,7 @@ export function claudeModel(apiKey: string): Model {
     const stream = client.beta.messages.stream(
       {
         model: MODEL_ID,
-        max_tokens: 16000,
+        max_tokens: 32000,
         system: req.system,
         tools: req.tools.map((t) => ({ ...t, input_schema: t.input_schema as Anthropic.Beta.BetaTool.InputSchema })),
         messages: req.messages,
@@ -116,6 +120,18 @@ export function claudeModel(apiKey: string): Model {
     const m = await stream.finalMessage();
     return { content: m.content, stop_reason: m.stop_reason };
   };
+}
+
+/** Tries a key without spending credit (looks up the model). null when it works, else why not. */
+export async function checkKey(apiKey: string): Promise<string | null> {
+  const { default: Sdk } = await import('@anthropic-ai/sdk');
+  try {
+    await new Sdk({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 }).models.retrieve(MODEL_ID);
+    return null;
+  } catch (e) {
+    if (e instanceof Sdk.AuthenticationError) return "That key didn't work. Copy it again from console.anthropic.com.";
+    return chatError(e);
+  }
 }
 
 /** A problem talking to Claude, in the player's words. */

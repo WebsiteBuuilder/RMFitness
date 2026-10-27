@@ -4,10 +4,11 @@
 // card list so the deck stays in view above it.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SpeedDeck } from '../eds/speedSave';
-import { chatError, claudeModel, runTurn, type Model, type Msg } from '../deckchat/agent';
-import { diffDecks, diffEmpty, type DeckDiff } from '../deckchat/tools';
+import { chatError, checkKey, claudeModel, runTurn, type Model, type Msg } from '../deckchat/agent';
+import { diffDecks, diffEmpty, undoDiff, type DeckDiff } from '../deckchat/tools';
 import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
 import { buzz, playBlip } from './sound';
+import { card, imageUrl } from '../eds/db';
 import './deckchat.css';
 
 interface Turn {
@@ -25,8 +26,35 @@ interface Chat {
   turns: Turn[];
 }
 
-/** Chats per deck, kept while the game is open (closing the chat doesn't lose it). */
+/** Chats per deck: kept in memory and on the phone, so closing the chat or the game doesn't lose them. */
 const chats = new Map<string, Chat>();
+const STORE = (deckId: string) => `eds.deckChat.${deckId}`;
+
+function loadChat(deckId: string): Chat {
+  const hit = chats.get(deckId);
+  if (hit) return hit;
+  try {
+    const c = JSON.parse(localStorage.getItem(STORE(deckId)) ?? 'null') as Chat | null;
+    if (c && Array.isArray(c.messages) && Array.isArray(c.turns)) return c;
+  } catch {
+    /* none saved */
+  }
+  return { messages: [], turns: [] };
+}
+
+function storeChat(deckId: string, c: Chat) {
+  chats.set(deckId, c);
+  try {
+    if (!c.turns.length) return localStorage.removeItem(STORE(deckId));
+    // a long chat keeps its last 60 lines on screen; the model history is dropped (not cut) when it gets too big
+    const keep: Chat = { turns: c.turns.slice(-60), messages: c.messages };
+    let raw = JSON.stringify(keep);
+    if (raw.length > 400_000) raw = JSON.stringify({ turns: keep.turns, messages: [] });
+    localStorage.setItem(STORE(deckId), raw);
+  } catch {
+    /* storage full or blocked: it lasts until the game closes */
+  }
+}
 
 const TOOL_LABEL: Record<string, string> = {
   view_deck: 'Reading your deck',
@@ -37,17 +65,32 @@ const TOOL_LABEL: Record<string, string> = {
   edit_deck: 'Changing the deck',
 };
 
-const IDEAS_EMPTY = ['Build me the strongest deck you can from my cards', 'Make a Dragon deck', 'Build a deck around my best monster', 'What deck can I make?'];
-const IDEAS_DECK = ['Make this deck stronger', 'What does my Skill do?', 'Swap weak monsters for better ones', 'Is this deck good? Be honest'];
+const IDEAS_EMPTY = ['Build my strongest deck', 'Make a Dragon deck', 'Build around my best monster', 'What can I build?'];
+const IDEAS_DECK = ['Make it stronger', 'What does my Skill do?', 'Swap weak monsters', 'Is this deck good?'];
 
 const bare = (n: string) => n.replace(/ \(Skill Card\)$/, '');
+
+/** What a running tool is doing, in a few words ("Adding Blue-Eyes White Dragon and 9 more"). */
+function toolLine(name: string, input: unknown): string {
+  const i = (input ?? {}) as { add?: { name?: string }[]; remove?: { name?: string }[]; name?: string; text?: string; names?: string[] };
+  if (name === 'edit_deck') {
+    const add = (i.add ?? []).map((x) => x.name).filter(Boolean) as string[];
+    const rem = (i.remove ?? []).map((x) => x.name).filter(Boolean) as string[];
+    const list = add.length ? add : rem;
+    if (list.length) return `${add.length ? 'Adding' : 'Taking out'} ${list[0]}${list.length > 1 ? ` and ${list.length - 1} more` : ''}`;
+  }
+  if (name === 'search_cards' && (i.name || i.text)) return `Searching for "${i.name ?? i.text}"`;
+  if (name === 'get_cards' && i.names?.length) return `Reading ${i.names[0]}${i.names.length > 1 ? ` and ${i.names.length - 1} more` : ''}`;
+  return TOOL_LABEL[name] ?? 'Working';
+}
 
 /** Only for tests and screenshots: a model to use instead of Claude (window.__deckChatModel). */
 const testModel = () => (globalThis as { __deckChatModel?: Model }).__deckChatModel;
 
-export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck: SpeedDeck; collection?: Record<string, number>; onChange: (d: SpeedDeck) => void; onRead: (name: string) => void; onClose: () => void }) {
-  const [chat, setChatState] = useState<Chat>(() => chats.get(deck.id) ?? { messages: [], turns: [] });
-  const setChat = (c: Chat) => (chats.set(deck.id, c), setChatState(c));
+export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, onClose }: { deck: SpeedDeck; collection?: Record<string, number>; onChange: (d: SpeedDeck) => void; /** cards that just came in, so their tiles can glow */ onFresh?: (names: string[]) => void; /** Claude is working: the editor holds still */ onBusy?: (busy: boolean) => void; onRead: (name: string) => void; onClose: () => void }) {
+  const [chat, setChatState] = useState<Chat>(() => loadChat(deck.id));
+  const setChat = (c: Chat) => (storeChat(deck.id, c), setChatState(c));
+  const [sureNew, setSureNew] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [live, setLive] = useState('');
@@ -56,6 +99,7 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
   const [tall, setTall] = useState(false);
   const stop = useRef<AbortController | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const deckRef = useRef(deck);
   deckRef.current = deck;
   // the newest onChange: the turn runs across renders and must not save into an old copy
@@ -67,6 +111,23 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat.turns.length, live, busy]);
   useEffect(() => () => stop.current?.abort(), []);
+  // iPhones put the keyboard over fixed sheets: keep the sheet above it
+  const [lift, setLift] = useState<{ bottom: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const fit = () => {
+      const covered = window.innerHeight - vv.height - vv.offsetTop;
+      setLift(covered > 80 ? { bottom: covered, height: Math.min(vv.height - 44, vv.height * 0.9) } : null);
+    };
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => (vv.removeEventListener('resize', fit), vv.removeEventListener('scroll', fit));
+  }, []);
+  // ready to type when there's a key (no keyboard popping over the key panel)
+  useEffect(() => {
+    if (key && !keyOpen && !matchMedia('(pointer: coarse)').matches) input.current?.focus();
+  }, []);
 
   const send = async (raw: string) => {
     const msg = raw.trim();
@@ -79,6 +140,7 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
     let turns: Turn[] = [...chat.turns, { id: Date.now(), who: 'me', text: msg }];
     setChat({ ...chat, turns });
     setBusy('Thinking');
+    onBusy?.(true);
     setLive('');
     const ac = new AbortController();
     stop.current = ac;
@@ -86,8 +148,8 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
       const r = await runTurn(model, chat.messages, msg, { deck: before, collection }, {
         signal: ac.signal,
         onText: (d) => (setLive((t) => t + d), setBusy(null)),
-        onTool: (n) => (setBusy(TOOL_LABEL[n] ?? 'Working'), setLive('')),
-        onDeck: (d) => changeRef.current(d),
+        onTool: (n, i) => (setBusy(toolLine(n, i)), setLive('')),
+        onDeck: (d, prev) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added))),
       });
       const diff = diffDecks(before, r.deck);
       turns = [...turns, { id: Date.now() + 1, who: 'claude', text: r.text || (diffEmpty(diff) ? 'Done.' : 'Here you go.'), ...(diffEmpty(diff) ? {} : { diff, before }) }];
@@ -98,26 +160,29 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
       const diff = diffDecks(before, deckRef.current);
       const why = await chatError(e);
       if (!diffEmpty(diff)) turns = [...turns, { id: Date.now() + 1, who: 'claude', text: 'I changed the deck before this stopped.', diff, before }];
-      setChat({ messages: chat.messages, turns: [...turns, { id: Date.now() + 2, who: 'note', text: why }] });
+      // Claude keeps the request in mind (the history stays append-only)
+      const messages: Msg[] = [...chat.messages, { role: 'user', content: [{ type: 'text', text: msg }] }, { role: 'assistant', content: [{ type: 'text', text: `(I was stopped before I finished${diffEmpty(diff) ? '' : ', after changing the deck'}.)` }] }];
+      setChat({ messages, turns: [...turns, { id: Date.now() + 2, who: 'note', text: why }] });
       if (/key/i.test(why)) setKeyOpen(true);
       buzz(30);
     } finally {
       stop.current = null;
+      onBusy?.(false);
       setBusy(null);
       setLive('');
     }
   };
 
   const undo = (t: Turn) => {
-    if (!t.before) return;
+    if (!t.before || !t.diff) return;
     playBlip();
-    onChange(t.before);
+    onChange(undoDiff(deckRef.current, t.diff, t.before));
     // later changes were made on top of this one, so they go too
     const at = chat.turns.indexOf(t);
     // Claude hears about it, and sees the deck as it is now with the next message
     setChat({
       messages: chat.messages.length ? [...chat.messages, { role: 'user', content: [{ type: 'text', text: '(I pressed Undo on your last change, so the deck went back. You will see the current deck with my next message.)' }] }, { role: 'assistant', content: [{ type: 'text', text: 'Got it.' }] }] : chat.messages,
-      turns: chat.turns.map((x, i) => (i >= at && x.diff ? { ...x, undone: true } : x)).concat({ id: Date.now(), who: 'note', text: 'Undone. The deck is back to how it was.' }),
+      turns: chat.turns.map((x, i) => (i >= at && x.diff ? { ...x, undone: true } : x)),
     });
   };
 
@@ -125,18 +190,23 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
   const ideas = deck.main.length ? IDEAS_DECK : IDEAS_EMPTY;
 
   return (
-    <div class={`dc ${tall ? 'dc-tall' : ''}`} role="dialog" aria-label="Deck chat">
+    <div class={`dc ${tall ? 'dc-tall' : ''}`} role="dialog" aria-label="Deck chat" style={lift ? { bottom: `${lift.bottom}px`, height: `${lift.height}px` } : undefined}>
       <div class="dc-head">
         <button class="dc-grip" onClick={() => setTall(!tall)} aria-label={tall ? 'Make the chat smaller' : 'Make the chat bigger'}>
           <b>✦ Deck chat</b>
           <span>{tall ? '▾' : '▴'}</span>
         </button>
-        <button class={`chip dc-keybtn ${key ? '' : 'on'}`} onClick={() => setKeyOpen(!keyOpen)}>
-          {key ? 'Key' : 'Add key'}
+        <button class={`chip dc-keybtn ${key ? '' : 'on'}`} onClick={() => setKeyOpen(!keyOpen)} aria-label="Claude key settings">
+          {key ? '⚙' : 'Add key'}
         </button>
+        {lastChange && !busy && (
+          <button class="chip dc-undo" onClick={() => undo(lastChange)} aria-label="Undo the last chat change">
+            ↶ Undo
+          </button>
+        )}
         {chat.turns.length > 0 && !busy && (
-          <button class="chip" onClick={() => (playBlip(), setChat({ messages: [], turns: [] }))} aria-label="Start a new chat">
-            New
+          <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
+            {sureNew ? 'Clear chat?' : 'New'}
           </button>
         )}
         <button class="win-x dc-x" onClick={onClose} aria-label="Close chat">
@@ -203,6 +273,7 @@ export function DeckChat({ deck, collection, onChange, onRead, onClose }: { deck
         }}
       >
         <textarea
+          ref={input}
           rows={1}
           value={text}
           placeholder={key || testModel() ? 'Ask for a deck or a change…' : 'Add your key first'}
@@ -233,15 +304,30 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
   const rem = Object.entries(diff.removed);
   const total = (l: [string, number][]) => l.reduce((a, [, k]) => a + k, 0);
   const [open, setOpen] = useState(add.length + rem.length <= 6);
+  const row = (n: string, k: number, plus: boolean) => (
+    <li key={`${plus ? '+' : '-'}${n}`}>
+      <button class={`dc-card ${plus ? 'dc-plus' : 'dc-minus'}`} onClick={() => onRead(n)} aria-label={`${plus ? 'Added' : 'Took out'} ${k} ${n}: tap to read`}>
+        {imageUrl(n) ? <img class="dc-thumb" src={imageUrl(n)!} alt="" loading="lazy" draggable={false} /> : <i class={`dc-thumb dc-k-${card(n)?.kind ?? 'monster'}`} />}
+        <b>
+          {plus ? '+' : '−'}
+          {k}
+        </b>
+        <span>{n}</span>
+      </button>
+    </li>
+  );
   return (
     <div class={`dc-change ${undone ? 'undone' : ''}`}>
       <div class="dc-change-head">
-        <button class="dc-change-sum" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <span>
-            {undone ? 'Undone: ' : 'Deck changed: '}
-            {[add.length ? `+${total(add)} in` : '', rem.length ? `−${total(rem)} out` : '', diff.skill ? 'new Skill' : '', diff.renamed ? 'renamed' : ''].filter(Boolean).join(' · ')}
+        <button class="dc-change-sum" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? 'Hide the changes' : 'Show the changes'}>
+          <span class="dc-sum">
+            {undone && <s>Undone</s>}
+            {add.length > 0 && <span class="dc-plus">+{total(add)}</span>}
+            {rem.length > 0 && <span class="dc-minus">−{total(rem)}</span>}
+            {diff.skill && <span>✦ Skill</span>}
+            {diff.renamed && <span>✎ Name</span>}
           </span>
-          <span class="dc-dim">{open ? 'Hide ▾' : 'See ▸'}</span>
+          <span class="dc-chev">{open ? '▾' : '▸'}</span>
         </button>
         {canUndo && !undone && (
           <button class="chip dc-undo" onClick={onUndo}>
@@ -251,28 +337,16 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
       </div>
       {open && (
         <ul>
-          {add.map(([n, k]) => (
-            <li key={`+${n}`}>
-              <button class="dc-card dc-plus" onClick={() => onRead(n)}>
-                +{k} {n}
-              </button>
-            </li>
-          ))}
-          {rem.map(([n, k]) => (
-            <li key={`-${n}`}>
-              <button class="dc-card dc-minus" onClick={() => onRead(n)}>
-                −{k} {n}
-              </button>
-            </li>
-          ))}
+          {add.map(([n, k]) => row(n, k, true))}
+          {rem.map(([n, k]) => row(n, k, false))}
           {diff.skill && (
             <li>
-              <span class="dc-card">✦ Skill: {diff.skill.to ? bare(diff.skill.to) : 'none'}</span>
+              <span class="dc-card dc-line">✦ Skill: {diff.skill.to ? bare(diff.skill.to) : 'none'}</span>
             </li>
           )}
           {diff.renamed && (
             <li>
-              <span class="dc-card">✎ Named "{diff.renamed}"</span>
+              <span class="dc-card dc-line">✎ Named "{diff.renamed}"</span>
             </li>
           )}
         </ul>
@@ -283,18 +357,40 @@ function Changes({ diff, undone, canUndo, onUndo, onRead }: { diff: DeckDiff; un
 
 function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k: string) => void; onClear: () => void; onClose: () => void }) {
   const [k, setK] = useState('');
+  const [check, setCheck] = useState<{ state: 'busy' | 'bad'; text: string } | null>(null);
   const bad = k.trim() !== '' && !looksLikeKey(k);
+  const save = async () => {
+    setCheck({ state: 'busy', text: 'Checking the key…' });
+    const why = await checkKey(k.trim());
+    if (why) return void (setCheck({ state: 'bad', text: why }), buzz(30));
+    setCheck(null);
+    onSave(k.trim());
+  };
+  const paste = async () => {
+    try {
+      setK((await navigator.clipboard.readText()).trim());
+    } catch {
+      setCheck({ state: 'bad', text: 'Paste with a long press in the box instead.' });
+    }
+  };
   return (
     <div class="dc-key">
       <p>
-        <b>Deck chat runs on Claude.</b> Paste an Anthropic API key once and it stays on this phone only. Get one at{' '}
+        <b>Deck chat runs on Claude</b> with your own Anthropic API key (about 2-5¢ of credit per deck build). It stays on this phone only.{' '}
         <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-          console.anthropic.com
+          Get a key
         </a>
-        . A deck build costs a few cents of API credit.
       </p>
-      <input type="password" autoComplete="off" autoCapitalize="off" spellcheck={false} placeholder={has ? 'Key saved · paste a new one to change it' : 'sk-ant-…'} value={k} onInput={(ev) => setK((ev.target as HTMLInputElement).value)} aria-label="Anthropic API key" />
-      {bad && <p class="dc-warn">That doesn't look like a key. It starts with sk-ant-.</p>}
+      <div class="dc-key-row">
+        <input type="password" autoComplete="off" autoCapitalize="off" spellcheck={false} placeholder={has ? 'Key saved ✓ · paste a new one to change' : 'sk-ant-…'} value={k} onInput={(ev) => (setK((ev.target as HTMLInputElement).value), setCheck(null))} aria-label="Anthropic API key" />
+        {typeof navigator !== 'undefined' && 'readText' in (navigator.clipboard ?? {}) && (
+          <button class="chip" onClick={paste}>
+            Paste
+          </button>
+        )}
+      </div>
+      {bad && !check && <p class="dc-warn">That doesn't look like a key. It starts with sk-ant-.</p>}
+      {check && <p class={check.state === 'bad' ? 'dc-warn' : 'dc-dim'}>{check.text}</p>}
       <div class="dc-key-acts">
         {has && (
           <button class="chip" onClick={onClear}>
@@ -304,7 +400,7 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
         <button class="chip" onClick={onClose}>
           {has ? 'Close' : 'Later'}
         </button>
-        <button class="gbtn gold" disabled={!looksLikeKey(k)} onClick={() => onSave(k)}>
+        <button class="gbtn gold" disabled={!looksLikeKey(k) || check?.state === 'busy'} onClick={save}>
           Save key
         </button>
       </div>

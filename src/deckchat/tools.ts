@@ -12,6 +12,7 @@ import {
   MAIN_MIN,
   isExtraCard,
   limitStatus,
+  limitedGroupFull,
   speedDeckProblems,
   unplayableReason,
   whyCantAdd,
@@ -50,7 +51,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'search_cards',
     description:
-      'Search the cards this deck may use (owned cards, or every Speed Duel card for an Anything goes deck). All filters are optional and combine. Each line: name | kind | stats | copies usable | copies in deck | Limited List status. Set with_text to also get each card\'s rules text (shortened). Cards the game cannot play yet are left out.',
+      'Search the cards this deck may use (owned cards, or every Speed Duel card for an Anything goes deck). All filters are optional and combine. Each result: name | kind | stats | copies usable | copies in deck | Limited List status, then the start of its rules text (Normal Monsters have none). Set full_text for the whole text. Cards the game cannot play yet are left out.',
     input_schema: {
       type: 'object',
       properties: {
@@ -63,8 +64,8 @@ export const TOOLS: ToolDef[] = [
         max_level: int,
         min_atk: int,
         sort: { type: 'string', enum: ['atk', 'name', 'level'], description: 'default atk (strongest first)' },
-        with_text: { type: 'boolean' },
-        limit: { ...int, description: 'how many lines, default 40, at most 120' },
+        full_text: { type: 'boolean' },
+        limit: { ...int, description: 'how many cards, default 30, at most 80' },
       },
       required: [],
       additionalProperties: false,
@@ -124,11 +125,13 @@ function stats(c: CardInfo): string {
 
 const short = (t: string, n = 220) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t).replace(/\s*\n\s*/g, ' ');
 
-function line(w: ChatWorld, c: CardInfo, withText = false): string {
+function line(w: ChatWorld, c: CardInfo, fullText = false): string {
   const lim = limitStatus(c.name);
   const parts = [c.name, stats(c), `use ${usable(w, c.name)}`, `deck ${inDeck(w.deck, c.name)}`];
   if (lim) parts.push(lim);
-  return parts.join(' | ') + (withText ? `\n   ${short(c.desc)}` : '');
+  // Normal Monsters' flavor text says nothing useful for deck building
+  const text = c.vanilla && c.kind === 'monster' && c.sub !== 'Fusion' ? '' : fullText ? c.desc.replace(/\s*\n\s*/g, ' ') : short(c.desc, 160);
+  return parts.join(' | ') + (text ? `\n   ${text}` : '');
 }
 
 /** Every playable Speed Duel card (no Skills) this deck may use. */
@@ -169,6 +172,22 @@ function grouped(list: string[]): string {
   return [...c].map(([n, k]) => `${k}x ${n}`).join('; ') || '(empty)';
 }
 
+/** Extra Deck monsters this deck probably can't summon: Fusions missing materials or a way to Fusion Summon. */
+function summonHints(d: SpeedDeck): string[] {
+  const out: string[] = [];
+  const main = new Set(d.main);
+  const fuses = d.main.some((n) => /Fusion Summon/i.test(card(n)?.desc ?? '') && card(n)?.kind !== 'monster');
+  for (const n of new Set(d.extra)) {
+    const c = card(n);
+    if (!c || c.sub !== 'Fusion') continue;
+    const mats = c.desc.match(/^"[^"]+"(?:\s*\+\s*"[^"]+")+/);
+    const missing = mats ? [...mats[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]).filter((m) => !main.has(m)) : [];
+    if (missing.length) out.push(`Hint: ${n} needs ${missing.join(' + ')} in the Main Deck`);
+    else if (!fuses && !/Contact Fusion|Special Summoned .* by (sending|banishing|Tributing)/i.test(c.desc)) out.push(`Hint: ${n} needs Polymerization or another Fusion Summon card in the Main Deck`);
+  }
+  return out;
+}
+
 export function deckReport(w: ChatWorld): string {
   const d = w.deck;
   const problems = speedDeckProblems(d);
@@ -183,6 +202,7 @@ export function deckReport(w: ChatWorld): string {
     `Main: ${grouped(d.main)}`,
     `Extra: ${grouped(d.extra)}`,
     problems.length ? `Not ready: ${problems.join('; ')}` : 'Ready to duel.',
+    ...summonHints(d),
   ].join('\n');
 }
 
@@ -246,9 +266,9 @@ function searchCards(w: ChatWorld, i: Input): string {
   if (i.min_atk !== undefined) list = list.filter((c) => (c.atk ?? -1) >= num(i.min_atk, 0));
   const sort = i.sort ?? 'atk';
   list.sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : sort === 'level' ? lvl(b) - lvl(a) : (b.atk ?? -1) - (a.atk ?? -1)) || a.name.localeCompare(b.name));
-  const limit = Math.max(1, Math.min(120, num(i.limit, 40)));
+  const limit = Math.max(1, Math.min(80, num(i.limit, 30)));
   if (!list.length) return 'No cards match. Try fewer filters.';
-  const shown = list.slice(0, limit).map((c) => line(w, c, i.with_text === true));
+  const shown = list.slice(0, limit).map((c) => line(w, c, i.full_text === true));
   return `${list.length} match${list.length > limit ? `, first ${limit}` : ''}:\n${shown.join('\n')}`;
 }
 
@@ -355,6 +375,7 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
     else if (!getSkill(r.name)) refused.push(`${bare(r.name)}: this Skill isn't in the game yet`);
     else if (w.collection && !(w.collection[r.name] ?? 0)) refused.push(`${bare(r.name)}: you don't own this Skill`);
     else if (limitStatus(r.name) === 'Forbidden') refused.push(`${bare(r.name)}: Forbidden`);
+    else if (limitedGroupFull([...d.main, ...d.extra], r.name)) refused.push(`${bare(r.name)}: ${limitedGroupFull([...d.main, ...d.extra], r.name)} (the deck already has a card from its Limited group)`);
     else (d.skill = r.name), done.push(`Skill ${bare(r.name)}`);
   }
   if (typeof i.name === 'string' && i.name.trim()) (d = { ...d, name: i.name.trim().slice(0, 20) }), done.push(`renamed "${d.name}"`);
@@ -389,3 +410,20 @@ export function runTool(w: ChatWorld, name: string, input: unknown): { text: str
 }
 
 export const DECK_RULES = `Speed Duel deck rules: Main Deck ${MAIN_MIN} to ${MAIN_MAX} cards, Extra Deck 0 to ${EXTRA_MAX} (Fusion/Synchro/Xyz/Link), at most ${COPIES} copies of a card, and the ${LIMITED_LIST_NAME} (Forbidden cards can't be used; "Limited N" means at most N cards in total from that group, Skills included). One Skill per deck, optional.`;
+
+/**
+ * Takes one change back out of the deck as it is now (not a snapshot), so cards the duelist
+ * moved by hand afterwards stay where they put them.
+ */
+export function undoDiff(now: SpeedDeck, diff: DeckDiff, before: SpeedDeck): SpeedDeck {
+  const d: SpeedDeck = { ...now, main: [...now.main], extra: [...now.extra] };
+  for (const [n, k] of Object.entries(diff.added))
+    for (let j = 0; j < k; j++) {
+      const from = d.extra.includes(n) ? d.extra : d.main.includes(n) ? d.main : null;
+      if (from) from.splice(from.lastIndexOf(n), 1);
+    }
+  for (const [n, k] of Object.entries(diff.removed)) for (let j = 0; j < k; j++) (isExtraCard(n) ? d.extra : d.main).push(n);
+  if (diff.skill) d.skill = diff.skill.from;
+  if (diff.renamed) d.name = before.name;
+  return d;
+}

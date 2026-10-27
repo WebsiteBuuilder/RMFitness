@@ -460,6 +460,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   const [random, setRandom] = useState(openRandom);
   /** the deck chat sheet (Claude builds and edits the deck) */
   const [chat, setChat] = useState(openChat);
+  /** cards deck chat just put in (their tiles glow), and whether it is working (the editor holds still) */
+  const [chatNew, setChatNew] = useState<{ names: Set<string>; id: number } | null>(null);
+  const [chatBusy, setChatBusy] = useState(false);
   /** the deck as it was before a random deck replaced it */
   const [undo, setUndo] = useState<SpeedDeck | null>(null);
   const [kind, setKind] = useState<Kind>('all');
@@ -567,8 +570,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
 
   const deckTile = (n: string, i: number) => (
     <button
-      key={`${n}-${i}`}
-      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''}`}
+      key={`${n}-${i}${chatNew?.names.has(n) ? `-${chatNew.id}` : ''}`}
+      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''} ${chatNew?.names.has(n) ? 'dk-chatnew' : ''}`}
       aria-label={quick ? `${n}: tap to take out, hold to read` : `${n}: tap to read, then take out`}
       data-pad-x="Remove one"
       data-pad-y=""
@@ -580,7 +583,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
   );
 
   return (
-    <div class="screen deckedit dk">
+    <div class={`screen deckedit dk ${chatBusy ? 'dk-held' : ''}`}>
       <div class="dk-head">
         <button class="dk-done" onClick={onBack}>
           ‹ Done
@@ -789,6 +792,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, openRandom =
           deck={deck}
           collection={collection}
           onChange={onChange}
+          onFresh={(names) => names.length && setChatNew({ names: new Set(names), id: Date.now() })}
+          onBusy={setChatBusy}
           onRead={(n) => (playBlip(), setViewFromDeck(copies(n) > 0), setView({ n, list: [n] }))}
           onClose={() => setChat(false)}
         />

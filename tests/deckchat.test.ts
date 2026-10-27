@@ -5,10 +5,11 @@
 import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, limitStatus, newSpeedSave, speedDeckProblems, isExtraCard, type SpeedDeck } from '../src/eds/speedSave';
 import { withStarter } from '../src/collection/economy';
-import { TOOLS, diffDecks, resolveName, runTool, type ChatWorld } from '../src/deckchat/tools';
+import { TOOLS, diffDecks, resolveName, runTool, undoDiff, type ChatWorld } from '../src/deckchat/tools';
 import { runTurn, type Model, type ModelReply } from '../src/deckchat/agent';
 import { DB, PLAYABLE, SKILLS } from './speedkit';
 import { getSkill } from '../src/eds/skills';
+import { readFileSync } from 'node:fs';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
 
@@ -28,7 +29,7 @@ const owned: ChatWorld = { deck: empty(), collection: save.collection };
   const t = runTool(owned, 'collection_overview', {}).text;
   ok(/Owns \d+ different playable cards/.test(t), 'collection_overview counts owned cards');
   const s = runTool(owned, 'search_cards', { kind: 'monster', limit: 200 }).text;
-  const names = s.split('\n').slice(1).map((l) => l.split(' | ')[0]);
+  const names = s.split('\n').slice(1).filter((l) => !l.startsWith(' ')).map((l) => l.split(' | ')[0]);
   ok(names.length > 0 && names.every((n) => (save.collection![n] ?? 0) > 0), 'search_cards only shows owned cards');
   const outside = PLAYABLE.find((c) => !save.collection![c.name] && c.kind === 'monster' && !isExtraCard(c.name))!;
   const r = runTool(owned, 'edit_deck', { add: [{ name: outside.name, count: 1 }] });
@@ -73,6 +74,42 @@ const owned: ChatWorld = { deck: empty(), collection: save.collection };
   ok(/no Skill/.test(runTool({ deck: { ...empty(true), skill: sk.name } }, 'edit_deck', { skill: null }).text), 'skill null takes it off');
 }
 
+// ---------- undo takes back only that change ----------
+{
+  const open: ChatWorld = { deck: empty(true) };
+  const [a, b, c] = PLAYABLE.filter((x) => x.kind === 'monster' && !isExtraCard(x.name) && !limitStatus(x.name));
+  const before = runTool(open, 'edit_deck', { add: [{ name: a.name, count: 2 }] }).deck!;
+  const after = runTool({ deck: before }, 'edit_deck', { add: [{ name: b.name, count: 3 }], remove: [{ name: a.name, count: 1 }], name: 'Claude' }).deck!;
+  const byHand = { ...after, main: [...after.main, c.name] };
+  const back = undoDiff(byHand, diffDecks(before, after), before);
+  const n = (d: SpeedDeck, x: string) => d.main.filter((y) => y === x).length;
+  ok(n(back, a.name) === 2 && n(back, b.name) === 0 && n(back, c.name) === 1 && back.name === before.name, 'undo reverses the chat change and keeps a card added by hand');
+}
+
+// ---------- Skills count in their Limited group ----------
+{
+  const raw = JSON.parse(readFileSync('src/eds/data/speedLimited.json', 'utf8')) as { limited: Record<string, string[]> };
+  const skillNames = new Set(SKILLS.map((s) => s.name.replace(/ \(Skill Card\)$/, '')));
+  const grp = Object.entries(raw.limited).map(([k, names]) => ({ k: Number(k), names })).find((g) => g.names.some((n) => skillNames.has(n)) && g.names.some((n) => PLAYABLE.some((c) => c.name === n)));
+  if (grp) {
+    const sk = SKILLS.find((s) => grp.names.includes(s.name.replace(/ \(Skill Card\)$/, '')) && getSkill(s.name));
+    const cardName = PLAYABLE.find((c) => grp.names.includes(c.name))!.name;
+    if (sk && grp.k === 1) {
+      const withSkill = { ...empty(true), skill: sk.name };
+      ok(!!runTool({ deck: withSkill }, 'edit_deck', { add: [{ name: cardName, count: 1 }] }).text.match(/Limited/), `a Limited 1 Skill (${sk.name}) blocks its group's cards`);
+      const withCard = runTool({ deck: empty(true) }, 'edit_deck', { add: [{ name: cardName, count: 1 }] }).deck!;
+      ok(runTool({ deck: withCard }, 'edit_deck', { skill: sk.name }).deck!.skill === null, "and the Skill can't join a deck holding one");
+    } else console.log('skip: no Limited 1 group with a Skill and a card');
+  }
+}
+
+// ---------- Fusion hints ----------
+{
+  const fusion = PLAYABLE.find((c) => c.sub === 'Fusion' && /^"[^"]+"(\s*\+\s*"[^"]+")+/.test(c.desc) && !limitStatus(c.name))!;
+  const r = runTool({ deck: empty(true) }, 'edit_deck', { add: [{ name: fusion.name, count: 1 }] });
+  ok(/Hint: .* needs /.test(r.text), `deckReport warns when ${fusion.name} can't be summoned`);
+}
+
 // ---------- forgiving names ----------
 {
   const r = resolveName('dark magician');
@@ -115,6 +152,11 @@ await (async () => {
 
   const refuse: Model = async () => ({ stop_reason: 'refusal', content: [] });
   ok(!!(await runTurn(refuse, [], 'x', owned)).stopped, 'a refusal becomes a note');
+  // cut off in the middle of a tool call: the history must still pair every tool_use with a result
+  const cut: Model = async () => ({ stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'cut1', name: 'view_deck', input: {} }] as never });
+  const c = await runTurn(cut, [], 'x', owned);
+  const lastMsg = c.messages[c.messages.length - 1];
+  ok(!!c.stopped && lastMsg.role === 'user' && (lastMsg.content as { type: string; tool_use_id?: string }[])[0].tool_use_id === 'cut1', 'a cut-off tool call still gets a tool_result');
   const loop: Model = async () => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id: String(Math.random()), name: 'view_deck', input: {} }] as never });
   ok(/too many steps/.test((await runTurn(loop, [], 'x', owned)).stopped ?? ''), 'a model that never stops is cut off');
 })();
