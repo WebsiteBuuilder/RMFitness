@@ -80,7 +80,7 @@ export function Ranked(p: Ctx) {
       rankedFirst(rp) === 'me' ? 'You go first.' : `${foe.duelist.name} goes first.`,
       ...(foe.wandering ? ['Wandering Duelist: a deck shuffled together for this one duel.'] : []),
       ...(lp || hand ? [`${tier.name} rule: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
-      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Leaving costs a star.`,
+      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Leaving costs a star (or today's bonus star if you have none).`,
     ];
     p.onDuel({
       me: { name: p.name, main: deck.main, extra: deck.extra, skill: deck.skill },
@@ -143,7 +143,7 @@ export function Ranked(p: Ctx) {
           ))}
         </div>
         <div class="rk-bonus">
-          <span class={bonusLeft ? 'on' : ''}>{bonusLeft ? '★ First win: +1 star' : '✓ Bonus star used'}</span>
+          <span class={bonusLeft ? 'on' : ''}>{bonusLeft ? '★ First win: +1 star' : '✓ Bonus star gone today'}</span>
           <span class={rp.streak >= 2 ? 'on' : ''}>{rp.streak >= 2 ? '🔥 Streak: +1 star' : '🔥 3 in a row: +1'}</span>
           <span class={goalDone || !tier.loses ? '' : 'on'}>{goalDone ? '✓ Daily pack won' : tier.loses ? `🎁 ${Math.min(won, DAILY_GOAL)}/${DAILY_GOAL} wins: a pack` : '🎁 Daily pack from Silver'}</span>
           <span class={linkUsed < LINK_STARS_PER_DAY ? 'on' : ''}>⚔ Online wins: +1 ({linkUsed}/{LINK_STARS_PER_DAY})</span>
@@ -226,7 +226,7 @@ export function Ranked(p: Ctx) {
           <div class="so-reward">Win a duel: +1 star. Fill a rank's stars to climb (3 a rank up to Silver, 4 from Gold).</div>
           <div class="so-reward">First win each day: +1 bonus star. Third win in a row and on: +1 streak star.</div>
           <div class="so-reward">From Silver up a loss takes a star back and can drop a rank, but never out of a tier you've reached.</div>
-          <div class="so-reward">Higher tiers bring later Millennium Road duelists, a sharper computer and, from Gold, Wandering Duelists with brand-new decks.</div>
+          <div class="so-reward">Higher tiers bring later Millennium Road duelists, a sharper computer and, from Bronze, Wandering Duelists with brand-new decks.</div>
           <div class="so-reward">From Silver up, the day's {DAILY_GOAL}rd Ranked win pays a pack.</div>
           <div class="so-reward">Online link battles with a friend count too: +1 star a win (up to {LINK_STARS_PER_DAY} a day), and a loss costs a star where Ranked losses do.</div>
           <div class="so-reward">Duel King is the top: every win there is a King point, and every {KING_MILESTONE} points pays a pack ({KING_MILESTONES} a season).</div>
@@ -299,14 +299,14 @@ function ResultSheet({ rep, foe, onNext, onDone, own, canGo }: { rep: Extract<No
         <b>{stepName(s.after.step)}</b>
         <RankStars p={s.after} fresh={fresh} />
         <span class="rk-delta">
-          {s.gained > 0 ? `+${s.gained} star${s.gained === 1 ? '' : 's'}` : s.gained < 0 ? '−1 star' : won ? '' : s.forfeit || tierOf(s.before.step).loses ? 'No stars to lose at this rank' : 'No star lost in this tier'}
+          {s.gained > 0 ? `+${s.gained} star${s.gained === 1 ? '' : 's'}` : s.gained < 0 ? '−1 star' : won ? '' : s.forfeit ? "No star to lose, so today's bonus star is gone" : tierOf(s.before.step).loses ? 'No stars to lose at this rank' : 'No star lost in this tier'}
           {s.bonus ? ' · daily bonus' : ''}
           {s.streakBonus ? ` · 🔥 ${s.streak} in a row` : ''}
         </span>
       </div>
       {s.lines.length > 0 && (
         <>
-          <div class="so-group">{s.newTier ? `${s.newTier.name} reached: season prize` : s.kingPaid ? 'Duel King milestone' : 'Daily Ranked pack'}</div>
+          <div class="so-group">{[s.newTier ? `${s.newTier.name} reached: season prize` : null, s.goalPaid ? 'daily Ranked pack' : null, s.kingPaid ? 'Duel King milestone' : null].filter(Boolean).join(' + ').replace(/^./, (c) => c.toUpperCase())}</div>
           {s.cards.length > 0 && <CardRow names={s.cards} reveal own={own} />}
           {prizeLines(s.lines).map((l) => (
             <div key={l} class="so-reward">

@@ -49,8 +49,8 @@ export interface RankedTier {
 
 export const RANKED_TIERS: RankedTier[] = [
   { id: 'rookie', name: 'Rookie', ranks: 1, stars: 3, loses: false, level: 'easy', chapters: [1, 2], wander: 0, prize: [] },
-  { id: 'bronze', name: 'Bronze', ranks: 2, stars: 3, loses: false, level: 'easy', chapters: [1, 2], wander: 0, prize: [{ kind: 'pack' }] },
-  { id: 'silver', name: 'Silver', ranks: 3, stars: 3, loses: true, level: 'normal', chapters: [2, 3], wander: 0, prize: [{ kind: 'pack' }] },
+  { id: 'bronze', name: 'Bronze', ranks: 2, stars: 3, loses: false, level: 'easy', chapters: [1, 2], wander: 0.15, prize: [{ kind: 'pack' }] },
+  { id: 'silver', name: 'Silver', ranks: 3, stars: 3, loses: true, level: 'normal', chapters: [2, 3], wander: 0.2, prize: [{ kind: 'pack' }] },
   { id: 'gold', name: 'Gold', ranks: 3, stars: 4, loses: true, level: 'normal', chapters: [3, 4], wander: 0.25, prize: [{ kind: 'pack' }, { kind: 'pack' }] },
   { id: 'platinum', name: 'Platinum', ranks: 3, stars: 4, loses: true, level: 'hard', chapters: [4, 5], wander: 0.3, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }] },
   { id: 'diamond', name: 'Diamond', ranks: 3, stars: 4, loses: true, level: 'hard', chapters: [5, 6], wander: 0.3, cpuLp: 4500, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }] },
@@ -474,7 +474,7 @@ export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' |
     return { speed, solo, line: result === 'w' ? `Ranked: today's ${LINK_STARS_PER_DAY} link-battle stars are already won` : null, lines: [], cards: [] };
   }
   const r = applyResult(p, result, now, false, true);
-  let next: RankedProgress = { ...r.p, w: p.w, l: p.l, ...(result === 'w' ? { linkDay: [day, used + 1] as [string, number] } : {}) };
+  let next: RankedProgress = { ...r.p, ...(result === 'w' ? { linkDay: [day, used + 1] as [string, number] } : {}) };
   let lines: string[] = [];
   let cards: string[] = [];
   const tierNow = tierIndexOf(next.step);
