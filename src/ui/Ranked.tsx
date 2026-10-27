@@ -7,6 +7,7 @@ import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import { DIFFICULTY_LABEL } from '../eds/difficulty';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import {
+  SEASON_MIN_WINS,
   ladderClock,
   rankedFirst,
   DAILY_GOAL,
@@ -251,6 +252,7 @@ function SeasonSheet({ p, onDone, own }: { p: RankedProgress; onDone: () => void
         <p>
           Last season ({seasonName(n.last.season)}): best {stepName(n.last.peak)}, {n.last.w}W {n.last.l}L.
         </p>
+        {n.last.w < SEASON_MIN_WINS && <p class="so-dim">Under {SEASON_MIN_WINS} wins last season, so this one starts fresh at Rookie.</p>}
       </div>
       {n.cards.length > 0 && (
         <>
