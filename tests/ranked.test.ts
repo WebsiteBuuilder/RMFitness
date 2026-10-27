@@ -8,6 +8,7 @@ import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
 import { cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, KING_MILESTONE, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { cleanStats } from '../src/collection/rankings';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
 for (const [k, v] of KIT) DB.set(k, v);
@@ -162,6 +163,11 @@ ok(rookieLeft.gained === 0 && rankedProgress(rookieLeft.solo).bonusDay === '2026
 // A thin season (under 10 wins) restarts at Rookie and pays no starting prizes.
 opened = openRanked(speed, at(newSoloSave(), { season: '2026-10', step: 13, peak: 13, w: 3, l: 0, paid: [0, 1, 2, 3, 4, 5] }), new Date(2026, 10, 2));
 ok(rankedProgress(opened.solo, new Date(2026, 10, 2)).step === 0 && opened.speed === speed, 'a season under 10 wins restarts at Rookie with no starting prizes');
+
+// Friends share their Ranked rank on the leaderboard: kept when sane, dropped when not.
+ok(cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: '2026-10', step: 7, kp: 0 } })?.rk?.step === 7, 'a shared Ranked rank survives cleaning');
+ok(!cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: 'evil', step: 7, kp: 0 } })?.rk, 'a malformed shared rank is dropped');
+ok(cleanStats({ w: 1, l: 0, d: 0, streak: 0, rk: { s: '2026-10', step: 999, kp: -4 } })?.rk?.step === 30, 'a shared rank is clamped');
 
 // ---------- opponents ----------
 const p0 = rankedProgress(newSoloSave(), day(1));

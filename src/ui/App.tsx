@@ -758,7 +758,7 @@ export function App() {
   useEffect(() => online.watchSession(screen === 'duel' ? session : null, duelMode, screen === 'duel'), [session, screen, duelMode]);
   // Duelist Rankings: friends see this profile's link-battle record.
   useEffect(() => {
-    if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save));
+    if (profile && save) online.setBoard(boardStatsOf(save.name, speedSave, save, profile.id));
   }, [profile, save, speedSave, screen]);
   // The floating Friends button only shows on menus with no buttons along the bottom; the
   // Speed Duel side has its own Friends row on the Duel tab, and invites still pop up anywhere.
