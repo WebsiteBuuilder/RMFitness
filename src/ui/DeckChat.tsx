@@ -92,6 +92,11 @@ function toolLine(name: string, input: unknown): string {
     if (list.length) return `${add.length ? 'Adding' : 'Taking out'} ${list[0]}${list.length > 1 ? ` and ${list.length - 1} more` : ''}`;
   }
   if (name === 'search_cards' && (i.name || i.text)) return `Searching for "${i.name ?? i.text}"`;
+  if (name === 'search_cards') {
+    const q = input as { kind?: string; race?: string; attribute?: string };
+    const what = q.kind === 'extra' ? 'Extra Deck monsters' : q.kind ? `${q.kind}s` : 'cards';
+    return `Searching ${[q.attribute, q.race].filter(Boolean).join(' ')} ${q.race || q.attribute ? (q.kind && q.kind !== 'monster' ? what : 'monsters') : what}`.replace(/\s+/g, ' ');
+  }
   if (name === 'get_cards' && i.names?.length) return `Reading ${i.names[0]}${i.names.length > 1 ? ` and ${i.names.length - 1} more` : ''}`;
   return TOOL_LABEL[name] ?? 'Working';
 }
@@ -108,13 +113,17 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const setChat = (c: Chat) => (storeChat(deck.id, c), setChatState(c));
   const [sureNew, setSureNew] = useState(false);
   const [text, setText] = useState('');
+  /** what Claude is doing right now (null while it writes), the steps it has done this turn, and whether a turn runs */
   const [busy, setBusy] = useState<string | null>(null);
+  const [trail, setTrail] = useState<string[]>([]);
+  const [working, setWorking] = useState(false);
   const [live, setLive] = useState('');
   const [key, setKey] = useState(chatKey);
   const [keyOpen, setKeyOpen] = useState(!chatKey() && !testModel());
   const [tall, setTall] = useState(false);
   const stop = useRef<AbortController | null>(null);
   const running = useRef(false);
+  const lastStep = useRef<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const deckRef = useRef(deck);
@@ -126,7 +135,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   useEffect(() => {
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.turns.length, live, busy]);
+  }, [chat.turns.length, live, busy, trail.length]);
   useEffect(() => {
     stopRunning = () => (stop.current ? (stop.current.abort(), true) : false);
     return () => {
@@ -155,7 +164,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const send = async (raw: string) => {
     const msg = raw.trim();
     // a ref, not state: two quick taps must not start two paid turns
-    if (!msg || busy || running.current) return;
+    if (!msg || working || running.current) return;
     const model = testModel() ?? (key ? claudeModel(key) : null);
     if (!model) return setKeyOpen(true);
     running.current = true;
@@ -165,6 +174,9 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     let turns: Turn[] = [...chat.turns, { id: Date.now(), who: 'me', text: msg }];
     setChat({ ...chat, turns });
     setBusy('Thinking');
+    setTrail([]);
+    lastStep.current = null;
+    setWorking(true);
     onBusy?.(true);
     setLive('');
     const ac = new AbortController();
@@ -174,7 +186,15 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       const hooks = {
         signal: ac.signal,
         onText: (d: string) => (setLive((t) => t + d), setBusy(null)),
-        onTool: (n: string, i: unknown) => (setBusy(toolLine(n, i)), setLive('')),
+        onTool: (n: string, i: unknown) => {
+          const step = toolLine(n, i);
+          // the step before this one is done: it joins the trail
+          const was = lastStep.current;
+          if (was) setTrail((t) => [...t, was]);
+          lastStep.current = step;
+          setBusy(step);
+          setLive('');
+        },
         onDeck: (d: SpeedDeck, prev: SpeedDeck) => (changeRef.current(d), onFresh?.(Object.keys(diffDecks(prev, d).added)), setTall(false)),
       };
       const r = await runTurn(model, history, msg, { deck: before, collection }, hooks).catch((e) => {
@@ -204,6 +224,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       running.current = false;
       onBusy?.(false);
       setBusy(null);
+      setTrail([]);
+      setWorking(false);
       setLive('');
     }
   };
@@ -249,7 +271,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
         <button class={`chip dc-keybtn ${key ? '' : 'on'}`} hidden={keyOpen} onClick={() => setKeyOpen(true)} aria-label="Claude key settings">
           {key ? 'Key' : 'Add key'}
         </button>
-        {chat.turns.length > 0 && !busy && (
+        {chat.turns.length > 0 && !working && (
           <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
             {sureNew ? 'Clear chat?' : 'New'}
           </button>
@@ -281,11 +303,18 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           <div key={t.id} class={`dc-msg dc-${t.who}`}>
             <div class="dc-bubble">{t.text}</div>
             {t.cost !== undefined && <span class="dc-cost">{t.cost < 0.01 ? 'under 1¢' : `about ${Math.round(t.cost * 100)}¢`} of credit</span>}
-            {t.diff && <Changes diff={t.diff} undone={!!t.undone} canUndo={t === lastChange && !busy} canRedo={t === redoable && !busy} onUndo={() => undo(t)} onRedo={() => redo(t)} onRead={onRead} />}
+            {t.diff && <Changes diff={t.diff} undone={!!t.undone} canUndo={t === lastChange && !working} canRedo={t === redoable && !working} onUndo={() => undo(t)} onRedo={() => redo(t)} onRead={onRead} />}
           </div>
         ))}
-        {(busy || live) && (
+        {working && (
           <div class="dc-msg dc-claude">
+            {trail.length > 0 && (
+              <ul class="dc-trail">
+                {trail.slice(-5).map((t, i) => (
+                  <li key={i}>✓ {t}</li>
+                ))}
+              </ul>
+            )}
             {live ? <div class="dc-bubble">{live}</div> : null}
             {busy && (
               <div class="dc-busy">
@@ -301,7 +330,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
         )}
       </div>
 
-      {!busy && (
+      {!working && (
         <div class={`dc-ideas ${chat.turns.length ? 'dc-ideas-one' : ''}`}>
           {(chat.turns.length ? ideas.slice(0, 2) : ideas).map((s) => (
             <button key={s} class="chip" onClick={() => send(s)}>
@@ -330,7 +359,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
             if (ev.key === 'Enter' && !ev.shiftKey) (ev.preventDefault(), send(text));
           }}
         />
-        {busy ? (
+        {working ? (
           <button type="button" class="gbtn dc-send" onClick={() => stop.current?.abort()}>
             Stop
           </button>
@@ -430,7 +459,7 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
   return (
     <div class="dc-key">
       <p>
-        <b>Deck chat runs on Claude</b> with your own Anthropic API key (a deck build is usually 10-30¢ of credit, a question a cent or two; each answer shows what it cost). It stays on this phone only.{' '}
+        <b>Deck chat runs on Claude</b> with your own Anthropic API key (a deck build is usually 10-30¢ of credit, a question a few cents; each answer shows what it cost). It stays on this phone only.{' '}
         <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
           Get a key
         </a>

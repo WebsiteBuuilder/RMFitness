@@ -410,6 +410,20 @@ button.dc-card:active {
   color: var(--dim);
   font-size: 12px;
 }
+.dc-trail {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 0 4px;
+  color: var(--green);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dc-send:disabled {
+  background: #2a2f4a;
+  color: #8790b8;
+  border-color: #4a5178;
+  opacity: 1;
+}
 .sd-chat {
   flex: none;
   min-height: 36px;
