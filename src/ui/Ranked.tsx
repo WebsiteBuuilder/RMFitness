@@ -133,9 +133,11 @@ export function Ranked(p: Ctx) {
             </span>
           </div>
         </div>
-        <div class="rk-ladder" aria-hidden="true">
+        <div class="rk-ladder" aria-label={`Tier ${tierNow + 1} of ${RANKED_TIERS.length}: ${tier.name}`}>
           {RANKED_TIERS.map((t, i) => (
-            <span key={t.id} class={`rk-pip t-${t.id} ${i < tierNow ? 'past' : i === tierNow ? 'now' : ''}`} />
+            <span key={t.id} class={`rk-pip t-${t.id} ${i < tierNow ? 'past' : i === tierNow ? 'now' : ''}`}>
+              <i>{t.id === 'king' ? '♛' : t.name[0]}</i>
+            </span>
           ))}
         </div>
         <div class="rk-bonus">

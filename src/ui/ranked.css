@@ -148,9 +148,26 @@
   margin: 10px 2px 8px;
 }
 .rk-pip {
+  position: relative;
   height: 6px;
+  margin-bottom: 14px;
   border-radius: 3px;
   background: #23315a;
+}
+.rk-pip i {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #5d6c95;
+}
+.rk-pip.now i,
+.rk-pip.past i {
+  color: var(--t1);
 }
 .rk-pip.past {
   background: var(--t1);
@@ -364,4 +381,17 @@
   .rk-flash {
     animation: none !important;
   }
+}
+
+.sdh-toprank {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.sdh-toprank .rk-emblem.s {
+  width: 18px;
+  height: 21px;
+}
+.sdh-toprank .rk-emblem.s b {
+  font-size: 9px;
 }

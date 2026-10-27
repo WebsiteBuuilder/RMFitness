@@ -187,6 +187,17 @@ function RankedRow({ profileId, onPick }: { profileId: string; onPick: () => voi
   return <Row label="Ranked" note={`${stepName(rp.step)} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
 }
 
+/** Your Ranked tier's shield beside your name, once you've played Ranked this season: something to show off. */
+function TopRank({ profileId }: { profileId: string }) {
+  const rp = rankedProgress(loadSolo(profileId));
+  if (rp.season !== seasonOf(ladderClock(rp)) || rp.w + rp.l === 0) return null;
+  return (
+    <span class="sdh-toprank">
+      <RankEmblem step={rp.step} size="s" />
+    </span>
+  );
+}
+
 /** A plain list row for things that don't need a picture. */
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
@@ -278,6 +289,7 @@ export function SpeedHome({
             <b>
               {profile.alias}
               {crown && <span class={`crown ${crown.rec.streak >= 3 ? 'hot' : ''}`}> 👑</span>}
+              <TopRank profileId={profile.id} />
             </b>
             <small>
               {save.wins}W · {save.losses}L{save.draws ? ` · ${save.draws}D` : ''}

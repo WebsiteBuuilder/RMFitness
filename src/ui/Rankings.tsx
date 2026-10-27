@@ -67,6 +67,18 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
   return (
     <div class="screen">
       <Win title="Duelist Rankings" onClose={onBack} class="rank-win">
+        {tab === 'ranked' ? (
+          <div class="rank-me">
+            {me.rk && me.rk.s === seasonOf(ladderClock(undefined)) ? <RankEmblem step={me.rk.step} size="m" /> : <RankEmblem step={0} size="m" />}
+            <div class="rank-me-text">
+              <b>{myName}</b>
+              <span class="rank-title">
+                {me.rk && me.rk.s === seasonOf(ladderClock(undefined)) ? `${stepName(me.rk.step)} · #${Math.max(1, ranked.findIndex((r) => r.kind === 'me') + 1)} of ${ranked.length}` : 'No Ranked Duels yet this season'}
+              </span>
+              <span class="rank-next">Ranked Duel · {seasonName(seasonOf(ladderClock(undefined)))} season</span>
+            </div>
+          </div>
+        ) : (
         <div class="rank-me">
           <span class="rank-icon" aria-hidden="true">
             {t.icon}
@@ -82,6 +94,7 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
             <span class="rank-next">{t.next ? `${pts} rank points · ${t.next.at - pts} more for ${t.next.name}` : `${pts} rank points · the top title`}</span>
           </div>
         </div>
+        )}
         <div class="rank-tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'board'} class={tab === 'board' ? 'on' : ''} onClick={() => setTab('board')}>
             Leaderboard
