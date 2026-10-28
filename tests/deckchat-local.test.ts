@@ -5,7 +5,7 @@ import { DB as APP_DB, card } from '../src/eds/db';
 import { STARTERS, deckFromStarter, isExtraCard, newSpeedSave, speedDeckProblems, whyCantAdd, type SpeedDeck } from '../src/eds/speedSave';
 import { withStarter } from '../src/collection/economy';
 import { runTurn } from '../src/deckchat/agent';
-import { findCard, localModel, planFor } from '../src/deckchat/local';
+import { clean, findCard, findCards, localModel, planFor, type Memory } from '../src/deckchat/local';
 import type { ChatWorld } from '../src/deckchat/tools';
 import { DB, PLAYABLE, SKILLS } from './speedkit';
 
@@ -159,6 +159,74 @@ for (const [what, check] of [
   ok(/Polymerization/.test(fus.text), 'explains Fusion Summons');
   const copies = await ask(base, 'can i use 4 copies?');
   ok(/up to 3 copies/.test(copies.text), 'explains the 3-copy rule');
+}
+
+// ---------- loose phrasing, follow-ups, and never wiping a deck by mistake ----------
+{
+  ok(clean('hey can u at 3 kuriboh pls') === 'add 3 kuriboh', 'greetings and voice slips are cleaned ("at 3" -> "add 3")');
+  ok(findCard('blue eys white dragn') === 'Blue-Eyes White Dragon', 'misspelled names still match');
+  const many = findCards('add monster reborn, 2 kuriboh and a sangan');
+  ok(many.map((f) => `${f.count ?? 1} ${f.name}`).join('|') === '1 Monster Reborn|2 Kuriboh|1 Sangan', 'several cards with their counts in one message');
+  // a memory shared across messages, as the chat keeps it
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  const built = await say('hey can u build a dark magician deck pls');
+  ok(built.deck.main.includes('Dark Magician') && /Dark Magician/.test(built.deck.name), 'a greeting in front still builds');
+  const before = w.deck;
+  for (const q of ['explain my deck', 'is it good', 'whats the strongest monster in my deck', 'what should i add', 'my deck has too many traps i think, is it good?']) {
+    await say(q);
+    ok(w.deck === before || w.deck.main.join() === before.main.join(), `"${q}" leaves the deck alone`);
+  }
+  await say('add 2 kuriboh and a sangan');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 2 && w.deck.main.includes('Sangan'), 'adds every card asked for');
+  const why = await say('why did you put that in');
+  ok(/Kuriboh:/.test(why.text) && /Sangan:/.test(why.text), '"why" explains the cards just added');
+  await say('actually take that out');
+  ok(!w.deck.main.includes('Kuriboh') && !w.deck.main.includes('Sangan'), '"take that out" removes the cards just added');
+  const n = w.deck.main.length;
+  await say('make it 30 cards');
+  ok(w.deck.main.length === 30 && legal(w.deck, big), `"make it 30 cards" grows the deck (was ${n})`);
+  await say('make it 20 cards');
+  ok(w.deck.main.length === 20, '"make it 20 cards" trims it');
+  const traps = kinds(w.deck, 'trap');
+  await say('swap the traps for spells');
+  ok(kinds(w.deck, 'trap') === 0 && w.deck.main.length === 20 && traps > 0, '"swap the traps for spells" keeps 20 cards and no traps');
+  await say('add a trap');
+  ok(kinds(w.deck, 'trap') === 1, '"add a trap" adds one');
+  const named = await say('build a dragon deck and call it Fire Storm');
+  ok(w.deck.name === 'Fire Storm' && w.deck.main.filter((x) => card(x)?.race === 'Dragon').length >= 6, `build plus a name does both (${named.text.slice(0, 30)})`);
+  await say('build a deck with no traps');
+  ok(kinds(w.deck, 'trap') === 0 && w.deck.main.length >= 20 && speedDeckProblems(w.deck).length === 0, '"a deck with no traps" builds a full legal deck without them');
+  const sk = w.deck.skill;
+  await say('use a different skill');
+  ok(!!w.deck.skill && w.deck.skill !== sk, 'a different Skill really is different');
+  const list = await say('what skills do i have');
+  ok(/^You have \d+ Skills/.test(list.text), 'lists owned Skills');
+  const cmp = await say('whats the difference between dark magician and dark magician girl');
+  ok(/Dark Magician:/.test(cmp.text) && /Dark Magician Girl:/.test(cmp.text), 'compares two cards');
+  const gf = await say('how does gearfried work');
+  ok(/^Gearfried the Iron Knight/.test(gf.text), 'a partial name picks the base card');
+  const first = await say('can i attack on my first turn');
+  ok(/can't attack on their first turn/.test(first.text), 'first-turn attack rule');
+  const harpie = await say('harpy lady deck');
+  ok(/Harpie/.test(w.deck.name) && w.deck.main.filter((x) => /Harpie/.test(x)).length >= 4, `"harpy lady deck" builds Harpies (${harpie.text.slice(0, 30)})`);
+  const thin = await runTurn(localModel(() => ({ deck: empty(), collection: small })), [], 'build me a dragon deck', { deck: empty(), collection: small });
+  ok(/mixed deck for now/.test(thin.text) && thin.deck.name === 'Mixed deck', 'a theme the collection can\'t carry is said plainly, not faked');
+  // a name the card list doesn't know (an old save) never breaks an edit
+  const odd: ChatWorld = { deck: { ...w.deck, main: [...w.deck.main.slice(0, 19), 'Old Removed Card'] }, collection: big };
+  let threw = false;
+  for (const q of ['take out the weakest card', 'more spells', 'make it stronger', 'is it good']) await runTurn(localModel(() => odd), [], q, odd).catch(() => (threw = true));
+  ok(!threw, 'an unknown card in the deck never crashes the helper');
+  // Stop: an aborted turn changes nothing
+  const ac = new AbortController();
+  ac.abort();
+  const stopped = await runTurn(localModel(() => w), [], 'clear the deck', w, { signal: ac.signal }).then(() => false, (e) => e.name === 'AbortError');
+  ok(stopped, 'Stop before the change stops the turn');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');

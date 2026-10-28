@@ -7,7 +7,7 @@ import type { SpeedDeck } from '../eds/speedSave';
 import { chatError, checkKey, claudeModel, costOf, keepTurn, runTurn, tooLong, type Model, type Msg } from '../deckchat/agent';
 import { diffDecks, diffEmpty, redoDiff, undoDiff, type DeckDiff } from '../deckchat/tools';
 import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
-import { localModel } from '../deckchat/local';
+import { localModel, type Memory } from '../deckchat/local';
 import { buzz, playBlip } from './sound';
 import { card, imageUrl } from '../eds/db';
 import './deckchat.css';
@@ -123,6 +123,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const [keyOpen, setKeyOpen] = useState(false);
   const [tall, setTall] = useState(false);
   const stop = useRef<AbortController | null>(null);
+  /** what the free helper remembers between messages (the cards it just touched) */
+  const helperMemory = useRef<Memory>({ added: [], removed: [] });
   const running = useRef(false);
   const lastStep = useRef<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -166,8 +168,19 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const msg = raw.trim();
     // a ref, not state: two quick taps must not start two paid turns
     if (!msg || working || running.current) return;
+    // "undo" said in the chat presses the Undo on the newest change
+    if (/^(undo|undo (it|that|this|the last change)|go back|take (it|that) back|revert( it| that)?)[.!]*$/i.test(msg) && lastChange) {
+      playBlip();
+      setText('');
+      return undo(lastChange, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Undid the last change. Say "redo" to put it back.' }]);
+    }
+    if (/^(redo|put it back|undo the undo)[.!]*$/i.test(msg) && redoable) {
+      playBlip();
+      setText('');
+      return redo(redoable, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Put the change back.' }]);
+    }
     // Claude when the duelist added a key, else the built-in helper (free, works offline)
-    const model = testModel() ?? (key ? claudeModel(key) : localModel(() => ({ deck: deckRef.current, collection })));
+    const model = testModel() ?? (key ? claudeModel(key) : localModel(() => ({ deck: deckRef.current, collection }), helperMemory.current));
     running.current = true;
     playBlip();
     setText('');
@@ -213,7 +226,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     } catch (e) {
       // the deck may already have changed in this turn: keep the Undo for it
       const diff = diffDecks(before, deckRef.current);
-      const why = await chatError(e);
+      // the free helper never loads the Claude SDK (it may not be reachable offline)
+      const why = key ? await chatError(e).catch(() => 'Something went wrong. Try again.') : (e as Error)?.name === 'AbortError' ? 'Stopped.' : `Something went wrong: ${(e as Error)?.message ?? e}`;
       if (!diffEmpty(diff)) turns = [...turns, { id: Date.now() + 1, who: 'claude', text: 'I changed the deck before this stopped.', diff, before }];
       // Claude keeps the request in mind (the history stays append-only)
       const messages: Msg[] = [...history, { role: 'user', content: [{ type: 'text', text: msg }] }, { role: 'assistant', content: [{ type: 'text', text: `(I was stopped before I finished${diffEmpty(diff) ? '' : ', after changing the deck'}.)` }] }];
@@ -231,7 +245,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     }
   };
 
-  const undo = (t: Turn) => {
+  const undo = (t: Turn, said: Turn[] = []) => {
     if (!t.before || !t.diff) return;
     playBlip();
     onChange(undoDiff(deckRef.current, t.diff, t.before));
@@ -240,18 +254,18 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     // Claude hears about it, and sees the deck as it is now with the next message
     setChat({
       messages: chat.messages.length ? [...chat.messages, { role: 'user', content: [{ type: 'text', text: '(I pressed Undo on your last change, so the deck went back. You will see the current deck with my next message.)' }] }, { role: 'assistant', content: [{ type: 'text', text: 'Got it.' }] }] : chat.messages,
-      turns: chat.turns.map((x, i) => (i >= at && x.diff ? { ...x, undone: true } : x)),
+      turns: [...chat.turns.map((x, i) => (i >= at && x.diff ? { ...x, undone: true } : x)), ...said],
     });
   };
 
-  const redo = (t: Turn) => {
+  const redo = (t: Turn, said: Turn[] = []) => {
     if (!t.diff) return;
     playBlip();
     onChange(redoDiff(deckRef.current, t.diff));
     onFresh?.(Object.keys(t.diff.added));
     setChat({
       messages: chat.messages.length ? [...chat.messages, { role: 'user', content: [{ type: 'text', text: '(I pressed Redo, so your change is back in the deck.)' }] }, { role: 'assistant', content: [{ type: 'text', text: 'Got it.' }] }] : chat.messages,
-      turns: chat.turns.map((x) => (x === t ? { ...x, undone: false } : x)),
+      turns: [...chat.turns.map((x) => (x === t ? { ...x, undone: false } : x)), ...said],
     });
   };
 

@@ -382,7 +382,7 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
     if (put) done.push(`+${put} ${r.name}`);
     if (why) refused.push(`${r.name}: ${put ? `only ${put} of ${want} went in, ` : ''}${why}`);
   }
-  if (typeof i.name === 'string' && i.name.trim()) (d = { ...d, name: i.name.trim().slice(0, 20) }), done.push(`renamed "${d.name}"`);
+  if (typeof i.name === 'string' && i.name.trim()) (d = { ...d, name: [...i.name.trim()].slice(0, 20).join('') }), done.push(`renamed "${d.name}"`);
   const text = [done.length ? `Done: ${done.join(', ')}.` : 'Nothing changed.', refused.length ? `Refused: ${refused.join(' | ')}` : '', '', deckReport({ ...w, deck: d })].filter((x, k) => x || k === 2).join('\n');
   return { text, deck: d };
 }
