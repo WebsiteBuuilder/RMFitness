@@ -3,11 +3,11 @@
 // phone the same way the moves do, over the online service or phone to phone, and a phone
 // that rejoins sees what was said. Nothing here covers the board for long: new lines float
 // in as bubbles for a few seconds, and the full chat drops down over the top of the screen.
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { CHAT_MAX, cleanChat, type ChatLine, type DuelSession } from '../eds/session';
 import type { Pid } from '../eds/types';
 import * as sfx from './duelSfx';
-import { BUBBLE_MS, canSend, EMOTES, isEmote, MINE_MS, NEWS_MS, QUICK_PHRASES, SETTLE_MS, SPAM_MS } from './chatRules';
+import { BUBBLE_MS, BURST_LINES, BURST_MS, canSend, EMOTES, isEmote, MINE_MS, NEWS_MS, QUICK_PHRASES, SETTLE_MS, SPAM_MS } from './chatRules';
 import './chat.css';
 
 const MUTE_KEY = 'eds.chat.muted';
@@ -47,7 +47,6 @@ export function DuelChat({
   // (kept on the room, so the chat picks up where it was when the duel turns into the result screen)
   const setOpen = (o: boolean) => ((session.chatOpen = o), setOpenState(o));
   const setDraft = (d: string) => ((session.chatDraft = d), setDraftState(d));
-  const mountedAt = useRef(Date.now());
   const timers = useRef(new Set<number>());
   useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), []);
   const [muted, setMuted] = useState(readMuted);
@@ -69,24 +68,46 @@ export function DuelChat({
       seen.current = new Set(chat.map((l) => l.id));
       return;
     }
-    // (a log arriving after a rejoin brings old lines: they are history, not news)
-    const now = Date.now();
-    // (news: said just now, and reaching a chat that was already up, not a rejoin's log pouring in)
-    const fresh = chat.filter((l) => !seen.current!.has(l.id) && l.late < NEWS_MS && l.got - mountedAt.current > SETTLE_MS && now - l.got < NEWS_MS);
+    const had = new Set(seen.current);
     for (const l of chat) seen.current.add(l.id);
+    // news: said just now and reaching a room this phone already had open; a log pouring in after a
+    // rejoin or reload brings old lines (history: no ping, no bubble, no count)
+    const now = Date.now();
+    const fresh = chat.filter((l) => !had.has(l.id) && l.late < NEWS_MS && now - l.got < NEWS_MS && l.got - session.openedAt > SETTLE_MS);
     if (!fresh.length) return;
+    // (a beat later: if lots of entries landed together it was a log loading, not someone talking)
+    const t = window.setTimeout(() => {
+      timers.current.delete(t);
+      if (session.arrivedWithin(BURST_MS) > BURST_LINES) return;
+      announce(fresh);
+    }, 250);
+    timers.current.add(t);
+  }, [chat.length, chat[chat.length - 1]?.id]);
+
+  const bubblesNow = useRef<ChatLine[]>([]);
+  bubblesNow.current = bubbles;
+  const announce = (fresh: ChatLine[]) => {
     const theirs = fresh.filter((l) => l.player === opp && !muted);
     const pop = fresh.filter((l) => l.player === mySeat || !muted);
     if (theirs.length) sfx.chatPing();
-    if (open) return;
+    if (session.chatOpen) return;
     if (theirs.length) setUnread((n) => n + theirs.length);
-    if (!pop.length) return;
-    setBubbles((b) => [...b, ...pop].slice(-3));
-    for (const l of pop) {
-      const t = window.setTimeout(() => (timers.current.delete(t), setBubbles((b) => b.filter((x) => x.id !== l.id))), l.player === mySeat ? MINE_MS : BUBBLE_MS);
+    // (one line each at a time: a newer one replaces the one showing)
+    const lastTheirs = pop.filter((l) => l.player !== mySeat).pop();
+    const lastMine = pop.filter((l) => l.player === mySeat).pop();
+    if (!lastTheirs && !lastMine) return;
+    setBubbles((b) => [lastTheirs ?? b.find((x) => x.player !== mySeat), lastMine ?? b.find((x) => x.player === mySeat)].filter((x): x is ChatLine => !!x));
+    for (const l of [lastTheirs, lastMine]) {
+      if (!l) continue;
+      const t = window.setTimeout(() => {
+        timers.current.delete(t);
+        // a line of theirs read in full in the bar no longer counts as unread
+        if (l.player !== mySeat && bubblesNow.current.some((x) => x.id === l.id)) setUnread((n) => Math.max(0, n - 1));
+        setBubbles((b) => b.filter((x) => x.id !== l.id));
+      }, l.player === mySeat ? MINE_MS : BUBBLE_MS);
       timers.current.add(t);
     }
-  }, [chat.length, chat[chat.length - 1]?.id]);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -110,6 +131,21 @@ export function DuelChat({
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);
+
+  // In the duel the open chat stops above the turn and phase controls (End Turn stays in reach); where
+  // that leaves little room (Classic on a small phone) it shrinks to one row of buttons and the box.
+  const sheet = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!open || place !== 'duel') return setRoom(null);
+    // (Touch: the turn row and the round phase button beside it; Classic: the centre strip)
+    const marks = [...document.querySelectorAll('.duel.touch .tmid, .duel.touch .tphase, .duel .field .center')].map((el) => el.getBoundingClientRect().top).filter((t) => t > 0);
+    // (its resting top: while it drops in, its box is still moving)
+    const top = sheet.current ? parseFloat(getComputedStyle(sheet.current).top) : undefined;
+    const limit = marks.length ? Math.min(...marks) : undefined;
+    setRoom(top !== undefined && limit !== undefined && limit > top ? Math.floor(limit - top - 6) : null);
+  }, [open, place, short]);
+  const mini = room !== null && room < 250;
 
   // Escape (a keyboard or a controller's B) closes the chat.
   useEffect(() => {
@@ -174,6 +210,8 @@ export function DuelChat({
   };
 
   const theirName = names[opp] || 'your opponent';
+  // (Classic controls: its top bar is thinner)
+  const classic = place === 'duel' && typeof document !== 'undefined' && !!document.querySelector('.duel:not(.touch)');
   // (one at a time: a newer line replaces the one showing)
   const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
@@ -193,7 +231,7 @@ export function DuelChat({
     <>
       {/* their lines by their name in the top bar (never over the field); taps go through */}
       {theirBubbles.length > 0 && !open && (
-        <div class={`chat-bubbles at-${place}`} aria-live="polite">
+        <div class={`chat-bubbles at-${place} ${classic ? 'classic' : ''}`} aria-live="polite">
           {theirBubbles.map((l) => (
             <div key={l.id} class={`chat-bubble ${isEmote(l.text) ? 'emote' : ''}`}>
               <b>{names[l.player] || 'Opponent'}</b>
@@ -205,7 +243,7 @@ export function DuelChat({
       {/* your own line: a short "sent" pill beside the button */}
       {myBubble && !open && (
         <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
-          <b>You</b>
+          <b>You:</b>
           <span>{myBubble.text}</span>
         </div>
       )}
@@ -218,7 +256,7 @@ export function DuelChat({
       {/* the chat drops down over the top of the screen: your hand, your side of the field and the
           room's buttons stay in view and keep working while it is open */}
       {open && (
-        <div class={`chat-sheet at-${place}`} role="dialog" aria-label={`Chat with ${theirName}`} style={vv ? { top: `${vv.top + 8}px`, maxHeight: `${Math.max(180, vv.h - 16)}px` } : undefined}>
+        <div ref={sheet} class={`chat-sheet at-${place} ${mini ? 'mini' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={vv ? { top: `${vv.top + 8}px`, maxHeight: `${Math.max(120, vv.h - 16)}px` } : room !== null ? { maxHeight: `${Math.max(120, room)}px` } : undefined}>
           <div class="chat-head">
             <span class="chat-title">Chat with {theirName}</span>
             <button class={`chat-mute ${muted ? 'on' : ''}`} onClick={toggleMute} aria-pressed={muted}>
@@ -238,10 +276,11 @@ export function DuelChat({
               </div>
             ))}
           </div>
-          {short ? (
+          {short || mini ? (
             <div class="chat-quick">
+              {phraseButtons.slice(0, 3)}
               {emoteButtons}
-              {phraseButtons}
+              {phraseButtons.slice(3)}
             </div>
           ) : (
             <>
@@ -254,6 +293,11 @@ export function DuelChat({
             <button type="submit" class="chat-send" disabled={!cleanChat(draft) || slow}>
               Send
             </button>
+            {mini && (
+              <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
+                ×
+              </button>
+            )}
           </form>
           {slow && (
             <p class="chat-slow" role="status">

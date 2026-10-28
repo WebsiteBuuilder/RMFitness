@@ -150,6 +150,15 @@ export class DuelSession {
   chatDraft = '';
   /** the smallest (arrival − host time) seen: the two clocks' difference plus the quickest delivery */
   private offset = Infinity;
+  /** when this phone opened the room (a log pouring in just after is history, not news) */
+  readonly openedAt = Date.now();
+  /** when the latest entries reached this phone (to tell a log pouring in from a line said just now) */
+  private arrivals: number[] = [];
+
+  /** Entries that reached this phone in the last `ms` (a burst means a log loading, not people talking). */
+  arrivedWithin(ms: number, now = Date.now()): number {
+    return this.arrivals.filter((t) => now - t <= ms).length;
+  }
   private moves = 0;
   /** duels already counted in the series, by seed (a rebuilt log replays them) */
   private counted = new Set<number>();
@@ -188,12 +197,15 @@ export class DuelSession {
     for (let i = this.applied; i < events.length; i++) {
       const ev = events[i];
       const now = Date.now();
-      if (i >= this.applied && typeof ev.ts === 'number') this.offset = Math.min(this.offset, now - ev.ts);
+      this.arrivals.push(now);
+      if (this.arrivals.length > 16) this.arrivals.shift();
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
       else {
         this.moves++;
         this.applyOne(ev as unknown as AnyAction);
       }
+      // (after the line: its own lateness is measured against the entries before it)
+      if (typeof ev.ts === 'number') this.offset = Math.min(this.offset, now - ev.ts);
     }
     this.applied = events.length;
     this.log = events;

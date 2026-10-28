@@ -4,8 +4,8 @@
   top: calc(56px + env(safe-area-inset-top));
   right: max(10px, env(safe-area-inset-right));
   z-index: 970;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -49,11 +49,12 @@
   animation: chat-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4);
 }
 
-/* the other player's new line, by their name in the top bar (never over the field); taps go through */
+/* the other player's new line, just under their bar (their name, LP and hand count stay readable),
+   over the backs of their hand; taps go through */
 .chat-bubbles {
   position: fixed;
-  top: calc(4px + env(safe-area-inset-top));
-  left: calc(56px + env(safe-area-inset-left));
+  top: calc(56px + env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
   right: calc(64px + env(safe-area-inset-right));
   z-index: 965;
   display: flex;
@@ -95,11 +96,11 @@
   line-height: 1;
   vertical-align: middle;
 }
-/* your own line: a short pill beside the chat button, so you see it went out */
+/* your own line: a short pill under the chat button, so you see it went out */
 .chat-sent {
   position: fixed;
-  top: calc(60px + env(safe-area-inset-top));
-  right: calc(64px + env(safe-area-inset-right));
+  top: calc(110px + env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
   z-index: 965;
   max-width: min(60vw, 280px);
   box-sizing: border-box;
@@ -333,9 +334,9 @@
   touch-action: manipulation;
 }
 .chat-send:disabled {
-  background: #343b66;
-  border-color: #6f78b0;
-  color: #d0d5f0;
+  background: #3d4677;
+  border-color: #8a93c8;
+  color: #e6e9fb;
 }
 .chat-slow {
   margin: -2px 0 0;
@@ -385,6 +386,7 @@
 }
 .chat-sent.at-top {
   top: calc(16px + env(safe-area-inset-top));
+  right: calc(68px + env(safe-area-inset-right));
 }
 /* on a short screen the history gives way first: the buttons and the message box keep their size */
 .chat-head,
@@ -392,4 +394,16 @@
 .chat-form,
 .chat-slow {
   flex-shrink: 0;
+}
+/* Classic controls: a thinner top bar */
+.chat-bubbles.at-duel.classic {
+  top: calc(42px + env(safe-area-inset-top));
+}
+/* little room above the turn controls (Classic on a small phone): one row of buttons and the box */
+.chat-sheet.mini {
+  padding-top: 10px;
+}
+.chat-sheet.mini .chat-head,
+.chat-sheet.mini .chat-list {
+  display: none;
 }

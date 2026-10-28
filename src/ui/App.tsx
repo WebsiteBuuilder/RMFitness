@@ -1545,7 +1545,8 @@ function Running({
   // (a tag or raid room's lobby too, for its first two phones: they can't tell yet what the room is for)
   const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !view.state.tag && mySeat <= 1;
   const st0 = view.state;
-  const attention = st0.started && st0.winner === null ? `${st0.turn}:${st0.phase}:${st0.battle ? 1 : 0}:${st0.prompt?.player === mySeat ? st0.prompt.title : ''}` : '';
+  // (your own turn's steps and anything asking you to choose; the other player's steps leave it open)
+  const attention = st0.started && st0.winner === null ? `${st0.turnPlayer === mySeat ? `${st0.turn}:${st0.phase}:${st0.battle ? 1 : 0}` : 'theirs'}:${st0.prompt?.player === mySeat ? `${view.moves}` : ''}` : '';
   const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} attention={attention} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
   if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {

@@ -15,6 +15,9 @@ export const MINE_MS = 2000;
 export const NEWS_MS = 60_000;
 /** Lines that arrive this soon after the chat shows are the room's log loading (a rejoin), not news. */
 export const SETTLE_MS = 1500;
+/** More than BURST_LINES entries landing within BURST_MS is a log loading (a rejoin), not news. */
+export const BURST_MS = 400;
+export const BURST_LINES = 4;
 
 /** An emote-only line (one to three emoji) is shown big. */
 export function isEmote(text: string): boolean {
