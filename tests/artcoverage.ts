@@ -153,6 +153,8 @@ export function runCoverage(games: number, seed = 31): Coverage {
           continue;
         }
         const name = ev.uid !== undefined ? e.find(ev.uid)?.card.name ?? '(gone)' : '';
+        // a Skill Card (Call of the Haunted (Skill Card)) or Token that vanished as it left the field: no card left to show its parting effect on
+        if (got === false && ev.kind === 'effect' && name === '(gone)') continue;
         switch (ev.kind) {
           case 'summon':
             bump(sub(cov.summons, ev.how ?? '(none: control change)'), name, got);
