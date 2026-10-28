@@ -172,7 +172,10 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const said = clean(msg);
     // ("undo that last change please", "give me back my old deck"; not "how do i undo?")
     // a "don't", "didn't" or "no" just before undo keeps the change ("i didn't mean to undo", "no undo"); "nah undo it" still undoes
-    const undoWord = /\b(undo|revert)\b|\b(reverse|cancel) (that|it|this|the last (one|change))\b|\bctrl ?z\b/.test(said);
+    const undoWord = /\b(undoo*|revert)\b|\b(reverse|cancel|scrap) (that|it|this|the last (one|change))\b|\bctrl ?z\b|\btake back what (you|u) (just )?did\b/.test(said);
+    // right after a change, "oops", "wait no", "i didnt want that" mean take it back
+    const justChanged = !!chat.turns.length && !!chat.turns[chat.turns.length - 1].diff && !chat.turns[chat.turns.length - 1].undone;
+    const regret = justChanged && /^(oops|whoops|wait no|no wait|no not that|not that|nope|no no|i didnt want that|i did not want that|i dont want that|i dont like that|i hate (it|that)|thats wrong|that was wrong|wrong one|never ?mind|nvm|scrap that)( (go back|put it back|change it back|undo( it| that)?|take it back))?$/.test(said.replace(/^(ugh|oh|ah|hmm) /, ''));
     // only the part of the message that says undo counts ("I don't like that, undo it" undoes)
     const undoPart = clean(msg.split(/[,.;!]+/).find((x) => /\b(undo|revert)\b/i.test(x)) ?? msg);
     // "no undo that" and "i didnt like that undo it" undo; "dont undo", "i didnt mean to undo" don't
@@ -180,7 +183,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const putBack = (/^(put it back|put it back how it was|put everything back|make it how it was)$/.test(said) && !helperMemory.current.removed.length) || /\bchange (it|that|this|everything) back\b|\bgo back to (how it was|before|the old (one|deck)|what it was)\b|\b(my|the) (old|previous|original) deck back\b|\bhow it was before\b/.test(said);
     // "can you undo that?" is a request
     const politeAsk = /^\s*(can|could|would|will) (you|u)\b|^\s*(pls|please)\b/i.test(msg);
-    const wantsUndo = (politeAsk || (!/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\?\s*$/.test(msg))) && !/\bredo\b|\bundo the undo\b/.test(said) && !negated && !/\b(undo|revert) (is|button|does|means|work)\b/.test(said) && (undoWord || putBack || /^(?:(?:ugh|nah|nvm|ok|okay|just|oh|hmm|no) )*(go back|take (it|that) back)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    const wantsUndo = regret || (politeAsk || /^(undo|undo (it|that))$/.test(said) || (!/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\?\s*$/.test(msg))) && !/\bredo\b|\bundo the undo\b/.test(said) && !negated && !/\b(undo|revert) (is|button|does|means|work)\b/.test(said) && (undoWord || putBack || /^(?:(?:ugh|nah|nvm|ok|okay|just|oh|hmm|no) )*(go back|take (it|that) back)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
     // "undo the last two changes" (said as "undo two of those"); "undo everything" takes them all back
     const all = /\bundo (everything|all( of it| the changes| of them)?|it all)\b/.test(said);
     const many = all ? 99 : Number(said.match(/\bundo (?:the )?(?:last )?(\d|two|three)\b/)?.[1]?.replace('two', '2').replace('three', '3') ?? 1);

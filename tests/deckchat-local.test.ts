@@ -556,5 +556,43 @@ for (const [what, check] of [
   ok(bigs(lt.deck) <= bigs(bw.deck) && lt.deck.main.length === bw.deck.main.length, '"less tribute monsters" never adds one or grows the deck');
 }
 
+// ---------- round 10: follow-ups to suggestions, ruled-out kinds, ATK lines, starter Skills ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('build a red eyes deck');
+  await say('what skill should i use');
+  let crashed = false;
+  try {
+    await say('add that');
+  } catch {
+    crashed = true;
+  }
+  ok(!crashed, '"add that" after a Skill tip does not crash');
+  await say('what should i add');
+  const n0 = w.deck.main.length;
+  const y = await say('yes');
+  ok(/^Added /.test(y.text) && w.deck.main.length === n0, '"yes" after suggestions adds them in place of the weakest');
+  await say('i dont want any traps');
+  await say('no spells either');
+  ok(kinds(w.deck, 'trap') === 0 && kinds(w.deck, 'spell') === 0 && w.deck.main.length >= 20, '"no traps" then "no spells either" keeps both out of the refills');
+  await say('replace all monsters under 1500 atk');
+  ok(w.deck.main.every((n) => card(n)?.kind !== 'monster' || (card(n)!.atk ?? 0) >= 1500 || (mem.wanted ?? []).includes(n) || card(n)!.desc.includes('"') || w.deck.main.some((x) => (card(x)?.desc ?? '').includes(`"${n}"`))), '"replace all monsters under 1500 atk" leaves only bigger ones (bar combo pieces)');
+  const tq = await say('how many tributes does blue eyes white dragon need');
+  ok(/^2\./.test(tq.text), '"how many tributes does blue eyes need" answers 2');
+  const ft = await say('can i summon on my first turn');
+  ok(/^Yes/.test(ft.text), '"can i summon on my first turn" says yes');
+  for (const i of [0, 3]) {
+    const col = withStarter(newSpeedSave(), deckFromStarter(STARTERS[i])).collection!;
+    const r = await runTurn(localModel(() => ({ deck: empty(), collection: col })), [], 'build me the best deck i can make', { deck: empty(), collection: col });
+    ok(!!r.deck.skill, `starter ${i}: the best deck keeps a Skill (${r.deck.skill})`);
+  }
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
