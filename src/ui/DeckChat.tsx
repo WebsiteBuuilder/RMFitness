@@ -175,7 +175,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       setText('');
       return undo(lastChange, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Undid the last change. Say "redo" to put it back.' }]);
     }
-    if (/^(redo|redo (it|that)|put it back|undo the undo)$/.test(said) && redoable) {
+    if (/^(redo|redo (it|that)|undo the undo)$/.test(said) && redoable) {
       playBlip();
       setText('');
       return redo(redoable, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Put the change back.' }]);
