@@ -618,5 +618,33 @@ for (const [what, check] of [
   ok(w.deck.main.includes(red) && !/couldn't find/i.test(pb.text), `"put him back" re-adds ${red} quietly (${pb.text.slice(0, 80)})`);
 }
 
+// ---------- round 12: dead cards, spells and traps in every build, plain rules, verdicts ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  for (const q of ['can u make a beatdown deck', 'build me the best deck i can make', 'give me a machine deck']) {
+    const r = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], q, { deck: empty(), collection: big });
+    ok(kinds(r.deck, 'spell') >= 2 && kinds(r.deck, 'trap') >= 2, `"${q}" has spells and traps (${kinds(r.deck, 'monster')}/${kinds(r.deck, 'spell')}/${kinds(r.deck, 'trap')})`);
+    ok(r.deck.skill !== 'Ancient Fusion' || r.deck.extra.some((n) => card(n)?.sub === 'Fusion'), `"${q}" has no Fusion Skill without a Fusion`);
+  }
+  await say('build a blue eyes deck');
+  ok(/^A Main Deck holds 20 to 30/.test((await say('max deck size')).text) && w.deck.main.length >= 20, '"max deck size" answers instead of building');
+  ok(/3 Spell & Trap Zones/.test((await say('how many spell trap zones')).text), 'spell & trap zones answered');
+  ok(/isn't a Speed Duel card/.test((await say('what does dark hole do')).text), '"what does dark hole do" says it is not Speed Duel');
+  ok(/^There are 3 level 8s/.test((await say('how many level 8s do i have now')).text), 'level 8s counted');
+  ok(/^(Yes|Not really)/.test((await say('is that skill good for this deck')).text), 'Skill verdict given');
+  const before = w.deck.main.filter((n) => n === 'Blue-Eyes White Dragon').length;
+  await say('more traps pls');
+  ok(w.deck.main.filter((n) => n === "Blue-Eyes White Dragon").length === before && kinds(w.deck, "monster") >= 9, `"more traps" keeps Blue-Eyes and enough monsters (${before} BEWD, now ${w.deck.main.filter((n) => n === "Blue-Eyes White Dragon").length}; ${kinds(w.deck, "monster")} monsters)`);
+  const col = withStarter(newSpeedSave(), deckFromStarter(STARTERS[1])).collection!;
+  const fr = await runTurn(localModel(() => ({ deck: deckFromStarter(STARTERS[1]), collection: col })), [], 'what fusions can i make', { deck: deckFromStarter(STARTERS[1]), collection: col });
+  ok(!/Rainbow Overdragon|Coordius/.test(fr.text), `fusions listed are ones you own and can make (${fr.text.slice(0, 80)})`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
