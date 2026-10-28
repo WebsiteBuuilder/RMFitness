@@ -344,7 +344,8 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
       refused.push(r.error);
       continue;
     }
-    let k = Math.max(1, Math.min(COPIES, num(it.count, 1)));
+    // an old or broken deck can hold more than 3 copies: they can all come out
+    let k = Math.max(1, Math.min(60, num(it.count, 1)));
     let took = 0;
     for (; k > 0; k--) {
       const from = d.extra.includes(r.name) ? d.extra : d.main.includes(r.name) ? d.main : null;

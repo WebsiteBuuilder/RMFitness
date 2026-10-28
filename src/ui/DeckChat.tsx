@@ -177,9 +177,9 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const undoPart = clean(msg.split(/[,.;!]+/).find((x) => /\b(undo|revert)\b/i.test(x)) ?? msg);
     const negated = /\b(dont|didnt|do not|wouldnt|shouldnt|wont|never|not|no|cant)\b(\s+\w+){0,2}\s+(undo|revert)\b/.test(undoPart) || /\b(keep it|like it|leave it)\b/.test(undoPart);
     const putBack = /^(put it back|put it back how it was|put everything back|change it back|make it how it was)$/.test(said) && !helperMemory.current.removed.length;
-    const wantsUndo = !/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\?\s*$/.test(msg) && !/\bredo\b|\bundo the undo\b/.test(said) && !negated && (undoWord || putBack || /^(go back|take (it|that) back)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    const wantsUndo = !/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\?\s*$/.test(msg) && !/\bredo\b|\bundo the undo\b/.test(said) && !negated && !/\b(undo|revert) (is|button|does|means|work)\b/.test(said) && (undoWord || putBack || /^(?:(?:ugh|nah|nvm|ok|okay|just|oh|hmm|no) )*(go back|take (it|that) back)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
     // "undo the last two changes" (said as "undo two of those")
-    const many = Number(said.match(/\bundo (\d|two|three)\b/)?.[1]?.replace('two', '2').replace('three', '3') ?? 1);
+    const many = Number(said.match(/\bundo (?:the )?(?:last )?(\d|two|three)\b/)?.[1]?.replace('two', '2').replace('three', '3') ?? 1);
     // "undo and add 2 kuriboh": the rest is asked again after the undo
     const rest = said.match(/\b(?:undo|revert)\b(?: (?:it|that|this))?\s+(?:and|then|and then)\s+(.+)$/)?.[1];
     if (wantsUndo && !lastChange) {

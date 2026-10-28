@@ -439,5 +439,57 @@ for (const [what, check] of [
   ok(!/^Your weakest card here is (Kuriboh|Sangan)\b/.test(wk.text), 'the weakest card is never one the player just asked for');
 }
 
+// ---------- round 7: character decks, follow-ups, kind swaps, Fusions, odd wording ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('make me a deck like yugi');
+  ok(w.deck.main.includes('Dark Magician'), '"a deck like yugi" builds around Dark Magician');
+  const ys = await say('give me a yugi skill');
+  ok(/Yugi/.test(ys.text) && !!w.deck.skill, '"give me a yugi skill" picks one of his Skills');
+  const fire = await say('this deck is fire');
+  ok(!fire.calls?.length && /like it|Nice|Thanks/.test(fire.text), '"this deck is fire" is a compliment, not a FIRE build');
+  await say('add sangan');
+  const n0 = w.deck.main.filter((n) => n === 'Sangan').length;
+  await say('add two more');
+  ok(w.deck.main.filter((n) => n === 'Sangan').length === Math.min(3, n0 + 2), '"add two more" adds copies of the card just added');
+  const ls = await say('list the deck');
+  ok(/^\d+ cards\. Monsters: /.test(ls.text), '"list the deck" lists it');
+  const len = w.deck.main.length;
+  const tr = kinds(w.deck, 'trap');
+  await say('remove 1 trap');
+  ok(kinds(w.deck, 'trap') === tr - 1 && w.deck.main.length === Math.max(20, len - 1), '"remove 1 trap" takes it out without swapping something in');
+  const which = await say('which one did you remove');
+  ok(/^I took out /.test(which.text), '"which one did you remove" names it');
+  await say('no sangan');
+  ok(!w.deck.main.includes('Sangan'), '"no sangan" takes Sangan out');
+  const wk = await say('whats weak about it');
+  ok(/\/10/.test(wk.text), '"whats weak about it" gives the check-up');
+  const cut = await say('which card should i take out');
+  ok(/^Your weakest card here is /.test(cut.text), '"which card should i take out" names the weakest');
+  const before = JSON.stringify(w.deck);
+  const gib = await say('swap the traps for zzqqxx');
+  ok(JSON.stringify(w.deck) === before && /couldn't find/.test(gib.text), 'a swap to a card nobody can find changes nothing');
+  await say('replace the spells with machines');
+  ok(kinds(w.deck, 'spell') < kinds(JSON.parse(before), 'spell') && w.deck.main.filter((n) => card(n)?.race === 'Machine').length >= 1, '"replace the spells with machines" swaps spells for Machines');
+  const fz = await say('how do i fusion summon dark paladin');
+  ok(/Polymerization/.test(fz.text) && /Buster Blader/.test(fz.text) && !/Tributes/.test(fz.text), 'how to Fusion Summon a card names its materials, no Tribute talk');
+  const best = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build the best deck i can with my cards', { deck: empty(), collection: big });
+  ok(best.deck.main.length === 20 && !/isn't a Speed Duel card/.test(best.text), '"the best deck i can with my cards" builds');
+  const mons = best.deck.main.map((n) => card(n)).filter((c) => c?.kind === 'monster').map((c) => c!.race);
+  ok(Math.max(...mons.map((r) => mons.filter((x) => x === r).length)) >= 6, 'the best deck sticks to a Type');
+  const bt = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'make me a deck that beats blue eyes', { deck: empty(), collection: big });
+  ok(bt.deck.main.length === 20 && /how do I beat blue eyes/.test(bt.text), '"a deck that beats blue eyes" builds and points to the counters');
+  // Polymerization is dead without a Fusion the deck can make
+  const poly: ChatWorld = { deck: { ...empty(), main: [...Array(17).fill(0).map((_, i) => ['Sangan', 'Kuriboh', 'Gemini Elf', 'Vorse Raider', 'Battle Ox', 'Giant Soldier of Stone'][i % 6]), 'Polymerization', 'Polymerization', 'Polymerization'].slice(0, 20) }, collection: big };
+  const wk2 = await runTurn(localModel(() => poly), [], 'whats my weakest card', poly);
+  ok(/Polymerization/.test(wk2.text), 'Polymerization with no Fusion to make is the weakest card');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
