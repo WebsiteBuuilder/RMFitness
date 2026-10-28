@@ -491,5 +491,70 @@ for (const [what, check] of [
   ok(/Polymerization/.test(wk2.text), 'Polymerization with no Fusion to make is the weakest card');
 }
 
+// ---------- round 9: polite and sloppy wording, dead cards, Type edits, deck questions ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('build me a harpie deck');
+  const hq = w.deck.main.filter((n) => n === 'Harpie Queen').length;
+  await say('can you put kuriboh in my deck please and also could you take out one harpie queen if thats ok');
+  ok(w.deck.main.includes('Kuriboh') && w.deck.main.filter((n) => n === 'Harpie Queen').length === Math.max(0, hq - 1), 'a polite two-part ask adds Kuriboh and takes out one Harpie Queen');
+  await say('add 2 dark magican gril');
+  ok(w.deck.main.filter((n) => n === 'Dark Magician Girl').length === 2 && !w.deck.main.includes('Dark Magician'), '"dark magican gril" is Dark Magician Girl');
+  await say('+2 sangan');
+  ok(w.deck.main.filter((n) => n === 'Sangan').length === 2, '"+2 sangan" adds 2');
+  await say('kuriboh out');
+  ok(!w.deck.main.includes('Kuriboh'), '"kuriboh out" takes it out');
+  await say('add 2 kuriboh no wait 1');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 1, '"add 2 kuriboh no wait 1" adds 1');
+  const ex = await say('add exodia');
+  ok(/aren't in Speed Duel/.test(ex.text), '"add exodia" says Exodia is not in Speed Duel');
+  const hl = await say('add harpie lady');
+  ok(/Harpie Lady 1/.test(hl.text), '"add harpie lady" adds Harpie Lady 1');
+  const rl = await say('can i activate a trap the turn i set it');
+  ok(/^No: a Trap has to be Set/.test(rl.text), 'trap timing rule');
+  const nw = await say('hi im new how does speed duel work');
+  ok(/^Speed Duel is a faster/.test(nw.text), 'a new player gets the overview');
+  const sz = await say('how many cards in a deck');
+  ok(/20 to 30/.test(sz.text), '"how many cards in a deck" is the rule');
+  const hs = await say('how do i summon blue eyes white dragon');
+  ok(/Tributing 2/.test(hs.text), '"how do i summon" a Level 8 says 2 Tributes');
+  const own = await say('how many blue eyes do i own');
+  ok(/^You own \d+/.test(own.text), '"how many X do i own" counts the collection');
+  const before = JSON.stringify(w.deck);
+  await say('leave the spells alone and add traps');
+  ok(kinds(w.deck, 'spell') === kinds(JSON.parse(before), 'spell') && kinds(w.deck, 'trap') > kinds(JSON.parse(before), 'trap'), '"leave the spells alone and add traps" keeps the spells');
+  await say('only dragons');
+  ok(w.deck.main.filter((n) => card(n)?.kind === 'monster' && card(n)?.race !== 'Dragon' && !(mem.wanted ?? []).includes(n)).length === 0, '"only dragons" swaps the other monsters for Dragons (keeping ones asked for by name)');
+  await say('delete the deck');
+  ok(w.deck.main.length === 0, '"delete the deck" empties it');
+  // built decks: no dead cards
+  for (const q of ['build me a dragon deck', 'build me a warrior deck', 'build me a light deck', 'make me a yugi deck']) {
+    const r = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], q, { deck: empty(), collection: big });
+    const mons = r.deck.main.map((n) => card(n)).filter((c) => c?.kind === 'monster');
+    const dark = mons.filter((c) => c!.attribute === 'DARK').length;
+    ok(!(r.deck.main.includes('Allure of Darkness') && dark < 3), `"${q}" has no Allure of Darkness without DARK monsters`);
+    ok(!r.deck.main.includes('Toon World') || r.deck.main.some((n) => /^Toon /.test(n) && n !== 'Toon World'), `"${q}" has no Toon World without Toons`);
+    ok(r.deck.extra.every((n) => card(n)?.sub !== 'Fusion' || (card(n)!.desc.split(/\n|\. /)[0].match(/"([^"]+)"/g) ?? []).every((m) => r.deck.main.some((x) => x.startsWith(m.slice(1, -1))))), `"${q}" only brings Fusions it has the materials for`);
+  }
+  const dr = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build me a dragon deck', { deck: empty(), collection: big });
+  ok(dr.deck.main.some((n) => (card(n)?.level ?? 0) >= 7), 'a Dragon deck has a boss monster');
+  // the Pegasus starter can build again after "start over"
+  const peg = withStarter(newSpeedSave(), deckFromStarter(STARTERS[2])).collection!;
+  const pb = await runTurn(localModel(() => ({ deck: empty(), collection: peg })), [], 'build me a deck', { deck: empty(), collection: peg });
+  ok(pb.deck.main.length >= 20, 'the Pegasus starter collection still builds a deck');
+  // fewer Tribute monsters never adds one
+  let bw: ChatWorld = { deck: empty(), collection: big };
+  bw = { ...bw, deck: (await runTurn(localModel(() => bw), [], 'build a blue eyes deck', bw)).deck };
+  const bigs = (d: SpeedDeck) => d.main.filter((n) => card(n)?.kind === 'monster' && (card(n)!.level ?? 0) >= 5 && card(n)?.sub !== 'Ritual').length;
+  const lt = await runTurn(localModel(() => bw), [], 'i want less tribute monsters', bw);
+  ok(bigs(lt.deck) <= bigs(bw.deck) && lt.deck.main.length === bw.deck.main.length, '"less tribute monsters" never adds one or grows the deck');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
