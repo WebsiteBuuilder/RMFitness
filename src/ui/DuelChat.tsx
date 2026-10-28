@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHAT_MAX, cleanChat, type ChatLine, type DuelSession } from '../eds/session';
 import type { Pid } from '../eds/types';
 import * as sfx from './duelSfx';
-import { BUBBLE_MS, canSend, EMOTES, isEmote, MINE_MS, NEWS_MS, QUICK_PHRASES, SPAM_MS } from './chatRules';
+import { BUBBLE_MS, canSend, EMOTES, isEmote, MINE_MS, NEWS_MS, QUICK_PHRASES, SETTLE_MS, SPAM_MS } from './chatRules';
 import './chat.css';
 
 const MUTE_KEY = 'eds.chat.muted';
@@ -26,9 +26,30 @@ const readMuted = () => {
  */
 export type ChatPlace = 'duel' | 'low' | 'top';
 
-export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { session: DuelSession; chat: ChatLine[]; mySeat: Pid; names: [string, string]; place?: ChatPlace }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState('');
+export function DuelChat({
+  session,
+  chat,
+  mySeat,
+  names,
+  place = 'duel',
+  attention = '',
+}: {
+  session: DuelSession;
+  chat: ChatLine[];
+  mySeat: Pid;
+  names: [string, string];
+  place?: ChatPlace;
+  /** changes when the duel needs this player (a prompt, an attack, a new phase): the open chat gets out of the way */
+  attention?: string;
+}) {
+  const [open, setOpenState] = useState(session.chatOpen);
+  const [draft, setDraftState] = useState(session.chatDraft);
+  // (kept on the room, so the chat picks up where it was when the duel turns into the result screen)
+  const setOpen = (o: boolean) => ((session.chatOpen = o), setOpenState(o));
+  const setDraft = (d: string) => ((session.chatDraft = d), setDraftState(d));
+  const mountedAt = useRef(Date.now());
+  const timers = useRef(new Set<number>());
+  useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), []);
   const [muted, setMuted] = useState(readMuted);
   const [bubbles, setBubbles] = useState<ChatLine[]>([]);
   const [slow, setSlow] = useState(false);
@@ -50,7 +71,8 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
     }
     // (a log arriving after a rejoin brings old lines: they are history, not news)
     const now = Date.now();
-    const fresh = chat.filter((l) => !seen.current!.has(l.id) && now - l.at < NEWS_MS);
+    // (news: said just now, and reaching a chat that was already up, not a rejoin's log pouring in)
+    const fresh = chat.filter((l) => !seen.current!.has(l.id) && l.late < NEWS_MS && l.got - mountedAt.current > SETTLE_MS && now - l.got < NEWS_MS);
     for (const l of chat) seen.current.add(l.id);
     if (!fresh.length) return;
     const theirs = fresh.filter((l) => l.player === opp && !muted);
@@ -60,7 +82,10 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
     if (theirs.length) setUnread((n) => n + theirs.length);
     if (!pop.length) return;
     setBubbles((b) => [...b, ...pop].slice(-3));
-    for (const l of pop) setTimeout(() => setBubbles((b) => b.filter((x) => x.id !== l.id)), l.player === mySeat ? MINE_MS : BUBBLE_MS);
+    for (const l of pop) {
+      const t = window.setTimeout(() => (timers.current.delete(t), setBubbles((b) => b.filter((x) => x.id !== l.id))), l.player === mySeat ? MINE_MS : BUBBLE_MS);
+      timers.current.add(t);
+    }
   }, [chat.length, chat[chat.length - 1]?.id]);
 
   useEffect(() => {
@@ -70,6 +95,21 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, shown.length]);
+
+  // The duel needs you (your prompt, an attack, a new phase or turn): the chat closes; what you typed stays.
+  const lastAttention = useRef(attention);
+  useEffect(() => {
+    if (attention !== lastAttention.current && open) setOpen(false);
+    lastAttention.current = attention;
+  }, [attention]);
+
+  // A short screen (iPhone SE): emotes and phrases share one row, so the history keeps room.
+  const [short, setShort] = useState(() => typeof window !== 'undefined' && window.innerHeight < 700);
+  useEffect(() => {
+    const on = () => setShort(window.innerHeight < 700);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
 
   // Escape (a keyboard or a controller's B) closes the chat.
   useEffect(() => {
@@ -134,8 +174,20 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
   };
 
   const theirName = names[opp] || 'your opponent';
-  const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-2);
+  // (one at a time: a newer line replaces the one showing)
+  const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
+
+  const emoteButtons = EMOTES.map((t) => (
+    <button key={t} class="chat-emote" onClick={() => quick(t)} aria-label={`Send ${t}`}>
+      {t}
+    </button>
+  ));
+  const phraseButtons = QUICK_PHRASES.map((t) => (
+    <button key={t} class="chat-phrase" onClick={() => quick(t)}>
+      {t}
+    </button>
+  ));
 
   return (
     <>
@@ -152,8 +204,9 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
       )}
       {/* your own line: a short "sent" pill beside the button */}
       {myBubble && !open && (
-        <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} aria-hidden="true">
-          {myBubble.text}
+        <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
+          <b>You</b>
+          <span>{myBubble.text}</span>
         </div>
       )}
       <button class={`chat-fab at-${place} ${open ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new` : 'Chat'} aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -185,20 +238,17 @@ export function DuelChat({ session, chat, mySeat, names, place = 'duel' }: { ses
               </div>
             ))}
           </div>
-          <div class="chat-quick">
-            {EMOTES.map((t) => (
-              <button key={t} class="chat-emote" onClick={() => quick(t)} aria-label={`Send ${t}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-          <div class="chat-quick">
-            {QUICK_PHRASES.map((t) => (
-              <button key={t} class="chat-phrase" onClick={() => quick(t)}>
-                {t}
-              </button>
-            ))}
-          </div>
+          {short ? (
+            <div class="chat-quick">
+              {emoteButtons}
+              {phraseButtons}
+            </div>
+          ) : (
+            <>
+              <div class="chat-quick">{emoteButtons}</div>
+              <div class="chat-quick">{phraseButtons}</div>
+            </>
+          )}
           <form class="chat-form" onSubmit={submit}>
             <input ref={input} type="text" enterKeyHint="send" autocomplete="off" maxLength={CHAT_MAX} placeholder="Type a message" value={draft} onInput={(e) => setDraft((e.target as HTMLInputElement).value)} aria-label="Message" />
             <button type="submit" class="chat-send" disabled={!cleanChat(draft) || slow}>

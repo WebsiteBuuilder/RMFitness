@@ -51,6 +51,8 @@ const ok = (c: boolean, msg: string) => {
   for (let i = 0; i < 20; i++) if (screenProposal({ type: 'CHAT', player: 1, text: 'spam' }, 1, recent, t + i)) passed++;
   ok(passed === 8, `a flood from a changed app is capped at 8 lines in a few seconds (got ${passed})`);
   ok(!!screenProposal({ type: 'CHAT', player: 1, text: 'later' }, 1, recent, t + 9000), 'after a pause lines get through again');
+  const extra = screenProposal({ type: 'CHAT', player: 1, text: 'hi', junk: 'z'.repeat(10_000) } as { type: string }, 1, [], t);
+  ok(JSON.stringify(extra) === '{"type":"CHAT","player":1,"text":"hi"}', 'anything else a changed app attaches to a line is dropped')
 }
 
 // ---------- a room: a host and a guest linked like PeerJS ----------
@@ -154,6 +156,21 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   const R = new DuelSession(rebuilt);
   rebuilt.got(host['events'] as LoggedEvent[]);
   ok(lines(R) === lines(H), 'the same log handed over twice shows each line once');
+  // a phone whose clock is far ahead still sees a new line as new (clocks cancel out)
+  {
+    const host2 = new Host();
+    const guest2 = new Guest(host2);
+    const G2 = new DuelSession(guest2);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 5 * 60_000;
+    try {
+      host2.send({ type: 'CHAT', player: 0, text: 'hey', } as unknown as GameEvent);
+      host2.send({ type: 'CHAT', player: 0, text: 'you there?' } as unknown as GameEvent);
+    } finally {
+      Date.now = realNow;
+    }
+    ok(G2.view().chat.every((l) => l.late < 1000), "a guest's clock 5 minutes off doesn't make new lines look old");
+  }
 
   // the duel ends; chat goes on over the result; a rematch keeps the room's chat
   H.send({ type: 'SURRENDER', player: 0 });

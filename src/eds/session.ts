@@ -63,8 +63,15 @@ export interface ChatLine {
   id: string;
   player: Pid;
   text: string;
-  /** when the host logged it (ms) */
+  /** when the host logged it (ms, the host's clock) */
   at: number;
+  /**
+   * how late it reached this phone compared with the quickest entry so far (ms; both phones' clocks
+   * cancel out): about 0 for a line said just now, large for one replayed from history after a rejoin
+   */
+  late: number;
+  /** when it reached this phone (ms, this phone's clock) */
+  got: number;
 }
 
 /** The longest chat line. */
@@ -87,7 +94,8 @@ export function screenProposal<T extends { type: string }>(ev: T, guestSeat: Pid
   while (recent.length && now - recent[0] >= CHAT_WINDOW_MS) recent.shift();
   if (recent.length >= CHAT_HOST_CAP) return null;
   recent.push(now);
-  return { ...ev, text };
+  // (only the three fields: nothing else a changed app attaches is stored)
+  return { type: 'CHAT', player: guestSeat, text } as unknown as T;
 }
 
 /** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
@@ -137,6 +145,11 @@ export class DuelSession {
   private earlierChat: ChatLine[] = [];
   /** when this phone sent its last chat lines (the send cap holds across the room's screens) */
   chatSentAt: number[] = [];
+  /** the chat's open state and unsent text, kept as the room moves between screens (duel → result) */
+  chatOpen = false;
+  chatDraft = '';
+  /** the smallest (arrival − host time) seen: the two clocks' difference plus the quickest delivery */
+  private offset = Infinity;
   private moves = 0;
   /** duels already counted in the series, by seed (a rebuilt log replays them) */
   private counted = new Set<number>();
@@ -174,6 +187,8 @@ export class DuelSession {
     }
     for (let i = this.applied; i < events.length; i++) {
       const ev = events[i];
+      const now = Date.now();
+      if (i >= this.applied && typeof ev.ts === 'number') this.offset = Math.min(this.offset, now - ev.ts);
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
       else {
         this.moves++;
@@ -188,7 +203,9 @@ export class DuelSession {
   private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown }) {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
-    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts }];
+    const got = Date.now();
+    const late = Number.isFinite(this.offset) ? Math.max(0, got - ev.ts - this.offset) : 0;
+    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, late, got }];
   }
 
   private applyOne(a: AnyAction) {

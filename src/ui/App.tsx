@@ -1544,7 +1544,9 @@ function Running({
   // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.
   // (a tag or raid room's lobby too, for its first two phones: they can't tell yet what the room is for)
   const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !view.state.tag && mySeat <= 1;
-  const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
+  const st0 = view.state;
+  const attention = st0.started && st0.winner === null ? `${st0.turn}:${st0.phase}:${st0.battle ? 1 : 0}:${st0.prompt?.player === mySeat ? st0.prompt.title : ''}` : '';
+  const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} attention={attention} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
   if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {
     const game = view.seats[0].mode ?? mode;

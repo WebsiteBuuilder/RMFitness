@@ -1,7 +1,7 @@
 // The chat's quick phrases, emotes and pacing (DuelChat.tsx), kept apart from the screen so tests can load them.
 
 /** Duel Links-style phrases: one tap sends them. */
-export const QUICK_PHRASES = ['Hi! Good luck!', 'Nice move!', 'Wow!', 'Oops…', 'Thinking…', 'Your turn!', 'Hurry up 😄', 'Good game!', 'Rematch?', 'Thanks!'];
+export const QUICK_PHRASES = ['Hi! Good luck!', 'Nice move!', 'Wow!', 'Oops…', 'Thinking…', 'Your go!', 'Hurry up 😄', 'Good game!', 'Rematch?', 'Thanks!'];
 /** Emotes: one tap sends them, shown big. */
 export const EMOTES = ['👍', '😂', '😮', '😡', '😭', '🔥', '🤝', '👋'];
 
@@ -13,6 +13,8 @@ export const BUBBLE_MS = 4500;
 export const MINE_MS = 2000;
 /** A line older than this when it reaches the phone (a rejoin's history) doesn't pop up or ping. */
 export const NEWS_MS = 60_000;
+/** Lines that arrive this soon after the chat shows are the room's log loading (a rejoin), not news. */
+export const SETTLE_MS = 1500;
 
 /** An emote-only line (one to three emoji) is shown big. */
 export function isEmote(text: string): boolean {
