@@ -144,7 +144,8 @@ export function DuelChat({
   }, [open, shown.length, pendingCount]);
 
   // The duel needs you (your prompt, an attack, a new phase or turn): the chat closes; what you typed stays.
-  const lastAttention = useRef(attention);
+  // (from '': coming up already open on a screen that needs you, e.g. the toss after a rematch, it closes too)
+  const lastAttention = useRef('');
   useEffect(() => {
     // (the other player's turn starting or going on leaves it open: that's the time to talk)
     // (nor does the duel ending: the chat carries on over the result)
@@ -271,6 +272,7 @@ export function DuelChat({
   // go to send it, or let go on the button and tap one; no chat to open.
   const holdTimer = useRef<number>();
   const held = useRef(false);
+  const heldUpAt = useRef(0);
   const [aim, setAim] = useState<string | null>(null);
   /** the button filling up while it's held (the cue on an iPhone, which can't buzz) */
   const [holding, setHolding] = useState(false);
@@ -280,6 +282,8 @@ export function DuelChat({
   const holdStart = (e: PointerEvent) => {
     held.current = false;
     clearTimeout(holdTimer.current);
+    // (the chat is open: its own buttons are right there)
+    if (open) return;
     // (a touch stays with the button it started on: let it go, so the slide can be followed over the row)
     try {
       (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
@@ -304,8 +308,10 @@ export function DuelChat({
       document.removeEventListener('pointermove', move, true);
       document.removeEventListener('pointerup', up, true);
       setAim(null);
-      // (let go off the button: the next tap on it is a tap again)
-      if (!fab.current?.contains(e.target as Node)) held.current = false;
+      // (the hold is over: a click that may follow this release is ignored, later taps are taps again;
+      // after a long press some phones send no click at all)
+      held.current = false;
+      heldUpAt.current = Date.now();
       const it = itemAt(e.clientX, e.clientY);
       if (it?.dataset.say) {
         held.current = false;
@@ -325,7 +331,7 @@ export function DuelChat({
     return () => (document.removeEventListener('pointermove', move, true), document.removeEventListener('pointerup', up, true), document.removeEventListener('pointercancel', cancel, true));
   }, [ring, holds]);
   const fabTap = () => {
-    if (held.current) return void (held.current = false);
+    if (held.current || Date.now() - heldUpAt.current < 400) return;
     if (ring) return setRing(false);
     setOpen(!open);
   };
@@ -502,25 +508,22 @@ export function DuelChat({
             )}
           </div>
           {/* (the small chat has no list: the latest line shows here) */}
-          {mini && lastLine && (
-            <p class="chat-last">
-              <b>{lastLine.player === mySeat ? 'You' : names[lastLine.player] || 'Opponent'}:</b> {lastLine.text}
-            </p>
+          {/* (the small chat has no list: the latest line shows in its top line, by Hide and close) */}
+          {mini && (
+            <div class="chat-last-row">
+              <p class="chat-last">{lastLine ? <><b>{lastLine.player === mySeat ? 'You' : names[lastLine.player] || 'Opponent'}:</b> {lastLine.text}</> : <span class="chat-last-none">Chat with {theirName}</span>}</p>
+              {muteButton}
+              <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
+                ×
+              </button>
+            </div>
           )}
           {short || mini ? (
-            <div class="chat-row">
-              <div class="chat-quick">
-                {emoteButtons.slice(0, 3)}
-                {phraseButtons.slice(0, 3)}
-                {emoteButtons.slice(3)}
-                {phraseButtons.slice(3)}
-                {/* (the small chat: hiding their messages sits at the end of the row) */}
-              </div>
-              {mini && (
-                <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
-                  ×
-                </button>
-              )}
+            <div class="chat-quick">
+              {emoteButtons.slice(0, 3)}
+              {phraseButtons.slice(0, 3)}
+              {emoteButtons.slice(3)}
+              {phraseButtons.slice(3)}
             </div>
           ) : (
             <>
@@ -541,7 +544,6 @@ export function DuelChat({
               Send
             </button>
             {mini && peekButton}
-            {mini && muteButton}
           </form>
           {slow && (
             <p class="chat-slow" role="status">

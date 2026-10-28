@@ -1546,7 +1546,14 @@ function Running({
   const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !view.state.tag && mySeat <= 1;
   const st0 = view.state;
   // (your own turn's steps and anything asking you to choose; the other player's steps leave it open)
-  const attention = st0.started && st0.winner === null ? `${st0.turnPlayer === mySeat ? `${st0.turn}:${st0.phase}:${st0.battle ? 1 : 0}` : 'theirs'}:${st0.prompt?.player === mySeat ? `${view.moves}` : ''}` : '';
+  const toss = view.toss;
+  const attention =
+    st0.started && st0.winner === null
+      ? `${st0.turnPlayer === mySeat ? `${st0.turn}:${st0.phase}:${st0.battle ? 1 : 0}` : 'theirs'}:${st0.prompt?.player === mySeat ? `${view.moves}` : ''}`
+      : // (who goes first: the throw or the call is yours, then the pick)
+        !st0.started && toss
+        ? `toss:${toss.round}:${toss.hands[mySeat] ? 1 : 0}:${toss.chooser === mySeat && toss.first === null ? 'pick' : ''}`
+        : '';
   const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} attention={attention} classic={controlsFor(mySeat) === 'classic'} mine={st0.started && st0.winner === null && st0.turnPlayer === mySeat} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
   if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {

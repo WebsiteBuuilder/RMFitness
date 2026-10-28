@@ -112,7 +112,7 @@ export function chatCid(cid: unknown): string | undefined {
 export function cleanChat(text: unknown): string {
   if (typeof text !== 'string') return '';
   const flat = text
-    .replace(/[\u0000-\u001f\u007f\u061c\u200b\u200c\u200e\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f\u061c\u200b\u200e\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
     // (a pile of accents on one letter grows tall over the screen: two at most)
     .replace(/(\p{M}{2})\p{M}+/gu, '$1')
     .replace(/\s+/g, ' ')
