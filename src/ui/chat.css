@@ -486,43 +486,102 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.chat-ring-off {
-  position: fixed;
-  inset: 0;
-  z-index: 975;
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
 .chat-ring {
   position: fixed;
   z-index: 980;
-  top: calc(112px + env(safe-area-inset-top));
-  right: max(10px, env(safe-area-inset-right));
-  max-width: min(calc(100% - 20px), 340px);
+  /* beside the chat button, over their face-down hand */
+  top: calc(52px + env(safe-area-inset-top));
+  right: calc(64px + env(safe-area-inset-right));
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 6px;
-  padding: 8px;
+  padding: 6px;
   box-sizing: border-box;
   border-radius: 18px;
-  background: #0b1030ee;
+  background: #0b1030f2;
   border: 1px solid #f7c94899;
   box-shadow: 0 10px 30px #000c;
-  animation: chat-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  animation: chat-in 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2);
   transform-origin: top right;
+}
+.chat-ring-emotes {
+  display: grid;
+  grid-template-columns: repeat(6, 40px);
+  gap: 4px;
+}
+.chat-ring .chat-emote {
+  width: 40px;
+  min-height: 44px;
+  font-size: 22px;
+}
+.chat-ring-phrases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.chat-ring .chat-phrase {
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-ring .aim {
+  border-color: #f7c948;
+  background: #f7c94844;
+  transform: scale(1.12);
 }
 .chat-ring.at-low {
   top: auto;
-  bottom: calc(76px + env(safe-area-inset-bottom));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  right: calc(76px + env(safe-area-inset-right));
   transform-origin: bottom right;
 }
 .chat-ring.at-top {
-  top: calc(66px + env(safe-area-inset-top));
+  top: calc(8px + env(safe-area-inset-top));
+}
+/* you muted them: a small mark on the button */
+.chat-muted-mark {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 8px;
+  background: #4a1c1c;
+  border: 1px solid #e5484d;
+}
+/* your turn: the chat drops over the top, so your hand and your side stay free */
+.chat-sheet.at-duel.up {
+  top: calc(52px + env(safe-area-inset-top));
+  bottom: auto;
+  max-height: min(48dvh, 420px, var(--room, 999px));
+  animation-name: chat-drop;
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-ring {
     animation: none;
   }
+}
+/* your line on its way to the room; one that didn't get there can be sent again */
+.chat-line.pending {
+  opacity: 0.6;
+}
+.chat-line.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  border: 1px solid #e5484d;
+  background: #4a1c1c;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  text-align: right;
+  cursor: pointer;
+}
+.chat-line.failed small {
+  color: #ffd2d2;
+  font-size: 11px;
+  font-weight: 700;
 }

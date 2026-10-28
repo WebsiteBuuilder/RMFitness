@@ -34,8 +34,8 @@ const ok = (c: boolean, msg: string) => {
   ok(cleanChat('a\u200Bb\u2067c\uFEFF') === 'a b c', 'zero-width and text-direction marks become spaces');
   ok(cleanChat('👨\u200D👩\u200D👧') === '👨\u200D👩\u200D👧', 'joined emoji (a family) stay whole');
   ok(cleanChat('Z\u0301\u0302\u0303\u0304\u0305') === 'Z\u0301\u0302', 'a pile of accents is cut to two (no text growing over the screen)');
-  for (const w of ['room', 'duel', 'after'] as const) ok(phrasesFor(w).length === QUICK_PHRASES.length && new Set(phrasesFor(w)).size === QUICK_PHRASES.length, `every phrase is offered (${w})`);
-  ok(phrasesFor('after')[0] === 'Good game!' && phrasesFor('room')[0] === 'Hi! Good luck!' && phrasesFor('duel')[0] === 'Nice move!', 'the phrase for the moment comes first');
+  for (const w of ['room', 'mine', 'theirs', 'after'] as const) ok(phrasesFor(w).length === QUICK_PHRASES.length && new Set(phrasesFor(w)).size === QUICK_PHRASES.length, `every phrase is offered (${w})`);
+  ok(phrasesFor('after')[0] === 'Good game!' && phrasesFor('room')[0] === 'Hi! Good luck!' && phrasesFor('theirs')[0] === 'Nice move!' && phrasesFor('mine')[0] === 'Thinking…', 'the phrase for the moment comes first');
   ok(bubbleMs('👍') === 4500 && bubbleMs('x'.repeat(40)) > 4500 && bubbleMs('x'.repeat(80)) === 7000, 'a longer line stays up longer (up to 7 seconds)');
   const now = 100_000;
   ok(canSend([], now) && canSend([now - 1000, now - 900, now - 800], now), 'up to four lines in a few seconds');
@@ -175,13 +175,19 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
       const guest2 = new Guest(host2);
       host2.send({ type: 'CHAT', player: 0, text: 'old one' } as unknown as GameEvent);
       const G2 = new DuelSession(guest2);
+      host2.live = true;
       t += 100;
       host2.send({ type: 'CHAT', player: 0, text: 'same load' } as unknown as GameEvent);
       t += 5000;
       host2.send({ type: 'CHAT', player: 0, text: 'hey' } as unknown as GameEvent);
       t += 50;
       host2.send({ type: 'CHAT', player: 0, text: 'you there?' } as unknown as GameEvent);
-      ok(G2.view().chat.map((l) => l.old).join() === 'true,true,false,false', 'after the first load, every new line is news, however quickly it follows another');
+      ok(G2.view().chat.map((l) => l.old).join() === 'true,false,false,false', 'after the first load, every new line is news, however quickly it follows another (and a line just said is news even in the load)');
+      // a later piece of an old log (a reload's load arriving in parts) is still history
+      t += 5000;
+      host2.live = false;
+      host2.send({ type: 'CHAT', player: 0, text: 'from long ago' } as unknown as GameEvent);
+      ok(G2.view().chat[4].old, 'a line said long before this phone opened the room stays history, however late it arrives');
     } finally {
       Date.now = realNow;
     }

@@ -8,10 +8,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { CHAT_MAX, cleanChat, type ChatLine, type DuelSession } from '../eds/session';
 import type { Pid } from '../eds/types';
 import * as sfx from './duelSfx';
-import { bubbleMs, canSend, EMOTES, isEmote, MINE_MS, phrasesFor, SPAM_MS } from './chatRules';
+import { bubbleMs, canSend, EMOTES, isEmote, MINE_MS, PENDING_MS, phrasesFor, SPAM_MS } from './chatRules';
 import './chat.css';
-
-const MUTE_KEY = 'eds.chat.muted';
 
 /** a light tap on the phone (Android; iPhone browsers have none) as a line goes out or comes in */
 const buzz = () => {
@@ -19,14 +17,6 @@ const buzz = () => {
     navigator.vibrate?.(12);
   } catch {
     /* none */
-  }
-};
-
-const readMuted = () => {
-  try {
-    return localStorage.getItem(MUTE_KEY) === '1';
-  } catch {
-    return false;
   }
 };
 
@@ -44,6 +34,7 @@ export function DuelChat({
   place = 'duel',
   attention = '',
   classic = false,
+  mine = false,
 }: {
   session: DuelSession;
   chat: ChatLine[];
@@ -54,15 +45,22 @@ export function DuelChat({
   attention?: string;
   /** Classic controls in the duel (a thinner top bar) */
   classic?: boolean;
+  /** your turn in the duel: the chat opens over the top (your hand stays free); on theirs it rises over your hand (their field stays in view) */
+  mine?: boolean;
 }) {
   const [open, setOpenState] = useState(session.chatOpen);
+  const [ring, setRing] = useState(false);
   const [draft, setDraftState] = useState(session.chatDraft);
   // (kept on the room, so the chat picks up where it was when the duel turns into the result screen)
   const setOpen = (o: boolean) => ((session.chatOpen = o), setOpenState(o));
   const setDraft = (d: string) => ((session.chatDraft = d), setDraftState(d));
   const timers = useRef(new Set<number>());
   useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), []);
-  const [muted, setMuted] = useState(readMuted);
+  // (mute: for this room only, so the next opponent isn't hidden)
+  const [muted, setMutedState] = useState(session.chatMuted);
+  const setMuted = (m: boolean) => setMutedState((session.chatMuted = m));
+  /** your lines on their way (the other phone's host puts them in the room); one not back in a few seconds can be sent again */
+  const [, setTick] = useState(0);
   const [bubbles, setBubbles] = useState<ChatLine[]>([]);
   const [slow, setSlow] = useState(false);
   const slowTimer = useRef<number>();
@@ -73,6 +71,7 @@ export function DuelChat({
   const input = useRef<HTMLInputElement>(null);
   const opp: Pid = mySeat === 0 ? 1 : 0;
   const shown = muted ? chat.filter((l) => l.player === mySeat) : chat;
+  const pendingCount = session.chatPending.length;
 
   // New lines: a bubble over the board (unless the chat is open), a blip and the unread count for the other's.
   useEffect(() => {
@@ -82,6 +81,12 @@ export function DuelChat({
     }
     const had = new Set(session.chatSeen);
     for (const l of chat) session.chatSeen.add(l.id);
+    // (your own lines back from the room: no longer on their way)
+    for (const l of chat) {
+      if (had.has(l.id) || l.player !== mySeat) continue;
+      const i = session.chatPending.findIndex((p) => p.text === l.text);
+      if (i >= 0) session.chatPending = session.chatPending.filter((_, j) => j !== i);
+    }
     // (news: a line said now; the log loading after a rejoin or reload brings history: no ping, no bubble, no count)
     const fresh = chat.filter((l) => !had.has(l.id) && !l.old);
     if (fresh.length) announce(fresh);
@@ -92,25 +97,22 @@ export function DuelChat({
   const announce = (fresh: ChatLine[]) => {
     const muted = mutedNow.current;
     const theirs = fresh.filter((l) => l.player === opp && !muted);
-    const pop = fresh.filter((l) => l.player === mySeat || !muted);
     if (theirs.length) (sfx.chatPing(), buzz());
     // (the chat open in full shows the line itself; the small one has no list, so the bubble shows)
     if (session.chatOpen && !miniNow.current) return;
     // (unread until the chat is opened: the bubble goes away, the count stays)
     if (theirs.length) setUnread((n) => n + theirs.length);
-    // (one line each at a time: a newer one replaces the one showing)
-    const lastTheirs = pop.filter((l) => l.player !== mySeat).pop();
-    const lastMine = pop.filter((l) => l.player === mySeat).pop();
-    if (!lastTheirs && !lastMine) return;
-    setBubbles((b) => [lastTheirs ?? b.find((x) => x.player !== mySeat), lastMine ?? b.find((x) => x.player === mySeat)].filter((x): x is ChatLine => !!x));
-    for (const l of [lastTheirs, lastMine]) {
-      if (!l) continue;
-      const t = window.setTimeout(() => {
-        timers.current.delete(t);
-        setBubbles((b) => b.filter((x) => x.id !== l.id));
-      }, l.player === mySeat ? MINE_MS : bubbleMs(l.text));
-      timers.current.add(t);
-    }
+    // (one line at a time: a newer one replaces the one showing; your own pill shows as you send)
+    const last = theirs[theirs.length - 1];
+    if (last) pop(last, bubbleMs(last.text));
+  };
+  const pop = (l: ChatLine, ms: number) => {
+    setBubbles((b) => [...b.filter((x) => (x.player === mySeat) !== (l.player === mySeat)), l]);
+    const t = window.setTimeout(() => {
+      timers.current.delete(t);
+      setBubbles((b) => b.filter((x) => x.id !== l.id));
+    }, ms);
+    timers.current.add(t);
   };
 
   useEffect(() => {
@@ -119,13 +121,14 @@ export function DuelChat({
     setBubbles([]);
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [open, shown.length]);
+  }, [open, shown.length, pendingCount]);
 
   // The duel needs you (your prompt, an attack, a new phase or turn): the chat closes; what you typed stays.
   const lastAttention = useRef(attention);
   useEffect(() => {
     // (the other player's turn starting or going on leaves it open: that's the time to talk)
-    if (attention !== lastAttention.current && attention !== 'theirs:' && open) setOpen(false);
+    // (nor does the duel ending: the chat carries on over the result)
+    if (attention !== lastAttention.current && attention !== 'theirs:' && attention !== '' && open) setOpen(false);
     lastAttention.current = attention;
   }, [attention]);
 
@@ -139,21 +142,22 @@ export function DuelChat({
     return () => window.removeEventListener('resize', on);
   }, []);
 
-  // In the duel the open chat rises over your hand and stops below the turn and phase controls: their
-  // whole field, the middle of the board and End Turn stay in view; where that leaves little room it
-  // shrinks to one row of buttons and the box.
+  // In the duel the open chat never reaches the turn and phase controls (End Turn stays in reach). On
+  // their turn it rises over your hand, so their whole field stays in view; on yours it drops over the
+  // top, so your hand and your side stay free to play. Where that leaves little room it shrinks to one
+  // row of buttons and the box.
+  const up = place === 'duel' && mine;
   const sheet = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<number | null>(null);
   useLayoutEffect(() => {
     if (!open || place !== 'duel') return setRoom(null);
     // (Touch: the turn row and the round phase button beside it; Classic: the centre strip)
-    const marks = [...document.querySelectorAll('.duel.touch .tmid, .duel.touch .tphase, .duel .field .center')].map((el) => el.getBoundingClientRect().bottom).filter((b) => b > 0);
-    // (its resting bottom: while it rises in, its box is still moving)
-    const bottom = sheet.current ? parseFloat(getComputedStyle(sheet.current).bottom) : NaN;
-    const limit = marks.length ? Math.max(...marks) : NaN;
-    const r = Math.floor(window.innerHeight - bottom - limit - 6);
-    setRoom(Number.isFinite(r) ? r : null);
-  }, [open, place, short, turned]);
+    const boxes = [...document.querySelectorAll('.duel.touch .tmid, .duel.touch .tphase, .duel .field .center')].map((el) => el.getBoundingClientRect()).filter((b) => b.bottom > 0);
+    // (its resting place: while it slides in, its box is still moving)
+    const css = sheet.current ? getComputedStyle(sheet.current) : null;
+    const r = !css || !boxes.length ? NaN : up ? Math.min(...boxes.map((b) => b.top)) - parseFloat(css.top) - 6 : window.innerHeight - parseFloat(css.bottom) - Math.max(...boxes.map((b) => b.bottom)) - 6;
+    setRoom(Number.isFinite(r) ? Math.floor(r) : null);
+  }, [open, place, short, turned, up]);
   const mini = room !== null && room < 230;
   const miniNow = useRef(mini);
   miniNow.current = mini;
@@ -161,6 +165,21 @@ export function DuelChat({
   const [peek, setPeek] = useState(false);
   // (the chat closing under a held eye: no pointer-up ever comes)
   useEffect(() => void (!open && setPeek(false)), [open]);
+
+  // A tap on the board outside the chat closes it, and the tap still does what it does (play a card).
+  const fab = useRef<HTMLButtonElement>(null);
+  const ringBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open && !ring) return;
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (fab.current?.contains(t) || sheet.current?.contains(t) || ringBox.current?.contains(t)) return;
+      setOpen(false);
+      setRing(false);
+    };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [open, ring]);
 
   // Escape (a keyboard or a controller's B) closes the chat.
   useEffect(() => {
@@ -200,8 +219,13 @@ export function DuelChat({
       return false;
     }
     session.chatSentAt = [...sent.filter((t) => now - t < SPAM_MS), now];
+    const id = `p${now}`;
+    session.chatPending = [...session.chatPending, { id, text, at: now }];
     session.send({ type: 'CHAT', player: mySeat, text });
     buzz();
+    if (!session.chatOpen) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
+    const t = window.setTimeout(() => (timers.current.delete(t), setTick((n) => n + 1)), PENDING_MS + 50);
+    timers.current.add(t);
     return true;
   };
 
@@ -209,15 +233,21 @@ export function DuelChat({
     if (say(text)) (setOpen(false), setRing(false));
   };
 
-  // Hold the chat button: a row of emotes and the phrases for the moment pops up by it, one tap sends
-  // (no chat to open, nothing over the field).
-  const [ring, setRing] = useState(false);
+  // Hold the chat button: emotes and the phrases for the moment pop up beside it. Slide onto one and let
+  // go to send it, or let go on the button and tap one; no chat to open.
   const holdTimer = useRef<number>();
   const held = useRef(false);
+  const [aim, setAim] = useState<string | null>(null);
   useEffect(() => () => clearTimeout(holdTimer.current), []);
-  const holdStart = () => {
+  const holdStart = (e: PointerEvent) => {
     held.current = false;
     clearTimeout(holdTimer.current);
+    // (a touch stays with the button it started on: let it go, so the slide can be followed over the row)
+    try {
+      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* not captured */
+    }
     holdTimer.current = window.setTimeout(() => {
       held.current = true;
       setRing(true);
@@ -225,6 +255,24 @@ export function DuelChat({
     }, 380);
   };
   const holdEnd = () => clearTimeout(holdTimer.current);
+  const itemAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.chat-ring [data-say]') ?? null;
+  useEffect(() => {
+    if (!ring || !held.current) return;
+    const move = (e: PointerEvent) => setAim(itemAt(e.clientX, e.clientY)?.dataset.say ?? null);
+    const up = (e: PointerEvent) => {
+      document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('pointerup', up, true);
+      setAim(null);
+      const it = itemAt(e.clientX, e.clientY);
+      if (it?.dataset.say) {
+        held.current = false;
+        quick(it.dataset.say);
+      }
+    };
+    document.addEventListener('pointermove', move, true);
+    document.addEventListener('pointerup', up, true);
+    return () => (document.removeEventListener('pointermove', move, true), document.removeEventListener('pointerup', up, true));
+  }, [ring]);
   const fabTap = () => {
     if (held.current) return void (held.current = false);
     if (ring) return setRing(false);
@@ -244,18 +292,14 @@ export function DuelChat({
     input.current?.focus();
   };
 
-  const toggleMute = () => {
-    const m = !muted;
-    setMuted(m);
-    try {
-      localStorage.setItem(MUTE_KEY, m ? '1' : '0');
-    } catch {
-      /* this time only */
-    }
+  const toggleMute = () => setMuted(!muted);
+  const retry = (id: string, text: string) => {
+    session.chatPending = session.chatPending.filter((p) => p.id !== id);
+    if (!say(text)) setTick((n) => n + 1);
   };
 
   const theirName = names[opp] || 'your opponent';
-  const phrases = phrasesFor(place === 'low' ? 'room' : place === 'top' ? 'after' : 'duel');
+  const phrases = phrasesFor(place === 'low' ? 'room' : place === 'top' ? 'after' : mine ? 'mine' : 'theirs');
   // (one at a time: a newer line replaces the one showing)
   const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
@@ -264,7 +308,7 @@ export function DuelChat({
   const sheetStyle: Record<string, string> | undefined =
     place !== 'top'
       ? vv
-        ? { bottom: `${Math.max(0, window.innerHeight - vv.top - vv.h) + 8}px`, '--room': `${Math.max(120, vv.h - 16)}px` }
+        ? { top: 'auto', bottom: `${Math.max(0, window.innerHeight - vv.top - vv.h) + 8}px`, '--room': `${Math.max(120, vv.h - 16)}px` }
         : room !== null
           ? { '--room': `${Math.max(120, room)}px` }
           : undefined
@@ -320,31 +364,35 @@ export function DuelChat({
       )}
       {ring && !open && (
         <>
-          <button type="button" class="chat-ring-off" aria-label="Close quick chat" onClick={() => setRing(false)} />
-          <div class={`chat-ring at-${place} ${classic ? 'classic' : ''}`} role="menu" aria-label="Quick chat">
-            {EMOTES.slice(0, 6).map((t) => (
-              <button key={t} type="button" role="menuitem" class="chat-emote" onClick={() => quick(t)} aria-label={`Send ${t}`}>
-                {t}
-              </button>
-            ))}
-            {phrases.slice(0, 3).map((t) => (
-              <button key={t} type="button" role="menuitem" class="chat-phrase" onClick={() => quick(t)}>
-                {t}
-              </button>
-            ))}
+          <div ref={ringBox} class={`chat-ring at-${place}`} role="menu" aria-label="Quick chat">
+            <div class="chat-ring-emotes">
+              {EMOTES.slice(0, 6).map((t) => (
+                <button key={t} type="button" role="menuitem" data-say={t} class={`chat-emote ${aim === t ? 'aim' : ''}`} onClick={() => quick(t)} aria-label={`Send ${t}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div class="chat-ring-phrases">
+              {phrases.slice(0, 2).map((t) => (
+                <button key={t} type="button" role="menuitem" data-say={t} class={`chat-phrase ${aim === t ? 'aim' : ''}`} onClick={() => quick(t)}>
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
         </>
       )}
-      <button class={`chat-fab at-${place} ${open || ring ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new (hold for quick emotes)` : 'Chat (hold for quick emotes)'} aria-expanded={open} onClick={fabTap} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
+      <button ref={fab} class={`chat-fab at-${place} ${open || ring ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new (hold for quick emotes)` : 'Chat (hold for quick emotes)'} aria-expanded={open} onClick={fabTap} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="currentColor" />
         </svg>
         {unread > 0 && <span class="chat-badge">{unread > 9 ? '9+' : unread}</span>}
+        {muted && <span class="chat-muted-mark" aria-hidden="true">🔇</span>}
       </button>
       {/* the chat: in the duel it rises over your hand (the field and the turn controls stay in view and
           keep working), in the room it sits over the bottom, over the result screen at the top */}
       {open && (
-        <div ref={sheet} class={`chat-sheet at-${place} ${mini ? 'mini' : ''} ${peek ? 'peek' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={sheetStyle}>
+        <div ref={sheet} class={`chat-sheet at-${place} ${up ? 'up' : ''} ${mini ? 'mini' : ''} ${peek ? 'peek' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={sheetStyle}>
           <div class="chat-head">
             <span class="chat-title">Chat with {theirName}</span>
             {place === 'duel' && peekButton}
@@ -362,6 +410,18 @@ export function DuelChat({
                 <span>{l.text}</span>
               </div>
             ))}
+            {session.chatPending.map((p) =>
+              Date.now() - p.at < PENDING_MS ? (
+                <div key={p.id} class={`chat-line mine pending ${isEmote(p.text) ? 'emote' : ''}`}>
+                  <span>{p.text}</span>
+                </div>
+              ) : (
+                <button key={p.id} type="button" class="chat-line mine failed" onClick={() => retry(p.id, p.text)}>
+                  <span>{p.text}</span>
+                  <small>Not sent · tap to try again</small>
+                </button>
+              ),
+            )}
           </div>
           {short || mini ? (
             <div class="chat-quick">
@@ -379,6 +439,8 @@ export function DuelChat({
           <form class="chat-form" onSubmit={submit}>
             <input ref={input} type="text" enterKeyHint="send" autocomplete="off" placeholder="Type a message" value={draft} onInput={(e) => {
                 const box = e.target as HTMLInputElement;
+                // (a word still being put together on a Japanese or Chinese keyboard: left alone until it's done)
+                if ((e as InputEvent).isComposing) return setDraft(box.value);
                 const cut = Array.from(box.value).slice(0, CHAT_MAX).join('');
                 if (cut !== box.value) box.value = cut;
                 setDraft(cut);

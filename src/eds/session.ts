@@ -156,6 +156,10 @@ export class DuelSession {
   /** the chat's lines already seen on this phone and their unread count (kept as the duel turns into the result screen) */
   chatSeen: Set<string> | null = null;
   chatUnread = 0;
+  /** this phone's lines on their way to the room, and whether the other player is muted (this room only) */
+  chatPending: { id: string; text: string; at: number }[] = [];
+  chatMuted = false;
+  private readonly createdAt = Date.now();
   /**
    * The room's log as this phone first gets it comes in one go (a reload or a rejoin hands it all
    * over at once): entries until the first pause are that load (history); after it, news.
@@ -219,7 +223,8 @@ export class DuelSession {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
     // (history: part of that first load and said a while ago; the room's very first line, said just now, is news)
-    const old = !this.loaded && !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS);
+    // (and a line said well before this phone opened the room is history however the load arrived)
+    const old = (!this.loaded && !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS)) || ev.ts < this.createdAt - LOAD_OLD_MS;
     this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old }];
   }
 
