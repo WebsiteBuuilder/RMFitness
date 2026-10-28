@@ -7,8 +7,11 @@ import { DB } from '../src/eds/db';
 import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
-import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, KING_MILESTONE, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, TOP_MILESTONE, TOP_MILESTONES, KING, migrateRanked, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
 import { cleanStats } from '../src/collection/rankings';
+import { weekMissions, weekOf } from '../src/eds/speedCampaign/rankedWeekly';
+import { boardFrom, ladderScore, postOf } from '../src/online/rankedBoard';
+import { mergeLadder } from '../src/online/rankedBoard';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
 for (const [k, v] of KIT) DB.set(k, v);
@@ -28,8 +31,8 @@ const day = (d: number, h = 12) => new Date(2026, 9, d, h); // October 2026
 const at = (solo: SoloSave, p: Partial<RankedProgress>): SoloSave => ({ ...solo, ranked: { ...rankedProgress(solo, day(1)), ...p } });
 
 // ---------- the ladder ----------
-ok(STEPS.length === 19, `19 steps (${STEPS.length})`);
-ok(stepName(0) === 'Rookie' && stepName(1) === 'Bronze II' && stepName(2) === 'Bronze I' && stepName(3) === 'Silver III' && stepName(TOP) === 'Duel King', `step names (${STEPS.map((_, i) => stepName(i)).join(', ')})`);
+ok(STEPS.length === 25, `25 steps (${STEPS.length})`);
+ok(stepName(0) === 'Rookie' && stepName(1) === 'Bronze II' && stepName(2) === 'Bronze I' && stepName(3) === 'Silver III' && stepName(18) === 'Duel King III' && stepName(23) === 'Legend I' && stepName(TOP) === 'Pharaoh', `step names (${STEPS.map((_, i) => stepName(i)).join(', ')})`);
 ok(tierFloor(tierIndexOf(8)) === 6, 'Gold I floor is Gold III');
 ok(starsAt(5) === 3 && starsAt(6) === 4, 'Gold ranks take 4 stars');
 
@@ -68,11 +71,11 @@ solo = at(r.solo, { step: 5, stars: 2, bonusDay: '2026-10-04' });
 r = settleRanked(r.speed, solo, WIN, day(4, 13));
 ok(!r.newTier && r.lines.length === 0, 'Gold reached a second time in the season pays nothing');
 
-// Duel King: points, never a drop.
+// Pharaoh: points, never a drop.
 solo = at(newSoloSave(), { step: TOP, kp: 1, peak: TOP, paid: RANKED_TIERS.map((_, i) => i) });
 r = settleRanked(speed, solo, LOSS, day(5));
 r = settleRanked(r.speed, r.solo, LOSS, day(5, 13));
-ok(r.after.step === TOP && r.after.kp === 0, `Duel King loses points, not rank (${r.after.kp})`);
+ok(r.after.step === TOP && r.after.kp === 0, `Pharaoh loses points, not rank (${r.after.kp})`);
 
 // Chips: reaching Platinum pays its chip; prizes add up to a fixed total a season.
 speed = { ...newSpeedSave(), chips: 0 };
@@ -80,7 +83,7 @@ solo = at(newSoloSave(), { step: 8, stars: 3, peak: 8, paid: [0, 1, 2, 3], bonus
 r = settleRanked(speed, solo, WIN, day(6));
 ok(r.newTier?.id === 'platinum' && r.speed.chips === 1, `Platinum pays 1 chip (${r.speed.chips})`);
 const chipsSeason = RANKED_TIERS.reduce((a, t) => a + t.prize.reduce((b, p) => b + (p.kind === 'chips' ? p.n : 0), 0), 0);
-ok(chipsSeason === 7, `a whole season pays 7 chips at most (${chipsSeason})`);
+ok(chipsSeason === 14, `a whole season of tiers pays 14 chips at most (${chipsSeason})`);
 
 // ---------- leaving ----------
 solo = at(newSoloSave(), { step: 4, stars: 1, peak: 4, paid: [0, 1, 2] });
@@ -107,7 +110,7 @@ ok(!rankedProgress(back0).pending && rankedProgress(back0).played === rankedProg
 
 // ---------- seasons ----------
 ok(seasonOf(day(1)) === '2026-10', 'season is the month');
-ok(seasonStart(TOP) === tierFloor(RANKED_TIERS.length - 3) && seasonStart(6) === tierFloor(1) && seasonStart(2) === 0, 'new season starts two tiers down');
+ok(seasonStart(TOP) === tierFloor(KING - 1) && seasonStart(tierFloor(KING)) === tierFloor(KING - 2) && seasonStart(6) === tierFloor(1) && seasonStart(2) === 0, 'new season starts two tiers down');
 speed = { ...newSpeedSave(), chips: 0 };
 solo = at(newSoloSave(), { season: '2026-10', step: 12, stars: 1, peak: 13, w: 20, l: 9, paid: [0, 1, 2, 3, 4, 5] });
 opened = openRanked(speed, solo, new Date(2026, 10, 2));
@@ -142,14 +145,34 @@ ok(goals === 1, `Silver: the daily pack pays once a day (${goals})`);
 r = settleRanked(r.speed, at(r.solo, { step: 3, stars: 0 }), WIN, day(8, 9));
 ok(!r.bonus && !r.goalPaid, 'the clock set back earlier gives no new bonus');
 ok(ladderClock(rankedProgress(r.solo), day(1)).getTime() >= day(9, 15).getTime(), 'the ladder clock never runs backwards');
-// Duel King: a pack every 5 points, 3 a season.
-solo = at(newSoloSave(), { step: TOP, kp: KING_MILESTONE - 1, peak: TOP, paid: RANKED_TIERS.map((_, i) => i), bonusDay: '2026-10-10' });
+// Pharaoh: a pack every 5 points (a chip every 10), 6 a season.
+speed = { ...newSpeedSave(), chips: 0 };
+solo = at(newSoloSave(), { step: TOP, kp: TOP_MILESTONE - 1, peak: TOP, paid: RANKED_TIERS.map((_, i) => i), bonusDay: '2026-10-10' });
 r = settleRanked(speed, solo, WIN, day(10));
-ok(r.kingPaid && rankedProgress(r.solo).kingPaid === 1, 'Duel King: 5 points pay a pack');
+ok(r.topPaid && rankedProgress(r.solo).topPaid === 1 && r.speed.chips === 0, 'Pharaoh: 5 points pay a pack');
+r = settleRanked(r.speed, at(r.solo, { kp: TOP_MILESTONE * 2 - 1 }), WIN, day(10, 12));
+ok(r.topPaid && r.speed.chips === 1, `Pharaoh: 10 points pay a pack and a chip (${r.speed.chips})`);
 r = settleRanked(r.speed, at(r.solo, { kp: 100 }), WIN, day(10, 13));
-ok(rankedProgress(r.solo).kingPaid === 3, `milestones stop at 3 a season (${rankedProgress(r.solo).kingPaid})`);
+ok(rankedProgress(r.solo).topPaid === TOP_MILESTONES && r.speed.chips === TOP_MILESTONES / 2, `milestones stop at ${TOP_MILESTONES} a season (${rankedProgress(r.solo).topPaid}, ${r.speed.chips} chips)`);
 r = settleRanked(r.speed, r.solo, WIN, day(10, 14));
-ok(!r.kingPaid, 'no more milestone packs after 3');
+ok(!r.topPaid, `no more milestone prizes after ${TOP_MILESTONES}`);
+speed = newSpeedSave();
+// From Duel King up, streaks stop adding stars; ranks take 5.
+solo = at(newSoloSave(), { step: tierFloor(KING), stars: 0, peak: tierFloor(KING), paid: RANKED_TIERS.map((_, i) => i).slice(0, KING + 1), streak: 5, bonusDay: '2026-10-10' });
+r = settleRanked(speed, solo, WIN, day(10, 15));
+ok(r.gained === 1 && !r.streakBonus && starsAt(tierFloor(KING)) === 5, `Duel King: no streak star, 5-star ranks (${r.gained})`);
+// Legend pays its prize and a title once.
+solo = at(newSoloSave(), { step: 20, stars: 4, peak: 20, paid: [0, 1, 2, 3, 4, 5, 6, 7], bonusDay: '2026-10-10' });
+r = settleRanked(speed, solo, WIN, day(10, 16));
+ok(r.newTier?.id === 'legend' && r.lines.some((l) => /Legend · October 2026/.test(l)), `Legend reached: prize + title (${r.lines.join(' / ')})`);
+// Old saves: Duel King was the top (step 18) with King points; those climb as stars now.
+const old = migrateRanked({ ...newRanked('2026-10'), v: undefined, step: 18, stars: 0, kp: 7, peak: 18 });
+ok(old.v === 2 && old.step === 19 && old.stars === 2 && old.kp === 0 && old.peak === 19, `old Duel King with 7 points moves to Duel King II with 2 stars (${stepName(old.step)} ${old.stars})`);
+const oldBig = migrateRanked({ ...newRanked('2026-10'), v: undefined, step: 18, kp: 40, peak: 18 });
+ok(oldBig.step === TOP && oldBig.kp === 10, `40 old King points reach Pharaoh with 10 left over (${stepName(oldBig.step)} ${oldBig.kp})`);
+ok(migrateRanked(old) === old, 'migration runs once');
+const viaOpen = openRanked(speed, { ...newSoloSave(), ranked: { ...newRanked('2026-10'), v: undefined, step: 18, kp: 3, peak: 18, w: 30 } }, day(10, 17));
+ok(rankedProgress(viaOpen.solo).step === 18 && rankedProgress(viaOpen.solo).stars === 3 && rankedProgress(viaOpen.solo).v === 2, 'opening the ladder moves an old save');
 // Who goes first is fixed with the opponent.
 const pf = rankedProgress(newSoloSave(), day(1));
 ok(rankedFirst(pf) === rankedFirst(pf) && new Set(Array.from({ length: 20 }, (_, i) => rankedFirst({ ...pf, played: i }))).size === 2, 'turn order is fixed per duel and varies between duels');
@@ -205,6 +228,77 @@ for (let step = 0; step <= TOP; step++)
 ok(names.size >= 20, `many different opponents across the ladder (${names.size})`);
 ok(wanderers > 0, `Wandering Duelists appear from Gold up (${wanderers})`);
 ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists in Rookie');
+
+// ---------- weekly missions ----------
+{
+  const wk = weekMissions(weekOf(day(12)));
+  ok(wk.length === 4 && new Set(wk.map((m) => m.id)).size === 4, `four missions a week (${wk.map((m) => m.id).join(', ')})`);
+  ok(weekOf(day(26)) === '2026-10-26' && weekOf(day(28)) === '2026-10-26' && weekOf(new Date(2026, 10, 1)) === '2026-10-26' && weekOf(new Date(2026, 10, 2)) === '2026-11-02', 'weeks start on Monday');
+  ok(weekMissions('2026-10-26').map((m) => m.id).join() === weekMissions('2026-10-26').map((m) => m.id).join(), 'the same missions for everyone in a week');
+  const weeks = new Set(Array.from({ length: 12 }, (_, i) => weekMissions(weekOf(new Date(2026, 9, 5 + 7 * i))).map((m) => m.id).join()));
+  ok(weeks.size > 3, `missions change week to week (${weeks.size} different sets in 12 weeks)`);
+  // A win moves the right missions and pays a pack the moment one is done; all four pay the crown.
+  let sp = newSpeedSave();
+  let so: SoloSave = at(newSoloSave(), { step: 4, stars: 0, peak: 4, paid: [0, 1, 2] });
+  const now0 = day(13, 9);
+  let crowns = 0;
+  let packsDone = 0;
+  for (let i = 0; i < 14; i++) {
+    const t = new Date(now0.getTime() + i * 3600000);
+    const won = settleRanked(sp, so, { ...WIN, myLp: 3500, turns: 6 }, t, t.getTime(), { wandering: true, second: true });
+    sp = won.speed;
+    so = won.solo;
+    packsDone += won.missions.length;
+    if (won.crown) crowns++;
+    // a link-battle win for the link mission
+    if (i === 0) {
+      const lk = settleLinkRanked(sp, so, 'w', 'Brother', new Date(t.getTime() + 60000));
+      sp = lk.speed;
+      so = lk.solo;
+      packsDone += rankedProgress(so).week!.paid.length - packsDone;
+    }
+  }
+  const wp = rankedProgress(so).week!;
+  ok(wp.paid.length === 4 && wp.crown === true && crowns === 1, `${weekMissions(wp.id).map((m) => m.id)}: a strong week finishes all four and pays the crown once (${wp.paid.length}, crowns ${crowns}, ${wp.prog.join('/')})`);
+  // A streak mission counts wins in a row this week and starts over on a loss.
+  const run = weekMissions('2026-10-26').findIndex((m) => m.run);
+  if (run >= 0) {
+    let s2: SoloSave = at(newSoloSave(), { step: 4, stars: 0, peak: 4, paid: [0, 1, 2] });
+    for (const [o, h] of [[WIN, 9], [WIN, 10], [LOSS, 11], [WIN, 12]] as const) s2 = settleRanked(sp, s2, o, day(27, h)).solo;
+    ok(rankedProgress(s2).week!.prog[run] === 1, `a loss restarts a streak mission (${rankedProgress(s2).week!.prog[run]})`);
+  }
+  // Leaving never moves a mission.
+  const before = rankedProgress(so).week!;
+  const lf = settleRanked(sp, so, LEFT, day(14, 9));
+  ok(JSON.stringify(rankedProgress(lf.solo).week!.prog) === JSON.stringify(before.prog) && lf.missions.length === 0, 'leaving a duel moves no mission');
+  // A new week starts a fresh sheet.
+  const nx = settleRanked(sp, so, WIN, day(20, 9));
+  ok(rankedProgress(nx.solo).week!.id === '2026-10-19' && rankedProgress(nx.solo).week!.prog.every((n) => n <= 1), `Monday starts a fresh sheet (${JSON.stringify(rankedProgress(nx.solo).week)})`);
+  // The week survives the month turning.
+  const turned = openRanked(sp, at(so, { week: { id: weekOf(new Date(2026, 10, 1)), prog: [1, 0, 0, 0], paid: [] } }), new Date(2026, 10, 1, 12));
+  ok(rankedProgress(turned.solo, new Date(2026, 10, 1)).week?.prog[0] === 1, 'a new season keeps the week\'s missions');
+}
+
+// ---------- the shared leaderboard ----------
+{
+  const pr = { ...newRanked('2026-10'), step: 7, stars: 2, w: 9, l: 3 };
+  const post = postOf('abc.def', 'Jammy', '#ff8800', pr, 5);
+  ok(post.id === 'abc_def' && post.step === 7 && post.stars === 2, 'a post keeps the rank and a safe key');
+  ok(ladderScore(TOP, 0, 3) === ladderScore(TOP, 0, 0) + 3 && ladderScore(4, 0, 0) === 3 + 3 + 3 + 3, 'ladder score counts stars up the ladder');
+  const raw = {
+    a: JSON.stringify({ name: 'Jammy', color: '#f80', step: 7, stars: 2, kp: 0, w: 9, l: 3, at: 5 }),
+    b: JSON.stringify({ name: 'Brother', color: '#0af', step: TOP, stars: 0, kp: 12, w: 40, l: 10, at: 6 }),
+    c: JSON.stringify({ name: 'Cheat', color: 'javascript:', step: 999, stars: 99, kp: -5, w: -3, l: 0, at: 7 }),
+    d: 'not json',
+    e: { name: 12 },
+  };
+  const rows = boardFrom(raw);
+  ok(rows.length === 3 && rows[0].name === 'Brother' && rows[0].kp === 12, `the board sorts best first and drops junk (${rows.map((r) => r.name).join(', ')})`);
+  const cheat = rows.find((r) => r.name === 'Cheat')!;
+  ok(cheat.step === TOP && cheat.kp === 0 && cheat.color === '#888888' && cheat.w === 0, 'a bad post is clamped');
+  const merged = mergeLadder([{ name: 'Jammy', color: '#f80', step: 6, stars: 0, kp: 0, w: 1, l: 0, kind: 'me' }], rows);
+  ok(merged.find((r) => r.name === 'Jammy')?.kind === 'me' && merged.find((r) => r.name === 'Jammy')?.step === 6 && merged.length === 3, 'your own line always comes from this phone');
+}
 
 if (fails) {
   console.log(`ranked: ${fails} failure(s)`);

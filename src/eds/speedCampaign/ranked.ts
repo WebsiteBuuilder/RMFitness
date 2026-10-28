@@ -1,17 +1,20 @@
 // Ranked Duel: a monthly ladder against the computer, like Master Duel's Ranked. Every season
-// is a calendar month. You climb from Rookie through Bronze, Silver, Gold, Platinum, Diamond and
-// Master to Duel King, three stars a rank; from Silver up a loss takes a star back and can drop
-// you a rank, but never out of a tier you've reached. Each tier deals stronger opponents: Road
+// is a calendar month. You climb from Rookie through Bronze, Silver, Gold, Platinum, Diamond,
+// Master, Duel King and Legend to Pharaoh, the endless top tier, where every win is a Pharaoh
+// Point; from Silver up a loss takes a star back and can drop you a rank, but never out of a
+// tier you've reached. Each tier deals stronger opponents: Road
 // duelists from later chapters, sharper play, and from Gold up Wandering Duelists with decks
 // shuffled together for that one duel, so no two climbs meet the same table.
 //
 // What it pays (once per tier per season, so there is nothing to farm):
 //  - reaching a tier for the first time this season pays its prize (packs, and Duel Chips
-//    from Platinum up); Duel King adds a title for the month
+//    from Platinum up); Duel King, Legend and Pharaoh each add a title for the month
+//  - Pharaoh Points pay a pack every TOP_MILESTONE, and every second one adds a chip
+//  - Weekly Ranked Missions (rankedWeekly.ts) pay packs and a Weekly Crown
 //  - a new season starts you two tiers below last season's best, and pays the prizes of the
 //    tiers you start in, so a good month still pays the next one
 // Bonus stars: the first win of each day is worth an extra star, and so is every win from
-// the third in a row. Leaving a Ranked Duel (or closing the game mid-duel) counts as a loss.
+// the third in a row below Duel King (from there on, every star is earned one win at a time). Leaving a Ranked Duel (or closing the game mid-duel) counts as a loss.
 // Own decks only: an Anything goes deck can't enter.
 import { rng } from '../rng';
 import { randomSpeedDeck } from '../speedRandom';
@@ -24,6 +27,7 @@ import { grant } from './rewards';
 import { todayString } from './labyrinth';
 import type { SoloSave } from './save';
 import type { CpuDuelist, DuelOutcome, Reward } from './types';
+import { advanceWeek, type Mission, type WeekEvent, type WeekProgress } from './rankedWeekly';
 
 export interface RankedTier {
   id: string;
@@ -55,7 +59,9 @@ export const RANKED_TIERS: RankedTier[] = [
   { id: 'platinum', name: 'Platinum', ranks: 3, stars: 4, loses: true, level: 'hard', chapters: [4, 5], wander: 0.3, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }] },
   { id: 'diamond', name: 'Diamond', ranks: 3, stars: 4, loses: true, level: 'hard', chapters: [5, 6], wander: 0.3, cpuLp: 4500, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }] },
   { id: 'master', name: 'Master', ranks: 3, stars: 4, loses: true, level: 'hard', chapters: [6, 7], wander: 0.35, cpuLp: 5000, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 2 }] },
-  { id: 'king', name: 'Duel King', ranks: 1, stars: 0, loses: true, level: 'hard', chapters: [7, 8], wander: 0.4, cpuLp: 5000, cpuHand: 1, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 3 }] },
+  { id: 'king', name: 'Duel King', ranks: 3, stars: 5, loses: true, level: 'hard', chapters: [7, 8], wander: 0.4, cpuLp: 5000, cpuHand: 1, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 3 }] },
+  { id: 'legend', name: 'Legend', ranks: 3, stars: 5, loses: true, level: 'hard', chapters: [8], wander: 0.45, cpuLp: 5500, cpuHand: 1, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 3 }] },
+  { id: 'pharaoh', name: 'Pharaoh', ranks: 1, stars: 0, loses: true, level: 'hard', chapters: [8], wander: 0.5, cpuLp: 6000, cpuHand: 1, prize: [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 4 }] },
 ];
 
 /** One step of the ladder: a tier and its rank (2 = "II", 1 = "I"). */
@@ -65,18 +71,25 @@ export interface RankStep {
 }
 export const STEPS: RankStep[] = RANKED_TIERS.flatMap((t, tier) => Array.from({ length: t.ranks }, (_, i) => ({ tier, rank: t.ranks - i })));
 export const TOP = STEPS.length - 1;
-const KING = RANKED_TIERS.length - 1;
+/** Duel King's tier: from here up, tiers pay a title and streaks stop adding stars. */
+export const KING = RANKED_TIERS.findIndex((t) => t.id === 'king');
+/** The tier a new season can start you in, at most (Master). */
+const START_CAP = KING - 1;
+/** The ladder before Duel King had ranks (Oct 2026): its top step, where old saves kept King points. */
+const OLD_TOP = 18;
 
 export const tierOf = (step: number) => RANKED_TIERS[STEPS[Math.max(0, Math.min(TOP, step))].tier];
 /** Stars the rank at this step takes to climb. */
 export const starsAt = (step: number) => tierOf(step).stars;
-/** Duel King points: every KING_MILESTONE pays a pack, at most KING_MILESTONES a season. */
-export const KING_MILESTONE = 5;
-export const KING_MILESTONES = 3;
+/** Pharaoh Points: every TOP_MILESTONE pays a pack (every second one a chip too), at most TOP_MILESTONES a season. */
+export const TOP_MILESTONE = 5;
+export const TOP_MILESTONES = 6;
+/** Pharaoh Points that still pay this season. */
+export const TOP_POINTS_PAYING = TOP_MILESTONE * TOP_MILESTONES;
 /** The daily Ranked goal: this many Ranked wins in a day pays a pack. */
 export const DAILY_GOAL = 3;
 export const tierIndexOf = (step: number) => STEPS[Math.max(0, Math.min(TOP, step))].tier;
-/** "Gold II", "Rookie", "Duel King" */
+/** "Gold II", "Rookie", "Duel King I", "Pharaoh" */
 export function stepName(step: number): string {
   const s = STEPS[Math.max(0, Math.min(TOP, step))];
   const t = RANKED_TIERS[s.tier];
@@ -99,7 +112,7 @@ export interface RankedProgress {
   step: number;
   /** stars in the current rank (below the rank's star count) */
   stars: number;
-  /** Duel King points: wins at the top, minus losses */
+  /** Pharaoh Points: wins at the top, minus losses */
   kp: number;
   /** best step this season */
   peak: number;
@@ -118,8 +131,14 @@ export interface RankedProgress {
   today?: [string, number];
   /** the last day the daily goal paid its pack */
   goalDay?: string;
-  /** King point milestones paid this season */
+  /** King point milestones paid this season (the ladder before Pharaoh; kept for old saves) */
   kingPaid?: number;
+  /** Pharaoh Point milestones paid this season */
+  topPaid?: number;
+  /** this week's Ranked Missions */
+  week?: WeekProgress;
+  /** 2 once the save has moved to the ladder with Legend and Pharaoh */
+  v?: number;
   /** link-battle Ranked wins today, for the daily cap: [day, wins] */
   linkDay?: [string, number];
   /** the latest clock time the ladder has seen: days and seasons never run backwards from it */
@@ -152,7 +171,7 @@ export function daysLeft(now = new Date()): number {
 }
 
 export function newRanked(season: string): RankedProgress {
-  return { season, step: 0, stars: 0, kp: 0, peak: 0, paid: [0], streak: 0, w: 0, l: 0, played: 0, history: [] };
+  return { season, step: 0, stars: 0, kp: 0, peak: 0, paid: [0], streak: 0, w: 0, l: 0, played: 0, history: [], v: 2 };
 }
 /** The ladder's clock: never earlier than the latest time it has seen, so setting the phone's
  * date back can't bring back a day's bonus, a daily pack or a season. */
@@ -162,8 +181,26 @@ export const rankedProgress = (solo: SoloSave, now = new Date()): RankedProgress
 /** Wins a season needs before the next one starts you higher than Rookie (and pays those tiers). */
 export const SEASON_MIN_WINS = 10;
 
-/** Where a new season starts you: two tiers below last season's best, at that tier's floor. */
-export const seasonStart = (peak: number) => tierFloor(Math.max(0, Math.min(KING - 1, tierIndexOf(peak) - 2)));
+/** Where a new season starts you: two tiers below last season's best (Master at most), at that tier's floor. */
+export const seasonStart = (peak: number) => tierFloor(Math.max(0, Math.min(START_CAP, tierIndexOf(peak) - 2)));
+
+/**
+ * Moves a save from the first ladder (Duel King was one endless rank, step 18) to this one,
+ * where Duel King has three ranks of 5 stars and Legend and Pharaoh sit above it. The King
+ * points it had climb as stars from Duel King III, so nobody loses a win they earned.
+ */
+export function migrateRanked(p: RankedProgress): RankedProgress {
+  if (p.v === 2) return p;
+  let { step, stars, kp } = p;
+  if (step === OLD_TOP) {
+    for (; kp > 0; kp--) {
+      if (step === TOP) break;
+      if (++stars >= starsAt(step)) (step++, (stars = 0));
+    }
+    if (step !== TOP) kp = 0;
+  }
+  return { ...p, step, stars, kp, peak: Math.max(p.peak, step), v: 2 };
+}
 
 /** A prize as words: "2 packs + 1 Duel Chip". */
 export function prizeText(prize: Reward[]): string {
@@ -183,7 +220,7 @@ function payTiers(speed: SpeedSave, solo: SoloSave, p: RankedProgress, tier: num
     if (paid.includes(t)) continue;
     paid.push(t);
     rewards.push(...RANKED_TIERS[t].prize);
-    if (t === KING) rewards.push({ kind: 'title', name: `Duel King · ${seasonName(season)}` });
+    if (t >= KING) rewards.push({ kind: 'title', name: `${RANKED_TIERS[t].name} · ${seasonName(season)}` });
   }
   if (!rewards.length) return { speed, solo, paid, lines: [] as string[], cards: [] as string[], chipsDue: 0 };
   const g = grant(speed, solo, rewards, [], seed);
@@ -205,7 +242,7 @@ export interface RankedOpened {
  */
 export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime()): RankedOpened {
   now = ladderClock(solo.ranked, now);
-  let p: RankedProgress = { ...rankedProgress(solo, now), seen: now.getTime() };
+  let p: RankedProgress = { ...migrateRanked(rankedProgress(solo, now)), seen: now.getTime() };
   let forfeited = false;
   if (p.pending) {
     p = applyResult(p, 'l', now, true).p;
@@ -218,7 +255,7 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
     // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
     const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
-    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen };
+    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
     return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, forfeited };
@@ -260,7 +297,7 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     if (!link) {
       streak += 1;
       if (bonusDay !== today) (gained++, (bonus = true), (bonusDay = today));
-      if (streak >= 3) (gained++, (streakBonus = true));
+      if (streak >= 3 && tierIndexOf(step) < KING) (gained++, (streakBonus = true));
     }
     for (let i = 0; i < gained; i++) {
       if (step === TOP) kp++;
@@ -313,12 +350,42 @@ export interface RankedSettled {
   forfeit: boolean;
   /** the day's Ranked goal paid its pack */
   goalPaid: boolean;
-  /** a Duel King milestone paid its pack */
-  kingPaid: boolean;
+  /** a Pharaoh Point milestone paid */
+  topPaid: boolean;
+  /** Weekly Missions finished by this duel */
+  missions: Mission[];
+  /** the Weekly Crown (all four missions) was paid */
+  crown: boolean;
 }
 
+/** What only the duel itself knows: whether the opponent was a Wandering Duelist, and who went first. */
+export interface RankedDuelInfo {
+  wandering?: boolean;
+  second?: boolean;
+}
+
+/** Ranks climbed (or fallen, negative) between two steps. */
+const rankUps = (from: number, to: number) => Math.max(0, to - from);
+
+/** Moves the Weekly Missions on and pays any it finished: a pack each, and the Weekly Crown. */
+function payWeek(speed: SpeedSave, solo: SoloSave, next: RankedProgress, e: WeekEvent, now: Date, seed: number) {
+  const w = advanceWeek(next.week, e, now);
+  next = { ...next, week: w.week };
+  const rewards: Reward[] = [...w.done.map(() => ({ kind: 'pack' }) as Reward), ...(w.crown ? ([{ kind: 'pack' }, { kind: 'chips', n: WEEKLY_CROWN_CHIPS }] as Reward[]) : [])];
+  if (!rewards.length) return { speed, solo, next, lines: [] as string[], cards: [] as string[], done: w.done, crown: w.crown };
+  const g = grant(speed, solo, rewards, [], seed);
+  return { speed: g.speed, solo: g.solo, next, lines: g.lines, cards: g.cards, done: w.done, crown: w.crown };
+}
+/** Duel Chips the Weekly Crown pays. */
+export const WEEKLY_CROWN_CHIPS = 2;
+
+/** Pharaoh Point milestones due at this many points (TOP_MILESTONES a season at most). */
+export const topDue = (kp: number) => Math.min(TOP_MILESTONES, Math.floor(kp / TOP_MILESTONE));
+/** The reward for reaching milestone i (0-based): a pack, and a chip on every second one. */
+const topReward = (i: number): Reward[] => [{ kind: 'pack' }, ...(i % 2 === 1 ? ([{ kind: 'chips', n: 1 }] as Reward[]) : [])];
+
 /** Files a Ranked Duel: stars and ranks, and the prize of any tier reached for the first time this season. */
-export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, now = new Date(), seed = now.getTime()): RankedSettled {
+export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, now = new Date(), seed = now.getTime(), info: RankedDuelInfo = {}): RankedSettled {
   // The month may have turned during the duel: the result goes to the season you're in now.
   const opened = openRanked(speed, { ...solo, ranked: solo.ranked ? { ...solo.ranked, pending: null } : solo.ranked }, now, seed);
   speed = opened.speed;
@@ -344,10 +411,10 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
     cards = pay.cards;
     next = { ...next, paid: pay.paid };
   }
-  // The daily goal (a pack for the day's third Ranked win) and Duel King milestones (a pack every 5 King points, 3 a season).
+  // The daily goal (a pack for the day's third Ranked win) and Pharaoh milestones (a pack every 5 points, a chip every 10).
   const extra: Reward[] = [];
   let goalPaid = false;
-  let kingPaid = false;
+  let topPaid = false;
   if (o.result === 'w' && !o.forfeit) {
     const day = todayString(now);
     const counts = RANKED_TIERS[tierIndexOf(p.step)].loses;
@@ -359,19 +426,36 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
       next = { ...next, goalDay: day };
       goalPaid = true;
     }
-    const due = Math.min(KING_MILESTONES, Math.floor(next.kp / KING_MILESTONE));
-    if (next.step === TOP && due > (next.kingPaid ?? 0)) {
-      for (let i = next.kingPaid ?? 0; i < due; i++) extra.push({ kind: 'pack' });
-      next = { ...next, kingPaid: due };
-      kingPaid = true;
+    const due = topDue(next.kp);
+    if (next.step === TOP && due > (next.topPaid ?? 0)) {
+      for (let i = next.topPaid ?? 0; i < due; i++) extra.push(...topReward(i));
+      next = { ...next, topPaid: due };
+      topPaid = true;
     }
   }
+  const chipsBefore = speed.chips ?? 0;
+  const chipsDue = extra.reduce((a, r) => a + (r.kind === 'chips' ? r.n : 0), 0);
   if (extra.length) {
     const g = grant(speed, solo, extra, [], seed + 7);
     speed = g.speed;
     solo = g.solo;
     lines = [...lines, ...g.lines];
     cards = [...cards, ...g.cards];
+    capped ||= chipsDue > 0 && (speed.chips ?? 0) - chipsBefore < chipsDue;
+  }
+  // Weekly Missions: a left duel moves nothing
+  let missions: Mission[] = [];
+  let crown = false;
+  if (!o.forfeit) {
+    const ev: WeekEvent = { result: o.result, gained: Math.max(0, r.gained), rankUps: rankUps(p.step, next.step), wandering: !!info.wandering, second: !!info.second, myLp: o.myLp, turns: o.turns, link: false };
+    const wk = payWeek(speed, solo, next, ev, now, seed + 13);
+    speed = wk.speed;
+    solo = wk.solo;
+    next = wk.next;
+    missions = wk.done;
+    crown = wk.crown;
+    lines = [...lines, ...wk.lines];
+    cards = [...cards, ...wk.cards];
   }
   return {
     speed,
@@ -388,7 +472,9 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
     capped,
     forfeit: !!o.forfeit,
     goalPaid,
-    kingPaid,
+    topPaid,
+    missions,
+    crown,
   };
 }
 
@@ -486,8 +572,15 @@ export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' |
     cards = pay.cards;
     next = { ...next, paid: pay.paid };
   }
-  const where = next.step === TOP ? `${next.kp} King points` : `${stepName(next.step)}, ${next.stars}/${starsAt(next.step)} stars`;
+  const wk = payWeek(speed, solo, next, { result, gained: Math.max(0, r.gained), rankUps: rankUps(p.step, next.step), wandering: false, second: false, myLp: 0, turns: 0, link: true }, now, seed + 47);
+  speed = wk.speed;
+  solo = wk.solo;
+  next = wk.next;
+  lines = [...lines, ...wk.lines];
+  cards = [...cards, ...wk.cards];
+  const missionLines = [...wk.done.map((m) => `Weekly mission done: ${m.text}`), ...(wk.crown ? ['Weekly Crown: every mission this week done!'] : [])];
+  const where = next.step === TOP ? `${next.kp} Pharaoh Points` : `${stepName(next.step)}, ${next.stars}/${starsAt(next.step)} stars`;
   const line =
     r.gained > 0 ? `Ranked: +1 star for beating ${opp} (${where})${next.step > p.step ? ' · rank up!' : ''}` : r.gained < 0 ? `Ranked: −1 star for losing to ${opp} (${where})` : null;
-  return { speed, solo: { ...solo, ranked: next }, line, lines, cards };
+  return { speed, solo: { ...solo, ranked: next }, line: line && missionLines.length ? [line, ...missionLines].join(' · ') : line, lines, cards };
 }

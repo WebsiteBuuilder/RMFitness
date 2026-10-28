@@ -71,7 +71,7 @@ export type DuelContext =
   | { kind: 'campaign'; nodeId: string; open?: boolean }
   | { kind: 'labyrinth'; runId: string; stopId: string }
   | { kind: 'legend'; duelId: string; rematch?: boolean; open?: boolean }
-  | { kind: 'ranked'; season: string; open?: undefined };
+  | { kind: 'ranked'; season: string; open?: undefined; wander?: boolean; first?: 'me' | 'cpu' };
 
 /** Everything needed to start one duel against the computer. */
 export interface CpuDuelSpec {

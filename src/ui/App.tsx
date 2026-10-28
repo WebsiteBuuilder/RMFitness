@@ -27,6 +27,7 @@ import { DeckSwitch } from './DeckPick';
 import { LinkMenu, Lobby, startFromSeats, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { TossScreen } from './Toss';
 import { boardStatsOf } from './Rankings';
+import { postProfileRank } from './RankedLadder';
 import { rematchDock } from './Rematch';
 import type { Series } from '../eds/session';
 import { Avatar, ProfilePicker } from './Profiles';
@@ -809,6 +810,7 @@ export function App() {
         if (base && profile && st.turn >= RIVAL_MIN_TURNS && !activeDeck(base)?.open) {
           const lr = settleLinkRanked(base, loadSolo(profile.id), won ? 'w' : 'l', st.players[other(mySeat)].name);
           writeSolo(profile.id, lr.solo);
+          postProfileRank(profile, save?.name || profile.alias, lr.solo.ranked);
           rankedLine = lr.line;
           if (left0) left = { ...left0, save: lr.speed };
           else setSpeedSave(lr.speed);
@@ -888,6 +890,7 @@ export function App() {
         if (realDuel && !activeDeck(s)?.open) {
           const lr = settleLinkRanked(save2, loadSolo(profile.id), result, opp);
           writeSolo(profile.id, lr.solo);
+          postProfileRank(profile, save?.name || profile.alias, lr.solo.ranked);
           save2 = lr.speed;
           if (lr.line) rv.lines.push(lr.line);
           if (lr.lines.length) rv.lines.push(...lr.lines.filter((l) => !l.includes(': ') || l.startsWith('Title')));

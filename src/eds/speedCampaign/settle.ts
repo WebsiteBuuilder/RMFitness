@@ -50,7 +50,7 @@ export function settleSolo(ctx: DuelContext, o: DuelOutcome, speed: SpeedSave, s
   }
   if (ctx.kind === 'ranked') {
     // Leaving a Ranked Duel counts as a loss.
-    const settled = settleRanked(speed, solo, o);
+    const settled = settleRanked(speed, solo, o, undefined, undefined, { wandering: !!ctx.wander, second: ctx.first === 'cpu' });
     return { speed: settled.speed, solo: settled.solo, report: { kind: 'ranked', outcome: o, settled } };
   }
   const run = solo.labyrinth.run;
