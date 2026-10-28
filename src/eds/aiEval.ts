@@ -4,7 +4,7 @@
 // face-down cards of the opponent are guessed, and the lookahead re-seeds the dice so it
 // can't see the future.
 import { Engine, other } from './engine';
-import type { Action, FieldCard, Pid } from './types';
+import type { Action, FieldCard, Pid, Prompt } from './types';
 
 export const WIN = 1e6;
 /** What the lookahead adds to the loss of each of its own field cards a play gives up for nothing of theirs. */
@@ -172,7 +172,7 @@ function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser, open = 
     // monster revived or saved now that dies to the next attack counts for nothing.
     if (open && !sim.state.prompt && sim.state.turnPlayer !== me && sim.state.phase === 'BP') {
       for (let i = 0; i < 60 && sim.state.winner === null && sim.state.turn === turn && sim.state.phase === 'BP'; i++) {
-        const pr = sim.state.prompt;
+        const pr = sim.state.prompt as Prompt | null; // (changed by the apply below: TypeScript narrowed it to null)
         let a: Action | null;
         if (pr?.kind === 'response') a = { type: 'PASS', player: pr.player };
         else if (pr?.kind === 'yesno' && pr.player !== me) a = { type: 'NO', player: pr.player };
