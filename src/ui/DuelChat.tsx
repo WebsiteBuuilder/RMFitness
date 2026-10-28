@@ -13,6 +13,15 @@ import './chat.css';
 
 const MUTE_KEY = 'eds.chat.muted';
 
+/** a light tap on the phone (Android; iPhone browsers have none) as a line goes out or comes in */
+const buzz = () => {
+  try {
+    navigator.vibrate?.(12);
+  } catch {
+    /* none */
+  }
+};
+
 const readMuted = () => {
   try {
     return localStorage.getItem(MUTE_KEY) === '1';
@@ -34,6 +43,7 @@ export function DuelChat({
   names,
   place = 'duel',
   attention = '',
+  classic = false,
 }: {
   session: DuelSession;
   chat: ChatLine[];
@@ -42,6 +52,8 @@ export function DuelChat({
   place?: ChatPlace;
   /** changes when the duel needs this player (a prompt, an attack, a new phase): the open chat gets out of the way */
   attention?: string;
+  /** Classic controls in the duel (a thinner top bar) */
+  classic?: boolean;
 }) {
   const [open, setOpenState] = useState(session.chatOpen);
   const [draft, setDraftState] = useState(session.chatDraft);
@@ -55,9 +67,8 @@ export function DuelChat({
   const [slow, setSlow] = useState(false);
   const slowTimer = useRef<number>();
   useEffect(() => () => clearTimeout(slowTimer.current), []);
-  /** lines already seen (the ones there when the chat first showed don't pop up again) */
-  const seen = useRef<Set<string> | null>(null);
-  const [unread, setUnread] = useState(0);
+  const [unread, setUnreadState] = useState(session.chatUnread);
+  const setUnread = (f: (n: number) => number) => setUnreadState((session.chatUnread = f(session.chatUnread)));
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const opp: Pid = mySeat === 0 ? 1 : 0;
@@ -65,12 +76,12 @@ export function DuelChat({
 
   // New lines: a bubble over the board (unless the chat is open), a blip and the unread count for the other's.
   useEffect(() => {
-    if (!seen.current) {
-      seen.current = new Set(chat.map((l) => l.id));
+    if (!session.chatSeen) {
+      session.chatSeen = new Set(chat.map((l) => l.id));
       return;
     }
-    const had = new Set(seen.current);
-    for (const l of chat) seen.current.add(l.id);
+    const had = new Set(session.chatSeen);
+    for (const l of chat) session.chatSeen.add(l.id);
     // (news: a line said now; the log loading after a rejoin or reload brings history: no ping, no bubble, no count)
     const fresh = chat.filter((l) => !had.has(l.id) && !l.old);
     if (fresh.length) announce(fresh);
@@ -82,8 +93,9 @@ export function DuelChat({
     const muted = mutedNow.current;
     const theirs = fresh.filter((l) => l.player === opp && !muted);
     const pop = fresh.filter((l) => l.player === mySeat || !muted);
-    if (theirs.length) sfx.chatPing();
-    if (session.chatOpen) return;
+    if (theirs.length) (sfx.chatPing(), buzz());
+    // (the chat open in full shows the line itself; the small one has no list, so the bubble shows)
+    if (session.chatOpen && !miniNow.current) return;
     // (unread until the chat is opened: the bubble goes away, the count stays)
     if (theirs.length) setUnread((n) => n + theirs.length);
     // (one line each at a time: a newer one replaces the one showing)
@@ -103,7 +115,7 @@ export function DuelChat({
 
   useEffect(() => {
     if (!open) return;
-    setUnread(0);
+    setUnread(() => 0);
     setBubbles([]);
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -112,7 +124,8 @@ export function DuelChat({
   // The duel needs you (your prompt, an attack, a new phase or turn): the chat closes; what you typed stays.
   const lastAttention = useRef(attention);
   useEffect(() => {
-    if (attention !== lastAttention.current && open) setOpen(false);
+    // (the other player's turn starting or going on leaves it open: that's the time to talk)
+    if (attention !== lastAttention.current && attention !== 'theirs:' && open) setOpen(false);
     lastAttention.current = attention;
   }, [attention]);
 
@@ -142,6 +155,8 @@ export function DuelChat({
     setRoom(Number.isFinite(r) ? r : null);
   }, [open, place, short, turned]);
   const mini = room !== null && room < 230;
+  const miniNow = useRef(mini);
+  miniNow.current = mini;
   /** holding the eye button: the chat fades away so the field shows through */
   const [peek, setPeek] = useState(false);
   // (the chat closing under a held eye: no pointer-up ever comes)
@@ -186,12 +201,42 @@ export function DuelChat({
     }
     session.chatSentAt = [...sent.filter((t) => now - t < SPAM_MS), now];
     session.send({ type: 'CHAT', player: mySeat, text });
+    buzz();
     return true;
   };
 
   const quick = (text: string) => {
-    if (say(text)) setOpen(false);
+    if (say(text)) (setOpen(false), setRing(false));
   };
+
+  // Hold the chat button: a row of emotes and the phrases for the moment pops up by it, one tap sends
+  // (no chat to open, nothing over the field).
+  const [ring, setRing] = useState(false);
+  const holdTimer = useRef<number>();
+  const held = useRef(false);
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
+  const holdStart = () => {
+    held.current = false;
+    clearTimeout(holdTimer.current);
+    holdTimer.current = window.setTimeout(() => {
+      held.current = true;
+      setRing(true);
+      buzz();
+    }, 380);
+  };
+  const holdEnd = () => clearTimeout(holdTimer.current);
+  const fabTap = () => {
+    if (held.current) return void (held.current = false);
+    if (ring) return setRing(false);
+    setOpen(!open);
+  };
+  useEffect(() => void (attention && setRing(false)), [attention]);
+  useEffect(() => {
+    if (!ring) return;
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), setRing(false));
+    document.addEventListener('keydown', key, true);
+    return () => document.removeEventListener('keydown', key, true);
+  }, [ring]);
 
   const submit = (e: Event) => {
     e.preventDefault();
@@ -210,16 +255,14 @@ export function DuelChat({
   };
 
   const theirName = names[opp] || 'your opponent';
-  // (Classic controls: its top bar is thinner)
-  const [classic, setClassic] = useState(false);
-  useLayoutEffect(() => setClassic(place === 'duel' && !!document.querySelector('.duel:not(.touch)')), [place]);
+  const phrases = phrasesFor(place === 'low' ? 'room' : place === 'top' ? 'after' : 'duel');
   // (one at a time: a newer line replaces the one showing)
   const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
 
   // (a phone keyboard: the chat sits just above it; in the duel otherwise it stops under the turn controls)
   const sheetStyle: Record<string, string> | undefined =
-    place === 'duel'
+    place !== 'top'
       ? vv
         ? { bottom: `${Math.max(0, window.innerHeight - vv.top - vv.h) + 8}px`, '--room': `${Math.max(120, vv.h - 16)}px` }
         : room !== null
@@ -249,7 +292,7 @@ export function DuelChat({
       {t}
     </button>
   ));
-  const phraseButtons = phrasesFor(place === 'low' ? 'room' : place === 'top' ? 'after' : 'duel').map((t) => (
+  const phraseButtons = phrases.map((t) => (
     <button key={t} class="chat-phrase" onClick={() => quick(t)}>
       {t}
     </button>
@@ -258,7 +301,7 @@ export function DuelChat({
   return (
     <>
       {/* their lines by their name, under their bar; a tap opens the chat, taps around it go through */}
-      {theirBubbles.length > 0 && !open && (
+      {theirBubbles.length > 0 && (!open || mini) && (
         <div class={`chat-bubbles at-${place} ${classic ? 'classic' : ''}`} aria-live="polite">
           {theirBubbles.map((l) => (
             <div key={l.id} class={`chat-bubble ${isEmote(l.text) ? 'emote' : ''}`} style={{ '--out': `${bubbleMs(l.text) - 350}ms` } as Record<string, string>} onClick={() => setOpen(true)}>
@@ -275,14 +318,31 @@ export function DuelChat({
           <span>{myBubble.text}</span>
         </div>
       )}
-      <button class={`chat-fab at-${place} ${open ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new` : 'Chat'} aria-expanded={open} onClick={() => setOpen(!open)}>
+      {ring && !open && (
+        <>
+          <button type="button" class="chat-ring-off" aria-label="Close quick chat" onClick={() => setRing(false)} />
+          <div class={`chat-ring at-${place} ${classic ? 'classic' : ''}`} role="menu" aria-label="Quick chat">
+            {EMOTES.slice(0, 6).map((t) => (
+              <button key={t} type="button" role="menuitem" class="chat-emote" onClick={() => quick(t)} aria-label={`Send ${t}`}>
+                {t}
+              </button>
+            ))}
+            {phrases.slice(0, 3).map((t) => (
+              <button key={t} type="button" role="menuitem" class="chat-phrase" onClick={() => quick(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <button class={`chat-fab at-${place} ${open || ring ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new (hold for quick emotes)` : 'Chat (hold for quick emotes)'} aria-expanded={open} onClick={fabTap} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="currentColor" />
         </svg>
         {unread > 0 && <span class="chat-badge">{unread > 9 ? '9+' : unread}</span>}
       </button>
-      {/* the chat drops down over the top of the screen: your hand, your side of the field and the
-          room's buttons stay in view and keep working while it is open */}
+      {/* the chat: in the duel it rises over your hand (the field and the turn controls stay in view and
+          keep working), in the room it sits over the bottom, over the result screen at the top */}
       {open && (
         <div ref={sheet} class={`chat-sheet at-${place} ${mini ? 'mini' : ''} ${peek ? 'peek' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={sheetStyle}>
           <div class="chat-head">
@@ -294,7 +354,7 @@ export function DuelChat({
             </button>
           </div>
           <div class="chat-list" ref={list}>
-            {shown.length === 0 && <p class="chat-empty">{muted ? `${names[opp] || 'Your opponent'} is muted. Tap the speaker to see their messages again.` : 'Say hi! Tap a phrase or type a message.'}</p>}
+            {shown.length === 0 && <p class="chat-empty">{muted ? `${names[opp] || 'Your opponent'} is muted. Tap the speaker to see their messages again.` : 'Say hi! Tap a phrase or type a message. Tip: hold the chat button for quick emotes.'}</p>}
             {shown.map((l, i) => (
               <div key={l.id} class={`chat-line ${l.player === mySeat ? 'mine' : 'theirs'} ${isEmote(l.text) ? 'emote' : ''}`}>
                 {/* (the name once per run of lines from the other player) */}

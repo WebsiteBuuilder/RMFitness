@@ -67,12 +67,14 @@ class Host extends AdapterBase implements SyncAdapter {
   readonly isHost = true;
   readonly roomCode = 'ABCD';
   guest: Guest | null = null;
+  /** stamp entries with the real time (default: long ago) */
+  live = false;
   constructor() {
     super();
     this.setStatus('connected', '');
   }
   send(ev: GameEvent) {
-    const logged = { ...ev, seq: this.events.length, ts: 1000 + this.events.length } as LoggedEvent;
+    const logged = { ...ev, seq: this.events.length, ts: this.live ? Date.now() : 1000 + this.events.length } as LoggedEvent;
     this.events = [...this.events, logged];
     this.emit();
     this.guest?.got([...this.guest.mirror(), logged]);
@@ -162,7 +164,7 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   const R = new DuelSession(rebuilt);
   rebuilt.got(host['events'] as LoggedEvent[]);
   ok(lines(R) === lines(H), 'the same log handed over twice shows each line once');
-  ok(again.view().chat.every((l) => l.old) && R.view().chat.every((l) => l.old), 'lines that come with the log loading on a rejoin are history (no ping, no bubble)');
+  ok(R.view().chat.every((l) => l.old), 'lines that come with the log loading on a rejoin are history (no ping, no bubble)');
   // a line said after the load has settled is news
   {
     const realNow = Date.now;
@@ -183,6 +185,16 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
     } finally {
       Date.now = realNow;
     }
+  }
+
+  // the room's very first entry is a line said just now (nobody has pressed Ready yet): news
+  {
+    const host3 = new Host();
+    host3.live = true;
+    const guest3 = new Guest(host3);
+    const G3 = new DuelSession(guest3);
+    host3.send({ type: 'CHAT', player: 0, text: 'Hi! Good luck!' } as unknown as GameEvent);
+    ok(G3.view().chat.length === 1 && !G3.view().chat[0].old, "a line in a room that is still empty pops up on the other phone");
   }
 
   // the duel ends; chat goes on over the result; a rematch keeps the room's chat

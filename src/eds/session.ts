@@ -71,6 +71,8 @@ export interface ChatLine {
 
 /** A pause this long after the room's log starts reaching a phone ends its first load. */
 const LOAD_PAUSE_MS = 300;
+/** A line in that first load said more than this long ago (by the host's clock) is history. */
+const LOAD_OLD_MS = 20_000;
 
 /** The longest chat line. */
 export const CHAT_MAX = 80;
@@ -151,6 +153,9 @@ export class DuelSession {
   /** the chat's open state and unsent text, kept as the room moves between screens (duel → result) */
   chatOpen = false;
   chatDraft = '';
+  /** the chat's lines already seen on this phone and their unread count (kept as the duel turns into the result screen) */
+  chatSeen: Set<string> | null = null;
+  chatUnread = 0;
   /**
    * The room's log as this phone first gets it comes in one go (a reload or a rejoin hands it all
    * over at once): entries until the first pause are that load (history); after it, news.
@@ -213,7 +218,9 @@ export class DuelSession {
   private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown }) {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
-    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old: !this.loaded }];
+    // (history: part of that first load and said a while ago; the room's very first line, said just now, is news)
+    const old = !this.loaded && !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS);
+    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old }];
   }
 
   private applyOne(a: AnyAction) {
