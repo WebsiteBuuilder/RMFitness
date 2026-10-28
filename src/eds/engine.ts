@@ -81,6 +81,13 @@ export const other = (p: Pid): Pid => (p === 0 ? 1 : 0);
 
 export class Engine {
   state: DuelState = emptyState();
+  /**
+   * The duel as it stood before the last move made with no question open, and every action since:
+   * a copy of the duel stopped at a question (whose paused effect can't be copied) is rebuilt from
+   * them (aiEval.ts). Not kept by the lookahead's own copies.
+   */
+  checkpoint: DuelState | null = null;
+  since: Action[] = [];
   private gen: Step | null = null;
   private seq = 0;
   /** >0 while an activation that can no longer be taken back picks its targets: its prompts offer no Cancel. */
@@ -491,6 +498,11 @@ export class Engine {
       const i = this.db.get(n) ?? this.db.get(n.toLowerCase());
       return i ? [i.name, ...(i.alias ? [i.alias] : [])] : [];
     });
+  }
+
+  /** A throwaway copy for the computer's lookahead (it doesn't look ahead again inside one). */
+  get isCopy(): boolean {
+    return this.sandbox;
   }
 
   /** Ceremonial Bell, Respect Play and The Eye of Truth show hands. */
@@ -1840,8 +1852,20 @@ export class Engine {
   apply(action: Action) {
     if (!this.sandbox) setNameEngine(this); // the duel being played answers name checks (names.ts)
     if (this.state.winner !== null) return;
-    if (action.type === 'START') return this.start(action);
+    if (action.type === 'START') {
+      this.checkpoint = null;
+      this.since = [];
+      return this.start(action);
+    }
     if (!this.state.started) return;
+    if (!this.sandbox) {
+      if (!this.state.prompt && !this.gen) {
+        const st = this.state;
+        this.checkpoint = structuredClone({ ...st, log: st.log.filter((l) => l.turn === st.turn), events: [], lastEvent: null });
+        this.since = [];
+      }
+      this.since.push(action);
+    }
     if (action.type === 'SURRENDER') return this.endDuel(other(action.player), `${this.player(action.player).name} surrendered`);
     if (this.state.prompt) {
       if (this.state.prompt.player !== action.player) return;
