@@ -19,6 +19,8 @@ const GIFTS_FOE = new Set(['The Eye of Truth']);
 const PLAN_MARGIN = 150;
 /** The least a Spell from the hand must gain Hard (the card itself is worth about 300). */
 const HARD_SPELL_MIN = -50;
+/** ...and Easy or Normal: a little more than nothing, so a card is never spent on a play that changes nothing. */
+const SPELL_MIN = -250;
 
 const GOOD_ANYTIME = new Set(['Pot of Greed', 'Graceful Charity', 'Dian Keto the Cure Master', 'Red Medicine', "Goblin's Secret Remedy", 'Sparks', 'Hinotama', 'Final Flame', 'Ookazi', 'Tremendous Fire', 'Swords of Revealing Light', 'Just Desserts', 'Mooyan Curry', 'Blue Medicine', 'Soul of the Pure', 'Raimei', 'Fusion Sage', 'Elegant Egotist', 'Polymerization', 'Painful Choice', 'Delinquent Duo', 'Confiscation', 'Dark-Piercing Light', 'Messenger of Peace']);
 /** Draw spells: not with the Deck nearly empty (drawing out loses the Duel). */
@@ -48,7 +50,17 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
 
   if (prompt) {
     if (prompt.player !== me) return null;
-    if (prompt.kind === 'yesno') return { type: yesNo(e, me, prompt.title) ? 'YES' : 'NO', player: me };
+    if (prompt.kind === 'yesno') {
+      const yes = yesNo(e, me, prompt.title);
+      // An optional effect: only when it leaves the computer better off than saying no (tried on copies of the duel).
+      if (yes && !e.isCopy && !/Skill|re-roll/.test(prompt.title)) {
+        const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
+        const y = lookaheadAnswer(e, me, { type: 'YES', player: me }, policy);
+        const n = y === null ? null : lookaheadAnswer(e, me, { type: 'NO', player: me }, policy);
+        if (y !== null && n !== null && n > y + 50) return { type: 'NO', player: me };
+      }
+      return { type: yes ? 'YES' : 'NO', player: me };
+    }
     if (prompt.kind === 'response') {
       // Don't spring defensive traps (Waboku, Negate Attack...) on your own attacks.
       if (s.turnPlayer === me && / attacks( .+)?\. Respond\?$/.test(prompt.title)) return { type: 'PASS', player: me };
@@ -67,11 +79,14 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
       // (Quick-Play Spells offered straight from the hand stay there: the computer plays those in its Main Phase.)
       const ks = prompt.options.map((o, i) => (o.value !== 'hand' && !(o.uid !== undefined && GIFTS_FOE.has(e.find(o.uid)?.card.name ?? '')) ? i : -1)).filter((i) => i >= 0);
       if (!ks.length) return { type: 'PASS', player: me };
+      // An Easy duelist misses some of its good answers, but never springs one that doesn't help.
+      if (easy && coin(e, `r${e.state.log.length}`, 0.35)) return { type: 'PASS', player: me };
       const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
-      const pass = easy ? null : lookaheadAnswer(e, me, { type: 'PASS', player: me }, policy);
-      if (pass === null) return { type: 'CHOOSE', player: me, picks: [ks[0]] };
+      const pass = lookaheadAnswer(e, me, { type: 'PASS', player: me }, policy);
+      // Can't be told (a duel that can't be replayed): only answer an attack, never spend a card on a whim.
+      if (pass === null) return atk ? { type: 'CHOOSE', player: me, picks: [ks[0]] } : { type: 'PASS', player: me };
       let best = -1;
-      let bestVal = pass + 150;
+      let bestVal = pass + 100;
       for (const k of ks) {
         const v = lookaheadAnswer(e, me, { type: 'CHOOSE', player: me, picks: [k] }, policy);
         if (v !== null && v > bestVal) (best = k), (bestVal = v);
@@ -80,6 +95,20 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     }
     // Selection: rank options by context.
     const { order: ranked, val } = rankOptions(e, me, prompt.title, prompt.options);
+    // A single pick that decides where an effect lands: each option is tried on a copy of the duel, so
+    // it never hits its own cards when it could hit theirs. Hard weighs every such pick this way;
+    // Easy and Normal the ones that could land on their own field.
+    // (not when an option is a card it can't see, a face-down card or the hand of the opponent: the copy would show it)
+    const ownField = prompt.options.some((o) => o.uid !== undefined && e.fieldCard(o.uid) && e.controller(o.uid) === me);
+    const hidden = prompt.options.some((o) => {
+      const f = o.uid !== undefined ? e.find(o.uid) : null;
+      if (!f || f.loc.player === me) return false;
+      return f.loc.zone === 'hand' || f.loc.zone === 'deck' || ((f.loc.zone === 'mz' || f.loc.zone === 'sz') && !(f.card as FieldCard).faceUp);
+    });
+    if (!e.isCopy && !hidden && prompt.min === 1 && prompt.max === 1 && prompt.options.length > 1 && prompt.options.length <= 8 && (hard || ownField)) {
+      const pick = simPick(e, me, ranked, t);
+      if (pick) return pick;
+    }
     const need = prompt.title.match(/^Ritual: .*Level (\d+)/);
     if (need) {
       const target = Number(need[1]);
@@ -114,7 +143,8 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
   /** A play with a price: only when a lookahead says it's worth at least `min` (a won Duel is worth everything). */
   const worth = (a: Action, min = -100) => {
     const d = lookahead(e, me, a, (x, p) => aiAction(x, p, t));
-    return d === null || d >= min;
+    // (a play whose outcome can't be told is left alone)
+    return d !== null && d >= min;
   };
   // Running out of Deck: whoever has fewer cards left has to force the issue; the other plays safe.
   const decking = my.deck.length <= 5 && my.deck.length <= their.deck.length;
@@ -226,10 +256,10 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
       }
       for (const c of my.hand) {
         const info = e.info(c.name);
-        if (info.kind === 'spell' && info.sub !== 'Equip' && !(info.sub === 'Field' && my.field) && canAct(c.uid)) cands.push({ key: `act${c.uid}`, act: { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) }, min: -350 });
+        if (info.kind === 'spell' && info.sub !== 'Equip' && !(info.sub === 'Field' && my.field) && canAct(c.uid)) cands.push({ key: `act${c.uid}`, act: { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) }, min: SPELL_MIN });
       }
       for (const m of myMonsters) if (e.canUseMonsterEffect(me, m)) cands.push({ key: `eff${m.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: m.uid }, min: -100 });
-      for (const c of my.hand) if (e.canUseMonsterEffect(me, c)) cands.push({ key: `heff${c.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: c.uid }, min: -350 });
+      for (const c of my.hand) if (e.canUseMonsterEffect(me, c)) cands.push({ key: `heff${c.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: c.uid }, min: SPELL_MIN });
       for (const c of my.gy) if (e.canUseGraveEffect(me, c.uid)) cands.push({ key: `gy${c.uid}`, act: { type: 'GRAVE_EFFECT', player: me, uid: c.uid }, min: -150 });
       for (const c of [...my.sz, my.field]) if (c && c.faceUp && e.canUseMonsterEffect(me, c)) cands.push({ key: `st${c.uid}`, act: { type: 'MONSTER_EFFECT', player: me, uid: c.uid }, min: -100 });
       const fresh = cands.filter((x) => !tried(x.key));
@@ -305,7 +335,15 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     // 6. Equip cards: boosts go on our own monsters, curses on theirs (and only when there is one to take them).
     for (const c of my.hand) {
       const info = e.info(c.name);
-      if (info.kind === 'spell' && info.sub === 'Equip' && canAct(c.uid) && equipTarget(e, me, c.name) && tryOnce(`eq${c.uid}`)) return { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      if (!(info.kind === 'spell' && info.sub === 'Equip' && canAct(c.uid) && equipTarget(e, me, c.name) && !tried(`eq${c.uid}`))) continue;
+      const act: Action = { type: 'ACTIVATE', player: me, uid: c.uid, zone: freeZone(my.sz) };
+      // Speed Duel: an Equip that changes nothing on the copy of the duel stays in the hand.
+      if (e.speed && !worth(act, -280)) {
+        decline(`eq${c.uid}`);
+        continue;
+      }
+      tryOnce(`eq${c.uid}`);
+      return act;
     }
     // 7. Set traps and quick-plays face-down.
     for (const c of my.hand) {
@@ -351,6 +389,20 @@ export function aiAction(e: Engine, me: Pid, t: Tactics = DEFAULT_TACTICS): Acti
     return { type: 'NEXT_PHASE', player: me };
   }
   return { type: 'NEXT_PHASE', player: me };
+}
+
+/** The best single pick, by playing each one out on a copy of the duel (ties go to the usual ranking); null when it can't be told. */
+function simPick(e: Engine, me: Pid, ranked: number[], t: Tactics): Action | null {
+  const policy = (x: Engine, p: Pid) => aiAction(x, p, t);
+  let best: { a: Action; v: number } | null = null;
+  for (const i of ranked) {
+    const a: Action = { type: 'CHOOSE', player: me, picks: [i] };
+    const v = lookaheadAnswer(e, me, a, policy);
+    if (v === null) return null;
+    if (!best || v > best.v) best = { a, v };
+  }
+  // (backing out is left to the usual ranking: a take-back offers the same play again)
+  return best?.a ?? null;
 }
 
 /** Yes/no questions: Draw Phase Skills by their policy; never pay LP we can't spare. */

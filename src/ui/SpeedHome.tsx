@@ -16,6 +16,10 @@ import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
 import { stampsToClaim } from '../collection/stamps';
 import { online } from '../online/controller';
+import { loadSolo } from '../eds/speedCampaign/save';
+import { ladderClock, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
+import { todayString } from '../eds/speedCampaign/labyrinth';
+import { RankEmblem, rankedNote } from './RankBadge';
 import './speedhome.css';
 
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
@@ -92,11 +96,12 @@ const TABS: { id: HomeTab; label: string; icon: ComponentChildren }[] = [
 ];
 
 /** A big picture button: card art behind a title, like Master Duel's mode banners. */
-function Tile({ art, title, sub, badge, hot, size = 'big', fy, onPick }: { art: string; title: string; sub?: string; badge?: string | number | null; hot?: boolean; size?: 'hero' | 'big' | 'half'; fy?: number; onPick: () => void }) {
+function Tile({ art, title, sub, badge, hot, size = 'big', fy, icon, onPick }: { art: string; title: string; sub?: string; badge?: string | number | null; hot?: boolean; size?: 'hero' | 'big' | 'half'; fy?: number; icon?: ComponentChildren; onPick: () => void }) {
   const url = imageUrl(art);
   return (
     <button class={`sdh-tile ${size} ${hot ? 'hot' : ''}`} onClick={() => (playBlip(), onPick())}>
       <span class="sdh-tile-art" style={url ? { backgroundImage: `url("${url}")`, backgroundPositionY: `${fy ?? 36}%` } : undefined} />
+      {icon && <span class="sdh-tile-ic">{icon}</span>}
       <span class="sdh-tile-txt">
         <b>{title}</b>
         {sub && <small>{sub}</small>}
@@ -165,6 +170,34 @@ function MatchTile() {
   );
 }
 
+/** Ranked Duel: your rank's emblem, stars and days left; glows while today's bonus star waits. */
+function RankedTile({ profileId, onPick }: { profileId: string; onPick: () => void }) {
+  const rp = rankedProgress(loadSolo(profileId));
+  // a new month: the old rank is about to roll over, so show a fresh start
+  const now = ladderClock(rp);
+  const fresh = rp.season < seasonOf(now);
+  const bonus = rp.bonusDay !== todayString(now);
+  return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
+}
+
+/** The Duelist page's Ranked line: this season's rank and the best past season. */
+function RankedRow({ profileId, onPick }: { profileId: string; onPick: () => void }) {
+  const rp = rankedProgress(loadSolo(profileId));
+  const best = rp.history.reduce((a, h) => Math.max(a, h.peak), -1);
+  return <Row label="Ranked" note={`${stepName(rp.step)} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
+}
+
+/** Your Ranked tier's shield beside your name, once you've played Ranked this season: something to show off. */
+function TopRank({ profileId }: { profileId: string }) {
+  const rp = rankedProgress(loadSolo(profileId));
+  if (rp.season !== seasonOf(ladderClock(rp)) || rp.w + rp.l === 0) return null;
+  return (
+    <span class="sdh-toprank">
+      <RankEmblem step={rp.step} size="s" />
+    </span>
+  );
+}
+
 /** A plain list row for things that don't need a picture. */
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
@@ -211,7 +244,7 @@ export function SpeedHome({
   requestsNote: string;
   controls: ControlStyle;
   onControls: () => void;
-  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends') => void;
+  onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends' | 'ranked') => void;
   onTag?: () => void;
   onRaid?: () => void;
   onExit: () => void;
@@ -256,6 +289,7 @@ export function SpeedHome({
             <b>
               {profile.alias}
               {crown && <span class={`crown ${crown.rec.streak >= 3 ? 'hot' : ''}`}> 👑</span>}
+              <TopRank profileId={profile.id} />
             </b>
             <small>
               {save.wins}W · {save.losses}L{save.draws ? ` · ${save.draws}D` : ''}
@@ -318,6 +352,7 @@ export function SpeedHome({
             )}
 
             <MatchTile />
+            <RankedTile profileId={profile.id} onPick={() => onSolo('ranked')} />
             <div class="sdh-pair">
               <Tile size="half" art="Dark Magician" fy={22} title="Link Battle" sub="Rooms, friends or one phone" onPick={() => go('link')} />
               <Tile size="half" art="Blue-Eyes White Dragon" title="VS Computer" sub="Counts for your record" onPick={() => go('cpu')} />
@@ -374,6 +409,7 @@ export function SpeedHome({
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">
               <Row label="Record" note="wins and losses by opponent" onPick={() => go('record')} />
+              <RankedRow profileId={profile.id} onPick={() => onSolo('ranked')} />
             </div>
           </>
         )}
