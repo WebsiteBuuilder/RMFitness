@@ -259,3 +259,9 @@ export function leave() {
 export function draw(count = 1) {
   for (let i = 0; i < Math.min(5, count); i++) hiss(0.1, 900, 3000, 0.1, i * 0.09);
 }
+
+/** A chat line from the other player: a soft two-note blip, quieter than any duel sound. */
+export function chatPing() {
+  tone(988, 0.09, 0.05, 0, { type: 'triangle' });
+  tone(1319, 0.14, 0.045, 0.07, { type: 'triangle' });
+}

@@ -1,0 +1,334 @@
+/* ---------- chat between the two players of an online room (DuelChat.tsx) ---------- */
+.chat-fab {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 970;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #3d56c9, #141c48 75%);
+  border: 1px solid #9fb2ffaa;
+  box-shadow:
+    0 3px 10px #000a,
+    0 0 0 2px #f7c94833 inset;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s;
+}
+.chat-fab:active {
+  transform: scale(0.92);
+}
+.chat-fab.on {
+  border-color: #f7c948;
+  color: #f7c948;
+}
+.chat-fab:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #e5484d;
+  border: 1.5px solid #fff;
+  color: #fff;
+  font: 800 11px/15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  animation: chat-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+/* new lines float in under the top bar for a few seconds; taps go through them to the board */
+.chat-bubbles {
+  position: fixed;
+  top: calc(58px + env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  right: calc(62px + env(safe-area-inset-right));
+  z-index: 965;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.chat-bubble {
+  max-width: 100%;
+  padding: 7px 12px;
+  border-radius: 16px 16px 16px 4px;
+  background: #0b1030ee;
+  border: 1px solid #9fb2ff88;
+  box-shadow: 0 4px 14px #000b;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  animation:
+    chat-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    chat-out 0.35s ease-in 4.15s forwards;
+}
+.chat-bubble b {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: #f7c948;
+}
+.chat-bubble.mine {
+  align-self: flex-end;
+  border-radius: 16px 16px 4px 16px;
+  background: #1d3a8aee;
+}
+.chat-bubble.mine b {
+  color: #9fd0ff;
+}
+.chat-bubble.emote span {
+  font-size: 30px;
+  line-height: 1.15;
+}
+@keyframes chat-in {
+  from {
+    transform: translateY(-8px) scale(0.9);
+    opacity: 0;
+  }
+}
+@keyframes chat-out {
+  to {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+@keyframes chat-pop {
+  from {
+    transform: scale(0.3);
+  }
+}
+
+/* the chat itself: a small sheet over the bottom; the top of the board stays in view */
+.chat-back {
+  position: fixed;
+  inset: 0;
+  z-index: 990;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  background: linear-gradient(180deg, transparent 30%, #000a);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-sheet {
+  width: min(100%, 520px);
+  max-height: min(70dvh, 460px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #16205a, #070a1c 70%);
+  border: 1px solid #8fa6ff55;
+  box-shadow:
+    0 -2px 0 #f7c94888 inset,
+    0 18px 50px #000c;
+  color: #fff;
+  animation: chat-rise 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+@keyframes chat-rise {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+}
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.4px;
+}
+.chat-mute,
+.chat-x {
+  min-height: 36px;
+  border-radius: 18px;
+  border: 1px solid #9fb2ff88;
+  background: #141c48;
+  color: #c9d3ff;
+  font: 700 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 12px;
+  touch-action: manipulation;
+}
+.chat-mute.on {
+  background: #4a1c1c;
+  border-color: #e5484d;
+  color: #ffd2d2;
+}
+.chat-x {
+  width: 36px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+.chat-list {
+  flex: 1 1 auto;
+  min-height: 64px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px;
+}
+.chat-empty {
+  margin: auto;
+  color: #9aa6d8;
+  font-size: 13px;
+  text-align: center;
+}
+.chat-line {
+  max-width: 82%;
+  align-self: flex-start;
+  padding: 6px 11px;
+  border-radius: 14px 14px 14px 4px;
+  background: #ffffff14;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.chat-line b {
+  display: block;
+  font-size: 11px;
+  color: #f7c948;
+}
+.chat-line.mine {
+  align-self: flex-end;
+  border-radius: 14px 14px 4px 14px;
+  background: #2e4cb0;
+}
+.chat-line.emote {
+  background: none;
+  padding: 0 4px;
+}
+.chat-line.emote span {
+  font-size: 30px;
+  line-height: 1.1;
+}
+.chat-quick {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -12px;
+  padding: 0 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-quick::-webkit-scrollbar {
+  display: none;
+}
+.chat-phrase,
+.chat-emote {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border-radius: 18px;
+  border: 1px solid #9fb2ff77;
+  background: linear-gradient(#2e3f8f, #141c48);
+  color: #fff;
+  font: 700 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 13px;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.chat-emote {
+  width: 40px;
+  padding: 0;
+  font-size: 21px;
+  background: #ffffff10;
+}
+.chat-phrase:active,
+.chat-emote:active {
+  transform: scale(0.94);
+}
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  border-radius: 21px;
+  border: 1px solid #9fb2ff88;
+  background: #050817;
+  color: #fff;
+  /* 16px: iPhone doesn't zoom the page in on a smaller font */
+  font: 16px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 14px;
+}
+.chat-form input:focus {
+  outline: none;
+  border-color: #f7c948;
+}
+.chat-send {
+  min-height: 42px;
+  border-radius: 21px;
+  border: 1px solid #fff2b8;
+  background: linear-gradient(#f7c948, #c98f12);
+  color: #1a1000;
+  font: 800 14px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 16px;
+  touch-action: manipulation;
+}
+.chat-send:disabled {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble,
+  .chat-sheet,
+  .chat-badge {
+    animation: none;
+  }
+}
+/* before the duel (the room, who goes first): bottom right, clear of the room's window */
+.chat-fab.at-low {
+  top: auto;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
+  width: 50px;
+  height: 50px;
+}
+.chat-bubbles.at-low {
+  top: auto;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
+  align-items: flex-end;
+}
+.chat-bubbles.at-low .chat-bubble.theirs {
+  border-radius: 16px 16px 4px 16px;
+}
+/* over the result screen: the top corner, above the VICTORY / DEFEAT title */
+.chat-fab.at-top {
+  top: calc(10px + env(safe-area-inset-top));
+}
+.chat-bubbles.at-top {
+  top: calc(12px + env(safe-area-inset-top));
+}

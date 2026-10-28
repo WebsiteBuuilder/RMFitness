@@ -33,7 +33,9 @@ export type LobbyAction =
   /** who goes first: rock-paper-scissors, a coin toss, or the last loser's call */
   | TossAction
   /** after a duel: this player wants a rematch in the same room (or walked away) */
-  | { type: 'REMATCH'; player: Pid; want: boolean };
+  | { type: 'REMATCH'; player: Pid; want: boolean }
+  /** a chat line between the two players of an online room (rides the room's log, never touches the duel) */
+  | { type: 'CHAT'; player: Pid; text: string };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -50,6 +52,27 @@ export interface SessionView {
   series: Series;
   /** 0 for the room's first duel, 1 for the first rematch... */
   round: number;
+  /** the room's chat, oldest first (lines from earlier duels in the room included) */
+  chat: ChatLine[];
+}
+
+export interface ChatLine {
+  /** unique in the room: rematch round and place in the log */
+  id: string;
+  player: Pid;
+  text: string;
+  /** when the host logged it (ms) */
+  at: number;
+}
+
+/** The longest chat line. */
+export const CHAT_MAX = 80;
+
+/** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
+export function cleanChat(text: unknown): string {
+  if (typeof text !== 'string') return '';
+  const flat = text.replace(/[\u0000-\u001f\u007f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return Array.from(flat).slice(0, CHAT_MAX).join('');
 }
 
 export type RematchVote = 'yes' | 'no' | null;
@@ -87,6 +110,9 @@ export class DuelSession {
    * (online and hotseat rooms build it from the seats).
    */
   autoStart: ((first: Pid) => Action) | null = null;
+  /** this duel's chat, and the lines from the duels before it in the room (a rematch keeps them) */
+  chat: ChatLine[] = [];
+  private earlierChat: ChatLine[] = [];
   /** duels already counted in the series, by seed (a rebuilt log replays them) */
   private counted = new Set<number>();
   private applied = 0;
@@ -111,17 +137,29 @@ export class DuelSession {
       if (events.length === 0 && this.engine.state.winner !== null) {
         this.round++;
         this.prevSeats = this.seats;
+        this.earlierChat = [...this.earlierChat, ...this.chat].slice(-60);
       }
+      this.chat = [];
       this.engine = new Engine(DB);
       this.seats = noSeats();
       this.toss = null;
       this.rematch = [null, null];
       this.applied = 0;
     }
-    for (let i = this.applied; i < events.length; i++) this.applyOne(events[i] as unknown as AnyAction);
+    for (let i = this.applied; i < events.length; i++) {
+      const ev = events[i];
+      if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
+      else this.applyOne(ev as unknown as AnyAction);
+    }
     this.applied = events.length;
     this.log = events;
     this.notify();
+  }
+
+  private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown }) {
+    const text = cleanChat(ev.text);
+    if (!text || (ev.player !== 0 && ev.player !== 1)) return;
+    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts }];
   }
 
   private applyOne(a: AnyAction) {
@@ -196,7 +234,7 @@ export class DuelSession {
   }
 
   view(): SessionView {
-    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round };
+    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round, chat: this.earlierChat.length ? [...this.earlierChat, ...this.chat] : this.chat };
   }
 
   listen(cb: () => void): () => void {

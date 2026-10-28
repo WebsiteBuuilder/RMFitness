@@ -9,6 +9,7 @@ import { DuelSession, useDuelSession, type SessionView } from '../eds/session';
 import { addToTrunk, controlsOf, deckProblems, loadProfiles, loadSave, newSave, withControls, writeSave, type ControlStyle, type Profile, type SaveFile } from '../eds/save';
 import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
+import { DuelChat } from './DuelChat';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
@@ -1539,12 +1540,26 @@ function Running({
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
   useEffect(() => () => showDuelRarity(null), []);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
+  // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
+  const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !tag && !view.state.tag;
+  const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
   if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {
     const game = view.seats[0].mode ?? mode;
-    return <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />;
+    return (
+      <>
+        <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />
+        {chat}
+      </>
+    );
   }
-  if (!view.state.started) return <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} deckSwitch={deckSwitch} />;
+  if (!view.state.started)
+    return (
+      <>
+        <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} deckSwitch={deckSwitch} />
+        {chat}
+      </>
+    );
   if (view.state.tag) {
     // A tag duel: this phone sees the board from its team's side and moves only when its duelist is in.
     const st = view.state;
@@ -1563,6 +1578,7 @@ function Running({
     <>
       <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} spectator={!!watch} />
       {!cpu && view.state.winner === null && <DuelPot view={view} />}
+      {chat}
     </>
   );
 }
