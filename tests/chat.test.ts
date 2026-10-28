@@ -58,7 +58,9 @@ const ok = (c: boolean, msg: string) => {
   ok(passed === 8, `a flood from a changed app is capped at 8 lines in a few seconds (got ${passed})`);
   ok(!!screenProposal({ type: 'CHAT', player: 1, text: 'later' }, 1, recent, t + 9000), 'after a pause lines get through again');
   const extra = screenProposal({ type: 'CHAT', player: 1, text: 'hi', junk: 'z'.repeat(10_000) } as { type: string }, 1, [], t);
-  ok(JSON.stringify(extra) === '{"type":"CHAT","player":1,"text":"hi"}', 'anything else a changed app attaches to a line is dropped')
+  ok(JSON.stringify(extra) === '{"type":"CHAT","player":1,"text":"hi"}', 'anything else a changed app attaches to a line is dropped');
+  ok(JSON.stringify(screenProposal({ type: 'CHAT', player: 1, text: 'hi', cid: 'ab12cd34' } as { type: string }, 1, [], t)) === '{"type":"CHAT","player":1,"text":"hi","cid":"ab12cd34"}', "the phone's own short tag on a line is kept");
+  ok(!('cid' in (screenProposal({ type: 'CHAT', player: 1, text: 'hi', cid: '<b>'.repeat(50) } as { type: string }, 1, [], t) as object)), 'a tag that is not short letters and digits is dropped')
 }
 
 // ---------- a room: a host and a guest linked like PeerJS ----------
@@ -154,6 +156,10 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   host.send({ type: 'CHAT', player: 0, text: '' } as unknown as GameEvent);
   host.send({ type: 'CHAT', player: 1, text: { evil: true } } as unknown as GameEvent);
   ok(G.view().chat.length === 6, 'a line with no text or no real seat is left out');
+  // a line sent again after it looked lost, when the first copy got there after all: shown once
+  G.send({ type: 'CHAT', player: 1, text: 'slow one', cid: 'k1' } as AnyAction);
+  G.send({ type: 'CHAT', player: 1, text: 'slow one', cid: 'k1' } as AnyAction);
+  ok(G.view().chat.filter((l) => l.text === 'slow one').length === 1 && H.view().chat.filter((l) => l.text === 'slow one').length === 1, 'a resent line shows once on both phones');
 
   // a rejoin (the log handed over again from the start) shows the same chat, once
   const again = new DuelSession(new MemoryAdapter());
@@ -210,10 +216,10 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   H.send({ type: 'REMATCH', player: 0, want: true });
   G.send({ type: 'REMATCH', player: 1, want: true });
   ok(H.startRematch() && G.round === 1, 'rematch');
-  ok(lines(G) === lines(H) && lines(G).endsWith('1:gg') && G.view().chat.length === 7, 'the rematch keeps what was said before it');
+  ok(lines(G) === lines(H) && lines(G).endsWith('1:gg') && G.view().chat.length === 8, 'the rematch keeps what was said before it');
   say(H, 0, 'again!');
   ok(lines(G).endsWith('1:gg|0:again!'), 'new lines follow the old ones');
-  ok(new Set(G.view().chat.map((l) => l.id)).size === 8, 'ids stay unique across the rematch');
+  ok(new Set(G.view().chat.map((l) => l.id)).size === 9, 'ids stay unique across the rematch');
   join(H, 0);
   join(G, 1);
   ok(H.seats[0].ready && G.seats[1].ready, 'the rematch room fills as usual');

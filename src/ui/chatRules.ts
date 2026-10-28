@@ -7,7 +7,7 @@ export function phrasesFor(when: 'room' | 'mine' | 'theirs' | 'after'): string[]
   const first = {
     room: ['Hi! Good luck!', 'Thanks!'],
     // (your turn: you're the one thinking, and you hand it over)
-    mine: ['Thinking…', 'Your go!', 'Oops…'],
+    mine: ['Thinking…', 'Nice move!', 'Your go!'],
     theirs: ['Nice move!', 'Wow!', 'Hurry up 😄'],
     after: ['Good game!', 'Rematch?', 'Thanks!'],
   }[when];
@@ -16,9 +16,9 @@ export function phrasesFor(when: 'room' | 'mine' | 'theirs' | 'after'): string[]
 /** Emotes: one tap sends them, shown big. */
 export const EMOTES = ['👍', '😂', '😮', '😡', '😭', '🔥', '🤝', '👋'];
 
-/** The six emotes beside the held chat button: a wave and a handshake in the room and after the duel. */
+/** The five emotes beside the held chat button: a wave and a handshake in the room and after the duel. */
 export function quickEmotes(when: 'room' | 'mine' | 'theirs' | 'after'): string[] {
-  return when === 'room' || when === 'after' ? ['👋', '🤝', '👍', '😂', '😮', '🔥'] : EMOTES.slice(0, 6);
+  return when === 'room' || when === 'after' ? ['👋', '🤝', '👍', '😂', '🔥'] : EMOTES.slice(0, 5);
 }
 /** How long the chat button is held before the quick emotes show. */
 export const HOLD_MS = 380;

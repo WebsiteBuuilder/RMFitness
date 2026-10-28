@@ -80,6 +80,8 @@ export function DuelChat({
   const opp: Pid = mySeat === 0 ? 1 : 0;
   const shown = muted ? chat.filter((l) => l.player === mySeat) : chat;
   const pendingCount = session.chatPending.length;
+  const failed = session.chatPending.some((p) => Date.now() - p.at >= PENDING_MS);
+  const lastLine = shown[shown.length - 1];
 
   // New lines: a bubble over the board (unless the chat is open), a blip and the unread count for the other's.
   useEffect(() => {
@@ -90,11 +92,13 @@ export function DuelChat({
     const had = new Set(session.chatSeen);
     for (const l of chat) session.chatSeen.add(l.id);
     // (your own lines back from the room: no longer on their way)
+    const waiting = session.chatPending.length;
     for (const l of chat) {
       if (had.has(l.id) || l.player !== mySeat) continue;
-      const i = session.chatPending.findIndex((p) => p.text === l.text);
+      const i = session.chatPending.findIndex((p) => (l.cid ? p.id === l.cid : p.text === l.text));
       if (i >= 0) session.chatPending = session.chatPending.filter((_, j) => j !== i);
     }
+    if (session.chatPending.length !== waiting) setTick((n) => n + 1);
     // (news: a line said now; the log loading after a rejoin or reload brings history: no ping, no bubble, no count)
     const fresh = chat.filter((l) => !had.has(l.id) && !l.old);
     if (fresh.length) announce(fresh);
@@ -106,8 +110,8 @@ export function DuelChat({
     const muted = mutedNow.current;
     const theirs = fresh.filter((l) => l.player === opp && !muted);
     if (theirs.length) (sfx.chatPing(), buzz());
-    // (the chat open in full shows the line itself; the small one has no list, so the bubble shows)
-    if (session.chatOpen && !miniNow.current) return;
+    // (the open chat shows the line itself: the small one in its one-line strip)
+    if (session.chatOpen) return;
     // (unread until the chat is opened: the bubble goes away, the count stays)
     if (theirs.length) setUnread((n) => n + theirs.length);
     // (one line at a time: a newer one replaces the one showing; your own pill shows as you send)
@@ -170,8 +174,6 @@ export function DuelChat({
     setRoom(Number.isFinite(r) ? Math.floor(r) : null);
   }, [open, place, short, turned, up]);
   const mini = room !== null && room < 230;
-  const miniNow = useRef(mini);
-  miniNow.current = mini;
   /** holding the eye button: the chat fades away so the field shows through */
   const [peek, setPeek] = useState(false);
   // (the chat closing under a held eye: no pointer-up ever comes)
@@ -218,7 +220,7 @@ export function DuelChat({
     return () => (v.removeEventListener('resize', on), v.removeEventListener('scroll', on), setVv(null));
   }, [open]);
 
-  const say = (raw: string): boolean => {
+  const say = (raw: string, again?: string): boolean => {
     const text = cleanChat(raw);
     if (!text) return false;
     const now = Date.now();
@@ -230,11 +232,12 @@ export function DuelChat({
       return false;
     }
     session.chatSentAt = [...sent.filter((t) => now - t < SPAM_MS), now];
-    const id = `p${now}`;
-    session.chatPending = [...session.chatPending, { id, text, at: now }];
-    session.send({ type: 'CHAT', player: mySeat, text });
+    // (a line sent again keeps its tag: if the first copy turns up after all, the room shows it once)
+    const id = again ?? Math.random().toString(36).slice(2, 10);
+    session.chatPending = [...session.chatPending.filter((p) => p.id !== id), { id, text, at: now }];
+    session.send({ type: 'CHAT', player: mySeat, text, cid: id });
     buzz();
-    if (!session.chatOpen || miniNow.current) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
+    if (!session.chatOpen) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
     const t = window.setTimeout(() => (timers.current.delete(t), setTick((n) => n + 1)), PENDING_MS + 50);
     timers.current.add(t);
     return true;
@@ -284,9 +287,16 @@ export function DuelChat({
         quick(it.dataset.say);
       }
     };
+    // (the phone took the touch away, e.g. a call: nothing sent, the row stays for a tap)
+    const cancel = () => {
+      document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('pointerup', up, true);
+      setAim(null);
+    };
     document.addEventListener('pointermove', move, true);
     document.addEventListener('pointerup', up, true);
-    return () => (document.removeEventListener('pointermove', move, true), document.removeEventListener('pointerup', up, true));
+    document.addEventListener('pointercancel', cancel, true);
+    return () => (document.removeEventListener('pointermove', move, true), document.removeEventListener('pointerup', up, true), document.removeEventListener('pointercancel', cancel, true));
   }, [ring]);
   const fabTap = () => {
     if (held.current) return void (held.current = false);
@@ -309,8 +319,8 @@ export function DuelChat({
 
   const toggleMute = () => setMuted(!muted);
   const retry = (id: string, text: string) => {
-    session.chatPending = session.chatPending.filter((p) => p.id !== id);
-    if (!say(text)) setTick((n) => n + 1);
+    say(text, id);
+    setTick((n) => n + 1);
   };
 
   const theirName = names[opp] || 'your opponent';
@@ -368,7 +378,7 @@ export function DuelChat({
   return (
     <>
       {/* their lines by their name, under their bar; a tap opens the chat, taps around it go through */}
-      {theirBubbles.length > 0 && (!open || mini) && (
+      {theirBubbles.length > 0 && !open && (
         <div class={`chat-bubbles at-${place} ${classic ? 'classic' : ''}`} aria-live="polite">
           {theirBubbles.map((l) => (
             <div key={l.id} class={`chat-bubble ${isEmote(l.text) ? 'emote' : ''}`} style={{ '--out': `${bubbleMs(l.text) - 350}ms` } as Record<string, string>} onClick={() => setOpen(true)}>
@@ -379,7 +389,7 @@ export function DuelChat({
         </div>
       )}
       {/* your own line: a short "sent" pill beside the button */}
-      {myBubble && (!open || mini) && (
+      {myBubble && !open && (
         <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
           <b>You:</b>
           <span>{myBubble.text}</span>
@@ -402,6 +412,11 @@ export function DuelChat({
                 </button>
               ))}
             </div>
+            {slow && (
+              <p class="chat-slow" role="status">
+                Slow down… a few seconds.
+              </p>
+            )}
           </div>
         </>
       )}
@@ -409,7 +424,7 @@ export function DuelChat({
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="currentColor" />
         </svg>
-        {unread > 0 && <span class="chat-badge">{unread > 9 ? '9+' : unread}</span>}
+        {failed ? <span class="chat-badge" aria-label="A message wasn't sent">!</span> : unread > 0 && <span class="chat-badge">{unread > 9 ? '9+' : unread}</span>}
         {muted && <span class="chat-muted-mark" aria-hidden="true">🔇</span>}
       </button>
       {/* the chat: in the duel it rises over your hand (the field and the turn controls stay in view and
@@ -446,6 +461,12 @@ export function DuelChat({
               ),
             )}
           </div>
+          {/* (the small chat has no list: the latest line shows here) */}
+          {mini && lastLine && (
+            <p class="chat-last">
+              <b>{lastLine.player === mySeat ? 'You' : names[lastLine.player] || 'Opponent'}:</b> {lastLine.text}
+            </p>
+          )}
           {short || mini ? (
             <div class="chat-row">
               <div class="chat-quick">

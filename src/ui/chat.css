@@ -98,7 +98,7 @@
   padding: 2px 12px 2px 10px;
 }
 .chat-bubble.emote span {
-  font-size: 22px;
+  font-size: 32px;
   line-height: 1;
   vertical-align: middle;
 }
@@ -506,11 +506,11 @@
 }
 .chat-ring-emotes {
   display: grid;
-  grid-template-columns: repeat(6, 40px);
+  grid-template-columns: repeat(5, 44px);
   gap: 4px;
 }
 .chat-ring .chat-emote {
-  width: 40px;
+  width: 44px;
   min-height: 44px;
   font-size: 22px;
 }
@@ -637,4 +637,28 @@
 }
 .chat-sheet.mini .chat-mute span {
   display: none;
+}
+
+/* the small chat's one line: the latest thing said */
+.chat-last {
+  margin: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 20px;
+  color: #fff;
+}
+.chat-last b {
+  color: #f7c948;
+  font-size: 12px;
+}
+.chat-ring .chat-slow {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.chat-sheet.mini .chat-last + .chat-row {
+  margin-top: -2px;
 }

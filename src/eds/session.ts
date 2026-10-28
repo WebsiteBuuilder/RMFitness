@@ -35,7 +35,7 @@ export type LobbyAction =
   /** after a duel: this player wants a rematch in the same room (or walked away) */
   | { type: 'REMATCH'; player: Pid; want: boolean }
   /** a chat line between the two players of an online room (rides the room's log, never touches the duel) */
-  | { type: 'CHAT'; player: Pid; text: string };
+  | { type: 'CHAT'; player: Pid; text: string; cid?: string };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -67,12 +67,14 @@ export interface ChatLine {
   at: number;
   /** it came with the room's log loading on this phone (a reload or a rejoin): history, not news */
   old: boolean;
+  /** the sending phone's tag on it */
+  cid?: string;
 }
 
 /** A pause this long after the room's log starts reaching a phone ends its first load. */
 const LOAD_PAUSE_MS = 300;
 /** A line in that first load said more than this long ago (by the host's clock) is history. */
-const LOAD_OLD_MS = 20_000;
+const LOAD_OLD_MS = 5000;
 
 /** The longest chat line. */
 export const CHAT_MAX = 80;
@@ -94,8 +96,14 @@ export function screenProposal<T extends { type: string }>(ev: T, guestSeat: Pid
   while (recent.length && now - recent[0] >= CHAT_WINDOW_MS) recent.shift();
   if (recent.length >= CHAT_HOST_CAP) return null;
   recent.push(now);
-  // (only the three fields: nothing else a changed app attaches is stored)
-  return { type: 'CHAT', player: guestSeat, text } as unknown as T;
+  // (only these fields: nothing else a changed app attaches is stored)
+  const cid = chatCid((ev as unknown as { cid?: unknown }).cid);
+  return (cid ? { type: 'CHAT', player: guestSeat, text, cid } : { type: 'CHAT', player: guestSeat, text }) as unknown as T;
+}
+
+/** The sending phone's own tag on a line (to match it when it comes back, and to drop a resent copy): short letters and digits only. */
+export function chatCid(cid: unknown): string | undefined {
+  return typeof cid === 'string' && /^[a-z0-9]{1,12}$/.test(cid) ? cid : undefined;
 }
 
 /** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
@@ -223,14 +231,17 @@ export class DuelSession {
     this.notify();
   }
 
-  private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown }) {
+  private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown; cid?: unknown }) {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
+    // (a line sent again after it looked lost, when the first one got there after all: shown once)
+    const cid = chatCid(ev.cid);
+    if (cid && this.chat.some((l) => l.cid === cid && l.player === ev.player)) return;
     // (history: part of that first load and said a while ago; the room's very first line, said just now, is news)
     // (and a line stamped before the newest entry of that load is history however late it arrives;
     // host times are only compared with host times, so a phone's clock being off doesn't matter)
     const old = this.loaded ? ev.ts < this.loadNewest : !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS);
-    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old }];
+    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old, cid }];
   }
 
   private applyOne(a: AnyAction) {
