@@ -356,7 +356,7 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
                   ...(sel.open
                     ? [{ label: 'Copy as my own deck', disabled: full, note: "cards you don't own show grey: craft them", onPick: () => (setSel(null), add({ ...sel, open: undefined, id: newDeckId(), name: `${sel.name} mine`.slice(0, 20) })) }]
                     : []),
-                  { label: sel.open ? 'Copy (Anything goes)' : 'Copy', disabled: full, onPick: () => (onSave({ ...save, decks: [...save.decks, { ...sel, id: newDeckId(), name: `${sel.name} copy`.slice(0, 20) }] }), setSel(null)) },
+                  { label: sel.open ? 'Copy as Anything goes' : 'Copy', note: sel.open ? 'every card free; earns nothing' : undefined, disabled: full, onPick: () => (onSave({ ...save, decks: [...save.decks, { ...sel, id: newDeckId(), name: `${sel.name} copy`.slice(0, 20) }] }), setSel(null)) },
                   { label: 'Delete', disabled: save.decks.length <= 1, onPick: () => setConfirmDel(true) },
                 ]}
               />
@@ -376,8 +376,15 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
                 ...STARTERS.map((s) => {
                   const d = deckFromStarter(s);
                   const left: Record<string, number> = { ...(save.collection ?? {}) };
-                  const miss = [...d.main, ...d.extra, ...(d.skill ? [d.skill] : [])].filter((n) => !((left[n] ?? 0) > 0 && left[n]--)).length;
-                  return { label: `Copy ${s.character}'s deck`, note: miss ? `${miss} card${miss === 1 ? '' : 's'} to craft` : 'you own every card', onPick: () => add(d) };
+                  const miss = [...d.main, ...d.extra, ...(d.skill ? [d.skill] : [])].filter((n) => !((left[n] ?? 0) > 0 && left[n]--));
+                  const skill = !!d.skill && miss.includes(d.skill);
+                  const cards = miss.length - Number(skill);
+                  const cost = miss.reduce((t, n) => t + craftCost(n), 0);
+                  const what = [cards ? `${cards} card${cards === 1 ? '' : 's'}` : '', skill ? 'the Skill' : ''].filter(Boolean).join(' + ');
+                  const base = `${s.character.split(' ').pop()}'s deck`;
+                  let name = base;
+                  for (let i = 2; save.decks.some((x) => x.name === name); i++) name = `${base} ${i}`.slice(0, 20);
+                  return { label: `Copy ${s.character}'s deck`, note: miss.length ? `${what} to craft · ${cost} chips` : 'you own every card', onPick: () => add({ ...d, name }) };
                 }),
               ]}
             />
@@ -578,22 +585,32 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
     if (!collection || deck.open) return [];
     const left: Record<string, number> = { ...collection };
     const out = [...deck.main, ...deck.extra, ...(deck.skill ? [deck.skill] : [])].filter((n) => !((left[n] ?? 0) > 0 && left[n]--));
-    return crafter ? out.sort((a, b) => crafter.cost(a) - crafter.cost(b)) : out;
+    // the Skill first (no deck duels without it), then the cards the deck runs most, then cheapest
+    const skillFirst = (n: string) => Number(card(n)?.sub === 'Skill');
+    const runs = (n: string) => out.filter((x) => x === n).length;
+    return out.sort((a, b) => skillFirst(b) - skillFirst(a) || runs(b) - runs(a) || craftCost(a) - craftCost(b) || a.localeCompare(b));
   }, [deck, collection, crafter?.chips]);
-  /** the cheapest missing copies your chips cover */
+  /** missing cards that can never be crafted: Forbidden, or not in the game yet */
+  const blocked = (n: string) => (card(n)?.sub !== 'Skill' && !!unplayableReason(n)) || limitStatus(n) === 'Forbidden';
+  const buyable = missing.filter((n) => !blocked(n));
+  /** the missing copies your chips cover, in order */
   const affordable = (() => {
-    if (!crafter) return { n: 0, cost: 0 };
+    if (!crafter) return { n: 0, cost: 0, pick: [] as string[] };
+    // skip what you can't pay for yet and keep going with cheaper ones
     let cost = 0;
-    let n = 0;
-    for (const m of missing) {
-      if (cost + crafter.cost(m) > crafter.chips) break;
+    const pick: string[] = [];
+    for (const m of buyable) {
+      if (cost + crafter.cost(m) > crafter.chips) continue;
       cost += crafter.cost(m);
-      n++;
+      pick.push(m);
     }
-    return { n, cost };
+    return { n: pick.length, cost, pick };
   })();
-  const missCost = crafter ? missing.reduce((t, m) => t + crafter.cost(m), 0) : 0;
+  const missSkill = !!deck.skill && missing.includes(deck.skill) && card(deck.skill)?.sub === 'Skill';
+  const missCards = missing.length - (missSkill ? 1 : 0);
+  const missCost = crafter ? buyable.reduce((t, m) => t + crafter.cost(m), 0) : 0;
   const [craftAll, setCraftAll] = useState(false);
+  const [allNote, setAllNote] = useState<string | null>(null);
   useEffect(() => {
     if (!craftAll) return;
     const t = setTimeout(() => setCraftAll(false), 3000);
@@ -602,7 +619,16 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   const takeOutMissing = () => {
     const left: Record<string, number> = { ...(collection ?? {}) };
     const keep = (n: string) => (left[n] ?? 0) > 0 && left[n]-- > 0;
-    set({ main: deck.main.filter(keep), extra: deck.extra.filter(keep), skill: deck.skill && (collection?.[deck.skill] ?? 0) > 0 ? deck.skill : null });
+    setUndo(deck);
+    setAllNote(null);
+    const kept = { main: deck.main.filter(keep), extra: deck.extra.filter(keep), skill: deck.skill && (collection?.[deck.skill] ?? 0) > 0 ? deck.skill : null };
+    // fill the gaps from cards you own, keeping everything you already had
+    const r = kept.main.length >= 20 && kept.skill ? kept : randomSpeedDeck(collection, { size: Math.max(20, kept.main.length), keep: kept });
+    // not enough cards of your own to fill it: just take the grey ones out
+    const filled = 'error' in r ? kept : r;
+    set({ main: filled.main, extra: filled.extra, skill: filled.skill });
+    const added = filled.main.length - kept.main.length;
+    if (added > 0) setNote({ text: `Swapped in ${added} of your own card${added === 1 ? '' : 's'}. Undo is up top.`, id: Date.now() });
   };
   const copies = (n: string) => deck.main.filter((x) => x === n).length + deck.extra.filter((x) => x === n).length;
   const tile = useTileTouch();
@@ -698,12 +724,11 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   const openDeck = (n: string) => (playBlip(), setViewFromDeck(true), setView({ n, list: [...new Set([...main, ...extra])] }));
 
   // which copies in the deck you own: the k-th copy of a card is yours while k < owned
-  const seen: Record<string, number> = {};
-  const lacks = (n: string) => !!collection && !deck.open && (seen[n] = (seen[n] ?? 0) + 1) > (collection[n] ?? 0);
-  const deckTile = (n: string, i: number) => (
+  const lacks = (n: string, i: number, list: string[]) => !!collection && !deck.open && list.slice(0, i + 1).filter((x) => x === n).length > (collection[n] ?? 0);
+  const deckTile = (n: string, i: number, list: string[]) => (
     <button
       key={`${n}-${i}`}
-      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''} ${lacks(n) ? 'unowned' : ''}`}
+      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''} ${lacks(n, i, list) ? 'unowned' : ''}`}
       aria-label={quick ? `${n}: tap to take out, hold to read` : `${n}: tap to read, then take out`}
       data-pad-x="Remove one"
       data-pad-y=""
@@ -732,32 +757,39 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
           </button>
         )}
       </div>
-      <div class={`dk-status ${problems.length || missing.length ? 'err' : 'good'}`}>
-        {problems.length ? problems[0] : missing.length ? `Craft the grey cards to duel with it · ${deck.main.length} cards` : `Ready to duel · ${deck.main.length} cards`}
-      </div>
+      {!(missing.length && !problems.length) && (
+        <div class={`dk-status ${problems.length ? 'err' : 'good'}`}>{problems.length ? problems[0] : `Ready to duel · ${deck.main.length} cards`}</div>
+      )}
       {missing.length > 0 && (
         <div class="dk-missing" role="status">
           <span>
-            {missing.length} card{missing.length === 1 ? '' : 's'} you don't own{crafter ? <> · all {missCost} <i class="dchip" /></> : ''}
+            {missCards ? `${missCards} grey card${missCards === 1 ? '' : 's'}` : ''}
+            {missCards && missSkill ? ' + ' : ''}
+            {missSkill ? 'the Skill' : ''} to craft{crafter && buyable.length ? <> · all {missCost} <i class="dchip" /></> : ''}
           </span>
+          {missing.length > buyable.length && <span class="dk-miss-why">{missing.length - buyable.length} can't be crafted (Forbidden or not in the game yet): take them out</span>}
+          {allNote ? <span class="dk-miss-done">{allNote}</span> : <span class="dk-miss-tip">Tap a grey card to craft just that one.</span>}
           {crafter && (
             <button
               class={`chip dk-craftall ${craftAll ? 'armed' : ''}`}
               disabled={!affordable.n}
+              aria-label={`Craft ${affordable.n} cards for ${affordable.cost} Duel Chips`}
               onClick={() => {
                 if (!craftAll) return void (playBlip(), setCraftAll(true));
                 setCraftAll(false);
-                const made = crafter.runAll(missing.slice(0, affordable.n));
+                const made = crafter.runAll(affordable.pick);
                 buzz(30);
-                setNote({ text: made === missing.length ? `Crafted all ${made}! The deck is ready.` : `Crafted ${made}. ${missing.length - made} still to craft.`, id: Date.now() });
+                // the bar goes away once nothing is missing, so then say it as a toast
+                if (made === missing.length) (setAllNote(null), setNote({ text: `Crafted all ${made}! The deck is ready.`, id: Date.now() }));
+                else setAllNote(made === buyable.length ? `Crafted all ${made} you can. Take out the rest.` : `Crafted ${made}. ${buyable.length - made} still to craft.`);
               }}
             >
               <i class="dchip" />{' '}
-              {craftAll ? `Tap again: spend ${affordable.cost} of ${crafter.chips}` : !affordable.n ? `Need ${crafter.cost(missing[0])}` : affordable.n === missing.length ? `Craft all · ${affordable.cost}` : `Craft ${affordable.n} · ${affordable.cost}`}
+              {craftAll ? `Tap again · spend ${affordable.cost}` : !buyable.length ? 'Nothing to craft' : !affordable.n ? `Need ${crafter.cost(buyable[0]) - crafter.chips} more chip${crafter.cost(buyable[0]) - crafter.chips === 1 ? '' : 's'}` : affordable.n === buyable.length ? `Craft all for ${affordable.cost}` : `Craft ${affordable.n} card${affordable.n === 1 ? '' : 's'} for ${affordable.cost}`}
             </button>
           )}
-          <button class="chip" onClick={takeOutMissing}>
-            Take them out
+          <button class="chip" onClick={takeOutMissing} aria-label="Swap the grey cards for cards you own">
+            Use my cards
           </button>
         </div>
       )}
