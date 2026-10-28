@@ -381,7 +381,7 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
                   const cards = miss.length - Number(skill);
                   const cost = miss.reduce((t, n) => t + craftCost(n), 0);
                   const what = [cards ? `${cards} card${cards === 1 ? '' : 's'}` : '', skill ? 'the Skill' : ''].filter(Boolean).join(' + ');
-                  const base = `${s.character.split(' ').pop()}'s deck`;
+                  const base = `${SHORT_NAME[s.character] ?? s.character.split(' ')[0]}'s deck`;
                   let name = base;
                   for (let i = 2; save.decks.some((x) => x.name === name); i++) name = `${base} ${i}`.slice(0, 20);
                   return { label: `Copy ${s.character}'s deck`, note: miss.length ? `${what} to craft · ${cost} chips` : 'you own every card', onPick: () => add({ ...d, name }) };
@@ -394,6 +394,9 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
     </div>
   );
 }
+
+/** what players call the starter characters: Yugi's deck, Kaiba's deck */
+const SHORT_NAME: Record<string, string> = { 'Yami Yugi': 'Yugi', 'Seto Kaiba': 'Kaiba', 'Maximillion Pegasus': 'Pegasus' };
 
 const PAGE = 60;
 type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
@@ -608,6 +611,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   })();
   const missSkill = !!deck.skill && missing.includes(deck.skill) && card(deck.skill)?.sub === 'Skill';
   const missCards = missing.length - (missSkill ? 1 : 0);
+  const cheapest = buyable.reduce((m, n) => Math.min(m, craftCost(n)), Infinity);
   const missCost = crafter ? buyable.reduce((t, m) => t + crafter.cost(m), 0) : 0;
   const [craftAll, setCraftAll] = useState(false);
   const [allNote, setAllNote] = useState<string | null>(null);
@@ -767,8 +771,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             {missCards && missSkill ? ' + ' : ''}
             {missSkill ? 'the Skill' : ''} to craft{crafter && buyable.length ? <> · all {missCost} <i class="dchip" /></> : ''}
           </span>
-          {missing.length > buyable.length && <span class="dk-miss-why">{missing.length - buyable.length} can't be crafted (Forbidden or not in the game yet): take them out</span>}
-          {allNote ? <span class="dk-miss-done">{allNote}</span> : <span class="dk-miss-tip">Tap a grey card to craft just that one.</span>}
+          {missing.length > buyable.length && <span class="dk-miss-why">{missing.length - buyable.length} can't be crafted (Forbidden or not in the game yet): tap Use my cards</span>}
+          {allNote ? <span class="dk-miss-done">{allNote}</span> : <span class="dk-miss-tip">{quick ? 'Hold a grey card to craft just that one.' : 'Tap a grey card to craft just that one.'}</span>}
           {crafter && (
             <button
               class={`chip dk-craftall ${craftAll ? 'armed' : ''}`}
@@ -781,11 +785,11 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 buzz(30);
                 // the bar goes away once nothing is missing, so then say it as a toast
                 if (made === missing.length) (setAllNote(null), setNote({ text: `Crafted all ${made}! The deck is ready.`, id: Date.now() }));
-                else setAllNote(made === buyable.length ? `Crafted all ${made} you can. Take out the rest.` : `Crafted ${made}. ${buyable.length - made} still to craft.`);
+                else setAllNote(made === buyable.length ? `Crafted all ${made} you can. Use my cards for the rest.` : `Crafted ${made}. ${buyable.length - made} still to craft.`);
               }}
             >
               <i class="dchip" />{' '}
-              {craftAll ? `Tap again · spend ${affordable.cost}` : !buyable.length ? 'Nothing to craft' : !affordable.n ? `Need ${crafter.cost(buyable[0]) - crafter.chips} more chip${crafter.cost(buyable[0]) - crafter.chips === 1 ? '' : 's'}` : affordable.n === buyable.length ? `Craft all for ${affordable.cost}` : `Craft ${affordable.n} card${affordable.n === 1 ? '' : 's'} for ${affordable.cost}`}
+              {craftAll ? `Tap again · spend ${affordable.cost}` : !buyable.length ? 'Nothing to craft' : !affordable.n ? `Need ${cheapest - crafter.chips} more chip${cheapest - crafter.chips === 1 ? '' : 's'}` : affordable.n === buyable.length ? `Craft all for ${affordable.cost}` : `Craft ${affordable.n} card${affordable.n === 1 ? '' : 's'} for ${affordable.cost}`}
             </button>
           )}
           <button class="chip" onClick={takeOutMissing} aria-label="Swap the grey cards for cards you own">
