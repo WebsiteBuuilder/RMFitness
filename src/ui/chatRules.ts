@@ -2,23 +2,21 @@
 
 /** Duel Links-style phrases: one tap sends them. */
 export const QUICK_PHRASES = ['Hi! Good luck!', 'Nice move!', 'Wow!', 'Oops…', 'Thinking…', 'Your go!', 'Hurry up 😄', 'Good game!', 'Rematch?', 'Thanks!'];
+/** The phrases in the order that fits the moment: greetings in the room, reactions in the duel, GG after it. */
+export function phrasesFor(when: 'room' | 'duel' | 'after'): string[] {
+  const first = when === 'room' ? ['Hi! Good luck!', 'Thanks!'] : when === 'after' ? ['Good game!', 'Rematch?', 'Thanks!'] : ['Nice move!', 'Wow!', 'Oops…', 'Thinking…', 'Your go!'];
+  return [...first, ...QUICK_PHRASES.filter((p) => !first.includes(p))];
+}
 /** Emotes: one tap sends them, shown big. */
 export const EMOTES = ['👍', '😂', '😮', '😡', '😭', '🔥', '🤝', '👋'];
 
 /** At most this many lines from this phone in SPAM_MS. */
 const SPAM_LINES = 4;
 export const SPAM_MS = 8000;
-/** How long the other player's new line shows, and your own "sent" pill. */
+/** How long the other player's new line shows (longer lines stay longer), and your own "sent" pill. */
 export const BUBBLE_MS = 4500;
+export const bubbleMs = (text: string) => Math.min(7000, Math.max(BUBBLE_MS, 2500 + 60 * Array.from(text).length));
 export const MINE_MS = 2000;
-/** A line older than this when it reaches the phone (a rejoin's history) doesn't pop up or ping. */
-export const NEWS_MS = 60_000;
-/** Lines that arrive this soon after the chat shows are the room's log loading (a rejoin), not news. */
-export const SETTLE_MS = 1500;
-/** More than BURST_LINES entries landing within BURST_MS is a log loading (a rejoin), not news. */
-export const BURST_MS = 400;
-export const BURST_LINES = 4;
-
 /** An emote-only line (one to three emoji) is shown big. */
 export function isEmote(text: string): boolean {
   return /^(\p{Extended_Pictographic}\uFE0F?(\u200D\p{Extended_Pictographic}\uFE0F?)*\s?){1,3}$/u.test(text);

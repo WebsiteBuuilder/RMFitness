@@ -65,14 +65,12 @@ export interface ChatLine {
   text: string;
   /** when the host logged it (ms, the host's clock) */
   at: number;
-  /**
-   * how late it reached this phone compared with the quickest entry so far (ms; both phones' clocks
-   * cancel out): about 0 for a line said just now, large for one replayed from history after a rejoin
-   */
-  late: number;
-  /** when it reached this phone (ms, this phone's clock) */
-  got: number;
+  /** it came with the room's log loading on this phone (a reload or a rejoin): history, not news */
+  old: boolean;
 }
+
+/** A pause this long after the room's log starts reaching a phone ends its first load. */
+const LOAD_PAUSE_MS = 300;
 
 /** The longest chat line. */
 export const CHAT_MAX = 80;
@@ -101,7 +99,12 @@ export function screenProposal<T extends { type: string }>(ev: T, guestSeat: Pid
 /** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
 export function cleanChat(text: unknown): string {
   if (typeof text !== 'string') return '';
-  const flat = text.replace(/[\u0000-\u001f\u007f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const flat = text
+    .replace(/[\u0000-\u001f\u007f\u061c\u200b\u200c\u200e\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
+    // (a pile of accents on one letter grows tall over the screen: two at most)
+    .replace(/(\p{M}{2})\p{M}+/gu, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
   return Array.from(flat).slice(0, CHAT_MAX).join('');
 }
 
@@ -148,26 +151,12 @@ export class DuelSession {
   /** the chat's open state and unsent text, kept as the room moves between screens (duel → result) */
   chatOpen = false;
   chatDraft = '';
-  /** the smallest (arrival − host time) seen: the two clocks' difference plus the quickest delivery */
-  private offset = Infinity;
-  /** when this phone opened the room, and when the room's first entry reached it */
-  readonly openedAt = Date.now();
-  private firstArrival = 0;
-
   /**
-   * Until this time, entries reaching this phone are the room's log loading (a reload or a rejoin
-   * brings it all at once, however slowly it starts): history, not news.
+   * The room's log as this phone first gets it comes in one go (a reload or a rejoin hands it all
+   * over at once): entries until the first pause are that load (history); after it, news.
    */
-  historyUntil(settleMs: number): number {
-    return Math.max(this.openedAt, this.firstArrival || Infinity) + settleMs;
-  }
-  /** when the latest entries reached this phone (to tell a log pouring in from a line said just now) */
-  private arrivals: number[] = [];
-
-  /** Entries that reached this phone in the last `ms` (a burst means a log loading, not people talking). */
-  arrivedWithin(ms: number, now = Date.now()): number {
-    return this.arrivals.filter((t) => now - t <= ms).length;
-  }
+  private loadingUntil = 0;
+  private loaded = false;
   private moves = 0;
   /** duels already counted in the series, by seed (a rebuilt log replays them) */
   private counted = new Set<number>();
@@ -205,17 +194,16 @@ export class DuelSession {
     }
     for (let i = this.applied; i < events.length; i++) {
       const ev = events[i];
-      const now = Date.now();
-      this.arrivals.push(now);
-      if (!this.firstArrival) this.firstArrival = now;
-      if (this.arrivals.length > 16) this.arrivals.shift();
+      if (!this.loaded) {
+        const now = Date.now();
+        if (this.loadingUntil && now > this.loadingUntil) this.loaded = true;
+        else this.loadingUntil = now + LOAD_PAUSE_MS;
+      }
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
       else {
         this.moves++;
         this.applyOne(ev as unknown as AnyAction);
       }
-      // (after the line: its own lateness is measured against the entries before it)
-      if (typeof ev.ts === 'number') this.offset = Math.min(this.offset, now - ev.ts);
     }
     this.applied = events.length;
     this.log = events;
@@ -225,9 +213,7 @@ export class DuelSession {
   private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown }) {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
-    const got = Date.now();
-    const late = Number.isFinite(this.offset) ? Math.max(0, got - ev.ts - this.offset) : 0;
-    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, late, got }];
+    this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old: !this.loaded }];
   }
 
   private applyOne(a: AnyAction) {

@@ -10,7 +10,7 @@ import type { GameEvent, LoggedEvent } from '../src/sync/events';
 import type { Pid } from '../src/eds/types';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
-import { canSend, EMOTES, isEmote, QUICK_PHRASES } from '../src/ui/chatRules';
+import { bubbleMs, canSend, EMOTES, isEmote, phrasesFor, QUICK_PHRASES } from '../src/ui/chatRules';
 
 for (const [k, v] of KIT) DB.set(k, v);
 
@@ -31,6 +31,12 @@ const ok = (c: boolean, msg: string) => {
   ok(EMOTES.every(isEmote), 'every emote button counts as an emote (shown big)');
   ok(isEmote('👍👍') && !isEmote('gg 👍') && !isEmote('Nice move!'), 'only emoji-only lines are emotes');
   ok(QUICK_PHRASES.every((p) => cleanChat(p) === p), 'every quick phrase goes out as it reads');
+  ok(cleanChat('a\u200Bb\u2067c\uFEFF') === 'a b c', 'zero-width and text-direction marks become spaces');
+  ok(cleanChat('👨\u200D👩\u200D👧') === '👨\u200D👩\u200D👧', 'joined emoji (a family) stay whole');
+  ok(cleanChat('Z\u0301\u0302\u0303\u0304\u0305') === 'Z\u0301\u0302', 'a pile of accents is cut to two (no text growing over the screen)');
+  for (const w of ['room', 'duel', 'after'] as const) ok(phrasesFor(w).length === QUICK_PHRASES.length && new Set(phrasesFor(w)).size === QUICK_PHRASES.length, `every phrase is offered (${w})`);
+  ok(phrasesFor('after')[0] === 'Good game!' && phrasesFor('room')[0] === 'Hi! Good luck!' && phrasesFor('duel')[0] === 'Nice move!', 'the phrase for the moment comes first');
+  ok(bubbleMs('👍') === 4500 && bubbleMs('x'.repeat(40)) > 4500 && bubbleMs('x'.repeat(80)) === 7000, 'a longer line stays up longer (up to 7 seconds)');
   const now = 100_000;
   ok(canSend([], now) && canSend([now - 1000, now - 900, now - 800], now), 'up to four lines in a few seconds');
   ok(!canSend([now - 1000, now - 900, now - 800, now - 700], now), 'a fifth line right away waits (no flooding the other phone)');
@@ -156,20 +162,27 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   const R = new DuelSession(rebuilt);
   rebuilt.got(host['events'] as LoggedEvent[]);
   ok(lines(R) === lines(H), 'the same log handed over twice shows each line once');
-  // a phone whose clock is far ahead still sees a new line as new (clocks cancel out)
+  ok(again.view().chat.every((l) => l.old) && R.view().chat.every((l) => l.old), 'lines that come with the log loading on a rejoin are history (no ping, no bubble)');
+  // a line said after the load has settled is news
   {
-    const host2 = new Host();
-    const guest2 = new Guest(host2);
-    const G2 = new DuelSession(guest2);
     const realNow = Date.now;
-    Date.now = () => realNow() + 5 * 60_000;
+    let t = realNow();
+    Date.now = () => t;
     try {
-      host2.send({ type: 'CHAT', player: 0, text: 'hey', } as unknown as GameEvent);
+      const host2 = new Host();
+      const guest2 = new Guest(host2);
+      host2.send({ type: 'CHAT', player: 0, text: 'old one' } as unknown as GameEvent);
+      const G2 = new DuelSession(guest2);
+      t += 100;
+      host2.send({ type: 'CHAT', player: 0, text: 'same load' } as unknown as GameEvent);
+      t += 5000;
+      host2.send({ type: 'CHAT', player: 0, text: 'hey' } as unknown as GameEvent);
+      t += 50;
       host2.send({ type: 'CHAT', player: 0, text: 'you there?' } as unknown as GameEvent);
+      ok(G2.view().chat.map((l) => l.old).join() === 'true,true,false,false', 'after the first load, every new line is news, however quickly it follows another');
     } finally {
       Date.now = realNow;
     }
-    ok(G2.view().chat.every((l) => l.late < 1000), "a guest's clock 5 minutes off doesn't make new lines look old");
   }
 
   // the duel ends; chat goes on over the result; a rematch keeps the room's chat

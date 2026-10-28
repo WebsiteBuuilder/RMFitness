@@ -75,13 +75,18 @@
   color: #fff;
   font-size: 15px;
   line-height: 1.3;
-  /* one line, inside the top bar: a long line ends in … (the whole line is in the chat) */
-  white-space: nowrap;
+  /* up to two lines (a longer one ends in …, the whole line is in the chat); a tap opens the chat */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  cursor: pointer;
   animation:
     chat-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2),
-    chat-out 0.35s ease-in 4.15s forwards;
+    chat-out 0.35s ease-in var(--out, 4.15s) forwards;
 }
 .chat-bubble b {
   color: #f7c948;
@@ -199,6 +204,9 @@
 }
 .chat-mute,
 .chat-x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
   min-height: 44px;
   border-radius: 22px;
   border: 1px solid #9fb2ff88;
@@ -213,6 +221,7 @@
   border-color: #e5484d;
   color: #ffd2d2;
 }
+.chat-mute,
 .chat-x {
   width: 44px;
   padding: 0;
@@ -260,8 +269,8 @@
   padding: 0 4px;
 }
 .chat-line.emote span {
-  font-size: 30px;
-  line-height: 1.1;
+  font-size: 24px;
+  line-height: 1.2;
 }
 .chat-quick {
   display: flex;
@@ -441,4 +450,24 @@
   border: 6px solid transparent;
   border-top: 0;
   border-bottom: 7px solid #f7c948;
+}
+
+/* in the duel the chat rises over your hand: their whole field, the middle of the board and the
+   turn controls stay in view (it stops under them) */
+.chat-sheet.at-duel {
+  top: auto;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  max-height: min(40dvh, 360px, var(--room, 999px));
+  animation-name: chat-rise;
+}
+@keyframes chat-rise {
+  from {
+    transform: translate(-50%, 24px);
+    opacity: 0;
+  }
+}
+.chat-peek {
+  display: grid;
+  place-items: center;
+  color: #c9d3ff;
 }
