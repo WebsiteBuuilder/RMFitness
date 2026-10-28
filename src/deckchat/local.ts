@@ -59,7 +59,7 @@ const flat = (s: string) => norm(s).replace(/['’]/g, '').replace(/[^a-z0-9]+/g
 const plural = (r: string) => (/(Fish|Psychic|Cyberse|Aqua)$/.test(r) ? r : r.endsWith('y') ? r.slice(0, -1) + 'ies' : r + 's');
 const kinds = (d: SpeedDeck, k: string) => d.main.filter((n) => cd(n)?.kind === k).length;
 const kindWord = (w: string): Kind | null => (/^monsters?$/.test(w) ? 'monster' : /^spells?$/.test(w) ? 'spell' : /^traps?$/.test(w) ? 'trap' : null);
-const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+const pick = <T>(a: T[]) => a[Math.floor(rng() * a.length)];
 /** up to 20 characters, never splitting an emoji */
 const clip = (s: string) => [...s.trim()].slice(0, 20).join('');
 const short = (s: string, n = 220) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s).replace(/\s*\n\s*/g, ' ');
@@ -306,6 +306,8 @@ export function clean(text: string): string {
     .replace(/\b(kurbo|kuribo|kuriboo|kurboh|kribo)\b/g, 'kuriboh')
     .replace(/\b(grede|gred|greeed)\b/g, 'greed')
     .replace(/\b(sawp|swpa|swop)\b/g, 'swap')
+    // "add 1 more dark magician girl" is one Dark Magician Girl, not "more DARK"
+    .replace(/\b(add|put in|throw in)\s+([1-3]|one|two|three|a|an)\s+more\s+(?!(?:traps?|spells?|monsters?)\b)/g, '$1 $2 ')
     .replace(/\b(sumthin|sumthing|somethin|smth|sth)\b/g, 'something')
     .replace(/\b(beter|bettr|betta)\b/g, 'better')
     .replace(/\bdragn\b/g, 'dragon')
@@ -920,7 +922,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   const score = (main: string[]) => deckScore(main) + (openBest ? together(main) : 0);
   for (let i = 0; i < tries * themes.length && !(best && i >= tries && !openBest); i++) {
     const th = themes[Math.floor(i / tries)];
-    const r = randomSpeedDeck(collection, { size: wish.size, style: wish.style, theme: th, keep: keepCards.length ? { main: keepCards.filter((n) => !isExtraCard(n)), extra: keepCards.filter(isExtraCard), skill: null } : undefined });
+    const r = randomSpeedDeck(collection, { rand: rng, size: wish.size, style: wish.style, theme: th, keep: keepCards.length ? { main: keepCards.filter((n) => !isExtraCard(n)), extra: keepCards.filter(isExtraCard), skill: null } : undefined });
     if ('error' in r) {
       error = r.error;
       continue;
@@ -934,7 +936,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
     const top = (f: (c: CardInfo) => boolean, n: number) => pool.filter(f).sort((a, b) => worth(b) - worth(a)).flatMap((c) => Array(own(c.name)).fill(c.name) as string[]).slice(0, n);
     const greedy = [...top((c) => c.kind === 'monster' && (c.level ?? 4) <= 4, 9), ...top((c) => c.kind === 'monster' && (c.level ?? 4) >= 5 && (c.level ?? 4) <= 6, 1), ...top((c) => c.kind === 'monster' && (c.level ?? 4) >= 7, 1), ...top((c) => c.kind === 'spell', 4), ...top((c) => c.kind === 'trap', 3)];
     for (let i = 0; i < 2; i++) {
-      const r = randomSpeedDeck(collection, { size: wish.size, style: wish.style, theme: { kind: 'any' }, keep: { main: greedy, extra: [], skill: null } });
+      const r = randomSpeedDeck(collection, { rand: rng, size: wish.size, style: wish.style, theme: { kind: 'any' }, keep: { main: greedy, extra: [], skill: null } });
       if (!('error' in r) && (!best || score(r.main) > score(best.main))) (best = r), (bestTheme = { kind: 'any' });
     }
   }
@@ -942,7 +944,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   if (!best && !ritualsOk) {
     const loose = poolFor(w, (n) => drop(n) && cd(n)?.sub !== 'Ritual') ?? w.collection;
     for (let i = 0; i < 4; i++) {
-      const r = randomSpeedDeck(loose, { size: wish.size, style: wish.style, theme: themes[0], keep: keepCards.length ? { main: keepCards.filter((n) => !isExtraCard(n)), extra: keepCards.filter(isExtraCard), skill: null } : undefined });
+      const r = randomSpeedDeck(loose, { rand: rng, size: wish.size, style: wish.style, theme: themes[0], keep: keepCards.length ? { main: keepCards.filter((n) => !isExtraCard(n)), extra: keepCards.filter(isExtraCard), skill: null } : undefined });
       if (!('error' in r) && (!best || score(r.main) > score(best.main))) best = r;
     }
   }
@@ -1127,7 +1129,7 @@ function skillPick(w: ChatWorld, not: string | null): string | null {
   const tried = new Set<string>();
   for (let i = 0; i < 6; i++) {
     const collection = poolFor(w, (n) => n === not || tried.has(n)) ?? w.collection;
-    const r = randomSpeedDeck(collection, { size: Math.max(MAIN_MIN, d.main.length), keep: { main: d.main, extra: d.extra, skill: null } });
+    const r = randomSpeedDeck(collection, { rand: rng, size: Math.max(MAIN_MIN, d.main.length), keep: { main: d.main, extra: d.extra, skill: null } });
     if ('error' in r || !r.skill || r.skill === not) continue;
     if (fits(r.skill)) return r.skill;
     tried.add(r.skill);
@@ -1175,7 +1177,7 @@ function skillFits(s: string, d: { main: string[]; extra: string[] }): boolean {
 function typeClash(desc: string, d: { main: string[]; extra: string[] }): boolean {
   const mons = d.main.map((n) => cd(n)).filter((c): c is CardInfo => c?.kind === 'monster');
   if (!mons.length) return false;
-  const few = (x: string) => mons.filter((m) => m.race === x || m.attribute === x).length < 3;
+  const few = (x: string) => mons.filter((m) => m.race === x || m.attribute === x).length < 5;
   const kinds = [...RACES, ...ATTRS];
   // a cost or a lock: "banish 1 DARK monster", "you cannot Summon non-Dragon monsters"
   for (const x of kinds) {
@@ -1237,7 +1239,7 @@ function fillPlan(w: ChatWorld, size: number, mem: Memory, why = '', notKind: Ki
   let error = '';
   for (let i = 0; i < 5 && !(i === 4 && added.length); i++) {
     // on the deck's Type first; one plain try if that can't fill it
-    const r = randomSpeedDeck(pool, { size, ...(race && i < 4 ? { theme: { kind: 'race', value: race } as RandomTheme } : {}), keep: { main: d.main, extra: d.extra, skill: d.skill } });
+    const r = randomSpeedDeck(pool, { rand: rng, size, ...(race && i < 4 ? { theme: { kind: 'race', value: race } as RandomTheme } : {}), keep: { main: d.main, extra: d.extra, skill: d.skill } });
     if ('error' in r) {
       error = r.error;
       continue;
@@ -1581,8 +1583,22 @@ let protect = new Set<string>();
 let split = false;
 
 /** Works out what one message asks for. A question or a remark ("I wish it was stronger") never edits. Exported for tests. */
+/** builds are steady: the same ask on the same deck and cards gives the same deck */
+let rng: () => number = Math.random;
+function seeded(key: string): () => number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return () => {
+    h = (h + 0x6d2b79f5) | 0;
+    let x = Math.imul(h ^ (h >>> 15), 1 | h);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(), part = false, whole = text): Plan {
   split = false;
+  if (!part) rng = seeded(`${clean(text)}|${w.deck.main.join(',')}|${w.deck.extra.join(',')}|${Object.keys(w.collection ?? {}).length}|${Object.values(w.collection ?? {}).reduce((a, b) => a + b, 0)}`);
   // "leave the spells alone and add traps": that kind is held, and the rest of the message is the ask
   const leave = clean(text).match(new RegExp(`^(?:leave|keep|dont touch|dont change)\\s+(?:the |my |all the )?${KIND_RE}(?:\\s+(?:alone|as they are|the same|how they are))?\\s+(?:and|but|then|just)\\s+(.+)$`));
   if (leave) {
@@ -1785,6 +1801,13 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const have = d.main.filter((n) => n === onlyName).length + d.extra.filter((n) => n === onlyName).length;
     if (want === have) return { calls: [], answer: () => `It already has ${have} ${onlyName}.` };
     return { calls: [{ name: 'edit_deck', input: want > have ? { add: [{ name: onlyName, count: want - have }] } : { remove: [{ name: onlyName, count: have - want }] } }], answer: (rs) => (refusedOf(rs[0] ?? '') ? `Couldn't: ${refusedOf(rs[0])}.` : `Now ${want} ${onlyName}.`) };
+  }
+  // "i dont like the ritual stuff get rid of it": Ritual monsters and their Spells go
+  if (/\b(dont want|do not want|dont like|no|without|get rid of|remove|take out|cut|hate|lose|ditch)\b.*\brituals?\s*(stuff|cards|things|monsters|spells|summons?)?\b/.test(t) && !/^(add|put|give|how|what|why|can|is)\b/.test(t) && d.main.length) {
+    const rx = d.main.filter((n) => cd(n)?.sub === 'Ritual' && !protect.has(n));
+    if (!rx.length) return { calls: [], answer: () => 'There are no Ritual cards in this deck.' };
+    const cut: Plan = { calls: [{ name: 'edit_deck', input: { remove: counts(rx) } }], answer: () => `Took out the Ritual cards: ${listOf(rx)}.` };
+    return d.main.length - rx.length < MAIN_MIN ? refill(cut, w, null, (n) => cd(n)?.sub === 'Ritual') : cut;
   }
   // "i dont want any fusion stuff": Fusions, Polymerization and what fetches it all go
   if (/\b(dont want|do not want|no|without|get rid of|remove|take out|cut|hate|lose|ditch)\b.*\bfusions?\s*(stuff|cards|things|monsters|spells|summons?)?$/.test(t) && !/^(add|put|give|how|what|why|can|is)\b/.test(t) && (d.extra.length || d.main.length)) {
@@ -2613,6 +2636,11 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const spared = tail.length && (removing || /\b(but not|but no|except|without)\b/.test(t)) ? new Set(findCards(tail.join(' '), d).map((f) => f.name)) : new Set<string>();
     let found = spared.size ? findCards(head, d).filter((f) => !spared.has(f.name)) : cardsSaid;
     const back = !removing && /\b(back|again)\b/.test(t);
+    // "add 3 call of the haunted": in Speed Duel that name is a Skill, never a card
+    const skillSaid = !removing && found.length === 1 && cd(found[0].name)?.sub === 'Skill' && /^(add|put in|put|include|throw in)$/.test(verb[1]) ? found[0].name : null;
+    if (skillSaid) return { calls: [], answer: () => `${bare(skillSaid)} is a Skill in Speed Duel, not a card for the deck. Say "use ${bare(skillSaid)}" to make it this deck's Skill.` };
+    // "put back the dust tornados" when none were taken out
+    if (back && found.length && !found.some((f) => mem.removed.includes(f.name)) && !/\b(it|that|those|them|these|him|her)\b/.test(t)) return { calls: [], answer: () => `I didn't take out ${listOf(found.map((f) => f.name))} in this chat. Say "add ${found[0].name}" to put one in.` };
     // "put red eyes back in": the card that was cut, not another Red-Eyes
     if (back && mem.removed.length) found = found.map((f) => (mem.removed.includes(f.name) || !f.said ? f : ((r) => (r ? { ...f, name: r } : f))(mem.removed.find((r) => flat(r).includes(flat(f.said!))))));
     // "add maiden with eyes of blue": a loose match must not stand in for a card Speed Duel never printed
