@@ -4,8 +4,8 @@
   top: calc(56px + env(safe-area-inset-top));
   right: max(10px, env(safe-area-inset-right));
   z-index: 970;
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -49,52 +49,87 @@
   animation: chat-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4);
 }
 
-/* new lines float in under the top bar for a few seconds; taps go through them to the board */
+/* the other player's new line, by their name in the top bar (never over the field); taps go through */
 .chat-bubbles {
   position: fixed;
-  top: calc(58px + env(safe-area-inset-top));
-  left: max(10px, env(safe-area-inset-left));
-  right: calc(62px + env(safe-area-inset-right));
+  top: calc(4px + env(safe-area-inset-top));
+  left: calc(56px + env(safe-area-inset-left));
+  right: calc(64px + env(safe-area-inset-right));
   z-index: 965;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
   pointer-events: none;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 .chat-bubble {
   max-width: 100%;
+  box-sizing: border-box;
   padding: 7px 12px;
-  border-radius: 16px 16px 16px 4px;
-  background: #0b1030ee;
-  border: 1px solid #9fb2ff88;
-  box-shadow: 0 4px 14px #000b;
+  border-radius: 4px 16px 16px 16px;
+  background: #0b1030;
+  border: 1.5px solid #f7c948;
+  box-shadow: 0 4px 14px #000c;
   color: #fff;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   animation:
     chat-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2),
     chat-out 0.35s ease-in 4.15s forwards;
 }
 .chat-bubble b {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 0.3px;
   color: #f7c948;
+  margin-right: 6px;
+  font-size: 13px;
 }
-.chat-bubble.mine {
-  align-self: flex-end;
-  border-radius: 16px 16px 4px 16px;
-  background: #1d3a8aee;
-}
-.chat-bubble.mine b {
-  color: #9fd0ff;
+.chat-bubble.emote {
+  padding: 2px 12px 2px 10px;
 }
 .chat-bubble.emote span {
-  font-size: 30px;
-  line-height: 1.15;
+  font-size: 28px;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+/* your own line: a short pill beside the chat button, so you see it went out */
+.chat-sent {
+  position: fixed;
+  top: calc(60px + env(safe-area-inset-top));
+  right: calc(64px + env(safe-area-inset-right));
+  z-index: 965;
+  max-width: min(60vw, 280px);
+  box-sizing: border-box;
+  padding: 7px 12px;
+  border-radius: 16px 4px 16px 16px;
+  background: #1d3a8a;
+  border: 1px solid #9fd0ff;
+  box-shadow: 0 4px 14px #000b;
+  color: #fff;
+  font: 15px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation:
+    chat-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    chat-out 0.3s ease-in 1.7s forwards;
+}
+.chat-sent::before {
+  content: '✓ ';
+  color: #9fd0ff;
+  font-weight: 800;
+}
+.chat-sent.emote {
+  font-size: 24px;
+  padding: 2px 12px;
+}
+.chat-sent.emote::before {
+  font-size: 15px;
 }
 @keyframes chat-in {
   from {
@@ -114,40 +149,38 @@
   }
 }
 
-/* the chat itself: a small sheet over the bottom; the top of the board stays in view */
-.chat-back {
-  position: fixed;
-  inset: 0;
-  z-index: 990;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
-  background: linear-gradient(180deg, transparent 30%, #000a);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  -webkit-tap-highlight-color: transparent;
-}
+/* the chat drops down over the top of the screen (the opponent's side): your hand, your side of the
+   field and the room's buttons stay in view and keep working; no backdrop */
 .chat-sheet {
-  width: min(100%, 520px);
-  max-height: min(70dvh, 460px);
+  position: fixed;
+  top: calc(52px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 990;
+  width: min(calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)), 520px);
+  max-height: min(48dvh, 420px);
   display: flex;
   flex-direction: column;
   gap: 8px;
   box-sizing: border-box;
-  padding: 10px 12px 12px;
+  padding: 8px 12px 12px;
   border-radius: 18px;
   background: linear-gradient(180deg, #16205a, #070a1c 70%);
-  border: 1px solid #8fa6ff55;
+  border: 1px solid #8fa6ff77;
   box-shadow:
-    0 -2px 0 #f7c94888 inset,
-    0 18px 50px #000c;
+    0 2px 0 #f7c94888 inset,
+    0 18px 50px #000e;
   color: #fff;
-  animation: chat-rise 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  animation: chat-drop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15);
 }
-@keyframes chat-rise {
+.chat-sheet.at-low,
+.chat-sheet.at-top {
+  top: calc(8px + env(safe-area-inset-top));
+}
+@keyframes chat-drop {
   from {
-    transform: translateY(30px);
+    transform: translate(-50%, -24px);
     opacity: 0;
   }
 }
@@ -168,8 +201,8 @@
 }
 .chat-mute,
 .chat-x {
-  min-height: 36px;
-  border-radius: 18px;
+  min-height: 44px;
+  border-radius: 22px;
   border: 1px solid #9fb2ff88;
   background: #141c48;
   color: #c9d3ff;
@@ -183,9 +216,9 @@
   color: #ffd2d2;
 }
 .chat-x {
-  width: 36px;
+  width: 44px;
   padding: 0;
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1;
 }
 .chat-list {
@@ -241,14 +274,18 @@
   padding: 0 12px;
   -webkit-overflow-scrolling: touch;
 }
+.chat-quick {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+}
 .chat-quick::-webkit-scrollbar {
   display: none;
 }
 .chat-phrase,
 .chat-emote {
   flex: 0 0 auto;
-  min-height: 36px;
-  border-radius: 18px;
+  min-height: 44px;
+  border-radius: 22px;
   border: 1px solid #9fb2ff77;
   background: linear-gradient(#2e3f8f, #141c48);
   color: #fff;
@@ -258,9 +295,9 @@
   touch-action: manipulation;
 }
 .chat-emote {
-  width: 40px;
+  width: 44px;
   padding: 0;
-  font-size: 21px;
+  font-size: 22px;
   background: #ffffff10;
 }
 .chat-phrase:active,
@@ -274,9 +311,9 @@
 .chat-form input {
   flex: 1;
   min-width: 0;
-  min-height: 42px;
+  min-height: 44px;
   box-sizing: border-box;
-  border-radius: 21px;
+  border-radius: 22px;
   border: 1px solid #9fb2ff88;
   background: #050817;
   color: #fff;
@@ -289,8 +326,8 @@
   border-color: #f7c948;
 }
 .chat-send {
-  min-height: 42px;
-  border-radius: 21px;
+  min-height: 44px;
+  border-radius: 22px;
   border: 1px solid #fff2b8;
   background: linear-gradient(#f7c948, #c98f12);
   color: #1a1000;
@@ -299,10 +336,23 @@
   touch-action: manipulation;
 }
 .chat-send:disabled {
-  opacity: 0.45;
+  background: #2a2f4a;
+  border-color: #4a5280;
+  color: #8a92b8;
+}
+.chat-slow {
+  margin: -2px 0 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #4a1c1c;
+  border: 1px solid #e5484d;
+  color: #ffd2d2;
+  font-size: 13px;
+  text-align: center;
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble,
+  .chat-sent,
   .chat-sheet,
   .chat-badge {
     animation: none;
@@ -313,17 +363,20 @@
   top: auto;
   bottom: max(14px, env(safe-area-inset-bottom));
   right: max(14px, env(safe-area-inset-right));
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
 }
 .chat-bubbles.at-low {
   top: auto;
-  bottom: calc(74px + env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   right: max(14px, env(safe-area-inset-right));
   align-items: flex-end;
 }
-.chat-bubbles.at-low .chat-bubble.theirs {
-  border-radius: 16px 16px 4px 16px;
+.chat-sent.at-low {
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  right: calc(76px + env(safe-area-inset-right));
 }
 /* over the result screen: the top corner, above the VICTORY / DEFEAT title */
 .chat-fab.at-top {
@@ -331,4 +384,15 @@
 }
 .chat-bubbles.at-top {
   top: calc(12px + env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+}
+.chat-sent.at-top {
+  top: calc(16px + env(safe-area-inset-top));
+}
+/* on a short screen the history gives way first: the buttons and the message box keep their size */
+.chat-head,
+.chat-quick,
+.chat-form,
+.chat-slow {
+  flex-shrink: 0;
 }

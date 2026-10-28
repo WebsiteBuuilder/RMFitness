@@ -54,6 +54,8 @@ export interface SessionView {
   round: number;
   /** the room's chat, oldest first (lines from earlier duels in the room included) */
   chat: ChatLine[];
+  /** entries in the log that aren't chat: what screens key their room logic on (a chat line changes nothing) */
+  moves: number;
 }
 
 export interface ChatLine {
@@ -67,6 +69,26 @@ export interface ChatLine {
 
 /** The longest chat line. */
 export const CHAT_MAX = 80;
+
+/** The host's lines per CHAT_WINDOW_MS it takes from the other phone (the rest are dropped). */
+const CHAT_HOST_CAP = 8;
+const CHAT_WINDOW_MS = 8000;
+
+/**
+ * The host screens a move the other phone proposes before it goes into the room's log: a chat line
+ * must be in the guest's own seat (no lines in the host's name), is tidied and cut to size here (so
+ * nothing big is stored), and a flood is dropped. Every other move passes as it is.
+ */
+export function screenProposal<T extends { type: string }>(ev: T, guestSeat: Pid, recent: number[], now = Date.now()): T | null {
+  if (ev.type !== 'CHAT') return ev;
+  const c = ev as unknown as { player: unknown; text: unknown };
+  const text = cleanChat(c.text);
+  if (c.player !== guestSeat || !text) return null;
+  while (recent.length && now - recent[0] >= CHAT_WINDOW_MS) recent.shift();
+  if (recent.length >= CHAT_HOST_CAP) return null;
+  recent.push(now);
+  return { ...ev, text };
+}
 
 /** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
 export function cleanChat(text: unknown): string {
@@ -113,6 +135,9 @@ export class DuelSession {
   /** this duel's chat, and the lines from the duels before it in the room (a rematch keeps them) */
   chat: ChatLine[] = [];
   private earlierChat: ChatLine[] = [];
+  /** when this phone sent its last chat lines (the send cap holds across the room's screens) */
+  chatSentAt: number[] = [];
+  private moves = 0;
   /** duels already counted in the series, by seed (a rebuilt log replays them) */
   private counted = new Set<number>();
   private applied = 0;
@@ -140,6 +165,7 @@ export class DuelSession {
         this.earlierChat = [...this.earlierChat, ...this.chat].slice(-60);
       }
       this.chat = [];
+      this.moves = 0;
       this.engine = new Engine(DB);
       this.seats = noSeats();
       this.toss = null;
@@ -149,7 +175,10 @@ export class DuelSession {
     for (let i = this.applied; i < events.length; i++) {
       const ev = events[i];
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
-      else this.applyOne(ev as unknown as AnyAction);
+      else {
+        this.moves++;
+        this.applyOne(ev as unknown as AnyAction);
+      }
     }
     this.applied = events.length;
     this.log = events;
@@ -234,7 +263,7 @@ export class DuelSession {
   }
 
   view(): SessionView {
-    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round, chat: this.earlierChat.length ? [...this.earlierChat, ...this.chat] : this.chat };
+    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round, chat: this.earlierChat.length ? [...this.earlierChat, ...this.chat] : this.chat, moves: this.moves };
   }
 
   listen(cb: () => void): () => void {

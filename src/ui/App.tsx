@@ -1529,7 +1529,7 @@ function Running({
     // ...and never in the middle of a 3D cinematic.
     const stopWaiting = whenArtIdle(() => (t = window.setTimeout(think, THINK_BEAT)));
     return () => ((dead = true), stopWaiting(), clearTimeout(t));
-  }, [cpu, cpuLevel, view.log.length, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
+  }, [cpu, cpuLevel, view.moves, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   // (a tag duel: each side shows the rarities of the phones playing on it; computers have none)
   const sideRarity = (side: Pid) => {
@@ -1541,23 +1541,25 @@ function Running({
   useEffect(() => () => showDuelRarity(null), []);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
-  const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !tag && !view.state.tag;
+  // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.
+  // (a tag or raid room's lobby too, for its first two phones: they can't tell yet what the room is for)
+  const chatOn = !!session.adapter.roomCode && !hotseat && !cpu && !watch && !view.state.tag && mySeat <= 1;
   const chat = chatOn ? <DuelChat session={session} chat={view.chat} mySeat={mySeat} place={view.state.started ? 'duel' : 'low'} names={[view.seats[0].name || (view.state.started ? view.state.players[0].name : ''), view.seats[1].name || (view.state.started ? view.state.players[1].name : '')]} /> : null;
   if (onRaidEnd && view.log.some((a) => (a as { type: string }).type === 'RAID_START')) return <RaidRoom adapter={session.adapter} phone={mySeat} controlsFor={controlsFor} onControls={onControls} onEnd={onRaidEnd} />;
   if (!view.state.started && view.toss && !tag) {
     const game = view.seats[0].mode ?? mode;
     return (
       <>
-        <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />
         {chat}
+        <TossScreen session={session} view={view} mySeat={mySeat} hotseat={hotseat} cpuSeat={cpu ? other(mySeat) : null} buildStart={session.autoStart ?? ((first) => startFromSeats(session.seats, game, first))} />
       </>
     );
   }
   if (!view.state.started)
     return (
       <>
-        <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} deckSwitch={deckSwitch} />
         {chat}
+        <Lobby session={session} view={view} mySeat={mySeat} hotseat={hotseat} mode={mode} entries={entries} others={others} onSeatProfile={onSeatProfile} onLeave={onLeave} betSave={betSave} tag={tag} rematchP2={rematchP2} deckSwitch={deckSwitch} />
       </>
     );
   if (view.state.tag) {
@@ -1576,9 +1578,9 @@ function Running({
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return (
     <>
+      {chat}
       <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} spectator={!!watch} />
       {!cpu && view.state.winner === null && <DuelPot view={view} />}
-      {chat}
     </>
   );
 }

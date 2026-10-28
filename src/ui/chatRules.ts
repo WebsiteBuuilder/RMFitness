@@ -8,8 +8,11 @@ export const EMOTES = ['👍', '😂', '😮', '😡', '😭', '🔥', '🤝', '
 /** At most this many lines from this phone in SPAM_MS. */
 const SPAM_LINES = 4;
 export const SPAM_MS = 8000;
-/** How long a new line floats over the board. */
+/** How long the other player's new line shows, and your own "sent" pill. */
 export const BUBBLE_MS = 4500;
+export const MINE_MS = 2000;
+/** A line older than this when it reaches the phone (a rejoin's history) doesn't pop up or ping. */
+export const NEWS_MS = 60_000;
 
 /** An emote-only line (one to three emoji) is shown big. */
 export function isEmote(text: string): boolean {

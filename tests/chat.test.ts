@@ -3,7 +3,7 @@
 // Run: npx tsx tests/chat.test.ts
 import { DB as KIT } from './speedkit';
 import { DB } from '../src/eds/db';
-import { CHAT_MAX, cleanChat, DuelSession, type AnyAction } from '../src/eds/session';
+import { CHAT_MAX, cleanChat, DuelSession, screenProposal, type AnyAction } from '../src/eds/session';
 import { AdapterBase, type SyncAdapter } from '../src/sync/types';
 import { MemoryAdapter } from '../src/sync/memory';
 import type { GameEvent, LoggedEvent } from '../src/sync/events';
@@ -35,6 +35,22 @@ const ok = (c: boolean, msg: string) => {
   ok(canSend([], now) && canSend([now - 1000, now - 900, now - 800], now), 'up to four lines in a few seconds');
   ok(!canSend([now - 1000, now - 900, now - 800, now - 700], now), 'a fifth line right away waits (no flooding the other phone)');
   ok(canSend([now - 9000, now - 8500, now - 8200, now - 8100], now), 'after a pause the lines flow again');
+}
+
+// ---------- the host screens what the other phone proposes ----------
+{
+  const recent: number[] = [];
+  const t = 50_000;
+  const move = { type: 'NEXT_PHASE', player: 1 };
+  ok(screenProposal(move, 1, recent, t) === move, 'a duel move passes as it is');
+  ok(screenProposal({ type: 'CHAT', player: 0, text: 'I give up' }, 1, recent, t) === null, "a line in the host's name from the other phone is dropped");
+  ok(screenProposal({ type: 'CHAT', player: 1, text: '   ' }, 1, recent, t) === null, 'an empty line is dropped');
+  const big = screenProposal({ type: 'CHAT', player: 1, text: 'y'.repeat(100_000) }, 1, recent, t);
+  ok(!!big && (big as { text: string }).text.length === CHAT_MAX, 'a huge line is cut before it is stored in the room');
+  let passed = 1;
+  for (let i = 0; i < 20; i++) if (screenProposal({ type: 'CHAT', player: 1, text: 'spam' }, 1, recent, t + i)) passed++;
+  ok(passed === 8, `a flood from a changed app is capped at 8 lines in a few seconds (got ${passed})`);
+  ok(!!screenProposal({ type: 'CHAT', player: 1, text: 'later' }, 1, recent, t + 9000), 'after a pause lines get through again');
 }
 
 // ---------- a room: a host and a guest linked like PeerJS ----------
@@ -104,6 +120,9 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   join(G, 1);
   ok(lines(H) === '1:hi' && lines(G) === '1:hi', 'a line in the room before the duel reaches both phones');
   ok(H.seats[0].ready && H.seats[1].ready && !H.seats[0].accepted, 'a chat line changes nothing in the room (seats as they were)');
+  const moves = G.view().moves;
+  say(G, 1, 'ready?');
+  ok(G.view().moves === moves && G.view().log.length === moves + 2, "chat doesn't count as a move (screens keyed on moves don't re-run)");
   H.send({ type: 'TOSS', how: 'rps' });
   say(H, 0, 'good luck!');
   G.send({ type: 'RPS', player: 1, hand: 'paper', round: 0 });
@@ -118,13 +137,13 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   say(H, 0, '😂');
   say(G, 1, '  multi\nline   text ');
   ok(JSON.stringify(G.state.players.map((p) => [p.lp, p.hand.length, p.deck.length])) === before && G.state.turn === turn && G.state.winner === null, 'chat mid-duel never touches the duel');
-  ok(lines(H) === lines(G) && lines(G) === '1:hi|0:good luck!|1:watch this|0:😂|1:multi line text', 'both phones show the same lines in the same order, tidied');
-  ok(H.view().chat.every((l, i, a) => i === 0 || l.at >= a[i - 1].at) && new Set(H.view().chat.map((l) => l.id)).size === 5, 'each line has its own id and the host’s time');
+  ok(lines(H) === lines(G) && lines(G) === '1:hi|1:ready?|0:good luck!|1:watch this|0:😂|1:multi line text', 'both phones show the same lines in the same order, tidied');
+  ok(H.view().chat.every((l, i, a) => i === 0 || l.at >= a[i - 1].at) && new Set(H.view().chat.map((l) => l.id)).size === 6, 'each line has its own id and the host’s time');
   // a forged or broken line from a phone is dropped, not shown
   host.send({ type: 'CHAT', player: 5, text: 'who?' } as unknown as GameEvent);
   host.send({ type: 'CHAT', player: 0, text: '' } as unknown as GameEvent);
   host.send({ type: 'CHAT', player: 1, text: { evil: true } } as unknown as GameEvent);
-  ok(G.view().chat.length === 5, 'a line with no text or no real seat is left out');
+  ok(G.view().chat.length === 6, 'a line with no text or no real seat is left out');
 
   // a rejoin (the log handed over again from the start) shows the same chat, once
   const again = new DuelSession(new MemoryAdapter());
@@ -143,10 +162,10 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
   H.send({ type: 'REMATCH', player: 0, want: true });
   G.send({ type: 'REMATCH', player: 1, want: true });
   ok(H.startRematch() && G.round === 1, 'rematch');
-  ok(lines(G) === lines(H) && lines(G).endsWith('1:gg') && G.view().chat.length === 6, 'the rematch keeps what was said before it');
+  ok(lines(G) === lines(H) && lines(G).endsWith('1:gg') && G.view().chat.length === 7, 'the rematch keeps what was said before it');
   say(H, 0, 'again!');
   ok(lines(G).endsWith('1:gg|0:again!'), 'new lines follow the old ones');
-  ok(new Set(G.view().chat.map((l) => l.id)).size === 7, 'ids stay unique across the rematch');
+  ok(new Set(G.view().chat.map((l) => l.id)).size === 8, 'ids stay unique across the rematch');
   join(H, 0);
   join(G, 1);
   ok(H.seats[0].ready && G.seats[1].ready, 'the rematch room fills as usual');

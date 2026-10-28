@@ -309,6 +309,7 @@ function viewOf(rs: RaidSession, b: Pid): SessionView {
     series: { wins: [0, 0], draws: 0, last: null },
     round: 0,
     chat: [],
+    moves: 0,
   };
 }
 

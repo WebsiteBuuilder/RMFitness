@@ -242,14 +242,14 @@ export function Lobby({
     if (bothReady && sameGame && staked(seats[0].stakes, seats[1].stakes) && !betsLocked(seats) && ([0, 1] as Pid[]).every((p) => withinBet(seats[p].stakes?.ante, session.prevSeats?.[p].stakes?.ante)))
       for (const p of hotseat ? ([0, 1] as Pid[]) : [mySeat]) if (!seats[p].accepted) session.send({ type: 'ACCEPT', player: p });
     if (session.adapter.isHost && bothReady && sameGame && !outdated && betsLocked(seats) && !view.toss) session.send(tossFor(view, hotseat));
-  }, [rematch, view.log.length, status]);
+  }, [rematch, view.moves, status]);
 
   // A room Find a Match opened: both sit down with their active deck as soon as the phones link.
   const matched = !!code && online.matchedRoom?.room === code && !tag ? online.matchedRoom : null;
   useEffect(() => {
     if (!matched || rematch || status !== 'connected') return;
     if (!iAmReady && mine && mine.problems.length === 0 && (mySeat === 0 || seats[0].ready)) ready();
-  }, [matched?.room, status, view.log.length]);
+  }, [matched?.room, status, view.moves]);
 
   // ...and the host's phone starts it by itself a few seconds later, unless someone puts up a bet.
   const autoGo = !!matched && !rematch && bothReady && sameGame && !outdated && !view.toss && status === 'connected' && stakesReady(view) && noAnte(seats[0].stakes?.ante) && noAnte(seats[1].stakes?.ante);
