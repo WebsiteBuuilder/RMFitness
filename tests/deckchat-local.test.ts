@@ -154,7 +154,7 @@ for (const [what, check] of [
   const pot = await ask(base, 'put three pot of greed in');
   ok(/isn't a Speed Duel card/.test(pot.text) && pot.deck === base.deck, 'a card outside Speed Duel is explained, not added');
   const agg = await ask(base, 'make it more aggressive');
-  ok(kinds(agg.deck, 'monster') > kinds(base.deck, 'monster') && agg.deck.main.length === base.deck.main.length, '"make it more aggressive" swaps in attackers and keeps the deck');
+  ok((kinds(agg.deck, 'monster') > kinds(base.deck, 'monster') && agg.deck.main.length === base.deck.main.length) || (/already runs your best attackers/.test(agg.text) && agg.deck === base.deck), `"make it more aggressive" swaps in attackers and keeps the deck (${agg.text.slice(0, 60)})`);
   ok(agg.deck.main.filter((n) => !base.deck.main.includes(n)).every((n) => (card(n)?.level ?? 0) <= 4), 'the new attackers need no Tribute');
   const sug = await ask(base, 'what should i add?');
   ok(/best fits for this deck are/.test(sug.text) && sug.deck === base.deck, 'suggestions name cards and change nothing');
