@@ -171,7 +171,17 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     // "undo" said in the chat presses the Undo on the newest change
     const said = clean(msg);
     // ("undo that last change please", "give me back my old deck"; not "how do i undo?")
-    const wantsUndo = !/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\b(dont|do not|never|nah|not|no undo|keep it|like it)\b/.test(said) && !/\?\s*$/.test(msg) && !/\bredo\b|\bundo the undo\b/.test(said) && (/\b(undo|revert)\b/.test(said) || /^(go back|take (it|that) back|put it back how it was)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    // a "don't", "didn't" or "no" just before undo keeps the change ("i didn't mean to undo", "no undo"); "nah undo it" still undoes
+    const undoWord = /\b(undo|revert)\b/.test(said);
+    // only the part of the message that says undo counts ("I don't like that, undo it" undoes)
+    const undoPart = clean(msg.split(/[,.;!]+/).find((x) => /\b(undo|revert)\b/i.test(x)) ?? msg);
+    const negated = /\b(dont|didnt|do not|wouldnt|shouldnt|wont|never|not|no|cant)\b(\s+\w+){0,2}\s+(undo|revert)\b/.test(undoPart) || /\b(keep it|like it|leave it)\b/.test(undoPart);
+    const putBack = /^(put it back|put it back how it was|put everything back|change it back|make it how it was)$/.test(said) && !helperMemory.current.removed.length;
+    const wantsUndo = !/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\?\s*$/.test(msg) && !/\bredo\b|\bundo the undo\b/.test(said) && !negated && (undoWord || putBack || /^(go back|take (it|that) back)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    // "undo the last two changes" (said as "undo two of those")
+    const many = Number(said.match(/\bundo (\d|two|three)\b/)?.[1]?.replace('two', '2').replace('three', '3') ?? 1);
+    // "undo and add 2 kuriboh": the rest is asked again after the undo
+    const rest = said.match(/\b(?:undo|revert)\b(?: (?:it|that|this))?\s+(?:and|then|and then)\s+(.+)$/)?.[1];
     if (wantsUndo && !lastChange) {
       setText('');
       return setChat({ ...chat, turns: [...chat.turns, { id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: changes.length ? 'Everything is already undone. Say "redo" to put a change back.' : "There's no change to undo yet." }] });
@@ -179,7 +189,13 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     if (wantsUndo && lastChange) {
       playBlip();
       setText('');
-      return undo(lastChange, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Undid the last change. Say "redo" to put it back.' }]);
+      const live = changes.filter((x) => !x.undone);
+      const target = live[Math.max(0, live.length - many)] ?? lastChange;
+      const n = live.length - live.indexOf(target);
+      // newest first, each change taken off the deck as it is
+      let back = deckRef.current;
+      for (const x of live.slice(live.indexOf(target)).reverse()) if (x.diff && x.before) back = undoDiff(back, x.diff, x.before);
+      return undo(target, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: `Undid the last ${n > 1 ? `${n} changes` : 'change'}. Say "redo" to put it back.${rest ? ` Now say "${rest}" again and I'll do that on the deck as it is now.` : ''}` }], back);
     }
     if (/^(redo|redo (it|that)|undo the undo)$/.test(said) && redoable) {
       playBlip();
@@ -252,12 +268,12 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     }
   };
 
-  const undo = (t: Turn, said: Turn[] = []) => {
+  const undo = (t: Turn, said: Turn[] = [], after?: SpeedDeck) => {
     if (!t.before || !t.diff) return;
     // "take that out" must not reach for cards an Undo already took back
     helperMemory.current = { added: [], removed: [], wanted: helperMemory.current.wanted };
     playBlip();
-    onChange(undoDiff(deckRef.current, t.diff, t.before));
+    onChange(after ?? undoDiff(deckRef.current, t.diff, t.before));
     // later changes were made on top of this one, so they go too
     const at = chat.turns.indexOf(t);
     // Claude hears about it, and sees the deck as it is now with the next message

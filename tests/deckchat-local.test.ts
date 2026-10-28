@@ -403,5 +403,41 @@ for (const [what, check] of [
   ok(/isn't in this deck|can't find/.test(why.r.text), 'asking why a card that isn\'t there is in the deck says so');
 }
 
+// ---------- round 6: Skills kept, remarks never edit, spelling, follow-up counts ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('mak me a spelcaster dek');
+  ok(w.deck.main.length === 20 && w.deck.main.filter((n) => card(n)?.race === 'Spellcaster').length >= 6, 'misspelled "mak me a spelcaster dek" builds Spellcasters');
+  const sk = w.deck.skill;
+  await say('make it stronger');
+  await say('fix my deck');
+  ok(!!w.deck.skill && (!sk || w.deck.skill === sk), `"make it stronger" and "fix my deck" keep a working Skill (${sk} -> ${w.deck.skill})`);
+  let before = JSON.stringify(w.deck);
+  for (const q of ['can i use 3 of the same card', 'my friend made his deck stronger by adding traps', 'I should probably cut the traps', 'would it be better with 25 cards?', 'he said add kuriboh']) {
+    await say(q);
+    ok(JSON.stringify(w.deck) === before, `"${q}" changes nothing`);
+  }
+  await say('add 2 sangan and kuriboh but not witch of the black forest');
+  ok(w.deck.main.includes('Sangan') && !w.deck.main.includes('Witch of the Black Forest'), '"but not X" leaves X out of an add');
+  await say('add kuriboh');
+  await say('actually make that 3');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 3, '"make that 3" sets the copies of the card just added');
+  const hm = await say('how many do i have now');
+  ok(/3 Kuriboh/.test(hm.text), '"how many do i have now" counts the card just added');
+  await say('make it thirty cards');
+  ok(w.deck.main.length === 30, '"make it thirty cards" reads the number word');
+  const bs = await say('whats the best skill for blue eyes');
+  ok(!/Executive Privilege/.test(bs.text), 'the Skill suggested for Blue-Eyes is not one made for Obelisk');
+  before = JSON.stringify(w.deck);
+  const wk = await say('whats my weakest card');
+  ok(!/^Your weakest card here is (Kuriboh|Sangan)\b/.test(wk.text), 'the weakest card is never one the player just asked for');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
