@@ -618,8 +618,9 @@ function aroundCards(q: string, w: ChatWorld): string[] {
  * A pass over a built deck: its weakest spells/traps and monsters (never the ones the theme
  * or the player asked for) go for clearly better ones it owns, monsters on the deck's Type.
  */
-function polish(main: string[], extra: string[], w: ChatWorld, keep: Set<string>, race: string | null, drop: (n: string) => boolean = () => false): string[] {
-  let work: SpeedDeck = { ...w.deck, main: [...main], extra: [...extra], skill: null };
+function polish(main: string[], extra: string[], w: ChatWorld, keep: Set<string>, race: string | null, drop: (n: string) => boolean = () => false, skill: string | null = null): string[] {
+  // with the Skill on: it can share a Limited group with a card
+  let work: SpeedDeck = { ...w.deck, main: [...main], extra: [...extra], skill };
   for (const kind of ['spell/trap', 'monster'] as const) {
     const isK = (c?: CardInfo) => !!c && (kind === 'monster' ? c.kind === 'monster' : c.kind !== 'monster') && !isExtraCard(c.name);
     const weak = [...new Set(work.main)].filter((n) => isK(cd(n)) && !keep.has(n) && !isNeeded(n, work)).sort((a, b) => wn(a, work) - wn(b, work));
@@ -736,7 +737,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   }
   // then the weakest picks go for better ones (steadier, stronger decks run to run)
   const themeRace = wish.theme.kind === 'race' ? wish.theme.value : themes[0].kind === 'race' ? (themes[0] as { value: string }).value : null;
-  b.main = polish(ok.main, ok.extra, w, new Set(keepCards), themeRace, drop);
+  b.main = polish(ok.main, ok.extra, w, new Set(keepCards), themeRace, drop, b.skill);
   b.extra = ok.extra;
   // how much of the theme made it in: a deck is only named after it when it really is one
   const fam = wish.around ? b.main.filter((n) => ` ${flat(n)} `.includes(` ${wish.around} `) || ` ${flat(cd(n)?.desc ?? '')} `.includes(` ${wish.around} `) || keepCards.includes(n)).length : 0;
