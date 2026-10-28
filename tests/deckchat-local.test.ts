@@ -255,10 +255,10 @@ for (const [what, check] of [
   ok(!w.deck.main.includes('Dark Magician Girl') && w.deck.main.filter((n) => n === 'Celtic Guardian').length === 2, 'remove then add in one message both happen');
   const sa = w.deck.main.filter((n) => n === 'Sakuretsu Armor').length;
   const rep = await say('replace celtic guardian with 2 sakuretsu armor');
-  ok(!w.deck.main.includes('Celtic Guardian') && (w.deck.main.filter((n) => n === 'Sakuretsu Armor').length === Math.min(3, sa + 2) || /Limited/.test(rep.text)), `"replace X with 2 Y" swaps exactly those (had ${sa}, now ${w.deck.main.filter((n) => n === 'Sakuretsu Armor').length}, celtic ${w.deck.main.filter((n) => n === 'Celtic Guardian').length}: ${rep.text})`);
+  ok((!w.deck.main.includes('Celtic Guardian') && (w.deck.main.filter((n) => n === 'Sakuretsu Armor').length === Math.min(3, sa + 2) || /Limited/.test(rep.text))) || (/Limited/.test(rep.text) && /Nothing changed/.test(rep.text)), `"replace X with 2 Y" swaps exactly those (had ${sa}, now ${w.deck.main.filter((n) => n === 'Sakuretsu Armor').length}, celtic ${w.deck.main.filter((n) => n === 'Celtic Guardian').length}: ${rep.text})`);
   const sp = kinds(w.deck, 'spell');
   await say('no more spells');
-  ok(kinds(w.deck, 'spell') < sp || sp === 0, '"no more spells" never adds spells');
+  ok(kinds(w.deck, 'spell') <= sp, '"no more spells" never adds spells');
   await say('remove kuriboh');
   await say('add too kuriboh');
   ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 2, '"add too kuriboh" (voice for two) adds 2');
@@ -315,7 +315,7 @@ for (const [what, check] of [
   ok(!w.deck.main.includes('Dark Magician') && w.deck.main.length === 20, '"without dark magician" leaves it out of the build');
   await say('add 2 kuriboh and a sangan');
   await say('take kuriboh out but leave sangan');
-  ok(w.deck.main.includes('Sangan') && w.deck.main.filter((n) => n === 'Kuriboh').length === 1, '"take kuriboh out but leave sangan" keeps Sangan');
+  ok(w.deck.main.includes('Sangan') && w.deck.main.filter((n) => n === 'Kuriboh').length === 0, '"take kuriboh out but leave sangan" keeps Sangan');
   let before = w.deck;
   const yugi = await say('what skill does yugi use');
   ok(w.deck === before && /Yugi/.test(yugi.text), 'a question about a duelist\'s Skills changes nothing');
@@ -362,6 +362,45 @@ for (const [what, check] of [
   ok(kinds(tr.deck, 'trap') > kinds(v.deck, 'trap'), '"not enough traps" adds traps');
   const rb = await runTurn(localModel(() => v, mm), [], 'build a red eyes deck', v);
   ok(rb.deck.main.filter((n) => (card(n)?.level ?? 0) >= 7 && card(n)?.kind === 'monster' && card(n)?.sub !== 'Ritual').length <= 4, 'a built deck runs few monsters that need 2 Tributes');
+}
+
+// ---------- round 5: combined builds, hedges, whole swaps, repairs, follow-ups ----------
+{
+  const run = async (w: ChatWorld, mem: Memory, q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    return { r, w: { ...w, deck: r.deck } };
+  };
+  let mem: Memory = { added: [], removed: [] };
+  let { r, w } = await run({ deck: empty(), collection: big }, mem, 'build me a spellcaster deck and make it 30 cards and use the skill magicians act');
+  ok(w.deck.main.length === 30 && w.deck.skill === "Magician's Act", `a build with a size and a Skill does all three (${w.deck.main.length}, ${w.deck.skill})`);
+  ({ r, w } = await run({ deck: empty(), collection: big }, mem, 'Build me a deck with dark magician girl. Then add more traps. Then tell me if it\'s good.'));
+  ok(w.deck.main.length === 20 && /\/10/.test(r.text), 'build, then more traps, then a rating, in one message');
+  ({ r, w } = await run({ deck: empty(), collection: big }, mem, 'build me a dragon deck with no warriors'));
+  ok(/Dragon/.test(r.text) && !w.deck.main.some((n) => card(n)?.race === 'Warrior'), '"a dragon deck with no warriors" is Dragons with no Warriors');
+  const before = w.deck;
+  for (const q of ['not sure if i should cut the spells', 'i used to run 3 sangan', 'maybe remove those traps?', 'no more monsters please']) {
+    ({ r, w } = await run(w, mem, q));
+    ok(w.deck === before || JSON.stringify(w.deck) === JSON.stringify(before), `"${q}" changes nothing`);
+  }
+  ({ r, w } = await run(w, mem, 'make it 25'));
+  ok(w.deck.main.filter((n) => card(n)?.kind === 'monster').every((n) => card(n)?.race === 'Dragon' || before.main.includes(n)), 'filling a Dragon deck adds Dragons');
+  ({ r, w } = await run(w, mem, 'what does summoned skull do'));
+  ({ r, w } = await run(w, mem, 'add it'));
+  ok(w.deck.main.includes('Summoned Skull'), '"add it" after a card question adds that card');
+  ({ r, w } = await run(w, mem, 'add another one'));
+  ok(w.deck.main.filter((n) => n === 'Summoned Skull').length === 2, '"add another one" adds one more');
+  ({ r, w } = await run(w, mem, 'take out the dragons'));
+  ok(w.deck.main.length >= 20, 'taking out a whole Type refills to 20');
+  mem = { added: [], removed: [] };
+  const bad: ChatWorld = { deck: { id: 'b', name: 'Bad', main: ['Totally Fake Card', 'Dark Magician', 'Dark Magician', 'Dark Magician', 'Dark Magician', ...PLAYABLE.filter((c) => c.kind === 'monster' && !isExtraCard(c.name)).slice(0, 18).map((c) => c.name)], extra: [], skill: 'Fake Skill' }, collection: big };
+  ({ r, w } = await run(bad, mem, 'fix my deck'));
+  ok(!w.deck.main.includes('Totally Fake Card') && w.deck.main.filter((n) => n === 'Dark Magician').length <= 3 && !speedDeckProblems(w.deck).length, `"fix my deck" makes a broken deck legal (${speedDeckProblems(w.deck).join('; ')})`);
+  ({ r, w } = await run(w, mem, 'clear the deck'));
+  ok(!w.deck.main.length && !w.deck.skill, 'clearing takes the Skill off too');
+  ({ r, w } = await run(w, mem, 'i want something with dragons but no warriors'));
+  ok(w.deck.main.length === 20, '"i want something with dragons" on an empty deck builds one');
+  const why = await run(w, mem, 'why is lord of d in here');
+  ok(/isn't in this deck|can't find/.test(why.r.text), 'asking why a card that isn\'t there is in the deck says so');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');

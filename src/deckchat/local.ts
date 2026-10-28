@@ -168,6 +168,9 @@ export function findCards(text: string, d?: SpeedDeck, which: 'cards' | 'skills'
       else if (w in NUM) count = NUM[w];
     }
     if (/\ball\b/.test(t.slice(from, h.at)) || /^ all\b/.test(t.slice(h.at + h.len, h.at + h.len + 5))) count = COPIES;
+    // "black metal dragon x2", "kuriboh times 3"
+    const after = t.slice(h.at + h.len, h.at + h.len + 10).match(/^ ?(?:x ?|times )([1-9])\b/);
+    if (after) count = Number(after[1]);
     from = h.at + h.len;
     const same = out.find((o) => o.name === h.name);
     if (same) same.count = (same.count ?? 1) + (count ?? 1);
@@ -267,8 +270,11 @@ function fixWords(t: string): string {
 /** Voice and texting clean-up: "hey can u at 3 kuriboh pls" -> "add 3 kuriboh". */
 export function clean(text: string): string {
   let t = flat(text)
-    .replace(/\b(\w+) (s|t|ll|re|ve|d|m)\b/g, '$1$2') // what s -> whats, don t -> dont
-    .replace(/\b(pls|plz|please|thx|thanks|thank you|lol|bro|dude|man)\b/g, ' ')
+    .replace(/\b(\w+) (s|t)\b/g, '$1$2') // what s -> whats, don t -> dont
+    .replace(/\b(i|you|u|we|they|he|she|it|that|there|who|what) (ll|re|ve|d|m)\b/g, '$1$2') // i ll -> ill (not "lord of d")
+    .replace(/\b(pls|plz|please|thx|thanks|thank you|lol)\b/g, ' ')
+    .replace(/^(bro|dude|man)\b|\b(bro|dude|man)$/g, ' ')
+    .replace(/\blotsa\b/g, 'lots of')
     .replace(/\bat (?=([1-3]|one|two|three|a|an|another|some)\b)/g, 'add ')
     .replace(/\b(ad|adde)\b/g, 'add')
     // "try adding kuriboh" is a request; "stop adding", "i was adding" and "i added" are not
@@ -282,7 +288,7 @@ export function clean(text: string): string {
     .replace(/\btakeout\b/g, 'take out')
     .replace(/\s+/g, ' ')
     .trim();
-  for (let i = 0; i < 4; i++) t = t.replace(/^(hey|hi|hello|yo|sup|ok|okay|so|um|uh|hmm|well|alright|right|no wait|wait|hold on|actually|oops|sorry|can you|could you|can u|could u|would you|will you|i want you to|id like you to|i need you to|i want to|i wanna|id like to|lets|let me)\b\s*/, '');
+  for (let i = 0; i < 4; i++) t = t.replace(/^(hey|hi|hello|yo|sup|ok|okay|so|um|uh|hmm|well|alright|right|no wait|wait|hold on|actually|oops|sorry|now|and now|ok now|can you|could you|can u|could u|would you|will you|i want you to|id like you to|i need you to|i want to|i wanna|id like to|lets|let me)\b\s*/, '');
   return t;
 }
 
@@ -316,7 +322,7 @@ function needed(c: CardInfo, d: SpeedDeck): boolean {
   if (c.name === 'Polymerization' && d.extra.some((n) => cd(n)?.sub === 'Fusion')) return true;
   if (all.some((n) => (cd(n)?.desc ?? '').includes(`"${c.name}"`) || (cd(n)?.desc ?? '').includes(`“${c.name}”`))) return true;
   // it names a card the deck runs: support for the deck's plan
-  return quoted(c).some((q) => all.includes(q));
+  return quoted(c).some((q) => all.some((n) => n === q || n.startsWith(`${q} `)));
 }
 /** cards in the deck that need this one: the Ritual Monster for its Spell, Fusions for Polymerization, cards naming it */
 function dependents(n: string, d: SpeedDeck): string[] {
@@ -468,7 +474,7 @@ function explainPlan(w: ChatWorld): Plan {
     low.length ? `It opens with ${listOf(low.slice(0, 3).map((c) => c.name))} attacking with no Tribute.` : '',
     big.length ? `Then it Tributes for ${listOf(big.slice(0, 2).map((c) => c.name))}.` : '',
     removal.length ? `${listOf(removal.slice(0, 3).map((c) => c.name))} clear the way.` : '',
-    traps.length ? `${traps.length} traps (${listOf(traps.slice(0, 2).map((c) => c.name))}${traps.length > 2 ? '…' : ''}) guard your field on their turn.` : '',
+    traps.length ? `${traps.length} trap${traps.length === 1 ? '' : 's'} (${listOf(traps.slice(0, 2).map((c) => c.name))}${traps.length > 2 ? '…' : ''}) guard your field on their turn.` : '',
     d.extra.length ? `The Extra Deck has ${listOf([...new Set(d.extra)])}.` : '',
     d.skill ? `Skill: ${bare(d.skill)}. ${short(cd(d.skill)?.desc ?? '', 160)}` : 'There is no Skill yet; say "pick a Skill".',
   ];
@@ -489,9 +495,17 @@ interface Wish {
   without: Kind[];
 }
 
-function readWish(said: string, w: ChatWorld): Wish & { arounds: string[]; missing: string | null } {
-  const t = fixWords(said);
-  const size = Number(t.match(/\b(2\d|30)\b/)?.[1] ?? 0) || 20;
+function readWish(said: string, w: ChatWorld): Wish & { arounds: string[]; missing: string | null; noRaces: string[]; noAttrs: string[] } {
+  let t = fixWords(said);
+  // "a dragon deck with no warriors": Types and Attributes they don't want are not the theme
+  const NOT = '(?:no|without|not|but no|except|minus|excluding)\\s+(?:any\\s+)?';
+  const noRaces = RACES.filter((r) => new RegExp(`\\b${NOT}${flat(r)}(s|es)?\\b`).test(t.replace(/ies\b/g, 'y')));
+  const noAttrs = ATTRS.filter((a) => new RegExp(`\\b${NOT}${a.toLowerCase()}\\b`).test(t));
+  for (const r of noRaces) t = t.replace(/ies\b/g, 'y').replace(new RegExp(`\\b${NOT}${flat(r)}(s|es)?\\b`), ' ');
+  for (const a of noAttrs) t = t.replace(new RegExp(`\\b${NOT}${a.toLowerCase()}\\b`), ' ');
+  // "keep it under 25" is 24 at most; the smallest (strongest) legal size fits it
+  const under = t.match(/\b(?:under|less than|below|fewer than)\s+(\d{2})\b/);
+  const size = under ? Math.max(MAIN_MIN, Math.min(Number(under[1]) - 1, 20)) : Number(t.match(/\b(2\d|30)\b/)?.[1] ?? 0) || 20;
   const style: RandomStyle = /\b(aggro|aggressive|attack|beat ?down|offen[cs]e|offensive|rush|damage|fast)\b/.test(t) ? 'beatdown' : /\b(control|defen[cs]e|defensive|trap heavy|lots of traps|stall|slow)\b/.test(t) ? 'control' : 'balanced';
   let theme: RandomTheme = /\b(surprise|random|anything|whatever)\b/.test(t) ? { kind: 'surprise' } : { kind: 'any' };
   const attr = ATTRS.find((a) => new RegExp(`\\b${a.toLowerCase()}\\b`).test(t) && !new RegExp(`\\b${a.toLowerCase()} (magician|hole|world|world|ruler|armed|blade|knight|warrior)`).test(t));
@@ -530,7 +544,7 @@ function readWish(said: string, w: ChatWorld): Wish & { arounds: string[]; missi
   const aroundCard = families[0]?.card ?? null;
   if (race) theme = { kind: 'race', value: race };
   else if (attr && !(around && around.includes(attr.toLowerCase()))) theme = { kind: 'attribute', value: attr };
-  return { size: Math.min(MAIN_MAX, Math.max(MAIN_MIN, size)), style, theme, around, aroundCard, arounds: families.map((f) => f.around), missing: families.length ? null : missing, best: /\b(best|strongest|strong|good|top|meta|op|powerful|win)\b/.test(t), without };
+  return { size: Math.min(MAIN_MAX, Math.max(MAIN_MIN, size)), style, theme, around, aroundCard, arounds: families.map((f) => f.around), missing: families.length ? null : missing, best: /\b(best|strongest|strong|good|top|meta|op|powerful|win)\b/.test(t), without, noRaces, noAttrs };
 }
 
 /**
@@ -624,6 +638,10 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   const aroundWord = t.match(/\b(?:around|based on|with|using|of)\s+(?:my\s+|the\s+)?([a-z0-9 ]+?)(?:\s+deck)?$/)?.[1];
   if (wish.missing) return { calls: [], answer: () => `You don't own any ${deckTitle(wish.missing!)} cards yet, so I left your deck as it is. They come from packs and the Card Shop. Say "what can I build?" to see what your cards can make now.` };
   const outsideAsk = !wish.around && (findOutside(t) || (aroundWord && aroundWord.length >= 4 ? (others ?? []).find((x) => ` ${x.flat} `.includes(` ${aroundWord} `))?.name : null));
+  // a family that only exists outside Speed Duel ("an exodia deck")
+  findOutside('');
+  const gone = !wish.around && !outsideAsk ? t.split(' ').find((x) => x.length >= 4 && !STOP.has(x) && !INTENT.has(x) && !/^(deck|decks|build|make|give)$/.test(x) && (others ?? []).filter((o) => ` ${o.flat} `.includes(` ${x} `)).length >= 2 && !nameIndex().some((c) => ` ${c.flat} `.includes(` ${x} `) || ` ${flat(cd(c.name)?.desc ?? "")} `.includes(` ${x} `))) : null;
+  if (gone) return { calls: [], answer: () => `${deckTitle(gone)} cards aren't in Speed Duel (Konami never printed them in a Speed Duel product), so I left your deck as it is. Say "what can I build?" for themes your cards can make.` };
   if (outsideAsk) return { calls: [], answer: () => `${outsideLine(outsideAsk)} Pick a Speed Duel card or theme to build around, like "build around Dark Magician" or "build me a Dragon deck".` };
   const keepCards = [
     ...cl.keep,
@@ -634,7 +652,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
     .slice(0, 18);
   // Ritual cards only come in as part of the theme asked for (a stray Ritual Monster is a dead card)
   const ritualsOk = /\britual/.test(t);
-  const drop = (n: string) => avoid.has(n) || (wish.without.includes(cd(n)?.kind as Kind) && cd(n)?.sub !== 'Skill') || (!ritualsOk && cd(n)?.sub === 'Ritual' && !keepCards.includes(n));
+  const drop = (n: string) => avoid.has(n) || (cd(n)?.kind === 'monster' && (wish.noRaces.includes(cd(n)!.race ?? '') || wish.noAttrs.includes(cd(n)!.attribute ?? ''))) || (wish.without.includes(cd(n)?.kind as Kind) && cd(n)?.sub !== 'Skill') || (!ritualsOk && cd(n)?.sub === 'Ritual' && !keepCards.includes(n));
   const collection = poolFor(w, drop) ?? w.collection;
   // a deck built around one card leans on that card's Type ("Dark Magician" -> Spellcasters)
   const keptMons = keepCards.map((n) => cd(n)).filter((c): c is CardInfo => c?.kind === 'monster');
@@ -653,9 +671,19 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   }
   if (!best) return { calls: [], answer: () => `I couldn't build that one: ${(error || 'not enough cards').replace(/\s*Open packs.*$/, '').replace(/\.$/, '')}${wish.without.length ? ` (without ${wish.without.map((k) => `${k}s`).join(' or ')})` : ''}. Open packs in the Card Shop for more cards, or try a different theme.` };
   const b = best;
-  // a Skill made for the theme beats a general one
+  // a Skill made for the theme beats a general one; a Skill for cards the deck doesn't run is no Skill at all
   const themeSkill = wish.around ? themedSkill([wish.around], w) : null;
   if (themeSkill) b.skill = themeSkill;
+  else if (b.skill && !skillFits(b.skill, b)) b.skill = skillPick({ ...w, deck: { ...w.deck, main: b.main, extra: b.extra, skill: null } }, null);
+  // every card checked the way the editor adds them (a Skill can share a Limited group): what's refused is made up from the pool
+  const ok: SpeedDeck = { ...w.deck, main: [], extra: [], skill: b.skill };
+  for (const n of [...b.main, ...b.extra]) if (!whyCantAdd(ok, n, w.collection)) (isExtraCard(n) ? ok.extra : ok.main).push(n);
+  if (ok.main.length < wish.size) {
+    const f = fillPlan({ ...w, deck: ok }, wish.size, freshMemory(), '', null, drop);
+    for (const x of ((f.calls[0]?.input as { add?: { name: string; count: number }[] } | undefined)?.add ?? [])) for (let i = 0; i < x.count; i++) ok.main.push(x.name);
+  }
+  b.main = ok.main;
+  b.extra = ok.extra;
   // how much of the theme made it in: a deck is only named after it when it really is one
   const fam = wish.around ? b.main.filter((n) => ` ${flat(n)} `.includes(` ${wish.around} `) || ` ${flat(cd(n)?.desc ?? '')} `.includes(` ${wish.around} `) || keepCards.includes(n)).length : 0;
   const themed = wish.theme.kind === 'race' ? b.main.filter((n) => cd(n)?.race === (wish.theme as { value: string }).value).length : wish.theme.kind === 'attribute' ? b.main.filter((n) => cd(n)?.attribute === (wish.theme as { value: string }).value).length : 0;
@@ -694,6 +722,7 @@ function strongerPlan(w: ChatWorld): Plan {
   if (d.main.length < MAIN_MIN) return fillPlan(w, MAIN_MIN, freshMemory(), `It needs ${MAIN_MIN} Main Deck cards first, so I added`);
   const inDeckCards = [...new Set(d.main)].map((n) => cd(n)).filter((c): c is CardInfo => !!c && !isExtraCard(c.name));
   const weak = inDeckCards.filter((c) => c.kind === 'monster').sort((a, b) => worth(a, d) - worth(b, d));
+  const race = deckRace(d);
   const swaps: { out: string; in: string }[] = [];
   let work: SpeedDeck = { ...d, main: [...d.main] };
   for (const c of weak) {
@@ -701,7 +730,7 @@ function strongerPlan(w: ChatWorld): Plan {
     const without = { ...work, main: [...work.main] };
     without.main.splice(without.main.indexOf(c.name), 1);
     if (needed(c, without) || protect.has(c.name)) continue;
-    const better = candidates(w, without, (x) => x.kind === 'monster' && x.sub !== 'Ritual' && !isExtraCard(x.name) && worth(x, without) > worth(c, without) + 250 && !swaps.some((s) => s.in === x.name))[0];
+    const better = candidates(w, without, (x) => x.kind === 'monster' && x.sub !== 'Ritual' && (!race || c.race !== race || x.race === race) && !isExtraCard(x.name) && worth(x, without) > worth(c, without) + 250 && !swaps.some((s) => s.in === x.name))[0];
     if (!better) continue;
     swaps.push({ out: c.name, in: better.name });
     work = { ...without, main: [...without.main, better.name] };
@@ -743,11 +772,7 @@ function skillPick(w: ChatWorld, not: string | null): string | null {
   const fam = deckFamily(d);
   const themed = fam ? themedSkill([fam], w, not) : null;
   if (themed) return themed;
-  // a Skill that names cards ("White Veil") is only worth it when the deck runs them
-  const fits = (s: string) => {
-    const q = quoted(cd(s) ?? ({ desc: '', name: s } as CardInfo)).filter((x) => nameIndex().some((y) => !y.skill && y.name.includes(x)));
-    return !q.length || q.some((x) => [...d.main, ...d.extra].some((n) => n.includes(x)));
-  };
+  const fits = (s: string) => skillFits(s, d);
   const tried = new Set<string>();
   for (let i = 0; i < 6; i++) {
     const collection = poolFor(w, (n) => n === not || tried.has(n)) ?? w.collection;
@@ -771,17 +796,36 @@ function diffList(from: string[], to: string[]): string[] {
   return out;
 }
 
+/** A Skill that names cards ("White Veil") only fits a deck that runs them. */
+function skillFits(s: string, d: { main: string[]; extra: string[] }): boolean {
+  const q = quoted(cd(s) ?? ({ desc: '', name: s } as CardInfo)).filter((x) => nameIndex().some((y) => !y.skill && y.name.includes(x)));
+  return !q.length || q.some((x) => [...d.main, ...d.extra].some((n) => n.includes(x)));
+}
+
+/** The deck's main monster Type, when most of its monsters share one (fills and swaps stay on it). */
+function deckRace(d: SpeedDeck): string | null {
+  const main = d.main.map((n) => cd(n)).filter((c): c is CardInfo => c?.kind === 'monster');
+  const mons = main.length >= 4 ? main : [...main, ...d.extra.map((n) => cd(n)).filter((c): c is CardInfo => c?.kind === 'monster')];
+  if (!mons.length) return null;
+  const by = new Map<string, number>();
+  for (const c of mons) if (c.race) by.set(c.race, (by.get(c.race) ?? 0) + 1);
+  const top = [...by].sort((a, b) => b[1] - a[1])[0];
+  return top && top[1] * 2 >= mons.length && (top[1] >= 4 || mons.length < 4) ? top[0] : null;
+}
+
 /** Tops the Main Deck up to `size` with cards that fit, never the ones just cut. */
 function fillPlan(w: ChatWorld, size: number, mem: Memory, why = '', notKind: Kind | null = null, drop?: (n: string) => boolean): Plan {
   const d = w.deck;
   const gone = new Set([...mem.removed, ...(mem.cut ?? [])]);
-  const pool = poolFor(w, (n) => (gone.has(n) && !d.main.includes(n)) || (!!notKind && cd(n)?.kind === notKind) || (!!drop && drop(n) && !d.main.includes(n)) || (/\btoken\b/i.test(cd(n)?.desc ?? '') && cd(n)?.kind !== 'monster'));
+  const race = deckRace(d);
+  const pool = poolFor(w, (n) => (gone.has(n) && !d.main.includes(n)) || (!!notKind && cd(n)?.kind === notKind) || (!!drop && drop(n) && !d.main.includes(n)) || (cd(n)?.sub === 'Ritual' && !d.main.includes(n)) || (/\btoken\b/i.test(cd(n)?.desc ?? '') && cd(n)?.kind !== 'monster'));
   // a few tries, keeping the one that fits the deck best
   let added: string[] = [];
   let bestScore = -Infinity;
   let error = '';
-  for (let i = 0; i < 4; i++) {
-    const r = randomSpeedDeck(pool, { size, keep: { main: d.main, extra: d.extra, skill: d.skill } });
+  for (let i = 0; i < 5 && !(i === 4 && added.length); i++) {
+    // on the deck's Type first; one plain try if that can't fill it
+    const r = randomSpeedDeck(pool, { size, ...(race && i < 4 ? { theme: { kind: 'race', value: race } as RandomTheme } : {}), keep: { main: d.main, extra: d.extra, skill: d.skill } });
     if ('error' in r) {
       error = r.error;
       continue;
@@ -804,6 +848,35 @@ function refill(cut: Plan, w: ChatWorld, notKind: Kind | null, drop?: (n: string
   const fill = fillPlan({ ...w, deck: r.deck }, size, { added: [], removed: edit.remove.map((x) => x.name) }, `To keep it at ${size} cards I added`, notKind, drop);
   if (!fill.calls.length) return { calls: cut.calls, answer: (rs) => `${cut.answer(rs)} The deck needs ${MAIN_MIN} cards to duel and you have nothing else that fits; say "undo" to put them back.` };
   return { calls: [...cut.calls, ...fill.calls], answer: (rs) => `${cut.answer(rs.slice(0, 1))} ${fill.answer(rs.slice(1))}` };
+}
+
+/** Takes out what can't be in the deck (left the game, not Speed Duel, too many copies, Limited, not owned, over 30) and fills back to 20. Null when it's already legal. */
+function repairPlan(w: ChatWorld): Plan | null {
+  const d = w.deck;
+  const good: SpeedDeck = { ...d, main: [], extra: [], skill: null };
+  const out: string[] = [];
+  // an Extra Deck monster sitting in the Main Deck moves over
+  const moved: string[] = [];
+  for (const [n, inMain] of [...d.main.map((n) => [n, true] as const), ...d.extra.map((n) => [n, false] as const)]) {
+    if (cd(n) && !whyCantAdd(good, n, w.collection)) {
+      (isExtraCard(n) ? good.extra : good.main).push(n);
+      if (inMain && isExtraCard(n)) moved.push(n);
+    } else out.push(n);
+  }
+  const trimmed = good.main.length > MAIN_MAX ? [...good.main].sort((a, b) => wn(a, good) - wn(b, good)).slice(0, good.main.length - MAIN_MAX) : [];
+  for (const n of trimmed) good.main.splice(good.main.indexOf(n), 1);
+  const badSkill = !!d.skill && (!cd(d.skill) || !!whyCantAdd({ ...good, skill: null }, d.skill, w.collection));
+  if (!out.length && !trimmed.length && !badSkill && !moved.length) return null;
+  const fill = good.main.length < MAIN_MIN ? fillPlan({ ...w, deck: good }, MAIN_MIN, { added: [], removed: out }) : null;
+  const add = (fill?.calls[0]?.input as { add?: { name: string; count: number }[] } | undefined)?.add ?? [];
+  const input: Record<string, unknown> = { remove: counts([...out, ...trimmed, ...moved]), ...(add.length || moved.length ? { add: [...add, ...counts(moved)] } : {}), ...(badSkill ? { skill: null } : {}) };
+  return {
+    calls: [{ name: 'edit_deck', input }],
+    answer: (rs) => {
+      const left = Number(rs[0]?.match(/\bMain (\d+)/)?.[1] ?? 0);
+      return `First I made it legal: took out ${out.length ? `${listOf(out)} (not allowed here: gone from the game, not a Speed Duel card, past ${COPIES} copies, Limited or not owned)` : ''}${out.length && trimmed.length ? ', and ' : ''}${trimmed.length ? `${trimmed.length} of the weakest cards to get down to ${MAIN_MAX}` : ''}${badSkill ? `${out.length || trimmed.length ? ', and ' : ''}the Skill ${bare(d.skill!)}, which can't be used` : ''}${moved.length ? `${out.length || trimmed.length || badSkill ? ', and ' : ''}moved ${listOf(moved)} to the Extra Deck` : ''}.${add.length ? ` To keep it at ${MAIN_MIN} I added ${listOf(add.flatMap((x) => Array(x.count).fill(x.name)))}.` : ''} It has ${left || good.main.length + add.reduce((a, x) => a + x.count, 0)} cards now. Ask again for "make it stronger" to upgrade it.`;
+    },
+  };
 }
 
 /** Cuts the weakest cards down to `size`. */
@@ -849,6 +922,9 @@ function kindShift(w: ChatWorld, kind: Kind, by: number, why?: string, only: (c:
     ins.push(c.name);
   }
   if (!ins.length) return { calls: [], answer: () => `You have no more ${kind}s that can go in${w.collection ? '; get more from packs or the Card Shop' : ''}.` };
+  // keeping the size: only as many in as could come out
+  if (!grow && d.main.length >= MAIN_MIN && ins.length > outs.length) ins.splice(outs.length);
+  if (!ins.length) return { calls: [], answer: () => `Every other card here is one you asked for or one your combos need, so there's no room for more ${kind}s at this size. Say "make it 25 cards" first, or name a card to take out.` };
   const outsUsed = outs.slice(0, ins.length);
   return {
     calls: [{ name: 'edit_deck', input: { remove: counts(outsUsed), add: counts(ins) } }],
@@ -983,6 +1059,25 @@ const CANT: [RegExp, (w: ChatWorld, t: string) => string][] = [
   }],
 ];
 
+/** The Fusions this deck has the materials for (each material named in the deck), and "add" puts some in with Polymerization. */
+function fusionPlan(w: ChatWorld, add: boolean, n: number | null): Plan {
+  const d = w.deck;
+  const fus = speedCards()
+    .filter((c) => c.sub === 'Fusion' && !unplayableReason(c.name))
+    .filter((c) => {
+      const mats = quoted(c).filter((q) => nameIndex().some((x) => x.name === q));
+      return mats.length > 0 && mats.every((q) => d.main.includes(q));
+    })
+    .sort((a, b) => (b.atk ?? 0) - (a.atk ?? 0));
+  if (!fus.length) return { calls: [], answer: () => 'This deck has no Fusion it can make: a Fusion needs its listed materials in the deck. Build around a Fusion monster ("build around Flame Swordsman") to get one with its materials.' };
+  if (!add) return { calls: [], answer: () => `With these cards you can Fusion Summon ${listOf(fus.slice(0, 6).map((c) => c.name))}${d.main.includes('Polymerization') ? '' : ', once you add Polymerization'}. Say "add the fusions" to put them in.` };
+  const room = Math.min(n ?? EXTRA_MAX, EXTRA_MAX - d.extra.length);
+  const ins = fus.filter((c) => !d.extra.includes(c.name)).slice(0, room).map((c) => c.name);
+  if (!ins.length) return { calls: [], answer: () => (room <= 0 ? `The Extra Deck is full (${EXTRA_MAX}).` : 'The Fusions this deck can make are already in.') };
+  const poly = d.main.includes('Polymerization') ? [] : [{ name: 'Polymerization', count: 1 }];
+  return { calls: [{ name: 'edit_deck', input: { add: [...counts(ins), ...poly] } }], answer: (rs) => `Added ${listOf(ins)} to the Extra Deck${poly.length ? ' and Polymerization to summon them' : ''}.${refusedOf(rs[0] ?? '') ? ` ${refusedOf(rs[0])}.` : ''}` };
+}
+
 const KIND_ADVICE: Record<Kind, string> = {
   trap: "Traps are your defence on the opponent's turn; 3 to 6 is usual in a 20-card deck.",
   spell: 'Spells are your removal and plays; 4 to 7 is usual in a 20-card deck.',
@@ -993,7 +1088,7 @@ const HELP = 'I can build and change this deck from your cards. Try: "build me a
 
 const EXPLICIT_BUILD = /\b(build|create|construct|new deck|another deck|different deck|fresh deck|start a deck)\b|\b(make|give|get)( me)?( a| an| another| some)? (\w+ ){0,4}deck\b/;
 /** how a new ask in the same message starts */
-const PART_START = /^(add|put|remove|take|cut|drop|swap|replace|get rid|include|throw|lose|delete|call it|name it|rename|use|give it|make|pick|choose|change|switch|fill|explain|rate|show|is|are|what|whats|how|why|which|does|do|tell|undo)\b/;
+const PART_START = /^(build|create|construct|give|start|add|put|remove|take|cut|drop|swap|replace|get rid|include|throw|lose|delete|call it|name it|rename|use|give it|make|pick|choose|change|switch|fill|explain|rate|show|is|are|what|whats|how|why|which|does|do|tell|undo)\b/;
 const THIS_DECK = /\b(make|turn) (it|this|this deck|my deck|the deck)\b/;
 
 /** cards the player asked for by name this chat: cuts, swaps and trims leave them alone */
@@ -1003,12 +1098,27 @@ let protect = new Set<string>();
 export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(), part = false, whole = text): Plan {
   const raw = text.trim();
   const t = clean(raw);
-  // an old save can hold cards or a Skill that left the game: plan as if they weren't there
+  // an old save can hold cards or a Skill that left the game: plan as if they weren't there (a fix takes them out)
+  const asSaved = w;
   if (w.deck.main.some((n) => !cd(n)) || w.deck.extra.some((n) => !cd(n)) || (w.deck.skill && !cd(w.deck.skill))) w = { ...w, deck: { ...w.deck, main: w.deck.main.filter((n) => cd(n)), extra: w.deck.extra.filter((n) => cd(n)), skill: w.deck.skill && cd(w.deck.skill) ? w.deck.skill : null } };
   // "don't add kuriboh", "I'll add it later, don't change anything yet": nothing changes
   if (/^(i )?(dont|do not|never|not|stop|quit|no need to|no dont)\s+(add|adding|put|putting|remove|removing|take|taking|change|changing|touch|cut|cutting|swap|build|do)\b|\b(not yet|dont change anything|dont touch (it|the deck|my deck))\b|^(leave it|leave it alone|leave it as it is|keep it|keep it as it is|wait|hold on|nevermind|never mind|nvm|forget it)$/.test(t)) return { calls: [], answer: () => "Okay, I'll leave the deck as it is. Tell me when you want a change." };
+  // "not sure if i should cut the spells", "maybe remove those traps?", "i used to run 3 sangan": thinking aloud, not asking
+  const hedge = t.match(/^(?:im |i am )?(?:not sure (?:if|whether)|maybe|perhaps|i used to|used to|i was thinking(?: of| about)?|thinking (?:of|about)|i wonder if|wondering if|i might|might|what if i|i could|should i maybe)\s+(.+)$/);
+  const hedged = hedge?.[1].replace(/^(i should|we should|i|we|to|should)\s+/, '').replace(/^(should|could)\s+/, '');
+  if (hedged && /^(add|put|remove|take|cut|swap|replace|run|use|play|make|change|drop|include|get rid|go)\b/.test(hedged)) {
+    const ask = hedged.replace(/^(run|play) /, 'add ').replace(/^go /, 'make it ');
+    return { calls: [], answer: () => `Say "${ask}" if you want that, and I'll do it with an Undo.${/\bused to\b/.test(t) ? '' : ' Or ask "is this deck good?" and I\'ll tell you what I\'d change.'}` };
+  }
+  const noMore = t.match(new RegExp(`^(?:no more|stop adding|dont add any more|no extra) ${KIND_RE}$`));
+  if (noMore) return { calls: [], answer: () => `Okay, I won't add more ${noMore[1].replace(/s?$/, 's')}. Say "fewer ${noMore[1].replace(/s?$/, 's')}" if you want some cut.` };
   const d = w.deck;
   protect = new Set(mem.wanted ?? []);
+  // "fix my deck", "make it legal", "remove the fake cards", "make it stronger" on a deck that can't duel: make it legal first
+  if (/\b(fix|repair|legal|illegal|fake|bad cards|broken|stronger|better|improve|clean (it )?up|sort (it )?out|cant duel|wont duel)\b/.test(t) && !/^(is|are|what|why|how|does|can)\b/.test(t)) {
+    const rp = repairPlan(asSaved);
+    if (rp) return rp;
+  }
   // a card asked about becomes "it" for the next part or message ("what does kuriboh do and add 2 of it")
   const cardPlan = (n: string, ww: ChatWorld, judge = false) => ((mem.focus = n), cardInfo(n, ww, judge));
   if (/^\W*(thanks|thank you|thx|ty|cheers|nice|great|awesome|perfect|cool|ok|okay|good|love it|sweet)\b[\s\w]{0,12}\W*$/i.test(raw) && !/\b(add|remove|build|make|deck)\b/i.test(raw)) return { calls: [], answer: () => pick(["You're welcome! Ask me for any change.", 'Glad it helps. Want any more changes?', 'Any time. Say "is this deck good?" for a check-up.']) };
@@ -1023,6 +1133,12 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
     return { calls: [], answer: () => `${typeR} is a monster Type. This deck runs ${here}, and you ${w.collection ? `own ${own} different` : 'can use all'} ${plural(typeR)}. Say "build me a ${typeR} deck" or "more ${plural(typeR)}".` };
   }
 
+  // "what does it do", "tell me about that one": the card just talked about or put in
+  if (/^(what does|whats|what is|tell me about|explain|how does) (it|that|that card|this card|that one|this one|she|he|her|him|they|them)( do| does| work)?$/.test(t)) {
+    const it = mem.focus ?? (new Set(mem.added).size === 1 ? mem.added[0] : null);
+    if (it && cd(it)) return cardPlan(it, w);
+    if (mem.added.length) return { calls: [], answer: () => `I just put in ${listOf([...new Set(mem.added)])}. Ask about one by name, like "what does ${mem.added[0]} do?"` };
+  }
   // what the chat can't do, with where to do it
   const cant = CANT.find(([re]) => re.test(t));
   if (cant) return { calls: [], answer: () => cant[1](w, t) };
@@ -1030,14 +1146,16 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   // several edits in one message ("put in 3 dark magician girl and remove the elegant egotist"): each part in turn
   if (!part) {
     // sentences and commas first (cleaning drops the punctuation), joined back when the next bit isn't a new ask ("add kuriboh, 2 sangan")
-    const chunks = raw.split(/[,.;!?]+(?=\s|$)/).map(clean).filter(Boolean);
+    const chunks = raw.split(/[,.;!?]+(?=\s|$)/).map((c) => clean(c).replace(/^(and then|then|and|also|now|next|after that|plus)\s+(?=\w)/, '')).filter(Boolean);
     const merged: string[] = [];
     for (const c of chunks) if (merged.length && !PART_START.test(c)) merged[merged.length - 1] += ` ${c}`;
       else merged.push(c);
     const parts = merged.flatMap((c) => c.split(/\s*(?:\band then\b|\bthen\b|\band\b|\balso\b|\bplus\b)\s*(?=(?:add|put|remove|take|cut|drop|swap|replace|get rid|include|throw|lose|delete|call it|name it|rename|use|give it|make it|pick|choose|fill)\b)/)).filter((x) => x.trim());
     // only when each part is its own ask ("is this deck good? add 2 sangan"), not "my deck has too many traps, is it good?"
     const own = merged.length === 1 || merged.every((c) => PART_START.test(c));
-    if (parts.length > 1 && own && !EXPLICIT_BUILD.test(parts[0])) return multiPlan(parts, w, mem, raw);
+    // a build first, then the rest on top of it ("build a spellcaster deck and make it 30 cards and use magician's act"); its name stays with the build
+    const ps = EXPLICIT_BUILD.test(parts[0]) ? [[parts[0], ...parts.slice(1).filter((x) => /^(call it|name it|rename)\b/.test(x))].join(' and '), ...parts.slice(1).filter((x) => !/^(call it|name it|rename)\b/.test(x))] : parts;
+    if (ps.length > 1 && own) return multiPlan(ps, w, mem, raw);
   }
 
   // rename
@@ -1050,6 +1168,11 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   // a new deck comes first: "build a deck with no traps" or "with a good skill" are options of the build
   if (wantsNew && !/\b(what|which) (can|could|should) i (build|make)\b/.test(t)) return buildPlan(t, w);
   // restyle the deck that's there ("make it a zombie deck", "make the deck dragons instead", "make it zombies but keep dark magician"): a rebuild, with Undo
+  // "keep red eyes but swap everything else for machines" is the same rebuild
+  if (d.main.length && /\b(swap|change|replace|turn|switch)\s+(everything|the rest|all)( else)?( of it)?\s+(for|to|into|with)\b/.test(t)) {
+    const wish = readWish(clauses(t, d).text, w);
+    if (wish.theme.kind === 'race' || wish.theme.kind === 'attribute') return buildPlan(t, w);
+  }
   if (d.main.length && /^(make|turn|change|convert|switch|rebuild|redo|transform)\b/.test(t) && /\b(it|this|deck|instead|into|to)\b/.test(t)) {
     const rest = clauses(t, d).text;
     if (!/\b(add|remove|take out|swap|replace|more|fewer|less|stronger|better|weaker|bigger|smaller|aggressive|defensive|skills?|name|cards?|monsters?|spells?|traps?)\b/.test(rest)) {
@@ -1062,11 +1185,13 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   const skillNamed = /\b(use|equip|switch to|change to|put on|run)\b/.test(t) ? nameIndex().find((x) => x.skill && ` ${t} `.includes(` ${x.flat} `)) : undefined;
   if (skillNamed && skillNamed.name === d.skill) return { calls: [], answer: () => `This deck already uses ${bare(d.skill!)}.` };
   if (skillNamed) return { calls: [{ name: 'edit_deck', input: { skill: skillNamed.name } }], answer: (rs) => (refusedOf(rs[0] ?? '') ? `Couldn't: ${refusedOf(rs[0])}.` : `Now using ${bare(skillNamed.name)}. ${short(cd(skillNamed.name)!.desc)}`) };
+  if (/\bhow many skills\b|\bmore than one skill\b|\b(two|2) skills\b/.test(t)) return { calls: [], answer: () => `Each deck brings one Skill to a duel.${d.skill ? ` This one uses ${bare(d.skill)}.` : ''} Say "pick a different Skill" to change it.` };
   if (/\bskills?\b/.test(t)) {
     const sk = findCard(t, 'skills', d);
     if (/^(what|whats|which|is there|are there)\b/.test(t) && /\b(best|good|better|should|for)\b/.test(t) && !sk) {
       const words = t.replace(/.*\bfor\b/, '').split(' ').filter((x) => x.length >= 3 && !STOP.has(x) && !INTENT.has(x)).map((x) => x.replace(/s$/, ''));
       const rec = (words.length ? themedSkill(words, w) : null) ?? skillPick(w, null);
+      if (rec) mem.focus = rec;
       return { calls: [], answer: () => (rec ? `I'd go with ${bare(rec)}: ${short(cd(rec)?.desc ?? '', 160)} Say "use ${bare(rec)}" to put it on this deck.` : "You don't own a Skill that fits yet. Skills come from packs and the Card Shop.") };
     }
     if (/\b(what|which|list|show|all)\b.*\bskills\b.*\b(have|own|got|are there|can i use)\b|\bmy skills\b|\bskills (do i|i) (have|own)\b/.test(t)) return skillsListPlan(w);
@@ -1101,7 +1226,14 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
 
   const cardsSaid = findCards(t, d, 'cards');
 
+  if (/\bhow many cards\b.*\b(in|is|have|got)\b.*\b(it|deck|now)\b|\bhow (big|large) is (it|my deck|the deck)\b|\bhow many cards (now|left|do i have)\b/.test(t)) return { calls: [{ name: 'view_deck', input: {} }], answer: () => `This deck has ${d.main.length} Main Deck card${d.main.length === 1 ? '' : 's'}${d.extra.length ? ` and ${d.extra.length} in the Extra Deck` : ''}${d.skill ? `, plus the Skill ${bare(d.skill)}` : ''}. It needs ${MAIN_MIN} to ${MAIN_MAX} to duel.` };
+  if (/\b(what|which) cards? (am i|i am|im) missing\b|\bwhat (do i|should i) need\b|\bmissing cards\b/.test(t)) return suggestPlan(w);
+  if (/\b(regular|normal|real|master duel|tcg|ocg|full|proper)\b.*\b(duels?|yugioh|yu gi oh|game)\b|\bspeed duels?\b.*\bdifferen|\bwhat is (a )?speed duel\b/.test(t)) return { calls: [], answer: () => `Speed Duel is a faster Yu-Gi-Oh!: 4000 Life Points, a ${MAIN_MIN} to ${MAIN_MAX} card Main Deck, 4 cards in your opening hand, 3 Monster Zones and 3 Spell & Trap Zones, no Main Phase 2, and one Skill per duel. Only cards printed in Konami's Speed Duel products are allowed.` };
+  if (/\b(turn one|turn 1|first turn|game ?plan|strategy|how (do|should) i play (it|this|this deck|my deck))\b/.test(t) && /\b(deck|it|this|play)\b/.test(t) && d.main.length) return explainPlan(w);
+  if (/\b(what|which)\b.*\b(fusions?|fusion summon|extra deck monsters?)\b.*\b(can|could|should)\b|\b(what|which)\b.*\b(can|could) i\b.*\bfusion|\b(add|make it|put in|fill)\b.*\b(\d )?(fusions?|extra deck( monsters?)?)\b/.test(t) && !/\b(remove|take out|clear|empty|cut)\b/.test(t)) return fusionPlan(w, /\b(add|make it|put in|fill)\b/.test(t), Number(t.match(/\b([1-6])\b/)?.[1] ?? 0) || null);
   // "is the deck legal?": the editor's own check
+  const outsideSaid = findOutside(t);
+  if (outsideSaid && /\b(legal|allowed|banned|use|play|run|in speed|speed duel|can i)\b/.test(t)) return { calls: [], answer: () => outsideLine(outsideSaid) };
   if (/\b(legal|valid|allowed|playable|ready to duel|can i duel|duel with (it|this))\b/.test(t) && /\b(deck|it|this)\b/.test(t) && !cardsSaid.length) {
     const probs = speedDeckProblems(d);
     return { calls: [{ name: 'view_deck', input: {} }], answer: () => (probs.length ? `Not yet: ${probs.slice(0, 2).join('; ')}.${d.main.length < MAIN_MIN ? ' Say "fill it up" and I\'ll add cards that fit.' : ''}` : `Yes, it's legal and ready to duel: ${d.main.length} Main Deck cards${d.extra.length ? `, ${d.extra.length} in the Extra Deck` : ''}${d.skill ? ` and the Skill ${bare(d.skill)}` : ''}.`) };
@@ -1171,14 +1303,22 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   if (/\b(explain|describe|summari[sz]e|break down|walk me through)\b.*\b(deck|it|this)\b|\b(whats|what is) in (my|this|the) deck\b|\bhow (does|do) (my|this|the) deck (work|play)\b|\b(tell me about|what about) (my|this|the) deck\b/.test(t)) return explainPlan(w);
 
   // rate the deck
-  if (/\b(good|rate|rating|review|grade|score|analy[sz]e|check|whats wrong|thoughts|opinion|how is|hows|any good|ready)\b/.test(t) && /\b(deck|it|this)\b/.test(t) && !/\b(make|swap|add|put|remove|take|cut|drop|get rid|weak|weakest|replace|change)\b/.test(t)) return ratePlan(w);
+  if (/\b(good|rate|rating|review|grade|score|analy[sz]e|check|whats wrong|thoughts|opinion|how is|hows|any good|ready)\b/.test(t) && /\b(deck|it|its|this)\b/.test(t) && !/\b(make|swap|add|put|remove|take|cut|drop|get rid|weak|weakest|replace|change)\b/.test(t)) return ratePlan(w);
 
   // why that card
   if (/\bwhy\b/.test(t)) {
     const asked = cardsSaid.map((c) => c.name).filter((n) => inDeck(d, n));
     const tookOut = /\b(take|took|remove|removed|cut|drop|dropped)\b/.test(t);
     if (tookOut && !asked.length && mem.removed.length) return { calls: [], answer: () => [...new Set(mem.removed)].slice(0, 4).map((n) => (cd(n) ? `${n} was one of the weakest here (${cd(n)!.kind === 'monster' ? `${cd(n)!.atk ?? 0} ATK` : 'little effect for this deck'}).` : n)).join(' ') + ' Say "undo" to bring it back.' };
+    const notIn = cardsSaid.map((c) => c.name).filter((n) => !inDeck(d, n));
+    const whyIs = t.match(/^why (?:is|are|do i have|did you (?:add|put in|pick))\s+(?:the\s+|my\s+)?(.+?)\s+(?:in here|in (?:my|the|this) deck|in it|there|here)$/);
+    if (whyIs && !cardsSaid.length && !/^(that|it|those|them|this|these|they)$/.test(whyIs[1])) return { calls: [], answer: () => `I can't find a card called "${whyIs[1]}" in this deck.${nearest(whyIs[1])}` };
+    if (!asked.length && notIn.length && !tookOut) return { calls: [], answer: () => `${listOf(notIn)} ${notIn.length > 1 ? "aren't" : "isn't"} in this deck.` };
     const list = asked.length ? asked : [...new Set(mem.added)].filter((n) => inDeck(d, n));
+    if (!list.length && d.main.length && /\b(add|put|pick|choose|build|did you)\b/.test(t)) {
+      const ex = explainPlan(w);
+      return { calls: ex.calls, answer: (rs) => `I built it from your strongest cards for that theme. ${ex.answer(rs)}` };
+    }
     if (list.length) return { calls: [], answer: () => list.slice(0, 4).map((n) => `${n}: ${reason(cd(n)!, d)}.`).join(' ') };
     if (/\b(that|this|those|it|them|did you|add|put)\b/.test(t)) return { calls: [], answer: () => "I didn't put a card in just now. Ask about a card by name, like \"why Kuriboh?\", or say \"explain my deck\"." };
   }
@@ -1206,6 +1346,7 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
     const askedSkill = /\bskills?\b/.test(t) && /\b(best|good|which|what)\b/.test(t);
     if (askedSkill) {
       const pickS = skillPick(w, null);
+      if (pickS) mem.focus = pickS;
       return { calls: [], answer: () => (pickS ? `For this deck I'd pick ${bare(pickS)}: ${short(cd(pickS)?.desc ?? '', 160)} Say "use ${bare(pickS)}" to put it on.` : "You don't own a Skill that fits yet.") };
     }
     const asked = nameIndex().find((x) => x.skill && ` ${t} `.includes(` ${x.flat} `))?.name ?? (cardsSaid.find((f) => !f.partial) ?? cardsSaid[0])?.name;
@@ -1226,6 +1367,11 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   // anything deck-shaped while the deck is empty builds one (not a question about it)
   if (/\b(legal|ready|valid|allowed|playable)\b/.test(t) && /\b(deck|it)\b/.test(t)) return ratePlan(w);
   if (!/^(is|are|what|whats|how|why|can|does|do)\b/.test(t) && (!d.main.length && !d.extra.length && /\b(deck|random|surprise|aggressive|aggro|control|defensive)\b/.test(t) && !cardsSaid.some((c) => /\b(add|put)\b/.test(t) && c))) return buildPlan(t, w);
+  // "i want something with dragons but no warriors" on an empty deck
+  if (!d.main.length && !d.extra.length && !/^(is|are|what|whats|how|why|does|do)\b/.test(t) && /\b(something|want|wanna|need|give me|make me|i like|lets do)\b/.test(t)) {
+    const wish = readWish(t, w);
+    if (wish.theme.kind === 'race' || wish.theme.kind === 'attribute') return buildPlan(t, w);
+  }
 
   // "more dragons": swap weak off-theme monsters for the best of that Type or Attribute
   const moreOf = t.match(/\b(more|extra|add some|add more)\s+(\w+)/);
@@ -1254,9 +1400,9 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   if (d.main.length && /\b(bigger|larger|more cards|longer)\b/.test(t) && !/\bdraw\b/.test(t)) return d.main.length >= MAIN_MAX ? { calls: [], answer: () => `It's already the biggest a deck can be (${MAIN_MAX}).` } : fillPlan(w, Math.min(MAIN_MAX, d.main.length + 5), mem, `Made it ${Math.min(MAIN_MAX, d.main.length + 5)} cards with`);
 
   // resize: "make it 30 cards"
-  const size = t.match(/\b(\d{1,3})\b(?= cards?\b)|\b(2\d|30)\b/);
+  const size = t.match(/\b(\d{1,3})\b(?= cards?\b)|\b(2\d|30)\b|^(?:make it|go to|set it to|bring it to|change it to|resize it to|cut it to|cut it down to)\s+(\d{1,3})$/);
   if (size && d.main.length && (/\b(make|set|change|go|bring|turn|up|down|resize|cards?)\b/.test(t) || THIS_DECK.test(t)) && !cardsSaid.length) {
-    const n = Number(size[1] ?? size[2]);
+    const n = Number(size[1] ?? size[2] ?? size[3]);
     if (n < MAIN_MIN || n > MAIN_MAX) return { calls: [], answer: () => `A Main Deck holds ${MAIN_MIN} to ${MAIN_MAX} cards.` };
     if (n === d.main.length) return { calls: [], answer: () => `It already has ${n} cards.` };
     return n > d.main.length ? fillPlan(w, n, mem, `Made it ${n} cards with`) : trimPlan(d, n, mem);
@@ -1273,7 +1419,7 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
 
   // "take out everything except the red eyes cards": those (by name or name family) stay
   const exceptNames = t.match(/\b(?:remove|delete|take out|take|get rid of|cut|clear|empty)\b(.*?)\b(?:except|but|other than|apart from|besides|aside from|save)\b(?: for)?(.+)$/);
-  if (exceptNames && /\b(everything|all|every|everycard|rest|whole|deck)\b/.test(exceptNames[1]) && d.main.length) {
+  if (exceptNames && /\b(everything|all|every|everycard|rest|whole|deck)\b/.test(exceptNames[1]) && !new RegExp(`\\b${KIND_RE}\\b`).test(exceptNames[1]) && d.main.length) {
     const named = new Set(findCards(exceptNames[2], d).map((f) => f.name));
     const fam = exceptNames[2].split(' ').filter((x) => x && !STOP.has(x) && !INTENT.has(x)).join(' ');
     const keepIt = (n: string) => named.has(n) || (fam.length >= 3 && ` ${flat(n)} `.includes(` ${fam} `));
@@ -1285,7 +1431,7 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   }
 
   // clear
-  if (!/\b(except|but|other than|apart from)\b/.test(t) && /^(clear|empty|wipe|reset|start over)\b|\b(clear|empty|wipe|reset) (it|the deck|my deck|this deck|everything)\b|\b(remove|delete|take out) everything\b|\btake everything out\b|\bstart (it )?over\b/.test(t) && !/\b(is|its) empty\b/.test(t)) return { calls: [{ name: 'edit_deck', input: { clear: true } }], answer: () => 'Emptied the deck. Say "build me a deck" to fill it again.' };
+  if (!/\b(except|but|other than|apart from)\b/.test(t) && /^(clear|empty|wipe|reset|start over)\b|\b(clear|empty|wipe|reset) (it|the deck|my deck|this deck|everything)\b|\b(remove|delete|take out) everything\b|\btake everything out\b|\bstart (it )?over\b/.test(t) && !/\b(is|its) empty\b/.test(t)) return { calls: [{ name: 'edit_deck', input: { clear: true, skill: null } }], answer: () => 'Emptied the deck and took the Skill off. Say "build me a deck" to fill it again.' };
 
   // "put kuriboh in instead of the weakest card": the weakest go to make room
   const insteadWeak = t.match(/^(.*?)\b(?:instead of|in place of|for|replacing|over)\s+(?:the |my |a |an )?(?:([1-9]) )?(?:weakest|worst)(?: (card|monster|spell|trap)s?)?\b/);
@@ -1310,7 +1456,8 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   const insteadCard = t.match(/^(?:add|put in|put|include|use|run|throw in)\s+(.+?)\s+(?:in\s+)?(?:instead of|in place of|replacing)\s+(.+)$/);
   const swapCards = insteadCard ? ['', 'replace', insteadCard[2], insteadCard[1]] : t.match(/\b(swap|replace|trade|switch|change|exchange|sub)\b(?: out)?\s+(.+?)\s+\b(?:for|with|to|into|by)\b\s+(.+)$/);
   if (swapCards) {
-    const from = findCards(swapCards[2], d);
+    // "replace them with man-eater bug": the cards just added (or talked about)
+    const from = /^(it|that|them|those|these|that one|this one|they)$/.test(swapCards[2].trim()) ? counts(mem.focus && inDeck(d, mem.focus) ? [mem.focus] : mem.added.filter((n) => inDeck(d, n))).map((x) => ({ name: x.name, count: x.count })) : findCards(swapCards[2], d);
     const to = findCards(swapCards[3], d);
     if (from.length && to.length) {
       const missing = from.filter((f) => !inDeck(d, f.name));
@@ -1320,6 +1467,9 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
       const toCount = to.every((f) => f.count !== null) ? to.reduce((a, f) => a + (f.count ?? 0), 0) : null;
       const rm = from.map((f) => ({ name: f.name, count: Math.min(have(f.name), f.count ?? (from.length === 1 && toCount ? toCount : have(f.name))) }));
       const add = to.map((f, i) => ({ name: f.name, count: f.count ?? (to.length === 1 ? Math.min(COPIES, rm.reduce((a, x) => a + x.count, 0)) : rm[i]?.count ?? 1) }));
+      // a swap goes through whole or not at all: never a card cut with nothing in its place
+      const sim = runTool(w, 'edit_deck', { remove: rm, add });
+      if (refusedOf(sim.text) && add.some((a) => !new RegExp(`\\+\\d+ ${a.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(,|\\.|$)`, 'm').test(sim.text))) return { calls: [], answer: () => `I couldn't swap: ${refusedOf(sim.text)}. Nothing changed.` };
       return {
         calls: [{ name: 'edit_deck', input: { remove: rm, add } }],
         answer: (rs) => {
@@ -1356,6 +1506,23 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   // "not enough traps", "i need more traps": more of that kind
   const notEnough = t.match(new RegExp(`\\b(?:not enough|too few|need more|needs more|dont have enough|doesnt have enough|lacks?|lacking|raise the number of|increase the number of|increase)\\s+(?:the\\s+)?${KIND_RE}\\b`));
   if (notEnough && d.main.length) return kindShift(w, kindWord(notEnough[1])!, 3);
+  // "swap the spells" with nothing named: the weakest of that kind out, better ones of the same kind in
+  const refresh = t.match(new RegExp(`\\b(?:swap|replace|change|refresh|upgrade|switch)\\b(?: out)?(?: the| my| all| some)? ${KIND_RE}\\b`));
+  if (refresh && !/\b(for|with|into|to)\b/.test(t.slice((refresh.index ?? 0) + refresh[0].length)) && d.main.length) {
+    const kind = kindWord(refresh[1])!;
+    const mine = d.main.filter((n) => cd(n)?.kind === kind && !isExtraCard(n) && !isNeeded(n, d) && !protect.has(n)).sort((a, b) => wn(a, d) - wn(b, d));
+    const rest = { ...d, main: [...d.main] };
+    const outs: string[] = [];
+    const ins: string[] = [];
+    for (const n of mine.slice(0, 3)) {
+      rest.main.splice(rest.main.indexOf(n), 1);
+      const c = candidates(w, { ...rest, main: [...rest.main, ...ins] }, (x) => x.kind === kind && !isExtraCard(x.name) && x.sub !== 'Ritual' && !d.main.includes(x.name) && !ins.includes(x.name) && worth(x, rest) > wn(n, rest))[0];
+      if (!c) (rest.main.push(n));
+      else (outs.push(n), ins.push(c.name));
+    }
+    if (!ins.length) return { calls: [], answer: () => `Your ${kind}s are already the best ones you own for this deck.` };
+    return { calls: [{ name: 'edit_deck', input: { remove: counts(outs), add: counts(ins) } }], answer: () => `Swapped ${kind}s: ${outs.map((o, i) => `${o} → ${ins[i]}`).join('; ')}.` };
+  }
   // more / fewer of a kind
   const more = t.match(new RegExp(`\\b(more|extra|add some|add a few|add more|lots of|a lot of|plenty of|loads of)\\s+${KIND_RE}\\b`));
   const fewer = t.match(new RegExp(`\\b(less|fewer|cut some|remove some|cut a few|remove a few|not so many|too many|no more|stop adding|enough|lower the number of|reduce the number of|reduce|lower|decrease|decrease the number of)\\s+(?:the\\s+)?${KIND_RE}\\b`));
@@ -1363,19 +1530,50 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   if (more) return kindShift(w, kindWord(more[2])!, 3);
 
   // remove all of a kind
-  const rk = t.match(new RegExp(`\\b(remove|take out|take|get rid of|no|drop|delete|cut|without|dont want|dont like|hate)\\s+(?:all\\s+)?(?:of\\s+)?(?:the\\s+|my\\s+|any\\s+)?${KIND_RE}\\b`));
-  if (rk && !cardsSaid.length) {
-    const kind = kindWord(rk[2])!;
-    const all = d.main.filter((n) => cd(n)?.kind === kind && !isExtraCard(n));
+  const rk = t.match(new RegExp(`\\b(remove|take out|take|get rid of|no|drop|delete|cut|without|dont want|dont like|hate)\\s+(?:all\\s+)?(?:of\\s+)?(half\\s+(?:of\\s+)?)?(?:the\\s+|my\\s+|any\\s+)?${KIND_RE}\\b`));
+  // "take out all the traps except mirror force": the cards named after except stay
+  const [rkHead, ...rkTail] = t.split(/\b(?:except|but|apart from|other than|besides|aside from|save)\b/);
+  const rkKeep = rkTail.length ? new Set(findCards(rkTail.join(' '), d).map((f) => f.name)) : new Set<string>();
+  if (rk && (!cardsSaid.length || (rkKeep.size && !findCards(rkHead, d).length))) {
+    const kind = kindWord(rk[3])!;
+    const every = d.main.filter((n) => cd(n)?.kind === kind && !isExtraCard(n) && !rkKeep.has(n));
+    // "take out half the monsters"
+    const all = rk[2] ? [...every].sort((a, b) => wn(a, d) - wn(b, d)).slice(0, Math.floor(every.length / 2)) : every;
     const kept = all.filter((n) => isNeeded(n, d) && cd(n)?.sub === 'Ritual' || (n === 'Polymerization' && isNeeded(n, d)));
     const out = counts(all.filter((n) => !kept.includes(n)));
     if (!all.length) return { calls: [], answer: () => `There are no ${kind}s in the deck.` };
     if (!out.length) return { calls: [], answer: () => `The only ${kind}s left (${listOf(kept)}) are needed to summon your other cards, so I kept them.` };
     const k = out.reduce((a, x) => a + x.count, 0);
-    const cut: Plan = { calls: [{ name: 'edit_deck', input: { remove: out } }], answer: () => `Took out ${k} ${kind}${k === 1 ? '' : 's'}.${kept.length ? ` I kept ${listOf(kept)}, which your other cards need to be summoned.` : ''}` };
+    const spared = [...rkKeep].filter((n) => d.main.includes(n));
+    const cut: Plan = { calls: [{ name: 'edit_deck', input: { remove: out } }], answer: () => `Took out ${k} ${kind}${k === 1 ? '' : 's'}.${spared.length ? ` Kept ${listOf(spared)}.` : rkKeep.size ? ` (${listOf([...rkKeep])} wasn't in the deck.)` : ''}${kept.length ? ` I kept ${listOf(kept)}, which your other cards need to be summoned.` : ''}${kind === 'monster' && !rk[2] ? ' A deck with no monsters has nothing to attack with; say "undo" if that was a slip.' : ''}` };
     return d.main.length - k < MAIN_MIN ? refill(cut, w, kind) : cut;
   }
 
+  // "remove all the extra deck"
+  if (/\b(remove|take out|clear|empty|get rid of|delete|cut)\b.*\bextra deck\b/.test(t)) {
+    if (!d.extra.length) return { calls: [], answer: () => 'The Extra Deck is already empty.' };
+    return { calls: [{ name: 'edit_deck', input: { remove: counts(d.extra) } }], answer: () => `Emptied the Extra Deck (${listOf(d.extra)}).${d.main.includes('Polymerization') ? ' Polymerization has nothing to summon now; say "take out polymerization" too if you like.' : ''}` };
+  }
+  // "remove 3 cards to make room": the weakest
+  const nCards = t.match(/\b(?:remove|take out|cut|drop|lose)\s+(\d|one|two|three|four|five)\s+(?:cards?|things)\b/);
+  if (nCards && d.main.length && !cardsSaid.length) {
+    const n = /^\d$/.test(nCards[1]) ? Number(nCards[1]) : ({ one: 1, two: 2, three: 3, four: 4, five: 5 } as Record<string, number>)[nCards[1]];
+    const out = [...d.main].filter((x) => !isNeeded(x, d) && !protect.has(x)).sort((a, b) => wn(a, d) - wn(b, d)).slice(0, n);
+    return { calls: [{ name: 'edit_deck', input: { remove: counts(out) } }], answer: () => `Took out ${listOf(out)}, the weakest ${out.length > 1 ? 'cards' : 'card'} here.` };
+  }
+  // "put in something else", "add replacements": a fill back to the size it should be
+  if (/\b(add|put in|put|fill|give)\b.*\b(something else|something better|replacements?|other cards|new cards|something)\b/.test(t) && !cardsSaid.length && d.main.length < MAIN_MIN) return fillPlan(w, MAIN_MIN, mem);
+  // "i need more removal", "add something to stop attacks", "add a card that destroys monsters"
+  const role = /\b(removal|destroys?|destruction|kill|get rid of their)\b/.test(t) ? 'destroy' : /\b(stop|stops|block|negate|negates) (their |an |the )?attacks?\b|\battack stopper\b/.test(t) ? 'attack' : /\b(cards? that|something that|one that) draws?\b/.test(t) ? 'draw' : null;
+  if (role && d.main.length && !cardsSaid.length && /\b(add|need|want|put|more|give|include|get)\b/.test(t) && !/^(what|which|how|is|are)\b/.test(t)) {
+    const fit = role === 'destroy' ? (c: CardInfo) => /destroy/i.test(c.desc) && !/destroy this card/i.test(c.desc) : role === 'attack' ? (c: CardInfo) => /attack/i.test(c.desc) && /(negate|end the battle phase|destroy|change)/i.test(c.desc) : (c: CardInfo) => /\bdraw\b/i.test(c.desc) && !/opponent draws/i.test(c.desc);
+    const n = /\b(a|an|one|something|card)\b/.test(t) && !/\bmore\b/.test(t) ? 1 : 2;
+    const ins = candidates(w, d, (c) => c.kind !== 'monster' && !d.main.includes(c.name) && fit(c)).slice(0, n).map((c) => c.name);
+    if (!ins.length) return { calls: [], answer: () => `You have no more cards like that which fit${w.collection ? '; get more from packs or the Card Shop' : ''}.` };
+    const label = role === 'destroy' ? 'removal' : role === 'attack' ? 'cards that stop attacks' : 'draw power';
+    const plan = kindShift(w, cd(ins[0])!.kind as Kind, ins.length, label, (c) => ins.includes(c.name));
+    return plan;
+  }
   // fill up to the minimum
   if (/\b(fill|finish|complete|top up|top it up|make it legal|make it playable)\b/.test(t)) {
     if (d.main.length >= MAIN_MIN) return { calls: [], answer: () => `The deck already has ${d.main.length} cards, enough to duel.` };
@@ -1410,16 +1608,18 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
   // "add something that protects my monsters": traps
   if (/\b(protect|protects|protection|defend|guard)\b/.test(t) && d.main.length) return kindShift(w, 'trap', /\b(a|one|something)\b/.test(t) ? 1 : 2, 'protection');
   // "add a dragon", "remove 2 warriors": the best (or weakest) monsters of that Type
-  const typeEdit = t.match(/\b(add|put in|put|include|remove|take out|cut|drop|lose)\s+(?:(a|an|one|another|[1-3]|two|three)\s+)?(?:more\s+)?([a-z ]+?)s?$/);
+  const typeEdit = t.match(/\b(add|put in|put|include|remove|take out|cut|drop|lose|get rid of)\s+(?:(?:all|all of|every|any)\s+)?(?:the\s+|my\s+)?(?:(a|an|one|another|[1-3]|two|three)\s+)?(?:more\s+)?([a-z ]+?)s?$/);
   const typeRace = typeEdit && RACES.find((x) => flat(x) === typeEdit[3].replace(/ies$/, 'y').replace(/s$/, ''));
   if (typeEdit && typeRace && d.main.length) {
-    const n = typeEdit[2] ? (/^\d$/.test(typeEdit[2]) ? Number(typeEdit[2]) : NUM[typeEdit[2]] ?? 1) : 1;
+    // "take out the warriors" means all of them; "add a dragon" one
+    const n = typeEdit[2] ? (/^\d$/.test(typeEdit[2]) ? Number(typeEdit[2]) : NUM[typeEdit[2]] ?? 1) : /^(remove|take out|cut|drop|lose|get rid of)$/.test(typeEdit[1]) && /s$/.test(t) ? 99 : 1;
     const removing = /^(remove|take out|cut|drop|lose)$/.test(typeEdit[1]);
     const fits = (c: CardInfo) => c.kind === 'monster' && c.race === typeRace && !isExtraCard(c.name);
     if (removing) {
       const out = d.main.filter((x) => cd(x) && fits(cd(x)!) && !isNeeded(x, d)).sort((a, b) => wn(a, d) - wn(b, d)).slice(0, n);
       if (!out.length) return { calls: [], answer: () => `There are no ${plural(typeRace)} here I can take out without breaking a combo.` };
-      return { calls: [{ name: 'edit_deck', input: { remove: counts(out) } }], answer: () => `Took out ${listOf(out)}, the weakest ${n > 1 ? plural(typeRace) : typeRace} here.` };
+      const cut: Plan = { calls: [{ name: 'edit_deck', input: { remove: counts(out) } }], answer: () => `Took out ${listOf(out)}, the ${n >= 99 ? '' : 'weakest '}${out.length > 1 ? plural(typeRace) : typeRace} here.` };
+      return d.main.length - out.length < MAIN_MIN ? refill(cut, w, null, (x) => cd(x)?.race === typeRace) : cut;
     }
     const ins: string[] = [];
     for (let i = 0; i < n; i++) {
@@ -1446,7 +1646,9 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
     let found = spared.size ? findCards(head, d).filter((f) => !spared.has(f.name)) : cardsSaid;
     const back = !removing && /\b(back|again)\b/.test(t);
     const recent = back ? mem.removed : mem.focus && (!removing || inDeck(d, mem.focus)) ? [mem.focus] : mem.added;
-    if (!found.length && /\b(that|it|those|them|these|this one|that one|they)\b/.test(t) && recent.length) {
+    // "use that one" after a Skill was suggested
+    if (!found.length && !removing && mem.focus && cd(mem.focus)?.sub === 'Skill' && /\b(that|it|that one|this one)\b/.test(t)) return { calls: [{ name: 'edit_deck', input: { skill: mem.focus } }], answer: (rs) => (refusedOf(rs[0] ?? '') ? `Couldn't: ${refusedOf(rs[0])}.` : `Now using ${bare(mem.focus!)}.`) };
+    if (!found.length && /\b(that|it|those|them|these|this one|that one|they|her|him|another( one)?|one more|same( one)?|the same)\b/.test(t) && recent.length) {
       // "take that out" -> the cards just added; "put them back" -> the cards just cut; "add another of those" -> one more
       const said = t.match(/\b([1-9]|one|two|three|a|an)\b(?= of)/)?.[1];
       const k = said ? (/^\d$/.test(said) ? Number(said) : NUM[said]) : null;
@@ -1454,7 +1656,8 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
       found = removing && k && recent.length > 1 ? counts(recent.slice(-k)).map((x) => ({ name: x.name, count: x.count })) : counts(recent).map((x) => ({ name: x.name, count: k ?? (removing || back ? x.count : 1) }));
     }
     if (found.length) {
-      const list = found.map((f) => ({ name: f.name, count: f.count ?? (removing && /\ball\b/.test(t) ? COPIES : 1) })).filter((f) => f.count > 0);
+      // "take out kuriboh" takes the card out (every copy); "take out 1 kuriboh" takes one
+      const list = found.map((f) => ({ name: f.name, count: f.count ?? (removing ? Math.max(1, d.main.filter((n) => n === f.name).length + d.extra.filter((n) => n === f.name).length) : 1) })).filter((f) => f.count > 0);
       if (!removing) mem.wanted = [...new Set([...(mem.wanted ?? []), ...list.map((f) => f.name)])];
       if (!list.length) return { calls: [], answer: () => 'Zero copies changes nothing. Say how many, like "add 2 Kuriboh".' };
       const out = findOutside(t);
@@ -1494,7 +1697,8 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
     if (!/\b(deck|monsters?|spells?|traps?|stronger|better)\b/.test(t)) return { calls: [], answer: () => `I couldn't tell which card you meant. Say its name, like "${removing ? 'take out' : 'add'} 2 Kuriboh".${nearest(t)}` };
   }
 
-  // make it stronger
+  // make it stronger ("less random" and "more consistent" too: fewer one-off weak cards)
+  if (/\b(less random|more consistent|consistent)\b/.test(t) && d.main.length) return strongerPlan(w);
   if (/\b(stronger|better|improve|upgrade|optimi[sz]e|power ?up|beef|buff|boost|fix it|fix my deck|fix the deck|swap|replace|tune|polish)\b/.test(t)) return strongerPlan(w);
 
   // questions about a card
@@ -1588,7 +1792,9 @@ export function localModel(getWorld: () => ChatWorld, mem: Memory = freshMemory(
     if (pending && results.some((x) => /^Done: (?!Nothing changed)/m.test(x))) {
       const lines = results.map((x) => x.match(/^Done: (.*)$/m)?.[1] ?? '').filter(Boolean);
       const names = new Set(lines.flatMap((line) => line.replace(/\.$/, '').split(', ').map((x) => x.replace(/^[-+]\d* ?/, '').trim())));
-      mem.added = pending.added.filter((n) => names.has(n));
+      // "take that out" after a cut still means the cards last put in
+      const put = pending.added.filter((n) => names.has(n));
+      if (put.length) mem.added = put;
       mem.removed = pending.removed.filter((n) => names.has(n));
       mem.cut = [...new Set([...(mem.cut ?? []).filter((n) => !mem.added.includes(n)), ...mem.removed])];
     }

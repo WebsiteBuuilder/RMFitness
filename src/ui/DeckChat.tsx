@@ -171,7 +171,11 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     // "undo" said in the chat presses the Undo on the newest change
     const said = clean(msg);
     // ("undo that last change please", "give me back my old deck"; not "how do i undo?")
-    const wantsUndo = !/^(how|what|why|can i|dont|do not|is|does|when)\b/.test(said) && !/\bredo\b|\bundo the undo\b/.test(said) && (/\b(undo|revert)\b/.test(said) || /^(go back|take (it|that) back|put it back how it was)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    const wantsUndo = !/^(how|what|why|can i|should|is|does|when|would)\b/.test(said) && !/\b(dont|do not|never|nah|not|no undo|keep it|like it)\b/.test(said) && !/\?\s*$/.test(msg) && !/\bredo\b|\bundo the undo\b/.test(said) && (/\b(undo|revert)\b/.test(said) || /^(go back|take (it|that) back|put it back how it was)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    if (wantsUndo && !lastChange) {
+      setText('');
+      return setChat({ ...chat, turns: [...chat.turns, { id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: changes.length ? 'Everything is already undone. Say "redo" to put a change back.' : "There's no change to undo yet." }] });
+    }
     if (wantsUndo && lastChange) {
       playBlip();
       setText('');
@@ -251,7 +255,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const undo = (t: Turn, said: Turn[] = []) => {
     if (!t.before || !t.diff) return;
     // "take that out" must not reach for cards an Undo already took back
-    helperMemory.current = { added: [], removed: [] };
+    helperMemory.current = { added: [], removed: [], wanted: helperMemory.current.wanted };
     playBlip();
     onChange(undoDiff(deckRef.current, t.diff, t.before));
     // later changes were made on top of this one, so they go too

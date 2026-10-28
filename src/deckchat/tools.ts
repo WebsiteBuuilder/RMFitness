@@ -338,7 +338,8 @@ function editDeck(w: ChatWorld, i: Input): { text: string; deck: SpeedDeck } {
   if (i.clear === true) (d.main = []), (d.extra = []), done.push('cleared the deck');
   const items = (v: unknown) => (Array.isArray(v) ? v : []).filter((x): x is { name: string; count?: number } => !!x && typeof (x as { name?: unknown }).name === 'string');
   for (const it of items(i.remove)) {
-    const r = resolveName(it.name);
+    // a card that left the game (an old save) can still be taken out by its exact name
+    const r = d.main.includes(it.name) || d.extra.includes(it.name) ? { name: it.name } : resolveName(it.name);
     if ('error' in r) {
       refused.push(r.error);
       continue;
