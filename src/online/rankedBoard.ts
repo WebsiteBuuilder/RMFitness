@@ -140,6 +140,8 @@ export interface LadderRow {
   l: number;
   kind: 'me' | 'phone' | 'friend' | 'world';
   online?: boolean;
+  /** a shared-board line's key */
+  id?: string;
 }
 
 /** A ladder line from a rank. */
@@ -167,7 +169,7 @@ export function mergeLadder(local: LadderRow[], world: BoardPost[] | null, myKey
     if (p.id === mine) continue;
     // a duelist this phone knows (its profiles, friends) keeps the line it has: a post can't take it over
     if (m.has(p.name.toLowerCase())) continue;
-    m.set(`#${p.id}`, rowOf(p.name, p.color, p, 'world'));
+    m.set(`#${p.id}`, { ...rowOf(p.name, p.color, p, 'world'), id: p.id });
   }
   return [...m.values()].sort((a, b) => score(b) - score(a) || b.w - a.w || a.name.localeCompare(b.name));
 }

@@ -63,7 +63,7 @@ export function LadderList({ rows, limit }: { rows: LadderRow[]; limit?: number 
   const shown = limit && rows.length > limit ? rows.slice(0, limit) : rows;
   const extra = limit && meAt >= limit ? rows[meAt] : null;
   const line = (r: LadderRow, i: number) => (
-    <li key={r.name} class={`rank-row ${r.kind === 'me' ? 'me' : ''} ${i === 0 ? 'top' : ''}`}>
+    <li key={`${r.kind}:${r.id ?? r.name}`} class={`rank-row ${r.kind === 'me' ? 'me' : ''} ${i === 0 ? 'top' : ''}`}>
       <span class="rank-place">{i === 0 ? '👑' : i + 1}</span>
       <RankEmblem step={r.step} size="s" />
       <span class="rank-who">
