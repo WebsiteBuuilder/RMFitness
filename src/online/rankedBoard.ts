@@ -6,7 +6,7 @@
 // anything. What comes back is cleaned before it's shown. With no online service the
 // leaderboard falls back to the duelists this phone knows (see Rankings.tsx).
 import { checkCloud, onlineDb } from '../sync/cloud';
-import { TOP, starsAt, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { KING, TOP, starsAt, tierFloor, type RankedProgress } from '../eds/speedCampaign/ranked';
 
 /** One duelist's line on the shared leaderboard. */
 export interface BoardPost {
@@ -45,14 +45,19 @@ export function cleanPost(id: string, x: unknown): BoardPost | null {
   const name = o.name.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 24);
   if (!name) return null;
   const step = n(o.step, TOP);
+  const w = n(o.w, 1e6);
+  const stars = step === TOP ? 0 : Math.min(n(o.stars, 9), starsAt(step) - 1);
+  // every Pharaoh Point is a win; and nobody climbs faster than 3 stars a win above where a season can start them
+  const kp = step === TOP ? Math.min(n(o.kp, 100000), w) : 0;
+  if (ladderScore(step, stars, kp) > ladderScore(tierFloor(KING - 1), 0, 0) + 3 * w) return null;
   return {
     id,
     name,
     color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : '#888888',
     step,
-    stars: step === TOP ? 0 : Math.min(n(o.stars, 9), starsAt(step) - 1),
-    kp: step === TOP ? n(o.kp, 100000) : 0,
-    w: n(o.w, 1e6),
+    stars,
+    kp,
+    w,
     l: n(o.l, 1e6),
     at: n(o.at, 1e14),
   };
@@ -153,15 +158,16 @@ export const rowOf = (name: string, color: string, rp: Pick<RankedProgress, 'ste
 const score = (r: LadderRow) => ladderScore(r.step, r.stars, r.kp);
 
 /** Both lists as one board: one line a name (yours always from this phone), best first. */
-export function mergeLadder(local: LadderRow[], world: BoardPost[] | null): LadderRow[] {
+export function mergeLadder(local: LadderRow[], world: BoardPost[] | null, myKey?: string): LadderRow[] {
   const m = new Map<string, LadderRow>();
   for (const r of local) m.set(r.name.toLowerCase(), r);
+  const mine = myKey === undefined ? null : keyOf(myKey);
   for (const p of world ?? []) {
-    const k = p.name.toLowerCase();
-    const old = m.get(k);
-    const row = rowOf(p.name, p.color, p, 'world');
-    if (!old) m.set(k, row);
-    else if (old.kind !== 'me' && score(row) > score(old)) m.set(k, { ...row, kind: old.kind, ...(old.online ? { online: true } : {}) });
+    // your own post (even under an old name) is already your line from this phone
+    if (p.id === mine) continue;
+    // a duelist this phone knows (its profiles, friends) keeps the line it has: a post can't take it over
+    if (m.has(p.name.toLowerCase())) continue;
+    m.set(`#${p.id}`, rowOf(p.name, p.color, p, 'world'));
   }
   return [...m.values()].sort((a, b) => score(b) - score(a) || b.w - a.w || a.name.localeCompare(b.name));
 }

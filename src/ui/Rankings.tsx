@@ -10,7 +10,7 @@ import { crownHolder } from '../collection/economy';
 import { online } from '../online/controller';
 import { Win } from './Window';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { ladderClock, seasonName, seasonOf } from '../eds/speedCampaign/ranked';
+import { ladderClock, migrateRanked, seasonName, seasonOf } from '../eds/speedCampaign/ranked';
 import { RankEmblem } from './RankBadge';
 import { LadderList, rowRank, useLadder } from './RankedLadder';
 import './rankings.css';
@@ -21,8 +21,9 @@ export const shadowSends = (name: string) => shadowLog().filter((e) => e.winner 
 /** A profile's record, as shown on the board and shared with friends. */
 export function boardStatsOf(name: string, speed: SpeedSave | null, eds: SaveFile | null, profileId?: string): BoardStats {
   const out = linkStats(speed, eds, shadowSends(name));
-  const rp = profileId ? loadSolo(profileId).ranked : undefined;
-  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp } } : out;
+  const saved = profileId ? loadSolo(profileId).ranked : undefined;
+  const rp = saved && migrateRanked(saved);
+  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp, st: rp.stars } } : out;
 }
 
 export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; speed: SpeedSave | null; eds: SaveFile | null; onBack: () => void }) {
@@ -55,7 +56,7 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
   const pts = rankOf(me);
   const pct = t.next ? Math.round(((pts - t.at) / (t.next.at - t.at)) * 100) : 100;
   const rivals = rivalRows(speed, eds);
-  const season = seasonOf(ladderClock(undefined));
+  const season = seasonOf(ladderClock(loadSolo(profile.id).ranked));
   const { rows: ranked, world } = useLadder(profile, myName, season);
   const myLine = ranked.findIndex((r) => r.kind === 'me');
 

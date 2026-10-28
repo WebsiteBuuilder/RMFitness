@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { loadProfiles, loadSave, type Profile } from '../eds/save';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { TOP, migrateRanked, seasonOf, ladderClock, stepName, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { TOP, starsAt, migrateRanked, seasonOf, ladderClock, stepName, type RankedProgress } from '../eds/speedCampaign/ranked';
 import { mergeLadder, postRanked, rowOf, watchRanked, type BoardPost, type LadderRow } from '../online/rankedBoard';
 export { mergeLadder, starsBetween, type LadderRow } from '../online/rankedBoard';
 import { online } from '../online/controller';
@@ -37,7 +37,7 @@ export function localLadder(me: Profile, myName: string, season: string): Ladder
     const rk = f.board?.rk;
     if (f.status !== 'friend' || !rk || rk.s !== season || names.has(f.name.toLowerCase())) continue;
     names.add(f.name.toLowerCase());
-    out.push(rowOf(f.name, f.color, { step: Math.min(rk.step, TOP), stars: 0, kp: rk.kp, w: f.board!.w, l: f.board!.l }, 'friend', live.has(f.code)));
+    out.push(rowOf(f.name, f.color, { step: Math.min(rk.step, TOP), stars: Math.min(rk.st ?? 0, starsAt(Math.min(rk.step, TOP)) - 1), kp: rk.kp, w: f.board!.w, l: f.board!.l }, 'friend', live.has(f.code)));
   }
   return out;
 }
@@ -48,7 +48,7 @@ export function useLadder(me: Profile, myName: string, season: string): { rows: 
   const [, tick] = useState(0);
   useEffect(() => watchRanked(season, setWorld), [season]);
   useEffect(() => online.subscribe(() => tick((n) => n + 1)), []);
-  const rows = mergeLadder(localLadder(me, myName, season), world);
+  const rows = mergeLadder(localLadder(me, myName, season), world, boardKey(me));
   return { rows, world: world !== null };
 }
 

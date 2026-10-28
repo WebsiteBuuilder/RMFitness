@@ -245,7 +245,7 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   let packsDone = 0;
   for (let i = 0; i < 14; i++) {
     const t = new Date(now0.getTime() + i * 3600000);
-    const won = settleRanked(sp, so, { ...WIN, myLp: 3500, turns: 6 }, t, t.getTime(), { wandering: true, second: true });
+    const won = settleRanked(sp, so, { ...WIN, myLp: 3500, turns: 6, usedSkill: true }, t, t.getTime(), { wandering: true, second: true });
     sp = won.speed;
     so = won.solo;
     packsDone += won.missions.length;
@@ -267,7 +267,17 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
     for (const [o, h] of [[WIN, 9], [WIN, 10], [LOSS, 11], [WIN, 12]] as const) s2 = settleRanked(sp, s2, o, day(27, h)).solo;
     ok(rankedProgress(s2).week!.prog[run] === 1, `a loss restarts a streak mission (${rankedProgress(s2).week!.prog[run]})`);
   }
-  // Leaving never moves a mission.
+  // Leaving ends a streak mission's run too.
+  if (run >= 0) {
+    let s3: SoloSave = at(newSoloSave(), { step: 4, stars: 0, peak: 4, paid: [0, 1, 2] });
+    for (const [o, h] of [[WIN, 9], [WIN, 10], [LEFT, 11]] as const) s3 = settleRanked(sp, s3, o, day(27, h)).solo;
+    ok(rankedProgress(s3).week!.prog[run] === 0, 'leaving restarts a streak mission');
+    s3 = settleRanked(sp, s3, WIN, day(27, 12)).solo;
+    s3 = startRanked(s3, day(27, 13));
+    s3 = openRanked(sp, s3, day(27, 14)).solo;
+    ok(rankedProgress(s3).week!.prog[run] === 0, 'closing the game mid-duel restarts it as well');
+  }
+  // Leaving never moves a mission forward.
   const before = rankedProgress(so).week!;
   const lf = settleRanked(sp, so, LEFT, day(14, 9));
   ok(JSON.stringify(rankedProgress(lf.solo).week!.prog) === JSON.stringify(before.prog) && lf.missions.length === 0, 'leaving a duel moves no mission');
@@ -293,11 +303,16 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
     e: { name: 12 },
   };
   const rows = boardFrom(raw);
-  ok(rows.length === 3 && rows[0].name === 'Brother' && rows[0].kp === 12, `the board sorts best first and drops junk (${rows.map((r) => r.name).join(', ')})`);
-  const cheat = rows.find((r) => r.name === 'Cheat')!;
-  ok(cheat.step === TOP && cheat.kp === 0 && cheat.color === '#888888' && cheat.w === 0, 'a bad post is clamped');
+  ok(rows.length === 2 && !rows.some((r) => r.name === 'Cheat') && rows[0].name === 'Brother' && rows[0].kp === 12, `the board sorts best first and drops junk (${rows.map((r) => r.name).join(', ')})`);
+  const odd = boardFrom({ x: { name: 'Odd', color: 'javascript:', step: TOP, kp: 500, w: 40, l: 0, at: 1 } });
+  ok(odd.length === 1 && odd[0].kp === 40 && odd[0].color === '#888888', `Pharaoh Points can't pass wins and colors are checked (${odd[0]?.kp})`);
+  ok(boardFrom({ y: { name: 'Fast', step: TOP, kp: 0, w: 2, l: 0 } }).length === 0, 'a rank no one could reach with that many wins is dropped');
   const merged = mergeLadder([{ name: 'Jammy', color: '#f80', step: 6, stars: 0, kp: 0, w: 1, l: 0, kind: 'me' }], rows);
-  ok(merged.find((r) => r.name === 'Jammy')?.kind === 'me' && merged.find((r) => r.name === 'Jammy')?.step === 6 && merged.length === 3, 'your own line always comes from this phone');
+  ok(merged.find((r) => r.name === 'Jammy')?.kind === 'me' && merged.find((r) => r.name === 'Jammy')?.step === 6 && merged.length === 2, 'your own line always comes from this phone');
+  const twins = mergeLadder([], boardFrom({ a: { name: 'Sam', step: 3, w: 5 }, b: { name: 'Sam', step: 4, w: 5 } }));
+  ok(twins.length === 2, 'two duelists with one name keep two lines');
+  const ghost = mergeLadder([{ name: 'NewName', color: '#f80', step: 6, stars: 0, kp: 0, w: 1, l: 0, kind: 'me' }], boardFrom({ me1: { name: 'OldName', step: 7, w: 9 } }), 'me1');
+  ok(ghost.length === 1 && ghost[0].name === 'NewName', 'your own old post (an old name) is left out');
 }
 
 if (fails) {

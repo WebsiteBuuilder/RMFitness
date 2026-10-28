@@ -246,6 +246,7 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
   let forfeited = false;
   if (p.pending) {
     p = applyResult(p, 'l', now, true).p;
+    p = { ...p, week: advanceWeek(p.week, LEFT_EVENT, now).week };
     forfeited = true;
   }
   const season = seasonOf(now);
@@ -364,8 +365,9 @@ export interface RankedDuelInfo {
   second?: boolean;
 }
 
-/** Ranks climbed (or fallen, negative) between two steps. */
-const rankUps = (from: number, to: number) => Math.max(0, to - from);
+/** Ranks climbed between two places on the ladder; at Pharaoh every TOP_MILESTONE points counts as one. */
+const rankUps = (from: { step: number; kp: number }, to: { step: number; kp: number }) =>
+  Math.max(0, to.step - from.step) + (from.step === TOP && to.step === TOP ? Math.max(0, Math.floor(to.kp / TOP_MILESTONE) - Math.floor(from.kp / TOP_MILESTONE)) : 0);
 
 /** Moves the Weekly Missions on and pays any it finished: a pack each, and the Weekly Crown. */
 function payWeek(speed: SpeedSave, solo: SoloSave, next: RankedProgress, e: WeekEvent, now: Date, seed: number) {
@@ -376,6 +378,8 @@ function payWeek(speed: SpeedSave, solo: SoloSave, next: RankedProgress, e: Week
   const g = grant(speed, solo, rewards, [], seed);
   return { speed: g.speed, solo: g.solo, next, lines: g.lines, cards: g.cards, done: w.done, crown: w.crown };
 }
+/** A duel left or closed: it ends a streak mission's run and moves nothing else. */
+const LEFT_EVENT: WeekEvent = { result: 'l', gained: 0, rankUps: 0, wandering: false, second: false, myLp: 0, turns: 0, link: false, usedSkill: false, left: true };
 /** Duel Chips the Weekly Crown pays. */
 export const WEEKLY_CROWN_CHIPS = 2;
 
@@ -443,11 +447,12 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
     cards = [...cards, ...g.cards];
     capped ||= chipsDue > 0 && (speed.chips ?? 0) - chipsBefore < chipsDue;
   }
-  // Weekly Missions: a left duel moves nothing
+  // Weekly Missions: a left duel only ends a streak mission's run
   let missions: Mission[] = [];
   let crown = false;
-  if (!o.forfeit) {
-    const ev: WeekEvent = { result: o.result, gained: Math.max(0, r.gained), rankUps: rankUps(p.step, next.step), wandering: !!info.wandering, second: !!info.second, myLp: o.myLp, turns: o.turns, link: false };
+  if (o.forfeit) next = { ...next, week: advanceWeek(next.week, LEFT_EVENT, now).week };
+  else {
+    const ev: WeekEvent = { result: o.result, gained: Math.max(0, r.gained), rankUps: rankUps(p, next), wandering: !!info.wandering, second: !!info.second, myLp: o.myLp, turns: o.turns, link: false, usedSkill: o.usedSkill };
     const wk = payWeek(speed, solo, next, ev, now, seed + 13);
     speed = wk.speed;
     solo = wk.solo;
@@ -572,7 +577,7 @@ export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' |
     cards = pay.cards;
     next = { ...next, paid: pay.paid };
   }
-  const wk = payWeek(speed, solo, next, { result, gained: Math.max(0, r.gained), rankUps: rankUps(p.step, next.step), wandering: false, second: false, myLp: 0, turns: 0, link: true }, now, seed + 47);
+  const wk = payWeek(speed, solo, next, { result, gained: Math.max(0, r.gained), rankUps: rankUps(p, next), wandering: false, second: false, myLp: 0, turns: 0, link: true, usedSkill: false }, now, seed + 47);
   speed = wk.speed;
   solo = wk.solo;
   next = wk.next;

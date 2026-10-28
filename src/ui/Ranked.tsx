@@ -388,7 +388,7 @@ function WeeklyMissions({ rp }: { rp: RankedProgress }) {
               <b>{m.text}</b>
               <em>{done ? '✓ pack won' : `${n}/${m.n} · 1 pack`}</em>
               <span class="rank-bar" aria-label={`${n} of ${m.n}`}>
-                <i style={{ width: `${Math.max(4, Math.round((n / m.n) * 100))}%` }} />
+                <i style={{ width: `${n ? Math.max(4, Math.round((n / m.n) * 100)) : 0}%` }} />
               </span>
             </div>
           );
@@ -405,9 +405,11 @@ function Rival({ rows }: { rows: LadderRow[] }) {
   if (i < 0) return null;
   if (i === 0) return rows.length > 1 ? <div class="rk-rival">👑 You're #1 this season. {rows[1].name} is {starsBetween(rows[0], rows[1])} star{starsBetween(rows[0], rows[1]) === 1 ? '' : 's'} behind.</div> : null;
   const gap = starsBetween(rows[i - 1], rows[i]);
+  // at the top the gap is counted in stars and Pharaoh Points alike
+  const unit = (n: number) => (rows[i - 1].step === TOP ? (n === 1 ? 'star or point' : 'stars or points') : n === 1 ? 'star' : 'stars');
   return (
     <div class="rk-rival">
-      ⚔ You're #{i + 1}. {rows[i - 1].name} is {gap === 0 ? "level with you: one more star passes them" : `${gap} star${gap === 1 ? "" : "s"} ahead: ${gap + 1} more passes them`}.
+      ⚔ You're #{i + 1}. {rows[i - 1].name} is {gap === 0 ? `level with you: one more ${unit(1)} passes them` : `${gap} ${unit(gap)} ahead: ${gap + 1} more passes them`}.
     </div>
   );
 }

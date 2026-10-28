@@ -23,6 +23,9 @@ export interface WeekEvent {
   turns: number;
   /** an online link battle that counted on the ladder */
   link: boolean;
+  usedSkill: boolean;
+  /** left the duel (or closed the game): only ends a streak mission's run */
+  left?: boolean;
 }
 
 export interface Mission {
@@ -47,7 +50,7 @@ export const MISSION_GROUPS: Mission[][] = [
   ],
   [
     { id: 'streak3', text: 'Win 3 Ranked Duels in a row', n: 3, step: (e) => (e.link ? 0 : win(e) ? 1 : -1), run: true },
-    { id: 'rankup2', text: 'Rank up twice', n: 2, step: (e) => e.rankUps },
+    { id: 'rankup2', text: 'Rank up twice (at Pharaoh: every 5 points)', n: 2, step: (e) => e.rankUps },
     { id: 'streak4', text: 'Win 4 Ranked Duels in a row', n: 4, step: (e) => (e.link ? 0 : win(e) ? 1 : -1), run: true },
   ],
   [
@@ -57,7 +60,7 @@ export const MISSION_GROUPS: Mission[][] = [
   ],
   [
     { id: 'lp3000', text: 'Win 2 Ranked Duels with 3000+ LP left', n: 2, step: (e) => (win(e) && !e.link && e.myLp >= 3000 ? 1 : 0) },
-    { id: 'link1', text: 'Win a link battle that counts on the ladder', n: 1, step: (e) => (win(e) && e.link ? 1 : 0) },
+    { id: 'skill2', text: 'Win 2 Ranked Duels using your Skill', n: 2, step: (e) => (win(e) && !e.link && e.usedSkill ? 1 : 0) },
     { id: 'play10', text: 'Finish 10 Ranked Duels (win or lose)', n: 10, step: (e) => (e.link ? 0 : 1) },
   ],
 ];
@@ -114,6 +117,7 @@ export function advanceWeek(w: WeekProgress | undefined, e: WeekEvent, now = new
   const prog = ms.map((m, i) => {
     const was = cur.prog[i] ?? 0;
     if (cur.paid.includes(i)) return m.n;
+    if (e.left) return m.run ? 0 : was;
     const s = m.step(e);
     return m.run && s < 0 ? 0 : Math.min(m.n, was + s);
   });
