@@ -1,6 +1,7 @@
 import type { GameEvent, LoggedEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
 import { cloudState, denied, onlineDb, type Db } from './cloud';
+import { screenProposal } from '../eds/session';
 
 export const NET_NO_ROOM = 'No room with that code. Check the 4 letters, or create a room.';
 export const NET_UNREACHABLE = "Can't reach the online server. Check your Wi-Fi or mobile data.";
@@ -45,6 +46,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
   private online = true;
   private run = 0;
   private timers: ReturnType<typeof setTimeout>[] = [];
+  /** the guest's recent chat lines (the host caps them) */
+  private chatAt: number[] = [];
   /** the room is set up: moves go straight out */
   private ready = false;
 
@@ -286,8 +289,11 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         if (typeof v !== 'string') return;
         try {
           const m = JSON.parse(v) as { ep?: number; ev?: GameEvent };
-          // a move sent during the last duel doesn't land in the rematch
-          if (m && typeof m === 'object' && m.ev && m.ep === this.ep) this.append(m.ev);
+          // a move sent during the last duel doesn't land in the rematch (a chat line does: "GG" as it starts)
+          if (m && typeof m === 'object' && m.ev && (m.ep === this.ep || ((m.ev as { type?: string }).type === 'CHAT' && m.ep === this.ep - 1))) {
+            const ev = screenProposal(m.ev, 1, this.chatAt);
+            if (ev) this.append(ev);
+          }
         } catch {
           /* not a move */
         }
