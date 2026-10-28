@@ -7,7 +7,7 @@ import type { SpeedDeck } from '../eds/speedSave';
 import { chatError, checkKey, claudeModel, costOf, keepTurn, runTurn, tooLong, type Model, type Msg } from '../deckchat/agent';
 import { diffDecks, diffEmpty, redoDiff, undoDiff, type DeckDiff } from '../deckchat/tools';
 import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
-import { localModel, type Memory } from '../deckchat/local';
+import { clean, localModel, type Memory } from '../deckchat/local';
 import { buzz, playBlip } from './sound';
 import { card, imageUrl } from '../eds/db';
 import './deckchat.css';
@@ -169,12 +169,13 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     // a ref, not state: two quick taps must not start two paid turns
     if (!msg || working || running.current) return;
     // "undo" said in the chat presses the Undo on the newest change
-    if (/^(undo|undo (it|that|this|the last change)|go back|take (it|that) back|revert( it| that)?)[.!]*$/i.test(msg) && lastChange) {
+    const said = clean(msg);
+    if (/^(undo|undo (it|that|this|the last change|last change)|go back|take (it|that) back|revert( it| that)?|put it back how it was)( again)?$/.test(said) && lastChange) {
       playBlip();
       setText('');
       return undo(lastChange, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Undid the last change. Say "redo" to put it back.' }]);
     }
-    if (/^(redo|put it back|undo the undo)[.!]*$/i.test(msg) && redoable) {
+    if (/^(redo|redo (it|that)|put it back|undo the undo)$/.test(said) && redoable) {
       playBlip();
       setText('');
       return redo(redoable, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Put the change back.' }]);
@@ -247,6 +248,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
 
   const undo = (t: Turn, said: Turn[] = []) => {
     if (!t.before || !t.diff) return;
+    // "take that out" must not reach for cards an Undo already took back
+    helperMemory.current = { added: [], removed: [] };
     playBlip();
     onChange(undoDiff(deckRef.current, t.diff, t.before));
     // later changes were made on top of this one, so they go too
@@ -287,7 +290,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           {key ? 'Claude ✓' : 'Claude'}
         </button>
         {chat.turns.length > 0 && !working && (
-          <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
+          <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), (helperMemory.current = { added: [], removed: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
             {sureNew ? 'Clear chat?' : 'New'}
           </button>
         )}

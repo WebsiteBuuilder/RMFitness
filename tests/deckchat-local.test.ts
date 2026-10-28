@@ -25,6 +25,13 @@ async function ask(w: ChatWorld, text: string) {
   const r = await runTurn(localModel(() => w), [], text, w, { onText: (d) => (said += d), onTool: (n) => tools.push(n) });
   return { ...r, said, tools, world: { ...w, deck: r.deck } };
 }
+const diffList = (a: string[], b: string[]) => {
+  const left = [...b];
+  return a.filter((n) => {
+    const i = left.indexOf(n);
+    return i < 0 ? true : (left.splice(i, 1), false);
+  });
+};
 const kinds = (d: SpeedDeck, k: string) => d.main.filter((n) => card(n)?.kind === k).length;
 /** every card in the deck could be there by the editor's rules (owned copies, 3 each, Limited List) */
 function legal(d: SpeedDeck, collection?: Record<string, number>): boolean {
@@ -89,7 +96,7 @@ for (const [what, check] of [
   const clear = await ask(base, 'clear the deck');
   ok(clear.deck.main.length === 0, 'clear empties it');
   const unknown = await ask(base, 'add 2 of that one card');
-  ok(unknown.deck.main.join() === base.deck.main.join() && /couldn't tell which card/.test(unknown.text), 'an add with no card name asks for the name and changes nothing');
+  ok(unknown.deck.main.join() === base.deck.main.join() && /couldn't tell which card|Which card/.test(unknown.text), 'an add with no card name asks for the name and changes nothing');
 }
 
 // ---------- stronger, swaps, rating ----------
@@ -152,7 +159,7 @@ for (const [what, check] of [
   const sug = await ask(base, 'what should i add?');
   ok(/best fits for this deck are/.test(sug.text) && sug.deck === base.deck, 'suggestions name cards and change nothing');
   const weak = await ask(base, 'take out the weakest card');
-  ok(weak.deck.main.length === base.deck.main.length - 1, '"take out the weakest card" takes out one');
+  ok(weak.deck.main.length >= 20 && diffList(base.deck.main, weak.deck.main).length === 1, '"take out the weakest card" swaps one out and keeps the deck at 20');
   const top = await ask(base, "what's the strongest monster in my deck");
   ok(/^Your strongest monster here is /.test(top.text), 'names the strongest monster');
   const fus = await ask(base, 'how do i summon a fusion monster');
@@ -227,6 +234,72 @@ for (const [what, check] of [
   ac.abort();
   const stopped = await runTurn(localModel(() => w), [], 'clear the deck', w, { signal: ac.signal }).then(() => false, (e) => e.name === 'AbortError');
   ok(stopped, 'Stop before the change stops the turn');
+}
+
+// ---------- second review round ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('build me a warrior deck');
+  const built = w.deck;
+  await say('take that out');
+  ok(w.deck.main.length === built.main.length, '"take that out" right after a build never empties the deck');
+  await say('put in 2 dark magician girl and remove the elegant egotist');
+  ok(w.deck.main.filter((n) => n === 'Dark Magician Girl').length === 2, 'add and remove in one message: the add');
+  await say('remove two dark magician girl and add 2 celtic guardian');
+  ok(!w.deck.main.includes('Dark Magician Girl') && w.deck.main.filter((n) => n === 'Celtic Guardian').length === 2, 'remove then add in one message both happen');
+  const sa = w.deck.main.filter((n) => n === 'Sakuretsu Armor').length;
+  await say('replace celtic guardian with 2 sakuretsu armor');
+  ok(!w.deck.main.includes('Celtic Guardian') && w.deck.main.filter((n) => n === 'Sakuretsu Armor').length === Math.min(3, sa + 2), '"replace X with 2 Y" swaps exactly those');
+  const sp = kinds(w.deck, 'spell');
+  await say('no more spells');
+  ok(kinds(w.deck, 'spell') < sp || sp === 0, '"no more spells" never adds spells');
+  await say('remove kuriboh');
+  await say('add too kuriboh');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 2, '"add too kuriboh" (voice for two) adds 2');
+  await say('take one of those out');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 1, '"take one of those out" takes out one');
+  await say('put that back in');
+  ok(w.deck.main.filter((n) => n === 'Kuriboh').length === 2, '"put that back in" returns the card just cut');
+  await say('take the skill off');
+  ok(w.deck.skill === null, '"take the skill off" takes it off');
+  await say('use symbol of pride');
+  ok(w.deck.skill === 'Symbol of Pride', '"use <Skill>" works without the word Skill');
+  await say('take out the traps');
+  ok(kinds(w.deck, 'trap') === 0 && w.deck.main.length >= 20, 'cutting a kind refills to 20 without that kind');
+  await say('make it a zombie deck');
+  ok(w.deck.main.filter((n) => card(n)?.race === 'Zombie').length >= 6, '"make it a zombie deck" restyles the deck');
+  const z = w.deck.main.filter((n) => card(n)?.race === 'Dragon').length;
+  await say('i want more dragons');
+  ok(w.deck.main.filter((n) => card(n)?.race === 'Dragon').length > z, '"more dragons" brings Dragons in');
+  await say('make it bigger');
+  ok(w.deck.main.length === 25, '"make it bigger" adds 5');
+  await say('make it smaller');
+  ok(w.deck.main.length === 20, '"make it smaller" cuts 5');
+  const big40 = await say('make it 40 cards');
+  ok(/20 to 30/.test(big40.text), 'an out-of-range size says the range');
+  const before = w.deck;
+  await say('remove everything except the monsters');
+  ok(w.deck.main.length > 0 && w.deck.main.every((n) => card(n)?.kind === 'monster'), '"remove everything except the monsters" keeps the monsters');
+  w = { ...w, deck: before };
+  const fd = await say('add harpies feather duster');
+  ok(/isn't a Speed Duel card/.test(fd.text) && w.deck === before, 'a non-Speed card with a near Speed name is not swapped for it');
+  const thanks = await say('thank you');
+  ok(!/not sure/.test(thanks.text) && w.deck === before, 'thanks gets a friendly reply');
+  const legalQ = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'is my deck legal?', { deck: empty(), collection: big });
+  ok(legalQ.deck.main.length === 0, 'a question about an empty deck doesn\'t build one');
+  for (const q of ['tell me something interesting', 'what should I do next', 'a deck for my little sister', 'i think my deck needs work', 'it keeps losing']) ok(!findCards(clean(q)).length, `"${q}" names no card`);
+  const bm = await say('make me a blue eyes deck');
+  ok(w.deck.main.filter((n) => n === 'Blue-Eyes White Dragon').length === 3, `a Blue-Eyes deck runs 3 Blue-Eyes White Dragon (${bm.deck.name})`);
+  const odd: ChatWorld = { deck: { ...w.deck, main: ['Bogus Card', ...w.deck.main.slice(1)] }, collection: big };
+  const t0 = Date.now();
+  await runTurn(localModel(() => odd), [], 'make it stronger', odd);
+  ok(Date.now() - t0 < 3000, 'an unknown card never slows the helper down');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
