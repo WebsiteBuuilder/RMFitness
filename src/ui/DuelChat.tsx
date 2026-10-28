@@ -161,18 +161,28 @@ export function DuelChat({
   // their turn it rises over your hand, so their whole field stays in view; on yours it drops over the
   // top, so your hand and your side stay free to play. Where that leaves little room it shrinks to one
   // row of buttons and the box.
-  const up = place === 'duel' && mine;
+  // (Classic on a short phone, your turn: too little room over the top, so it goes over the help box under your hand)
+  const [under, setUnder] = useState(false);
+  const up = place === 'duel' && mine && !under;
   const sheet = useRef<HTMLDivElement>(null);
+  const fab = useRef<HTMLButtonElement>(null);
   const [room, setRoom] = useState<number | null>(null);
   useLayoutEffect(() => {
-    if (!open || place !== 'duel') return setRoom(null);
+    if (!open || place !== 'duel') return (setRoom(null), setUnder(false));
     // (Touch: the turn row and the round phase button beside it; Classic: the centre strip)
     const boxes = [...document.querySelectorAll('.duel.touch .tmid, .duel.touch .tphase, .duel .field .center')].map((el) => el.getBoundingClientRect()).filter((b) => b.bottom > 0);
-    // (its resting place: while it slides in, its box is still moving)
-    const css = sheet.current ? getComputedStyle(sheet.current) : null;
-    const r = !css || !boxes.length ? NaN : up ? Math.min(...boxes.map((b) => b.top)) - parseFloat(css.top) - 6 : window.innerHeight - parseFloat(css.bottom) - Math.max(...boxes.map((b) => b.bottom)) - 6;
-    setRoom(Number.isFinite(r) ? Math.floor(r) : null);
-  }, [open, place, short, turned, up]);
+    const f = fab.current?.getBoundingClientRect();
+    if (!boxes.length || !f) return setRoom(null);
+    // (where it rests: over the top it starts just above the button's top, from the bottom 8px up)
+    const fromTop = Math.min(...boxes.map((b) => b.top)) - (f.top - 4) - 6;
+    const fromBottom = window.innerHeight - 8 - Math.max(...boxes.map((b) => b.bottom)) - 6;
+    if (!mine) return (setUnder(false), setRoom(Math.floor(fromBottom)));
+    const hand = document.querySelector('.duel:not(.touch) .hand')?.getBoundingClientRect();
+    const underHand = hand ? window.innerHeight - 8 - hand.bottom - 6 : -1;
+    const low = fromTop < 160 && underHand > fromTop;
+    setUnder(low);
+    setRoom(Math.floor(low ? underHand : fromTop));
+  }, [open, place, short, turned, mine]);
   const mini = room !== null && room < 230;
   /** holding the eye button: the chat fades away so the field shows through */
   const [peek, setPeek] = useState(false);
@@ -180,7 +190,6 @@ export function DuelChat({
   useEffect(() => void (!open && setPeek(false)), [open]);
 
   // A tap on the board outside the chat closes it, and the tap still does what it does (play a card).
-  const fab = useRef<HTMLButtonElement>(null);
   const ringBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open && !ring) return;
@@ -281,6 +290,8 @@ export function DuelChat({
       document.removeEventListener('pointermove', move, true);
       document.removeEventListener('pointerup', up, true);
       setAim(null);
+      // (let go off the button: the next tap on it is a tap again)
+      if (!fab.current?.contains(e.target as Node)) held.current = false;
       const it = itemAt(e.clientX, e.clientY);
       if (it?.dataset.say) {
         held.current = false;
@@ -289,6 +300,7 @@ export function DuelChat({
     };
     // (the phone took the touch away, e.g. a call: nothing sent, the row stays for a tap)
     const cancel = () => {
+      held.current = false;
       document.removeEventListener('pointermove', move, true);
       document.removeEventListener('pointerup', up, true);
       setAim(null);
@@ -303,7 +315,14 @@ export function DuelChat({
     if (ring) return setRing(false);
     setOpen(!open);
   };
-  useEffect(() => void (attention && setRing(false)), [attention]);
+  useEffect(() => void (attention && attention !== 'theirs:' && setRing(false)), [attention]);
+  // (lines still on their way when this chat came up, e.g. on the result screen: check on them in time)
+  useEffect(() => {
+    for (const p of session.chatPending) {
+      const t = window.setTimeout(() => (timers.current.delete(t), setTick((n) => n + 1)), Math.max(0, PENDING_MS - (Date.now() - p.at)) + 50);
+      timers.current.add(t);
+    }
+  }, []);
   useEffect(() => {
     if (!ring) return;
     const key = (e: KeyboardEvent) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), setRing(false));
@@ -389,7 +408,7 @@ export function DuelChat({
         </div>
       )}
       {/* your own line: a short "sent" pill beside the button */}
-      {myBubble && !open && (
+      {myBubble && !open && !ring && (
         <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
           <b>You:</b>
           <span>{myBubble.text}</span>
@@ -475,7 +494,6 @@ export function DuelChat({
                 {emoteButtons.slice(3)}
                 {phraseButtons.slice(3)}
                 {/* (the small chat: hiding their messages sits at the end of the row) */}
-                {mini && muteButton}
               </div>
               {mini && (
                 <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
@@ -502,6 +520,7 @@ export function DuelChat({
               Send
             </button>
             {mini && peekButton}
+            {mini && muteButton}
           </form>
           {slow && (
             <p class="chat-slow" role="status">

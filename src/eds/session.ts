@@ -75,6 +75,8 @@ export interface ChatLine {
 const LOAD_PAUSE_MS = 300;
 /** A line in that first load said more than this long ago (by the host's clock) is history. */
 const LOAD_OLD_MS = 5000;
+/** ...and roughly now by this phone's clock (generous: phones' clocks differ a little). */
+const LOAD_CLOCK_MS = 60_000;
 
 /** The longest chat line. */
 export const CHAT_MAX = 80;
@@ -236,11 +238,12 @@ export class DuelSession {
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
     // (a line sent again after it looked lost, when the first one got there after all: shown once)
     const cid = chatCid(ev.cid);
-    if (cid && this.chat.some((l) => l.cid === cid && l.player === ev.player)) return;
+    if (cid && [...this.earlierChat, ...this.chat].some((l) => l.cid === cid && l.player === ev.player)) return;
     // (history: part of that first load and said a while ago; the room's very first line, said just now, is news)
     // (and a line stamped before the newest entry of that load is history however late it arrives;
     // host times are only compared with host times, so a phone's clock being off doesn't matter)
-    const old = this.loaded ? ev.ts < this.loadNewest : !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS);
+    // (in the load: news only if it's among the load's newest entries by host time, and roughly now on this phone's clock)
+    const old = this.loaded ? ev.ts < this.loadNewest : !(this.loadNewest - ev.ts < LOAD_OLD_MS && Math.abs(Date.now() - ev.ts) < LOAD_CLOCK_MS);
     this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old, cid }];
   }
 

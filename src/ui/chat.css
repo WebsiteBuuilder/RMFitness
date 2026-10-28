@@ -234,11 +234,13 @@
   line-height: 1;
 }
 .chat-list {
+  /* about three lines: the chat stays short, older lines scroll */
+  max-height: 120px;
   /* older lines fade out under the header */
   -webkit-mask-image: linear-gradient(transparent, #000 14px);
   mask-image: linear-gradient(transparent, #000 14px);
-  flex: 1 1 auto;
-  min-height: 64px;
+  flex: 0 1 auto;
+  min-height: 40px;
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
