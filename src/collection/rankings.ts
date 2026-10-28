@@ -18,7 +18,7 @@ export interface BoardStats extends Rec {
   /** duelists this one sent to the Shadow Realm */
   shadow?: number;
   /** Ranked Duel: the season ("2026-10"), the ladder step and Duel King points */
-  rk?: { s: string; step: number; kp: number };
+  rk?: { s: string; step: number; kp: number; st?: number };
 }
 
 export interface BoardEntry extends BoardStats {
@@ -106,6 +106,6 @@ export function cleanStats(x: unknown): BoardStats | null {
   const o = x as Partial<BoardStats> | null;
   if (!o || typeof o !== 'object') return null;
   const n = (v: unknown, max = 1e6) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-max, Math.min(max, Math.floor(v))) : 0);
-  const rk = o.rk && typeof o.rk === 'object' && typeof o.rk.s === 'string' && /^\d{4}-\d{2}$/.test(o.rk.s) ? { s: o.rk.s, step: Math.max(0, n(o.rk.step, 30)), kp: Math.max(0, n(o.rk.kp, 100000)) } : undefined;
+  const rk = o.rk && typeof o.rk === 'object' && typeof o.rk.s === 'string' && /^\d{4}-\d{2}$/.test(o.rk.s) ? { s: o.rk.s, step: Math.max(0, n(o.rk.step, 30)), kp: Math.max(0, n(o.rk.kp, 100000)), st: Math.max(0, n(o.rk.st, 9)) } : undefined;
   return { w: Math.max(0, n(o.w)), l: Math.max(0, n(o.l)), d: Math.max(0, n(o.d)), streak: n(o.streak, 1000), shadow: Math.max(0, n(o.shadow)), ...(rk ? { rk } : {}) };
 }

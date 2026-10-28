@@ -84,6 +84,31 @@
 .rk-emblem.t-king svg {
   filter: drop-shadow(0 0 10px rgba(255, 216, 107, 0.6));
 }
+.t-legend {
+  --t1: #8ff7ff;
+  --t2: #1a3fa8;
+}
+.rk-emblem.t-legend svg {
+  filter: drop-shadow(0 0 10px rgba(120, 230, 255, 0.65));
+}
+.t-pharaoh {
+  --t1: #fff1a8;
+  --t2: #0f6b6b;
+}
+.rk-emblem.t-pharaoh svg {
+  filter: drop-shadow(0 0 12px rgba(255, 225, 120, 0.85));
+  animation: rk-pharaoh 2.4s ease-in-out infinite;
+}
+@keyframes rk-pharaoh {
+  50% {
+    filter: drop-shadow(0 0 18px rgba(255, 225, 120, 1));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rk-emblem.t-pharaoh svg {
+    animation: none;
+  }
+}
 
 .rk-stars {
   display: inline-flex;
@@ -143,7 +168,7 @@
 }
 .rk-ladder {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(10, 1fr);
   gap: 4px;
   margin: 10px 2px 8px;
 }
@@ -394,4 +419,79 @@
 }
 .sdh-toprank .rk-emblem.s b {
   font-size: 9px;
+}
+
+/* Weekly Ranked Missions */
+.rk-week {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rk-mission {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, 0.1);
+}
+.rk-mission b {
+  font-size: 14px;
+  min-width: 0;
+}
+.rk-mission em {
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.rk-mission .rank-bar {
+  grid-column: 1 / -1;
+}
+.rk-mission.done {
+  background: rgba(80, 200, 120, 0.16);
+}
+.rk-mission.done em {
+  color: #4cc27a;
+  opacity: 1;
+}
+.rk-crown {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 200, 90, 0.6);
+}
+.rk-crown.done {
+  border-style: solid;
+  background: rgba(255, 200, 90, 0.16);
+}
+
+/* The leaderboard on the Ranked screen */
+.rk-rival {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(120, 80, 220, 0.14);
+  border: 1px solid rgba(160, 120, 255, 0.4);
+}
+.rk-passed {
+  font-weight: 700;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(220, 60, 60, 0.18);
+  border: 1px solid rgba(255, 100, 100, 0.5);
+}
+.rank-gap {
+  text-align: center;
+  opacity: 0.6;
+  line-height: 1;
+}
+.rk-board-more {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.9;
 }

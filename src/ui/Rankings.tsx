@@ -10,8 +10,9 @@ import { crownHolder } from '../collection/economy';
 import { online } from '../online/controller';
 import { Win } from './Window';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { TOP, ladderClock, seasonName, seasonOf, stepName } from '../eds/speedCampaign/ranked';
+import { ladderClock, migrateRanked, seasonName, seasonOf } from '../eds/speedCampaign/ranked';
 import { RankEmblem } from './RankBadge';
+import { LadderList, rowRank, useLadder } from './RankedLadder';
 import './rankings.css';
 
 /** Duelists this name sent to the Shadow Realm on this phone. */
@@ -20,16 +21,9 @@ export const shadowSends = (name: string) => shadowLog().filter((e) => e.winner 
 /** A profile's record, as shown on the board and shared with friends. */
 export function boardStatsOf(name: string, speed: SpeedSave | null, eds: SaveFile | null, profileId?: string): BoardStats {
   const out = linkStats(speed, eds, shadowSends(name));
-  const rp = profileId ? loadSolo(profileId).ranked : undefined;
-  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp } } : out;
-}
-
-/** This season's Ranked ladder: everyone who has played it this month, highest rank first. */
-function rankedRows(entries: BoardEntry[]) {
-  const season = seasonOf(ladderClock(undefined));
-  return entries
-    .filter((e) => e.rk && e.rk.s === season && e.rk.step <= TOP)
-    .sort((a, b) => b.rk!.step - a.rk!.step || b.rk!.kp - a.rk!.kp || a.name.localeCompare(b.name));
+  const saved = profileId ? loadSolo(profileId).ranked : undefined;
+  const rp = saved && migrateRanked(saved);
+  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp, st: rp.stars } } : out;
 }
 
 export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; speed: SpeedSave | null; eds: SaveFile | null; onBack: () => void }) {
@@ -62,20 +56,22 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
   const pts = rankOf(me);
   const pct = t.next ? Math.round(((pts - t.at) / (t.next.at - t.at)) * 100) : 100;
   const rivals = rivalRows(speed, eds);
-  const ranked = rankedRows(entries);
+  const season = seasonOf(ladderClock(loadSolo(profile.id).ranked));
+  const { rows: ranked, world } = useLadder(profile, myName, season);
+  const myLine = ranked.findIndex((r) => r.kind === 'me');
 
   return (
     <div class="screen">
       <Win title="Duelist Rankings" onClose={onBack} class="rank-win">
         {tab === 'ranked' ? (
           <div class="rank-me">
-            {me.rk && me.rk.s === seasonOf(ladderClock(undefined)) ? <RankEmblem step={me.rk.step} size="m" /> : <RankEmblem step={0} size="m" />}
+            <RankEmblem step={myLine >= 0 ? ranked[myLine].step : 0} size="m" />
             <div class="rank-me-text">
               <b>{myName}</b>
               <span class="rank-title">
-                {me.rk && me.rk.s === seasonOf(ladderClock(undefined)) ? `${stepName(me.rk.step)} · #${Math.max(1, ranked.findIndex((r) => r.kind === 'me') + 1)} of ${ranked.length}` : 'No Ranked Duels yet this season'}
+                {myLine >= 0 ? `${rowRank(ranked[myLine])} · #${myLine + 1} of ${ranked.length}` : 'No Ranked Duels yet this season'}
               </span>
-              <span class="rank-next">Ranked Duel · {seasonName(seasonOf(ladderClock(undefined)))} season</span>
+              <span class="rank-next">Ranked Duel · {seasonName(season)} season</span>
             </div>
           </div>
         ) : (
@@ -139,22 +135,7 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
           ranked.length === 0 ? (
             <p class="hint">Nobody has played Ranked Duel this season yet. Climb from the Duel tab, and your brother shows up here once he does.</p>
           ) : (
-            <ol class="rank-list">
-              {ranked.map((r, i) => (
-                <li key={r.name} class={`rank-row ${r.kind === 'me' ? 'me' : ''} ${i === 0 ? 'top' : ''}`}>
-                  <span class="rank-place">{i + 1}</span>
-                  <RankEmblem step={r.rk!.step} size="s" />
-                  <span class="rank-who">
-                    <b>{r.name}</b>
-                    <small>{r.kind === 'me' ? 'you' : r.kind === 'phone' ? 'on this phone' : r.online ? 'friend · online' : 'friend'}</small>
-                  </span>
-                  <span class="rank-rec">
-                    <b>{stepName(r.rk!.step)}</b>
-                    <small>{r.rk!.step === TOP ? `${r.rk!.kp} King points` : seasonName(r.rk!.s)}</small>
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <LadderList rows={ranked} />
           )
         ) : rivals.length === 0 ? (
           <p class="hint">No link battles yet. Beat your brother online and he shows up here.</p>
@@ -181,7 +162,11 @@ export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; sp
             })}
           </ol>
         )}
-        {tab === 'ranked' && <p class="hint rank-foot">This month's Ranked Duel ladder: duelists on this phone, and friends while they share their record online. It resets with the season.</p>}
+        {tab === 'ranked' && (
+          <p class="hint rank-foot">
+            {world ? "This month's Ranked Duel ladder for everyone who plays, updated live. It resets with the season." : "This month's Ranked Duel ladder: duelists on this phone, and friends who shared their rank. Everyone else shows up once the game is online."}
+          </p>
+        )}
         {tab !== 'ranked' && <p class="hint rank-foot">Link battles in both games count: 10 points a win, 3 a draw, minus 5 a loss. 🔥 win streak · ☠ sent to the Shadow Realm. Friends' records update while they're online. Rankings are bragging rights only and never pay prizes.</p>}
       </Win>
     </div>
