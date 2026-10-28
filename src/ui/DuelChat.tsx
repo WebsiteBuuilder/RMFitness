@@ -249,7 +249,9 @@ export function DuelChat({
     if (!canSend(sent, now)) {
       setSlow(true);
       clearTimeout(slowTimer.current);
-      slowTimer.current = window.setTimeout(() => setSlow(false), SPAM_MS / 2);
+      // (the note stays until a line can go again: the oldest of the recent ones leaves the window)
+      const recent = sent.filter((t) => now - t < SPAM_MS);
+      slowTimer.current = window.setTimeout(() => setSlow(false), Math.max(500, Math.min(...recent) + SPAM_MS - now));
       return false;
     }
     session.chatSentAt = [...sent.filter((t) => now - t < SPAM_MS), now];
