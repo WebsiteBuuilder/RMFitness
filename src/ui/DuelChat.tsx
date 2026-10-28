@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { CHAT_MAX, cleanChat, type ChatLine, type DuelSession } from '../eds/session';
 import type { Pid } from '../eds/types';
 import * as sfx from './duelSfx';
-import { bubbleMs, canSend, EMOTES, isEmote, MINE_MS, PENDING_MS, phrasesFor, SPAM_MS } from './chatRules';
+import { bubbleMs, canSend, EMOTES, HOLD_MS, isEmote, MINE_MS, PENDING_MS, phrasesFor, quickEmotes, SPAM_MS } from './chatRules';
 import './chat.css';
 
 /** a light tap on the phone (Android; iPhone browsers have none) as a line goes out or comes in */
@@ -63,6 +63,14 @@ export function DuelChat({
   const [, setTick] = useState(0);
   const [bubbles, setBubbles] = useState<ChatLine[]>([]);
   const [slow, setSlow] = useState(false);
+  const [hint, setHint] = useState('');
+  const hintTimer = useRef<number>();
+  useEffect(() => () => clearTimeout(hintTimer.current), []);
+  const showHint = (h: string) => {
+    setHint(h);
+    clearTimeout(hintTimer.current);
+    hintTimer.current = window.setTimeout(() => setHint(''), 1800);
+  };
   const slowTimer = useRef<number>();
   useEffect(() => () => clearTimeout(slowTimer.current), []);
   const [unread, setUnreadState] = useState(session.chatUnread);
@@ -115,12 +123,15 @@ export function DuelChat({
     timers.current.add(t);
   };
 
+  // (opening the chat reads what was said; a line arriving while it's open shows in it, or as a bubble over the small one)
   useEffect(() => {
     if (!open) return;
     setUnread(() => 0);
     setBubbles([]);
+  }, [open]);
+  useEffect(() => {
     const el = list.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (open && el) el.scrollTop = el.scrollHeight;
   }, [open, shown.length, pendingCount]);
 
   // The duel needs you (your prompt, an attack, a new phase or turn): the chat closes; what you typed stays.
@@ -223,7 +234,7 @@ export function DuelChat({
     session.chatPending = [...session.chatPending, { id, text, at: now }];
     session.send({ type: 'CHAT', player: mySeat, text });
     buzz();
-    if (!session.chatOpen) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
+    if (!session.chatOpen || miniNow.current) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
     const t = window.setTimeout(() => (timers.current.delete(t), setTick((n) => n + 1)), PENDING_MS + 50);
     timers.current.add(t);
     return true;
@@ -238,6 +249,8 @@ export function DuelChat({
   const holdTimer = useRef<number>();
   const held = useRef(false);
   const [aim, setAim] = useState<string | null>(null);
+  /** the button filling up while it's held (the cue on an iPhone, which can't buzz) */
+  const [holding, setHolding] = useState(false);
   useEffect(() => () => clearTimeout(holdTimer.current), []);
   const holdStart = (e: PointerEvent) => {
     held.current = false;
@@ -248,13 +261,15 @@ export function DuelChat({
     } catch {
       /* not captured */
     }
+    setHolding(true);
     holdTimer.current = window.setTimeout(() => {
       held.current = true;
+      setHolding(false);
       setRing(true);
       buzz();
-    }, 380);
+    }, HOLD_MS);
   };
-  const holdEnd = () => clearTimeout(holdTimer.current);
+  const holdEnd = () => (clearTimeout(holdTimer.current), setHolding(false));
   const itemAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.chat-ring [data-say]') ?? null;
   useEffect(() => {
     if (!ring || !held.current) return;
@@ -299,7 +314,8 @@ export function DuelChat({
   };
 
   const theirName = names[opp] || 'your opponent';
-  const phrases = phrasesFor(place === 'low' ? 'room' : place === 'top' ? 'after' : mine ? 'mine' : 'theirs');
+  const moment = place === 'low' ? 'room' : place === 'top' ? 'after' : mine ? 'mine' : 'theirs';
+  const phrases = phrasesFor(moment);
   // (one at a time: a newer line replaces the one showing)
   const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
@@ -315,19 +331,26 @@ export function DuelChat({
       : vv
         ? { top: `${vv.top + 8}px`, maxHeight: `${Math.max(120, vv.h - 16)}px` }
         : undefined;
+  const peekFrom = useRef(0);
+  const peekOff = () => {
+    // (a quick tap does nothing to see: say how it works)
+    if (peek && Date.now() - peekFrom.current < 250) showHint('Hold the eye to see the field');
+    setPeek(false);
+  };
   const peekButton = (
-    <button type="button" class="chat-peek" aria-label="Hold to see the field" onPointerDown={() => setPeek(true)} onPointerUp={() => setPeek(false)} onPointerCancel={() => setPeek(false)} onPointerLeave={() => setPeek(false)} onContextMenu={(e) => e.preventDefault()}>
+    <button type="button" class="chat-peek" aria-label="Hold to see the field" onPointerDown={() => ((peekFrom.current = Date.now()), setPeek(true))} onPointerUp={peekOff} onPointerCancel={() => setPeek(false)} onPointerLeave={() => setPeek(false)} onContextMenu={(e) => e.preventDefault()}>
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
         <path d="M12 5C6.5 5 2.7 9.2 1.5 12c1.2 2.8 5 7 10.5 7s9.3-4.2 10.5-7C21.3 9.2 17.5 5 12 5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2.2a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z" fill="currentColor" />
       </svg>
     </button>
   );
   const muteButton = (
-    <button type="button" class={`chat-mute ${muted ? 'on' : ''}`} onClick={toggleMute} aria-pressed={muted} aria-label={muted ? `${theirName} is muted: tap to see their messages again` : `Mute ${theirName}`} title={muted ? 'Unmute' : 'Mute'}>
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-        <path d="M3 9.5v5h4l5 4.5v-14L7 9.5z" fill="currentColor" />
-        {muted ? <path d="M16 9l5 6m0-6l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" />}
+    <button type="button" class={`chat-mute ${muted ? 'on' : ''}`} onClick={toggleMute} aria-pressed={muted} aria-label={muted ? `${theirName}'s messages are hidden: tap to show them` : `Hide ${theirName}'s messages`}>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="currentColor" opacity={muted ? 0.45 : 1} />
+        {muted && <path d="M3 3l18 18" stroke="#ffd2d2" stroke-width="2.4" stroke-linecap="round" />}
       </svg>
+      <span>{muted ? 'Show' : 'Hide'}</span>
     </button>
   );
 
@@ -356,7 +379,7 @@ export function DuelChat({
         </div>
       )}
       {/* your own line: a short "sent" pill beside the button */}
-      {myBubble && !open && (
+      {myBubble && (!open || mini) && (
         <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
           <b>You:</b>
           <span>{myBubble.text}</span>
@@ -366,7 +389,7 @@ export function DuelChat({
         <>
           <div ref={ringBox} class={`chat-ring at-${place}`} role="menu" aria-label="Quick chat">
             <div class="chat-ring-emotes">
-              {EMOTES.slice(0, 6).map((t) => (
+              {quickEmotes(moment).map((t) => (
                 <button key={t} type="button" role="menuitem" data-say={t} class={`chat-emote ${aim === t ? 'aim' : ''}`} onClick={() => quick(t)} aria-label={`Send ${t}`}>
                   {t}
                 </button>
@@ -382,7 +405,7 @@ export function DuelChat({
           </div>
         </>
       )}
-      <button ref={fab} class={`chat-fab at-${place} ${open || ring ? 'on' : ''}`} aria-label={unread ? `Chat, ${unread} new (hold for quick emotes)` : 'Chat (hold for quick emotes)'} aria-expanded={open} onClick={fabTap} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
+      <button ref={fab} class={`chat-fab at-${place} ${open || ring ? 'on' : ''} ${holding ? 'holding' : ''}`} aria-label={unread ? `Chat, ${unread} new (hold for quick emotes)` : 'Chat (hold for quick emotes)'} aria-expanded={open} onClick={fabTap} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="currentColor" />
         </svg>
@@ -394,7 +417,7 @@ export function DuelChat({
       {open && (
         <div ref={sheet} class={`chat-sheet at-${place} ${up ? 'up' : ''} ${mini ? 'mini' : ''} ${peek ? 'peek' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={sheetStyle}>
           <div class="chat-head">
-            <span class="chat-title">Chat with {theirName}</span>
+            <span class={`chat-title ${hint ? 'hint' : ''}`}>{hint || `Chat with ${theirName}`}</span>
             {place === 'duel' && peekButton}
             {muteButton}
             <button class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
@@ -424,11 +447,20 @@ export function DuelChat({
             )}
           </div>
           {short || mini ? (
-            <div class="chat-quick">
-              {emoteButtons.slice(0, 3)}
-              {phraseButtons.slice(0, 3)}
-              {emoteButtons.slice(3)}
-              {phraseButtons.slice(3)}
+            <div class="chat-row">
+              <div class="chat-quick">
+                {emoteButtons.slice(0, 3)}
+                {phraseButtons.slice(0, 3)}
+                {emoteButtons.slice(3)}
+                {phraseButtons.slice(3)}
+                {/* (the small chat: hiding their messages sits at the end of the row) */}
+                {mini && muteButton}
+              </div>
+              {mini && (
+                <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
+                  ×
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -449,12 +481,6 @@ export function DuelChat({
               Send
             </button>
             {mini && peekButton}
-            {mini && muteButton}
-            {mini && (
-              <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
-                ×
-              </button>
-            )}
           </form>
           {slow && (
             <p class="chat-slow" role="status">

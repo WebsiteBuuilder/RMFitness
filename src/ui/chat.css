@@ -17,7 +17,8 @@
     0 3px 10px #000a,
     0 0 0 2px #f7c94833 inset;
   cursor: pointer;
-  touch-action: manipulation;
+  /* (held and slid onto an emote: no page scroll or pull-to-refresh takes the touch) */
+  touch-action: none;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.12s;
 }
@@ -226,7 +227,6 @@
   border-color: #e5484d;
   color: #ffd2d2;
 }
-.chat-mute,
 .chat-x {
   width: 44px;
   padding: 0;
@@ -584,4 +584,57 @@
   color: #ffd2d2;
   font-size: 11px;
   font-weight: 700;
+}
+
+/* the chat button filling up while held */
+.chat-fab.holding {
+  animation: chat-hold 0.38s linear forwards;
+}
+@keyframes chat-hold {
+  to {
+    transform: scale(1.12);
+    box-shadow:
+      0 3px 10px #000a,
+      0 0 0 4px #f7c948;
+  }
+}
+.chat-ring {
+  animation-name: chat-ring-pop;
+}
+@keyframes chat-ring-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.04);
+  }
+}
+.chat-mute {
+  padding: 0 12px 0 10px;
+  grid-auto-flow: column;
+  gap: 5px;
+}
+.chat-title.hint {
+  color: #f7c948;
+  font-size: 13px;
+}
+/* the small chat: the quick row scrolls beside a fixed close button */
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.chat-row .chat-quick {
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
+}
+.chat-sheet.mini .chat-mute {
+  padding: 0;
+  width: 44px;
+}
+.chat-sheet.mini .chat-mute span {
+  display: none;
 }

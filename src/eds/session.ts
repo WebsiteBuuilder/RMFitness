@@ -159,7 +159,8 @@ export class DuelSession {
   /** this phone's lines on their way to the room, and whether the other player is muted (this room only) */
   chatPending: { id: string; text: string; at: number }[] = [];
   chatMuted = false;
-  private readonly createdAt = Date.now();
+  /** the newest host time in that first load (a later line stamped before it is history too: the load arriving in parts) */
+  private loadNewest = 0;
   /**
    * The room's log as this phone first gets it comes in one go (a reload or a rejoin hands it all
    * over at once): entries until the first pause are that load (history); after it, news.
@@ -206,7 +207,10 @@ export class DuelSession {
       if (!this.loaded) {
         const now = Date.now();
         if (this.loadingUntil && now > this.loadingUntil) this.loaded = true;
-        else this.loadingUntil = now + LOAD_PAUSE_MS;
+        else {
+          this.loadingUntil = now + LOAD_PAUSE_MS;
+          if (typeof ev.ts === 'number') this.loadNewest = Math.max(this.loadNewest, ev.ts);
+        }
       }
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
       else {
@@ -223,8 +227,9 @@ export class DuelSession {
     const text = cleanChat(ev.text);
     if (!text || (ev.player !== 0 && ev.player !== 1)) return;
     // (history: part of that first load and said a while ago; the room's very first line, said just now, is news)
-    // (and a line said well before this phone opened the room is history however the load arrived)
-    const old = (!this.loaded && !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS)) || ev.ts < this.createdAt - LOAD_OLD_MS;
+    // (and a line stamped before the newest entry of that load is history however late it arrives;
+    // host times are only compared with host times, so a phone's clock being off doesn't matter)
+    const old = this.loaded ? ev.ts < this.loadNewest : !(Math.abs(Date.now() - ev.ts) < LOAD_OLD_MS);
     this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old }];
   }
 
