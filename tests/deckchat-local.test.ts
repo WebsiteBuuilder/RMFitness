@@ -594,5 +594,29 @@ for (const [what, check] of [
   }
 }
 
+// ---------- round 11: Skill fit, Skill follow-ups, outside cards, put back ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('build me a beast deck');
+  ok(w.deck.skill !== 'Crystal Transcendence', `a Beast deck does not get Crystal Transcendence (${w.deck.skill})`);
+  await say('what skill should i use');
+  const before = w.deck.skill;
+  const sk = await say('put that skill on');
+  ok(/Now using|already this deck|^Picked /.test(sk.text) && !!w.deck.skill, `"put that skill on" equips the tip (${sk.text.slice(0, 80)}; was ${before})`);
+  const n0 = w.deck.main.length;
+  const mw = await say('add maiden with eyes of blue');
+  ok(/isn't a Speed Duel card|couldn't find/.test(mw.text) && w.deck.main.length === n0, `"add maiden with eyes of blue" is refused (${mw.text.slice(0, 80)})`);
+  const red = w.deck.main.find((n) => card(n)?.kind === 'monster')!;
+  await say(`take out ${red}`);
+  const pb = await say('put him back');
+  ok(w.deck.main.includes(red) && !/couldn't find/i.test(pb.text), `"put him back" re-adds ${red} quietly (${pb.text.slice(0, 80)})`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);

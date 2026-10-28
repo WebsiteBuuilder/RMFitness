@@ -293,6 +293,11 @@ export function clean(text: string): string {
     .replace(/\b(remov|remvoe|rmove|delet)\b/g, (m) => (m.startsWith('del') ? 'delete' : 'remove'))
     .replace(/\b(tak|tke|taek)\b/g, 'take')
     .replace(/\bgimme\b/g, 'give me')
+    .replace(/\bgiv\b/g, 'give')
+    .replace(/\bmor\b/g, 'more')
+    .replace(/\b(dose|dos|duz)\b/g, 'does')
+    .replace(/\b(summund|sumoned|summond|sumond|summonned)\b/g, 'summoned')
+    .replace(/\b(skul|skulll)\b/g, 'skull')
     .replace(/\btrapz\b/g, 'traps')
     .replace(/\b(spels|spelz|spellz)\b/g, 'spells')
     .replace(/\b(spel)\b/g, 'spell')
@@ -300,6 +305,13 @@ export function clean(text: string): string {
     .replace(/\blady sister\b/g, 'lady sisters')
     .replace(/\b(kurbo|kuribo|kuriboo|kurboh|kribo)\b/g, 'kuriboh')
     .replace(/\b(grede|gred|greeed)\b/g, 'greed')
+    .replace(/\b(agressive|aggresive|agresive)\b/g, 'aggressive')
+    .replace(/\bbetter+r\b/g, 'better')
+    .replace(/\b(repalce|replase|replce)\b/g, 'replace')
+    .replace(/\b(meny|mny)\b/g, 'many')
+    .replace(/\b(wats|wut|wat)\b/g, 'whats')
+    .replace(/\bdark ?magishin\b/g, 'dark magician')
+    .replace(/\bharpy\b/g, 'harpie')
     // "and also a sangan": another add
     .replace(/^(?:and also|and|also|plus|oh and)\s+(?=(?:a|an|one|another|[1-3]|two|three)\s)/, 'add ')
     // "dont change anything just tell me whats weak": the question is the ask
@@ -337,6 +349,7 @@ export function clean(text: string): string {
     .replace(/\bthirty\b/g, '30')
     .replace(/\btwenty\b/g, '20')
     .replace(/\b([1-3]) ?x\b/g, '$1')
+    .replace(/\b(?:yami yugi|yugi mut[oa]|yugi moto|seto kaiba|joey wheeler|jonouchi|mai valentine|maximillion pegasus|maximilian pegasus|weevil underwood|rex raptor|bandit keith|bonz)\b/g, (m) => ({ jonouchi: 'joey' })[m] ?? m.split(' ').find((x) => /^(yugi|kaiba|joey|mai|pegasus|weevil|rex|keith|bonz)$/.test(x)) ?? m)
     // "a deck like yugi", "kaiba's deck": the deck that duelist is known for
     .replace(/\b(?:(?:a |an )?deck )?(?:like|as|of|copy) (yugi|kaiba|joey|mai|pegasus|weevil|rex|bonz|keith)s?\b(?! skills?)/g, (_m, c: string) => `${CHAR_DECK[c]} deck`)
     .replace(/\b(yugi|kaiba|joey|mai|pegasus|weevil|rex|bonz|keith)s? (?!style|type|kind)([a-z]{3,}) deck\b/g, '$2 deck')
@@ -473,7 +486,17 @@ function candidates(w: ChatWorld, d: SpeedDeck, f: (c: CardInfo) => boolean, ski
 
 /** a spell or trap that would do nothing in this deck: support for cards it doesn't run, a cost it can't pay, nothing to Fusion or Ritual Summon */
 function deadFor(c: CardInfo, d: SpeedDeck): boolean {
-  if (c.kind === 'monster') return false;
+  const mons = d.main.map((n) => cd(n)).filter((m): m is CardInfo => m?.kind === 'monster');
+  // a monster that feeds on Spells (Spell Counters) in a deck with almost none
+  if (c.kind === 'monster') return mons.length >= 6 && /spell counter/i.test(c.desc) && d.main.filter((n) => cd(n)?.kind === 'spell').length < 4;
+  if (mons.length >= 6) {
+    // costs and targets the deck can't supply: Normal Monsters, Xyz or Fusion Monsters, "7 or more DARK monsters"
+    if (/\b(banish|discard|send|reveal|tribute|target) (1|a|one|2|two) normal monsters?\b|\bnormal monsters? (from|in) your (hand|deck|graveyard|gy)\b/i.test(c.desc) && mons.filter((m) => m.vanilla).length < 3) return true;
+    if (/\bxyz monster|\b"number|\brank-up/i.test(c.desc) && !d.extra.some((n) => cd(n)?.sub === 'Xyz')) return true;
+    if (/\bfusion monster/i.test(c.desc) && !/polymerization/i.test(c.name) && !fusionReady(d)) return true;
+    const many = c.desc.match(/\b(\d+) or more ([A-Z]+|[A-Z][a-z]+(?:-[A-Z][a-z]+)?) monsters\b/);
+    if (many && [...RACES, ...ATTRS].includes(many[2]) && mons.filter((m) => m.race === many[2] || m.attribute === many[2]).length < Number(many[1]) + 2) return true;
+  }
   if (c.name === 'Polymerization' || (/"Polymerization"/.test(c.desc) && !/fusion monster/i.test(c.desc))) return !fusionReady(d);
   if (c.sub === 'Ritual') return !RITUAL_OF(c) || !d.main.includes(RITUAL_OF(c)!);
   if (orphan(c.name, d) || typeClash(c.desc, d)) return true;
@@ -559,7 +582,7 @@ function ratePlan(w: ChatWorld): Plan {
   // compared with what they own: when nothing better is in the collection, it's the best they can make
   const room = strongerPlan(w, 4, false).calls.some((c) => c.name === 'edit_deck');
   const raw = 6 + (avg - 1500) / 300 + (effects >= 6 ? 0.5 : 0) + (bAvg >= 1600 ? 0.5 : 0) - tips.length - dead.length - problems.length * 2 + (d.skill ? 0.5 : 0);
-  const score = Math.max(1, Math.min(10, Math.round(!room && !dead.length && !problems.length ? Math.max(raw, 7) : raw)));
+  const score = Math.max(1, Math.min(10, Math.round(!room && !dead.length && !problems.length && !tips.length ? Math.max(raw, 7) : raw)));
   const weakest = [...new Set(d.main)].filter((n) => !protect.has(n)).sort((a, b) => wn(a, d) - wn(b, d))[0];
   const weak = [...(dead.length ? [`${listOf(dead)} ${dead.length > 1 ? 'do' : 'does'} nothing here (${dead.length > 1 ? 'they support' : 'it supports'} cards this deck doesn't run).`] : []), ...tips, ...(avg < 1500 ? [`The monsters you can summon without a Tribute are small (${avg} ATK on average), so bigger attackers will run them over.`] : []), ...(weakest && !dead.includes(weakest) ? [`The weakest card is ${weakest}.`] : [])];
   return {
@@ -925,6 +948,8 @@ function buildPlan(said: string, w: ChatWorld): Plan {
     b.main = [...without.main, sub.name];
   }
   b.extra = ok.extra;
+  // the cards changed since the Skill was picked: it must still fit the deck as built
+  if (b.skill && !skillFits(b.skill, b)) b.skill = skillPick({ ...w, deck: { ...w.deck, main: b.main, extra: b.extra, skill: null } }, null);
   // how much of the theme made it in: a deck is only named after it when it really is one
   const fam = wish.around ? b.main.filter((n) => ` ${flat(n)} `.includes(` ${wish.around} `) || ` ${flat(cd(n)?.desc ?? '')} `.includes(` ${wish.around} `) || keepCards.includes(n)).length : 0;
   const themed = wish.theme.kind === 'race' ? b.main.filter((n) => cd(n)?.race === (wish.theme as { value: string }).value).length : wish.theme.kind === 'attribute' ? b.main.filter((n) => cd(n)?.attribute === (wish.theme as { value: string }).value).length : 0;
@@ -1067,7 +1092,19 @@ function skillFits(s: string, d: { main: string[]; extra: string[] }): boolean {
   // "this card's name is always treated as Necrovalley" is about itself, not what the deck needs
   const c = cd(s) ?? ({ desc: '', name: s } as CardInfo);
   const q = quoted({ ...c, desc: c.desc.replace(/treated as ["“][^"”]+["”]/g, '') });
-  return (!q.length || q.some((x) => [...d.main, ...d.extra].some((n) => n === x || (cd(n)?.kind === 'monster' && n.includes(x))))) && !typeClash(cd(s)?.desc ?? '', d);
+  // a card named exactly is enough; an archetype ("HERO", "Ancient Gear") needs 3 of its monsters
+  const all = [...d.main, ...d.extra];
+  const meets = (x: string) => all.includes(x) || all.filter((n) => cd(n)?.kind === 'monster' && n.includes(x)).length >= (cd(x) ? 1 : 3);
+  // a lock ("you can only Summon "Crystal" monsters and Dragon monsters"): most of the deck's monsters must pass it
+  const lock = c.desc.match(/\byou can only (?:normal |special )?summon(?:\/set)? (.+?) monsters?\b/i) ?? c.desc.match(/\byou cannot (?:normal |special )?summon(?:\/set)? monsters?,? except (.+?) monsters?\b/i);
+  if (lock) {
+    const names = [...lock[1].matchAll(/["“]([^"”]+)["”]/g)].map((m) => m[1]);
+    const types = [...RACES, ...ATTRS].filter((x) => new RegExp(`\\b${x}\\b`).test(lock[1]));
+    const mons = d.main.filter((n) => cd(n)?.kind === 'monster');
+    const ok = mons.filter((n) => names.some((x) => n.includes(x)) || types.some((x) => cd(n)!.race === x || cd(n)!.attribute === x));
+    if (mons.length && ok.length < mons.length * 0.8) return false;
+  }
+  return (!q.length || q.some(meets)) && !typeClash(c.desc, d);
 }
 /** card text that asks for a Type or Attribute ("banish 1 DARK monster", "non-Dragon monsters") the deck barely runs */
 function typeClash(desc: string, d: { main: string[]; extra: string[] }): boolean {
@@ -1104,7 +1141,7 @@ function skillScore(s: string, d: SpeedDeck): number {
   const names = [...new Set([...d.main, ...d.extra])];
   const q = [...new Set(quoted({ ...c, desc: c.desc.replace(/treated as ["“][^"”]+["”]/g, '') }))];
   const hits = q.filter((x) => names.some((n) => n === x || (cd(n)?.kind === 'monster' && n.includes(x)))).length;
-  if ((q.length && !hits) || typeClash(c.desc, d)) return -1;
+  if ((q.length && !hits) || typeClash(c.desc, d) || !skillFits(s, d)) return -1;
   const race = deckRace(d);
   const raceHit = race && new RegExp(`\\b${race}\\b`, 'i').test(c.desc) ? 1 : 0;
   return hits * 2 + raceHit;
@@ -1376,6 +1413,7 @@ const OVERVIEW = `Speed Duel is a faster Yu-Gi-Oh!: each duelist has 4000 Life P
 const RULES: [RegExp, string][] = [
   [/\b(how (does|do) (speed duels?|this game|the game|yugioh|yu gi oh|dueling|duels?|it all) (work|go)|how (do i|to|do you) (play|duel)( speed duels?| yugioh| this game)?$|im new|i am new|new (to|at) (this|the game|yugioh|speed duel|dueling)|teach me|the basics|beginner)\b/, OVERVIEW],
   [/\btraps?\b.*\b(same turn|turn i set|turn (it is|its|you|i) set|right away|immediately|when i set|turn i play)\b|\b(activate|use|play) (a |my )?traps? (the )?(same|right|turn)\b/, "No: a Trap has to be Set face-down first, and you can activate it from your opponent's turn on (or your next turn). Quick-Play Spells work the same way when Set, but can be played straight from your hand on your own turn."],
+  [/\b(difference|different)\b.*\bspells?\b.*\btraps?\b|\bspells?\b.*\b(vs|versus|or)\b.*\btraps?\b.*\b(difference|different)\b/, 'Spells are played from your hand on your turn and work right away. Traps have to be Set face-down first and can be activated from the next turn on, even on your opponent\'s turn, so they answer what the opponent does.'],
   [/\bquick ?play\b|\bnormal spells?\b.*\b(difference|vs|versus|or)\b|\b(continuous|field|equip) spells?\b.*\b(what|how|difference|mean)\b|\b(what|how)\b.*\b(continuous|field|equip) spells?\b/, 'Normal Spells work once and go to the Graveyard, on your turn only. Quick-Play Spells can also be used on your opponent\'s turn if you Set them first. Continuous and Field Spells stay on the field and keep working; an Equip Spell sits on one monster and changes it.'],
   [/\bsummon\b.*\b(first turn|turn 1|turn one)\b/, 'Yes: you can Normal Summon (and Special Summon) on your first turn. Going first, you just can\'t attack or draw that turn.'],
   [/\b(draw|draws)\b.*\b(per turn|each turn|every turn|a turn)\b|\bhow many cards (do i|you) draw\b/, 'You draw 1 card at the start of each turn (the player going first skips their first draw). You start the duel with 4 cards.'],
@@ -1529,7 +1567,7 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
   // "yes", "do it", "add those": what was just suggested
   const offer = mem.offer;
   mem.offer = null;
-  if (offer && /^(yes|yeah|yep|yup|ya|ye|sure|ok|okay|ok do it|do it|go ahead|go for it|please do|lets do it|lets go|do that|sounds good|add (those|them|that|it|these|all of them|em)|put (those|them|that|it) in|sure add (that|those|them)|use (that|it|that one|that skill)|equip (it|that))$/.test(t)) {
+  if (offer && /^(yes|yeah|yep|yup|ya|ye|sure|ok|okay|ok do it|do it|go ahead|go for it|please do|lets do it|lets go|do that|sounds good|add (those|them|that|it|these|all of them|em)|put (those|them|that|it) in|sure add (that|those|them)|use (that|it|that one|that skill)|equip (it|that|that skill|the skill)|put (that skill|it|that|the skill) on)$/.test(t)) {
     if (offer.skill) return offer.skill === d.skill ? { calls: [], answer: () => `${bare(offer.skill!)} is already this deck's Skill.` } : { calls: [{ name: 'edit_deck', input: { skill: offer.skill } }], answer: (rs) => (refusedOf(rs[0] ?? '') ? `Couldn't: ${refusedOf(rs[0])}.` : `Now using ${bare(offer.skill!)}.`) };
     if (offer.add?.length) {
       // in place of the weakest cards of the same kind, so the deck keeps its size
@@ -1537,7 +1575,8 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
       const out: string[] = [];
       for (const n of offer.add) {
         const k = cd(n)?.kind;
-        const pickWeak = (f: (x: string) => boolean) => work.filter((x) => f(x) && !protect.has(x) && !offer.add!.includes(x)).sort((a, b) => wn(a, d) - wn(b, d))[0];
+        const ace = [...d.main].filter((x) => cd(x)?.kind === 'monster').sort((a, b) => (cd(b)!.atk ?? 0) - (cd(a)!.atk ?? 0))[0];
+        const pickWeak = (f: (x: string) => boolean) => work.filter((x) => f(x) && x !== ace && !protect.has(x) && !offer.add!.includes(x)).sort((a, b) => wn(a, d) - wn(b, d))[0];
         const weak = pickWeak((x) => cd(x)?.kind === k && !isNeeded(x, d)) ?? pickWeak((x) => !isNeeded(x, d)) ?? pickWeak((x) => cd(x)?.kind === k);
         if (weak && d.main.length >= MAIN_MIN) (out.push(weak), work.splice(work.indexOf(weak), 1));
       }
@@ -1658,7 +1697,8 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
   }
   // "less tribute monsters": big monsters out, the best ones that need no Tribute in
   if (/\b(less|fewer|lower|reduce|cut|no|not so many|too many|without)\b.*\b(tribute|big|high level|level 5|level 7|5 star|7 star|heavy)\s*(monsters?|ones|cards)?\b/.test(t) && !/^(how|what|why|is|are|does)\b/.test(t) && d.main.length) {
-    const bigs = [...d.main].filter((n) => cd(n)?.kind === 'monster' && (cd(n)!.level ?? 0) >= 5 && !isExtraCard(n) && cd(n)?.sub !== 'Ritual' && !protect.has(n) && !isNeeded(n, d)).sort((a, b) => wn(a, d) - wn(b, d));
+    const bigAll = [...d.main].filter((n) => cd(n)?.kind === 'monster' && (cd(n)!.level ?? 0) >= 5 && !isExtraCard(n) && cd(n)?.sub !== 'Ritual' && !(mem.wanted ?? []).includes(n));
+    const bigs = [...bigAll.filter((n) => !protect.has(n) && !isNeeded(n, d)).sort((a, b) => wn(a, d) - wn(b, d)), ...bigAll.filter((n) => protect.has(n) || isNeeded(n, d)).sort((a, b) => wn(a, d) - wn(b, d))];
     const n = Math.min(bigs.length, /\bno\b|\bwithout\b/.test(t) ? bigs.length : Math.max(1, Math.min(3, bigs.length - 2)));
     if (!n) return { calls: [], answer: () => 'There are no Tribute monsters here I can swap (the ones left are ones you asked for or ones combos need).' };
     const out = bigs.slice(0, n);
@@ -1780,7 +1820,13 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const sk = findCard(t, 'skills', d);
     if (/^(what|whats|which|is there|are there)\b/.test(t) && /\b(best|good|better|should|for)\b/.test(t) && !sk) {
       const words = t.replace(/.*\bfor\b/, '').split(' ').filter((x) => x.length >= 3 && !STOP.has(x) && !INTENT.has(x)).map((x) => x.replace(/s$/, ''));
-      const rec = (words.length ? themedSkill([words.join(' '), ...words], w) : null) ?? skillPick(w, null);
+      const pickd = (words.length ? themedSkill([words.join(' '), ...words], w, null, d) : null) ?? skillPick(w, null);
+      // the Skill on already is the answer when nothing fits better
+      if (d.skill && skillFits(d.skill, d) && (!pickd || skillScore(d.skill, d) >= skillScore(pickd, d))) {
+        mem.focus = d.skill;
+        return { calls: [], answer: () => `Keep ${bare(d.skill!)}: it fits this deck best of the Skills you own. ${short(cd(d.skill!)?.desc ?? '', 140)}` };
+      }
+      const rec = pickd;
       if (rec) (mem.focus = rec), (mem.offer = { skill: rec });
       return { calls: [], answer: () => (rec ? `I'd go with ${bare(rec)}: ${short(cd(rec)?.desc ?? '', 160)} Say "use ${bare(rec)}" to put it on this deck.` : "You don't own a Skill that fits yet. Skills come from packs and the Card Shop.") };
     }
@@ -1791,7 +1837,8 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     }
     if (sk && /\b(what|explain|tell|does|read|about)\b/.test(t) && !/\b(use|equip|switch|change|set|put|give|add)\b/.test(t)) return cardPlan(sk, w);
     // a question about Skills never changes the Skill: "what skill does yugi use"
-    if (/^(what|whats|which|who|whos|is|are|does|do|did|how|why|where)\b/.test(t)) {
+    if (/^(what|whats|which|who|whos|is|are|does|do|did|how|why|where|can|could|will|would)\b/.test(t) && !/^(can|could|will|would) (you|u)\b/.test(t)) {
+      if (/\bnegat|\bdestroy|\bstop\b|\bcounter/.test(t)) return { calls: [], answer: () => 'No: a Skill isn\'t a card on the field, so card effects can\'t negate or destroy it. Your opponent just has to play around it.' };
       const said = t.split(' ').filter((x) => x.length >= 3 && !STOP.has(x) && !INTENT.has(x));
       const theirs = skillCards().filter((s) => s.character && said.some((x) => flat(s.character!).split(' ').some((y) => y === x || y === x.replace(/s$/, ''))));
       if (theirs.length) {
@@ -1807,6 +1854,8 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const asked = t.split(' ').filter((x) => x.length >= 3 && !STOP.has(x) && !INTENT.has(x) && !/^(skill|skills|equip|switch|change|set|put|give|add|use|one|instead)$/.test(x));
     if (d.skill && (sk === d.skill || (asked.length && asked.every((x) => flat(bare(d.skill!)).split(' ').some((y) => y.startsWith(x.replace(/s$/, '').slice(0, 5)))))) && !/\b(different|another|other|new|better)\b/.test(t)) return { calls: [], answer: () => `This deck already uses ${bare(d.skill!)}. Say "pick a different Skill" for another one.` };
     if (/\b(remove|no|take off|off|drop|without|get rid|delete|clear)\b/.test(t) && !sk) return d.skill ? { calls: [{ name: 'edit_deck', input: { skill: null } }], answer: () => `Took ${bare(d.skill!)} off.` } : { calls: [], answer: () => "This deck has no Skill to take off." };
+    const notSkill = !sk && /\b(use|equip|switch to|change to|set)\b/.test(t) ? findCard(t.replace(/\bskills?\b/g, ''), 'cards', d) : null;
+    if (notSkill) return { calls: [], answer: () => `${notSkill} is a card, not a Skill. Say "add ${notSkill}" to put it in the deck, or "what skills do I have" to see your Skills.` };
     if (sk) return { calls: [{ name: 'edit_deck', input: { skill: sk } }], answer: (rs) => (refusedOf(rs[0] ?? '') ? `Couldn't: ${refusedOf(rs[0])}.` : `Now using ${bare(sk)}. ${short(cd(sk)!.desc)}${skillWarn(sk, w)}`) };
     const other = /\b(different|another|other|new|change|switch|better)\b/.test(t) && d.skill ? d.skill : null;
     // "give me a yugi skill": the best of that duelist's Skills for this deck
@@ -1882,8 +1931,11 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     return { calls: [], answer: () => `${sumName}: ${how}${helpers.length ? ` In this deck, ${listOf(helpers)} can bring it out too.` : ''}` };
   }
   // "how many tribute monsters do i have", "whats the average attack"
-  if (/\bhow many\b.*\b(tribute|big|high level|level 5|level 7|level five|level seven)\b/.test(t) && /\b(have|got|in|run|are there)\b/.test(t) && d.main.length) {
+  if ((/\bhow many\b.*\b(tribute|big|high level|level 5|level 7|level five|level seven)\b/.test(t) && /\b(have|got|in|run|are there)\b/.test(t)) || /^(what|which) are (the |my )?(\d |two |2 )?(tribute|big|high level|level 5\+?|level 7) monsters\b/.test(t)) {
+    if (!d.main.length) return { calls: [], answer: () => 'The deck is empty.' };
     const bigs = d.main.filter((n) => cd(n)?.kind === 'monster' && (cd(n)!.level ?? 0) >= 5 && !isExtraCard(n));
+    // "replace them", "cut one of them" next
+    mem.added = [...bigs];
     const two = bigs.filter((n) => (cd(n)!.level ?? 0) >= 7).length;
     return { calls: [], answer: () => `${bigs.length} monster${bigs.length === 1 ? '' : 's'} here need${bigs.length === 1 ? 's' : ''} a Tribute${bigs.length ? ` (${two} of them need 2): ${listOf(bigs)}` : ''}. With 3 Monster Zones, 2 to 4 is plenty.${bigs.length > 4 ? ' Say "fewer tribute monsters" and I\'ll swap some for ones that need none.' : ''}` };
   }
@@ -2225,6 +2277,21 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
         },
       };
     }
+    // "replace them with level 4s": the best monsters that need no Tribute
+    if (from.length && !to.length && /^(level (4|four)s?|level (4|four) (monsters|ones)|lv ?4s?|small(er)? (monsters|ones)|ones? (that|which) (need|needs) no tributes?|no tribute (monsters|ones)|non tribute)/.test(swapCards[3].trim())) {
+      const outs = from.flatMap((f) => Array(Math.min(f.count ?? 99, d.main.filter((x) => x === f.name).length)).fill(f.name) as string[]);
+      const rest = { ...d, main: [...d.main] };
+      for (const n of outs) rest.main.splice(rest.main.indexOf(n), 1);
+      const ins: string[] = [];
+      for (let i = 0; i < outs.length; i++) {
+        const c = candidates(w, { ...rest, main: [...rest.main, ...ins] }, (x) => x.kind === 'monster' && (x.level ?? 4) <= 4 && !isExtraCard(x.name) && x.sub !== 'Ritual' && ins.filter((m) => m === x.name).length < 2)[0];
+        if (!c) break;
+        ins.push(c.name);
+      }
+      if (!ins.length) return { calls: [], answer: () => 'You have no more Level 4 or lower monsters that fit.' };
+      const gone = outs.slice(0, ins.length);
+      return { calls: [{ name: 'edit_deck', input: { remove: counts(gone), add: counts(ins) } }], answer: () => `Swapped ${listOf(gone)} for ${listOf(ins)}, which need no Tribute.` };
+    }
     if (from.length && !to.length && /^(something|a better|better|stronger|a stronger|a good|good|anything)\b/.test(swapCards[3].trim())) {
       const race = deckRace(d);
       const rest = { ...d, main: [...d.main] };
@@ -2423,6 +2490,23 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const spared = tail.length && (removing || /\b(but not|but no|except|without)\b/.test(t)) ? new Set(findCards(tail.join(' '), d).map((f) => f.name)) : new Set<string>();
     let found = spared.size ? findCards(head, d).filter((f) => !spared.has(f.name)) : cardsSaid;
     const back = !removing && /\b(back|again)\b/.test(t);
+    // "put red eyes back in": the card that was cut, not another Red-Eyes
+    if (back && mem.removed.length) found = found.map((f) => (mem.removed.includes(f.name) || !f.said ? f : ((r) => (r ? { ...f, name: r } : f))(mem.removed.find((r) => flat(r).includes(flat(f.said!))))));
+    // "add maiden with eyes of blue": a loose match must not stand in for a card Speed Duel never printed
+    const outsideAll = !removing && found.length && found.every((f) => f.partial) ? findOutside(t) : null;
+    // "add maiden with eyes of blue" is not Maiden of Macabre: a loose match needs most of the words said
+    const loose = (f: { name: string; partial?: boolean; said?: string }) => {
+      if (removing || !f.partial || !f.said) return false;
+      // one card asked for: judge against everything said after the verb, not just the words that matched
+      const whole = found.length === 1 ? t.slice((verb.index ?? 0) + verb[0].length).replace(/^\s*(?:[1-3]|an?|one|two|three)\s+/, '').trim() : f.said;
+      f.said = whole || f.said;
+      const ws = f.said.split(' ').filter((x) => x.length >= 3 && !STOP.has(x) && !INTENT.has(x) && !(x in NUM));
+      return ws.length >= 3 && ws.filter((x) => ` ${flat(f.name)} `.includes(` ${x}`)).length * 2 < ws.length;
+    };
+    const tooLoose = found.filter(loose);
+    if (tooLoose.length && tooLoose.length === found.length) return { calls: [], answer: () => `I couldn't find a Speed Duel card called "${tooLoose[0].said}". It may not be in Speed Duel, or check the spelling.` };
+    found = found.filter((f) => !loose(f));
+    if (outsideAll && !found.some((f) => flat(f.name).includes(flat(outsideAll))) && !nameIndex().some((x) => x.flat.startsWith(`${flat(outsideAll)} `))) return { calls: [], answer: () => outsideLine(outsideAll) };
     const recent = back ? mem.removed : mem.focus && (!removing || inDeck(d, mem.focus)) ? [mem.focus] : mem.added;
     // "use that one" after a Skill was suggested
     const fs = mem.focus;
@@ -2459,7 +2543,7 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
             .replace(/^.*?\b(add|put in|put|include|throw in|stick in|chuck in|give it|i want|use|run|play with|remove|take out|take|get rid of|drop|cut|delete|lose|minus|no more|without)\b/, '')
             .split(/,|\b(?:and|plus|also|with)\b/)
             .map((x) => x.trim())
-            .filter((x) => x.split(' ').some((y) => y.length >= 3 && !STOP.has(y) && !INTENT.has(y) && !(y in NUM) && !/^\d+$/.test(y)) && !findCards(x, d).length && !findOutside(x));
+            .filter((x) => x.split(' ').some((y) => y.length >= 3 && !STOP.has(y) && !INTENT.has(y) && !(y in NUM) && !/^\d+$/.test(y)) && !findCards(x, d).length && !findOutside(x) && !/^(?:(?:him|her|it|them|that|those|this|one) )?(?:back|again)(?: in| on)?$/.test(x));
           const missed = lost.length ? ` I couldn't find a Speed Duel card called ${lost.map((x) => `"${x.replace(/^(\d+|an?|one|two|three) /, '')}"`).join(' or ')}.` : '';
           return `${ok}${kept}${read}${missed}${refused ? ` ${refused}.` : ''}${outside ? ` ${outsideLine(outside)}` : ''}${warn}${low}`;
         },

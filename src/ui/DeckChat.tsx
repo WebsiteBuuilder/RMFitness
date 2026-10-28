@@ -175,7 +175,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     const undoWord = /\b(undoo*|revert)\b|\b(reverse|cancel|scrap) (that|it|this|the last (one|change))\b|\bctrl ?z\b|\btake back what (you|u) (just )?did\b/.test(said);
     // right after a change, "oops", "wait no", "i didnt want that" mean take it back
     const justChanged = !!chat.turns.length && !!chat.turns[chat.turns.length - 1].diff && !chat.turns[chat.turns.length - 1].undone;
-    const regret = justChanged && /^(oops|whoops|wait no|no wait|no not that|not that|nope|no no|i didnt want that|i did not want that|i dont want that|i dont like that|i hate (it|that)|thats wrong|that was wrong|wrong one|never ?mind|nvm|scrap that)( (go back|put it back|change it back|undo( it| that)?|take it back))?$/.test(said.replace(/^(ugh|oh|ah|hmm) /, ''));
+    const regret = justChanged && /^(oops|whoops|wait no|no wait|no not that|not that|nope|no no|i didnt want that|i did not want that|i dont want that|i dont like that|i hate (it|that)|thats wrong|that was wrong|wrong one|never ?mind|nvm|scrap that)( (go back|put it back|change it back|undo( it| that)?|take it back))?$/.test(said.replace(/^(ugh|oh|ah|hmm) /, '')) || (justChanged && /^(?:(?:ugh|oh|ah|hmm) )?(oops|whoops|wait no|no wait|hold on|nope|never ?mind|nvm)( (go back|put it back|change it back|undo( it| that)?|take it back))?$/.test(msg.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim()));
     // only the part of the message that says undo counts ("I don't like that, undo it" undoes)
     const undoPart = clean(msg.split(/[,.;!]+/).find((x) => /\b(undo|revert)\b/i.test(x)) ?? msg);
     // "no undo that" and "i didnt like that undo it" undo; "dont undo", "i didnt mean to undo" don't
@@ -208,6 +208,10 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       playBlip();
       setText('');
       return redo(redoable, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Put the change back.' }]);
+    }
+    if (/^(redo|redo (it|that)|undo the undo)$/.test(said)) {
+      setText('');
+      return setChat({ ...chat, turns: [...chat.turns, { id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Nothing to redo: there is no undone change to put back.' }] });
     }
     // Claude when the duelist added a key, else the built-in helper (free, works offline)
     const model = testModel() ?? (key ? claudeModel(key) : localModel(() => ({ deck: deckRef.current, collection }), helperMemory.current));
