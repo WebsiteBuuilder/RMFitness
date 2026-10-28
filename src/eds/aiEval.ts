@@ -7,9 +7,13 @@ import { Engine, other } from './engine';
 import type { Action, FieldCard, Pid } from './types';
 
 export const WIN = 1e6;
+/** What the lookahead adds to the loss of each of its own field cards a play gives up for nothing of theirs. */
+const SELF_LOSS = 250;
 
-/** Life Points are worth more the fewer you have. */
-const lpValue = (lp: number) => Math.max(0, lp) + Math.max(0, 1500 - lp) * 0.6;
+const onField = (e: Engine, p: Pid) => new Set([...e.monsters(p), ...e.spells(p), ...(e.player(p).field ? [e.player(p).field!] : [])].map((c) => c.uid));
+
+/** Life Points are worth more the fewer you have (each point under 1500 counts 1.6 times: a low duelist can't spend them freely). */
+const lpValue = (lp: number) => Math.max(0, lp) - Math.max(0, 1500 - lp) * 0.6;
 
 function monsterValue(e: Engine, m: FieldCard, viewer: Pid, owner: Pid): number {
   if (!m.faceUp && owner !== viewer) return 900;
@@ -49,6 +53,41 @@ export function sandbox(e: Engine): Engine {
   return sim;
 }
 
+/** What has to match for a rebuilt copy to be the same duel. */
+function fingerprint(e: Engine): string {
+  const st = e.state;
+  const side = (p: Pid) => {
+    const ps = e.player(p);
+    const z = (c: FieldCard | null) => (c ? `${c.uid}${c.pos}${c.faceUp ? 'u' : 'd'}${c.atkMod},${c.defMod},${c.counters},${c.equips.join('.')}` : '-');
+    return [ps.lp, ps.deck.length, ps.hand.map((c) => c.uid).join(','), ps.mz.map(z).join(','), ps.sz.map(z).join(','), z(ps.field), ps.gy.map((c) => c.uid).join(',')].join('/');
+  };
+  const pr = st.prompt;
+  return [st.rngState, st.turn, st.phase, st.chain.length, side(0), side(1), pr ? `${pr.kind}:${pr.player}:${pr.title}` : ''].join('|');
+}
+
+/**
+ * A throwaway copy of a duel stopped at a question (a "Respond?" window, a target pick): the
+ * paused effect can't be copied, so the copy is rebuilt from the duel's last checkpoint by
+ * replaying the actions since, then its dice are re-seeded as in sandbox. Null when that
+ * doesn't land on the same duel (or for a copy, which keeps no checkpoint).
+ */
+export function rebuild(e: Engine): Engine | null {
+  const cp = e.checkpoint;
+  if (!cp) return null;
+  try {
+    const sim = new Engine(e.db, true);
+    sim.state = structuredClone(cp);
+    // (tests fix the shuffle; the copy must shuffle the same way)
+    if (Object.prototype.hasOwnProperty.call(e, 'shuffle')) sim.shuffle = e.shuffle;
+    for (const a of e.since) sim.apply(a);
+    if (fingerprint(sim) !== fingerprint(e)) return null;
+    sim.state.rngState = (e.state.rngState ^ 0x5bd1e995) >>> 0;
+    return sim;
+  } catch {
+    return null;
+  }
+}
+
 export type Chooser = (e: Engine, p: Pid) => Action | null;
 
 /**
@@ -68,7 +107,8 @@ export function lookahead(e: Engine, me: Pid, action: Action, choose: Chooser): 
  */
 export function lookaheadAnswer(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
   if (!e.state.prompt || e.state.winner !== null) return null;
-  return playOut(e, me, action, choose);
+  const r = playOutSim(e, me, action, choose, true);
+  return r && r.value;
 }
 
 function playOut(e: Engine, me: Pid, action: Action, choose: Chooser): number | null {
@@ -93,7 +133,8 @@ export function lookaheadCombo(e: Engine, me: Pid, action: Action, choose: Choos
   for (const c of ps.hand) {
     const was = before.hand.find((x) => x.uid === c.uid);
     if (sim.canSpecialProc(me, c) && !(was && e.canSpecialProc(me, was))) follow.push({ type: 'SPECIAL', player: me, uid: c.uid });
-    else if (!ps.normalSummoned && sim.canNormalSummon(me, c, true) && !(was && e.canNormalSummon(me, was, true)) && sim.freeMonsterZone(me) >= 0)
+    // (not a Summon it only has room for because the play gave up one of its monsters)
+    else if (!ps.normalSummoned && sim.canNormalSummon(me, c, true) && !(was && e.canNormalSummon(me, was, true)) && sim.freeMonsterZone(me) >= 0 && e.freeMonsterZone(me) >= 0)
       follow.push({ type: 'SUMMON', player: me, uid: c.uid, zone: sim.freeMonsterZone(me), pos: 'atk', faceUp: true });
   }
   let best = first.value;
@@ -105,10 +146,12 @@ export function lookaheadCombo(e: Engine, me: Pid, action: Action, choose: Choos
   return best;
 }
 
-function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser): { sim: Engine; value: number } | null {
+function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser, open = false): { sim: Engine; value: number } | null {
   let sim: Engine;
   try {
-    sim = sandbox(e);
+    const x = open ? rebuild(e) : sandbox(e);
+    if (!x) return null;
+    sim = x;
   } catch {
     return null;
   }
@@ -125,12 +168,35 @@ function playOutSim(e: Engine, me: Pid, action: Action, choose: Chooser): { sim:
       if (!a) return null;
       sim.apply(a);
     }
+    // An answer in the opponent's Battle Phase: their remaining attacks are played out too, so a
+    // monster revived or saved now that dies to the next attack counts for nothing.
+    if (open && !sim.state.prompt && sim.state.turnPlayer !== me && sim.state.phase === 'BP') {
+      for (let i = 0; i < 60 && sim.state.winner === null && sim.state.turn === turn && sim.state.phase === 'BP'; i++) {
+        const pr = sim.state.prompt;
+        let a: Action | null;
+        if (pr?.kind === 'response') a = { type: 'PASS', player: pr.player };
+        else if (pr?.kind === 'yesno' && pr.player !== me) a = { type: 'NO', player: pr.player };
+        else a = choose(sim, pr ? pr.player : sim.state.turnPlayer);
+        if (!a || (!pr && a.type !== 'ATTACK')) break;
+        sim.apply(a);
+      }
+    }
   } catch {
     return null;
   }
   if (sim.state.prompt && sim.state.winner === null) return null;
   if (sim.state.turn !== turn && sim.state.winner === null) return null;
-  return { sim, value: evaluate(sim, me) - before };
+  let value = evaluate(sim, me) - before;
+  // Giving up its own cards on the field (not a Summon's materials) has to clearly pay: each one it loses
+  // beyond what the opponent loses counts extra, so it never trades its board away for a little burn.
+  if (action.type !== 'SPECIAL' && sim.state.winner === null) {
+    // (the card being played, or the Set card sprung in answer, isn't given up)
+    const pr = e.state.prompt;
+    const used = 'uid' in action ? action.uid : action.type === 'CHOOSE' && pr?.kind === 'response' ? (pr.options[action.picks[0]]?.uid ?? -1) : -1;
+    const lost = (p: Pid) => [...onField(e, p)].filter((u) => u !== used && !onField(sim, p).has(u)).length;
+    value -= SELF_LOSS * Math.max(0, lost(me) - lost(other(me)));
+  }
+  return { sim, value };
 }
 
 /** What a monster on the opponent's side needs to be beaten (face-down ones are a guess). */
