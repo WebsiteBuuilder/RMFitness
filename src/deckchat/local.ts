@@ -2548,7 +2548,8 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
   const nCards = t.match(/\b(?:remove|take out|cut|drop|lose)\s+(\d|one|two|three|four|five)\s+(?:cards?|things)\b/);
   if (nCards && d.main.length && !cardsSaid.length) {
     const n = /^\d$/.test(nCards[1]) ? Number(nCards[1]) : ({ one: 1, two: 2, three: 3, four: 4, five: 5 } as Record<string, number>)[nCards[1]];
-    const out = [...d.main].filter((x) => !isNeeded(x, d) && !protect.has(x)).sort((a, b) => wn(a, d) - wn(b, d)).slice(0, n);
+    const out = [...[...d.main].filter((x) => !isNeeded(x, d) && !protect.has(x)).sort((a, b) => wn(a, d) - wn(b, d)), ...[...d.main].filter((x) => isNeeded(x, d) && !protect.has(x)).sort((a, b) => wn(a, d) - wn(b, d))].slice(0, n);
+    if (!out.length) return { calls: [], answer: () => 'Every card left is one you asked for by name, so I kept them. Name the ones to cut.' };
     return { calls: [{ name: 'edit_deck', input: { remove: counts(out) } }], answer: () => `Took out ${listOf(out)}, the weakest ${out.length > 1 ? 'cards' : 'card'} here.` };
   }
   // "put in something else", "add replacements": a fill back to the size it should be
@@ -2576,7 +2577,11 @@ function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: 
     const said = t.match(/\b([1-9])\b/)?.[1];
     const n = said ? Number(said) : /\b(cards|monsters|ones)\b/.test(t) ? 3 : 1;
     const kind = kindWord(t.match(new RegExp(`\\b${KIND_RE}\\b`))?.[1] ?? '');
-    const out = [...d.main].filter((x) => !kind || cd(x)?.kind === kind).filter((x) => !isNeeded(x, d)).sort((a, b) => Number(protect.has(a)) - Number(protect.has(b)) || wn(a, d) - wn(b, d)).slice(0, n);
+    const ofKind = [...d.main].filter((x) => !kind || cd(x)?.kind === kind);
+    const order = (a: string, b: string) => Number(protect.has(a)) - Number(protect.has(b)) || wn(a, d) - wn(b, d);
+    // spare cards first; when every one is a combo piece, the weakest of those
+    const out = [...ofKind.filter((x) => !isNeeded(x, d)).sort(order), ...ofKind.filter((x) => isNeeded(x, d)).sort(order)].slice(0, n);
+    if (!out.length) return { calls: [], answer: () => `There are no ${kind ?? 'card'}s in this deck to take out.` };
     const cut: Plan = { calls: [{ name: 'edit_deck', input: { remove: counts(out) } }], answer: () => `Took out ${listOf(out)}, the weakest ${kind ?? 'card'}${out.length > 1 ? 's' : ''} here.` };
     // a monster goes for a monster, so the mix stays
     return d.main.length - out.length < MAIN_MIN ? refill(cut, w, null, kind ? (n) => cd(n)?.kind !== kind : undefined) : cut;
