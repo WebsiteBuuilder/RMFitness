@@ -518,7 +518,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   /** the list also shows cards you don't own yet, to craft them */
   const [crafting, setCrafting] = useState(false);
   /** a card just crafted with "Craft & add": it goes in once the new copy reaches the collection */
-  const [addAfterCraft, setAddAfterCraft] = useState<string | null>(null);
+  const [addAfterCraft, setAddAfterCraft] = useState<{ n: string; had: number } | null>(null);
   const [size, setSizeState] = useState<TileSize>(savedSize);
   const nextSize = () => {
     const v: TileSize = size === 's' ? 'm' : size === 'm' ? 'l' : 's';
@@ -616,8 +616,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   };
 
   useEffect(() => {
-    if (!addAfterCraft || !ownsCard(addAfterCraft)) return;
-    if (canAdd(addAfterCraft)) addCard(addAfterCraft);
+    // wait for the new copy itself, not just any copy
+    if (!addAfterCraft || (collection?.[addAfterCraft.n] ?? 0) <= addAfterCraft.had) return;
+    if (canAdd(addAfterCraft.n)) addCard(addAfterCraft.n);
     setAddAfterCraft(null);
   }, [collection, addAfterCraft]);
 
@@ -786,7 +787,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
         {collection && !craftOn && pool.length < 40 && <p class="hint">Only cards you own are here. {crafter ? 'Tap Craft to see the rest and make them with Duel Chips.' : 'Get more from packs and crafting in the Card Shop.'}</p>}
         <p class="hint dk-hint">
           <span>
-            {rows.length} card{rows.length === 1 ? '' : 's'} · {quick ? 'tap to add · hold to read' : 'tap to read, then Add'}
+            {craftOn && crafter
+              ? `${rows.length} card${rows.length === 1 ? '' : 's'} to craft · ${rows.filter((n) => crafter.cost(n) <= crafter.chips).length} you can afford`
+              : `${rows.length} card${rows.length === 1 ? '' : 's'} · ${quick ? 'tap to add · hold to read' : 'tap to read, then Add'}`}
           </span>
         </p>
         <div class="dk-tools">
@@ -799,7 +802,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             </button>
           )}
           <button class="chip dk-size" onClick={() => (playBlip(), nextSize())} aria-label={`Card size ${size.toUpperCase()}: tap to change`}>
-            ⊞ {size.toUpperCase()}
+            Size {size.toUpperCase()}
           </button>
           <button class={`chip dk-quick ${quick ? 'on' : ''}`} role="switch" aria-checked={quick} onClick={() => (playBlip(), setQuick(!quick))}>
             Quick add {quick ? 'on' : 'off'}
@@ -903,8 +906,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
           owned={ownedCopies(view.n)}
           why={whyNot(view.n)}
           craft={crafter && collection ? crafter : undefined}
+          craftList={craftOn && !viewFromDeck}
           fits={!roomFor(view.n) && copies(view.n) >= ownedCopies(view.n)}
-          onCrafted={(added) => added && setAddAfterCraft(view.n)}
+          onCrafted={(added) => added && setAddAfterCraft({ n: view.n, had: collection?.[view.n] ?? 0 })}
           zoom={zoom === view.n}
           onZoom={(on) => setZoom(on ? view.n : null)}
           deckLine={isExtraCard(view.n) ? `Extra ${deck.extra.length}/${EXTRA_MAX}` : `Main ${deck.main.length}/${MAIN_MAX}`}
@@ -963,7 +967,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
  * A card read big before anything changes: Add and Remove are the confirm, ‹ › (or a swipe,
  * or a controller's LB/RB) read the next card without closing.
  */
-function CardView({ view, inDeck, copies, owned, why, deckLine, craft: crafter, fits, onCrafted, zoom, onZoom, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; /** stepping through the deck's cards (one per name) */ inDeck: boolean; copies: number; owned: number; why: string | null; craft?: DeckCrafter; /** a crafted copy would go straight in (every copy you own is in, and there's room) */ fits: boolean; /** a copy was crafted (added: it also goes in the deck) */ onCrafted: (added: boolean) => void; /** the picture is open full-screen */ zoom: boolean; onZoom: (on: boolean) => void; /** "Main 21/30": the deck this card goes in */ deckLine: string; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
+function CardView({ view, inDeck, craftList = false, copies, owned, why, deckLine, craft: crafter, fits, onCrafted, zoom, onZoom, onStep, onAdd, onRemove, onClose }: { view: { n: string; list: string[] }; /** stepping through the deck's cards (one per name) */ inDeck: boolean; /** stepping through the Craft list */ craftList?: boolean; copies: number; owned: number; why: string | null; craft?: DeckCrafter; /** a crafted copy would go straight in (every copy you own is in, and there's room) */ fits: boolean; /** a copy was crafted (added: it also goes in the deck) */ onCrafted: (added: boolean) => void; /** the picture is open full-screen */ zoom: boolean; onZoom: (on: boolean) => void; /** "Main 21/30": the deck this card goes in */ deckLine: string; onStep: (n: string) => void; onAdd: () => void; onRemove: () => void; onClose: () => void }) {
   const { n, list } = view;
   const i = list.indexOf(n);
   const canStep = list.length > 1 && i >= 0;
@@ -1000,7 +1004,7 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, craft: crafter, 
   };
   return (
     <Overlay onClose={onClose}>
-      <Win title={canStep ? (inDeck ? `In your deck · ${i + 1} of ${list.length}` : `Card ${i + 1} of ${list.length}`) : 'Card'} class="dk-view" onClose={onClose}>
+      <Win title={canStep ? (inDeck ? `In your deck · ${i + 1} of ${list.length}` : craftList ? `Craft · ${i + 1} of ${list.length}` : `Card ${i + 1} of ${list.length}`) : 'Card'} class="dk-view" onClose={onClose}>
         <div
           class="dk-view-swipe"
           onTouchStart={(ev) => (swipe.current = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, side: null })}
@@ -1065,7 +1069,8 @@ function CardView({ view, inDeck, copies, owned, why, deckLine, craft: crafter, 
             </div>
             <p class={`hint dk-view-count ${bump ? 'pulse' : ''}`} key={bump?.id ?? 0}>
               {owned ? `${copies} of ${owned} in your deck` : 'Not in your collection yet'} · {deckLine}
-              {why && !notReady && owned > 0 && <span class="dk-view-whyline">{why}</span>}
+              {/* (right after a craft the reason is stale for a moment: the new copy is on its way) */}
+              {why && !notReady && owned > 0 && !(crafted?.n === n && Date.now() - crafted.id < 1500) && <span class="dk-view-whyline">{why}</span>}
             </p>
             {crafter && !notReady && limitStatus(n) !== 'Forbidden' && owned < COPIES ? (
               <CraftButton name={n} craft={crafter} andAdd={fits} onCrafted={(added) => (setCrafted({ n, id: Date.now() }), onCrafted(added))} />
@@ -1111,13 +1116,11 @@ function CraftButton({ name, craft: crafter, andAdd = false, onCrafted }: { name
           crafter.run(name);
           onCrafted?.(andAdd);
           buzz(25);
-          // stays armed a moment so a second copy is one more tap
           setArmed(false);
-          setTimeout(() => setArmed(true));
           setDone({ id: Date.now(), added: andAdd });
         }}
       >
-        <i class="dchip" /> {armed ? (done ? `Tap for another · ${cost}` : `Tap again to spend ${cost}`) : `${andAdd ? 'Craft & add' : 'Craft one'} · ${cost}`}
+        <i class="dchip" /> {armed ? `Tap again: spend ${cost} of ${crafter.chips}` : `${andAdd ? 'Craft & add' : 'Craft one'} · ${cost}`}
       </button>
       <span class={`dk-craft-note ${done ? 'done' : ''}`} key={done?.id ?? 0}>
         {done ? (done.added ? 'Crafted and added! ' : 'Crafted! ') : ''}
