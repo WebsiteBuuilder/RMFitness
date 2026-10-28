@@ -199,6 +199,20 @@ const lines = (s: DuelSession) => s.view().chat.map((l) => `${l.player}:${l.text
     }
   }
 
+  // a load arriving one entry at a time (the online service hands a log over line by line): judged as a whole
+  {
+    const now = Date.now();
+    const log = [
+      { type: 'CHAT', player: 0, text: 'twenty seconds ago', seq: 0, ts: now - 20_000 },
+      { type: 'CHAT', player: 1, text: 'just now', seq: 1, ts: now },
+    ] as unknown as LoggedEvent[];
+    const slow = new Guest(new Host());
+    const S = new DuelSession(slow);
+    slow.got(log.slice(0, 1));
+    slow.got(log.slice(0, 2));
+    ok(S.view().chat.map((l) => l.old).join() === 'true,false', 'a line from the load, older than its newest entry, stays history even when the load comes in one entry at a time');
+  }
+
   // the room's very first entry is a line said just now (nobody has pressed Ready yet): news
   {
     const host3 = new Host();

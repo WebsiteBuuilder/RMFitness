@@ -289,8 +289,8 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
         if (typeof v !== 'string') return;
         try {
           const m = JSON.parse(v) as { ep?: number; ev?: GameEvent };
-          // a move sent during the last duel doesn't land in the rematch
-          if (m && typeof m === 'object' && m.ev && m.ep === this.ep) {
+          // a move sent during the last duel doesn't land in the rematch (a chat line does: "GG" as it starts)
+          if (m && typeof m === 'object' && m.ev && (m.ep === this.ep || (m.ev as { type?: string }).type === 'CHAT')) {
             const ev = screenProposal(m.ev, 1, this.chatAt);
             if (ev) this.append(ev);
           }

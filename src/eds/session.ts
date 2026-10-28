@@ -228,9 +228,16 @@ export class DuelSession {
         this.applyOne(ev as unknown as AnyAction);
       }
     }
+    // (a load that arrives one entry at a time: its lines are judged again against the whole load so far)
+    if (!this.loaded) this.chat = this.chat.map((l) => (l.old === this.isOld(l.at) ? l : { ...l, old: this.isOld(l.at) }));
     this.applied = events.length;
     this.log = events;
     this.notify();
+  }
+
+  /** A line in the first load said at host time `ts`: history unless among the load's newest entries and roughly now. */
+  private isOld(ts: number): boolean {
+    return !(this.loadNewest - ts < LOAD_OLD_MS && Math.abs(Date.now() - ts) < LOAD_CLOCK_MS);
   }
 
   private addChat(ev: { seq: number; ts: number; player: Pid; text: unknown; cid?: unknown }) {
@@ -243,7 +250,7 @@ export class DuelSession {
     // (and a line stamped before the newest entry of that load is history however late it arrives;
     // host times are only compared with host times, so a phone's clock being off doesn't matter)
     // (in the load: news only if it's among the load's newest entries by host time, and roughly now on this phone's clock)
-    const old = this.loaded ? ev.ts < this.loadNewest : !(this.loadNewest - ev.ts < LOAD_OLD_MS && Math.abs(Date.now() - ev.ts) < LOAD_CLOCK_MS);
+    const old = this.loaded ? ev.ts < this.loadNewest : this.isOld(ev.ts);
     this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old, cid }];
   }
 

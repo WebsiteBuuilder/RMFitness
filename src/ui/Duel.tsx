@@ -171,7 +171,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   );
 
   /** The last move sent, so a double tap can't send it twice before the game answers (online it takes a moment). */
-  const sent = useRef<{ view: SessionView; at: number } | null>(null);
+  // (keyed on the moves, not the view: a chat line makes a new view without a move landing)
+  const sent = useRef<{ moves: number; at: number } | null>(null);
   const online = !!session.adapter.roomCode;
   /** Saves the result exactly once, however many times Continue is tapped. */
   const recorded = useRef(false);
@@ -196,8 +197,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     onLeave();
   };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
-    if (sent.current && sent.current.view === view && Date.now() - sent.current.at < 1500) return;
-    sent.current = { view, at: Date.now() };
+    const moves = view.moves || view.log.length;
+    if (sent.current && sent.current.moves === moves && Date.now() - sent.current.at < 1500) return;
+    sent.current = { moves, at: Date.now() };
     unlockAudio();
     playBlip();
     // A command used up the selection: don't leave the old card's menu on screen.
