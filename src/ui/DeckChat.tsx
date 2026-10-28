@@ -7,6 +7,7 @@ import type { SpeedDeck } from '../eds/speedSave';
 import { chatError, checkKey, claudeModel, costOf, keepTurn, runTurn, tooLong, type Model, type Msg } from '../deckchat/agent';
 import { diffDecks, diffEmpty, redoDiff, undoDiff, type DeckDiff } from '../deckchat/tools';
 import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
+import { localModel } from '../deckchat/local';
 import { buzz, playBlip } from './sound';
 import { card, imageUrl } from '../eds/db';
 import './deckchat.css';
@@ -77,7 +78,7 @@ const TOOL_LABEL: Record<string, string> = {
   edit_deck: 'Changing the deck',
 };
 
-const IDEAS_EMPTY = ['Build my strongest deck', 'Make a Dragon deck', 'Build around my best monster', 'What can I build?'];
+const IDEAS_EMPTY = ['Build my strongest deck', 'Make a Dragon deck', 'Make an aggressive deck', 'What can I build?'];
 const IDEAS_DECK = ['Make it stronger', 'What does my Skill do?', 'Swap weak monsters', 'Is this deck good?'];
 
 const bare = (n: string) => n.replace(/ \(Skill Card\)$/, '');
@@ -119,7 +120,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
   const [working, setWorking] = useState(false);
   const [live, setLive] = useState('');
   const [key, setKey] = useState(chatKey);
-  const [keyOpen, setKeyOpen] = useState(!chatKey() && !testModel());
+  const [keyOpen, setKeyOpen] = useState(false);
   const [tall, setTall] = useState(false);
   const stop = useRef<AbortController | null>(null);
   const running = useRef(false);
@@ -156,17 +157,17 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     vv.addEventListener('scroll', fit);
     return () => (vv.removeEventListener('resize', fit), vv.removeEventListener('scroll', fit));
   }, []);
-  // ready to type when there's a key (no keyboard popping over the key panel)
+  // ready to type (phones wait for a tap, so the keyboard doesn't cover the deck)
   useEffect(() => {
-    if (key && !keyOpen && !matchMedia('(pointer: coarse)').matches) input.current?.focus();
+    if (!matchMedia('(pointer: coarse)').matches) input.current?.focus();
   }, []);
 
   const send = async (raw: string) => {
     const msg = raw.trim();
     // a ref, not state: two quick taps must not start two paid turns
     if (!msg || working || running.current) return;
-    const model = testModel() ?? (key ? claudeModel(key) : null);
-    if (!model) return setKeyOpen(true);
+    // Claude when the duelist added a key, else the built-in helper (free, works offline)
+    const model = testModel() ?? (key ? claudeModel(key) : localModel(() => ({ deck: deckRef.current, collection })));
     running.current = true;
     playBlip();
     setText('');
@@ -217,7 +218,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
       // Claude keeps the request in mind (the history stays append-only)
       const messages: Msg[] = [...history, { role: 'user', content: [{ type: 'text', text: msg }] }, { role: 'assistant', content: [{ type: 'text', text: `(I was stopped before I finished${diffEmpty(diff) ? '' : ', after changing the deck'}.)` }] }];
       setChat({ messages, turns: [...turns, { id: Date.now() + 2, who: 'note', text: why }] });
-      if (/didn't work|isn't allowed|no credit/.test(why)) setKeyOpen(true);
+      if (key && /didn't work|isn't allowed|no credit/.test(why)) setKeyOpen(true);
       buzz(30);
     } finally {
       stop.current = null;
@@ -268,8 +269,8 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           <b>✦ Deck chat</b>
           <span>{tall ? '▾' : '▴'}</span>
         </button>
-        <button class={`chip dc-keybtn ${key ? '' : 'on'}`} hidden={keyOpen} onClick={() => setKeyOpen(true)} aria-label="Claude key settings">
-          {key ? 'Key' : 'Add key'}
+        <button class={`chip dc-keybtn ${key ? 'on' : ''}`} hidden={keyOpen} onClick={() => setKeyOpen(true)} aria-label={key ? 'Claude is on: key settings' : 'Optional: use Claude with your own key'}>
+          {key ? 'Claude ✓' : 'Claude'}
         </button>
         {chat.turns.length > 0 && !working && (
           <button class={`chip ${sureNew ? 'on' : ''}`} onClick={() => (playBlip(), sureNew ? (setChat({ messages: [], turns: [] }), setSureNew(false)) : setSureNew(true))} onBlur={() => setSureNew(false)} aria-label="Start a new chat">
@@ -285,7 +286,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
         <KeyPanel
           has={!!key}
           onSave={(k) => (setChatKey(k), setKey(k), setKeyOpen(false), playBlip())}
-          onClear={() => (setChatKey(''), setKey(''), playBlip())}
+          onClear={() => (setChatKey(''), setKey(''), setKeyOpen(false), playBlip())}
           onClose={() => setKeyOpen(false)}
         />
       )}
@@ -296,7 +297,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
             <p>
               Tell me what you want and I'll {deck.main.length ? 'change this deck' : 'build the deck'} from {collection ? 'the cards you own' : 'every Speed Duel card'}. I can answer questions about cards and rules too.
             </p>
-            <p class="dc-dim">Every change shows up in your deck right away, with an Undo.</p>
+            <p class="dc-dim">Every change shows up in your deck right away, with an Undo.{key ? '' : ' Free, and works offline.'}</p>
           </div>
         )}
         {chat.turns.map((t) => (
@@ -351,7 +352,7 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
           ref={input}
           rows={1}
           value={text}
-          placeholder={key || testModel() ? 'Ask for a deck or a change…' : 'Add your key first'}
+          placeholder="Ask for a deck or a change…"
           aria-label="Message"
           maxLength={800}
           onInput={(ev) => setText((ev.target as HTMLTextAreaElement).value)}
@@ -459,7 +460,7 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
   return (
     <div class="dc-key">
       <p>
-        <b>Deck chat runs on Claude</b> with your own Anthropic API key (a deck build is usually 10-30¢ of credit, a question a few cents; each answer shows what it cost). It stays on this phone only.{' '}
+        <b>Optional upgrade: Claude.</b> The built-in helper is free and needs nothing. With your own Anthropic API key, Claude answers instead and understands almost anything you ask (a deck build is usually 10-30¢ of credit, a question a few cents; each answer shows what it cost). The key stays on this phone only.{' '}
         <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
           Get a key
         </a>
@@ -484,11 +485,11 @@ function KeyPanel({ has, onSave, onClear, onClose }: { has: boolean; onSave: (k:
       <div class="dc-key-acts">
         {has && (
           <button class="chip" onClick={onClear}>
-            Remove key
+            Use free helper
           </button>
         )}
         <button class="chip" onClick={onClose}>
-          {has ? 'Close' : 'Later'}
+          {has ? 'Close' : 'No thanks'}
         </button>
         <button class="gbtn gold" disabled={!looksLikeKey(k) || check?.state === 'busy'} onClick={save}>
           {check?.state === 'busy' ? 'Checking…' : 'Save key'}
