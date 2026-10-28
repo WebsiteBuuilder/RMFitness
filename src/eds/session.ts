@@ -150,8 +150,17 @@ export class DuelSession {
   chatDraft = '';
   /** the smallest (arrival − host time) seen: the two clocks' difference plus the quickest delivery */
   private offset = Infinity;
-  /** when this phone opened the room (a log pouring in just after is history, not news) */
+  /** when this phone opened the room, and when the room's first entry reached it */
   readonly openedAt = Date.now();
+  private firstArrival = 0;
+
+  /**
+   * Until this time, entries reaching this phone are the room's log loading (a reload or a rejoin
+   * brings it all at once, however slowly it starts): history, not news.
+   */
+  historyUntil(settleMs: number): number {
+    return Math.max(this.openedAt, this.firstArrival || Infinity) + settleMs;
+  }
   /** when the latest entries reached this phone (to tell a log pouring in from a line said just now) */
   private arrivals: number[] = [];
 
@@ -198,6 +207,7 @@ export class DuelSession {
       const ev = events[i];
       const now = Date.now();
       this.arrivals.push(now);
+      if (!this.firstArrival) this.firstArrival = now;
       if (this.arrivals.length > 16) this.arrivals.shift();
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
       else {

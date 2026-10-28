@@ -73,7 +73,7 @@ export function DuelChat({
     // news: said just now and reaching a room this phone already had open; a log pouring in after a
     // rejoin or reload brings old lines (history: no ping, no bubble, no count)
     const now = Date.now();
-    const fresh = chat.filter((l) => !had.has(l.id) && l.late < NEWS_MS && now - l.got < NEWS_MS && l.got - session.openedAt > SETTLE_MS);
+    const fresh = chat.filter((l) => !had.has(l.id) && l.late < NEWS_MS && now - l.got < NEWS_MS && l.got > session.historyUntil(SETTLE_MS));
     if (!fresh.length) return;
     // (a beat later: if lots of entries landed together it was a log loading, not someone talking)
     const t = window.setTimeout(() => {
@@ -86,12 +86,18 @@ export function DuelChat({
 
   const bubblesNow = useRef<ChatLine[]>([]);
   bubblesNow.current = bubbles;
+  const mutedNow = useRef(muted);
+  mutedNow.current = muted;
   const announce = (fresh: ChatLine[]) => {
+    const muted = mutedNow.current;
     const theirs = fresh.filter((l) => l.player === opp && !muted);
     const pop = fresh.filter((l) => l.player === mySeat || !muted);
     if (theirs.length) sfx.chatPing();
     if (session.chatOpen) return;
-    if (theirs.length) setUnread((n) => n + theirs.length);
+    // (unread: their lines not read in the bar; the one shown there now isn't counted, one it replaces is)
+    const lastShown = theirs[theirs.length - 1];
+    const replaced = lastShown && bubblesNow.current.some((x) => x.player !== mySeat) ? 1 : 0;
+    if (theirs.length) setUnread((n) => n + theirs.length - 1 + replaced);
     // (one line each at a time: a newer one replaces the one showing)
     const lastTheirs = pop.filter((l) => l.player !== mySeat).pop();
     const lastMine = pop.filter((l) => l.player === mySeat).pop();
@@ -101,8 +107,6 @@ export function DuelChat({
       if (!l) continue;
       const t = window.setTimeout(() => {
         timers.current.delete(t);
-        // a line of theirs read in full in the bar no longer counts as unread
-        if (l.player !== mySeat && bubblesNow.current.some((x) => x.id === l.id)) setUnread((n) => Math.max(0, n - 1));
         setBubbles((b) => b.filter((x) => x.id !== l.id));
       }, l.player === mySeat ? MINE_MS : BUBBLE_MS);
       timers.current.add(t);
@@ -146,6 +150,10 @@ export function DuelChat({
     setRoom(top !== undefined && limit !== undefined && limit > top ? Math.floor(limit - top - 6) : null);
   }, [open, place, short]);
   const mini = room !== null && room < 250;
+  /** holding the eye button: the chat fades away so the field shows through */
+  const [peek, setPeek] = useState(false);
+  // (the chat closing under a held eye: no pointer-up ever comes)
+  useEffect(() => void (!open && setPeek(false)), [open]);
 
   // Escape (a keyboard or a controller's B) closes the chat.
   useEffect(() => {
@@ -256,18 +264,21 @@ export function DuelChat({
       {/* the chat drops down over the top of the screen: your hand, your side of the field and the
           room's buttons stay in view and keep working while it is open */}
       {open && (
-        <div ref={sheet} class={`chat-sheet at-${place} ${mini ? 'mini' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={vv ? { top: `${vv.top + 8}px`, maxHeight: `${Math.max(120, vv.h - 16)}px` } : room !== null ? { maxHeight: `${Math.max(120, room)}px` } : undefined}>
+        <div ref={sheet} class={`chat-sheet at-${place} ${mini ? 'mini' : ''} ${peek ? 'peek' : ''}`} role="dialog" aria-label={`Chat with ${theirName}`} style={vv ? { top: `${vv.top + 8}px`, maxHeight: `${Math.max(120, vv.h - 16)}px` } : room !== null ? { maxHeight: `${Math.max(120, room)}px` } : undefined}>
           <div class="chat-head">
             <span class="chat-title">Chat with {theirName}</span>
+            {place === 'duel' && <button type="button" class="chat-peek" aria-label="Hold to see the field" onPointerDown={() => setPeek(true)} onPointerUp={() => setPeek(false)} onPointerCancel={() => setPeek(false)} onPointerLeave={() => setPeek(false)} onContextMenu={(e) => e.preventDefault()}>
+              👁
+            </button>}
             <button class={`chat-mute ${muted ? 'on' : ''}`} onClick={toggleMute} aria-pressed={muted}>
-              {muted ? `🔕 Unmute` : `🔔 Mute ${names[opp] || 'them'}`}
+              {muted ? `🔇 Muted` : `🔈 Mute ${names[opp] || 'them'}`}
             </button>
             <button class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
             </button>
           </div>
           <div class="chat-list" ref={list}>
-            {shown.length === 0 && <p class="chat-empty">{muted ? `${names[opp] || 'Your opponent'} is muted. Tap Unmute to see their messages again.` : 'Say hi! Tap a phrase or type a message.'}</p>}
+            {shown.length === 0 && <p class="chat-empty">{muted ? `${names[opp] || 'Your opponent'} is muted. Tap Muted to see their messages again.` : 'Say hi! Tap a phrase or type a message.'}</p>}
             {shown.map((l, i) => (
               <div key={l.id} class={`chat-line ${l.player === mySeat ? 'mine' : 'theirs'} ${isEmote(l.text) ? 'emote' : ''}`}>
                 {/* (the name once per run of lines from the other player) */}
@@ -278,8 +289,9 @@ export function DuelChat({
           </div>
           {short || mini ? (
             <div class="chat-quick">
+              {emoteButtons.slice(0, 3)}
               {phraseButtons.slice(0, 3)}
-              {emoteButtons}
+              {emoteButtons.slice(3)}
               {phraseButtons.slice(3)}
             </div>
           ) : (
@@ -293,6 +305,9 @@ export function DuelChat({
             <button type="submit" class="chat-send" disabled={!cleanChat(draft) || slow}>
               Send
             </button>
+            {mini && <button type="button" class="chat-peek" aria-label="Hold to see the field" onPointerDown={() => setPeek(true)} onPointerUp={() => setPeek(false)} onPointerCancel={() => setPeek(false)} onPointerLeave={() => setPeek(false)} onContextMenu={(e) => e.preventDefault()}>
+                👁
+            </button>}
             {mini && (
               <button type="button" class="chat-x" aria-label="Close chat" onClick={() => setOpen(false)}>
                 ×

@@ -407,3 +407,38 @@
 .chat-sheet.mini .chat-list {
   display: none;
 }
+/* hold the eye: the chat fades so the whole field shows through */
+.chat-peek {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff88;
+  background: #141c48;
+  font-size: 20px;
+  padding: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.chat-sheet {
+  transition: opacity 0.12s;
+}
+.chat-sheet.peek {
+  opacity: 0.08;
+}
+/* Classic: beside their hand's card backs, clear of their Graveyard */
+.chat-bubbles.at-duel.classic {
+  left: calc(118px + env(safe-area-inset-left));
+}
+/* a small tail pointing up at their bar */
+.chat-bubbles.at-duel::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 14px;
+  border: 6px solid transparent;
+  border-top: 0;
+  border-bottom: 7px solid #f7c948;
+}
