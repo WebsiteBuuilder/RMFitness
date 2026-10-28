@@ -17,7 +17,7 @@ import { endRun, type SoloReport } from '../eds/speedCampaign/settle';
 import type { CpuDuelSpec, CpuDuelist, VsInfo } from '../eds/speedCampaign/types';
 import { randomSeed } from '../eds/rng';
 import { CardImg, CardInfoPanel } from './CardImg';
-import { SpeedDeckEdit, speedOpponents } from './Speed';
+import { SpeedDeckEdit, deckCrafter, speedOpponents } from './Speed';
 import { buzz, playBlip, playFanfare, playLose, playStar, playVs } from './sound';
 import { Legends } from './Legends';
 import { Ranked } from './Ranked';
@@ -788,6 +788,7 @@ function Road(p: Ctx) {
       <SpeedDeckEdit
         deck={deck}
         collection={deck.open ? undefined : (speed.collection ?? {})}
+        craft={deck.open ? undefined : deckCrafter(speed, p.onSpeed)}
         onChange={(d) => (chosen ? p.onSpeed({ ...speed, decks: speed.decks.map((x) => (x.id === d.id ? d : x)) }) : (setSolo({ ...solo, campaign: { ...c, deck: d } }), p.onSpeed({ ...speed, road: d })))}
         onBack={() => setEditing(false)}
       />
