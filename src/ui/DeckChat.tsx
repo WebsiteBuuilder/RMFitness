@@ -170,7 +170,9 @@ export function DeckChat({ deck, collection, onChange, onFresh, onBusy, onRead, 
     if (!msg || working || running.current) return;
     // "undo" said in the chat presses the Undo on the newest change
     const said = clean(msg);
-    if (/^(undo|undo (it|that|this|the last change|last change)|go back|take (it|that) back|revert( it| that)?|put it back how it was)( again)?$/.test(said) && lastChange) {
+    // ("undo that last change please", "give me back my old deck"; not "how do i undo?")
+    const wantsUndo = !/^(how|what|why|can i|dont|do not|is|does|when)\b/.test(said) && !/\bredo\b|\bundo the undo\b/.test(said) && (/\b(undo|revert)\b/.test(said) || /^(go back|take (it|that) back|put it back how it was)( again)?$/.test(said) || /\b(give|bring|put|get) (me )?(back )?(my )?(old|previous|last|original) deck( back)?\b/.test(said));
+    if (wantsUndo && lastChange) {
       playBlip();
       setText('');
       return undo(lastChange, [{ id: Date.now(), who: 'me', text: msg }, { id: Date.now() + 1, who: 'claude', text: 'Undid the last change. Say "redo" to put it back.' }]);

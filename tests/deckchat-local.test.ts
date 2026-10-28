@@ -302,5 +302,67 @@ for (const [what, check] of [
   ok(Date.now() - t0 < 3000, 'an unknown card never slows the helper down');
 }
 
+// ---------- round 4: not / but / except, restyles, swaps, questions that must not edit ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('build a spellcaster deck without dark magician');
+  ok(!w.deck.main.includes('Dark Magician') && w.deck.main.length === 20, '"without dark magician" leaves it out of the build');
+  await say('add 2 kuriboh and a sangan');
+  await say('take kuriboh out but leave sangan');
+  ok(w.deck.main.includes('Sangan') && w.deck.main.filter((n) => n === 'Kuriboh').length === 1, '"take kuriboh out but leave sangan" keeps Sangan');
+  let before = w.deck;
+  const yugi = await say('what skill does yugi use');
+  ok(w.deck === before && /Yugi/.test(yugi.text), 'a question about a duelist\'s Skills changes nothing');
+  before = w.deck;
+  const not = await say('can you not add any more traps');
+  ok(w.deck === before && /leave the deck/.test(not.text), '"can you not add any more traps" changes nothing');
+  await say('stop adding traps');
+  ok(w.deck === before, '"stop adding traps" changes nothing');
+  await say('make it zombies but keep sangan');
+  ok(w.deck.main.includes('Sangan') && w.deck.main.filter((n) => card(n)?.race === 'Zombie').length >= 6, '"make it zombies but keep sangan" rebuilds as Zombies and keeps Sangan');
+  await say('make the deck dragons instead');
+  ok(w.deck.main.filter((n) => card(n)?.race === 'Dragon').length >= 6, '"make the deck dragons instead" restyles the deck');
+  await say('no more than 2 traps');
+  ok(kinds(w.deck, 'trap') <= 2 && w.deck.main.length === 20, '"no more than 2 traps" cuts to 2 and keeps 20 cards');
+  const n0 = w.deck.main.length;
+  await say('put kuriboh in instead of the weakest card');
+  ok(w.deck.main.includes('Kuriboh') && w.deck.main.length === n0, '"instead of the weakest card" swaps one for one');
+  const one = w.deck.main.find((n) => w.deck.main.filter((x) => x === n).length >= 2 && card(n)?.kind === 'monster' && n !== 'Kuriboh')!;
+  const had = w.deck.main.filter((n) => n === one).length;
+  await say(`swap ${one} for 1 sangan`);
+  ok(w.deck.main.filter((n) => n === one).length === had - 1 && w.deck.main.length === n0, 'a swap with one count on the right swaps one for one');
+  const legal = await say('is the deck legal');
+  ok(/legal|Not yet/.test(legal.text), '"is the deck legal" answers about legality');
+  const ex = await say('show me the extra deck');
+  ok(/Extra Deck/.test(ex.text), '"show me the extra deck" lists it');
+  const ss = await say('difference between normal and special summon');
+  ok(/Special Summon/.test(ss.text), 'normal vs special summon gets a rules answer');
+  const cards = await say('how do i get more cards');
+  ok(/Card Shop/.test(cards.text), '"how do i get more cards" points to packs');
+  before = w.deck;
+  const ask2 = await say('what does dark magician do? add it');
+  ok(/Dark Magician/.test(ask2.text) && w.deck.main.includes('Dark Magician'), '"what does X do? add it" adds the card asked about');
+  const multi = await say('add 1 kuriboh, remove 1 sangan');
+  ok(/Kuriboh/.test(multi.text) && /Sangan/.test(multi.text), 'a comma splits two edits');
+  const miss = await say('add 2 sages stone and magicians rod');
+  ok(/couldn't find/.test(miss.text), 'a name that matches nothing is reported, not dropped');
+  const wonder = await say('i wonder if dark magician would fit');
+  ok(/^Dark Magician:/.test(wonder.text), 'a whole card name beats a word-only partial match');
+  const mm: Memory = { added: [], removed: [] };
+  let v: ChatWorld = { deck: empty(), collection: big };
+  for (const q of ['build me a warrior deck', 'add 2 kuriboh', 'make it 30 cards', 'make it 20 cards']) v = { ...v, deck: (await runTurn(localModel(() => v, mm), [], q, v)).deck };
+  ok(v.deck.main.filter((n) => n === 'Kuriboh').length === 2, 'trimming back to 20 keeps the cards asked for by name');
+  const tr = await runTurn(localModel(() => v, mm), [], 'not enough traps', v);
+  ok(kinds(tr.deck, 'trap') > kinds(v.deck, 'trap'), '"not enough traps" adds traps');
+  const rb = await runTurn(localModel(() => v, mm), [], 'build a red eyes deck', v);
+  ok(rb.deck.main.filter((n) => (card(n)?.level ?? 0) >= 7 && card(n)?.kind === 'monster' && card(n)?.sub !== 'Ritual').length <= 4, 'a built deck runs few monsters that need 2 Tributes');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);
