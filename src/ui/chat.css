@@ -1,0 +1,700 @@
+/* ---------- chat between the two players of an online room (DuelChat.tsx) ---------- */
+.chat-fab {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 970;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #3d56c9, #141c48 75%);
+  border: 1px solid #9fb2ffaa;
+  box-shadow:
+    0 3px 10px #000a,
+    0 0 0 2px #f7c94833 inset;
+  cursor: pointer;
+  /* (held and slid onto an emote: no page scroll or pull-to-refresh takes the touch) */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s;
+}
+.chat-fab:active {
+  transform: scale(0.92);
+}
+.chat-fab.on {
+  border-color: #f7c948;
+  color: #f7c948;
+}
+.chat-fab:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #e5484d;
+  border: 1.5px solid #fff;
+  color: #fff;
+  font: 800 11px/15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  animation: chat-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+/* the other player's new line, just under their bar (their name, LP and hand count stay readable),
+   over the backs of their hand; taps go through */
+.chat-bubbles {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  right: calc(64px + env(safe-area-inset-right));
+  z-index: 965;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.chat-bubble {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  border-radius: 4px 16px 16px 16px;
+  background: #0b1030;
+  border: 1.5px solid #f7c948;
+  box-shadow: 0 4px 14px #000c;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.3;
+  /* up to two lines (a longer one ends in …, the whole line is in the chat); a tap opens the chat */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  cursor: pointer;
+  animation:
+    chat-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    chat-out 0.35s ease-in var(--out, 4.15s) forwards;
+}
+.chat-bubble b {
+  color: #f7c948;
+  margin-right: 6px;
+  font-size: 13px;
+}
+.chat-bubble.emote {
+  padding: 2px 12px 2px 10px;
+}
+.chat-bubble.emote span {
+  font-size: 32px;
+  line-height: 1;
+  vertical-align: middle;
+}
+/* your own line: a short pill under the chat button, so you see it went out */
+.chat-sent {
+  position: fixed;
+  top: calc(110px + env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 965;
+  max-width: min(60vw, 280px);
+  box-sizing: border-box;
+  padding: 7px 12px;
+  border-radius: 16px 4px 16px 16px;
+  background: #1d3a8a;
+  border: 1px solid #9fd0ff;
+  box-shadow: 0 4px 14px #000b;
+  color: #fff;
+  font: 15px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation:
+    chat-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    chat-out 0.3s ease-in 1.7s forwards;
+}
+.chat-sent b {
+  color: #9fd0ff;
+  font-size: 13px;
+  margin-right: 6px;
+}
+.chat-sent.emote span {
+  font-size: 22px;
+  line-height: 1;
+  vertical-align: middle;
+}
+@keyframes chat-in {
+  from {
+    transform: translateY(-8px) scale(0.9);
+    opacity: 0;
+  }
+}
+@keyframes chat-out {
+  to {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+@keyframes chat-pop {
+  from {
+    transform: scale(0.3);
+  }
+}
+
+/* the chat drops down over the top of the screen (the opponent's side): your hand, your side of the
+   field and the room's buttons stay in view and keep working; no backdrop */
+.chat-sheet {
+  position: fixed;
+  top: calc(52px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 990;
+  width: min(calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)), 520px);
+  max-height: min(48dvh, 420px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 8px 12px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #16205a, #070a1c 70%);
+  border: 1px solid #8fa6ff77;
+  box-shadow:
+    0 2px 0 #f7c94888 inset,
+    0 18px 50px #000e;
+  color: #fff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  animation: chat-drop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+.chat-sheet.at-top {
+  top: calc(8px + env(safe-area-inset-top));
+}
+/* in the room (before the duel): over the bottom, above the chat button; the room's window stays in view */
+.chat-sheet.at-low {
+  top: auto;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  animation-name: chat-rise;
+}
+@keyframes chat-drop {
+  from {
+    transform: translate(-50%, -24px);
+    opacity: 0;
+  }
+}
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.4px;
+}
+.chat-mute,
+.chat-x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff88;
+  background: #141c48;
+  color: #c9d3ff;
+  font: 700 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 12px;
+  touch-action: manipulation;
+}
+.chat-mute.on {
+  background: #4a1c1c;
+  border-color: #e5484d;
+  color: #ffd2d2;
+}
+.chat-x {
+  width: 44px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+}
+.chat-list {
+  /* about three lines: the chat stays short, older lines scroll */
+  max-height: 120px;
+  /* older lines fade out under the header */
+  -webkit-mask-image: linear-gradient(transparent, #000 14px);
+  mask-image: linear-gradient(transparent, #000 14px);
+  flex: 0 1 auto;
+  min-height: 40px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px;
+}
+.chat-empty {
+  margin: auto;
+  color: #9aa6d8;
+  font-size: 13px;
+  text-align: center;
+}
+.chat-line {
+  max-width: 82%;
+  align-self: flex-start;
+  padding: 6px 11px;
+  border-radius: 14px 14px 14px 4px;
+  background: #ffffff14;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.chat-line b {
+  display: block;
+  font-size: 11px;
+  color: #f7c948;
+}
+.chat-line.mine {
+  align-self: flex-end;
+  border-radius: 14px 14px 4px 14px;
+  background: #2e4cb0;
+}
+.chat-line.emote {
+  background: none;
+  padding: 0 4px;
+}
+.chat-line.emote span {
+  font-size: 24px;
+  line-height: 1.2;
+}
+.chat-quick {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -12px;
+  padding: 0 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-quick {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+}
+.chat-quick::-webkit-scrollbar {
+  display: none;
+}
+.chat-phrase,
+.chat-emote {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff77;
+  background: linear-gradient(#2e3f8f, #141c48);
+  color: #fff;
+  font: 700 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 13px;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.chat-emote {
+  width: 44px;
+  padding: 0;
+  font-size: 22px;
+  background: #ffffff10;
+}
+.chat-phrase:active,
+.chat-emote:active {
+  transform: scale(0.94);
+}
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff88;
+  background: #050817;
+  color: #fff;
+  /* 16px: iPhone doesn't zoom the page in on a smaller font */
+  font: 16px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 14px;
+}
+.chat-form input:focus {
+  outline: none;
+  border-color: #f7c948;
+}
+.chat-send {
+  min-height: 44px;
+  border-radius: 22px;
+  border: 1px solid #fff2b8;
+  background: linear-gradient(#f7c948, #c98f12);
+  color: #1a1000;
+  font: 800 14px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 16px;
+  touch-action: manipulation;
+}
+.chat-send:disabled {
+  background: #3d4677;
+  border-color: #8a93c8;
+  color: #e6e9fb;
+}
+.chat-slow {
+  margin: -2px 0 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #4a1c1c;
+  border: 1px solid #e5484d;
+  color: #ffd2d2;
+  font-size: 13px;
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble,
+  .chat-sent,
+  .chat-sheet,
+  .chat-badge {
+    animation: none;
+  }
+}
+/* before the duel (the room, who goes first): bottom right, clear of the room's window */
+.chat-fab.at-low {
+  top: auto;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
+  width: 52px;
+  height: 52px;
+}
+.chat-bubbles.at-low {
+  top: auto;
+  left: max(14px, env(safe-area-inset-left));
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
+  align-items: flex-end;
+}
+.chat-sent.at-low {
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  right: calc(76px + env(safe-area-inset-right));
+}
+/* over the result screen: the top corner, above the VICTORY / DEFEAT title */
+.chat-fab.at-top {
+  top: calc(10px + env(safe-area-inset-top));
+}
+.chat-bubbles.at-top {
+  top: calc(12px + env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+}
+.chat-sent.at-top {
+  top: calc(16px + env(safe-area-inset-top));
+  right: calc(68px + env(safe-area-inset-right));
+}
+/* on a short screen the history gives way first: the buttons and the message box keep their size */
+.chat-head,
+.chat-quick,
+.chat-form,
+.chat-slow {
+  flex-shrink: 0;
+}
+/* Classic controls: a thinner top bar */
+.chat-bubbles.at-duel.classic {
+  top: calc(42px + env(safe-area-inset-top));
+}
+/* little room above the turn controls (Classic on a small phone): one row of buttons and the box */
+.chat-sheet.mini {
+  padding-top: 10px;
+}
+.chat-sheet.mini .chat-head,
+.chat-sheet.mini .chat-list {
+  display: none;
+}
+/* hold the eye: the chat fades so the whole field shows through */
+.chat-peek {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff88;
+  background: #141c48;
+  font-size: 20px;
+  padding: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.chat-sheet {
+  transition: opacity 0.12s;
+}
+.chat-sheet.peek {
+  opacity: 0.08;
+}
+/* Classic: beside their hand's card backs, clear of their Graveyard */
+.chat-bubbles.at-duel.classic {
+  left: calc(118px + env(safe-area-inset-left));
+}
+/* a small tail pointing up at their bar */
+.chat-bubbles.at-duel::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 14px;
+  border: 6px solid transparent;
+  border-top: 0;
+  border-bottom: 7px solid #f7c948;
+}
+
+/* in the duel the chat rises over your hand: their whole field, the middle of the board and the
+   turn controls stay in view (it stops under them) */
+.chat-sheet.at-duel {
+  top: auto;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  max-height: min(40dvh, 360px, var(--room, 999px));
+  animation-name: chat-rise;
+}
+@keyframes chat-rise {
+  from {
+    transform: translate(-50%, 24px);
+    opacity: 0;
+  }
+}
+.chat-peek {
+  display: grid;
+  place-items: center;
+  color: #c9d3ff;
+}
+
+/* hold the chat button: quick emotes and phrases by it, one tap sends */
+.chat-fab {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.chat-ring {
+  position: fixed;
+  z-index: 980;
+  /* beside the chat button, over their face-down hand */
+  top: calc(52px + env(safe-area-inset-top));
+  right: calc(64px + env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 18px;
+  background: #0b1030f2;
+  border: 1px solid #f7c94899;
+  box-shadow: 0 10px 30px #000c;
+  animation: chat-in 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  transform-origin: top right;
+}
+.chat-ring-emotes {
+  display: grid;
+  grid-template-columns: repeat(5, 44px);
+  gap: 4px;
+}
+.chat-ring .chat-emote {
+  width: 44px;
+  min-height: 44px;
+  font-size: 22px;
+}
+.chat-ring-phrases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.chat-ring .chat-phrase {
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-ring .aim {
+  border-color: #f7c948;
+  background: #f7c94844;
+  transform: scale(1.12);
+}
+.chat-ring.at-low {
+  top: auto;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  right: calc(76px + env(safe-area-inset-right));
+  transform-origin: bottom right;
+}
+.chat-ring.at-top {
+  top: calc(8px + env(safe-area-inset-top));
+}
+/* you muted them: a small mark on the button */
+.chat-muted-mark {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 8px;
+  background: #4a1c1c;
+  border: 1px solid #e5484d;
+}
+/* your turn: the chat drops over the top, so your hand and your side stay free */
+.chat-sheet.at-duel.up {
+  top: calc(52px + env(safe-area-inset-top));
+  bottom: auto;
+  max-height: min(48dvh, 420px, var(--room, 999px));
+  animation-name: chat-drop;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-ring {
+    animation: none;
+  }
+}
+/* your line on its way to the room; one that didn't get there can be sent again */
+.chat-line.pending {
+  opacity: 0.6;
+}
+.chat-line.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  border: 1px solid #e5484d;
+  background: #4a1c1c;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  text-align: right;
+  cursor: pointer;
+}
+.chat-line.failed small {
+  color: #ffd2d2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* the chat button filling up while held */
+.chat-fab.holding {
+  animation: chat-hold 0.38s linear forwards;
+}
+@keyframes chat-hold {
+  to {
+    transform: scale(1.12);
+    box-shadow:
+      0 3px 10px #000a,
+      0 0 0 4px #f7c948;
+  }
+}
+.chat-ring {
+  animation-name: chat-ring-pop;
+}
+@keyframes chat-ring-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.04);
+  }
+}
+.chat-mute {
+  padding: 0 12px 0 10px;
+  grid-auto-flow: column;
+  gap: 5px;
+}
+.chat-title.hint {
+  color: #f7c948;
+  font-size: 13px;
+}
+/* the small chat: the quick row scrolls beside a fixed close button */
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.chat-row .chat-quick {
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
+}
+.chat-sheet.mini .chat-mute {
+  padding: 0;
+  width: 44px;
+}
+.chat-sheet.mini .chat-mute span {
+  display: none;
+}
+
+/* the small chat's one line: the latest thing said */
+.chat-last {
+  margin: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 20px;
+  color: #fff;
+}
+.chat-last b {
+  color: #f7c948;
+  font-size: 12px;
+}
+.chat-ring .chat-slow {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.chat-sheet.mini .chat-last + .chat-row {
+  margin-top: -2px;
+}
+
+/* the small chat's top line: the latest thing said, Hide and close */
+.chat-last-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.chat-last-row .chat-last {
+  flex: 1;
+  min-width: 0;
+}
+.chat-last-row .chat-mute,
+.chat-last-row .chat-x {
+  min-height: 40px;
+  height: 40px;
+}
+.chat-last-row .chat-x {
+  width: 40px;
+}
+.chat-last-none {
+  font-weight: 800;
+}
+.chat-sheet.mini {
+  gap: 6px;
+  padding: 8px 12px 10px;
+}
+.chat-sheet.mini .chat-mute span {
+  display: inline;
+}
+.chat-sheet.mini .chat-mute {
+  width: auto;
+  padding: 0 10px 0 8px;
+}

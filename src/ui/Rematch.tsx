@@ -6,6 +6,7 @@ import { useDuelSession, type DuelSession, type Series } from '../eds/session';
 import { other } from '../eds/engine';
 import type { Pid } from '../eds/types';
 import { buzz, playBlip, playVs } from './sound';
+import { DuelChat } from './DuelChat';
 import './toss.css';
 
 export type Dock =
@@ -34,7 +35,19 @@ export function RematchLayer() {
   useEffect(() => rematchDock.subscribe(() => tick((n) => n + 1)), []);
   const d = rematchDock.dock;
   if (!d) return null;
-  return d.kind === 'room' ? <RoomDock key={d.session.round} d={d} /> : <CpuDock d={d} />;
+  if (d.kind === 'cpu') return <CpuDock d={d} />;
+  return (
+    <>
+      <RoomDock key={d.session.round} d={d} />
+      {!d.hotseat && !!d.session.adapter.roomCode && <RoomChat d={d} />}
+    </>
+  );
+}
+
+/** The room's chat stays open over the result, for a "good game" or a call for a rematch. */
+function RoomChat({ d }: { d: Extract<Dock, { kind: 'room' }> }) {
+  const view = useDuelSession(d.session);
+  return <DuelChat session={d.session} chat={view.chat} mySeat={d.mySeat} names={view.state.players.map((p) => p.name) as [string, string]} place="top" />;
 }
 
 const score = (s: Series, me: Pid) => `${s.wins[me]}–${s.wins[other(me)]}${s.draws ? `, ${s.draws} draw${s.draws > 1 ? 's' : ''}` : ''}`;

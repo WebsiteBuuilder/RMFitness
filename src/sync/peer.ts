@@ -2,6 +2,7 @@ import Peer, { DataConnection, type PeerOptions } from 'peerjs';
 import type { GameEvent, LoggedEvent } from './events';
 import { AdapterBase, SyncAdapter } from './types';
 import { localBroker } from '../online/peerTransport';
+import { screenProposal } from '../eds/session';
 
 type Msg = { t: 'sync'; events: LoggedEvent[] } | { t: 'ev'; ev: GameEvent } | { t: 'hello' };
 
@@ -57,6 +58,8 @@ export class PeerAdapter extends AdapterBase implements SyncAdapter {
   /** broker failures in a row, and "no such room" answers in a row */
   private failures = 0;
   private lookups = 0;
+  /** the guest's recent chat lines (the host caps them) */
+  private chatAt: number[] = [];
   /** which ICE list is in use */
   private ice = 0;
 
@@ -220,7 +223,10 @@ export class PeerAdapter extends AdapterBase implements SyncAdapter {
 
   private receive(msg: Msg) {
     if (msg.t === 'ev') {
-      if (this.isHost) this.append(msg.ev);
+      if (this.isHost) {
+        const ev = screenProposal(msg.ev, 1, this.chatAt);
+        if (ev && (!this.vet || this.vet(ev))) this.append(ev);
+      }
       else this.events = [...this.events, msg.ev as LoggedEvent], this.emit();
     } else if (msg.t === 'sync') {
       if (!this.isHost) {

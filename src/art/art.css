@@ -399,7 +399,8 @@
   animation: art-land var(--d) ease-out forwards;
 }
 .art-caption.shadow {
-  bottom: calc(26% + env(safe-area-inset-bottom));
+  /* (above the sealed line, both clear of your Life Points bar, raised over the stage) */
+  bottom: max(calc(26% + env(safe-area-inset-bottom)), calc(var(--art-safe-px, 0px) + 66px));
   font-size: 19px;
   line-height: 1.25;
   text-shadow:
@@ -407,7 +408,7 @@
     0 2px 2px #000;
 }
 .art-caption.sealed {
-  bottom: calc(16% + env(safe-area-inset-bottom));
+  bottom: max(calc(16% + env(safe-area-inset-bottom)), var(--art-safe-px, 0px));
   font-size: 14px;
   font-weight: 600;
   color: #ffd8f6;
