@@ -107,6 +107,10 @@ opened = openRanked(opened.speed, opened.solo, day(7, 15));
 ok(!opened.dropped && rankedProgress(opened.solo).l === 0, 'and only once');
 ok(openRanked(speed, started, new Date(2026, 10, 2), undefined, true).dropped, 'a kept duel from last season is dropped, not resumed');
 {
+  const link = settleLinkRanked(speed, started, 'w', 'Rival', day(7, 14));
+  ok(!!rankedProgress(link.solo).pending && rankedProgress(link.solo).l === 0, 'a link battle leaves a cut-off Ranked Duel waiting to be resumed');
+}
+{
   const resumed = settleRanked(speed, openRanked(speed, started, day(7, 14), undefined, true).solo, LEFT, day(7, 15));
   ok(rankedProgress(resumed.solo).l === 1 && !rankedProgress(resumed.solo).pending, 'pressing Leave in the resumed duel is still a loss');
 }
@@ -351,6 +355,12 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   ok(ses.engine.state.turn >= 2 && sig(back) === sig(ses), `a resumed Ranked Duel rebuilds the same board (turn ${ses.engine.state.turn})`);
   for (let i = 0; i < 4000 && back.engine.state.winner === null; i++) if (!step(back)) break;
   ok(back.engine.state.winner !== null, 'and plays on to the end');
+}
+// Only the host takes a win on time: the other phone can't send its own surrender as a dropped connection.
+{
+  const ses = new DuelSession(new MemoryAdapter());
+  const vet = (ses.adapter as unknown as { vet: (e: unknown) => boolean }).vet;
+  ok(!vet({ type: 'SURRENDER', player: 1, timeout: true }) && vet({ type: 'SURRENDER', player: 1 }), 'a timeout surrender from the other phone is refused');
 }
 
 if (fails) {

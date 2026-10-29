@@ -190,6 +190,8 @@ export class DuelSession {
     adapter.vet = (ev) => {
       const st = this.engine.state;
       const e = ev as { type: string; player?: unknown };
+      // (and only the host takes a win on time: the other phone can't mark its own surrender as a dropped connection)
+      if (e.type === 'SURRENDER' && (ev as { timeout?: unknown }).timeout) return false;
       return !(e.type === 'SURRENDER' && e.player !== 1 && st.started && !st.tag && !this.log.some((a) => (a as { type: string }).type === 'RAID_START'));
     };
     this.unsubs.push(

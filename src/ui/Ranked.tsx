@@ -1,7 +1,7 @@
 // Ranked Duel: the monthly ladder against the computer. The emblem and stars up top, the next
 // opponent, one big Duel! button; the ladder's prizes and past seasons below. Rules and
 // numbers live in speedCampaign/ranked.ts.
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
 import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import { clearRankedLive, loadRankedLive, type RankedLive } from '../eds/speedCampaign/rankedLive';
@@ -54,19 +54,25 @@ export function Ranked(p: Ctx) {
   const [live, setLive] = useState<RankedLive | null>(null);
   const [askResume, setAskResume] = useState(false);
   useEffect(() => {
-    const kept = loadRankedLive(p.profile.id);
+    const found = loadRankedLive(p.profile.id);
+    // (only the duel the ladder is waiting on: same season as the pending one)
+    const kept = found && solo.ranked?.pending?.season === found.season ? found : null;
     const o = openRanked(speed, solo, undefined, undefined, !!kept && !!p.onResume);
     if (o.speed !== speed) p.onSpeed(o.speed);
     setSolo(o.solo);
     if (o.resume && kept) {
       setLive(kept);
       setAskResume(true);
-    } else if (kept) clearRankedLive(p.profile.id);
+    } else if (found) clearRankedLive(p.profile.id);
     if (o.dropped) setDropped(true);
   }, []);
+  const resumed = useRef(false);
   const resume = () => {
     setAskResume(false);
-    if (live && p.onResume) p.onResume(live);
+    // (once: the sheet and the big button can't open two copies of the duel)
+    if (!live || !p.onResume || resumed.current) return;
+    resumed.current = true;
+    p.onResume(live);
   };
   const rp = rankedProgress(solo);
   // the shared leaderboard: post this rank whenever it changes
@@ -292,7 +298,7 @@ export function Ranked(p: Ctx) {
       )}
       {dropped && !rep && !askResume && (
         <Sheet title="Ranked Duel cut off" onClose={() => setDropped(false)}>
-          <p>The game closed during your last Ranked Duel. It doesn't count: no star lost, and the same opponent is waiting.</p>
+          <p>The game closed during your last Ranked Duel. It doesn't count: no star lost.</p>
           <Btn kind="gold" onClick={() => setDropped(false)}>
             OK
           </Btn>

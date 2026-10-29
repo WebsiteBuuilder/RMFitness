@@ -38,7 +38,7 @@ import { Menu, Overlay, Win } from './Window';
 import { SoloHud, Solo, WatchBar, soloBack, type SoloMode } from './Solo';
 import { forfeit, outcomeOf } from '../eds/speedCampaign/outcome';
 import { loadSolo, writeSolo } from '../eds/speedCampaign/save';
-import { clearRankedLive, saveRankedLive, type RankedLive } from '../eds/speedCampaign/rankedLive';
+import { clearRankedLive, loadRankedLive, saveRankedLive, type RankedLive } from '../eds/speedCampaign/rankedLive';
 import type { LoggedEvent } from '../sync/events';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
 import { cancelRanked, settleLinkRanked } from '../eds/speedCampaign/ranked';
@@ -332,6 +332,8 @@ export function App() {
       const left = speedSave ? settleLeftDuel(speedSave) : null;
       if (left) setSpeedSave(left.save);
       const lines = left ? left.lines.map((l) => l.replace(/^(.*) left the duel against (.*), so it counted as a loss\.$/, "$1 didn't rejoin within two minutes, so the duel against $2 counted as a loss.")) : ['Your opponent took the win.'];
+      // (Ranked never counts a duel lost to a dropped connection)
+      if (st.turn >= RIVAL_MIN_TURNS) lines.push("Ranked: the connection dropped, so this duel doesn't count on the ladder.");
       const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
       setSpeedNews(lines);
       setNewsCards(cards);
@@ -815,6 +817,17 @@ export function App() {
   const [whoQuits, setWhoQuits] = useState(false);
   /** Online with the connection gone, leaving asks first: it counts as this player's loss. */
   const [offlineLeave, setOfflineLeave] = useState(false);
+  /** A Ranked Duel the game was closed in, offered back on the Speed Duel menu (once per visit to it) */
+  const [cutOff, setCutOff] = useState<RankedLive | null>(null);
+  const cutOffAsked = useRef(false);
+  useEffect(() => {
+    if (screen !== 'speed' || soloMode || !profile) return;
+    if (cutOffAsked.current) return;
+    cutOffAsked.current = true;
+    const live = loadRankedLive(profile.id);
+    const pend = loadSolo(profile.id).ranked?.pending;
+    if (live && pend && pend.season === live.season) setCutOff(live);
+  }, [screen, soloMode, profile?.id]);
 
   /** the session whose result was already written (a duel settles once) */
   const settled = useRef<DuelSession | null>(null);
@@ -846,9 +859,22 @@ export function App() {
         const won = !!session.adapter.abandoned?.();
         const left0 = speedSave ? settleLeftDuel(speedSave, won ? mySeat : undefined) : null;
         settled.current = session;
-        // A dropped connection never moves the Ranked ladder, for either phone: no star lost, none won.
-        const left = left0;
-        const rankedLine = st.turn >= RIVAL_MIN_TURNS ? "Ranked: the connection dropped, so this duel doesn't count on the ladder." : null;
+        // A dropped connection never moves the Ranked ladder for the one left waiting (no star won off a
+        // phone that dropped). Choosing Leave while cut off is still this player's own Ranked loss.
+        let left = left0;
+        let rankedLine: string | null = null;
+        const base = left0?.save ?? speedSave;
+        if (base && profile && st.turn >= RIVAL_MIN_TURNS && !activeDeck(base)?.open) {
+          if (won) rankedLine = "Ranked: your opponent's connection dropped, so this duel doesn't count on the ladder.";
+          else {
+            const lr = settleLinkRanked(base, loadSolo(profile.id), 'l', st.players[other(mySeat)].name);
+            writeSolo(profile.id, lr.solo);
+            postProfileRank(profile, save?.name || profile.alias, lr.solo.ranked);
+            rankedLine = lr.line;
+            if (left0) left = { ...left0, save: lr.speed };
+            else setSpeedSave(lr.speed);
+          }
+        }
         if (left) setSpeedSave(left.save);
         const lines = [
           ...(left ? left.lines.map((l) => l.replace(' gave up the unfinished duel, so ', " didn't rejoin within two minutes, so ")) : [won ? "Your opponent didn't come back, so the win is yours." : 'The connection was lost, so this friendly duel has no result.']),
@@ -1325,6 +1351,19 @@ export function App() {
             </Overlay>
           )}
           {newsOverlay}
+          {cutOff && !speedNews.length && (
+            <Overlay onClose={() => setCutOff(null)}>
+              <Win title="Ranked Duel cut off" onClose={() => setCutOff(null)}>
+                <p>The game closed during your Ranked Duel against {cutOff.spec.cpu.name}. Nothing was lost: pick it up right where it stopped.</p>
+                <Menu
+                  items={[
+                    { label: 'Resume duel', onPick: () => (setCutOff(null), setSoloMode('ranked'), startSoloDuel(cutOff.spec, cutOff)) },
+                    { label: 'Later (it waits in Ranked Duel)', onPick: () => setCutOff(null) },
+                  ]}
+                />
+              </Win>
+            </Overlay>
+          )}
         </>
       );
     case 'duel': {
@@ -1338,7 +1377,7 @@ export function App() {
               {session.adapter.abandoned?.() ? (
                 <p>Your opponent didn't rejoin within two minutes. Leave now and the win is yours.</p>
               ) : (
-                <p>The other phone can't be reached. Leaving now counts as your loss, bets included. Waiting keeps the duel going: it carries on as soon as you're both back.</p>
+                <p>The other phone can't be reached. Leaving now counts as your loss, bets and Ranked included. Waiting keeps the duel going: it carries on as soon as you're both back, and a duel that ends on a dropped connection never costs a Ranked star.</p>
               )}
               <Menu
                 items={[

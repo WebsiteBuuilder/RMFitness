@@ -335,7 +335,8 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     w: p.w + (result === 'w' ? 1 : 0),
     l: p.l + (result === 'l' ? 1 : 0),
     ...(result === 'd' ? { d: (p.d ?? 0) + 1 } : {}),
-    pending: null,
+    // (a link battle leaves a cut-off Ranked Duel against the computer waiting)
+    pending: link ? (p.pending ?? null) : null,
   };
   return { p: next, gained, bonus, streakBonus };
 }
@@ -561,7 +562,8 @@ export interface LinkRanked {
  * real duels (online, a few turns, not a quick surrender).
  */
 export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' | 'l' | 'd', opp: string, now = new Date(), seed = now.getTime()): LinkRanked {
-  const opened = openRanked(speed, solo, now, seed);
+  // (a cut-off Ranked Duel against the computer keeps waiting to be resumed: a link battle never files or drops it)
+  const opened = openRanked(speed, solo, now, seed, true);
   speed = opened.speed;
   solo = opened.solo;
   now = ladderClock(solo.ranked, now);
