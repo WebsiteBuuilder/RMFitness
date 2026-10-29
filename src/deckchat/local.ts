@@ -332,6 +332,15 @@ export function clean(text: string): string {
     .replace(/\b(wekest|weakst)\b/g, 'weakest')
     .replace(/\b(beefier|more op|op)\b/g, 'stronger')
     .replace(/^(?:idk|i dunno|dunno)\s+/, '')
+    // "less monsters more spells": a swap from one kind to the other
+    .replace(/^(?:make it |use |put )?(?:less|fewer) (monsters|spells|traps)(?:,| and| but)? (?:more|add more|add) (monsters|spells|traps)$/, 'swap 3 $1 for $2')
+    .replace(/^(?:make it |use |put )?more (monsters|spells|traps)(?:,| and| but)? (?:less|fewer) (monsters|spells|traps)$/, 'swap 3 $2 for $1')
+    // "replace sakuretsu armor" with nothing named: take it out (a 20-card deck gets the best card of its kind back)
+    .replace(/^(?:replace|swap out|switch out|change) (?!the weakest|the worst|my weakest|weakest|worst|it\b|that\b|this\b|them\b|the skill|my skill|skill)(.+?)$/, (m, x: string) => (/\b(with|for|to|into)\b/.test(x) ? m : `remove ${x}`))
+    // "earth beatdown", "dragon control": a style with no "deck"
+    .replace(/^((?:[a-z-]+ ){0,2})(beatdown|aggro|control|stall|burn)$/, 'build a $1$2 deck')
+    .replace(/\bstall\b/g, 'control')
+    .replace(/\b(?:no|without|zero) tributes?(?: monsters)?\b/g, 'only level 4 or lower monsters')
     // Roids are named "Steamroid", "Drillroid": no word to match on
     .replace(/\broids? deck\b/g, 'machine deck with steamroid and drillroid')
     .replace(/^(?:whats|what is|what s) (?:wrong|bad) (?:with|about|in) (?:my|this|the) deck$/, 'is this deck good')
@@ -1929,7 +1938,10 @@ function kindShift(w: ChatWorld, kind: Kind, by: number, why?: string, only: (c:
       // "more attackers": a weak monster of the same kind can make room too
       const asked = new Set(curMem?.wanted ?? []);
       const skillOk = !!work.skill && skillFits(work.skill, work);
-      const pool = [...new Set(work.main)].filter((n) => (!isKind(n) || (kind === 'monster' && !only(cd(n)!) && !protect.has(n) && (cd(n)!.level ?? 4) <= 4 && !isNeeded(n, work))) && !held(n) && !asked.has(n));
+      const pool0 = [...new Set(work.main)].filter((n) => (!isKind(n) || (kind === 'monster' && !only(cd(n)!) && !protect.has(n) && (cd(n)!.level ?? 4) <= 4 && !isNeeded(n, work))) && !held(n) && !asked.has(n));
+      // the last 2 traps or spells stay while anything else can go (no 17-monster, 1-trap decks)
+      const thin = (n: string) => cd(n)?.kind !== 'monster' && cd(n)?.kind !== kind && per(cd(n)?.kind ?? '') <= 2;
+      const pool = pool0.some((n) => !thin(n)) ? pool0.filter((n) => !thin(n)) : pool0;
       if (!pool.length) break;
       const base = deckQuality(work);
       const cost = (n: string) => {
@@ -2112,7 +2124,7 @@ const RULES: [RegExp, string][] = [
   [/\bquick ?play\b|\bnormal spells?\b.*\b(difference|vs|versus|or)\b|\b(continuous|field|equip) spells?\b.*\b(what|how|difference|mean)\b|\b(what|how)\b.*\b(continuous|field|equip) spells?\b/, 'Normal Spells work once and go to the Graveyard, on your turn only. Quick-Play Spells can also be used on your opponent\'s turn if you Set them first. Continuous and Field Spells stay on the field and keep working; an Equip Spell sits on one monster and changes it.'],
   [/\bsummon\b.*\b(first turn|turn 1|turn one)\b/, 'Yes: you can Normal Summon (and Special Summon) on your first turn. Going first, you just can\'t attack or draw that turn.'],
   [/\b(draw|draws)\b.*\b(per turn|each turn|every turn|a turn)\b|\bhow many cards (do i|you) draw\b/, 'You draw 1 card at the start of each turn (the player going first skips their first draw). You start the duel with 4 cards.'],
-  [/\b(deck|cards) (runs?|run|ran) out\b|\bno cards left\b|\bcant draw\b|\bdeck out\b|\bdecked out\b/, 'If you have to draw and your deck is empty, you lose the duel. In a 20-card deck that rarely happens, but card-drawing effects make it faster.'],
+  [/\b(deck|cards) (runs?|run|ran) out\b|\bno cards left\b|\bcant draw\b|\bdeck out\b(?! of)|\bdecked out\b/, 'If you have to draw and your deck is empty, you lose the duel. In a 20-card deck that rarely happens, but card-drawing effects make it faster.'],
   [/\bflip summons?\b|\bflip effects?\b|\bwhat (is|does) flip\b/, 'A Flip Summon turns your face-down Defense Position monster face-up into Attack Position on your turn (not the turn you Set it). FLIP effects trigger when a monster is flipped face-up, whether you flip it or it\'s attacked.'],
   [/\b(counter traps?|continuous traps?|normal traps?)\b/, 'Normal Traps work once. Continuous Traps stay on the field and keep working. Counter Traps answer another card as it is played, and only other Counter Traps can respond to them.'],
   [/\b(attack|battle)\b.*\b(first turn|turn 1|turn one)\b|\bfirst turn\b.*\b(attack|battle)\b/, 'The player going first can\'t attack on their first turn, and skips their first draw. From the second turn on, both players can attack.'],
@@ -2143,7 +2155,7 @@ const QUICK_RULES: [RegExp, string][] = [
   [/\bspell(?: and| &|\/)? ?trap zones?\b|\bhow many (?:spell|trap|backrow) zones?\b|\bhow many (?:spells|traps) can i (?:set|have out)\b/, 'You have 3 Spell & Trap Zones (plus a Field Zone), so you can have at most 3 Spells or Traps set or face-up at once.'],
   [/\bstarting hand\b|\bopening hand\b|\bhand size\b|\bhow many cards (?:do (?:i|you|we)|you) (?:start|begin) with\b/, 'You start with 4 cards in hand. You draw 1 each turn (the player going first skips their first draw), and discard down to 6 at the End Phase.'],
   [/\bdraw\b.*\b(?:turn 1|turn one|first turn)\b|\b(?:turn 1|first turn)\b.*\bdraw\b/, "The player going first doesn't draw on their first turn. The second player draws as normal, and from then on everyone draws 1 card each turn."],
-  [/\b(?:deck|cards) (?:runs?|ran) out\b|\bdeck out\b|\bdecked out\b|\bno cards left (?:in my deck|to draw)\b/, 'If you have to draw and your deck is empty, you lose the duel.'],
+  [/\b(?:deck|cards) (?:runs?|ran) out\b|\bdeck out\b(?! of)|\bdecked out\b|\bno cards left (?:in my deck|to draw)\b/, 'If you have to draw and your deck is empty, you lose the duel.'],
   [/\bdamage step\b/, 'The Damage Step is the part of an attack where the monsters\' ATK/DEF are compared and damage is dealt. Only a few cards (like ATK boosters that say "during the Damage Step") can be used then.'],
   [/\bpiercing\b|\bwhat (?:is|does) pierce\b/, 'Piercing damage: when a monster with it attacks a Defense Position monster with lower DEF, your opponent takes the difference as damage anyway.'],
   [/\bquick effects?\b/, "A Quick Effect is a monster effect you can use on either player's turn, even in response to your opponent, like a Trap."],
