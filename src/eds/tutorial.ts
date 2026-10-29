@@ -45,7 +45,7 @@ const zoneOf = (uid: number) => `.tz[data-uid="${uid}"]`;
 const handAim =
   (name: string, button: 'Summon' | 'Set' | 'Activate'): Aim =>
   (st, on) => {
-    if (on('.tsheet')) return on('.tsheet .toptions') ? '.tsheet .toptions' : '.tsheet .tbtns';
+    if (on('.tsheet')) return on('.tsheet .toptions') ? '.tsheet .toptions' : '.tsheet .tbtn.main';
     const uid = uidOf(handCard(st, 0, name));
     if (uid < 0) return null;
     if (on(`.thcard.sel[data-uid="${uid}"]`)) return `.tactions .taction[data-label="${button}"]`;

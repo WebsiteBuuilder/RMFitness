@@ -497,7 +497,7 @@ function Done({ lesson, coach, packs, score, next, onNext, onMap }: { lesson: Le
             <small>Open it in the Shop tab</small>
           </div>
         )}
-        <Says coach={coach}>{next ? `${coach.win} Next: ${next.title}.` : `${coach.win} Now go duel for real: try VS Computer or a Practice Duel, or challenge your brother!`}</Says>
+        <Says coach={coach}>{`${lesson.duel ? coach.win : coach.cheers[0]} ${next ? `Next: ${next.title}.` : 'Now go duel for real: try VS Computer or a Practice Duel, or challenge your brother!'}`}</Says>
         <button class="ds-go" onClick={() => (playBlip(), onNext())}>
           {next ? `Next lesson: ${next.title}` : 'Back to Speed Duel'}
         </button>

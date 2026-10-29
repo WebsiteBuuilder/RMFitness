@@ -700,7 +700,7 @@ html.in-school .mm-bar {
   position: fixed;
   z-index: 943;
   left: 50%;
-  top: 58%;
+  top: calc(45% - 28px);
   display: flex;
   align-items: center;
   gap: 8px;
