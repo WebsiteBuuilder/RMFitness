@@ -8,8 +8,7 @@ import { MemoryAdapter } from '../src/sync/memory';
 import type { DuelState, Pid } from '../src/eds/types';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
-import { aiAction } from '../src/eds/ai';
-import { actor, BANK_MS, clockKey, clockText, expired, newClock, RESPOND_MS, show, tick, TURN_MS, type Clock } from '../src/eds/turnClock';
+import { actor, BANK_MS, clockKey, clockText, expired, newClock, RESPOND_MS, show, tick, timeoutMove, TURN_MS, type Clock } from '../src/eds/turnClock';
 
 for (const [k, v] of KIT) DB.set(k, v);
 
@@ -20,8 +19,8 @@ const ok = (c: boolean, msg: string) => {
   if (!c) fails++;
 };
 
-const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null): DuelState =>
-  ({ started: true, winner: null, turnPlayer, turn, prompt: prompt === null ? null : { kind: 'yesno', player: prompt, title: 'Respond?' } }) as unknown as DuelState;
+const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null, log = 0): DuelState =>
+  ({ started: true, winner: null, turnPlayer, turn, log: Array(log).fill({}), prompt: prompt === null ? null : { kind: 'yesno', player: prompt, title: 'Respond?' } }) as unknown as DuelState;
 
 // ---------- the clock ----------
 {
@@ -33,11 +32,15 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null): DuelState
   c = tick(c, t1, 5, 60_000, turns);
   ok(show(c, t1)?.left === TURN_MS - 60_000 + BANK_MS && !show(c, t1)?.bank, 'the turn time runs first');
   // the other player is asked something: their own answer time runs, the turn player's stops
-  const r = st(0, 1, 1);
+  const r = st(0, 1, 1, 6);
   c = tick(c, r, 6, 0, turns);
   ok(clockKey(r, 6).startsWith('r') && show(c, r)?.who === 1 && show(c, r)?.left === RESPOND_MS + BANK_MS, 'a question to the other player gets its own 30 s');
   c = tick(c, r, 6, 40_000, turns);
   ok(c.bank[1] === BANK_MS - 10_000 && show(c, r)?.bank === true, 'answering past 30 s takes from their bank');
+  c = tick(c, r, 7, 0, turns);
+  ok(show(c, r)?.bank === true, "an entry the duel ignores (the room's count moves, the duel's log doesn't) gives no fresh 30 s");
+  const r2 = st(0, 1, 1, 7);
+  ok(clockKey(r2) !== clockKey(r), 'a new question to them (the duel moved on) gets its own 30 s');
   // back to the turn player: their turn time is where they left it
   c = tick(c, t1, 7, 0, turns);
   ok(show(c, t1)?.left === TURN_MS - 60_000 + BANK_MS, "the turn player's time picks up where it stopped");
@@ -56,6 +59,9 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null): DuelState
   c = tick(c, t3, 10, 0, turns);
   ok(show(c, t3)?.left === TURN_MS, 'an empty bank stays empty');
   ok(actor({ ...t3, winner: 0 } as DuelState) === null && show(c, { ...t3, winner: 0 } as DuelState) === null, 'a finished duel runs no clock');
+  const sel = { ...st(0, 3), prompt: { kind: 'select', player: 1, title: 'Pick 2', options: [{ label: 'a' }, { label: 'b' }, { label: 'c' }], min: 2, max: 3 } } as unknown as DuelState;
+  ok(JSON.stringify(timeoutMove(sel, 1)) === JSON.stringify({ type: 'CHOOSE', player: 1, picks: [0, 1] }), 'out of time on a choice: the first options it needs, nothing clever');
+  ok(timeoutMove(st(0, 3, 1), 1)?.type === 'NO' && timeoutMove(st(0, 3), 0)?.type === 'END_TURN' && timeoutMove(st(0, 3), 1) === null, 'a yes/no is a no; your own turn ends; nothing is played for the other player');
   ok(clockText(65_000) === '1:05' && clockText(9_001) === '0:10' && clockText(-5) === '0:00', 'times show as m:ss, rounded up');
 }
 
@@ -80,7 +86,7 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null): DuelState
       const st0 = s.engine.state;
       const print = (x: DuelState) => JSON.stringify([x.turn, x.phase, x.prompt, x.log.length, x.winner]);
       const was = print(st0);
-      const act: AnyAction = st0.prompt?.player === who ? (aiAction(s.engine, who) ?? { type: 'PASS', player: who }) : { type: 'END_TURN', player: who };
+      const act = timeoutMove(st0, who) as AnyAction;
       s.send(act);
       if (print(s.engine.state) === was && s.log.length > before) {
         stuck++;

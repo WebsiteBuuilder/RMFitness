@@ -6,7 +6,9 @@ import type { GameEvent, LoggedEvent } from '../sync/events';
 
 export const REPLAYS_MAX = 10;
 /** A replay bigger than this (stored text) isn't kept: phone storage is small. */
-export const REPLAY_BYTES_MAX = 200_000;
+export const REPLAY_BYTES_MAX = 120_000;
+/** All of a duelist's replays together stay under this (the duelists' saves need the room more). */
+export const REPLAYS_BYTES_TOTAL = 600_000;
 
 export type ReplayKind = 'cpu' | 'online' | 'hotseat';
 
@@ -35,7 +37,12 @@ export function replayOf(log: readonly { type: string }[], st: DuelState, seat: 
   const moves = log
     .filter((a) => !SKIP.has(a.type))
     .map((a) => {
-      const { seq: _s, ts: _t, ...rest } = a as { seq?: number; ts?: number };
+      const { seq: _s, ts: _t, ...rest } = a as { seq?: number; ts?: number; type: string };
+      // (a seat's bets and card finishes aren't kept: nothing a replay shows, and not this phone's to keep)
+      if (rest.type === 'JOIN') {
+        const { stakes: _k, rarity: _r, ...seat } = rest as typeof rest & { stakes?: unknown; rarity?: unknown };
+        return seat as unknown as Action;
+      }
       return rest as unknown as Action;
     });
   if (!moves.some((a) => a.type === 'START')) return null;
@@ -78,6 +85,7 @@ export function saveReplay(profile: string, r: Replay): boolean {
   if (!s) return false;
   if (JSON.stringify(r).length > REPLAY_BYTES_MAX) return false;
   let list = [r, ...loadReplays(profile).filter((x) => x.id !== r.id)].slice(0, REPLAYS_MAX);
+  while (list.length > 1 && JSON.stringify(list).length > REPLAYS_BYTES_TOTAL) list = list.slice(0, -1);
   while (list.length) {
     try {
       s.setItem(key(profile), JSON.stringify(list));

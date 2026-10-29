@@ -35,7 +35,7 @@ function play(seed: number): DuelSession {
   const s = new DuelSession(new MemoryAdapter());
   for (const p of [0, 1] as Pid[]) {
     const d = ROAD[(p * 7 + seed) % ROAD.length];
-    s.send({ type: 'JOIN', player: p, name: d.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill } as AnyAction);
+    s.send({ type: 'JOIN', player: p, name: d.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, rarity: { [d.main[0]]: 2 } } as AnyAction);
   }
   s.send({ type: 'CHAT', player: 0, text: 'good luck' });
   const [a, b] = s.seats;
@@ -58,6 +58,7 @@ for (const seed of [101, 202, 303, 404]) {
   ok(!!r && r.moves.length > 10, `seed ${seed}: a replay is made (${r?.moves.length} moves)`);
   ok(!r.moves.some((m) => (m as { type: string }).type === 'CHAT'), `seed ${seed}: chat lines stay out of the replay`);
   ok(!r.moves.some((m) => 'seq' in m || 'ts' in m), `seed ${seed}: no log numbering kept`);
+  ok(!r.moves.some((m) => 'stakes' in m || 'rarity' in m), `seed ${seed}: no seat's bets or finishes kept`);
   const a = new ReplayAdapter();
   const back = new DuelSession(a);
   a.push(r.moves.slice(0, startIndex(r) + 1));

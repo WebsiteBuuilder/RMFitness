@@ -18,8 +18,8 @@ import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
 import { artBusy, onArtChange } from '../art/cues';
-import { aiAction } from '../eds/ai';
-import { ClockPill, useClockRunner } from './TurnClock';
+import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
+import { timeoutMove } from '../eds/turnClock';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -181,11 +181,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // The turn timer: when this phone's time runs out it answers the question the way the computer
   // would (or passes), or ends the turn.
   const clockOn = !!clock && online && !hotseat && !spectator && !locked && e.speed;
-  const runner = useClockRunner(clockOn, session.engine.state, view.moves || view.log.length, view.status === 'connected', mySeat, () => {
+  const runner = useClockRunner(clockOn, `${session.adapter.roomCode}:${state.seed}`, session.engine.state, view.moves || view.log.length, view.status === 'connected', mySeat, () => {
     const st = session.engine.state;
-    if (st.winner !== null) return;
-    if (st.prompt?.player === mySeat) session.send(aiAction(session.engine, mySeat) ?? { type: 'PASS', player: mySeat });
-    else if (!st.prompt && st.turnPlayer === mySeat) session.send({ type: 'END_TURN', player: mySeat });
+    const a = st.winner === null ? timeoutMove(st, mySeat) : null;
+    if (a) session.send(a);
   });
   const clockFor = (p: Pid) => (runner ? <ClockPill runner={runner} who={p} me={mySeat} /> : null);
   /** Saves the result exactly once, however many times Continue is tapped. */
@@ -623,6 +622,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         </ConfirmSheet>
       )}
       {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock"><span>Paused · reconnecting</span></div>}
+      {runner && state.winner === null && <ClaimWin runner={runner} name={state.players[other(mySeat)].name} onClaim={() => session.send({ type: 'SURRENDER', player: other(mySeat) })} />}
       {online && view.status !== 'connected' && state.winner === null && (
         <div class="netwarn">
           <span>{view.detail || 'Connection lost. Rejoining…'}</span>

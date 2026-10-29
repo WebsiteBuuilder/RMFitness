@@ -855,8 +855,11 @@ export function App() {
   const keepReplay = () => {
     const st = session?.engine.state;
     if (!profile || !session || !st) return setLastReplay(null);
-    const r = replayOf(session.log, st, mySeat, cpu ? 'cpu' : hotseat ? 'hotseat' : 'online');
-    setLastReplay(r && saveReplay(profile.id, r) ? r : null);
+    // (not a duel the computer played against itself; written after the duel's own results, which come first)
+    const r = soloDuel.current?.spec.watch ? null : replayOf(session.log, st, mySeat, cpu ? 'cpu' : hotseat ? 'hotseat' : 'online');
+    setLastReplay(r);
+    const id = profile.id;
+    if (r) window.setTimeout(() => saveReplay(id, r), 1500);
   };
   const finishDuel = (winner: Pid | 'draw', oppName: string): void => {
     if (session && settled.current === session) return;

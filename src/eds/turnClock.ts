@@ -2,7 +2,7 @@
 // Each phone keeps the clock itself from the duel state it sees: the turn player has TURN_MS for
 // their whole turn, the other player RESPOND_MS for each question put to them, and both dip into
 // their own BANK_MS for the duel once that runs out. At zero the phone that owes the move plays it.
-import type { DuelState, Pid } from './types';
+import type { Action, DuelState, Pid } from './types';
 
 export const TURN_MS = 120_000;
 export const RESPOND_MS = 30_000;
@@ -38,11 +38,33 @@ export function actor(s: DuelState): Pid | null {
   return s.prompt ? s.prompt.player : s.turnPlayer;
 }
 
-/** The allowance running now: the turn player's whole turn, or one question to the other player (by `moves`, the room's move count). */
-export function clockKey(s: DuelState, moves: number): string {
+/**
+ * The allowance running now: the turn player's whole turn, or one question to the other player
+ * (told apart by the duel's own log, so entries the duel ignores never start a fresh 30 s).
+ */
+export function clockKey(s: DuelState, _moves = 0): string {
   const who = actor(s);
   if (who === null) return '';
-  return who === s.turnPlayer ? `t${s.turn}:${who}` : `r${s.turn}:${who}:${moves}`;
+  return who === s.turnPlayer ? `t${s.turn}:${who}` : `r${s.turn}:${who}:${s.log.length}:${s.prompt?.title ?? ''}`;
+}
+
+/** After the owing player's time ran out, how long the other phone waits for any move before it may take the win. */
+export const CLAIM_GRACE_MS = 30_000;
+
+/**
+ * The move played for a player whose time ran out: the plainest answer, never a clever one
+ * (pass a chance to respond, say no, pick the first options a choice needs), or end the turn.
+ */
+export function timeoutMove(s: DuelState, me: Pid): Action | null {
+  const p = s.prompt;
+  if (p) {
+    if (p.player !== me) return null;
+    if (p.kind === 'response') return { type: 'PASS', player: me };
+    if (p.kind === 'yesno') return { type: 'NO', player: me };
+    const n = Math.max(0, Math.min(p.min, p.options.length));
+    return { type: 'CHOOSE', player: me, picks: Array.from({ length: n }, (_, i) => i) };
+  }
+  return s.turnPlayer === me ? { type: 'END_TURN', player: me } : null;
 }
 
 const allowance = (key: string) => (key.startsWith('t') ? TURN_MS : RESPOND_MS);
