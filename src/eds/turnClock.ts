@@ -49,7 +49,7 @@ export function clockKey(s: DuelState, _moves = 0): string {
 }
 
 /** After the owing player's time ran out, how long the other phone waits for any move before it may take the win. */
-export const CLAIM_GRACE_MS = 30_000;
+export const CLAIM_GRACE_MS = 60_000;
 
 /**
  * The move played for a player whose time ran out: the plainest answer, never a clever one

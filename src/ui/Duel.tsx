@@ -20,6 +20,7 @@ import { LpCount, useShownState } from '../art/flow';
 import { artBusy, onArtChange } from '../art/cues';
 import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
+import { aiAction } from '../eds/ai';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -181,9 +182,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // The turn timer: when this phone's time runs out it answers the question the way the computer
   // would (or passes), or ends the turn.
   const clockOn = !!clock && online && !hotseat && !spectator && !locked && e.speed;
-  const runner = useClockRunner(clockOn, `${session.adapter.roomCode}:${state.seed}`, session.engine.state, view.moves || view.log.length, view.status === 'connected', mySeat, () => {
+  const runner = useClockRunner(clockOn, `${session.adapter.roomCode}:${state.seed}`, session.engine.state, view.moves || view.log.length, view.status === 'connected', mySeat, (attempt) => {
     const st = session.engine.state;
-    const a = st.winner === null ? timeoutMove(st, mySeat) : null;
+    if (st.winner !== null) return;
+    // the plainest move first; if the duel refused it (a choice with rules: tributes, materials), the computer's pick
+    const a = attempt === 0 ? timeoutMove(st, mySeat) : st.prompt?.player === mySeat ? aiAction(session.engine, mySeat) : timeoutMove(st, mySeat);
     if (a) session.send(a);
   });
   const clockFor = (p: Pid) => (runner ? <ClockPill runner={runner} who={p} me={mySeat} /> : null);

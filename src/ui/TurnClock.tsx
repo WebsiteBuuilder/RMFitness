@@ -2,7 +2,7 @@
 // and plays the move for this phone when its time is up; each player bar shows a small pill.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
-import { actor, CLAIM_GRACE_MS, clockText, expired, newClock, show, tick, URGENT_MS, type Clock, type ClockShow } from '../eds/turnClock';
+import { actor, CLAIM_GRACE_MS, clockKey, clockText, expired, newClock, show, tick, URGENT_MS, type Clock, type ClockShow } from '../eds/turnClock';
 import { artBusy } from '../art/cues';
 import './clock.css';
 
@@ -14,6 +14,8 @@ export interface TimeOut {
 
 /** Where a duel's clock is kept on this phone, so a reload or a rejoin can't hand out fresh time. */
 const STORE = 'eds.clock';
+/** Longer than this between two steps is a gap, not a tick. */
+const GAP_MS = 2000;
 interface Saved {
   key: string;
   clock: Clock;
@@ -30,6 +32,8 @@ export class ClockRunner {
   private turns = new Map<string, number>();
   private last = Date.now();
   private retryAt = 0;
+  /** moves played for this phone at one point of the duel that didn't land */
+  private tries = 0;
   private zeroSince = 0;
   private zeroAt = -1;
   private savedSec = '';
@@ -63,22 +67,26 @@ export class ClockRunner {
    * One step: `live` false (reconnecting) or a cinematic on screen holds the clock. `play` makes
    * the move for this phone; it runs again after a few seconds if that move didn't land.
    */
-  step(s: DuelState, moves: number, live: boolean, me: Pid, play: () => void, now = Date.now()) {
-    const dt = now - this.last;
+  step(s: DuelState, moves: number, live: boolean, me: Pid, play: (attempt: number) => void, now = Date.now()) {
+    let dt = now - this.last;
     this.last = now;
+    // A gap (the app was in the background, or closed and opened again): it counts only when the
+    // same allowance is still running; when moves came in meanwhile nobody can tell whose it was.
+    if (dt > GAP_MS && clockKey(s) !== this.clock.key) dt = 0;
     this.clock = tick(this.clock, s, moves, live && !artBusy() ? dt : 0, this.turns);
     const who = actor(s);
     if (who !== null && expired(this.clock, s, moves)) {
       this.clock = { ...this.clock, spent: moves };
+      this.tries = 0;
       this.out = { who, at: now };
       if (who === me) {
         this.retryAt = now + 4000;
-        play();
+        play(0);
       }
     } else if (who === me && this.clock.spent === moves && show(this.clock, s)?.left === 0 && now > this.retryAt && live) {
       // (the move played for them didn't land: try again)
       this.retryAt = now + 4000;
-      play();
+      play(++this.tries);
     }
     const next = show(this.clock, s);
     // The other phone owes a move, its time is gone and nothing comes (closed, frozen, asleep):
@@ -114,7 +122,7 @@ export class ClockRunner {
 }
 
 /** Runs the clock while the duel is on (an online duel between two phones only). */
-export function useClockRunner(on: boolean, duel: string, s: DuelState, moves: number, live: boolean, me: Pid, play: () => void): ClockRunner | null {
+export function useClockRunner(on: boolean, duel: string, s: DuelState, moves: number, live: boolean, me: Pid, play: (attempt: number) => void): ClockRunner | null {
   const runner = useRef<ClockRunner | null>(null);
   if (on && !runner.current) runner.current = new ClockRunner(duel);
   const latest = useRef({ s, moves, live, me, play });

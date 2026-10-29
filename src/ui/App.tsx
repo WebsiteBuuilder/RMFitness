@@ -859,7 +859,7 @@ export function App() {
     const r = soloDuel.current?.spec.watch ? null : replayOf(session.log, st, mySeat, cpu ? 'cpu' : hotseat ? 'hotseat' : 'online');
     setLastReplay(r);
     const id = profile.id;
-    if (r) window.setTimeout(() => saveReplay(id, r), 1500);
+    if (r) window.setTimeout(() => saveReplay(id, r), 300);
   };
   const finishDuel = (winner: Pid | 'draw', oppName: string): void => {
     if (session && settled.current === session) return;

@@ -12,8 +12,18 @@
   box-sizing: border-box;
 }
 .so-watchbar.rp-bar button {
-  min-width: 36px;
+  min-width: 44px;
+  min-height: 40px;
   padding: 0 8px;
+  font-size: 13px;
+}
+@media (max-width: 380px) {
+  .so-watchbar.rp-bar button {
+    min-width: 40px;
+  }
+  .rp-tag {
+    padding: 0 2px 0 6px;
+  }
 }
 .rp-tag {
   padding: 0 6px 0 8px;
@@ -110,5 +120,5 @@
 }
 /* the board gives the bar its own strip at the bottom: your hand stays in full view */
 .replay .duel.touch {
-  height: calc(100dvh - 52px - env(safe-area-inset-bottom));
+  height: calc(100dvh - 58px - env(safe-area-inset-bottom));
 }
