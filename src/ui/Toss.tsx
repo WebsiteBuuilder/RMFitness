@@ -27,6 +27,7 @@ export function TossScreen({
   hotseat,
   cpuSeat,
   buildStart,
+  rival,
 }: {
   session: DuelSession;
   view: SessionView;
@@ -36,6 +37,8 @@ export function TossScreen({
   cpuSeat: Pid | null;
   /** the START for this duel once who goes first is known (sent by the host) */
   buildStart: (first: Pid) => Action;
+  /** a duel with another player: your all-time record with them */
+  rival?: { w: number; l: number; d: number; streak: number } | null;
 }) {
   const t = view.toss!;
   const names = view.seats.map((s, i) => s.name || `Player ${i + 1}`) as [string, string];
@@ -159,6 +162,13 @@ export function TossScreen({
         <p class="toss-series">
           {view.round > 0 ? 'Rematch · ' : ''}Series {names[mySeat === 1 && !hotseat ? 1 : 0]} {series.wins[mySeat === 1 && !hotseat ? 1 : 0]} – {series.wins[mySeat === 1 && !hotseat ? 0 : 1]} {names[mySeat === 1 && !hotseat ? 0 : 1]}
           {series.draws ? ` · ${series.draws} draw${series.draws > 1 ? 's' : ''}` : ''}
+        </p>
+      )}
+      {rival && !hotseat && rival.w + rival.l + rival.d > 0 && (
+        <p class="toss-series toss-alltime">
+          All time: You {rival.w} – {rival.l} {names[other(mySeat)]}
+          {rival.d > 0 ? ` · ${rival.d} ${rival.d === 1 ? 'draw' : 'draws'}` : ''}
+          {rival.streak >= 2 ? ` · 🔥 ${rival.streak} wins in a row` : rival.streak <= -2 ? ` · ${-rival.streak} losses in a row` : ''}
         </p>
       )}
       <h1 id="toss-head" class="toss-head">

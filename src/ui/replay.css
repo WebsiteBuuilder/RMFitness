@@ -1,0 +1,141 @@
+/* Duel replays (Replay.tsx): the player's bar over the board and the list. */
+.so-watchbar.rp-bar {
+  align-items: center;
+  /* bottom centre, over the lower edge of your hand: the opponent's hand and the field stay clear */
+  top: auto;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100vw - 12px);
+  box-sizing: border-box;
+}
+.so-watchbar.rp-bar button {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+@media (max-width: 380px) {
+  .so-watchbar.rp-bar button {
+    min-width: 40px;
+  }
+  .rp-tag {
+    padding: 0 2px 0 6px;
+  }
+}
+.rp-tag {
+  padding: 0 6px 0 8px;
+  color: #ffd76a;
+  font: 800 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.rp-empty {
+  opacity: 0.8;
+  text-align: center;
+  padding: 18px 0;
+}
+.rp-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.rp-list li {
+  display: flex;
+  gap: 12px;
+}
+.rp-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 52px;
+  border-radius: 12px;
+  border: 1px solid #ffffff26;
+  background: #ffffff0f;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rp-row:active {
+  background: #ffffff1f;
+}
+.rp-res {
+  flex: none;
+  width: 44px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 6px;
+  font: 800 12px/1.2 system-ui, sans-serif;
+}
+.rp-res.win {
+  background: #2fae5a33;
+  color: #7fe3a0;
+}
+.rp-res.loss {
+  background: #ff3b4f2b;
+  color: #ff9aa4;
+}
+.rp-res.draw {
+  background: #ffffff1f;
+  color: #dfe6ff;
+}
+.rp-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rp-who b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rp-who small {
+  opacity: 0.75;
+  font-size: 12px;
+}
+.rp-play {
+  flex: none;
+  color: #ffd76a;
+}
+.rp-del {
+  flex: none;
+  width: 44px;
+  border-radius: 12px;
+  border: 1px solid #ffffff1f;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+/* the replay is a duel screen of its own (the result screen it came from waits hidden) */
+.replay {
+  min-height: 100dvh;
+}
+/* the board gives the bar its own strip at the bottom: your hand stays in full view */
+.replay .duel.touch {
+  height: calc(100dvh - 58px - env(safe-area-inset-bottom));
+}
+/* how far into the duel the replay is: a thin gold line along the bar's top edge */
+.so-watchbar.rp-bar {
+  overflow: hidden;
+  /* over the cinematics' stage (z 60-62): pause and skip stay in reach while a card plays out */
+  z-index: 63;
+}
+.rp-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: #ffd76a;
+  transform-origin: 0 50%;
+  transition: transform 0.3s ease-out;
+  pointer-events: none;
+}

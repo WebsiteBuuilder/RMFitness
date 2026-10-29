@@ -2292,7 +2292,7 @@ p {
 
 /* Dice and coin results, shown over the duel for a moment. */
 .roll-chip {
-  position: fixed; left: 50%; top: 42%; z-index: 60; transform: translate(-50%, -50%);
+  position: fixed; left: 50%; top: 31%; z-index: 60; transform: translate(-50%, -50%);
   display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 8px;
   background: rgba(10, 14, 30, 0.92); border: 1px solid #e8c25a; border-radius: 14px;
   color: #fff; font-weight: 700; font-size: 15px; pointer-events: none; white-space: nowrap;

@@ -25,13 +25,15 @@ export interface SpeedResultData {
   rewards: ResultReward[];
   /** what this player's cards did: damage dealt, monsters destroyed, cards played, and the standout card */
   stats?: { dealt: number; kills: number; plays: number; mvp?: string };
+  /** a duel with another player: your all-time record with them, this duel included */
+  rival?: { opp: string; w: number; l: number; d: number; streak: number };
 }
 
 /** When the first reward appears, and the longest wait before Continue can be tapped (ms). */
 const FIRST = 1200;
 const READY_MAX = 3600;
 
-export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResultData; onContinue: () => void; /** a computer duel: run it back */ onRematch?: () => void }) {
+export function SpeedResult({ data, onContinue, onRematch, onReplay }: { data: SpeedResultData; onContinue: () => void; /** a computer duel: run it back */ onRematch?: () => void; /** watch this duel again */ onReplay?: () => void }) {
   const n = data.rewards.length;
   const step = n ? Math.min(280, 2000 / n) : 0;
   const readyAt = Math.min(READY_MAX, FIRST + n * step + 300);
@@ -70,6 +72,7 @@ export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResult
         </h1>
         {data.reason && <p class="mdres-reason">{data.reason}</p>}
       </div>
+      {data.rival && <RivalLine r={data.rival} />}
       <div class="mdres-lp">
         {data.lp.map((p, i) => (
           <div key={i} class={`mdres-lpbox ${i === 0 ? 'lp-me' : 'lp-them'} ${p.lp <= 0 ? 'lp-zero' : ''}`}>
@@ -129,8 +132,36 @@ export function SpeedResult({ data, onContinue, onRematch }: { data: SpeedResult
             Rematch
           </button>
         )}
+        {onReplay && ready && (
+          <button type="button" class="mdres-replay" onClick={(ev) => (ev.stopPropagation(), skip(), onReplay())}>
+            ▶ Watch the replay
+          </button>
+        )}
         {!ready && <p class="mdres-skip">Tap to skip</p>}
       </div>
+    </div>
+  );
+}
+
+/** "You 5 – 3 Joey · 🔥 2 in a row": the head-to-head with the other player. */
+export function RivalLine({ r, me = 'You' }: { r: NonNullable<SpeedResultData['rival']>; me?: string }) {
+  const run = r.streak >= 2 ? `🔥 ${r.streak} wins in a row` : r.streak <= -2 ? `${-r.streak} losses in a row` : '';
+  return (
+    <div class="mdres-rival" aria-label={`Your record with ${r.opp}: ${r.w} wins, ${r.l} losses${r.d ? `, ${r.d} draws` : ''}`}>
+      <span class="rv-me">{me}</span>
+      <b>
+        {r.w}
+        <i>–</i>
+        {r.l}
+      </b>
+      <span class="rv-opp">{r.opp}</span>
+      {(r.d > 0 || run) && (
+        <small>
+          {r.d > 0 ? `${r.d} ${r.d === 1 ? 'draw' : 'draws'}` : ''}
+          {r.d > 0 && run ? ' · ' : ''}
+          {run}
+        </small>
+      )}
     </div>
   );
 }

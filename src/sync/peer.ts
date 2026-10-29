@@ -225,7 +225,7 @@ export class PeerAdapter extends AdapterBase implements SyncAdapter {
     if (msg.t === 'ev') {
       if (this.isHost) {
         const ev = screenProposal(msg.ev, 1, this.chatAt);
-        if (ev) this.append(ev);
+        if (ev && (!this.vet || this.vet(ev))) this.append(ev);
       }
       else this.events = [...this.events, msg.ev as LoggedEvent], this.emit();
     } else if (msg.t === 'sync') {

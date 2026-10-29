@@ -185,6 +185,13 @@ export class DuelSession {
   private unsubs: (() => void)[] = [];
 
   constructor(public readonly adapter: SyncAdapter) {
+    // A two-phone duel: the other phone may give up its own seat only, never this one's
+    // (a Tag Duel or Boss Raid seats its phones another way: left as it was).
+    adapter.vet = (ev) => {
+      const st = this.engine.state;
+      const e = ev as { type: string; player?: unknown };
+      return !(e.type === 'SURRENDER' && e.player !== 1 && st.started && !st.tag && !this.log.some((a) => (a as { type: string }).type === 'RAID_START'));
+    };
     this.unsubs.push(
       adapter.subscribe((events) => this.ingest(events)),
       adapter.onStatus((status, detail) => {
