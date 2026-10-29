@@ -688,6 +688,12 @@ for (const [what, check] of [
   ok(bigs(w.deck) <= after, `"make it stronger" after "less tributes" adds no big monsters (${after} -> ${bigs(w.deck)})`);
   const mako = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build a mako tsunami deck', { deck: empty(), collection: big });
   ok(mako.deck.main.includes('The Legendary Fisherman'), 'a Mako deck runs The Legendary Fisherman');
+  const cb = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build a crystal beast deck', { deck: empty(), collection: big });
+  ok(cb.deck.main.filter((n) => n.startsWith('Crystal Beast')).length >= 9 && !deckIssues(cb.deck).issues.some((x) => /^dead/.test(x)), 'Crystal Beasts are not dead cards');
+  const burn = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'make me a burn deck', { deck: empty(), collection: big });
+  ok(['Bowganian', 'Des Koala', 'Lady Assailant of Flames'].filter((n) => burn.deck.main.includes(n)).length >= 2, 'a burn deck runs real burners');
+  const low = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build a deck with only level 4 or lower monsters', { deck: empty(), collection: big });
+  ok(!low.deck.main.some((n) => card(n)?.kind === 'monster' && (card(n)!.level ?? 0) > 4), '"only level 4 or lower" keeps to it');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');

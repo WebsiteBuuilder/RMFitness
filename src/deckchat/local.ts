@@ -283,10 +283,10 @@ function fixWords(t: string): string {
 const CHAR_DECK: Record<string, string> = {
   yugi: 'dark magician', kaiba: 'blue eyes', joey: 'red eyes', mai: 'harpie', pegasus: 'toon', weevil: 'insect', rex: 'dinosaur', bonz: 'zombie', keith: 'machine',
   // the rest of the cast, by the cards their Speed Duel Skills are made for
-  mako: 'water deck with the legendary fisherman', ishizu: 'gravekeeper', marik: 'fiend', bakura: 'fiend', jaden: 'elemental hero', aster: 'destiny hero', zane: 'cyber dragon', syrus: 'roid', chazz: 'ojama', camula: 'vampire', jesse: 'crystal beast', tania: 'amazoness', titan: 'archfiend', paradox: 'gate guardian', zaloog: 'dark scorpion', axel: 'volcanic', espa: 'jinzo', belowski: 'mokey mokey', hassleberry: 'dinosaur', crowler: 'ancient gear', vellian: 'ancient gear',
+  mako: 'water deck with the legendary fisherman', ishizu: 'gravekeeper', marik: 'fiend', bakura: 'fiend deck with dark necrofear', jaden: 'elemental hero', aster: 'destiny hero', zane: 'cyber dragon', syrus: 'machine deck with steamroid and drillroid', chazz: 'ojama', camula: 'vampire', jesse: 'crystal beast', tania: 'amazoness', titan: 'archfiend', paradox: 'gate guardian', zaloog: 'dark scorpion', axel: 'volcanic', espa: 'jinzo', belowski: 'mokey mokey', hassleberry: 'dinosaur', crowler: 'ancient gear', vellian: 'ancient gear',
 };
 const CHARS = Object.keys(CHAR_DECK).join('|');
-const CHAR_FULL = new RegExp(`\\b(?:yami yugi|yugi mut[oa]|yugi moto|seto kaiba|joey wheeler|jonouchi|mai valentine|maximill?ian pegasus|weevil underwood|rex raptor|bandit keith|mako tsunami|ishizu ishtar|marik ishtar|yami marik|yami bakura|ryou bakura|jaden yuki|jaden yuki|aster phoenix|zane truesdale|syrus truesdale|chazz princeton|jesse anderson|tyranno hassleberry|dr\\.? vellian crowler|vellian crowler|dr\\.? crowler|don zaloog|axel brodie|espa roba)\\b`, 'g');
+const CHAR_FULL = new RegExp(`\\b(?:yami yugi|yugi mut[oa]|yugi moto|seto kaiba|joey wheeler|jonouchi|mai valentine|maximill?ian pegasus|weevil underwood|rex raptor|bandit keith|mako tsunami|ishizu ishtar|marik ishtar|yami marik|yami bakura|ryou bakura|jaden yuki|jaden yuki|aster phoenix|zane truesdale|syrus truesdale|chazz princeton|jesse anderson|tyranno hassleberry|dr\\.? vellian crowler|vellian crowler|dr\\.? crowler|don zaloog|axel brodie|espa roba)s?\\b`, 'g');
 const CHAR_LIKE = new RegExp(`\\b(?:(?:a |an )?deck )?(?:like|as|of|copy) (${CHARS})s?\\b(?! skills?)`, 'g');
 const CHAR_WITH = new RegExp(`\\b(${CHARS})s? (?!style|type|kind)([a-z]{3,}) deck\\b`, 'g');
 const CHAR_ONLY = new RegExp(`\\b(${CHARS})s?(?: style| type| kind of)? deck\\b`, 'g');
@@ -332,6 +332,12 @@ export function clean(text: string): string {
     .replace(/\b(wekest|weakst)\b/g, 'weakest')
     .replace(/\b(beefier|more op|op)\b/g, 'stronger')
     .replace(/^(?:idk|i dunno|dunno)\s+/, '')
+    // Roids are named "Steamroid", "Drillroid": no word to match on
+    .replace(/\broids? deck\b/g, 'machine deck with steamroid and drillroid')
+    .replace(/^(?:whats|what is|what s) (?:wrong|bad) (?:with|about|in) (?:my|this|the) deck$/, 'is this deck good')
+    .replace(/^(?:fix|remove|take out|get rid of|cut) (?:the |all the |my )?dead cards?$/, 'fix my deck')
+    .replace(/^(?:add )?(?:some )?more fusions?(?: stuff| cards)?$/, 'add more fusion support')
+    .replace(/^(?:remove|take out|cut|get rid of) (?:the |all the |all )?cards? (?:that (?:are|arent) not|that arent|not) ([a-z ]+?)s?$/, 'make it a $1 deck')
     // "an effect damage deck", "a deck that deals damage": burn
     .replace(/\b(?:effect|direct|lp|life ?points?) damage\b/g, 'burn')
     .replace(/\bburn (deck )?(?:that|which|to)?\s*(?:deals?|does|inflicts?|do) (?:lots of |a lot of |direct |effect )?(?:damage|burn)\b/g, (_m, deck?: string) => (deck ? 'burn deck' : 'burn'))
@@ -561,6 +567,52 @@ function cutLoss(d: SpeedDeck): (n: string) => number {
     return memo.get(n)!;
   };
 }
+/** the deck an edit_deck input would leave (remove, Skill, add; Extra Deck cards go to the Extra Deck) */
+function applyEdit(d: SpeedDeck, input: { remove?: { name: string; count: number }[]; add?: { name: string; count: number }[]; skill?: string | null; clear?: boolean }): SpeedDeck {
+  const out: SpeedDeck = { ...d, main: input.clear ? [] : [...d.main], extra: input.clear ? [] : [...d.extra] };
+  for (const r of input.remove ?? []) for (let i = 0; i < r.count; i++) {
+    const zone = isExtraCard(r.name) ? out.extra : out.main;
+    const j = zone.indexOf(r.name);
+    if (j >= 0) zone.splice(j, 1);
+  }
+  if (input.skill !== undefined) out.skill = input.skill;
+  for (const a of input.add ?? []) for (let i = 0; i < a.count; i++) (isExtraCard(a.name) ? out.extra : out.main).push(a.name);
+  return out;
+}
+/** the problems the checker names that matter most: dead cards, a Skill that stopped working, an Extra Deck it can't make */
+const hardIssues = (d: SpeedDeck) => deckIssues(d).issues.filter((x) => /^dead|Skill doesn't fit|Extra Deck can't/.test(x));
+
+/**
+ * After any edit that swaps cards: if it left dead cards, a Skill that no longer works or an
+ * Extra Deck it can't summon, a second change repairs that (the cards just asked for stay).
+ */
+function guardEdit(plan: Plan, w: ChatWorld, t: string, mem: Memory): Plan {
+  const calls = plan.calls.filter((c) => c.name === 'edit_deck');
+  if (calls.length !== 1 || plan.calls.length !== 1) return plan;
+  const input = calls[0].input as { remove?: { name: string; count: number }[]; add?: { name: string; count: number }[]; skill?: string | null; clear?: boolean };
+  if (input.clear || !input.remove?.length || w.deck.main.length < MAIN_MIN) return plan;
+  // "only dragons", "no traps": a limit the repair could break
+  if (/\b(only|no|without|just|all)\b/.test(t)) return plan;
+  // a card they cut by name is their call
+  if (input.remove.some((r) => ` ${t} `.includes(` ${flat(r.name)} `))) return plan;
+  const before = new Set(hardIssues(w.deck));
+  const after = applyEdit(w.deck, input);
+  const fresh = hardIssues(after).filter((x) => !before.has(x));
+  if (!fresh.length) return plan;
+  const keep = new Set([...(input.add ?? []).map((a) => a.name), ...(mem.wanted ?? [])]);
+  const fixed = optimize(after, w, keep, () => false, undefined, 4);
+  const skill = after.skill && !skillFits(after.skill, fixed) ? skillPick({ ...w, deck: { ...fixed, skill: null } }, null) : null;
+  const done = skill ? { ...fixed, skill } : fixed;
+  const left = hardIssues(done).filter((x) => !before.has(x));
+  if (left.length >= fresh.length) return plan;
+  const outs = diffNames(after.main, done.main), ins = diffNames(done.main, after.main);
+  const xOut = diffNames(after.extra, done.extra), xIn = diffNames(done.extra, after.extra);
+  if (!outs.length && !xOut.length && !xIn.length && !skill) return plan;
+  return {
+    calls: [...plan.calls, { name: 'edit_deck', input: { remove: [...counts(outs), ...counts(xOut)], add: [...counts(ins), ...counts(xIn)], ...(skill ? { skill } : {}) } }],
+    answer: (rs) => `${plan.answer(rs)} That left ${fresh.join('; ')}, so I also ${[outs.length ? `swapped ${listOf(outs)} for ${listOf(ins)}` : '', xOut.length ? `took ${listOf(xOut)} out of the Extra Deck` : '', xIn.length ? `put ${listOf(xIn)} in the Extra Deck` : '', skill ? `changed the Skill to ${bare(skill)}` : ''].filter(Boolean).join(', ')}.`,
+  };
+}
 /** worth by name; a name the card list doesn't know (an old save) sorts last */
 const wn = (n: string, d?: SpeedDeck) => (cd(n) ? worth(cd(n)!, d) : -1e6);
 const isNeeded = (n: string, d: SpeedDeck) => !!cd(n) && needed(cd(n)!, d);
@@ -588,6 +640,9 @@ function deadFor(c: CardInfo, d: SpeedDeck): boolean {
     if (mons.length >= 6 && needsOf(c).continuous && all.filter((x) => cd(x)?.kind === 'spell' && cd(x)?.sub === 'Continuous').length < 2) return true;
     // "Must first be Special Summoned by Tributing 1 "Sanga of the Thunder", "Kazejin", and "Suijin"": every one
     const summon = c.desc.match(/must (?:first )?be special summoned[^.]*?by tributing[^.]*/i)?.[0];
+    // "banishing 7 DARK monsters with different names from your GY": far more than that many names
+    const names7 = c.desc.match(/\b(\d+) ([A-Z]+ )?monsters? with different names\b/);
+    if (names7 && Number(names7[1]) >= 3 && new Set(mons.filter((m) => !names7[2] || m.attribute === names7[2].trim() || m.race === names7[2].trim()).map((m) => m.name)).size < Number(names7[1]) + 2) return true;
     const pieces = summon ? [...summon.matchAll(/["“]([^"”]+)["”]/g)].map((m) => canon(m[1])) : [];
     return pieces.length > 0 && !pieces.every((x) => all.includes(x));
   }
@@ -633,7 +688,8 @@ function needsOf(c: CardInfo) {
     const dist = ours.match(/\b(\d+) ["“]([^"”]+)["”] (?:monsters|cards) with different names\b/i);
     hit = {
       distinct: dist ? [dist[2], Number(dist[1])] : null,
-      continuous: /\bcontinuous spells?\b/i.test(ours) && c.sub !== 'Continuous',
+      // ("place it face-up as a Continuous Spell" is the card itself, not a need: Crystal Beasts)
+      continuous: /\bcontinuous spells?\b/i.test(ours.replace(/\bas an? (?:face-up )?continuous spell(?: card)?\b/gi, '')) && c.sub !== 'Continuous',
       named,
       // a cost naming several cards with "and" ("Shuffle 1 "Duoterion", 1 "Hydrogeddon", and 1 "Oxygeddon"") needs every one
       must: ours.split(/(?<=[.;])\s+/).filter((x) => /\b(tribute|send|banish|discard|reveal|shuffle)\b/i.test(x) && /["“][^"”]+["”][^;.]*\band\b[^;.]*["“]/.test(x) && !/\bor\b/.test(x.split(';')[0].replace(/and\/or/g, ''))).flatMap((x) => [...x.split(';')[0].matchAll(/["“]([^"”]+)["”]/g)].map((m) => canon(m[1]))),
@@ -1236,8 +1292,8 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   if (/\bburn\b/.test(t) && !wish.arounds.length) {
     const own = (n: string) => (!w.collection ? COPIES : Math.min(COPIES, w.collection[n] ?? 0));
     const core = speedCards()
-      .filter((c) => /inflicts? \d+ damage to your opponent|inflict \d+ damage to your opponent|your opponent takes \d+ damage/i.test(c.desc) && !/["“]/.test(c.desc) && !isExtraCard(c.name) && c.sub !== 'Ritual' && (c.level ?? 4) <= 4 && own(c.name) > 0 && !avoid.has(c.name) && !unplayableReason(c.name) && limitStatus(c.name) !== 'Forbidden' && !deadFor(c, { ...w.deck, main: [], extra: [] }))
-      .sort((a, b) => worth(b, w.deck) - worth(a, w.deck))
+      .filter((c) => /inflicts? \d+ damage to your opponent|inflict \d+ damage to your opponent|your opponent takes \d+ damage/i.test(c.desc) && !/["“]/.test(c.desc) && !/\bby battle\b/i.test(c.desc) && !isExtraCard(c.name) && c.sub !== 'Ritual' && (c.level ?? 4) <= 4 && own(c.name) > 0 && !avoid.has(c.name) && !unplayableReason(c.name) && limitStatus(c.name) !== 'Forbidden' && !deadFor(c, { ...w.deck, main: [], extra: [] }))
+      .sort((a, b) => Number(BURNERS.includes(b.name)) - Number(BURNERS.includes(a.name)) || worth(b, w.deck) - worth(a, w.deck))
       .slice(0, 4);
     for (const c of core) for (let i = 0; i < Math.min(own(c.name), c.kind === 'monster' ? 3 : 2); i++) if (keepCards.length < 11) keepCards.push(c.name);
   }
@@ -1252,7 +1308,9 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   // Ritual cards only come in as part of the theme asked for (a stray Ritual Monster is a dead card)
   const ritualsOk = /\britual/.test(t) && !/\b(?:no|without|not|zero|any)\s+(?:any\s+)?rituals?\b/.test(t);
   if (!ritualsOk && /\britual/.test(t)) for (let i = keepCards.length - 1; i >= 0; i--) if (cd(keepCards[i])?.sub === 'Ritual') keepCards.splice(i, 1);
-  const drop = (n: string) => avoid.has(n) || (cd(n)?.kind === 'monster' && (wish.noRaces.includes(cd(n)!.race ?? '') || wish.noAttrs.includes(cd(n)!.attribute ?? ''))) || (wish.without.includes(cd(n)?.kind as Kind) && cd(n)?.sub !== 'Skill') || (!ritualsOk && cd(n)?.sub === 'Ritual' && !keepCards.includes(n));
+  // "only level 4 or lower monsters"
+  const lvlCap = Number(t.match(/\b(?:only|just|all)?\s*level (\d+) (?:or (?:lower|less|below|under)|and (?:under|below|lower))\b|\bno (?:monsters? )?(?:above|over|higher than) level (\d+)\b/)?.slice(1).find(Boolean) ?? 0);
+  const drop = (n: string) => avoid.has(n) || (lvlCap > 0 && cd(n)?.kind === 'monster' && !isExtraCard(n) && (cd(n)!.level ?? 0) > lvlCap) || (cd(n)?.kind === 'monster' && (wish.noRaces.includes(cd(n)!.race ?? '') || wish.noAttrs.includes(cd(n)!.attribute ?? ''))) || (wish.without.includes(cd(n)?.kind as Kind) && cd(n)?.sub !== 'Skill') || (!ritualsOk && cd(n)?.sub === 'Ritual' && !keepCards.includes(n));
   const collection = poolFor(w, drop) ?? w.collection;
   // a deck built around one card leans on that card's Type ("Dark Magician" -> Spellcasters)
   const keptMons = keepCards.map((n) => cd(n)).filter((c): c is CardInfo => c?.kind === 'monster');
@@ -1368,7 +1426,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
   // the optimizer: swaps until the checker's score stops climbing (cards asked for stay)
   {
     const fam = wish.around;
-    const theme = /\bburn\b/.test(t) ? (c: CardInfo) => /inflicts? \d+ damage|inflict damage|damage equal to/i.test(c.desc) && !/inflicts? \d+ damage to you\b/i.test(c.desc)
+    const theme = /\bburn\b/.test(t) ? (c: CardInfo) => /inflicts? \d+ damage|inflict damage|damage equal to/i.test(c.desc) && !/inflicts? \d+ damage to you\b|\bby battle\b|\bgain (?:that much )?LP instead\b/i.test(c.desc)
       : wish.theme.kind === 'race' ? (c: CardInfo) => c.kind === 'monster' && c.race === (wish.theme as { value: string }).value
       : wish.theme.kind === 'attribute' ? (c: CardInfo) => c.kind === 'monster' && c.attribute === (wish.theme as { value: string }).value
       : fam ? (c: CardInfo) => ` ${flat(c.name)} `.includes(` ${fam} `) || ` ${flat(c.desc)} `.includes(` ${fam} `)
@@ -1380,7 +1438,7 @@ function buildPlan(said: string, w: ChatWorld): Plan {
     // "a flip deck": Flip monsters and the cards that flip them
     const flips = /\bflip\b/.test(t);
     const theme2 = trapsToo || mats || flips ? (c: CardInfo) => (!!theme && theme(c)) || (trapsToo && c.kind === 'trap') || (!!mats && (mats.has(c.name) || c.name === 'Polymerization')) || (flips && (/^FLIP:/m.test(c.desc) || /\bflip summon|change (?:it|them|that monster|1 face-down monster) to face-up|face-down defense position\b/i.test(c.desc))) : theme;
-    const done = optimize({ ...ok, main: b.main, extra: ok.extra, skill: b.skill }, w, new Set([...cl.keep, ...wish.arounds.length ? keepCards : []]), drop, theme2);
+    const done = optimize({ ...ok, main: b.main, extra: ok.extra, skill: b.skill }, w, new Set([...cl.keep, ...wish.arounds.length || /\bburn\b/.test(t) ? keepCards : []]), drop, theme2);
     b.main = done.main;
     ok.extra = done.extra;
   }
@@ -1439,10 +1497,17 @@ function strongerPlan(w: ChatWorld, most = 4, withSkill = true): Plan {
     const before = deckIssues(d, theme);
     // after "fewer tribute monsters", no new ones come back in
     const noBig = (n: string) => !!curMem?.lessTribs && cd(n)?.kind === 'monster' && (cd(n)!.level ?? 0) >= 5;
-    let done = optimize(d, w, new Set(protect), noBig, theme, Math.max(most * 3, 12));
+    // the cards the Skill names (Valkyrion for Magnetic Attraction) stay
+    const skillCardsNamed = d.skill ? quoted(cd(d.skill) ?? ({ desc: '', name: '' } as CardInfo)).filter((n) => d.main.includes(n)) : [];
+    // and the pieces a deck monster is summoned with (Alpha, Beta and Gamma for Valkyrion)
+    for (const n of new Set(d.main)) {
+      const summon = cd(n)?.desc.match(/must (?:first )?be special summoned[^.]*?by tributing[^.]*/i)?.[0];
+      for (const m of summon ? summon.matchAll(/["“]([^"”]+)["”]/g) : []) if (d.main.includes(canon(m[1]))) skillCardsNamed.push(canon(m[1]));
+    }
+    let done = optimize(d, w, new Set([...protect, ...skillCardsNamed]), noBig, theme, Math.max(most * 3, 12));
     // never a change that makes the deck worse by the plain checker: then the swaps that help without the theme
     if (theme && deckQuality(done) < deckQuality(d)) {
-      const plainDone = optimize(d, w, new Set([...protect, ...d.main.filter((n) => !!cd(n) && theme(cd(n)!))]), noBig, undefined, Math.max(most * 3, 12));
+      const plainDone = optimize(d, w, new Set([...protect, ...skillCardsNamed, ...d.main.filter((n) => !!cd(n) && theme(cd(n)!))]), noBig, undefined, Math.max(most * 3, 12));
       done = deckQuality(plainDone) >= deckQuality(d) ? plainDone : d;
     }
     const outs = diffNames(d.main, done.main);
@@ -1533,6 +1598,8 @@ function deckFamily(d: SpeedDeck): string | null {
 }
 
 /** The Skill the deck maker would choose for this deck, other than `not`; one made for the deck's family first. */
+/** burn cards that hit every turn or on their own, no setup (a burn deck's core) */
+const BURNERS = ['Bowganian', 'Lady Assailant of Flames', 'Des Koala', 'Stamping Destruction', 'Gravekeeper\'s Curse', 'Coffin Seller'];
 /** Skills that help any deck, strongest first (Destiny Draw's pick of the Deck beats a one-off ATK boost) */
 const GOOD_SKILLS = ['Destiny Draw (Skill Card)', 'Switcheroo', 'Battle City Bestie', 'Shadow Reborn', 'No More Mrs. Nice Mai!', 'Digging for Gold', 'Final Draw', 'Power Up!'];
 function skillPick(w: ChatWorld, not: string | null): string | null {
@@ -1810,7 +1877,7 @@ function kindShift(w: ChatWorld, kind: Kind, by: number, why?: string, only: (c:
       const cost = (n: string) => {
         const t2 = { ...left, main: [...left.main] };
         t2.main.splice(t2.main.indexOf(n), 1);
-        return base - deckQuality(t2) + (isNeeded(n, left) ? 400 : 0) + (protect.has(n) ? 900 : 0);
+        return base - deckQuality(t2) + (isNeeded(n, left) ? 400 : 0) + (protect.has(n) ? 900 : 0) + (left.skill && skillFits(left.skill, left) && !skillFits(left.skill, t2) ? 3000 : 0);
       };
       const n = pool.sort((a, b) => cost(a) - cost(b))[0];
       out.push(n);
@@ -1861,14 +1928,16 @@ function kindShift(w: ChatWorld, kind: Kind, by: number, why?: string, only: (c:
       // cards they named never go; the deck's namesake cards can, but last ("more traps" in a Gravekeeper deck isn't 3 fewer Necrovalley)
       // "more attackers": a weak monster of the same kind can make room too
       const asked = new Set(curMem?.wanted ?? []);
-      const pool = [...new Set(work.main)].filter((n) => (!isKind(n) || (!only(cd(n)!) && kind === 'monster')) && !held(n) && !asked.has(n));
+      const skillOk = !!work.skill && skillFits(work.skill, work);
+      const pool = [...new Set(work.main)].filter((n) => (!isKind(n) || (kind === 'monster' && !only(cd(n)!) && !protect.has(n) && (cd(n)!.level ?? 4) <= 4 && !isNeeded(n, work))) && !held(n) && !asked.has(n));
       if (!pool.length) break;
       const base = deckQuality(work);
       const cost = (n: string) => {
         const t2 = { ...work, main: [...work.main] };
         t2.main.splice(t2.main.indexOf(n), 1);
         const mon = cd(n)?.kind === 'monster';
-        return (base - deckQuality(t2)) * 4 + (protect.has(n) ? 900 : 0) + (isKind(n) ? -800 : 0) + (isNeeded(n, work) ? 1500 : 0) + (mon && !isKind(n) && per('monster') <= floor ? 2500 : 0) + (!mon && per(cd(n)?.kind ?? '') >= 7 ? -600 : 0) + (!mon && per(cd(n)?.kind ?? '') <= 2 ? 1200 : 0);
+        const skillBreaks = !!work.skill && skillOk && !skillFits(work.skill, t2);
+        return (base - deckQuality(t2)) * 4 + (skillBreaks ? 3000 : 0) + (protect.has(n) ? 900 : 0) + (isKind(n) ? -800 : 0) + (isNeeded(n, work) ? 1500 : 0) + (mon && !isKind(n) && per('monster') <= floor ? 2500 : 0) + (!mon && per(cd(n)?.kind ?? '') >= 7 ? -600 : 0) + (!mon && per(cd(n)?.kind ?? '') <= 2 ? 1200 : 0);
       };
       const n = pool.sort((a, b) => cost(a) - cost(b))[0];
       outs.push(n);
@@ -1877,7 +1946,11 @@ function kindShift(w: ChatWorld, kind: Kind, by: number, why?: string, only: (c:
   }
   const ins: string[] = [];
   for (let i = 0; i < by; i++) {
-    const c = candidates(w, { ...work, main: [...work.main, ...ins] }, (x) => isKind(x.name) && only(x) && ins.filter((n) => n === x.name).length < 2)[0];
+    // monsters of the deck's own Type first (no Insect in a Harpie deck)
+    const okIn = (x: CardInfo) => isKind(x.name) && only(x) && ins.filter((n) => n === x.name).length < 2;
+    const race = kind === 'monster' ? deckRace(d) : null;
+    const now = { ...work, main: [...work.main, ...ins] };
+    const c = (race ? candidates(w, now, (x) => okIn(x) && x.race === race)[0] : undefined) ?? candidates(w, now, okIn)[0];
     if (!c) break;
     ins.push(c.name);
   }
@@ -2177,7 +2250,7 @@ export function planFor(text: string, w: ChatWorld, mem: Memory = freshMemory(),
             : 'I haven\'t changed anything. If you want that, say it as a request, like "make it stronger" or "add 2 traps", and I\'ll do it with an Undo.',
     };
   }
-  return plan;
+  return guardEdit(plan, w, t, mem);
 }
 
 function readAsk(text: string, w: ChatWorld, mem: Memory, part: boolean, whole: string): Plan {
