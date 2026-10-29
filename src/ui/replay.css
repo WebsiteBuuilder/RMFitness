@@ -125,6 +125,8 @@
 /* how far into the duel the replay is: a thin gold line along the bar's top edge */
 .so-watchbar.rp-bar {
   overflow: hidden;
+  /* over the cinematics' stage (z 60-62): pause and skip stay in reach while a card plays out */
+  z-index: 63;
 }
 .rp-progress {
   position: absolute;
