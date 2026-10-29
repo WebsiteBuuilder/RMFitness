@@ -17,8 +17,8 @@ export interface Clock {
   used: number;
   /** each player's reserve left */
   bank: [number, number];
-  /** the room's move count when the time ran out and a move was played for them (-1: not yet) */
-  spent: number;
+  /** the point of the duel (pointOf) where the time ran out and a move was played for them ('' : not yet) */
+  spent: string;
 }
 
 export interface ClockShow {
@@ -30,7 +30,7 @@ export interface ClockShow {
   bank: boolean;
 }
 
-export const newClock = (): Clock => ({ key: '', used: 0, bank: [BANK_MS, BANK_MS], spent: -1 });
+export const newClock = (): Clock => ({ key: '', used: 0, bank: [BANK_MS, BANK_MS], spent: '' });
 
 /** Who owes the next move: the player asked a question, else the turn player (null: nobody, the duel is over or not on). */
 export function actor(s: DuelState): Pid | null {
@@ -99,10 +99,16 @@ export function show(c: Clock, s: DuelState): ClockShow | null {
   return { who, left: room + c.bank[who], bank: room === 0 };
 }
 
+/**
+ * Where the duel stands, by its own log: a move the duel refused (a pick against its rules) leaves
+ * it where it was, so the same point means nothing happened.
+ */
+export const pointOf = (s: DuelState): string => `${s.turn}:${s.log.length}:${s.prompt ? `${s.prompt.player}:${s.prompt.title}` : '-'}`;
+
 /** The time is up for the move owed now, and no move was played for them yet at this point of the duel. */
-export const expired = (c: Clock, s: DuelState, moves: number): boolean => {
+export const expired = (c: Clock, s: DuelState, _moves = 0): boolean => {
   const v = show(c, s);
-  return !!v && v.left <= 0 && c.spent !== moves;
+  return !!v && v.left <= 0 && c.spent !== pointOf(s);
 };
 
 /** "1:05", "0:09" */

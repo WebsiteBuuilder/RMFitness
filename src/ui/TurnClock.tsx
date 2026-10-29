@@ -2,7 +2,7 @@
 // and plays the move for this phone when its time is up; each player bar shows a small pill.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
-import { actor, CLAIM_GRACE_MS, clockKey, clockText, expired, newClock, show, tick, URGENT_MS, type Clock, type ClockShow } from '../eds/turnClock';
+import { actor, CLAIM_GRACE_MS, clockKey, pointOf, clockText, expired, newClock, show, tick, URGENT_MS, type Clock, type ClockShow } from '../eds/turnClock';
 import { artBusy } from '../art/cues';
 import './clock.css';
 
@@ -35,7 +35,7 @@ export class ClockRunner {
   /** moves played for this phone at one point of the duel that didn't land */
   private tries = 0;
   private zeroSince = 0;
-  private zeroAt = -1;
+  private zeroAt = '';
   private savedSec = '';
   private listeners = new Set<() => void>();
 
@@ -76,14 +76,14 @@ export class ClockRunner {
     this.clock = tick(this.clock, s, moves, live && !artBusy() ? dt : 0, this.turns);
     const who = actor(s);
     if (who !== null && expired(this.clock, s, moves)) {
-      this.clock = { ...this.clock, spent: moves };
+      this.clock = { ...this.clock, spent: pointOf(s) };
       this.tries = 0;
       this.out = { who, at: now };
       if (who === me) {
         this.retryAt = now + 4000;
         play(0);
       }
-    } else if (who === me && this.clock.spent === moves && show(this.clock, s)?.left === 0 && now > this.retryAt && live) {
+    } else if (who === me && this.clock.spent === pointOf(s) && show(this.clock, s)?.left === 0 && now > this.retryAt && live) {
       // (the move played for them didn't land: try again)
       this.retryAt = now + 4000;
       play(++this.tries);
@@ -92,8 +92,9 @@ export class ClockRunner {
     // The other phone owes a move, its time is gone and nothing comes (closed, frozen, asleep):
     // after a grace this phone may take the win.
     const stalled = who !== null && who !== me && next?.left === 0 && live;
-    if (!stalled || this.zeroAt !== moves) this.zeroSince = stalled ? now : 0;
-    this.zeroAt = moves;
+    const at = pointOf(s);
+    if (!stalled || this.zeroAt !== at) this.zeroSince = stalled ? now : 0;
+    this.zeroAt = at;
     const claim = stalled && this.zeroSince > 0 && now - this.zeroSince >= CLAIM_GRACE_MS;
     const claimChanged = claim !== this.claimable;
     this.claimable = claim;

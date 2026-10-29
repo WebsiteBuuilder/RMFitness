@@ -8,7 +8,7 @@ import { MemoryAdapter } from '../src/sync/memory';
 import type { DuelState, Pid } from '../src/eds/types';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { deckOf } from '../src/eds/speedCampaign/campaign';
-import { actor, BANK_MS, clockKey, clockText, expired, newClock, RESPOND_MS, show, tick, timeoutMove, TURN_MS, type Clock } from '../src/eds/turnClock';
+import { actor, BANK_MS, clockKey, clockText, expired, newClock, pointOf, RESPOND_MS, show, tick, timeoutMove, TURN_MS, type Clock } from '../src/eds/turnClock';
 
 for (const [k, v] of KIT) DB.set(k, v);
 
@@ -48,9 +48,10 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null, log = 0): 
   ok(!expired(c, t1, 7) && show(c, t1)!.left === 1, 'one ms left: not out yet');
   c = tick(c, t1, 7, 5_000, turns);
   ok(expired(c, t1, 7) && c.bank[0] === 0, 'turn time and bank gone: out of time');
-  c = { ...c, spent: 7 };
-  ok(!expired(c, t1, 7), 'played for them once at this point of the duel');
-  ok(expired(c, t1, 8), '...and again if they are still owing a move after it');
+  c = { ...c, spent: pointOf(t1) };
+  ok(!expired(c, t1), 'played for them once at this point of the duel');
+  ok(!expired(c, t1, 8), "a move the duel refused (the room's count moves, the duel doesn't): not played again at once");
+  ok(expired(c, st(0, 1, null, 3)), '...but played again once the duel moved on and they still owe a move');
   // the next turn: the other player's fresh turn time, the bank stays spent
   const t2 = st(1, 2);
   c = tick(c, t2, 9, 0, turns);
