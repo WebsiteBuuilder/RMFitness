@@ -41,6 +41,8 @@ interface Props {
   locked?: boolean;
   /** an online duel between two phones: Master Duel's turn timer runs */
   clock?: boolean;
+  /** the beginner tutorial: a move this says no to is never sent */
+  vet?: (a: Parameters<DuelSession['send']>[0]) => boolean;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -51,7 +53,7 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock, vet }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
@@ -213,6 +215,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     onLeave();
   };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
+    if (vet && !vet(a)) {
+      setSel(null);
+      setMode(null);
+      return;
+    }
     const moves = view.moves || view.log.length;
     if (sent.current && sent.current.moves === moves && Date.now() - sent.current.at < 1500) return;
     sent.current = { moves, at: Date.now() };

@@ -839,7 +839,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       {bubble && (
         <div class={`tactions ${bubble.below ? 'below' : ''}`} style={{ left: `${bubble.x}px`, top: `${bubble.y}px` }} onClick={(ev) => ev.stopPropagation()}>
           {actions.map((c) => (
-            <button key={c.label} class={`taction ${c.label === 'Attack' || c.label === 'Summon' || c.label === 'Activate' ? 'main' : ''}`} onClick={c.onPick}>
+            <button key={c.label} data-label={c.label.split(' ·')[0]} class={`taction ${c.label === 'Attack' || c.label === 'Summon' || c.label === 'Activate' ? 'main' : ''}`} onClick={c.onPick}>
               {c.label}
             </button>
           ))}

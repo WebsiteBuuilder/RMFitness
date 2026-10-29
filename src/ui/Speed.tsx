@@ -45,6 +45,8 @@ import { RequestsScreen, StampsScreen } from '../collection/Earn';
 import { boardOf } from '../collection/requests';
 import { bestCrown, cantCraft, chipsOf, claimGift, collectionProblems, craft, craftCost, nextGift, withStarter, type Gift } from '../collection/economy';
 import { GiftReveal } from '../collection/Gift';
+import { ConfirmSheet } from './ConfirmSheet';
+import { offerSchool, skipSchool } from '../eds/tutorial';
 import { accounts } from '../accounts';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
@@ -112,6 +114,7 @@ export function SpeedHub({
   controls,
   onControls,
   onSolo,
+  onSchool,
   onTag,
   onRaid,
   profile,
@@ -126,6 +129,8 @@ export function SpeedHub({
   onControls: () => void;
   /** opens a solo mode: the Millennium Road campaign, the Duel Labyrinth or Practice */
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends' | 'ranked') => void;
+  /** Duel School, the beginner tutorial (`first`: straight into the first lesson) */
+  onSchool?: (first?: boolean) => void;
   /** 2v2 Tag Duels and the Tag Road */
   onTag?: () => void;
   /** Boss Raid: you and your brother against the bosses */
@@ -188,7 +193,7 @@ export function SpeedHub({
     };
   });
 
-  if (save.decks.length === 0) return <StarterPick onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
+  if (save.decks.length === 0) return <StarterPick onSchool={onSchool && (() => onSchool(true))} onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
   if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id, random) => (setEditing(id), setEditRandom(!!random), setSub('edit'))} onBack={() => setSub('menu')} />;
   if (sub === 'edit' && editing) {
@@ -213,6 +218,11 @@ export function SpeedHub({
 
   return (
     <>
+      {!gift && sub === 'menu' && onSchool && offerSchool(save) && (held || notNow.has(profile.id) || !nextGift(save, profile.created, profile.id)) && (
+        <ConfirmSheet look="md" title="New to Yu-Gi-Oh!?" confirmLabel="Teach me!" cancelLabel="I know how to play" onConfirm={() => (onSave(skipSchool(save)), onSchool(true))} onCancel={() => onSave(skipSchool(save))}>
+          Duel School teaches you everything from zero in a few short, hands-on lessons with a coach, and each lesson pays a card pack the first time. You can find it any time in the Solo tab.
+        </ConfirmSheet>
+      )}
       {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (closeGift(), setSub('shop'))} onLater={closeGift} onNotNow={putOff} />}
       <SpeedHome
         tab={tab}
@@ -228,6 +238,7 @@ export function SpeedHub({
         controls={controls}
         onControls={onControls}
         onSolo={onSolo}
+        onSchool={onSchool && (() => onSchool())}
         onTag={onTag}
         onRaid={onRaid}
         onExit={onExit}
@@ -263,7 +274,7 @@ function PickTile({ art, name, note, on, disabled, onPick }: { art: string; name
   );
 }
 
-function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExit: () => void }) {
+function StarterPick({ onPick, onExit, onSchool }: { onPick: (d: SpeedDeck) => void; onExit: () => void; onSchool?: () => void }) {
   const [sel, setSel] = useState<Starter | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const preview = sel ? deckFromStarter(sel) : null;
@@ -271,6 +282,12 @@ function StarterPick({ onPick, onExit }: { onPick: (d: SpeedDeck) => void; onExi
     <div class="screen">
       <Win title="Pick your first Speed Duel deck" onClose={onExit}>
         <p>Each one is a real Speed Duel Starter Deck with its Skill. Its cards become yours. Win packs and Duel Chips to grow your collection, plus 3 welcome packs to start.</p>
+        {onSchool && (
+          <button class="sdh-note gold" onClick={() => (playBlip(), onSchool())}>
+            <span>🎓 Never played Yu-Gi-Oh!? Learn first in Duel School: no deck needed</span>
+            <b>Learn ›</b>
+          </button>
+        )}
         <div class="sp-picks">
           {STARTERS.map((s) => {
             const d = deckFromStarter(s);
