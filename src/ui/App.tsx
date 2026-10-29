@@ -333,7 +333,7 @@ export function App() {
       if (left) setSpeedSave(left.save);
       const lines = left ? left.lines.map((l) => l.replace(/^(.*) left the duel against (.*), so it counted as a loss\.$/, "$1 didn't rejoin within two minutes, so the duel against $2 counted as a loss.")) : ['Your opponent took the win.'];
       // (Ranked never counts a duel lost to a dropped connection)
-      if (st.turn >= RIVAL_MIN_TURNS) lines.push("Ranked: the connection dropped, so this duel doesn't count on the ladder.");
+      if (profile && speedSave && !activeDeck(speedSave)?.open && st.turn >= RIVAL_MIN_TURNS) lines.push("Ranked: the connection dropped, so this duel doesn't count on the ladder.");
       const cards: NewsCards = left ? [{ who: '', won: left.won, lost: left.lost }] : [];
       setSpeedNews(lines);
       setNewsCards(cards);
@@ -817,13 +817,13 @@ export function App() {
   const [whoQuits, setWhoQuits] = useState(false);
   /** Online with the connection gone, leaving asks first: it counts as this player's loss. */
   const [offlineLeave, setOfflineLeave] = useState(false);
-  /** A Ranked Duel the game was closed in, offered back on the Speed Duel menu (once per visit to it) */
+  /** A Ranked Duel the game was closed in, offered back on the Speed Duel menu (once per duelist each time the game opens) */
   const [cutOff, setCutOff] = useState<RankedLive | null>(null);
-  const cutOffAsked = useRef(false);
+  const cutOffAsked = useRef(new Set<string>());
   useEffect(() => {
     if (screen !== 'speed' || soloMode || !profile) return;
-    if (cutOffAsked.current) return;
-    cutOffAsked.current = true;
+    if (cutOffAsked.current.has(profile.id)) return;
+    cutOffAsked.current.add(profile.id);
     const live = loadRankedLive(profile.id);
     const pend = loadSolo(profile.id).ranked?.pending;
     if (live && pend && pend.season === live.season) setCutOff(live);
@@ -1351,14 +1351,21 @@ export function App() {
             </Overlay>
           )}
           {newsOverlay}
-          {cutOff && !speedNews.length && (
+          {cutOff && !speedNews.length && !unfinished && (
             <Overlay onClose={() => setCutOff(null)}>
               <Win title="Ranked Duel cut off" onClose={() => setCutOff(null)}>
-                <p>The game closed during your Ranked Duel against {cutOff.spec.cpu.name}. Nothing was lost: pick it up right where it stopped.</p>
+                <p>The game closed during your Ranked Duel against {cutOff.spec.cpu.name}. Nothing was lost: pick it up right where it stopped. (It also waits on the Ranked Duel screen.)</p>
                 <Menu
                   items={[
-                    { label: 'Resume duel', onPick: () => (setCutOff(null), setSoloMode('ranked'), startSoloDuel(cutOff.spec, cutOff)) },
-                    { label: 'Later (it waits in Ranked Duel)', onPick: () => setCutOff(null) },
+                    { label: 'Resume duel', onPick: () => {
+                      // (once: a double tap can't open two copies of the duel)
+                      const live = cutOff;
+                      setCutOff(null);
+                      if (!live || soloDuel.current) return;
+                      setSoloMode('ranked');
+                      startSoloDuel(live.spec, live);
+                    } },
+                    { label: 'Later', onPick: () => setCutOff(null) },
                   ]}
                 />
               </Win>

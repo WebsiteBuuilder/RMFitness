@@ -185,12 +185,26 @@ export function Ranked(p: Ctx) {
           <Portrait d={shownFoe.duelist} size="m" />
           <div>
             <span class="so-label">{resuming ? 'DUEL IN PROGRESS' : 'NEXT OPPONENT'}</span>
-            <b>{shownFoe.duelist.name}</b>
-            <span>{shownFoe.duelist.title}</span>
-            <em>
-              {DIFFICULTY_LABEL[tier.level]} computer{tier.cpuLp ? ` · ${tier.cpuLp} LP` : ''}
-              {tier.cpuHand ? ` · +${tier.cpuHand} card` : ''}
-            </em>
+            {resuming && live ? (
+              <>
+                {/* (the duel as it was dealt, even if a link battle has moved the rank since) */}
+                <b>{live.spec.cpu.name}</b>
+                <span>{live.spec.vs?.cpuTitle ?? shownFoe.duelist.title}</span>
+                <em>
+                  {DIFFICULTY_LABEL[live.spec.level ?? 'normal']} computer{live.spec.cpu.setup?.lp ? ` · ${live.spec.cpu.setup.lp} LP` : ''}
+                  {live.spec.cpu.setup?.openingHand ? ` · +${live.spec.cpu.setup.openingHand} card` : ''}
+                </em>
+              </>
+            ) : (
+              <>
+                <b>{shownFoe.duelist.name}</b>
+                <span>{shownFoe.duelist.title}</span>
+                <em>
+                  {DIFFICULTY_LABEL[tier.level]} computer{tier.cpuLp ? ` · ${tier.cpuLp} LP` : ''}
+                  {tier.cpuHand ? ` · +${tier.cpuHand} card` : ''}
+                </em>
+              </>
+            )}
           </div>
         </div>
         <Btn kind="gold" class="rk-go" disabled={!resuming && problems.length > 0} onClick={() => duel()}>

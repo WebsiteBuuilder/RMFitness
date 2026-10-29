@@ -239,7 +239,7 @@ export interface RankedOpened {
 /**
  * Brings the ladder up to date when its screen opens: a Ranked Duel that was cut off (the
  * game closed, the phone killed it, an update reloaded it) waits to be resumed when its moves
- * were kept (`resumable`, same season), and is otherwise dropped with no result: a lost
+ * were kept (`resumable`; it carries into a new month, so waiting can't dodge it), and is otherwise dropped with no result: a lost
  * connection is never a loss. Starts a new season when the month has turned (paying the
  * prizes of the tiers it starts you in). Seasons only move forward, so turning the clock back
  * can't replay one.
@@ -250,7 +250,8 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
   let resume = false;
   let dropped = false;
   if (p.pending) {
-    if (resumable && p.pending.season === seasonOf(now) && p.pending.season === p.season) resume = true;
+    // (across a month's turn too: the result then goes to the new season, as a duel finished after midnight does)
+    if (resumable) resume = true;
     else {
       p = { ...p, pending: null, played: Math.max(0, p.played - 1) };
       dropped = true;
@@ -263,7 +264,7 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
     // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
     const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
-    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}) };
+    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
     return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, resume, dropped };

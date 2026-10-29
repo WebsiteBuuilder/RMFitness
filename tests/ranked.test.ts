@@ -105,7 +105,12 @@ ok(opened.dropped && !opened.resume && rankedProgress(opened.solo).l === 0 && ra
 ok(rankedProgress(opened.solo).played === 0 && rankedFoe(rankedProgress(opened.solo)).duelist.name === rankedFoe(rankedProgress(solo)).duelist.name, 'and the same opponent comes back');
 opened = openRanked(opened.speed, opened.solo, day(7, 15));
 ok(!opened.dropped && rankedProgress(opened.solo).l === 0, 'and only once');
-ok(openRanked(speed, started, new Date(2026, 10, 2), undefined, true).dropped, 'a kept duel from last season is dropped, not resumed');
+{
+  const carried = openRanked(speed, started, new Date(2026, 10, 2), undefined, true);
+  ok(carried.resume && !!rankedProgress(carried.solo).pending && rankedProgress(carried.solo).season === '2026-11', 'a kept duel waits into the new month (no dodging it by waiting)');
+  const filed = settleRanked(carried.speed, carried.solo, LEFT, new Date(2026, 10, 2, 13));
+  ok(rankedProgress(filed.solo).l === 1 && !rankedProgress(filed.solo).pending, 'and its result goes to the new season');
+}
 {
   const link = settleLinkRanked(speed, started, 'w', 'Rival', day(7, 14));
   ok(!!rankedProgress(link.solo).pending && rankedProgress(link.solo).l === 0, 'a link battle leaves a cut-off Ranked Duel waiting to be resumed');
