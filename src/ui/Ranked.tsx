@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
 import { soloDeckProblems } from '../eds/speedCampaign/campaign';
+import { clearRankedLive, loadRankedLive, type RankedLive } from '../eds/speedCampaign/rankedLive';
 import { DIFFICULTY_LABEL } from '../eds/difficulty';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import {
@@ -47,14 +48,26 @@ function prizeLines(lines: string[]): string[] {
 
 export function Ranked(p: Ctx) {
   const { solo, setSolo, speed } = p;
-  // Coming in: file a duel the game was closed in, and turn the season over if the month changed.
-  const [forfeited, setForfeited] = useState(false);
+  // Coming in: a duel cut off by the game closing waits to be resumed (or, with no moves kept,
+  // is dropped with no result), and the season turns over if the month changed.
+  const [dropped, setDropped] = useState(false);
+  const [live, setLive] = useState<RankedLive | null>(null);
+  const [askResume, setAskResume] = useState(false);
   useEffect(() => {
-    const o = openRanked(speed, solo);
+    const kept = loadRankedLive(p.profile.id);
+    const o = openRanked(speed, solo, undefined, undefined, !!kept && !!p.onResume);
     if (o.speed !== speed) p.onSpeed(o.speed);
     setSolo(o.solo);
-    if (o.forfeited) setForfeited(true);
+    if (o.resume && kept) {
+      setLive(kept);
+      setAskResume(true);
+    } else if (kept) clearRankedLive(p.profile.id);
+    if (o.dropped) setDropped(true);
   }, []);
+  const resume = () => {
+    setAskResume(false);
+    if (live && p.onResume) p.onResume(live);
+  };
   const rp = rankedProgress(solo);
   // the shared leaderboard: post this rank whenever it changes
   useEffect(() => postProfileRank(p.profile, p.name, solo.ranked), [rp.season, rp.step, rp.stars, rp.kp, rp.w, rp.l]);
@@ -71,6 +84,9 @@ export function Ranked(p: Ctx) {
   const tier = tierOf(rp.step);
   // the next opponent (a Wandering Duelist's deck is built once, not on every render)
   const foe = useMemo(() => rankedFoe(rp), [rp.season, rp.played, rp.step]);
+  // (a cut-off duel waiting to be resumed: its opponent, dealt one duel back)
+  const resuming = !!live && !!rp.pending;
+  const shownFoe = useMemo(() => (resuming ? rankedFoe({ ...rp, played: Math.max(0, rp.played - 1) }) : foe), [resuming, foe]);
   const lastFoe = useMemo(() => (rep ? rankedFoe({ ...rp, step: rep.settled.before.step, played: Math.max(0, rp.played - 1) }).duelist : null), [rep]);
   const today = ladderClock(rp);
   const bonusLeft = rp.bonusDay !== todayString(today);
@@ -81,6 +97,7 @@ export function Ranked(p: Ctx) {
   const nextName = rp.step === TOP ? null : stepName(rp.step + 1);
 
   const duel = () => {
+    if (resuming) return resume();
     if (!deck || problems.length) return;
     const lp = tier.cpuLp;
     const hand = tier.cpuHand;
@@ -89,7 +106,7 @@ export function Ranked(p: Ctx) {
       rankedFirst(rp) === 'me' ? 'You go first.' : `${foe.duelist.name} goes first.`,
       ...(foe.wandering ? ['Wandering Duelist: a deck shuffled together for this one duel.'] : []),
       ...(lp || hand ? [`${tier.name} rule: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
-      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Leaving costs a star (or today's bonus star if you have none).`,
+      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Pressing Leave costs a star (or today's bonus star if you have none); if the game closes, the duel resumes.`,
     ];
     p.onDuel({
       me: { name: p.name, main: deck.main, extra: deck.extra, skill: deck.skill },
@@ -159,19 +176,19 @@ export function Ranked(p: Ctx) {
         </div>
 
         <div class="rk-foe">
-          <Portrait d={foe.duelist} size="m" />
+          <Portrait d={shownFoe.duelist} size="m" />
           <div>
-            <span class="so-label">NEXT OPPONENT</span>
-            <b>{foe.duelist.name}</b>
-            <span>{foe.duelist.title}</span>
+            <span class="so-label">{resuming ? 'DUEL IN PROGRESS' : 'NEXT OPPONENT'}</span>
+            <b>{shownFoe.duelist.name}</b>
+            <span>{shownFoe.duelist.title}</span>
             <em>
               {DIFFICULTY_LABEL[tier.level]} computer{tier.cpuLp ? ` · ${tier.cpuLp} LP` : ''}
               {tier.cpuHand ? ` · +${tier.cpuHand} card` : ''}
             </em>
           </div>
         </div>
-        <Btn kind="gold" class="rk-go" disabled={problems.length > 0} onClick={() => duel()}>
-          Ranked Duel!
+        <Btn kind="gold" class="rk-go" disabled={!resuming && problems.length > 0} onClick={() => duel()}>
+          {resuming ? 'Resume Ranked Duel' : 'Ranked Duel!'}
         </Btn>
 
         <div class="so-deckbar">
@@ -257,23 +274,31 @@ export function Ranked(p: Ctx) {
           <div class="so-reward">From Silver up a loss takes a star back and can drop a rank, but never out of a tier you've reached.</div>
           <div class="so-reward">Higher tiers bring later Millennium Road duelists, a sharper computer and, from Bronze, Wandering Duelists with brand-new decks.</div>
           <div class="so-reward">From Silver up, the day's {DAILY_GOAL}rd Ranked win pays a pack.</div>
-          <div class="so-reward">Online link battles with a friend count too: +1 star a win (up to {LINK_STARS_PER_DAY} a day), and a loss costs a star where Ranked losses do.</div>
+          <div class="so-reward">Online link battles with a friend count too: +1 star a win (up to {LINK_STARS_PER_DAY} a day), and a loss costs a star where Ranked losses do. A duel that ends because a phone dropped off doesn't count either way.</div>
           <div class="so-reward">Above Master: Duel King III to I, then Legend III to I, then Pharaoh. Each pays packs, chips and a title for the month.</div>
           <div class="so-reward">Pharaoh never ends: every win is a Pharaoh Point and a loss takes one. Every {TOP_MILESTONE} points pays a pack, every {TOP_MILESTONE * 2} a chip as well ({TOP_MILESTONES} prizes a season), and the points rank you on the leaderboard.</div>
           <div class="so-reward">Weekly Missions: four new ones every Monday, the same for everyone. Each pays a pack; all four add the Weekly Crown (a pack + {WEEKLY_CROWN_CHIPS} chips).</div>
           <div class="so-reward">The leaderboard shows everyone's rank this season, even when they're offline. Bragging rights only.</div>
-          <p class="so-dim">Seasons run a calendar month; with 10+ wins, the next one starts you two tiers below your best. Leaving a Ranked Duel, or closing the game during one, is a loss and costs a star in any tier. Own decks only.</p>
+          <p class="so-dim">Seasons run a calendar month; with 10+ wins, the next one starts you two tiers below your best. Leaving a Ranked Duel with the Leave button is a loss and costs a star in any tier. A duel cut off by the game closing or the connection dropping is never a loss: it resumes where it stopped, or doesn't count. Own decks only.</p>
         </Sheet>
       )}
-      {forfeited && !rep && (
-        <Sheet title="Ranked Duel left" onClose={() => setForfeited(false)}>
-          <p>The game closed during your last Ranked Duel, so it counted as a loss.</p>
-          <Btn kind="gold" onClick={() => setForfeited(false)}>
+      {askResume && live && !rep && (
+        <Sheet title="Ranked Duel cut off" onClose={() => setAskResume(false)}>
+          <p>The game closed during your Ranked Duel against {live.spec.cpu.name}. Nothing was lost: pick it up right where it stopped.</p>
+          <Btn kind="gold" onClick={resume}>
+            Resume duel
+          </Btn>
+        </Sheet>
+      )}
+      {dropped && !rep && !askResume && (
+        <Sheet title="Ranked Duel cut off" onClose={() => setDropped(false)}>
+          <p>The game closed during your last Ranked Duel. It doesn't count: no star lost, and the same opponent is waiting.</p>
+          <Btn kind="gold" onClick={() => setDropped(false)}>
             OK
           </Btn>
         </Sheet>
       )}
-      {!rep && !forfeited && rp.news && <SeasonSheet p={rp} onDone={() => setSolo({ ...solo, ranked: { ...rp, news: null } })} own={(n) => ownedCopies(speed, n)} />}
+      {!rep && !dropped && !askResume && rp.news && <SeasonSheet p={rp} onDone={() => setSolo({ ...solo, ranked: { ...rp, news: null } })} own={(n) => ownedCopies(speed, n)} />}
       {rep && lastFoe && <ResultSheet rep={rep} foe={lastFoe} onNext={() => (p.onReportSeen(), duel())} onDone={p.onReportSeen} own={(n) => ownedCopies(speed, n)} canGo={!problems.length} />}
     </div>
   );

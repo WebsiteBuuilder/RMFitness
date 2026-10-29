@@ -257,7 +257,8 @@ export type Action =
   | { type: 'SKILL'; player: Pid }
   | { type: 'GRAVE_EFFECT'; player: Pid; uid: number }
   | { type: 'QUICK_EFFECT'; player: Pid; uid: number }
-  | { type: 'SURRENDER'; player: Pid };
+  /** `timeout`: the win taken on time from a phone that stopped answering (a dropped connection) */
+  | { type: 'SURRENDER'; player: Pid; timeout?: boolean };
 
 export type LoggedAction = Action & { seq: number; ts: number };
 

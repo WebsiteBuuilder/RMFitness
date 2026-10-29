@@ -230,24 +230,31 @@ function payTiers(speed: SpeedSave, solo: SoloSave, p: RankedProgress, tier: num
 export interface RankedOpened {
   speed: SpeedSave;
   solo: SoloSave;
-  /** a Ranked Duel left unfinished (the game was closed) was filed as a loss */
-  forfeited: boolean;
+  /** a Ranked Duel cut off (the game was closed or reloaded) waits to be resumed */
+  resume: boolean;
+  /** a cut-off Ranked Duel that can't be resumed was dropped with no result */
+  dropped: boolean;
 }
 
 /**
- * Brings the ladder up to date when its screen opens: files a Ranked Duel that was never
- * finished as a loss, and starts a new season when the month has turned (paying the prizes
- * of the tiers it starts you in). Seasons only move forward, so turning the clock back
+ * Brings the ladder up to date when its screen opens: a Ranked Duel that was cut off (the
+ * game closed, the phone killed it, an update reloaded it) waits to be resumed when its moves
+ * were kept (`resumable`, same season), and is otherwise dropped with no result: a lost
+ * connection is never a loss. Starts a new season when the month has turned (paying the
+ * prizes of the tiers it starts you in). Seasons only move forward, so turning the clock back
  * can't replay one.
  */
-export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime()): RankedOpened {
+export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime(), resumable = false): RankedOpened {
   now = ladderClock(solo.ranked, now);
   let p: RankedProgress = { ...migrateRanked(rankedProgress(solo, now)), seen: now.getTime() };
-  let forfeited = false;
+  let resume = false;
+  let dropped = false;
   if (p.pending) {
-    p = applyResult(p, 'l', now, true).p;
-    p = { ...p, week: advanceWeek(p.week, LEFT_EVENT, now).week };
-    forfeited = true;
+    if (resumable && p.pending.season === seasonOf(now) && p.pending.season === p.season) resume = true;
+    else {
+      p = { ...p, pending: null, played: Math.max(0, p.played - 1) };
+      dropped = true;
+    }
   }
   const season = seasonOf(now);
   if (season > p.season) {
@@ -259,9 +266,9 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
-    return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, forfeited };
+    return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, resume, dropped };
   }
-  return { speed, solo: { ...solo, ranked: p }, forfeited };
+  return { speed, solo: { ...solo, ranked: p }, resume, dropped };
 }
 
 /** Ranked wins so far today (for the daily goal). */

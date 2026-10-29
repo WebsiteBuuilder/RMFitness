@@ -4,6 +4,9 @@
 // Run: npx tsx tests/ranked.test.ts
 import { DB as KIT, aiAction, playDuel } from './speedkit';
 import { DB } from '../src/eds/db';
+import { DuelSession } from '../src/eds/session';
+import { MemoryAdapter } from '../src/sync/memory';
+import type { Pid } from '../src/eds/types';
 import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
@@ -91,13 +94,22 @@ const viaSettle = settleSolo({ kind: 'ranked', season: '2026-10' }, LEFT, speed,
 ok(viaSettle.report.kind === 'ranked' && rankedProgress(viaSettle.solo).stars === 0 && rankedProgress(viaSettle.solo).l === 1, 'leaving a Ranked Duel is a loss');
 const bronzeLeft = settleRanked(speed, at(newSoloSave(), { step: 2, stars: 1, peak: 2, paid: [0, 1] }), LEFT, day(7));
 ok(bronzeLeft.after.stars === 0 && bronzeLeft.gained === -1, 'leaving costs a star even in Bronze');
-// Closing the game mid-duel: the next visit files it as a loss.
+// Closing the game mid-duel (or a reload) is never a loss: with its moves kept the duel waits
+// to be resumed; without them it's dropped with no result and the same opponent comes back.
 let started = startRanked(solo, day(7));
 ok(!!rankedProgress(started).pending && rankedProgress(started).played === 1, 'starting a duel marks it pending and deals the next foe');
-let opened = openRanked(speed, started, day(7, 14));
-ok(opened.forfeited && rankedProgress(opened.solo).l === 1 && !rankedProgress(opened.solo).pending, 'an unfinished Ranked Duel counts as a loss on the next visit');
+let opened = openRanked(speed, started, day(7, 14), undefined, true);
+ok(opened.resume && !opened.dropped && !!rankedProgress(opened.solo).pending && rankedProgress(opened.solo).l === 0 && rankedProgress(opened.solo).stars === 1, 'a cut-off Ranked Duel with kept moves waits to be resumed, nothing lost');
+opened = openRanked(speed, started, day(7, 14));
+ok(opened.dropped && !opened.resume && rankedProgress(opened.solo).l === 0 && rankedProgress(opened.solo).stars === 1 && !rankedProgress(opened.solo).pending, 'without kept moves it is dropped with no result: no loss, no star lost');
+ok(rankedProgress(opened.solo).played === 0 && rankedFoe(rankedProgress(opened.solo)).duelist.name === rankedFoe(rankedProgress(solo)).duelist.name, 'and the same opponent comes back');
 opened = openRanked(opened.speed, opened.solo, day(7, 15));
-ok(!opened.forfeited && rankedProgress(opened.solo).l === 1, 'and only once');
+ok(!opened.dropped && rankedProgress(opened.solo).l === 0, 'and only once');
+ok(openRanked(speed, started, new Date(2026, 10, 2), undefined, true).dropped, 'a kept duel from last season is dropped, not resumed');
+{
+  const resumed = settleRanked(speed, openRanked(speed, started, day(7, 14), undefined, true).solo, LEFT, day(7, 15));
+  ok(rankedProgress(resumed.solo).l === 1 && !rankedProgress(resumed.solo).pending, 'pressing Leave in the resumed duel is still a loss');
+}
 // A finished duel clears pending without an extra loss.
 started = startRanked(solo, day(7));
 r = settleRanked(speed, started, WIN, day(7, 16));
@@ -274,8 +286,9 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
     ok(rankedProgress(s3).week!.prog[run] === 0, 'leaving restarts a streak mission');
     s3 = settleRanked(sp, s3, WIN, day(27, 12)).solo;
     s3 = startRanked(s3, day(27, 13));
+    const kept = rankedProgress(s3).week!.prog[run];
     s3 = openRanked(sp, s3, day(27, 14)).solo;
-    ok(rankedProgress(s3).week!.prog[run] === 0, 'closing the game mid-duel restarts it as well');
+    ok(rankedProgress(s3).week!.prog[run] === kept, "a duel cut off by the game closing doesn't break it");
   }
   // Leaving never moves a mission forward.
   const before = rankedProgress(so).week!;
@@ -313,6 +326,31 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   ok(twins.length === 2, 'two duelists with one name keep two lines');
   const ghost = mergeLadder([{ name: 'NewName', color: '#f80', step: 6, stars: 0, kp: 0, w: 1, l: 0, kind: 'me' }], boardFrom({ me1: { name: 'OldName', step: 7, w: 9 } }), 'me1');
   ok(ghost.length === 1 && ghost[0].name === 'NewName', 'your own old post (an old name) is left out');
+}
+
+// ---------- resuming a cut-off Ranked Duel ----------
+// The kept room log rebuilds the very same board (the engine is deterministic from START's seed),
+// and the duel goes on to the end from there.
+{
+  const f = rankedFoe({ ...p0, step: 6, played: 1 });
+  const ses = new DuelSession(new MemoryAdapter());
+  ses.send({ type: 'JOIN', player: 0, name: 'Me', deck: f.main, fusion: f.extra, mode: 'speed', skill: f.duelist.skill });
+  ses.send({ type: 'JOIN', player: 1, name: f.duelist.name, deck: f.main, fusion: f.extra, mode: 'speed', skill: f.duelist.skill });
+  ses.send({ type: 'START', first: 0, seed: 4242, names: ['Me', f.duelist.name], decks: [f.main, f.main], fusions: [f.extra, f.extra], mode: 'speed', skills: [f.duelist.skill, f.duelist.skill], setup: [null, null] });
+  const step = (s: DuelSession) => {
+    const st = s.engine.state;
+    const pl = (st.prompt ? st.prompt.player : st.turnPlayer) as Pid;
+    const act = aiAction(s.engine, pl);
+    if (act) s.send(act);
+    return !!act;
+  };
+  for (let i = 0; i < 80 && ses.engine.state.winner === null; i++) if (!step(ses)) break;
+  const sig = (s: DuelSession) => JSON.stringify({ t: s.engine.state.turn, lp: s.engine.state.players.map((x) => x.lp), hand: s.engine.state.players.map((x) => x.hand.map((c) => c.name)), w: s.engine.state.winner, ph: s.engine.state.phase });
+  const kept = JSON.parse(JSON.stringify(ses.log));
+  const back = new DuelSession(new MemoryAdapter(kept));
+  ok(ses.engine.state.turn >= 2 && sig(back) === sig(ses), `a resumed Ranked Duel rebuilds the same board (turn ${ses.engine.state.turn})`);
+  for (let i = 0; i < 4000 && back.engine.state.winner === null; i++) if (!step(back)) break;
+  ok(back.engine.state.winner !== null, 'and plays on to the end');
 }
 
 if (fails) {
