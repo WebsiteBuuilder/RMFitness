@@ -24,6 +24,8 @@ export interface SyncAdapter {
   abandoned?(): boolean;
   /** online rooms: this phone gives the unfinished duel up while it can't reach the other (the other phone gets the win) */
   forfeit?(): void;
+  /** the host's last check on a move the other phone proposes (set by the duel on this phone; false drops it) */
+  vet?: ((ev: GameEvent) => boolean) | null;
 }
 
 /** Shared bookkeeping for adapters: listeners and a status value. */
@@ -33,6 +35,7 @@ export class AdapterBase {
   protected events: LoggedEvent[] = [];
   status: SyncStatus = 'offline';
   detail = '';
+  vet: ((ev: GameEvent) => boolean) | null = null;
 
   subscribe(cb: (events: LoggedEvent[]) => void): () => void {
     this.listeners.add(cb);

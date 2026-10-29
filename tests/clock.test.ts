@@ -77,6 +77,8 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null, log = 0): 
     }
     const [a, b] = s.seats;
     s.send({ type: 'START', first: 0, seed, names: [a.name, b.name], decks: [a.deck, b.deck], fusions: [a.fusion, b.fusion], mode: 'speed', skills: [a.skill ?? null, b.skill ?? null] });
+    const vet = s.adapter.vet!;
+    ok(!vet({ type: 'SURRENDER', player: 0 }) && vet({ type: 'SURRENDER', player: 1 }) && vet({ type: 'END_TURN', player: 1 }), `seed ${seed}: the host takes the other phone's surrender for its own seat only`);
     let stuck = 0;
     let steps = 0;
     while (s.state.winner === null && steps < 3000) {

@@ -292,7 +292,7 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
           // a move sent during the last duel doesn't land in the rematch (a chat line does: "GG" as it starts)
           if (m && typeof m === 'object' && m.ev && (m.ep === this.ep || ((m.ev as { type?: string }).type === 'CHAT' && m.ep === this.ep - 1))) {
             const ev = screenProposal(m.ev, 1, this.chatAt);
-            if (ev) this.append(ev);
+            if (ev && (!this.vet || this.vet(ev))) this.append(ev);
           }
         } catch {
           /* not a move */
