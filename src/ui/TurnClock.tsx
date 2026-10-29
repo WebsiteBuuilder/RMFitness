@@ -43,6 +43,14 @@ export class ClockRunner {
       play();
     }
     const next = show(this.clock, s);
+    // (your own clock reaching the last seconds: a short buzz, once per allowance)
+    if (next && next.who === me && next.left <= URGENT_MS && this.shown && this.shown.who === me && this.shown.left > URGENT_MS) {
+      try {
+        navigator.vibrate?.(120);
+      } catch {
+        /* no vibration on this phone */
+      }
+    }
     const sec = (v: ClockShow | null) => (v ? `${v.who}:${Math.ceil(v.left / 1000)}:${v.bank ? 1 : 0}` : '');
     const changed = sec(next) !== sec(this.shown);
     this.shown = next;

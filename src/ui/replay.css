@@ -36,7 +36,7 @@
 }
 .rp-list li {
   display: flex;
-  gap: 6px;
+  gap: 12px;
 }
 .rp-row {
   flex: 1;
@@ -107,4 +107,8 @@
 /* the replay is a duel screen of its own (the result screen it came from waits hidden) */
 .replay {
   min-height: 100dvh;
+}
+/* the board gives the bar its own strip at the bottom: your hand stays in full view */
+.replay .duel.touch {
+  height: calc(100dvh - 52px - env(safe-area-inset-bottom));
 }

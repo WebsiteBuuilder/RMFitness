@@ -9,9 +9,10 @@
   font-size: 13px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  color: #e9f0ff;
-  background: #ffffff18;
-  border: 1px solid #ffffff38;
+  color: #fff;
+  background: #3a5bd8;
+  border: 1px solid #8fa6ff;
+  box-shadow: 0 0 8px #3a5bd888;
   white-space: nowrap;
 }
 .tclock i {
