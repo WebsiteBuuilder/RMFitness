@@ -49,6 +49,7 @@ import { accounts } from '../accounts';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
 import { DIFFICULTIES, DIFFICULTY_LABEL, DIFFICULTY_NOTE, saveDifficulty, savedDifficulty, type Difficulty } from '../eds/difficulty';
+import { ReplayList, replayBack } from './Replay';
 
 /** Speed Duel products, oldest first (codes as in public/cards/speed.json `sets`). */
 const SPEED_SETS: [string, string][] = [
@@ -102,7 +103,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
 
 /** profiles whose presents were put off with "Not now": none show again until the game is next opened */
 const notNow = new Set<string>();
@@ -178,6 +179,7 @@ export function SpeedHub({
         return true;
       }
       if (sub === 'edit' && editBack?.()) return true;
+      if (sub === 'replays' && replayBack?.()) return true;
       setSub(sub === 'edit' ? 'decks' : 'menu');
       return true;
     };
@@ -199,6 +201,7 @@ export function SpeedHub({
   if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
+  if (sub === 'replays') return <ReplayList profileId={profile.id} controls={controls} onBack={() => setSub('menu')} />;
   if (sub === 'rankings') return <Rankings profile={profile} speed={save} eds={loadSave(profile.id)} onBack={() => setSub('menu')} />;
   if (sub === 'art') return <ArtLab onBack={() => setSub('menu')} />;
   if (sub === 'shadow') return <ShadowRealmScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;

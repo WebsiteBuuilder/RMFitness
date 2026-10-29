@@ -1,0 +1,52 @@
+/* Online duel turn timer (TurnClock.tsx): a pill on the player's bar. */
+.tclock {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #e9f0ff;
+  background: #ffffff18;
+  border: 1px solid #ffffff38;
+  white-space: nowrap;
+}
+.tclock i {
+  font-style: normal;
+  font-size: 11px;
+}
+.tclock.bank {
+  color: #ffd76a;
+  border-color: #ffd76a88;
+  background: #ffd76a1c;
+}
+.tclock.urgent {
+  color: #fff;
+  border-color: #ff5a6a;
+  background: #ff3b4fcc;
+  animation: tclock-beat 1s ease-in-out infinite;
+}
+.tclock.out {
+  color: #fff;
+  background: #ff3b4f;
+  border-color: #ff8f8f;
+}
+@keyframes tclock-beat {
+  50% {
+    transform: scale(1.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tclock.urgent {
+    animation: none;
+  }
+}
+/* the Classic board's player bars */
+.pbar .tclock {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 6px;
+}

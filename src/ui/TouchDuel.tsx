@@ -26,6 +26,8 @@ type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
 
 export interface TouchCtl {
   state: DuelState;
+  /** an online duel's turn timer pill for a player's bar (none offline) */
+  clockFor?: (p: Pid) => ComponentChildren;
   e: Engine;
   acting: Pid;
   mySeat: Pid;
@@ -484,6 +486,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             {!top && ps.normalSummoned ? ' · Summoned' : ''}
           </span>
         </div>
+        {ctl.clockFor?.(p)}
         {ps.skill && (
           <button
             class={`tskill ${ps.skillRevealed ? 'up' : ''} ${p === acting && canAct && e.canUseSkill(acting) ? 'ready' : ''}`}

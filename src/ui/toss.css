@@ -413,3 +413,10 @@ body:has(.mdres) .rematch-dock {
 body:has(.mdres) .rematch-dock.cpu {
   display: none;
 }
+/* all-time record with this player (above the room's series) */
+.toss-alltime {
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #e9f0ff;
+}

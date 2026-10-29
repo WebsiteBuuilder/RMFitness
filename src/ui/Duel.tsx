@@ -18,6 +18,8 @@ import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
 import { artBusy, onArtChange } from '../art/cues';
+import { aiAction } from '../eds/ai';
+import { ClockPill, useClockRunner } from './TurnClock';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -36,6 +38,8 @@ interface Props {
   spectator?: boolean;
   /** a Tag Duel where your teammate is in: you watch your side's moves (their hand shows) but can't touch */
   locked?: boolean;
+  /** an online duel between two phones: Master Duel's turn timer runs */
+  clock?: boolean;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -46,7 +50,7 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
@@ -174,6 +178,16 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // (keyed on the moves, not the view: a chat line makes a new view without a move landing)
   const sent = useRef<{ moves: number; at: number } | null>(null);
   const online = !!session.adapter.roomCode;
+  // The turn timer: when this phone's time runs out it answers the question the way the computer
+  // would (or passes), or ends the turn.
+  const clockOn = !!clock && online && !hotseat && !spectator && !locked && e.speed;
+  const runner = useClockRunner(clockOn, session.engine.state, view.moves || view.log.length, view.status === 'connected', mySeat, () => {
+    const st = session.engine.state;
+    if (st.winner !== null) return;
+    if (st.prompt?.player === mySeat) session.send(aiAction(session.engine, mySeat) ?? { type: 'PASS', player: mySeat });
+    else if (!st.prompt && st.turnPlayer === mySeat) session.send({ type: 'END_TURN', player: mySeat });
+  });
+  const clockFor = (p: Pid) => (runner ? <ClockPill runner={runner} who={p} me={mySeat} /> : null);
   /** Saves the result exactly once, however many times Continue is tapped. */
   const recorded = useRef(false);
   const finish = (w: Pid | 'draw') => {
@@ -645,7 +659,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish, clockFor }}
         overlays={overlays}
       />
     );
@@ -661,6 +675,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
+        {clockFor(other(acting))}
         {/* Speed Duel: the menu sits up here, so the centre strip keeps to two lines on a phone */}
         {e.speed && (
           <button class="gbtn menu-btn pbar-menu" aria-label="Menu" onClick={() => setShowMenu(true)}>
@@ -719,6 +734,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
+        {clockFor(acting)}
       </div>
       <div class="hand">
         {me.hand.map((c) => (

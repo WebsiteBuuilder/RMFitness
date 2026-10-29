@@ -274,8 +274,15 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     const low = document.querySelector<HTMLElement>(".duel .tbar.bottom, .duel .pbar.bottom");
     if (!cv) return;
     const top = low?.getBoundingClientRect().top ?? 0;
-    if (low && top > window.innerHeight * 0.5) cv.style.setProperty("--art-safe-bottom", `${Math.round(window.innerHeight - top + 8)}`);
-    else cv.style.removeProperty("--art-safe-bottom");
+    // (the stage's captions keep clear of the bar too: --art-safe-px)
+    const stage = cv.parentElement;
+    if (low && top > window.innerHeight * 0.5) {
+      cv.style.setProperty("--art-safe-bottom", `${Math.round(window.innerHeight - top + 8)}`);
+      stage?.style.setProperty("--art-safe-px", `${Math.round(window.innerHeight - top + 8)}px`);
+    } else {
+      cv.style.removeProperty("--art-safe-bottom");
+      stage?.style.removeProperty("--art-safe-px");
+    }
   };
 
   // Plug into the flow.
