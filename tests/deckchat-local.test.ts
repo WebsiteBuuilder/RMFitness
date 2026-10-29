@@ -5,7 +5,7 @@ import { DB as APP_DB, card } from '../src/eds/db';
 import { STARTERS, deckFromStarter, isExtraCard, newSpeedSave, speedDeckProblems, whyCantAdd, type SpeedDeck } from '../src/eds/speedSave';
 import { withStarter } from '../src/collection/economy';
 import { runTurn } from '../src/deckchat/agent';
-import { clean, findCard, findCards, localModel, planFor, type Memory } from '../src/deckchat/local';
+import { clean, deckIssues, findCard, findCards, localModel, planFor, type Memory } from '../src/deckchat/local';
 import type { ChatWorld } from '../src/deckchat/tools';
 import { DB, PLAYABLE, SKILLS } from './speedkit';
 
@@ -644,6 +644,18 @@ for (const [what, check] of [
   const col = withStarter(newSpeedSave(), deckFromStarter(STARTERS[1])).collection!;
   const fr = await runTurn(localModel(() => ({ deck: deckFromStarter(STARTERS[1]), collection: col })), [], 'what fusions can i make', { deck: deckFromStarter(STARTERS[1]), collection: col });
   ok(!/Rainbow Overdragon|Coordius/.test(fr.text), `fusions listed are ones you own and can make (${fr.text.slice(0, 80)})`);
+}
+
+// ---------- the deck checker and optimizer: built decks have no dead cards and a Skill that fits ----------
+{
+  for (const q of ['build me a dragon deck', 'mak me a warior deck', 'fiend deck pls', 'give me a machine deck', 'make a water deck', 'build a toon deck', 'gimme a harpie deck', 'can u make a beatdown deck']) {
+    const r = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], q, { deck: empty(), collection: big });
+    const iss = deckIssues(r.deck).issues;
+    ok(!iss.some((x) => /^dead|Skill doesn't fit|Extra Deck/.test(x)), `"${q}" passes the deck checker (${iss.join('; ') || 'clean'})`);
+  }
+  const t0 = Date.now();
+  await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build a light deck', { deck: empty(), collection: big });
+  ok(Date.now() - t0 < 6000, `a build with the optimizer stays quick (${Date.now() - t0}ms)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
