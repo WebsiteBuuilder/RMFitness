@@ -255,7 +255,7 @@ for (const [what, check] of [
   ok(!w.deck.main.includes('Dark Magician Girl') && w.deck.main.filter((n) => n === 'Celtic Guardian').length === 2, 'remove then add in one message both happen');
   const sa = w.deck.main.filter((n) => n === 'Sakuretsu Armor').length;
   const rep = await say('replace celtic guardian with 2 sakuretsu armor');
-  ok((!w.deck.main.includes('Celtic Guardian') && (w.deck.main.filter((n) => n === 'Sakuretsu Armor').length === Math.min(3, sa + 2) || /Limited/.test(rep.text))) || (/Limited/.test(rep.text) && /Nothing changed/.test(rep.text)), `"replace X with 2 Y" swaps exactly those (had ${sa}, now ${w.deck.main.filter((n) => n === 'Sakuretsu Armor').length}, celtic ${w.deck.main.filter((n) => n === 'Celtic Guardian').length}: ${rep.text})`);
+  ok((!w.deck.main.includes('Celtic Guardian') && (w.deck.main.filter((n) => n === 'Sakuretsu Armor').length === Math.min(3, sa + 2) || /Limited/.test(rep.text))) || (/Limited|copies at most/.test(rep.text) && /Nothing changed/.test(rep.text)), `"replace X with 2 Y" swaps exactly those (had ${sa}, now ${w.deck.main.filter((n) => n === 'Sakuretsu Armor').length}, celtic ${w.deck.main.filter((n) => n === 'Celtic Guardian').length}: ${rep.text})`);
   const sp = kinds(w.deck, 'spell');
   await say('no more spells');
   ok(kinds(w.deck, 'spell') <= sp, '"no more spells" never adds spells');
