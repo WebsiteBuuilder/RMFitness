@@ -416,6 +416,9 @@ body:has(.mdres) .rematch-dock.cpu {
 /* all-time record with this player (above the room's series) */
 .toss-alltime {
   margin-top: 6px;
+  max-width: calc(100% - 24px);
+  font-size: 12px;
+  text-align: center;
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.28);
   color: #e9f0ff;
