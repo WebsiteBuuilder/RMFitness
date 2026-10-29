@@ -210,8 +210,8 @@ for (const [what, check] of [
   await say('build a deck with no traps');
   ok(kinds(w.deck, 'trap') === 0 && w.deck.main.length >= 20 && speedDeckProblems(w.deck).length === 0, '"a deck with no traps" builds a full legal deck without them');
   const sk = w.deck.skill;
-  await say('use a different skill');
-  ok(!!w.deck.skill && w.deck.skill !== sk, 'a different Skill really is different');
+  const diff = await say('use a different skill');
+  ok(!!w.deck.skill && w.deck.skill !== sk, `a different Skill really is different (${sk} -> ${w.deck.skill}: ${diff.text.slice(0, 80)})`);
   const list = await say('what skills do i have');
   ok(/^You have \d+ Skills/.test(list.text), 'lists owned Skills');
   const cmp = await say('whats the difference between dark magician and dark magician girl');
