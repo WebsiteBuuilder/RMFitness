@@ -658,5 +658,37 @@ for (const [what, check] of [
   ok(Date.now() - t0 < 6000, `a build with the optimizer stays quick (${Date.now() - t0}ms)`);
 }
 
+// ---------- round 15-17: themes, Skills that work, edits that keep the deck whole ----------
+{
+  const mem: Memory = { added: [], removed: [] };
+  let w: ChatWorld = { deck: empty(), collection: big };
+  const say = async (q: string) => {
+    const r = await runTurn(localModel(() => w, mem), [], q, w);
+    w = { ...w, deck: r.deck };
+    return r;
+  };
+  await say('i want a beatdown deck with big monsters');
+  ok(w.deck.main.length >= 20, '"a beatdown deck" builds a deck, not just the Skill Beatdown!');
+  ok(/no Skill called/.test((await say("use the skill Dragon's Inferno")).text), 'a Skill that does not exist is named as missing');
+  await say('build a magnet warrior deck');
+  ok(w.deck.main.includes('Valkyrion the Magna Warrior') && !deckIssues(w.deck).issues.some((x) => /^dead/.test(x)), 'Magnet Warriors run Valkyrion, and it is not dead');
+  await say('build an amazoness deck');
+  await say('more harpies');
+  ok(w.deck.main.some((n) => /^Harpie|Cyber Harpie/.test(n) && card(n)?.kind === 'monster'), '"more harpies" adds Harpie monsters, not Harpies\' Hunting Ground');
+  await say('build a dragon deck');
+  const n0 = w.deck.main.length;
+  const cut = w.deck.main.find((n) => card(n)?.kind === 'spell')!;
+  await say(`remove ${cut}`);
+  ok(w.deck.main.length === n0 && w.deck.main.filter((n) => n === cut).length === 0, `a cut from a 20-card deck refills it (${cut})`);
+  await say('build a dark magician deck');
+  await say('less tributes');
+  const bigs = (x: SpeedDeck) => x.main.filter((n) => card(n)?.kind === 'monster' && (card(n)!.level ?? 0) >= 5).length;
+  const after = bigs(w.deck);
+  await say('make it stronger');
+  ok(bigs(w.deck) <= after, `"make it stronger" after "less tributes" adds no big monsters (${after} -> ${bigs(w.deck)})`);
+  const mako = await runTurn(localModel(() => ({ deck: empty(), collection: big })), [], 'build a mako tsunami deck', { deck: empty(), collection: big });
+  ok(mako.deck.main.includes('The Legendary Fisherman'), 'a Mako deck runs The Legendary Fisherman');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall deck chat helper checks passed');
 process.exit(fails ? 1 : 0);

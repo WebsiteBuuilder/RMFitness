@@ -158,7 +158,8 @@ export function limitedGroupFull(cards: string[], name: string): string | null {
   for (const g of GROUPS) {
     if (!g.names.has(base)) continue;
     const used = cards.filter((n) => g.names.has(n.replace(/ \(Skill Card\)$/, ''))).length;
-    if (used >= g.limit) return g.names.size > 1 ? `Limited ${g.limit}: only ${g.limit} from its group` : `Limited ${g.limit}: ${g.limit === 1 ? 'only 1 copy' : `only ${g.limit} copies`}`;
+    const holder = cards.find((n) => n.replace(/ \(Skill Card\)$/, '') !== base && g.names.has(n.replace(/ \(Skill Card\)$/, '')));
+    if (used >= g.limit) return g.names.size > 1 ? `Limited ${g.limit}: only ${g.limit} from its group${holder ? ` (${holder} is already in)` : ''}` : `Limited ${g.limit}: ${g.limit === 1 ? 'only 1 copy' : `only ${g.limit} copies`}`;
   }
   return null;
 }
