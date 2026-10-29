@@ -53,7 +53,7 @@ export const CLAIM_GRACE_MS = 60_000;
 
 /**
  * The move played for a player whose time ran out: the plainest answer, never a clever one
- * (pass a chance to respond, say no, pick the first options a choice needs), or end the turn.
+ * (pass a chance to respond, say no, back out of a choice that allows it, else pick the first options it needs), or end the turn.
  */
 export function timeoutMove(s: DuelState, me: Pid): Action | null {
   const p = s.prompt;
@@ -61,6 +61,8 @@ export function timeoutMove(s: DuelState, me: Pid): Action | null {
     if (p.player !== me) return null;
     if (p.kind === 'response') return { type: 'PASS', player: me };
     if (p.kind === 'yesno') return { type: 'NO', player: me };
+    // (a choice that can be backed out of, like the cost of a card being played: back out, nothing spent)
+    if (p.cancel) return { type: 'CANCEL', player: me };
     const n = Math.max(0, Math.min(p.min, p.options.length));
     return { type: 'CHOOSE', player: me, picks: Array.from({ length: n }, (_, i) => i) };
   }

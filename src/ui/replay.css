@@ -122,3 +122,18 @@
 .replay .duel.touch {
   height: calc(100dvh - 58px - env(safe-area-inset-bottom));
 }
+/* how far into the duel the replay is: a thin gold line along the bar's top edge */
+.so-watchbar.rp-bar {
+  overflow: hidden;
+}
+.rp-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: #ffd76a;
+  transform-origin: 0 50%;
+  transition: transform 0.3s ease-out;
+  pointer-events: none;
+}

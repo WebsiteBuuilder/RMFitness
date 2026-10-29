@@ -167,7 +167,8 @@ export function TossScreen({
       {rival && !hotseat && rival.w + rival.l + rival.d > 0 && (
         <p class="toss-series toss-alltime">
           All time: You {rival.w} – {rival.l} {names[other(mySeat)]}
-          {rival.streak >= 2 ? ` · 🔥 ${rival.streak} in a row` : rival.streak <= -2 ? ` · ${-rival.streak} losses in a row` : ''}
+          {rival.d > 0 ? ` · ${rival.d} ${rival.d === 1 ? 'draw' : 'draws'}` : ''}
+          {rival.streak >= 2 ? ` · 🔥 ${rival.streak} wins in a row` : rival.streak <= -2 ? ` · ${-rival.streak} losses in a row` : ''}
         </p>
       )}
       <h1 id="toss-head" class="toss-head">

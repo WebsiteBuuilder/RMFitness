@@ -1,6 +1,6 @@
 // Duel replays: the list of this duelist's last duels and the player that shows one again on the
 // duel board, move by move (pause, 1x/2x/4x, skip to the next turn).
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DuelSession, useDuelSession } from '../eds/session';
 import { deleteReplay, loadReplays, ReplayAdapter, startIndex, type Replay } from '../eds/replays';
 import type { Action } from '../eds/types';
@@ -24,16 +24,20 @@ function ReplayBoard({ session, seat, controls, onClose }: { session: DuelSessio
   return <Duel session={session} view={view} mySeat={seat} hotseat={false} controlsFor={() => controls} onLeave={onClose} onFinished={finished} spectator />;
 }
 
-/** Index of the first move of the next turn after `from` (or the end). */
-function nextTurnAt(r: Replay, from: number): number {
+/** Where each turn starts in the moves: [turn 1's first move, turn 2's, ...] (played through once). */
+function turnStarts(r: Replay): number[] {
   const a = new ReplayAdapter();
   const s = new DuelSession(a);
-  a.push(r.moves.slice(0, from));
-  const turn = s.state.turn;
-  let i = from;
-  while (i < r.moves.length && s.state.turn === turn && s.state.winner === null) a.push([r.moves[i++]]);
+  const first = startIndex(r) + 1;
+  a.push(r.moves.slice(0, first));
+  const starts = [first];
+  for (let i = first; i < r.moves.length && s.state.winner === null; i++) {
+    const turn = s.state.turn;
+    a.push([r.moves[i]]);
+    if (s.state.turn !== turn) starts.push(i + 1);
+  }
   s.close();
-  return i;
+  return starts;
 }
 
 export function ReplayPlayer({ replay, controls, onClose }: { replay: Replay; controls: ControlStyle; onClose: () => void }) {
@@ -47,6 +51,7 @@ export function ReplayPlayer({ replay, controls, onClose }: { replay: Replay; co
     return { a, s, pos: upto, epoch: Math.random() };
   };
   const [cur, setCur] = useState(() => build(startIndex(replay) + 1));
+  const starts = useMemo(() => turnStarts(replay), [replay]);
   const pos = useRef(cur.pos);
   // (redraws the bar as the moves go by: the board redraws itself)
   const [, setShown] = useState(0);
@@ -75,32 +80,52 @@ export function ReplayPlayer({ replay, controls, onClose }: { replay: Replay; co
     pos.current = next.pos;
     setCur(next);
   };
-  const skip = () => jump(nextTurnAt(replay, pos.current));
-  const restart = () => jump(startIndex(replay) + 1);
-  const st = cur.s.state;
+  // the turn on screen: the last turn start at or before the moves shown
+  const here = Math.max(0, starts.filter((i) => i <= pos.current).length - 1);
+  const next = () => jump(starts[here + 1] ?? replay.moves.length);
+  // (a few moves into a turn: back to its start; at its start: the turn before)
+  const back = () => jump(starts[pos.current - starts[here] > 2 ? here : Math.max(0, here - 1)]);
+  const restart = () => jump(starts[0]);
+  /** paused: one move at a time */
+  const stepOne = () => {
+    if (pos.current >= replay.moves.length) return;
+    cur.a.push([replay.moves[pos.current++]]);
+    setShown(pos.current);
+  };
+  const SPEEDS = [1, 2, 4];
+  const first = starts[0];
+  const progress = Math.min(1, Math.max(0, (pos.current - first) / Math.max(1, replay.moves.length - first)));
 
   return (
     <div class="replay">
       <ReplayBoard key={cur.epoch} session={cur.s} seat={replay.seat} controls={controls} onClose={onClose} />
       <div class="so-watchbar rp-bar" role="toolbar" aria-label="Replay controls">
-        <span class="rp-tag">REPLAY · T{st.turn}</span>
+        <i class="rp-progress" style={{ transform: `scaleX(${progress.toFixed(3)})` }} aria-hidden="true" />
+        <span class="rp-tag">
+          REPLAY · T{here + 1}/{starts.length}
+        </span>
+        <button onClick={back} aria-label="Back a turn">
+          ⏮
+        </button>
         <button onClick={() => setPaused(!paused)} aria-label={paused ? 'Play' : 'Pause'}>
           {paused ? '▶' : '❚❚'}
         </button>
-        {[1, 2, 4].map((n) => (
-          <button key={n} class={speed === n ? 'on' : ''} onClick={() => setSpeed(n)}>
-            {n}x
-          </button>
-        ))}
         {done ? (
           <button onClick={restart} aria-label="Watch again">
             ↺
           </button>
+        ) : paused ? (
+          <button onClick={stepOne} aria-label="Next move">
+            ›
+          </button>
         ) : (
-          <button onClick={skip} aria-label="Skip to the next turn">
+          <button onClick={next} aria-label="Skip to the next turn">
             ⏭
           </button>
         )}
+        <button class="on" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])} aria-label={`Speed ${speed}x: tap to change`}>
+          {speed}x
+        </button>
         <button onClick={onClose} aria-label="Close the replay">
           ✕
         </button>

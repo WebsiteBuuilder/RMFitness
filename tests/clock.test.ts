@@ -62,6 +62,7 @@ const st = (turnPlayer: Pid, turn: number, prompt: Pid | null = null, log = 0): 
   ok(actor({ ...t3, winner: 0 } as DuelState) === null && show(c, { ...t3, winner: 0 } as DuelState) === null, 'a finished duel runs no clock');
   const sel = { ...st(0, 3), prompt: { kind: 'select', player: 1, title: 'Pick 2', options: [{ label: 'a' }, { label: 'b' }, { label: 'c' }], min: 2, max: 3 } } as unknown as DuelState;
   ok(JSON.stringify(timeoutMove(sel, 1)) === JSON.stringify({ type: 'CHOOSE', player: 1, picks: [0, 1] }), 'out of time on a choice: the first options it needs, nothing clever');
+  ok(timeoutMove({ ...sel, prompt: { ...(sel.prompt as object), cancel: true } } as unknown as DuelState, 1)?.type === 'CANCEL', 'out of time on a choice that can be backed out of (a cost, a target): backs out');
   ok(timeoutMove(st(0, 3, 1), 1)?.type === 'NO' && timeoutMove(st(0, 3), 0)?.type === 'END_TURN' && timeoutMove(st(0, 3), 1) === null, 'a yes/no is a no; your own turn ends; nothing is played for the other player');
   ok(clockText(65_000) === '1:05' && clockText(9_001) === '0:10' && clockText(-5) === '0:00', 'times show as m:ss, rounded up');
 }
