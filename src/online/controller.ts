@@ -11,6 +11,8 @@ import { parseFriendCode, type Activity, type Transport } from './protocol';
 import { loadOnline, writeOnline } from './store';
 import type { BoardStats } from '../collection/rankings';
 import { Matchmaker, type Match } from './matchmaking';
+import { GlobalChat, loadGc, writeGc, type Doing, type GcNote } from './globalChat';
+import { onlineDb } from '../sync/cloud';
 
 /** The "Opponent found!" screen stays up this long before the duel room opens. */
 export const VERSUS_MS = 1800;
@@ -28,10 +30,21 @@ export interface AppHooks {
 
 export type Notice = { id: number; text: string };
 
+/** Which part of the Chat page shows: the room everyone sees, the list of conversations, one conversation, or who is online. */
+export type ChatView = { tab: 'all' } | { tab: 'dms' } | { tab: 'people' } | { tab: 'dm'; code: string; name: string; color: string };
+
 class OnlineController {
   presence: Presence | null = null;
   profile: Profile | null = null;
   panelOpen = false;
+  /** global chat: the room everyone sees and private messages (needs the online service) */
+  gchat: GlobalChat | null = null;
+  /** the Chat page is open on this */
+  chatView: ChatView | null = null;
+  /** private messages just in, newest last, shown as notices on any screen */
+  chatNotes: GcNote[] = [];
+  /** set for each message just in (sound, a buzz, a phone notification when the game is in the background) */
+  onChatNote: (n: GcNote) => void = () => {};
   /** the Friends button shows (menus, not duels) */
   button = false;
   notice: Notice | null = null;
@@ -94,6 +107,7 @@ class OnlineController {
         this.goOnline(p);
         this.changed();
       }
+      if (st === 'on' && this.profile && this.presence && !this.gchat) this.startChat();
     });
     this.mm.onMatch = (m) => this.matched(m);
     if (typeof location !== 'undefined') {
@@ -149,6 +163,8 @@ class OnlineController {
 
   private changed() {
     this.watchOutgoing();
+    const a = this.presence?.activity;
+    if (a && this.gchat) this.gchat.setDoing(a.kind as Doing);
     for (const cb of this.listeners) cb();
   }
 
@@ -160,11 +176,13 @@ class OnlineController {
   setProfile(p: Profile | null) {
     if (p?.id === this.profile?.id) {
       if (p && this.presence) this.presence.setMe({ ...this.presence.me, name: p.alias, color: p.color });
+      if (p) this.gchat?.setMe({ code: '', name: p.alias, color: p.color });
       return;
     }
     this.unsubPresence?.();
     this.presence?.stop();
     this.presence = null;
+    this.stopChat();
     this.cancelMatch();
     this.profile = p;
     this.panelOpen = false;
@@ -192,13 +210,75 @@ class OnlineController {
     this.unsubPresence = pr.subscribe(() => this.changed());
     pr.onNotice = (text) => this.say(text);
     pr.start();
+    this.startChat();
     // the newest window of this profile is the one online; any older one steps aside
     this.channel?.postMessage({ t: 'claim', profile: p.id, from: this.instance });
     return pr;
   }
 
+  /** Global chat goes online with the profile (only over the online service: there is no room without it). */
+  private startChat() {
+    const p = this.profile;
+    const pr = this.presence;
+    if (!p || !pr || this.gchat) return;
+    if (cloudState() !== 'on') {
+      void checkCloud();
+      return;
+    }
+    const gc = new GlobalChat({ db: onlineDb, me: { code: pr.data.code, name: p.alias, color: p.color }, data: loadGc(p.id), save: (d) => writeGc(p.id, d) });
+    this.gchat = gc;
+    gc.subscribe(() => this.changed());
+    gc.onNote = (n) => this.chatIn(n);
+    gc.start();
+  }
+
+  private stopChat() {
+    this.gchat?.stop();
+    this.gchat = null;
+    this.chatView = null;
+    this.chatNotes = [];
+  }
+
+  private chatIn(n: GcNote) {
+    const v = this.chatView;
+    // (the conversation is on screen: it shows there, read)
+    if (v?.tab === 'dm' && v.code === n.from && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      this.gchat?.read(n.from);
+    } else {
+      // (one notice per player: a newer message from them replaces theirs)
+      this.chatNotes = [...this.chatNotes.filter((x) => x.from !== n.from), n].slice(-3);
+    }
+    this.onChatNote(n);
+    this.changed();
+  }
+
+  dismissNote(from: string) {
+    const left = this.chatNotes.filter((x) => x.from !== from);
+    if (left.length === this.chatNotes.length) return;
+    this.chatNotes = left;
+    this.changed();
+  }
+
+  /** Opens the Chat page (null closes it). */
+  openChat(v: ChatView | null = { tab: 'all' }) {
+    this.chatView = v;
+    if (v?.tab === 'dm') {
+      this.gchat?.read(v.code);
+      this.dismissNote(v.code);
+    }
+    if (v) this.panelOpen = false;
+    this.changed();
+  }
+
+  /** Unread room lines and private messages, for the Chat buttons. */
+  chatUnread(): { all: number; dms: number } {
+    const gc = this.gchat;
+    return gc ? { all: gc.allUnread(), dms: gc.dmUnread() } : { all: 0, dms: 0 };
+  }
+
   /** Another window (the installed app, a browser tab) took this profile online. */
   private stepAside() {
+    this.stopChat();
     this.cancelMatch();
     this.unsubPresence?.();
     this.unsubPresence = null;

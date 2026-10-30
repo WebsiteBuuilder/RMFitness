@@ -7,6 +7,7 @@ import { INVITE_MS, type FriendView, type IncomingInvite, type RecentRec } from 
 import { parseFriendCode, showCode, type Activity } from './protocol';
 import { duelistTitle, type BoardStats } from '../collection/rankings';
 import type { Match } from './matchmaking';
+import { ChatNotes, ChatPage, ChatPill } from './GlobalChatUi';
 import './online.css';
 import './friends.css';
 
@@ -75,6 +76,7 @@ export function OnlineLayer() {
   const out = pr.outgoing?.state === 'waiting' ? pr.outgoing : null;
   return (
     <>
+      {o.button && !o.panelOpen && !o.chatView && !o.mm.searching && <ChatPill />}
       {o.button && !o.panelOpen && !o.mm.searching && (
         <button class={`ol-pill ${count > 0 ? 'live' : ''}`} onClick={() => o.openPanel()} aria-label="Friends">
           <span class="ol-pill-ic">👥</span>
@@ -101,6 +103,8 @@ export function OnlineLayer() {
         </div>
       )}
       {o.panelOpen && <FriendsPage />}
+      {o.chatView && <ChatPage view={o.chatView} />}
+      <ChatNotes />
     </>
   );
 }
@@ -447,6 +451,11 @@ function FriendRow({ f, game, menu, onMenu, onMsg }: { f: FriendView; game: Game
       {f.status === 'friend' && f.online && !openRoom && (
         <button class="fr-btn go" disabled={!!busy} onClick={() => onMsg(online.inviteFriend(f.code, game))}>
           {busy ? 'Busy' : 'Duel'}
+        </button>
+      )}
+      {f.status === 'friend' && online.gchat && (
+        <button class="fr-btn gc-msg" onClick={() => online.openChat({ tab: 'dm', code: f.code, name: f.name, color: f.color })} aria-label={`Message ${f.name}`}>
+          💬
         </button>
       )}
       <button class="fr-more" onClick={() => onMenu(!menu)} aria-label={`More for ${f.name}`}>

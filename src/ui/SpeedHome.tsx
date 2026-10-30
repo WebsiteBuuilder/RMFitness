@@ -17,6 +17,7 @@ import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
 import { stampsToClaim } from '../collection/stamps';
 import { online } from '../online/controller';
+import { chatBadge } from '../online/GlobalChatUi';
 import { loadSolo } from '../eds/speedCampaign/save';
 import { ladderClock, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
 import { todayString } from '../eds/speedCampaign/labyrinth';
@@ -109,6 +110,21 @@ function Tile({ art, title, sub, badge, hot, size = 'big', fy, icon, onPick }: {
       </span>
       {badge !== undefined && badge !== null && badge !== 0 && badge !== '' && <i class="sdh-badge">{badge}</i>}
       <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
+/** Global chat in the top bar (stands in for the floating Chat button on this screen), with what's new. */
+function ChatTop() {
+  const [, bump] = useState(0);
+  useEffect(() => online.subscribe(() => bump((n) => n + 1)), []);
+  const b = chatBadge();
+  return (
+    <button class={`sdh-gear sdh-chat ${b.dm ? 'dm' : ''}`} onClick={() => (playBlip(), online.openChat(b.dm ? { tab: 'dms' } : { tab: 'all' }))} aria-label={b.n ? `Chat, ${b.n} new` : 'Chat with anyone online'}>
+      <svg viewBox="0 0 24 24">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3.1-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" />
+      </svg>
+      {b.n > 0 && <i class="sdh-badge">{b.n > 9 ? '9+' : b.n}</i>}
     </button>
   );
 }
@@ -311,6 +327,7 @@ export function SpeedHome({
         <div class="sdh-cash">
           <ChipBar save={save} cpus={cpus} compact />
         </div>
+        <ChatTop />
         <button class="sdh-gear" onClick={() => (playBlip(), setSettings(true))} aria-label="Settings">
           <svg viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="3" />

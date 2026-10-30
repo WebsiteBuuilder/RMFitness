@@ -260,15 +260,26 @@ export function DuelChat({
     session.chatPending = [...session.chatPending.filter((p) => p.id !== id), { id, text, at: now }];
     session.send({ type: 'CHAT', player: mySeat, text, cid: id });
     buzz();
-    if (!session.chatOpen) pop({ id, player: mySeat, text, at: now, old: false }, MINE_MS);
+    // (in the duel your words float over your own name as long as theirs do over theirs: what they see too)
+    if (!session.chatOpen) pop({ id, player: mySeat, text, at: now, old: false }, place === 'duel' ? bubbleMs(text) : MINE_MS);
     const t = window.setTimeout(() => (timers.current.delete(t), setTick((n) => n + 1)), PENDING_MS + 50);
     timers.current.add(t);
     return true;
   };
 
-  const quick = (text: string) => {
-    if (say(text)) (setOpen(false), setRing(false));
+  /** Sends and closes the chat: your words then float up over your own name, as they do over you on their phone. */
+  const sayAndClose = (text: string): boolean => {
+    const was = session.chatOpen;
+    session.chatOpen = false;
+    if (say(text)) {
+      setOpen(false);
+      setRing(false);
+      return true;
+    }
+    session.chatOpen = was;
+    return false;
   };
+  const quick = (text: string) => void sayAndClose(text);
 
   // Hold the chat button: emotes and the phrases for the moment pop up beside it. Slide onto one and let
   // go to send it, or let go on the button and tap one; no chat to open.
@@ -354,6 +365,12 @@ export function DuelChat({
 
   const submit = (e: Event) => {
     e.preventDefault();
+    // (in the duel a typed line goes like a game's chat: the box closes, the field is back and the line pops
+    // over you; their answer comes in as a bubble over them, and a tap on it opens the chat again)
+    if (place === 'duel') {
+      if (sayAndClose(draft)) return (setDraft(''), input.current?.blur());
+      return input.current?.focus();
+    }
     if (say(draft)) setDraft('');
     input.current?.focus();
   };
@@ -370,6 +387,13 @@ export function DuelChat({
   // (one at a time: a newer line replaces the one showing)
   const theirBubbles = bubbles.filter((l) => l.player !== mySeat).slice(-1);
   const myBubble = bubbles.filter((l) => l.player === mySeat).slice(-1)[0];
+  // In the duel your line is a speech bubble over your own name bar (as theirs is under theirs): it points at you.
+  const [myAt, setMyAt] = useState<{ bottom: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!myBubble || place !== 'duel') return;
+    const bar = document.querySelector('.duel .tbar.bottom, .duel .pbar.bottom')?.getBoundingClientRect();
+    setMyAt(bar && bar.top > 0 ? { bottom: Math.round(window.innerHeight - bar.top + 8), left: Math.round(bar.left + 8) } : null);
+  }, [myBubble?.id, place, turned]);
 
   // (a phone keyboard: the chat sits just above it; in the duel otherwise it stops under the turn controls)
   const sheetStyle: Record<string, string> | undefined =
@@ -430,8 +454,17 @@ export function DuelChat({
           ))}
         </div>
       )}
-      {/* your own line: a short "sent" pill beside the button */}
-      {myBubble && !open && !ring && (
+      {/* your own line in the duel: a bubble over your name, pointing down at you */}
+      {myBubble && !open && !ring && place === 'duel' && myAt && (
+        <div key={myBubble.id} class="chat-bubbles chat-mine-at" role="status" style={{ bottom: `${myAt.bottom}px`, left: `${myAt.left}px`, '--out': `${bubbleMs(myBubble.text) - 350}ms` } as Record<string, string>}>
+          <div class={`chat-bubble mine ${isEmote(myBubble.text) ? 'emote' : ''}`}>
+            <b>You</b>
+            <span>{myBubble.text}</span>
+          </div>
+        </div>
+      )}
+      {/* elsewhere (the room, the result): a short "sent" pill beside the button */}
+      {myBubble && !open && !ring && !(place === 'duel' && myAt) && (
         <div key={myBubble.id} class={`chat-sent at-${place} ${isEmote(myBubble.text) ? 'emote' : ''}`} role="status">
           <b>You:</b>
           <span>{myBubble.text}</span>

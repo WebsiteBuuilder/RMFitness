@@ -92,6 +92,18 @@
   color: var(--sd-ink);
 }
 
+/* the Chat button beside Settings: its count sits on its corner */
+.sdh-chat {
+  position: relative;
+}
+.sdh-chat.dm {
+  border-color: var(--gold, #f7c948);
+}
+.sdh-chat .sdh-badge {
+  top: -5px;
+  right: -5px;
+}
+
 /* ---------- pages ---------- */
 .sdh-page {
   display: flex;
