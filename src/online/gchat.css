@@ -375,3 +375,14 @@
 .gc-note.replying {
   left: 50%;
 }
+/* the small note's reply cue: a tap answers */
+.gc-reply-ic {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #f7c948;
+  color: #1a1300;
+  font: 800 13px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-style: normal;
+}

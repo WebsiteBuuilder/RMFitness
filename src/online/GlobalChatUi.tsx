@@ -115,6 +115,11 @@ function Note({ n, more }: { n: GcNote; more: number }) {
             </b>
             <span>{sent ? 'Reply sent ✓' : n.text}</span>
           </span>
+          {!sent && (
+            <i class="gc-reply-ic" aria-hidden="true">
+              ↩
+            </i>
+          )}
         </button>
         <button class="gc-x" aria-label="Close" onClick={() => online.dismissNote(n.from)}>
           ✕
@@ -195,7 +200,7 @@ export function ChatPage({ view }: { view: ChatView }) {
             <h1>Chat</h1>
             <span class={`fr-state ${state === 'on' ? 'ready' : state === 'connecting' ? 'connecting' : 'offline'}`}>
               <i />
-              {state === 'on' ? (people.length ? `${people.length} others online` : 'Online') : state === 'connecting' ? 'Connecting…' : 'Offline'}
+              {state === 'on' ? (people.length ? `${people.length} other${people.length === 1 ? '' : 's'} online` : 'Online') : state === 'connecting' ? 'Connecting…' : 'Offline'}
             </span>
           </>
         )}

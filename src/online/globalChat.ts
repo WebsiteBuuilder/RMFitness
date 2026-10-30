@@ -381,9 +381,10 @@ export class GlobalChat {
 
   /** The room is on screen. */
   readAll() {
-    const last = this.all[this.all.length - 1];
-    if (!last || last.at <= this.data.allSeen) return;
-    this.data.allSeen = last.at;
+    // (the newest time, not the last key: a line under an odd key can't hold the badge back)
+    const newest = Math.max(0, ...this.all.map((l) => l.at));
+    if (newest <= this.data.allSeen) return;
+    this.data.allSeen = newest;
     this.save();
     this.changed();
   }
