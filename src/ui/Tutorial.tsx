@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DuelSession, useDuelSession } from '../eds/session';
 import { MemoryAdapter } from '../sync/memory';
-import type { Action, Pid } from '../eds/types';
+import type { Action, DuelState, Pid } from '../eds/types';
 import { imageUrl } from '../eds/db';
 import { CardImg } from './CardImg';
 import { Duel } from './Duel';
@@ -280,8 +280,7 @@ function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: L
   // the coach plays its part a beat after each change, never in the middle of a cinematic
   const turnAt = useRef({ turn: -1, at: 0 });
   if (st.turn !== turnAt.current.turn) turnAt.current = { turn: st.turn, at: Date.now() };
-  const movesRef = useRef(view.moves);
-  movesRef.current = view.moves;
+  const sent = useRef({ from: '', tries: 0 });
   useEffect(() => {
     if (!coachMayMove(steps, idx, session.engine.state)) return;
     let t = 0;
@@ -292,22 +291,20 @@ function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: L
       started = true;
       t = window.setTimeout(() => {
         if (dead || !coachMayMove(steps, idxRef.current, session.engine.state)) return;
-        const a = d.coach(session.engine);
+        // the same state as before the last move: the rules turned it down, so the coach lets it go instead of trying it forever
+        const from = stateSig(session.engine.state);
+        const tries = sent.current.from === from ? sent.current.tries + 1 : 0;
+        const p = session.engine.state.prompt;
+        const a: Action | null = tries === 0 ? d.coach(session.engine) : p?.player === 1 ? (tries === 1 ? { type: 'PASS', player: 1 } : { type: 'CHOOSE', player: 1, picks: [0] }) : { type: 'END_TURN', player: 1 };
         if (!a) return;
         const s = session.engine.state;
         const pace = cpuDelay(a, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: s.turn === 1, ownTurn: s.turnPlayer === 1 && !s.prompt, animSpeed: getAnimSpeed() });
         t = window.setTimeout(() => {
           if (dead) return;
-          const before = movesRef.current;
+          sent.current = { from, tries };
           session.send(a);
           const uid = spotUid(a);
           if (uid !== null) spotlight(uid);
-          // a move the rules turned down changes nothing: the coach lets it go instead of waiting forever
-          t = window.setTimeout(() => {
-            const n = session.engine.state;
-            if (dead || movesRef.current !== before || n.winner !== null) return;
-            session.send(n.prompt?.player === 1 ? { type: 'PASS', player: 1 } : { type: 'END_TURN', player: 1 });
-          }, 2500);
         }, Math.max(0, pace - THINK));
       }, THINK);
     };
@@ -363,6 +360,9 @@ function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: L
     </>
   );
 }
+
+/** what a turned-down move leaves unchanged (the session counts every move sent, taken or not) */
+const stateSig = (st: DuelState) => JSON.stringify([st.turn, st.phase, st.prompt, st.chain.length, st.players.map((p) => [p.lp, p.hand.length, p.deck.length, p.gy.length, p.mz.map((m) => m && [m.uid, m.pos, m.faceUp, m.attacked, m.equips.length]), p.sz.map((c) => c?.uid), p.field?.uid])]);
 
 /** The coach's line over the duel, and a ring around what to tap. */
 function CoachBubble({ coach, step, n, total, text, aim, nudge, cheer, askLeave: askSkip, setAskLeave: setAskSkip, onNext, onSkip }: { coach: Coach; step: TutStep; n: number; total: number; text: string; aim?: (on: (sel: string) => boolean) => string | null; nudge: { text: string; key: number } | null; cheer: string | null; askLeave: boolean; setAskLeave: (v: boolean) => void; onNext: () => void; onSkip: () => void }) {
