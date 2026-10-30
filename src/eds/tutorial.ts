@@ -5,6 +5,7 @@
 // only the move a step asks for goes through, so nobody gets lost. Some steps are the player's
 // own choice, and the coach says how it went either way.
 import type { Engine } from './engine';
+import { DB } from './db';
 import { aiAction } from './ai';
 import { DEFAULT_TACTICS } from './tactics';
 import type { Action, Card, DuelState, FieldCard, Pid, SeatSetup } from './types';
@@ -675,9 +676,12 @@ export function freeTip(st: DuelState): string {
   if (st.prompt?.player === 0) return st.prompt.kind === 'response' ? 'The coach did something: you may answer with a card (tap it), or let it happen ("Don\'t chain").' : 'The game asks you a question at the bottom: pick an answer.';
   if (st.turnPlayer === 1) return "The coach's turn. Your Set Traps can spring when they attack.";
   if (st.phase === 'BP') return monsters(st, 0).some((m) => m.pos === 'atk' && !m.attacked) ? 'Battle Phase: tap a monster, then Attack. Higher ATK wins; no monsters in the way means a direct hit.' : 'All done? Tap the phase button, then End Turn.';
-  const then = st.turn === 1 ? 'Then tap the phase button and End Turn: nobody attacks on the very first turn.' : 'Then tap the phase button for the Battle Phase.';
-  if (!me.normalSummoned && me.hand.length > 0) return `Main Phase: play a monster (Level 5 and 6 need a Tribute), Set your Traps, use Spells. ${then}`;
-  if (st.turn === 1) return then;
+  const then = st.firstTurn ? 'Then tap the phase button and End Turn: nobody attacks on the very first turn.' : 'Then tap the phase button for the Battle Phase.';
+  if (!me.normalSummoned && me.hand.length > 0) {
+    const big = me.hand.some((c) => (DB.get(c.name)?.level ?? 0) >= 7);
+    return `Main Phase: play a monster (Level 5 and 6 need 1 Tribute${big ? ', 7 and up need 2' : ''}), Set your Traps, use Spells. ${then}`;
+  }
+  if (st.firstTurn) return then;
   return 'Use Spells or Set Traps if you like, then tap the phase button: Battle Phase to attack, or End Turn.';
 }
 const final: Lesson = {
@@ -685,9 +689,9 @@ const final: Lesson = {
   title: 'The final duel',
   blurb: 'A real duel against your coach: no script, just tips',
   art: 'Black Luster Soldier',
-  slides: [{ title: 'Your first real duel', text: "This time nothing is planned: the decks are shuffled and the coach plays to win. I'll give you tips along the way. Use everything you've learned. Good luck!" }],
+  slides: [{ title: 'Your first real duel', text: "This time nothing is planned: the decks are shuffled, a coin picks who goes first, and the coach plays to win. I'll give you tips along the way. Use everything you've learned. Good luck!" }],
   duel: {
-    start: (me, coach) => ({ type: 'START', first: 0, seed: (Date.now() >>> 0) || 1, names: [me, coach], decks: [FINAL_ME, FINAL_COACH], fusions: [[], []], mode: 'speed', skills: [TUTORIAL_SKILL, null] }),
+    start: (me, coach) => ({ type: 'START', first: Math.random() < 0.5 ? 0 : 1, seed: (Date.now() >>> 0) || 1, names: [me, coach], decks: [FINAL_ME, FINAL_COACH], fusions: [[], []], mode: 'speed', skills: [TUTORIAL_SKILL, null] }),
     coach: (e) => {
       const st = e.state;
       if (st.winner !== null) return null;

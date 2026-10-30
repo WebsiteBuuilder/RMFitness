@@ -280,27 +280,41 @@ function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: L
   // the coach plays its part a beat after each change, never in the middle of a cinematic
   const turnAt = useRef({ turn: -1, at: 0 });
   if (st.turn !== turnAt.current.turn) turnAt.current = { turn: st.turn, at: Date.now() };
+  const movesRef = useRef(view.moves);
+  movesRef.current = view.moves;
   useEffect(() => {
     if (!coachMayMove(steps, idx, session.engine.state)) return;
     let t = 0;
     let dead = false;
-    const stop = whenArtIdle(
-      () =>
-        (t = window.setTimeout(() => {
-          if (dead || !coachMayMove(steps, idxRef.current, session.engine.state)) return;
-          const a = d.coach(session.engine);
-          if (!a) return;
-          const s = session.engine.state;
-          const pace = cpuDelay(a, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: s.turn === 1, ownTurn: s.turnPlayer === 1 && !s.prompt, animSpeed: getAnimSpeed() });
+    let started = false;
+    const go = () => {
+      if (started) return;
+      started = true;
+      t = window.setTimeout(() => {
+        if (dead || !coachMayMove(steps, idxRef.current, session.engine.state)) return;
+        const a = d.coach(session.engine);
+        if (!a) return;
+        const s = session.engine.state;
+        const pace = cpuDelay(a, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: s.turn === 1, ownTurn: s.turnPlayer === 1 && !s.prompt, animSpeed: getAnimSpeed() });
+        t = window.setTimeout(() => {
+          if (dead) return;
+          const before = movesRef.current;
+          session.send(a);
+          const uid = spotUid(a);
+          if (uid !== null) spotlight(uid);
+          // a move the rules turned down changes nothing: the coach lets it go instead of waiting forever
           t = window.setTimeout(() => {
-            if (dead) return;
-            session.send(a);
-            const uid = spotUid(a);
-            if (uid !== null) spotlight(uid);
-          }, Math.max(0, pace - THINK));
-        }, THINK)),
-    );
-    return () => ((dead = true), stop(), clearTimeout(t));
+            const n = session.engine.state;
+            if (dead || movesRef.current !== before || n.winner !== null) return;
+            session.send(n.prompt?.player === 1 ? { type: 'PASS', player: 1 } : { type: 'END_TURN', player: 1 });
+          }, 2500);
+        }, Math.max(0, pace - THINK));
+      }, THINK);
+    };
+    const stop = whenArtIdle(go);
+    // and if a cinematic never reports that it's over, the coach goes anyway
+    const late = window.setTimeout(go, 4000);
+    return () => ((dead = true), stop(), clearTimeout(t), clearTimeout(late));
   }, [view.moves, idx]);
 
   const vet = (move: Parameters<DuelSession['send']>[0]) => {
@@ -318,6 +332,8 @@ function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: L
       // a window open over the duel (card text, a pile) closes first
       const ov = document.querySelector('.overlay') as HTMLElement | null;
       if (ov) ov.click();
+      // once the duel is over, back is the Continue button
+      else if (session.engine.state.winner !== null) session.engine.state.winner === 0 ? onWon() : onLost();
       else setAskLeave((v) => !v);
     };
     return () => {
@@ -390,7 +406,24 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, cheer, askLeave:
     const t = setInterval(find, 220);
     return () => clearInterval(t);
   }, [step.id]);
-  if (hidden) return null;
+  const ask = askSkip && (
+    <div class="ds-ask">
+      <span>Leave this lesson? You can start it again any time.</span>
+      <button class="ds-btn" onClick={() => setAskSkip(false)}>
+        Keep going
+      </button>
+      <button class="ds-btn bad" onClick={onSkip}>
+        Leave
+      </button>
+    </div>
+  );
+  // behind a window or a cinematic the bubble steps aside, but a nudge or the leave question still shows, small
+  if (hidden)
+    return nudge || askSkip ? (
+      <div class={`ds-toast${askSkip ? ' ask' : ''}`} key={askSkip ? 'ask' : nudge?.key} onClick={(ev) => ev.stopPropagation()}>
+        {ask || nudge?.text}
+      </div>
+    ) : null;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   // the bubble sits on the half of the screen away from what it points at
   const low = !!rect && rect.y + rect.h / 2 < vh * 0.42;
@@ -461,17 +494,7 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, cheer, askLeave:
           )}
         </div>
         )}
-        {askSkip && (
-          <div class="ds-ask">
-            <span>Leave this lesson? You can start it again any time.</span>
-            <button class="ds-btn" onClick={() => setAskSkip(false)}>
-              Keep going
-            </button>
-            <button class="ds-btn bad" onClick={onSkip}>
-              Leave
-            </button>
-          </div>
-        )}
+        {ask}
       </div>
     </>
   );

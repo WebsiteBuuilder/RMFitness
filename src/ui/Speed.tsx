@@ -46,7 +46,7 @@ import { boardOf } from '../collection/requests';
 import { bestCrown, cantCraft, chipsOf, claimGift, collectionProblems, craft, craftCost, nextGift, withStarter, type Gift } from '../collection/economy';
 import { GiftReveal } from '../collection/Gift';
 import { ConfirmSheet } from './ConfirmSheet';
-import { offerSchool, skipSchool } from '../eds/tutorial';
+import { offerSchool, prizesHere, skipSchool } from '../eds/tutorial';
 import { accounts } from '../accounts';
 import { preloadArt3d } from '../art/preload';
 import { online } from '../online/controller';
@@ -228,7 +228,7 @@ export function SpeedHub({
     <>
       {!gift && sub === 'menu' && onSchool && offerSchool(save) && (held || notNow.has(profile.id) || !nextGift(save, profile.created, profile.id)) && (
         <ConfirmSheet look="md" title="New to Yu-Gi-Oh!?" confirmLabel="Teach me!" cancelLabel="I know how to play" onConfirm={() => (onSave(skipSchool(save)), onSchool(true))} onCancel={() => onSave(skipSchool(save))}>
-          Duel School teaches you everything from zero in a few short, hands-on lessons with a coach, and each lesson pays a card pack the first time. You can find it any time in the Solo tab.
+          Duel School teaches you everything from zero in a few short, hands-on lessons with a coach{prizesHere(profile.id) ? ', and each lesson pays a card pack the first time' : ''}. You can find it any time in the Solo tab.
         </ConfirmSheet>
       )}
       {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (closeGift(), setSub('shop'))} onLater={closeGift} onNotNow={putOff} />}
