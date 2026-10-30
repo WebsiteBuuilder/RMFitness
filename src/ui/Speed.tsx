@@ -18,11 +18,11 @@ import {
   deckFromStarter,
   isExtraCard,
   limitStatus,
-  limitedGroupFull,
   newDeckId,
   speedDeckProblems,
   starterSkill,
   unplayableReason,
+  limitedGroupFull,
   type SpeedDeck,
   type SpeedSave,
   type Starter,
@@ -30,6 +30,7 @@ import {
 import { CardImg, CardInfoPanel } from './CardImg';
 import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
+import { DeckChat, forgetDeckChat, stopDeckChat } from './DeckChat';
 import { DeckSwitch } from './DeckPick';
 import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
@@ -153,7 +154,7 @@ export function SpeedHub({
   }, []);
   const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
-  const [editRandom, setEditRandom] = useState(false);
+  const [editMode, setEditMode] = useState<EditMode | undefined>();
   const [gift, setGift] = useState<Gift | null>(null);
   /** a present was just closed: the next one waits until the player leaves the menu and comes back */
   const [held, setHeld] = useState(false);
@@ -203,10 +204,10 @@ export function SpeedHub({
 
   if (save.decks.length === 0) return <StarterPick onSchool={onSchool && (() => onSchool(true))} onPick={(d) => onSave({ ...withStarter(save, d), decks: [d], active: d.id })} onExit={onExit} />;
 
-  if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id, random) => (setEditing(id), setEditRandom(!!random), setSub('edit'))} onBack={() => setSub('menu')} />;
+  if (sub === 'decks') return <DeckList save={save} onSave={onSave} onEdit={(id, mode) => (setEditing(id), setEditMode(mode), setSub('edit'))} onBack={() => setSub('menu')} />;
   if (sub === 'edit' && editing) {
     const d = save.decks.find((x) => x.id === editing);
-    if (d) return <SpeedDeckEdit key={d.id} openRandom={editRandom} deck={d} collection={d.open ? undefined : (save.collection ?? {})} craft={d.open ? undefined : deckCrafter(save, onSave)} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
+    if (d) return <SpeedDeckEdit key={d.id} openRandom={editMode === 'random'} openChat={editMode === 'chat'} deck={d} collection={d.open ? undefined : (save.collection ?? {})} craft={d.open ? undefined : deckCrafter(save, onSave)} onChange={(nd) => onSave({ ...save, decks: save.decks.map((x) => (x.id === nd.id ? nd : x)) })} onBack={() => setSub('decks')} />;
   }
   const deckSwitch = <DeckSwitch decks={save.decks} current={deck} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]} onPick={(d) => onSave({ ...save, active: d.id })} onManage={() => setSub('decks')} />;
   if (sub === 'cpu') return <CpuPick save={save} problems={problems} deckSwitch={deckSwitch} onPick={onCpu} onBack={() => setSub('menu')} />;
@@ -335,14 +336,17 @@ function StarterPick({ onPick, onExit, onSchool }: { onPick: (d: SpeedDeck) => v
   );
 }
 
-function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onEdit: (id: string, random?: boolean) => void; onBack: () => void }) {
+/** what the deck editor opens with */
+type EditMode = 'random' | 'chat';
+
+function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onEdit: (id: string, mode?: EditMode) => void; onBack: () => void }) {
   const [sel, setSel] = useState<SpeedDeck | null>(null);
   const [adding, setAdding] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const add = (d: SpeedDeck, random = false) => {
+  const add = (d: SpeedDeck, mode?: EditMode) => {
     onSave({ ...save, decks: [...save.decks, d] });
     setAdding(false);
-    onEdit(d.id, random);
+    onEdit(d.id, mode);
   };
   const full = save.decks.length >= MAX_DECKS;
   return (
@@ -370,6 +374,7 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
                     label: `Delete ${sel.name}`,
                     onPick: () => {
                       const decks = save.decks.filter((d) => d.id !== sel.id);
+                      forgetDeckChat(sel.id);
                       onSave({ ...save, decks, active: save.active === sel.id ? (decks[0]?.id ?? null) : save.active });
                       setSel(null);
                     },
@@ -398,7 +403,8 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
             <Menu
               items={[
                 { label: 'Empty deck', note: 'from the cards you own', onPick: () => add({ id: newDeckId(), name: `Deck ${save.decks.length + 1}`, main: [], extra: [], skill: null }) },
-                { label: '🎲 Random deck', note: 'built for you from the cards you own', onPick: () => add({ id: newDeckId(), name: `Random ${save.decks.length + 1}`, main: [], extra: [], skill: null }, true) },
+                { label: '🎲 Random deck', note: 'built for you from the cards you own', onPick: () => add({ id: newDeckId(), name: `Random ${save.decks.length + 1}`, main: [], extra: [], skill: null }, 'random') },
+                { label: '💬 Build it with chat', note: 'tell Claude what you want, it builds from your cards', onPick: () => add({ id: newDeckId(), name: `Deck ${save.decks.length + 1}`, main: [], extra: [], skill: null }, 'chat') },
                 { label: 'Anything goes deck', note: "every card; earns nothing and can't be bet", onPick: () => add({ id: newDeckId(), name: `Anything ${save.decks.length + 1}`, main: [], extra: [], skill: null, open: true }) },
                 // the whole list: cards you don't own show grey in the editor, ready to craft
                 ...STARTERS.map((s) => {
@@ -545,8 +551,13 @@ function savedSize(): TileSize {
   }
 }
 
-export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean }) {
+export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false, openChat = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean; openChat?: boolean }) {
   const [random, setRandom] = useState(openRandom);
+  /** the deck chat sheet (Claude builds and edits the deck) */
+  const [chat, setChat] = useState(openChat);
+  /** cards deck chat just put in (their tiles glow), and whether it is working (the editor holds still) */
+  const [chatNew, setChatNew] = useState<{ names: Set<string>; id: number } | null>(null);
+  const [chatBusy, setChatBusy] = useState(false);
   /** the deck as it was before a random deck replaced it */
   const [undo, setUndo] = useState<SpeedDeck | null>(null);
   const [kind, setKind] = useState<Kind>('all');
@@ -672,6 +683,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
       if (skillPick) return (setSkillPick(false), true);
       if (renaming) return (setRenaming(false), true);
       if (random) return (setRandom(false), true);
+      if (chat) return (stopDeckChat() || setChat(false), true);
       return false;
     };
     return () => {
@@ -707,7 +719,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   /** why the deck has no room for one more copy, whatever you own (null: it has) */
   const roomFor = (n: string): string | null => {
     if (copies(n) >= COPIES) return `${COPIES} copies at most`;
-    const group = limitedGroupFull([...deck.main, ...deck.extra], n);
+    const group = limitedGroupFull([...deck.main, ...deck.extra, ...(deck.skill ? [deck.skill] : [])], n);
     if (group) return group;
     if (isExtraCard(n) ? deck.extra.length >= EXTRA_MAX : deck.main.length >= MAIN_MAX) return isExtraCard(n) ? `The Extra Deck is full (${EXTRA_MAX})` : `The Main Deck is full (${MAIN_MAX})`;
     return null;
@@ -759,8 +771,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   const lacks = (n: string, i: number, list: string[]) => !!collection && !deck.open && list.slice(0, i + 1).filter((x) => x === n).length > (collection[n] ?? 0);
   const deckTile = (n: string, i: number, list: string[]) => (
     <button
-      key={`${n}-${i}`}
-      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''} ${lacks(n, i, list) ? 'unowned' : ''}`}
+      key={`${n}-${i}${chatNew?.names.has(n) ? `-${chatNew.id}` : ''}`}
+      class={`dk-tile ${fresh?.n === n ? 'dk-fresh' : ''} ${lacks(n, i, list) ? 'unowned' : ''} ${chatNew?.names.has(n) ? 'dk-chatnew' : ''}`}
       aria-label={quick ? `${n}: tap to take out, hold to read` : `${n}: tap to read, then take out`}
       data-pad-x="Remove one"
       data-pad-y=""
@@ -772,7 +784,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   );
 
   return (
-    <div class="screen deckedit dk">
+    <div class={`screen deckedit dk ${chatBusy ? 'dk-held' : ''}`}>
       <div class="dk-head">
         <button class="dk-done" onClick={onBack}>
           ‹ Done
@@ -782,6 +794,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
         </button>
         <button class="chip sd-dice" onClick={() => (playBlip(), setRandom(true))} aria-label="Random deck maker">
           🎲
+        </button>
+        <button class={`chip sd-chat ${chat ? 'on' : ''}`} onClick={() => (playBlip(), setChat(!chat))} aria-label="Deck chat: ask Claude to build or change the deck">
+          💬 Chat
         </button>
         {undo && (
           <button class="chip" onClick={() => (onChange(undo), setUndo(null), playBlip())}>
@@ -1046,6 +1061,18 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             </div>
           </Win>
         </Overlay>
+      )}
+      {chat && (
+        <DeckChat
+          deck={deck}
+          collection={collection}
+          // the random maker's Undo is a snapshot: it would wipe the chat's changes, so it goes
+          onChange={(d) => (setUndo(null), onChange(d))}
+          onFresh={(names) => names.length && setChatNew({ names: new Set(names), id: Date.now() })}
+          onBusy={setChatBusy}
+          onRead={(n, list) => (playBlip(), setViewFromDeck(copies(n) > 0), setView({ n, list }))}
+          onClose={() => setChat(false)}
+        />
       )}
       {view && (
         <CardView

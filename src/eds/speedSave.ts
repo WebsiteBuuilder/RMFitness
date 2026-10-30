@@ -158,7 +158,8 @@ export function limitedGroupFull(cards: string[], name: string): string | null {
   for (const g of GROUPS) {
     if (!g.names.has(base)) continue;
     const used = cards.filter((n) => g.names.has(n.replace(/ \(Skill Card\)$/, ''))).length;
-    if (used >= g.limit) return g.names.size > 1 ? `Limited ${g.limit}: only ${g.limit} from its group` : `Limited ${g.limit}: ${g.limit === 1 ? 'only 1 copy' : `only ${g.limit} copies`}`;
+    const holder = cards.find((n) => n.replace(/ \(Skill Card\)$/, '') !== base && g.names.has(n.replace(/ \(Skill Card\)$/, '')));
+    if (used >= g.limit) return g.names.size > 1 ? `Limited ${g.limit}: only ${g.limit} from its group${holder ? ` (${holder} is already in)` : ''}` : `Limited ${g.limit}: ${g.limit === 1 ? 'only 1 copy' : `only ${g.limit} copies`}`;
   }
   return null;
 }
@@ -230,4 +231,21 @@ export function deckFromStarter(s: Starter): SpeedDeck {
     else if (pool.every((x) => main.filter((y) => y === x).length >= COPIES)) break;
   }
   return { id: newDeckId(), name: s.character, main, extra: s.extra.filter((n) => !unplayableReason(n)), skill: starterSkill(s) };
+}
+
+/**
+ * Why one more copy of a card can't go in this deck, in the player's words (null: it can).
+ * `collection` limits copies to the ones owned; leave it out for an Anything goes deck.
+ */
+export function whyCantAdd(d: SpeedDeck, name: string, collection?: Record<string, number>): string | null {
+  const why = unplayableReason(name);
+  if (why) return `Not in the game yet: ${why}`;
+  if (limitStatus(name) === 'Forbidden') return 'Forbidden on the Limited List';
+  const have = collection ? Math.min(COPIES, collection[name] ?? 0) : COPIES;
+  const used = d.main.filter((x) => x === name).length + d.extra.filter((x) => x === name).length;
+  if (used >= have) return have === 0 ? "You don't own it" : have < COPIES ? (have === 1 ? 'Your only copy is already in the deck' : `All ${have} of your copies are already in the deck`) : `${COPIES} copies at most`;
+  const group = limitedGroupFull([...d.main, ...d.extra, ...(d.skill ? [d.skill] : [])], name);
+  if (group) return group;
+  if (isExtraCard(name) ? d.extra.length >= EXTRA_MAX : d.main.length >= MAIN_MAX) return isExtraCard(name) ? `The Extra Deck is full (${EXTRA_MAX})` : `The Main Deck is full (${MAIN_MAX})`;
+  return null;
 }
