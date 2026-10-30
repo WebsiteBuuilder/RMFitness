@@ -11,7 +11,7 @@ import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
 import type { MatePlan } from '../mates/MateLayer';
-import { chosenMate, mateForName, type MateId } from '../mates/roster';
+import { chosenMate, mateForName, retireOldMates, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
@@ -243,6 +243,12 @@ export function App() {
     let s = migrate(raw);
     const paid = retiredPaid(raw, s);
     const retiredNews = paid.copies || paid.chips || paid.decks.length ? [retiredNotice(paid)] : [];
+    // (the first Mates gave way to Mates from the cards: any bought ones are paid back)
+    const oldMates = retireOldMates(s);
+    if (oldMates) {
+      s = oldMates.save;
+      if (oldMates.chips && id === profile?.id) retiredNews.push(`Mates now come from the cards! The Mates you bought were paid back: +${oldMates.chips} Duel Chips.`);
+    }
     if (retiredNews.length) setSpeedNews(retiredNews);
     const t = ticketOf(s);
     if (settleLeft && t && !session) {

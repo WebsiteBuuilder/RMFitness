@@ -57,7 +57,9 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   const idOf = (p: Pid): MateId | null => {
     // (this phone's own Mate shows at once: it doesn't wait for the room's log to echo it)
     const id = p === plan.sendSeat ? plan.idFor(p) : view.mates[p]?.id;
-    return isMate(id) ? id : null;
+    if (isMate(id)) return id;
+    // (one this version doesn't know, from an older or newer app: still show one of ours)
+    return id ? plan.idFor(p) : null;
   };
 
   // ----- what each one is doing -----
@@ -155,7 +157,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
         if (!r || r.width < 8) return null;
         // Yours is big and grows up into the empty strip by the turn row; theirs stands a little
         // higher than its spot's foot (the phase button sits just under it).
-        const size = Math.round(bottom ? Math.max(52, Math.min(112, r.width * 1.32, r.height * 1.15)) : Math.max(48, Math.min(96, r.width * 1.12, r.height * 0.9)));
+        const size = Math.round(bottom ? Math.max(52, Math.min(104, r.width * 1.2, r.height * 1.05)) : Math.max(46, Math.min(88, r.width * 1.0, r.height * 0.82)));
         return { x: Math.round(Math.max(size / 2 + 2, r.left + r.width / 2)), y: Math.round(bottom ? r.bottom - r.height * 0.04 : r.top + r.height * 0.74), size };
       }
       const bar = root.querySelector(bottom ? '.pbar.bottom' : '.pbar.top')?.getBoundingClientRect();
