@@ -9,6 +9,7 @@ import { playBlip, playMate, playWin, unlockAudio } from '../ui/sound';
 import { MateArt } from './MateArt';
 import { buyMate, cantBuy, chosenMate, costNote, EMOTES, hasMate, MATES, mateDef, pickMate, type MateId, type MateReact } from './roster';
 import { REACT_SPEC, tapReact } from './react';
+import { Emote } from './MateLayer';
 import './mates.css';
 
 export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onBack: () => void }) {
@@ -19,10 +20,12 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
   const [note, setNote] = useState<string | null>(null);
   const last = useRef<MateReact | null>(null);
   const timer = useRef(0);
+  const lastTouch = useRef(Date.now());
   const def = mateDef(look)!;
   const owned = hasMate(save, look);
 
   const show = (r: MateReact) => {
+    lastTouch.current = Date.now();
     unlockAudio();
     clearTimeout(timer.current);
     setAct((a) => ({ react: r, key: a.key + 1 }));
@@ -30,6 +33,19 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
     timer.current = window.setTimeout(() => setAct((a) => ({ react: null, key: a.key })), REACT_SPEC[r].ms || 1400);
   };
   useEffect(() => () => clearTimeout(timer.current), []);
+  // (left alone, the big one shows off now and then)
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (Date.now() - lastTouch.current < 3500) return;
+      lastTouch.current = Date.now();
+      const r = tapReact(def.taps, last.current, Math.random());
+      last.current = r;
+      clearTimeout(timer.current);
+      setAct((a) => ({ react: r, key: a.key + 1 }));
+      timer.current = window.setTimeout(() => setAct((a) => ({ react: null, key: a.key })), REACT_SPEC[r].ms || 1400);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [look]);
   const pick = (id: MateId) => {
     playBlip();
     setNote(null);
@@ -63,12 +79,17 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
   return (
     <div class="screen mates">
       <Win title="Mates" onClose={onBack}>
+        <div class="mt-chips">
+          <b>● {chipsOf(save)} Duel Chips</b>
+          <span>Win them from daily computer wins, rival duels, Set Stamps and bets</span>
+        </div>
         <div class="mt-stage">
           <button class="mt-big" aria-label={`${def.name}: tap to see it react`} onClick={() => show(tapReact(def.taps, last.current, Math.random()))}>
             <i class="mt-floor" />
             <div key={act.key} class={`mate-act ${act.react ? `r-${act.react}` : 'r-idle'}`}>
               <MateArt id={look} face={spec?.face ?? 'idle'} />
             </div>
+            {spec?.emote && <Emote key={`e${act.key}`} kind={spec.emote} />}
           </button>
           <div class="mt-info">
             <b>{def.name}</b>
@@ -77,6 +98,7 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
           </div>
         </div>
         <div class="mt-emotes" role="group" aria-label="Try its reactions">
+          <span class="mt-emotes-label">Try its emotes:</span>
           {EMOTES.map((e) => (
             <button key={e.react} class="mt-try" onClick={() => show(e.react)}>
               {e.label}
@@ -107,14 +129,15 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
               <button key={m.id} class={`mt-card ${look === m.id ? 'on' : ''} ${has ? '' : 'locked'}`} onClick={() => pick(m.id)}>
                 <span class="mt-pic">
                   <MateArt id={m.id} />
+                  {!has && <i class="mt-lock">🔒</i>}
                 </span>
                 <b>{m.name}</b>
-                <small>{m.id === current ? '★ With you' : has ? 'Yours' : 'chips' in m.cost ? `${m.cost.chips} chips` : '🔒 Earn'}</small>
+                <small class={has ? 'own' : ''}>{m.id === current ? '★ With you' : has ? 'Yours' : 'chips' in m.cost ? `${m.cost.chips} chips` : 'wins' in m.cost ? `${m.cost.wins} wins` : 'Duel School'}</small>
               </button>
             );
           })}
         </div>
-        <p class="mt-foot">Mates are just for fun: they never change a duel. You have {chipsOf(save)} Duel Chips.</p>
+        <p class="mt-foot">Mates are just for fun: they never change a duel.</p>
       </Win>
       {buying && (
         <ConfirmSheet look="md" title={`Get ${mateDef(buying)!.name}?`} confirmLabel={`Spend ${price} Duel Chips`} onConfirm={buy} onCancel={() => setBuying(null)}>

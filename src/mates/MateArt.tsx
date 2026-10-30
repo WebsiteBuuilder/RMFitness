@@ -234,7 +234,7 @@ const ART: Record<MateId, Draw> = {
   ),
   wisp: (f) => (
     <g>
-      <defs>{grad('mg-wisp', '#c9f4ff', '#3d7dff')}</defs>
+      <defs>{grad('mg-wisp', '#ecfcff', '#5aa2ff')}</defs>
       <Shadow w={18} />
       <path class="mt-wisp" d="M50 14 C58 26 78 36 76 60 C75 76 64 86 56 84 C60 90 52 94 48 88 C44 94 36 90 40 84 C30 84 24 72 25 60 C26 42 42 34 50 14Z" fill="url(#mg-wisp)" {...stroke} opacity="0.95" />
       <path d="M50 34 C56 44 66 50 64 64 C62 74 38 74 36 64 C35 52 46 46 50 34Z" fill="#e9fbff" opacity="0.55" />
@@ -243,7 +243,7 @@ const ART: Record<MateId, Draw> = {
   ),
   pebble: (f) => (
     <g>
-      <defs>{radial('mg-pebble', '#c7c3bd', '#7b746c')}</defs>
+      <defs>{radial('mg-pebble', '#ebe7e0', '#9c958b')}</defs>
       <Shadow w={30} />
       <path d="M20 86 C14 66 22 40 44 36 C66 30 84 48 82 72 C82 88 70 92 50 92 C34 92 24 92 20 86Z" fill="url(#mg-pebble)" {...stroke} />
       <path d="M30 44 C38 34 56 30 66 38 C60 40 50 38 46 44 C40 42 34 46 30 44Z" fill="#5fae4e" {...stroke} stroke-width="1.6" />

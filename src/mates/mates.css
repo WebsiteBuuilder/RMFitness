@@ -11,6 +11,17 @@
 .duel.touch:not(.armed) .mates-layer {
   opacity: 0;
 }
+.mate-spot .mate-svg > g {
+  pointer-events: visiblePainted;
+}
+.mate-spot .mt-shadow {
+  pointer-events: none;
+}
+/* never in the way of a card being dragged, or of the field before it has swung in */
+.duel.dragging .mates-layer *,
+.duel.touch:not(.armed) .mates-layer * {
+  pointer-events: none !important;
+}
 .mates-layer {
   transition: opacity 0.4s ease;
 }
@@ -21,7 +32,8 @@
   height: var(--ms);
   /* left/top is where its feet stand */
   transform: translate(-50%, -100%);
-  pointer-events: auto;
+  /* only the drawing itself takes a tap (its box overlaps the zone next to it) */
+  pointer-events: none;
   touch-action: manipulation;
   -webkit-touch-callout: none;
   user-select: none;
@@ -40,7 +52,7 @@
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter: drop-shadow(0 0 1.5px #ffe7a066) drop-shadow(0 2px 3px #0008);
+  filter: drop-shadow(0 0 1.5px #fff8e0aa) drop-shadow(0 0 5px #9fb4ff55) drop-shadow(0 2px 3px #0008);
 }
 .mate-svg.flip {
   transform: scaleX(-1);
@@ -419,69 +431,137 @@
   }
 }
 
-/* ---- the symbol over its head ---- */
+/* ---- the speech bubble over its head ---- */
 .mate-emote {
   position: absolute;
-  left: 62%;
-  top: -6%;
-  font: 900 calc(var(--ms) * 0.3) / 1 system-ui, sans-serif;
-  color: #ffe36e;
-  -webkit-text-stroke: 1.5px #2a1a2e;
-  text-shadow: 0 2px 3px #0009;
+  left: 58%;
+  top: -14%;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  background: #fffdf4;
+  border: 2px solid #2a1a2e;
+  box-shadow: 0 3px 8px #000a;
+  font: 900 16px/1 system-ui, sans-serif;
+  color: #2a1a2e;
   pointer-events: none;
-  animation: mate-emote 1.3s ease-out forwards;
   white-space: nowrap;
+  transform-origin: 0% 100%;
+  animation: mate-emote 1.5s ease-out forwards;
+}
+/* (its tail points down at the Mate) */
+.mate-emote::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  bottom: -7px;
+  width: 9px;
+  height: 9px;
+  background: #fffdf4;
+  border: solid #2a1a2e;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) skew(10deg, 10deg);
 }
 .mate-spot.top .mate-emote {
   left: auto;
-  right: 62%;
+  right: 58%;
+  transform-origin: 100% 100%;
+}
+.mate-spot.top .mate-emote::after {
+  left: auto;
+  right: 7px;
 }
 .mate-emote svg {
-  width: calc(var(--ms) * 0.3);
-  height: calc(var(--ms) * 0.3);
+  width: 20px;
+  height: 20px;
   display: block;
 }
 .mate-emote.em-heart {
-  color: #ff4f86;
+  color: #ff2f72;
+  font-size: 19px;
 }
-.mate-emote.em-bang {
-  color: #ffd23f;
-  font-size: calc(var(--ms) * 0.38);
+.mate-emote.em-yay {
+  background: #ffe36e;
+}
+.mate-emote.em-yay::after {
+  background: #ffe36e;
+}
+.mate-emote.em-wow {
+  color: #e8590c;
 }
 .mate-emote.em-zzz {
-  color: #b9d4ff;
-  font-size: calc(var(--ms) * 0.22);
-  animation-duration: 2.8s;
+  color: #4d63c9;
+  animation-duration: 2.9s;
 }
-.mate-emote.em-note {
-  color: #7ee0ff;
+.mate-emote.em-note,
+.mate-emote.em-star {
+  color: #1c86c9;
+  font-size: 18px;
 }
-.mate-emote.em-ha {
-  font-size: calc(var(--ms) * 0.22);
-  color: #fff3a8;
+.mate-emote.em-gg {
+  background: #ffd23f;
+  animation: mate-emote-in 0.4s ease-out both, mate-gg 1.4s ease-in-out 0.4s infinite;
+}
+.mate-emote.em-gg::after {
+  background: #ffd23f;
 }
 .mate-emote.em-dots {
-  color: #c5cbe0;
+  color: #59607a;
 }
 @keyframes mate-emote {
   0% {
-    transform: translateY(20%) scale(0.3);
+    scale: 0.2;
     opacity: 0;
   }
-  18% {
-    transform: translateY(-10%) scale(1.15);
+  14% {
+    scale: 1.18;
     opacity: 1;
   }
-  30% {
-    transform: translateY(-10%) scale(1);
+  24% {
+    scale: 1;
   }
-  75% {
+  80% {
     opacity: 1;
+    translate: 0 0;
   }
   100% {
-    transform: translateY(-45%) scale(1);
+    opacity: 0;
+    translate: 0 -10px;
+  }
+}
+@keyframes mate-emote-in {
+  from {
+    scale: 0.2;
     opacity: 0;
   }
+}
+@keyframes mate-gg {
+  50% {
+    translate: 0 -4px;
+  }
+}
+/* the emote menu's own little bubbles stay put */
+.mate-emote.still {
+  animation: none;
+  top: -8px;
+  left: auto;
+  right: -10px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 5px;
+  font-size: 11px;
+  border-width: 1.5px;
+}
+.mate-emote.still::after {
+  display: none;
+}
+.mate-emote.still svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* ---- hold your Mate: the emote row ---- */
@@ -502,6 +582,34 @@
   border: 1.5px solid #e9c46a;
   box-shadow: 0 8px 26px #000b, inset 0 1px 0 #ffffff22;
   animation: mate-wheel-in 0.18s ease-out;
+}
+.mate-wheel-title {
+  grid-column: 1 / -1;
+  font: 700 12px/1.2 system-ui, sans-serif;
+  color: #ffe9a8;
+  text-align: center;
+  padding: 0 0 2px;
+}
+/* its tail points at your Mate */
+.mate-wheel::after {
+  content: '';
+  position: absolute;
+  left: var(--tail, 50%);
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  background: #0d1330;
+  border: solid #e9c46a;
+  border-width: 0 1.5px 1.5px 0;
+}
+.mate-wheel.up::after {
+  bottom: -8px;
+  transform: rotate(45deg);
+}
+.mate-wheel.down::after {
+  top: -8px;
+  transform: rotate(225deg);
+  background: #1c2550;
 }
 .mate-wheel.up {
   transform: translate(-50%, -100%);
@@ -535,9 +643,32 @@
   background: #e9c46a33;
   scale: 0.95;
 }
+.mate-emo-pic {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
 .mate-emo .mate-svg {
   width: 44px;
   height: 44px;
+}
+.mate-emo.emo-cheer {
+  background: #ffd23f1c;
+}
+.mate-emo.emo-laugh {
+  background: #ff9d2e1a;
+}
+.mate-emo.emo-wow {
+  background: #7ee0ff17;
+}
+.mate-emo.emo-love {
+  background: #ff4f861f;
+}
+.mate-emo.emo-sad {
+  background: #6f8cff1c;
+}
+.mate-emo.emo-angry {
+  background: #ff3b4e1f;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -549,6 +680,11 @@
 }
 
 /* ---- the Mates page ---- */
+.screen.mates .win-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .screen.mates .mt-stage {
   display: flex;
   align-items: center;
@@ -608,13 +744,17 @@
   border-color: #e9c46a88;
 }
 .mt-emotes {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   margin: 12px 0 8px;
 }
+.mt-emotes-label {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  opacity: 0.7;
+}
 .mt-try {
-  flex: 1 1 auto;
   min-height: 36px;
   padding: 6px 10px;
   border-radius: 999px;
@@ -674,7 +814,45 @@
   height: 64px;
 }
 .mt-card.locked .mate-svg {
-  filter: grayscale(0.55) brightness(0.75);
+  filter: grayscale(0.55) brightness(0.72);
+}
+.mt-card.locked {
+  background: linear-gradient(180deg, #1a2048, #10142e);
+}
+.mt-card .mt-pic {
+  position: relative;
+}
+.mt-lock {
+  position: absolute;
+  right: -4px;
+  bottom: 0;
+  font-size: 15px;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.mt-card small.own {
+  color: #ffe36e;
+  opacity: 1;
+  font-weight: 700;
+}
+.mt-chips {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: #ffffff0d;
+  border: 1px solid #ffffff1f;
+  font-size: 13px;
+}
+.mt-chips b {
+  color: #ffe36e;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.mt-chips span {
+  opacity: 0.8;
 }
 .mt-card b {
   font-size: 13px;

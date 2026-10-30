@@ -8,7 +8,7 @@ import type { DuelState, EngineEvent, Pid } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
 import { MateArt } from './MateArt';
 import { EMOTES, isMate, isReact, mateDef, type MateId, type MateReact } from './roster';
-import { canSend, cuesFor, endCues, REACT_SPEC, tapReact } from './react';
+import { canSend, cuesFor, endCues, REACT_SPEC, tapReact, type Bubble } from './react';
 import { useMatesShown } from './settings';
 import { playMate, unlockAudio } from '../ui/sound';
 import './mates.css';
@@ -52,9 +52,11 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       const mine = plan.idFor(send);
       if (view.mates[send]?.id !== mine) session.send({ type: 'MATE', player: send, mate: mine });
     } else for (const p of [0, 1] as Pid[]) if (!view.mates[p]) session.localMate(p, plan.idFor(p));
-  }, [view.mates[0]?.id, view.mates[1]?.id, view.round]);
+    // (sent again after a reconnect: a send lost on the way would leave the other phone without it)
+  }, [view.mates[0]?.id, view.mates[1]?.id, view.round, view.status]);
   const idOf = (p: Pid): MateId | null => {
-    const id = view.mates[p]?.id;
+    // (this phone's own Mate shows at once: it doesn't wait for the room's log to echo it)
+    const id = p === plan.sendSeat ? plan.idFor(p) : view.mates[p]?.id;
     return isMate(id) ? id : null;
   };
 
@@ -119,7 +121,8 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     if (!fresh.length || state.winner !== null) return;
     lastSeq.current = fresh[fresh.length - 1].seq;
     const summoned = (p: Pid) => fresh.filter((x) => x.kind === 'summon' && x.player === p).length;
-    const lost: [number, number] = [Math.max(0, was[0] + summoned(0) - now[0]), Math.max(0, was[1] + summoned(1) - now[1])];
+    // (a side that Summoned in this batch gave up its Tributes or materials: not a loss to be sad about)
+    const lost = ([0, 1] as Pid[]).map((p) => (summoned(p) ? 0 : Math.max(0, was[p] - now[p]))) as [number, number];
     for (const c of cuesFor(fresh, bigSummon(state), lost)) play(c.player, c.react);
     quietSince.current = Date.now();
   }, [topSeq]);
@@ -134,7 +137,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   useEffect(() => {
     const hi = state.turn <= 1 ? window.setTimeout(() => (play(0, 'wave', false), play(1, 'wave', false)), 1400) : 0;
     const doze = window.setInterval(() => {
-      if (state.winner !== null || Date.now() - quietSince.current < DOZE_MS) return;
+      if (session.engine.state.winner !== null || Date.now() - quietSince.current < DOZE_MS) return;
       play(other(session.engine.state.turnPlayer), 'sleep', false);
     }, 4000);
     return () => (clearTimeout(hi), clearInterval(doze));
@@ -150,9 +153,10 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
         const sp = root.querySelectorAll('.tmat .tz-spacer')[bottom ? 1 : 0];
         const r = sp?.getBoundingClientRect();
         if (!r || r.width < 8) return null;
-        const size = Math.round(Math.max(44, Math.min(92, r.width * 1.05, r.height * 0.95)));
-        // (theirs stands a little higher: the phase button sits just under its spot)
-        return { x: Math.round(r.left + r.width / 2), y: Math.round(bottom ? r.bottom - r.height * 0.06 : r.top + r.height * 0.8), size };
+        // Yours is big and grows up into the empty strip by the turn row; theirs stands a little
+        // higher than its spot's foot (the phase button sits just under it).
+        const size = Math.round(bottom ? Math.max(52, Math.min(112, r.width * 1.32, r.height * 1.15)) : Math.max(48, Math.min(96, r.width * 1.12, r.height * 0.9)));
+        return { x: Math.round(Math.max(size / 2 + 2, r.left + r.width / 2)), y: Math.round(bottom ? r.bottom - r.height * 0.04 : r.top + r.height * 0.74), size };
       }
       const bar = root.querySelector(bottom ? '.pbar.bottom' : '.pbar.top')?.getBoundingClientRect();
       if (!bar || bar.width < 8) return null;
@@ -174,6 +178,12 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     return () => (ts.forEach(clearTimeout), window.removeEventListener('resize', measure), ro?.disconnect());
   }, [touch, acting]);
 
+  // (the board can shift without changing size: a prompt, the hand row, the phase)
+  useEffect(() => {
+    const f = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(f);
+  }, [topSeq, state.prompt, state.phase, state.turn]);
+
   // ----- taps -----
   const [wheel, setWheel] = useState(false);
   const lastSent = useRef(0);
@@ -182,8 +192,8 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   const react = (p: Pid, r: MateReact) => {
     const id = idOf(p);
     if (!id) return;
-    if (p === plan.sendSeat) {
-      if (!canSend(lastSent.current)) return;
+    // (tapping faster than the room takes: it still plays here, only the send is skipped)
+    if (p === plan.sendSeat && canSend(lastSent.current)) {
       lastSent.current = Date.now();
       session.send({ type: 'MATE', player: p, mate: id, react: r });
     }
@@ -265,14 +275,23 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       {wheel && ownBox && idOf(own) && (
         <>
           <div class="mate-catch" onPointerDown={(ev) => (ev.stopPropagation(), setWheel(false))} onClick={(ev) => ev.stopPropagation()} />
-          <div class={`mate-wheel ${own === acting ? 'up' : 'down'}`} style={{ left: `${Math.min(window.innerWidth - 150, Math.max(150, ownBox.x))}px`, top: `${own === acting ? ownBox.y - ownBox.size - 6 : ownBox.y + 8}px` }} onClick={(ev) => ev.stopPropagation()}>
-            {EMOTES.map((e) => (
-              <button key={e.react} class="mate-emo" onClick={() => (setWheel(false), react(own, e.react))}>
-                <MateArt id={idOf(own)!} face={REACT_SPEC[e.react].face} />
-                <span>{e.label}</span>
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const left = Math.min(window.innerWidth - 142, Math.max(142, ownBox.x));
+            return (
+              <div class={`mate-wheel ${own === acting ? 'up' : 'down'}`} style={{ left: `${left}px`, top: `${own === acting ? ownBox.y - ownBox.size - 10 : ownBox.y + 12}px`, '--tail': `${Math.round(ownBox.x - left + 140)}px` } as Record<string, string>} onClick={(ev) => ev.stopPropagation()}>
+                <div class="mate-wheel-title">{plan.sendSeat !== null ? `${mateDef(idOf(own)!)!.name} shows your opponent…` : `${mateDef(idOf(own)!)!.name}…`}</div>
+                {EMOTES.map((e) => (
+                  <button key={e.react} class={`mate-emo emo-${e.react}`} onClick={() => (setWheel(false), react(own, e.react))}>
+                    <span class="mate-emo-pic">
+                      <MateArt id={idOf(own)!} face={REACT_SPEC[e.react].face} />
+                      <Emote kind={REACT_SPEC[e.react].emote!} still />
+                    </span>
+                    <span>{e.label}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
@@ -290,19 +309,20 @@ function bigSummon(state: DuelState) {
   };
 }
 
-/** The little symbol over a Mate's head. */
-function Emote({ kind }: { kind: NonNullable<(typeof REACT_SPEC)[MateReact]['emote']> }) {
+/** The speech bubble over a Mate's head. */
+export function Emote({ kind, still }: { kind: Bubble; still?: boolean }) {
   const body =
     kind === 'sweat' ? (
       <svg viewBox="0 0 20 20">
-        <path d="M10 2 C14 9 16 12 16 14 a6 6 0 0 1 -12 0 C4 12 6 9 10 2Z" fill="#8fdcff" stroke="#1d3b5c" stroke-width="1.4" />
+        <path d="M10 2 C14 9 16 12 16 14 a6 6 0 0 1 -12 0 C4 12 6 9 10 2Z" fill="#5cc8ff" stroke="#1d3b5c" stroke-width="1.4" />
       </svg>
     ) : kind === 'anger' ? (
       <svg viewBox="0 0 20 20">
-        <path d="M3 8 Q8 8 8 3 M12 3 Q12 8 17 8 M17 12 Q12 12 12 17 M8 17 Q8 12 3 12" fill="none" stroke="#ff3b4e" stroke-width="2.6" stroke-linecap="round" />
+        <path d="M3 8 Q8 8 8 3 M12 3 Q12 8 17 8 M17 12 Q12 12 12 17 M8 17 Q8 12 3 12" fill="none" stroke="#ff2e44" stroke-width="2.8" stroke-linecap="round" />
       </svg>
     ) : (
-      <span>{{ note: '♪', star: '★', bang: '!', dots: '…', heart: '♥', zzz: 'z z', ha: 'ha!' }[kind]}</span>
+      <span>{BUBBLE_TEXT[kind]}</span>
     );
-  return <div class={`mate-emote em-${kind}`}>{body}</div>;
+  return <div class={`mate-emote em-${kind}${still ? ' still' : ''}`}>{body}</div>;
 }
+const BUBBLE_TEXT: Record<Exclude<Bubble, 'sweat' | 'anger'>, string> = { note: '♪', star: '★', yay: 'Yay!', wow: '!?', dots: '…', heart: '♥', zzz: 'zzz', ha: 'Haha!', gg: 'GG!' };

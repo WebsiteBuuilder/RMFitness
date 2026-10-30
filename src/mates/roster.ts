@@ -60,7 +60,7 @@ export const MATES: MateDef[] = [
   { id: 'wisp', name: 'Wisp', blurb: 'A spooky little flame. Mostly harmless. Mostly.', cost: { chips: 4 }, voice: 520, taps: ['spin', 'laugh', 'wow', 'wave'] },
   { id: 'pebble', name: 'Pebble', blurb: 'A mossy rock golem who naps between turns.', cost: { chips: 4 }, voice: 330, taps: ['sleep', 'hop', 'wave', 'cheer'] },
   { id: 'mimic', name: 'Mimic', blurb: 'A treasure chest with teeth. Do not open.', cost: { chips: 6 }, voice: 440, taps: ['laugh', 'angry', 'wow', 'hop'] },
-  { id: 'hoot', name: 'Professor Hoot', blurb: 'An owl wizard who has read every card text twice.', cost: { chips: 6 }, voice: 600, taps: ['wave', 'wow', 'spin', 'sleep'] },
+  { id: 'hoot', name: 'Prof. Hoot', blurb: 'An owl wizard who has read every card text twice.', cost: { chips: 6 }, voice: 600, taps: ['wave', 'wow', 'spin', 'sleep'] },
   { id: 'chill', name: 'Chill', blurb: 'A penguin too cool to take off its shades.', cost: { chips: 8 }, voice: 740, taps: ['spin', 'laugh', 'wave', 'cheer'] },
   { id: 'scarab', name: 'Scarab', blurb: 'A golden beetle from a forgotten tomb.', cost: { chips: 8 }, voice: 500, taps: ['spin', 'hop', 'wow', 'cheer'] },
   { id: 'sphinx', name: 'Sphinxy', blurb: 'A royal desert cat. Asks riddles, ignores answers.', cost: { chips: 10 }, voice: 820, taps: ['love', 'sleep', 'angry', 'wave'] },

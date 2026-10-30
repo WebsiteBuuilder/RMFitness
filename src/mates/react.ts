@@ -4,10 +4,13 @@ import type { EngineEvent, Pid } from '../eds/types';
 import type { Face } from './MateArt';
 import type { MateReact } from './roster';
 
+/** The speech bubble over its head. */
+export type Bubble = 'note' | 'star' | 'yay' | 'wow' | 'sweat' | 'dots' | 'anger' | 'heart' | 'zzz' | 'ha' | 'gg';
+
 export interface ReactSpec {
   face: Face;
   /** the little symbol over its head */
-  emote: 'note' | 'star' | 'bang' | 'sweat' | 'dots' | 'anger' | 'heart' | 'zzz' | 'ha' | null;
+  emote: Bubble | null;
   /** how long it plays (ms); a win or loss loops until the duel screen closes */
   ms: number;
   loop?: boolean;
@@ -15,17 +18,17 @@ export interface ReactSpec {
 
 export const REACT_SPEC: Record<MateReact, ReactSpec> = {
   wave: { face: 'happy', emote: 'note', ms: 1200 },
-  hop: { face: 'happy', emote: null, ms: 800 },
+  hop: { face: 'happy', emote: 'note', ms: 900 },
   spin: { face: 'laugh', emote: 'star', ms: 1000 },
-  cheer: { face: 'laugh', emote: 'bang', ms: 1400 },
+  cheer: { face: 'laugh', emote: 'yay', ms: 1500 },
   laugh: { face: 'laugh', emote: 'ha', ms: 1400 },
-  wow: { face: 'wow', emote: 'bang', ms: 1200 },
+  wow: { face: 'wow', emote: 'wow', ms: 1300 },
   hurt: { face: 'hurt', emote: 'sweat', ms: 1100 },
   sad: { face: 'sad', emote: 'dots', ms: 1800 },
   angry: { face: 'angry', emote: 'anger', ms: 1400 },
   love: { face: 'love', emote: 'heart', ms: 1400 },
   sleep: { face: 'sleep', emote: 'zzz', ms: 3000 },
-  win: { face: 'laugh', emote: 'star', ms: 0, loop: true },
+  win: { face: 'laugh', emote: 'gg', ms: 0, loop: true },
   lose: { face: 'sad', emote: 'dots', ms: 0, loop: true },
 };
 
