@@ -109,7 +109,7 @@ export function CounterLines({ list }: { list: Counters[] }) {
           <span class={`ctrmark k-${(x.kind || 'other').toLowerCase()}`}>
             <i />
           </span>
-          <span>{counterText(x)}</span>
+          <span>{x.max !== undefined ? `${x.n}/${x.max} ${x.kind ? `${x.kind} Counters` : 'counters'}` : counterText(x)}</span>
         </span>
       ))}
     </>

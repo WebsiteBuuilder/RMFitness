@@ -826,12 +826,31 @@
 /* Spell/Trap and Field zones (no figures): the top-left corner */
 .duel.touch :is(.tz-s, .tz-f) .ctrmarks {
   left: -6px;
-  top: 6px;
-  bottom: auto;
+  bottom: 6px;
 }
 
 /* a tapped card on the left half: the preview opens on the right, never over it */
 .duel.touch .tdetail.right {
   left: auto;
   right: 6px;
+}
+
+/* monster counter badges over the 3D figures (TouchDuel ctrBoxes): a flat layer like the turn row */
+.ctrfloat {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.ctrfloat-at {
+  position: absolute;
+  /* anchored at its bottom edge: several kinds stack upward, clear of the ATK label */
+  transform: translateY(-100%);
+}
+.ctrfloat .ctrmarks {
+  position: static;
+}
+/* (hidden while the field is still swinging in) */
+.duel.touch:not(.armed) .ctrfloat {
+  opacity: 0;
 }
