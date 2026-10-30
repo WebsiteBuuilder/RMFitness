@@ -25,6 +25,8 @@ interface FaceSpot {
   noMouth?: boolean;
   /** brows and mouth colour, on a dark face (a hood, a visor) */
   ink?: string;
+  /** brows only, when they sit on something else again (Jinzo's visor) */
+  brow?: string;
 }
 
 /** Eyes, mouth and cheeks, drawn for a face. */
@@ -32,6 +34,7 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
   const { x, y, gap, s } = at;
   const eye = at.eye ?? INK;
   const ink = at.ink ?? INK;
+  const brow = at.brow ?? ink;
   const lx = x - gap;
   const rx = x + gap;
   const my = at.mouthY ?? y + 8 * s;
@@ -86,8 +89,8 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
         <g>
           {dot(lx, 0.85)}
           {dot(rx, 0.85)}
-          <path d={`M${lx - 4 * s} ${y - 5 * s} L${lx + 3 * s} ${y - 7 * s}`} stroke={ink} stroke-width={sw * 0.7} stroke-linecap="round" />
-          <path d={`M${rx + 4 * s} ${y - 5 * s} L${rx - 3 * s} ${y - 7 * s}`} stroke={ink} stroke-width={sw * 0.7} stroke-linecap="round" />
+          <path d={`M${lx - 4 * s} ${y - 5 * s} L${lx + 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
+          <path d={`M${rx + 4 * s} ${y - 5 * s} L${rx - 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
           <path class="mt-tear" d={`M${lx - 1 * s} ${y + 4 * s} q${-1.8 * s} ${3 * s} 0 ${4.5 * s} q${1.8 * s} ${-1.5 * s} 0 ${-4.5 * s}Z`} fill="#7cd3ff" />
         </g>
       );
@@ -98,8 +101,8 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
         <g>
           {dot(lx, 0.8)}
           {dot(rx, 0.8)}
-          <path d={`M${lx - 4.5 * s} ${y - 7 * s} L${lx + 3.5 * s} ${y - 4 * s}`} stroke={ink} stroke-width={sw} stroke-linecap="round" />
-          <path d={`M${rx + 4.5 * s} ${y - 7 * s} L${rx - 3.5 * s} ${y - 4 * s}`} stroke={ink} stroke-width={sw} stroke-linecap="round" />
+          <path d={`M${lx - 4.5 * s} ${y - 7 * s} L${lx + 3.5 * s} ${y - 4 * s}`} stroke={brow} stroke-width={sw} stroke-linecap="round" />
+          <path d={`M${rx + 4.5 * s} ${y - 7 * s} L${rx - 3.5 * s} ${y - 4 * s}`} stroke={brow} stroke-width={sw} stroke-linecap="round" />
         </g>
       );
       mouth = (
@@ -217,10 +220,10 @@ function dragon(f: Face, d: DragonLook): VNode {
       {d.horns !== 'one' && <path d="M42 31 l3 -6 l3 5 l2 -6 l2 6 l3 -5 l3 6" fill={d.spike} stroke={INK} stroke-width="1.2" />}
       {d.snout ? (
         <g>
-          <path d="M37 52 Q50 50 63 52 L54 72 Q50 76 46 72Z" fill={`url(#${g})`} {...stroke} stroke-width="1.8" />
-          <path d="M41 54 L50 52 L59 54 M44 62 L50 60 L56 62" stroke={d.wingEdge} stroke-width="1.3" fill="none" opacity="0.7" />
-          <circle cx="47.5" cy="69" r="0.9" fill={INK} />
-          <circle cx="52.5" cy="69" r="0.9" fill={INK} />
+          <path d="M38 53 Q50 51 62 53 L55 67 Q50 71 45 67Z" fill={`url(#${g})`} {...stroke} stroke-width="1.8" />
+          <path d="M42 55 L50 53 L58 55 M45 61 L50 59 L55 61" stroke={d.wingEdge} stroke-width="1.3" fill="none" opacity="0.7" />
+          <circle cx="47.5" cy="65" r="0.9" fill={INK} />
+          <circle cx="52.5" cy="65" r="0.9" fill={INK} />
         </g>
       ) : (
         <g>
@@ -230,7 +233,7 @@ function dragon(f: Face, d: DragonLook): VNode {
         </g>
       )}
       <Gloss x={38} y={40} r={5} />
-      <FaceParts f={f} at={{ x: 50, y: d.snout ? 43 : 46, gap: 10.5, s: 0.95, eye: d.eye, mouthY: d.snout ? 65 : 61 }} />
+      <FaceParts f={f} at={{ x: 50, y: d.snout ? 43 : 46, gap: d.snout ? 11.5 : 10.5, s: d.snout ? 1.12 : 0.95, eye: d.eye, mouthY: d.snout ? 62 : 61 }} />
     </g>
   );
 }
@@ -439,9 +442,9 @@ const ART: Record<MateId, Draw> = {
       <path d="M32 68 Q24 76 28 86 M68 68 Q76 76 72 86" stroke="#22242e" stroke-width="6" fill="none" stroke-linecap="round" />
       <path d="M36 34 Q30 20 40 16 M64 34 Q70 20 60 16 M50 30 V14" stroke="#7a3a8c" stroke-width="3.4" fill="none" stroke-linecap="round" />
       <ellipse cx="50" cy="48" rx="18" ry="18" fill="url(#mg-jinzo)" {...stroke} />
-      <path d="M36 40 Q50 34 64 40 Q66 46 62 50 Q50 46 38 50 Q34 46 36 40Z" fill="#e01e2e" stroke={INK} stroke-width="1.6" />
+      <path d="M33 39 Q50 32 67 39 Q69 47 64 52 Q50 48 36 52 Q31 47 33 39Z" fill="#b8141f" stroke={INK} stroke-width="1.6" />
       <path d="M40 41 Q50 38 60 41" stroke="#ff9aa2" stroke-width="1.4" fill="none" />
-      <FaceParts f={f} at={{ x: 50, y: 44, gap: 7, s: 0.75, eye: '#ffe36e', ink: '#2a1a2e', flat: true, mouthY: 57 }} />
+      <FaceParts f={f} at={{ x: 50, y: 44, gap: 8, s: 0.92, eye: '#fff36a', brow: '#ffd0d4', flat: true, mouthY: 58 }} />
     </g>
   ),
   slifer: (f) => (

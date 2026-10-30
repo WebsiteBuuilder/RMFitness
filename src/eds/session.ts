@@ -104,7 +104,7 @@ const MATE_HOST_CAP = 6;
 const MATE_WINDOW_MS = 6000;
 const mateRecent = new WeakMap<number[], number[]>();
 /** A Mate's id or reaction name as it may ride the log: a short lowercase word (the screen knows which are real). */
-export const mateWord = (w: unknown): string | undefined => (typeof w === 'string' && /^[a-z]{2,16}$/.test(w) ? w : undefined);
+export const mateWord = (w: unknown): string | undefined => (typeof w === 'string' && /^[a-z]{2,12}$/.test(w) ? w : undefined);
 
 /**
  * The host screens a move the other phone proposes before it goes into the room's log: a chat line
