@@ -172,10 +172,13 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     measure();
     const ts = [150, 700, 1300, 2200].map((ms) => window.setTimeout(measure, ms));
     window.addEventListener('resize', measure);
+    // (and when the field's own animations end: the swing-in, the KO shake)
+    const settled = (ev: Event) => (ev.target as Element | null)?.classList?.contains('tmat') && requestAnimationFrame(measure);
+    document.addEventListener('animationend', settled);
     const mat = document.querySelector('.duel .tmat');
     const ro = typeof ResizeObserver !== 'undefined' && mat ? new ResizeObserver(measure) : null;
     if (ro && mat) ro.observe(mat);
-    return () => (ts.forEach(clearTimeout), window.removeEventListener('resize', measure), ro?.disconnect());
+    return () => (ts.forEach(clearTimeout), window.removeEventListener('resize', measure), document.removeEventListener('animationend', settled), ro?.disconnect());
   }, [touch, acting]);
 
   // (the board can shift without changing size: a prompt, the hand row, the phase)
@@ -265,6 +268,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
             onClick={(ev) => ev.stopPropagation()}
             onContextMenu={(ev) => ev.preventDefault()}
           >
+            <i class="mate-hit" />
             <div key={pl.key} class={`mate-act ${pl.react ? `r-${pl.react}` : 'r-idle'}`}>
               <MateArt id={id} face={spec?.face ?? 'idle'} class={top ? 'flip' : ''} />
             </div>

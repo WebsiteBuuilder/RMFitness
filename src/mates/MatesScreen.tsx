@@ -46,8 +46,12 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
     }, 4000);
     return () => clearInterval(t);
   }, [look]);
+  const top = useRef<HTMLDivElement>(null);
   const pick = (id: MateId) => {
     playBlip();
+    // (picked low in the list on a small phone: bring its preview and button into view)
+    const r = top.current?.getBoundingClientRect();
+    if (r && r.top < 0) top.current!.scrollIntoView({ block: 'start', behavior: 'smooth' });
     setNote(null);
     setLook(id);
     clearTimeout(timer.current);
@@ -77,7 +81,7 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
   const spec = act.react ? REACT_SPEC[act.react] : null;
 
   return (
-    <div class="screen mates">
+    <div class="screen mates" ref={top}>
       <Win title="Mates" onClose={onBack}>
         <div class="mt-chips">
           <b>● {chipsOf(save)} Duel Chips</b>
@@ -113,9 +117,13 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
               Take {def.name} to duels
             </button>
           ) : price ? (
-            <button class="gbtn mt-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
-              {why && chipsOf(save) < price ? `${price} Duel Chips · you have ${chipsOf(save)}` : `Get for ${price} Duel Chips`}
-            </button>
+            why && chipsOf(save) < price ? (
+              <span class="mt-need">🔒 Costs {price} Duel Chips · you need {price - chipsOf(save)} more</span>
+            ) : (
+              <button class="gbtn mt-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
+                Get for {price} Duel Chips
+              </button>
+            )
           ) : (
             <span class="mt-hint">🔒 {costNote(save, def)} to unlock.</span>
           )}

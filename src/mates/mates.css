@@ -14,6 +14,17 @@
 .mate-spot .mate-svg > g {
   pointer-events: visiblePainted;
 }
+/* a round target at least ~44px over its body, so a small Mate is still easy to hold */
+.mate-hit {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  width: max(44px, 72%);
+  height: max(44px, 72%);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  pointer-events: auto;
+}
 .mate-spot .mt-shadow {
   pointer-events: none;
 }
@@ -63,10 +74,34 @@
 
 /* ---- idle: breathing and blinking ---- */
 .mate-act.r-idle {
-  animation: mate-breathe 2.8s ease-in-out infinite;
+  animation: mate-idle 8.4s ease-in-out infinite;
 }
 .mate-spot.top .mate-act.r-idle {
-  animation-delay: -1.3s;
+  animation-delay: -4.6s;
+}
+/* three breaths, then a little bounce */
+@keyframes mate-idle {
+  0%,
+  33%,
+  66%,
+  86%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  16.5%,
+  49.5%,
+  76% {
+    transform: scale(1.03, 0.96);
+  }
+  89% {
+    transform: translateY(0) scale(1.08, 0.9);
+  }
+  92% {
+    transform: translateY(-12%) scale(0.96, 1.05);
+  }
+  95% {
+    transform: translateY(0) scale(1.05, 0.94);
+  }
 }
 @keyframes mate-breathe {
   0%,
@@ -776,6 +811,17 @@
 .mt-go {
   width: 100%;
   min-height: 46px;
+}
+.mt-need {
+  display: block;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1.5px dashed #e9c46a88;
+  background: #e9c46a14;
+  color: #ffe9a8;
+  font-weight: 700;
+  font-size: 15px;
+  text-align: center;
 }
 .mt-hint,
 .mt-note {
