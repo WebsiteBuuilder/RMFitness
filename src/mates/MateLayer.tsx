@@ -161,7 +161,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       const bar = root.querySelector(bottom ? '.pbar.bottom' : '.pbar.top')?.getBoundingClientRect();
       if (!bar || bar.width < 8) return null;
       const size = 46;
-      return bottom ? { x: Math.round(bar.left + size * 0.75), y: Math.round(bar.top + 4), size } : { x: Math.round(bar.right - size * 1.9), y: Math.round(bar.bottom + size - 4), size };
+      return bottom ? { x: Math.round(bar.left + size * 0.75), y: Math.round(bar.top - 1), size } : { x: Math.round(bar.right - size * 1.9), y: Math.round(bar.bottom + size - 4), size };
     };
     const next: [Box | null, Box | null] = [null, null];
     next[acting] = place(true);
