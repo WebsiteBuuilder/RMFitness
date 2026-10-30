@@ -1,4 +1,4 @@
-// The Mates page: every Mate, the one you take to duels, and buying the rest with Duel Chips
+// The Mates page: every Mate (each one a Speed Duel card, shown beside it), the one you take to duels, and buying the rest with Duel Chips
 // (some are earned instead: wins, Duel School). Tap the big one to see it react.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SpeedSave } from '../eds/speedSave';
@@ -7,6 +7,7 @@ import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { chipsOf } from '../collection/economy';
 import { playBlip, playMate, playWin, unlockAudio } from '../ui/sound';
 import { MateArt } from './MateArt';
+import { CardImg } from '../ui/CardImg';
 import { buyMate, cantBuy, chosenMate, costNote, EMOTES, hasMate, MATES, mateDef, pickMate, type MateId, type MateReact } from './roster';
 import { REACT_SPEC, tapReact } from './react';
 import { Emote } from './MateLayer';
@@ -97,6 +98,12 @@ export function MatesScreen({ save, onSave, onBack }: { save: SpeedSave; onSave:
           </button>
           <div class="mt-info">
             <b>{def.name}</b>
+            <span class="mt-from">
+              <span class="mt-from-card">
+                <CardImg name={def.card} />
+              </span>
+              <small>From the card {def.card}</small>
+            </span>
             <p>{def.blurb}</p>
             <span class={`mt-cost ${owned ? 'own' : ''}`}>{look === current ? '★ With you in duels' : owned ? 'Yours' : costNote(save, def)}</span>
           </div>

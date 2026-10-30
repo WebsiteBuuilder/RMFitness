@@ -65,6 +65,10 @@
   overflow: visible;
   filter: drop-shadow(0 0 1.5px #fff8e0aa) drop-shadow(0 0 5px #9fb4ff55) drop-shadow(0 2px 3px #0008);
 }
+.mate-svg.dark {
+  /* (dark mates get a pale rim so they don't sink into the navy field) */
+  filter: drop-shadow(0 0 1.5px #ffffffcc) drop-shadow(0 0 6px #c9d6ffaa) drop-shadow(0 2px 3px #0008);
+}
 .mate-svg.flip {
   transform: scaleX(-1);
 }
@@ -759,6 +763,31 @@
   font-size: 20px;
   color: #ffe9a8;
 }
+.mt-from {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.mt-from-card {
+  flex: none;
+  width: 32px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow: 0 1px 4px #0008;
+}
+.mt-from-card .cimg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+.mt-from small {
+  font-size: 12px;
+  line-height: 1.2;
+  color: #b9c3ff;
+}
 .mt-info p {
   margin: 0;
   font-size: 14px;
@@ -860,7 +889,8 @@
   height: 64px;
 }
 .mt-card.locked .mate-svg {
-  filter: grayscale(0.55) brightness(0.72);
+  /* (dimmed, but keeping its colours: Ojama stays yellow, Slifer red) */
+  filter: brightness(0.62) drop-shadow(0 2px 3px #0008);
 }
 .mt-card.locked {
   background: linear-gradient(180deg, #1a2048, #10142e);
@@ -902,10 +932,10 @@
 }
 .mt-card b {
   font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.15;
   max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .mt-card small {
   font-size: 11px;
