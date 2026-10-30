@@ -698,3 +698,46 @@
   width: auto;
   padding: 0 10px 0 8px;
 }
+
+/* your own line in the duel: a speech bubble over your name bar, its tail pointing down at you
+   (placed by DuelChat from where your bar is); taps go through to the field under it */
+.chat-bubbles.chat-mine-at {
+  top: auto;
+  right: auto;
+  max-width: min(calc(100vw - 20px), 320px);
+  transform-origin: 14px 100%;
+  animation:
+    chat-rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    chat-out 0.35s ease-in var(--out, 4.15s) forwards;
+}
+.chat-bubble.mine {
+  border-color: #9fd0ff;
+  background: #142a6e;
+  border-radius: 16px 16px 16px 4px;
+  pointer-events: none;
+  cursor: default;
+  animation: none;
+}
+.chat-bubble.mine b {
+  color: #9fd0ff;
+}
+.chat-bubbles.chat-mine-at::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 14px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top: 7px solid #9fd0ff;
+}
+@keyframes chat-rise {
+  from {
+    transform: translateY(8px) scale(0.85);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubbles.chat-mine-at {
+    animation: chat-out 0.35s ease-in var(--out, 4.15s) forwards;
+  }
+}

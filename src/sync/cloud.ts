@@ -21,7 +21,8 @@ export interface Db {
   /** a key that sorts after every key made before it */
   pushKey(path: string): string;
   onValue(path: string, cb: (v: unknown) => void, err?: (e: Error) => void): () => void;
-  onChildAdded(path: string, cb: (key: string, v: unknown) => void, err?: (e: Error) => void): () => void;
+  /** `last`: only the newest that many children (and every one added after) */
+  onChildAdded(path: string, cb: (key: string, v: unknown) => void, err?: (e: Error) => void, last?: number): () => void;
   /** the server removes (or sets) this path if this phone drops off */
   onDisconnectRemove(path: string): Promise<void>;
   onDisconnectSet(path: string, value: unknown): Promise<void>;
@@ -172,7 +173,7 @@ export async function makeDb(db: Database, uid: string, relay: string): Promise<
     get: async (p) => (await fb.get(r(p))).val(),
     pushKey: (p) => fb.push(r(p)).key!,
     onValue: (p, cb, err) => fb.onValue(r(p), (s) => cb(s.val()), err),
-    onChildAdded: (p, cb, err) => fb.onChildAdded(r(p), (s) => cb(s.key!, s.val()), err),
+    onChildAdded: (p, cb, err, last) => fb.onChildAdded(last ? fb.query(r(p), fb.limitToLast(last)) : r(p), (s) => cb(s.key!, s.val()), err),
     onDisconnectRemove: (p) => fb.onDisconnect(r(p)).remove(),
     onDisconnectSet: (p, v) => fb.onDisconnect(r(p)).set(v),
     cancelOnDisconnect: (p) => fb.onDisconnect(r(p)).cancel(),

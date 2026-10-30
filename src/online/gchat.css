@@ -1,0 +1,388 @@
+/* Global chat: the Chat page (built on the Friends page's look) and the private-message notice. */
+
+/* over everything, the duel and its own chat included (opened from a notice mid-duel) */
+.fr.gc {
+  z-index: 975;
+}
+.gc .fr-top {
+  position: relative;
+}
+.gc-av {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid #ffffffcc;
+  color: #fff;
+  font: 800 16px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-shadow: 0 1px 2px #0008;
+}
+.gc-av.s {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+.gc-dm-who {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gc-dm-who b {
+  font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gc-dm-who small {
+  color: #9aa6d6;
+  font-size: 12px;
+}
+.gc-dm-who small.on {
+  color: #7dffb0;
+}
+.gc-menu {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top));
+  right: 12px;
+  z-index: 2;
+}
+
+/* the lines: fill the page between the tabs and the message box */
+.gc-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.gc-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+}
+.gc-line.mine {
+  justify-content: flex-end;
+}
+.gc-line-av {
+  padding: 0;
+  border: 0;
+  background: none;
+  min-height: 0;
+}
+.gc-say {
+  position: relative;
+  max-width: 78%;
+  padding: 7px 11px 5px;
+  border-radius: 4px 16px 16px 16px;
+  background: #142050;
+  border: 1px solid #ffffff1f;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+}
+.gc-line.mine .gc-say {
+  border-radius: 16px 4px 16px 16px;
+  background: #1d3a8a;
+  border-color: #9fd0ff66;
+}
+.gc-say > span {
+  display: block;
+}
+.gc-name {
+  display: block;
+  padding: 0;
+  margin: 0 0 1px;
+  min-height: 0;
+  border: 0;
+  background: none;
+  font: 700 12px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  filter: brightness(1.5) saturate(1.2);
+  text-align: left;
+}
+.gc-say time {
+  display: block;
+  margin-top: 2px;
+  color: #9aa6d6;
+  font-size: 10px;
+  text-align: right;
+}
+.gc-line-menu {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+/* the message box at the bottom */
+.gc-compose {
+  flex: 0 0 auto;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid #ffffff1a;
+  background: #0b1226ee;
+}
+.gc-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.gc-form input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid #9fb2ff66;
+  background: #0b1030;
+  color: #fff;
+  /* 16px: iPhone doesn't zoom the page into the box */
+  font: 16px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.gc-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  border: 0;
+  background: #2c4ab0;
+  color: #fff;
+  font: 800 14px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.gc-btn.go {
+  background: linear-gradient(180deg, #ffd96a, #e0a92a);
+  color: #1a1300;
+}
+.gc-btn:disabled {
+  opacity: 0.45;
+}
+.gc-x {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #ffffff2a;
+  background: #ffffff10;
+  color: #cfd6ff;
+  font-size: 15px;
+}
+.gc-said {
+  margin: 0 0 6px;
+  color: #ffd27a;
+  font: 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Messages: one row per person */
+.gc-convo {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.gc-convo .fr-who small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gc-convo.unread .fr-who b,
+.gc-convo.unread .fr-who small {
+  color: #fff;
+  font-weight: 800;
+}
+.gc-convo-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.gc-convo-end time {
+  color: #9aa6d6;
+  font-size: 11px;
+}
+.gc-convo-end em {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #e5484d;
+  color: #fff;
+  font: 800 11px/20px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  font-style: normal;
+}
+.fr-btn.gc-msg {
+  padding: 0 10px;
+  font-size: 17px;
+}
+
+/* the Chat button on menus: just above the Friends button */
+.ol-pill.gc-pill {
+  bottom: calc(64px + env(safe-area-inset-bottom));
+}
+.ol-pill.gc-pill.dm {
+  border-color: var(--gold);
+}
+
+/* a private message just in: a card across the top of any screen, the duel included */
+.gc-note {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 985;
+  width: min(calc(100vw - 16px), 440px);
+  box-sizing: border-box;
+  padding: 8px 8px 8px 10px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #1c2c74, #0d1640);
+  border: 1.5px solid #f7c948;
+  box-shadow: 0 8px 24px #000d;
+  color: #fff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  animation: gc-drop 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+@keyframes gc-drop {
+  from {
+    transform: translate(-50%, -120%);
+    opacity: 0;
+  }
+}
+.gc-note-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.gc-note-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gc-note-txt b {
+  color: #f7c948;
+  font-size: 13px;
+}
+.gc-note-txt b em {
+  color: #9aa6d6;
+  font-weight: 600;
+  font-style: normal;
+}
+.gc-note-txt span {
+  font-size: 15px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.gc-note-btns {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.gc-note .gc-form {
+  flex: 1 0 100%;
+}
+.gc-note .gc-said {
+  flex: 1 0 100%;
+  margin: 0;
+}
+.gc-note-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: #f7c948;
+  transform-origin: left;
+  animation: gc-timer linear forwards;
+}
+@keyframes gc-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gc-note {
+    animation: none;
+  }
+}
+
+/* in a duel: a small note under their bar, just left of the duel's chat button (their line's bubble sits on the left); a tap opens the reply */
+.gc-note.small {
+  left: auto;
+  right: calc(72px + env(safe-area-inset-right));
+  transform: none;
+  width: auto;
+  max-width: calc(100vw - 92px);
+  padding: 4px 4px 4px 8px;
+  border-radius: 22px;
+  flex-wrap: nowrap;
+  animation: gc-pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes gc-pop {
+  from {
+    transform: translateY(-10px) scale(0.9);
+    opacity: 0;
+  }
+}
+.gc-note.small .gc-note-main {
+  min-height: 36px;
+  gap: 7px;
+}
+.gc-note.small .gc-note-txt {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+.gc-note.small .gc-note-txt span {
+  font-size: 14px;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.gc-note.small .gc-x {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.gc-note.replying {
+  left: 50%;
+}
+/* the small note's reply cue: a tap answers */
+.gc-reply-ic {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #f7c948;
+  color: #1a1300;
+  font: 800 13px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-style: normal;
+}

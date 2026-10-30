@@ -108,8 +108,8 @@ export function chatCid(cid: unknown): string | undefined {
   return typeof cid === 'string' && /^[a-z0-9]{1,12}$/.test(cid) ? cid : undefined;
 }
 
-/** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters. */
-export function cleanChat(text: unknown): string {
+/** A chat line as it is shown: one line, no control or text-direction characters, at most CHAT_MAX characters (or `max`). */
+export function cleanChat(text: unknown, max = CHAT_MAX): string {
   if (typeof text !== 'string') return '';
   const flat = text
     .replace(/[\u0000-\u001f\u007f\u061c\u200b\u200e\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]+/g, ' ')
@@ -117,7 +117,7 @@ export function cleanChat(text: unknown): string {
     .replace(/(\p{M}{2})\p{M}+/gu, '$1')
     .replace(/\s+/g, ' ')
     .trim();
-  return Array.from(flat).slice(0, CHAT_MAX).join('');
+  return Array.from(flat).slice(0, max).join('');
 }
 
 export type RematchVote = 'yes' | 'no' | null;
