@@ -633,7 +633,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       )}
       {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock"><span>Paused · reconnecting</span></div>}
       {/* (only the room's host can take a win on time: the host's phone vets the other phone's moves) */}
-      {runner && session.adapter.isHost && state.winner === null && <ClaimWin runner={runner} name={state.players[other(mySeat)].name} onClaim={() => session.send({ type: 'SURRENDER', player: other(mySeat) })} />}
+      {runner && session.adapter.isHost && state.winner === null && <ClaimWin runner={runner} name={state.players[other(mySeat)].name} onClaim={() => session.send({ type: 'SURRENDER', player: other(mySeat), timeout: true })} />}
       {online && view.status !== 'connected' && state.winner === null && (
         <div class="netwarn">
           <span>{view.detail || 'Connection lost. Rejoining…'}</span>
