@@ -93,7 +93,13 @@ export function Ranked(p: Ctx) {
   // (a cut-off duel waiting to be resumed: its opponent, dealt one duel back)
   const resuming = !!live && !!rp.pending;
   const shownFoe = useMemo(() => (resuming ? rankedFoe({ ...rp, played: Math.max(0, rp.played - 1) }) : foe), [resuming, foe]);
-  const lastFoe = useMemo(() => (rep ? rankedFoe({ ...rp, step: rep.settled.before.step, played: Math.max(0, rp.played - 1) }).duelist : null), [rep]);
+  const lastFoe = useMemo(() => {
+    if (!rep) return null;
+    const d = rankedFoe({ ...rp, step: rep.settled.before.step, played: Math.max(0, rp.played - 1) }).duelist;
+    // (a resumed duel may have been dealt at another rank or month: show who was really fought)
+    const s = p.lastSpec?.context.kind === 'ranked' ? p.lastSpec : null;
+    return s && s.cpu.name !== d.name && s.vs ? { ...d, name: s.cpu.name, portrait: s.vs.cpuPortrait } : d;
+  }, [rep]);
   const today = ladderClock(rp);
   const bonusLeft = rp.bonusDay !== todayString(today);
   const won = winsToday(rp, today);
