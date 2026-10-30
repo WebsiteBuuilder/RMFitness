@@ -22,6 +22,8 @@ import { artBusy, onArtChange } from '../art/cues';
 import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
+import { MateLayer, type MatePlan } from '../mates/MateLayer';
+import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -44,6 +46,8 @@ interface Props {
   clock?: boolean;
   /** the beginner tutorial: a move this says no to is never sent */
   vet?: (a: Parameters<DuelSession['send']>[0]) => boolean;
+  /** Speed Duel: the Mates beside each field (none in replays and lessons) */
+  mates?: MatePlan;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -54,7 +58,7 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock, vet }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock, vet, mates }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
@@ -81,6 +85,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [pass, setPass] = useState(false);
   const artItems = useCinematicsMenu();
   const soundOn = useSoundEnabled();
+  const matesShown = useMatesShown();
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -506,6 +511,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {mates && e.speed && <MateLayer session={session} view={view} state={state} acting={acting} plan={mates} touch={style === 'touch'} />}
       {roll && (
         <div key={roll.seq} class="roll-chip" aria-live="polite">
           <span class="roll-face">{roll.to === 'coin' ? (roll.amount === 1 ? 'H' : 'T') : roll.amount}</span>
@@ -619,6 +625,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
+                ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),

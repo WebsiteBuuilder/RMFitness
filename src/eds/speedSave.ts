@@ -41,6 +41,10 @@ export interface SpeedSave {
    * count its cards as used. Refreshed every time the save is loaded.
    */
   road?: SpeedDeck | null;
+  /** Mates bought with Duel Chips (free and earned ones aren't listed: see mates/roster) */
+  mates?: string[];
+  /** the mate that stands beside this duelist's field */
+  mate?: string;
 }
 
 export const CHIP_CAP = 30;

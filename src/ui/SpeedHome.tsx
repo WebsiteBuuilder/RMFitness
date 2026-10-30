@@ -1,6 +1,9 @@
 // The Speed Duel home screen, laid out like Master Duel: a slim top bar, one calm page per tab
 // (Duel, Solo, Deck, Shop, Duelist) and a tab bar along the bottom. Every screen the old
 // one-long-list menu reached is still one or two taps away; Speed.tsx owns those screens.
+import { MateArt } from '../mates/MateArt';
+import { chosenMate, hasMate, mateDef, MATES } from '../mates/roster';
+import '../mates/mates.css';
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
@@ -27,7 +30,7 @@ import './speedhome.css';
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -224,6 +227,26 @@ function SchoolTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
 }
 
 /** A plain list row for things that don't need a picture. */
+/** Your Mate on its own tile: the little companion beside your field in duels. */
+function MatesTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
+  const id = chosenMate(save);
+  const got = MATES.filter((m) => hasMate(save, m.id)).length;
+  return (
+    <button class="sdh-mates" onClick={() => (playBlip(), onPick())}>
+      <span class="sdh-mates-pic">
+        <MateArt id={id} />
+      </span>
+      <span class="sdh-mates-txt">
+        <b>Mates</b>
+        <span>
+          {mateDef(id)!.name} stands by your field · {got}/{MATES.length} yours
+        </span>
+      </span>
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
     <button class="sdh-row" onClick={() => (playBlip(), onPick())}>
@@ -426,6 +449,9 @@ export function SpeedHome({
               <Tile size="half" art="Time Wizard" title="Requests" sub={requestsNote} onPick={() => go('requests')} />
               <Tile size="half" art="Monster Reborn" title="Set Stamps" sub={stamps ? `${stamps} to claim!` : 'Collect a set, earn its rewards'} badge={stamps || null} hot={stamps > 0} onPick={() => go('stamps')} />
             </div>
+            <div class="sdh-list">
+              <Row label="Mates" note="companions for your field" onPick={() => go('mates')} />
+            </div>
           </>
         )}
 
@@ -441,6 +467,7 @@ export function SpeedHome({
                 {crown && <span class="sdh-crown">👑 King of Games over {crown.rival}</span>}
               </div>
             </div>
+            <MatesTile save={save} onPick={() => go('mates')} />
             <Tile art="Slifer the Sky Dragon" fy={28} title="Duelist Rankings" sub="Leaderboard, rivals and titles" onPick={() => go('rankings')} />
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">

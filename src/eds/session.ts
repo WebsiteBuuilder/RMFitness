@@ -35,7 +35,9 @@ export type LobbyAction =
   /** after a duel: this player wants a rematch in the same room (or walked away) */
   | { type: 'REMATCH'; player: Pid; want: boolean }
   /** a chat line between the two players of an online room (rides the room's log, never touches the duel) */
-  | { type: 'CHAT'; player: Pid; text: string; cid?: string };
+  | { type: 'CHAT'; player: Pid; text: string; cid?: string }
+  /** a player's Mate (the little companion beside their field) and, if any, the reaction it just played: for show only */
+  | { type: 'MATE'; player: Pid; mate: string; react?: string };
 export type AnyAction = Action | LobbyAction;
 
 export interface SessionView {
@@ -56,6 +58,19 @@ export interface SessionView {
   chat: ChatLine[];
   /** entries in the log that aren't chat: what screens key their room logic on (a chat line changes nothing) */
   moves: number;
+  /** each seat's Mate and its latest reaction */
+  mates: [SeatMate | null, SeatMate | null];
+}
+
+/** A seat's Mate as the room knows it. */
+export interface SeatMate {
+  id: string;
+  /** its latest reaction (null: none yet) */
+  react: string | null;
+  /** counts reactions: a new number is a new one to play (the same reaction twice included) */
+  n: number;
+  /** that reaction came with the room's log loading on this phone (a reload or a rejoin): not played */
+  old: boolean;
 }
 
 export interface ChatLine {
@@ -84,6 +99,12 @@ export const CHAT_MAX = 80;
 /** The host's lines per CHAT_WINDOW_MS it takes from the other phone (the rest are dropped). */
 const CHAT_HOST_CAP = 8;
 const CHAT_WINDOW_MS = 8000;
+/** ...and the Mate reactions it takes from it */
+const MATE_HOST_CAP = 6;
+const MATE_WINDOW_MS = 6000;
+const mateRecent = new WeakMap<number[], number[]>();
+/** A Mate's id or reaction name as it may ride the log: a short lowercase word (the screen knows which are real). */
+export const mateWord = (w: unknown): string | undefined => (typeof w === 'string' && /^[a-z]{2,12}$/.test(w) ? w : undefined);
 
 /**
  * The host screens a move the other phone proposes before it goes into the room's log: a chat line
@@ -91,6 +112,21 @@ const CHAT_WINDOW_MS = 8000;
  * nothing big is stored), and a flood is dropped. Every other move passes as it is.
  */
 export function screenProposal<T extends { type: string }>(ev: T, guestSeat: Pid, recent: number[], now = Date.now()): T | null {
+  if (ev.type === 'MATE') {
+    const m = ev as unknown as { player: unknown; mate: unknown; react?: unknown };
+    const mate = mateWord(m.mate);
+    if (m.player !== guestSeat || !mate) return null;
+    const react = m.react === undefined ? undefined : mateWord(m.react);
+    if (m.react !== undefined && !react) return null;
+    if (react) {
+      let sent = mateRecent.get(recent);
+      if (!sent) mateRecent.set(recent, (sent = []));
+      while (sent.length && now - sent[0] >= MATE_WINDOW_MS) sent.shift();
+      if (sent.length >= MATE_HOST_CAP) return null;
+      sent.push(now);
+    }
+    return (react ? { type: 'MATE', player: guestSeat, mate, react } : { type: 'MATE', player: guestSeat, mate }) as unknown as T;
+  }
   if (ev.type !== 'CHAT') return ev;
   const c = ev as unknown as { player: unknown; text: unknown };
   const text = cleanChat(c.text);
@@ -169,6 +205,8 @@ export class DuelSession {
   /** this phone's lines on their way to the room, and whether the other player is muted (this room only) */
   chatPending: { id: string; text: string; at: number }[] = [];
   chatMuted = false;
+  /** each seat's Mate (from the room's log, or set on this phone for a duel against the computer) */
+  mates: [SeatMate | null, SeatMate | null] = [null, null];
   /** the newest host time in that first load (a later line stamped before it is history too: the load arriving in parts) */
   private loadNewest = 0;
   /**
@@ -214,6 +252,7 @@ export class DuelSession {
         this.earlierChat = [...this.earlierChat, ...this.chat].slice(-60);
       }
       this.chat = [];
+      this.mates = [null, null];
       this.moves = 0;
       this.engine = new Engine(DB);
       this.seats = noSeats();
@@ -232,6 +271,7 @@ export class DuelSession {
         }
       }
       if ((ev as { type: string }).type === 'CHAT') this.addChat(ev as unknown as LoggedAction & { player: Pid; text: unknown });
+      else if ((ev as { type: string }).type === 'MATE') this.addMate(ev as unknown as LoggedAction & { player: Pid; mate: unknown; react?: unknown });
       else {
         this.moves++;
         this.applyOne(ev as unknown as AnyAction);
@@ -261,6 +301,30 @@ export class DuelSession {
     // (in the load: news only if it's among the load's newest entries by host time, and roughly now on this phone's clock)
     const old = this.loaded ? ev.ts < this.loadNewest : this.isOld(ev.ts);
     this.chat = [...this.chat, { id: `${this.round}:${ev.seq}`, player: ev.player, text, at: ev.ts, old, cid }];
+  }
+
+  private addMate(ev: { ts: number; player: Pid; mate: unknown; react?: unknown }) {
+    const id = mateWord(ev.mate);
+    if (!id || (ev.player !== 0 && ev.player !== 1)) return;
+    const react = mateWord(ev.react) ?? null;
+    const was = this.mates[ev.player];
+    const old = this.loaded ? ev.ts < this.loadNewest : this.isOld(ev.ts);
+    this.setMate(ev.player, react ? { id, react, n: (was?.n ?? 0) + 1, old } : { id, react: was?.react ?? null, n: was?.n ?? 0, old: true });
+  }
+
+  private setMate(p: Pid, m: SeatMate) {
+    this.mates = (p === 0 ? [m, this.mates[1]] : [this.mates[0], m]) as [SeatMate | null, SeatMate | null];
+  }
+
+  /**
+   * A Mate on this phone only (a duel against the computer, one phone, watching): shown at once,
+   * never in the log. `react` plays a reaction.
+   */
+  localMate(p: Pid, id: string, react?: string) {
+    const was = this.mates[p];
+    if (!react && was?.id === id) return;
+    this.setMate(p, react ? { id, react, n: (was?.n ?? 0) + 1, old: false } : { id, react: was?.react ?? null, n: was?.n ?? 0, old: true });
+    this.notify();
   }
 
   private applyOne(a: AnyAction) {
@@ -335,7 +399,7 @@ export class DuelSession {
   }
 
   view(): SessionView {
-    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round, chat: this.earlierChat.length ? [...this.earlierChat, ...this.chat] : this.chat, moves: this.moves };
+    return { state: this.engine.state, seats: this.seats, status: this.status, detail: this.detail, log: this.log, toss: this.toss, rematch: this.rematch, series: this.series, round: this.round, chat: this.earlierChat.length ? [...this.earlierChat, ...this.chat] : this.chat, moves: this.moves, mates: this.mates };
   }
 
   listen(cb: () => void): () => void {

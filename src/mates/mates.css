@@ -1,0 +1,740 @@
+/* Mates on the duel screen (MateLayer) and the Mates page (MatesScreen). */
+
+.mates-layer {
+  position: fixed;
+  inset: 0;
+  /* over the field and its 3D figures (z 2-3), under the action buttons (20), sheets (30) and banners */
+  z-index: 4;
+  pointer-events: none;
+}
+/* (hidden while the field is still swinging in) */
+.duel.touch:not(.armed) .mates-layer {
+  opacity: 0;
+}
+.mates-layer {
+  transition: opacity 0.4s ease;
+}
+
+.mate-spot {
+  position: absolute;
+  width: var(--ms);
+  height: var(--ms);
+  /* left/top is where its feet stand */
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mate-act {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 94%;
+  will-change: transform;
+}
+.mate-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 1.5px #ffe7a066) drop-shadow(0 2px 3px #0008);
+}
+.mate-svg.flip {
+  transform: scaleX(-1);
+}
+.on-classic .mate-spot {
+  opacity: 0.95;
+}
+
+/* ---- idle: breathing and blinking ---- */
+.mate-act.r-idle {
+  animation: mate-breathe 2.8s ease-in-out infinite;
+}
+.mate-spot.top .mate-act.r-idle {
+  animation-delay: -1.3s;
+}
+@keyframes mate-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.025, 0.965);
+  }
+}
+.r-idle .mt-eyes {
+  animation: mate-blink 4.3s infinite;
+}
+.mate-spot.top .r-idle .mt-eyes {
+  animation-delay: -2.1s;
+}
+@keyframes mate-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* ---- little loops on their parts ---- */
+.mt-flame {
+  transform-box: fill-box;
+  transform-origin: 30% 100%;
+  animation: mate-flicker 0.5s ease-in-out infinite alternate;
+}
+.r-cheer .mt-flame,
+.r-angry .mt-flame,
+.r-win .mt-flame {
+  animation-duration: 0.18s;
+  scale: 1.3;
+}
+@keyframes mate-flicker {
+  from {
+    transform: scale(1, 1) rotate(-3deg);
+  }
+  to {
+    transform: scale(0.92, 1.08) rotate(4deg);
+  }
+}
+.mt-leaf,
+.mt-tail,
+.mt-wing {
+  transform-box: fill-box;
+  animation: mate-sway 2.4s ease-in-out infinite;
+}
+.mt-leaf {
+  transform-origin: 100% 100%;
+}
+.mt-leaf.r {
+  transform-origin: 0% 100%;
+  animation-delay: -1.2s;
+}
+.mt-tail {
+  transform-origin: 20% 90%;
+}
+.mt-tail.r {
+  transform-origin: 80% 90%;
+  animation-delay: -1.2s;
+}
+.mt-wing {
+  transform-origin: 90% 90%;
+  animation-duration: 1.6s;
+}
+.mt-wing.r {
+  transform-origin: 10% 90%;
+  animation-delay: -0.8s;
+}
+.r-cheer :is(.mt-tail, .mt-wing),
+.r-win :is(.mt-tail, .mt-wing) {
+  animation-duration: 0.35s;
+}
+@keyframes mate-sway {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+.mt-blink,
+.mt-twinkle {
+  animation: mate-glint 1.8s ease-in-out infinite;
+}
+.mt-twinkle.b {
+  animation-delay: -0.9s;
+}
+@keyframes mate-glint {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.mt-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mate-glow 2.6s ease-in-out infinite;
+}
+@keyframes mate-glow {
+  50% {
+    transform: scale(1.12);
+    opacity: 0.7;
+  }
+}
+.mt-wisp {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: mate-wisp 1.6s ease-in-out infinite;
+}
+@keyframes mate-wisp {
+  50% {
+    transform: skewX(4deg) scaleY(1.04);
+  }
+}
+.mt-gloop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: mate-wobble 1.9s ease-in-out infinite;
+}
+@keyframes mate-wobble {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.05, 0.95);
+  }
+}
+.mt-lid {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.r-laugh .mt-lid,
+.r-angry .mt-lid,
+.r-cheer .mt-lid,
+.r-win .mt-lid {
+  animation: mate-chomp 0.22s ease-in-out infinite alternate;
+}
+@keyframes mate-chomp {
+  to {
+    transform: translateY(5px);
+  }
+}
+.mt-tear {
+  animation: mate-tear 0.9s ease-in infinite;
+}
+@keyframes mate-tear {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(9px);
+    opacity: 0;
+  }
+}
+
+/* ---- reactions ---- */
+.mate-act.r-hop {
+  animation: mate-hop 0.8s ease-out;
+}
+@keyframes mate-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  45% {
+    transform: translateY(-26%) scale(0.94, 1.08);
+  }
+  75% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+}
+.mate-act.r-wave {
+  animation: mate-wave 1.2s ease-in-out;
+}
+@keyframes mate-wave {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20%,
+  60% {
+    transform: rotate(-10deg);
+  }
+  40%,
+  80% {
+    transform: rotate(10deg);
+  }
+}
+.mate-act.r-spin {
+  animation: mate-spin 1s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+@keyframes mate-spin {
+  0% {
+    transform: translateY(0) rotateY(0);
+  }
+  40% {
+    transform: translateY(-22%) rotateY(200deg);
+  }
+  70% {
+    transform: translateY(0) rotateY(360deg) scale(1.08, 0.92);
+  }
+  100% {
+    transform: translateY(0) rotateY(360deg);
+  }
+}
+.mate-act.r-cheer {
+  animation: mate-cheer 1.4s ease-out;
+}
+@keyframes mate-cheer {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  8%,
+  58% {
+    transform: translateY(0) scale(1.14, 0.84);
+  }
+  25%,
+  75% {
+    transform: translateY(-34%) scale(0.92, 1.12) rotate(-6deg);
+  }
+}
+.mate-act.r-laugh {
+  animation: mate-laugh 0.23s ease-in-out 6;
+}
+@keyframes mate-laugh {
+  50% {
+    transform: translateY(-5%) rotate(3deg) scale(1.03, 0.97);
+  }
+}
+.mate-act.r-wow {
+  animation: mate-wow 0.7s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes mate-wow {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: translateY(-12%) scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.mate-act.r-hurt {
+  animation: mate-hurt 0.7s ease-out;
+}
+.mate-act.r-hurt .mate-svg {
+  animation: mate-redflash 0.7s ease-out;
+}
+@keyframes mate-hurt {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-9%) rotate(-6deg);
+  }
+  35% {
+    transform: translateX(8%) rotate(5deg);
+  }
+  55% {
+    transform: translateX(-5%) rotate(-3deg);
+  }
+  75% {
+    transform: translateX(3%);
+  }
+}
+@keyframes mate-redflash {
+  0%,
+  45% {
+    filter: drop-shadow(0 0 4px #ff3b4e) brightness(1.15) saturate(1.3);
+  }
+}
+.mate-act.r-sad {
+  animation: mate-sad 1.8s ease-in-out forwards;
+}
+@keyframes mate-sad {
+  0% {
+    transform: scale(1, 1);
+  }
+  20%,
+  85% {
+    transform: translateY(3%) scale(1.06, 0.88) rotate(-4deg);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+.mate-act.r-angry {
+  animation: mate-angry 0.12s linear 10;
+}
+.mate-act.r-angry .mate-svg {
+  filter: drop-shadow(0 0 5px #ff3b4ecc) drop-shadow(0 2px 3px #0008);
+}
+@keyframes mate-angry {
+  0%,
+  100% {
+    transform: translateX(0) scale(1.06, 0.95);
+  }
+  50% {
+    transform: translateX(4%) scale(1.06, 0.95);
+  }
+}
+.mate-act.r-love {
+  animation: mate-love 0.46s ease-in-out 3;
+}
+@keyframes mate-love {
+  50% {
+    transform: scale(1.12) translateY(-4%);
+  }
+}
+.mate-act.r-sleep {
+  animation: mate-doze 3s ease-in-out;
+}
+@keyframes mate-doze {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20%,
+  80% {
+    transform: rotate(9deg) scale(1.02, 0.96);
+  }
+  50% {
+    transform: rotate(7deg) scale(1.04, 0.94);
+  }
+}
+.mate-act.r-win {
+  animation: mate-cheer 1.4s ease-out infinite;
+}
+.mate-act.r-lose {
+  animation: mate-slump 2.6s ease-in-out infinite;
+}
+.mate-act.r-lose .mate-svg {
+  filter: saturate(0.6) brightness(0.85) drop-shadow(0 2px 3px #0008);
+}
+@keyframes mate-slump {
+  0%,
+  100% {
+    transform: translateY(4%) scale(1.06, 0.86) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(4%) scale(1.04, 0.88) rotate(-3deg);
+  }
+}
+
+/* ---- the symbol over its head ---- */
+.mate-emote {
+  position: absolute;
+  left: 62%;
+  top: -6%;
+  font: 900 calc(var(--ms) * 0.3) / 1 system-ui, sans-serif;
+  color: #ffe36e;
+  -webkit-text-stroke: 1.5px #2a1a2e;
+  text-shadow: 0 2px 3px #0009;
+  pointer-events: none;
+  animation: mate-emote 1.3s ease-out forwards;
+  white-space: nowrap;
+}
+.mate-spot.top .mate-emote {
+  left: auto;
+  right: 62%;
+}
+.mate-emote svg {
+  width: calc(var(--ms) * 0.3);
+  height: calc(var(--ms) * 0.3);
+  display: block;
+}
+.mate-emote.em-heart {
+  color: #ff4f86;
+}
+.mate-emote.em-bang {
+  color: #ffd23f;
+  font-size: calc(var(--ms) * 0.38);
+}
+.mate-emote.em-zzz {
+  color: #b9d4ff;
+  font-size: calc(var(--ms) * 0.22);
+  animation-duration: 2.8s;
+}
+.mate-emote.em-note {
+  color: #7ee0ff;
+}
+.mate-emote.em-ha {
+  font-size: calc(var(--ms) * 0.22);
+  color: #fff3a8;
+}
+.mate-emote.em-dots {
+  color: #c5cbe0;
+}
+@keyframes mate-emote {
+  0% {
+    transform: translateY(20%) scale(0.3);
+    opacity: 0;
+  }
+  18% {
+    transform: translateY(-10%) scale(1.15);
+    opacity: 1;
+  }
+  30% {
+    transform: translateY(-10%) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-45%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---- hold your Mate: the emote row ---- */
+.mate-catch {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+.mate-wheel {
+  position: fixed;
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 84px);
+  gap: 6px;
+  padding: 8px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #1c2550f2, #0d1330f2);
+  border: 1.5px solid #e9c46a;
+  box-shadow: 0 8px 26px #000b, inset 0 1px 0 #ffffff22;
+  animation: mate-wheel-in 0.18s ease-out;
+}
+.mate-wheel.up {
+  transform: translate(-50%, -100%);
+  transform-origin: 50% 100%;
+}
+.mate-wheel.down {
+  transform: translate(-50%, 0);
+  transform-origin: 50% 0;
+}
+@keyframes mate-wheel-in {
+  from {
+    opacity: 0;
+    scale: 0.8;
+  }
+}
+.mate-emo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 5px;
+  min-height: 72px;
+  border-radius: 12px;
+  border: 1px solid #ffffff22;
+  background: #ffffff10;
+  color: #f2ecd8;
+  font: 700 12px/1.1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.mate-emo:active {
+  background: #e9c46a33;
+  scale: 0.95;
+}
+.mate-emo .mate-svg {
+  width: 44px;
+  height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mate-act,
+  .mate-act * {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ---- the Mates page ---- */
+.screen.mates .mt-stage {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mt-big {
+  position: relative;
+  flex: 0 0 auto;
+  width: 132px;
+  height: 132px;
+  padding: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, #3a4ea8 0%, #1a2252 62%, transparent 72%);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mt-big .mt-floor {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 9%;
+  height: 10%;
+  border-radius: 50%;
+  background: radial-gradient(#e9c46a55, transparent 70%);
+}
+.mt-big .mate-act {
+  position: relative;
+}
+.mt-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mt-info b {
+  font-size: 20px;
+  color: #ffe9a8;
+}
+.mt-info p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  opacity: 0.9;
+}
+.mt-cost {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  background: #ffffff14;
+  border: 1px solid #ffffff2a;
+}
+.mt-cost.own {
+  color: #ffe36e;
+  border-color: #e9c46a88;
+}
+.mt-emotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 8px;
+}
+.mt-try {
+  flex: 1 1 auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #ffffff2a;
+  background: #ffffff10;
+  color: inherit;
+  font: 700 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.mt-try:active {
+  background: #e9c46a33;
+}
+.mt-act {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mt-go {
+  width: 100%;
+  min-height: 46px;
+}
+.mt-hint,
+.mt-note {
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+.mt-note {
+  color: #ffe36e;
+  opacity: 1;
+}
+.mt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.mt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 8px;
+  border-radius: 14px;
+  border: 1.5px solid #ffffff1f;
+  background: linear-gradient(180deg, #232e66, #141b40);
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.mt-card.on {
+  border-color: #e9c46a;
+  box-shadow: 0 0 0 2px #e9c46a44, 0 0 14px #e9c46a44;
+}
+.mt-card .mt-pic {
+  width: 64px;
+  height: 64px;
+}
+.mt-card.locked .mate-svg {
+  filter: grayscale(0.55) brightness(0.75);
+}
+.mt-card b {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.mt-card small {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.mt-foot {
+  margin: 12px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+@media (max-width: 380px) {
+  .mt-big {
+    width: 112px;
+    height: 112px;
+  }
+  .mt-info b {
+    font-size: 18px;
+  }
+}
+
+/* ---- the Speed Duel home's Mates tile (your duelist tab) ---- */
+.sdh-mates {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 34px 8px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--sd-line, #ffffff22);
+  background: radial-gradient(circle at 12% 60%, #3a4ea8aa, transparent 45%), linear-gradient(120deg, #1b2a52, #101a38);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sdh-mates-pic {
+  flex: none;
+  width: 64px;
+  height: 64px;
+}
+.sdh-mates-pic .mate-svg {
+  animation: mate-breathe 2.8s ease-in-out infinite;
+  transform-origin: 50% 94%;
+}
+.sdh-mates-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sdh-mates-txt b {
+  font-size: 17px;
+}
+.sdh-mates-txt span {
+  font-size: 13px;
+  opacity: 0.8;
+}

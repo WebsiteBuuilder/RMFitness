@@ -10,6 +10,8 @@ import { addToTrunk, controlsOf, deckProblems, loadProfiles, loadSave, newSave, 
 import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
+import type { MatePlan } from '../mates/MateLayer';
+import { chosenMate, mateForName, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
@@ -1444,7 +1446,7 @@ export function App() {
       }
       return (
         <>
-          <Running deckSwitch={speedSave && speedSave.decks.length > 1 ? <DeckSwitch decks={speedSave.decks} current={activeDeck(speedSave)} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(speedSave, d)]} onPick={(d) => setSpeedSave({ ...speedSave, active: d.id })} /> : undefined} session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
+          <Running myMate={chosenMate(speedSave)} deckSwitch={speedSave && speedSave.decks.length > 1 ? <DeckSwitch decks={speedSave.decks} current={activeDeck(speedSave)} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(speedSave, d)]} onPick={(d) => setSpeedSave({ ...speedSave, active: d.id })} /> : undefined} session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
@@ -1574,9 +1576,12 @@ function Running({
   rematchP2,
   onRaidEnd,
   deckSwitch,
+  myMate,
 }: {
   /** the room's "Duel with … Change" line (Speed Duel decks), before the duel starts */
   deckSwitch?: preact.ComponentChildren;
+  /** this phone's duelist's Mate (Speed Duel) */
+  myMate?: MateId;
   session: DuelSession;
   hotseat: boolean;
   cpu: boolean;
@@ -1727,11 +1732,15 @@ function Running({
       </>
     );
   }
+  // Mates: in an online room this phone's goes into the room's log (the other phone sends its own);
+  // otherwise both live on this phone (the computer's is picked by its name).
+  const matePlan: MatePlan | undefined =
+    view.state.rules?.mode === 'speed' ? { sendSeat: chatOn ? mySeat : null, idFor: (p) => (p === mySeat && !watch && myMate ? myMate : mateForName(view.state.players[p].name)) } : undefined;
   const oppName = view.state.players[mySeat === 0 ? 1 : 0].name === 'Téa Gardner' ? 'Tea Gardner' : view.state.players[mySeat === 0 ? 1 : 0].name;
   return (
     <>
       {chat}
-      <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} spectator={!!watch} clock={!cpu && !hotseat && !watch} />
+      <Duel session={session} view={view} mySeat={mySeat} hotseat={hotseat} controlsFor={controlsFor} onControls={onControls} onLeave={onLeave} onFinished={(w) => onFinished(w, oppName)} spectator={!!watch} clock={!cpu && !hotseat && !watch} mates={matePlan} />
       {!cpu && view.state.winner === null && <DuelPot view={view} />}
     </>
   );
