@@ -23,6 +23,10 @@ export const STALE_MS = 150_000;
 /** Lines kept per conversation, and conversations kept. */
 export const DM_KEEP = 60;
 export const CONVOS_KEEP = 30;
+/** After the online service couldn't be reached, chat tries again this long after. */
+export const RETRY_MS = 15_000;
+/** A room line's key: the service's own push keys (start with "-"), so no phone can pin a line above the others. */
+const KEY_RE = /^-[-0-9A-Za-z_]{1,24}$/;
 
 export type Doing = 'menu' | 'room' | 'duel';
 
@@ -157,6 +161,7 @@ export class GlobalChat {
   onNote: (n: GcNote) => void = () => {};
   private db: Db | null = null;
   private stopped = false;
+  private retry: ReturnType<typeof setTimeout> | undefined;
   private unsubs: (() => void)[] = [];
   private listeners = new Set<() => void>();
   private doing: Doing = 'menu';
@@ -200,6 +205,8 @@ export class GlobalChat {
         if (this.stopped) return;
         this.state = 'off';
         this.changed();
+        // (a slow or failed sign-in: try again in a while, as the rest of online play does)
+        this.retry = setTimeout(() => this.start(), RETRY_MS);
       },
     );
   }
@@ -263,10 +270,13 @@ export class GlobalChat {
   }
 
   private roomLine(key: string, w: Wire) {
-    if (!w || typeof w.f !== 'string' || !CODE_RE.test(w.f) || this.data.blocked.includes(w.f)) return;
+    if (!KEY_RE.test(key) || !w || typeof w.f !== 'string' || !CODE_RE.test(w.f) || this.data.blocked.includes(w.f)) return;
     const text = cleanChat(w.t, GC_MAX);
     if (!text || this.all.some((l) => l.id === key)) return;
-    const line: GcLine = { id: key, from: w.f, name: cleanName(w.n), color: cleanColor(w.c), text, at: typeof w.at === 'number' ? w.at : this.clock.now() };
+    // (a time from the future, from a phone with a broken clock or worse, would hide every later line's badge)
+    const now = this.db?.serverNow() ?? this.clock.now();
+    const at = typeof w.at === 'number' && Number.isFinite(w.at) ? Math.min(w.at, now) : now;
+    const line: GcLine = { id: key, from: w.f, name: cleanName(w.n), color: cleanColor(w.c), text, at };
     // (keys sort by time: a line can still arrive out of order after a reconnect)
     this.all = [...this.all, line].sort((a, b) => (a.id < b.id ? -1 : 1)).slice(-ALL_SHOW);
     if ((line.from === this.me.code || line.at <= this.firstVisitFrom) && line.at > this.data.allSeen) this.data.allSeen = line.at;
@@ -281,7 +291,8 @@ export class GlobalChat {
     if (!text) return;
     const name = cleanName(w.n);
     const color = cleanColor(w.c);
-    const at = typeof w.at === 'number' ? w.at : this.clock.now();
+    const now = db.serverNow();
+    const at = typeof w.at === 'number' && Number.isFinite(w.at) ? Math.min(w.at, now) : now;
     const c = this.convo(w.f, name, color);
     if (c.lines.some((l) => l.id === key)) return;
     c.name = name;
@@ -402,6 +413,11 @@ export class GlobalChat {
     this.changed();
   }
 
+  /** Blocked players, with the names they last had, to unblock from Messages. */
+  blockedList(): string[] {
+    return this.data.blocked;
+  }
+
   forget(code: string) {
     this.data.convos = this.data.convos.filter((c) => c.code !== code);
     this.save();
@@ -426,6 +442,7 @@ export class GlobalChat {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
+    clearTimeout(this.retry);
     for (const u of this.unsubs) u();
     this.unsubs = [];
     const db = this.db;

@@ -246,7 +246,7 @@
   box-sizing: border-box;
   padding: 8px 8px 8px 10px;
   border-radius: 16px;
-  background: linear-gradient(180deg, #1c2c74f5, #0d1640f5);
+  background: linear-gradient(180deg, #1c2c74, #0d1640);
   border: 1.5px solid #f7c948;
   box-shadow: 0 8px 24px #000d;
   color: #fff;
@@ -333,4 +333,45 @@
   .gc-note {
     animation: none;
   }
+}
+
+/* in a duel: a small note under their bar, just left of the duel's chat button (their line's bubble sits on the left); a tap opens the reply */
+.gc-note.small {
+  left: auto;
+  right: calc(72px + env(safe-area-inset-right));
+  transform: none;
+  width: auto;
+  max-width: calc(100vw - 92px);
+  padding: 4px 4px 4px 8px;
+  border-radius: 22px;
+  flex-wrap: nowrap;
+  animation: gc-pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes gc-pop {
+  from {
+    transform: translateY(-10px) scale(0.9);
+    opacity: 0;
+  }
+}
+.gc-note.small .gc-note-main {
+  min-height: 36px;
+  gap: 7px;
+}
+.gc-note.small .gc-note-txt {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+.gc-note.small .gc-note-txt span {
+  font-size: 14px;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.gc-note.small .gc-x {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.gc-note.replying {
+  left: 50%;
 }

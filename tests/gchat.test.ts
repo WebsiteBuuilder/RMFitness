@@ -2,7 +2,7 @@
 // wherever they are, over an in-memory stand-in for the online service.
 // Run: npx tsx tests/gchat.test.ts
 import type { Db } from '../src/sync/cloud';
-import { ALL_KEEP, ALL_SHOW, CONVOS_KEEP, DM_KEEP, emptyGc, GC_MAX, GlobalChat, loadGc, STALE_MS, writeGc, type Clock, type GcData, type GcNote } from '../src/online/globalChat';
+import { RETRY_MS, ALL_KEEP, ALL_SHOW, CONVOS_KEEP, DM_KEEP, emptyGc, GC_MAX, GlobalChat, loadGc, STALE_MS, writeGc, type Clock, type GcData, type GcNote } from '../src/online/globalChat';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -56,7 +56,7 @@ class MemServer {
       set: async (p, v) => sv.write(p, v),
       remove: async (p) => sv.write(p, null),
       get: async (p) => sv.read(p),
-      pushKey: () => `k${String(++seq).padStart(6, '0')}`,
+      pushKey: () => `-k${String(++seq).padStart(6, '0')}`,
       onValue: (path, cb) => {
         const s = { path, cb };
         sv.valueSubs.add(s);
@@ -190,7 +190,14 @@ async function main() {
     b.gc.sendAll('still here');
     ok(!c.gc.all.some((l) => l.from === 'BBBBBB'), 'their later lines are dropped as they arrive');
     sv.write(`net/gc/all/zzjunk`, { f: 'nope', t: 'x' });
-    ok(!c.gc.all.some((l) => l.id === 'zzjunk'), 'a junk room line is ignored');
+    ok(!c.gc.all.some((l) => l.id === 'zzjunk'), 'a line under a made-up key (one that would sort above every real line) is ignored');
+    sv.write(`net/gc/all/-k999999`, { f: 'DDDDDD', n: 'Clock', t: 'from the future', at: t + 10 ** 9 });
+    const fut = c.gc.all.find((l) => l.text === 'from the future');
+    ok(!!fut && fut.at <= t, 'a time from the future is pulled back to now');
+    c.gc.readAll();
+    clock.advance(9000);
+    a.gc.sendAll('after that');
+    ok(c.gc.allUnread() === 1, 'so later lines still count as new');
     for (const p of [a, b, c]) p.gc.stop();
   }
 
@@ -256,12 +263,27 @@ async function main() {
     ok(loadGc('p3', st).convos.length === 0, 'a broken entry starts over');
   }
 
+  // ---------- the service comes back ----------
+  {
+    let tries = 0;
+    const sv = new MemServer();
+    const gc = new GlobalChat({ db: () => (++tries === 1 ? Promise.reject(new Error('slow')) : Promise.resolve(sv.db('x'))), me: { code: 'AAAAAA', name: 'J', color: '#000000' }, data: emptyGc(), save: () => {} });
+    gc.start();
+    await tick();
+    ok(gc.state === 'off', 'a failed sign-in leaves chat offline for now');
+    await new Promise((r) => setTimeout(r, RETRY_MS + 50));
+    await tick();
+    ok(gc.state === 'on' && tries === 2, 'and it tries again by itself');
+    gc.stop();
+  }
+
   // ---------- no service ----------
   {
     const gc = new GlobalChat({ db: () => Promise.reject(new Error('no')), me: { code: 'AAAAAA', name: 'J', color: '#000000' }, data: emptyGc(), save: () => {} });
     gc.start();
     await tick();
     ok(gc.state === 'off' && gc.sendAll('hi') === 'offline', 'with no online service nothing pretends to send');
+    gc.stop();
   }
 
   if (fails) {

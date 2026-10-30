@@ -73,8 +73,17 @@ export function ChatNotes() {
   return <Note key={n.id} n={n} more={o.chatNotes.length - 1} />;
 }
 
+/** Where the notice goes in a duel: just under the opponent's bar (their name, timer and LP stay in view). */
+function duelTop(): number | null {
+  const bar = document.querySelector('.duel .tbar.top, .duel .pbar.top')?.getBoundingClientRect();
+  return bar && bar.bottom > 0 ? Math.round(bar.bottom + 6) : null;
+}
+
 function Note({ n, more }: { n: GcNote; more: number }) {
   const [replying, setReplying] = useState(false);
+  // (in a duel it comes in small, under their bar and beside the duel's chat button; a tap opens the reply)
+  const [top] = useState(duelTop);
+  const small = top !== null && !replying;
   const [draft, setDraft] = useState('');
   const [said, setSaid] = useState('');
   const [sent, setSent] = useState(false);
@@ -94,8 +103,27 @@ function Note({ n, more }: { n: GcNote; more: number }) {
       setSent(true);
     } else setSaid(SAID[r]);
   };
+  if (small)
+    return (
+      <div class="gc-note small" role="alert" style={{ top: `${top}px` }}>
+        <button class="gc-note-main" onClick={() => (sent ? online.dismissNote(n.from) : setReplying(true))} aria-label={`Message from ${n.name}: ${n.text}. Tap to reply`}>
+          <Av name={n.name} color={n.color} size="s" />
+          <span class="gc-note-txt">
+            <b>
+              {n.name}
+              {more > 0 && <em> +{more}</em>}
+            </b>
+            <span>{sent ? 'Reply sent ✓' : n.text}</span>
+          </span>
+        </button>
+        <button class="gc-x" aria-label="Close" onClick={() => online.dismissNote(n.from)}>
+          ✕
+        </button>
+        {!sent && <div class="gc-note-timer" style={{ animationDuration: `${NOTE_MS}ms` }} />}
+      </div>
+    );
   return (
-    <div class={`gc-note ${replying ? 'replying' : ''}`} role="alert">
+    <div class={`gc-note ${replying ? 'replying' : ''}`} role="alert" style={top !== null ? { top: `${top}px` } : undefined}>
       <button class="gc-note-main" onClick={() => online.openChat({ tab: 'dm', code: n.from, name: n.name, color: n.color })}>
         <Av name={n.name} color={n.color} />
         <span class="gc-note-txt">
@@ -167,7 +195,7 @@ export function ChatPage({ view }: { view: ChatView }) {
             <h1>Chat</h1>
             <span class={`fr-state ${state === 'on' ? 'ready' : state === 'connecting' ? 'connecting' : 'offline'}`}>
               <i />
-              {state === 'on' ? `${people.length + 1} online` : state === 'connecting' ? 'Connecting…' : 'Offline'}
+              {state === 'on' ? (people.length ? `${people.length} others online` : 'Online') : state === 'connecting' ? 'Connecting…' : 'Offline'}
             </span>
           </>
         )}
@@ -214,6 +242,7 @@ function DmHead({ v }: { v: Extract<ChatView, { tab: 'dm' }> }) {
           <button
             class="fr-btn bad"
             onClick={() => {
+              if (!confirm(`Block ${v.name}? You won't see their messages. You can unblock them at the bottom of Messages.`)) return;
               gc?.block(v.code, true);
               online.openChat({ tab: 'dms' });
             }}
@@ -303,7 +332,7 @@ function Room() {
                     <button class="fr-btn go" onClick={() => online.openChat({ tab: 'dm', code: l.from, name: l.name, color: l.color })}>
                       Message {l.name}
                     </button>
-                    <button class="fr-btn bad" onClick={() => (gc.block(l.from, true), setMenu(null))}>
+                    <button class="fr-btn bad" onClick={() => confirm(`Block ${l.name}? You won't see their messages. You can unblock them at the bottom of Messages.`) && (gc.block(l.from, true), setMenu(null))}>
                       Block
                     </button>
                   </div>
@@ -369,14 +398,35 @@ function Convos() {
           </button>
         );
       })}
+      {gc.data.blocked.length > 0 && (
+        <section class="gc-blocked">
+          <h2>Blocked</h2>
+          {gc.data.blocked.map((code) => (
+            <div key={code} class="fr-row">
+              <span class="fr-who">
+                <b>Code {showCode(code)}</b>
+                <small>Their messages are hidden</small>
+              </span>
+              <button class="fr-btn" onClick={() => gc.block(code, false)}>
+                Unblock
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
     </div>
   );
 }
 
 function People() {
   const gc = online.gchat!;
-  const friends = new Set(online.presence?.data.friends.filter((f) => f.status === 'friend').map((f) => f.code) ?? []);
-  const list = [...gc.people].sort((a, b) => Number(friends.has(b.code)) - Number(friends.has(a.code)));
+  const pr = online.presence;
+  const friends = new Set(pr?.data.friends.filter((f) => f.status === 'friend').map((f) => f.code) ?? []);
+  const added = new Set(pr?.data.friends.map((f) => f.code) ?? []);
+  const [, bump] = useState(0);
+  // (friends first, then whoever is free to duel, then those in a duel)
+  const rank = (p: GcPerson) => (friends.has(p.code) ? 0 : 2) + (p.doing === 'menu' ? 0 : 1);
+  const list = [...gc.people].sort((a, b) => rank(a) - rank(b));
   return (
     <div class="gc-list">
       {!list.length && (
@@ -399,6 +449,11 @@ function People() {
               {DOING[p.doing]}
             </small>
           </span>
+          {pr && !added.has(p.code) && (
+            <button class="fr-btn" onClick={() => (pr.add(p.code, p.name, p.color), bump((n) => n + 1))} aria-label={`Add ${p.name} as a friend`}>
+              + Friend
+            </button>
+          )}
           <button class="fr-btn go" onClick={() => online.openChat({ tab: 'dm', code: p.code, name: p.name, color: p.color })}>
             Message
           </button>
@@ -413,7 +468,15 @@ function Dm({ v }: { v: Extract<ChatView, { tab: 'dm' }> }) {
   const c = gc.data.convos.find((x) => x.code === v.code);
   const lines = c?.lines ?? [];
   const stick = useStick(lines.length);
-  useEffect(() => gc.read(v.code), [lines.length, v.code]);
+  // (read only while it's on screen: a line in while the game is in the background stays new)
+  useEffect(() => {
+    if (document.visibilityState === 'visible') gc.read(v.code);
+  }, [lines.length, v.code]);
+  useEffect(() => {
+    const on = () => document.visibilityState === 'visible' && gc.read(v.code);
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, [v.code]);
   return (
     <>
       <div class="gc-list gc-dm" ref={stick.ref} onScroll={stick.onScroll}>

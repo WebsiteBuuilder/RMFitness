@@ -113,7 +113,8 @@ export function DuelChat({
     // (the open chat shows the line itself: the small one in its one-line strip)
     if (session.chatOpen) return;
     // (unread until the chat is opened: the bubble goes away, the count stays)
-    if (theirs.length) setUnread((n) => n + theirs.length);
+    // (the line shown as a bubble has been seen: only lines that came in under it count)
+    if (theirs.length > 1) setUnread((n) => n + theirs.length - 1);
     // (one line at a time: a newer one replaces the one showing; your own pill shows as you send)
     const last = theirs[theirs.length - 1];
     if (last) pop(last, bubbleMs(last.text));
@@ -392,7 +393,8 @@ export function DuelChat({
   useLayoutEffect(() => {
     if (!myBubble || place !== 'duel') return;
     const bar = document.querySelector('.duel .tbar.bottom, .duel .pbar.bottom')?.getBoundingClientRect();
-    setMyAt(bar && bar.top > 0 ? { bottom: Math.round(window.innerHeight - bar.top + 8), left: Math.round(bar.left + 8) } : null);
+    // (its tail rests on the bar's edge, so it covers as little of your field as it can)
+    setMyAt(bar && bar.top > 0 ? { bottom: Math.round(window.innerHeight - bar.top + 3), left: Math.round(bar.left + 8) } : null);
   }, [myBubble?.id, place, turned]);
 
   // (a phone keyboard: the chat sits just above it; in the duel otherwise it stops under the turn controls)

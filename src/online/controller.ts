@@ -244,8 +244,8 @@ class OnlineController {
     // (the conversation is on screen: it shows there, read)
     if (v?.tab === 'dm' && v.code === n.from && typeof document !== 'undefined' && document.visibilityState === 'visible') {
       this.gchat?.read(n.from);
-    } else {
-      // (one notice per player: a newer message from them replaces theirs)
+    } else if (!v) {
+      // (one notice per player: a newer message from them replaces theirs; with the Chat page open the tabs' counts show it)
       this.chatNotes = [...this.chatNotes.filter((x) => x.from !== n.from), n].slice(-3);
     }
     this.onChatNote(n);
