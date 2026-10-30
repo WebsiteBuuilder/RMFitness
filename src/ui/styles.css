@@ -2339,3 +2339,86 @@ p {
 .howto[open] summary {
   margin-bottom: 4px;
 }
+
+/* counters on a card in play (counters.tsx): a glowing orb and the count, at the card's left edge */
+.ctrmark {
+  --ctr: #b48cff;
+  --ctr-deep: #4a2390;
+  position: absolute;
+  left: -6px;
+  bottom: 26%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px 0 2px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #1b1236f2, #0c0820f2);
+  border: 1px solid var(--ctr);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ctr) 60%, transparent), 0 1px 3px #000c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: ctr-pop 0.45s cubic-bezier(.2, 1.6, .4, 1);
+}
+.ctrmark i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0 12%, var(--ctr) 38%, var(--ctr-deep) 80%);
+  box-shadow: 0 0 6px var(--ctr);
+}
+.ctrmark.k-fog {
+  --ctr: #b9cbe0;
+  --ctr-deep: #3f5470;
+}
+.ctrmark:not(.k-spell):not(.k-fog) {
+  --ctr: #ffcf5a;
+  --ctr-deep: #8a5a00;
+}
+@keyframes ctr-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ctrmark {
+    animation: none;
+  }
+}
+/* in the card preview: inline, with the words after it */
+.tdetail-ctr {
+  display: flex;
+  line-height: 1.15;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0 1px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d9c6ff;
+}
+.tdetail-ctr .ctrmark {
+  position: static;
+  animation: none;
+  flex: none;
+  /* just the orb: the words beside it give the count */
+  font-size: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.tdetail-ctr .ctrmark i {
+  width: 14px;
+  height: 14px;
+}

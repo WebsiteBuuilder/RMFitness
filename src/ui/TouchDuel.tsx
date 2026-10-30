@@ -19,6 +19,7 @@ import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { CounterMark, counterText, showsCounters } from './counters';
 import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
@@ -83,6 +84,8 @@ interface Drag {
 export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: ComponentChildren }) {
   const { state, e, acting, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, send, tap, commands, highlight, anim, selCard, canSeeSel } = ctl;
   const oppId = other(acting);
+  /** the selected card when it is in play (its counters show in the preview) */
+  const selField = selCard ? e.fieldCard(selCard.uid) : null;
   const [phaseOpen, setPhaseOpen] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [bubble, setBubble] = useState<{ x: number; y: number; below: boolean } | null>(null);
@@ -380,7 +383,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${c.counters}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -408,6 +411,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {fc && <div class={`tfc ${fc.tone}`}>{fcShort}</div>}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
+        {showsCounters(c) && <CounterMark c={c} />}
       </div>
     )} />;
   };
@@ -431,6 +435,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       >
         {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : fieldSkill ? <CardImg name={fieldSkill} class="tz-skillcard" /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
+        {showsCounters(ps.field) && <CounterMark c={ps.field} />}
       </div>
     );
   };
@@ -724,6 +729,29 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         ))}
       </div>
 
+      {/* (outside the field box: its size containment would keep the preview under the figures and the turn row) */}
+      <div class="tdetail-anchor">
+        {selCard && canSeeSel && !drag && !mode && (
+          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
+            <span class="tdetail-pic">
+              <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
+            </span>
+            <div class="tdetail-text">
+              <b>{e.nameOf(selCard)}</b>
+              {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
+              <DetailLine name={selCard.name} />
+              {showsCounters(selField) && (
+                <span class="tdetail-ctr">
+                  <CounterMark c={selField} />
+                  <span>{counterText(selField)}</span>
+                </span>
+              )}
+              <p>{cardInfo(selCard.name)?.desc}</p>
+              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
+            </div>
+          </div>
+        )}
+      </div>
       <div class="tboard">
         <div class="tarena" aria-hidden="true">
           <i class="tarena-glow" />
@@ -785,20 +813,6 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </button>
         </div>
 
-        {selCard && canSeeSel && !drag && !mode && (
-          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
-            <span class="tdetail-pic">
-              <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
-            </span>
-            <div class="tdetail-text">
-              <b>{e.nameOf(selCard)}</b>
-              {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
-              <DetailLine name={selCard.name} />
-              <p>{cardInfo(selCard.name)?.desc}</p>
-              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* the turn / phase row again, flat over the 3D field figures (the field's tilt keeps the
