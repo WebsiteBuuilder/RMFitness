@@ -6,8 +6,10 @@ export class MemoryAdapter extends AdapterBase implements SyncAdapter {
   readonly kind = 'local' as const;
   readonly isHost = true;
   readonly roomCode = null;
-  constructor() {
+  /** `events`: a kept log to pick a duel back up from (a cut-off Ranked Duel) */
+  constructor(events: LoggedEvent[] = []) {
     super();
+    this.events = events.map((e, i) => ({ ...e, seq: i }));
     this.setStatus('connected', 'Campaign');
   }
   send(ev: GameEvent) {

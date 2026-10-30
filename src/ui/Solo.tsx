@@ -22,6 +22,7 @@ import { buzz, playBlip, playFanfare, playLose, playStar, playVs } from './sound
 import { Legends } from './Legends';
 import { Ranked } from './Ranked';
 import { startRanked } from '../eds/speedCampaign/ranked';
+import type { RankedLive } from '../eds/speedCampaign/rankedLive';
 import { deckSummary } from './DeckPick';
 import './solo.css';
 
@@ -39,6 +40,8 @@ interface Props {
   onReportSeen: () => void;
   /** onCancel undoes whatever led here if the player backs out of the VS screen */
   onDuel: (spec: CpuDuelSpec, onCancel?: () => void) => void;
+  /** picks a cut-off Ranked Duel back up from its kept moves */
+  onResume?: (live: RankedLive) => void;
   onMode: (m: SoloMode) => void;
   onExit: () => void;
 }
@@ -56,7 +59,7 @@ export function Solo(p: Props) {
     // From here, closing the app mid-duel counts as losing a Labyrinth duel.
     const run = solo.labyrinth.run;
     if (spec.context.kind === 'labyrinth' && run) setSolo({ ...solo, labyrinth: { ...solo.labyrinth, run: stake(run) } });
-    // A Ranked Duel deals the next opponent and counts as a loss if the game closes now.
+    // A Ranked Duel deals the next opponent; from here its moves are kept, so a closed game resumes it.
     if (spec.context.kind === 'ranked') setSolo(startRanked(solo));
     p.onDuel(spec);
   };

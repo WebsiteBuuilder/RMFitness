@@ -22,6 +22,8 @@ export interface SyncAdapter {
   restart?(): void;
   /** the other phone has been gone so long that leaving wins the duel (this phone is still online) */
   abandoned?(): boolean;
+  /** the other phone chose to give the duel up while cut off (its own loss, not a dropped connection) */
+  gaveUp?(): boolean;
   /** online rooms: this phone gives the unfinished duel up while it can't reach the other (the other phone gets the win) */
   forfeit?(): void;
   /** the host's last check on a move the other phone proposes (set by the duel on this phone; false drops it) */
