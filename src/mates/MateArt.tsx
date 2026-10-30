@@ -208,7 +208,7 @@ function dragon(f: Face, d: DragonLook): VNode {
       <ellipse cx="39" cy="92" rx="5.5" ry="3.2" fill={d.lo} {...stroke} stroke-width="1.8" />
       <ellipse cx="61" cy="92" rx="5.5" ry="3.2" fill={d.lo} {...stroke} stroke-width="1.8" />
       {d.horns === 'swept' ? (
-        <path d="M30 44 L6 30 L24 36 L10 18 L32 32 L24 12 L40 30 M70 44 L94 30 L76 36 L90 18 L68 32 L76 12 L60 30" fill={d.spike} {...stroke} stroke-width="1.6" />
+        <path d="M30 44 L4 28 L24 35 L8 14 L32 31 L22 6 L41 29 M70 44 L96 28 L76 35 L92 14 L68 31 L78 6 L59 29" fill={d.spike} {...stroke} stroke-width="1.6" />
       ) : d.horns === 'spiky' ? (
         <path d="M32 40 L20 22 L38 32 M68 40 L80 22 L62 32 M42 30 L44 18 L50 28 L56 18 L58 30" fill={d.spike} {...stroke} stroke-width="1.8" />
       ) : d.horns === 'one' ? (
@@ -216,16 +216,17 @@ function dragon(f: Face, d: DragonLook): VNode {
       ) : (
         <path d="M34 36 l-6 -10 l10 4 M66 36 l6 -10 l-10 4" fill={d.spike} {...stroke} stroke-width="1.6" />
       )}
+      {d.snout && (
+        <g>
+          <path d="M37 50 Q50 47 63 50 L54 76 Q50 80 46 76Z" fill={`url(#${g})`} {...stroke} />
+          <path d="M44 64 L50 62 L56 64 M46 70 L50 68.5 L54 70" stroke={d.wingEdge} stroke-width="1.2" fill="none" opacity="0.6" />
+          <circle cx="48" cy="74" r="0.9" fill={INK} />
+          <circle cx="52" cy="74" r="0.9" fill={INK} />
+        </g>
+      )}
       <ellipse cx="50" cy="48" rx="24" ry="19" fill={`url(#${g})`} {...stroke} />
       {d.horns !== 'one' && <path d="M42 31 l3 -6 l3 5 l2 -6 l2 6 l3 -5 l3 6" fill={d.spike} stroke={INK} stroke-width="1.2" />}
-      {d.snout ? (
-        <g>
-          <path d="M38 53 Q50 51 62 53 L55 67 Q50 71 45 67Z" fill={`url(#${g})`} {...stroke} stroke-width="1.8" />
-          <path d="M42 55 L50 53 L58 55 M45 61 L50 59 L55 61" stroke={d.wingEdge} stroke-width="1.3" fill="none" opacity="0.7" />
-          <circle cx="47.5" cy="65" r="0.9" fill={INK} />
-          <circle cx="52.5" cy="65" r="0.9" fill={INK} />
-        </g>
-      ) : (
+      {!d.snout && (
         <g>
           <ellipse cx="50" cy="58" rx="13" ry="7.5" fill={d.belly} opacity="0.85" />
           <circle cx="46" cy="56.5" r="0.9" fill={INK} />
@@ -233,14 +234,14 @@ function dragon(f: Face, d: DragonLook): VNode {
         </g>
       )}
       <Gloss x={38} y={40} r={5} />
-      <FaceParts f={f} at={{ x: 50, y: d.snout ? 43 : 46, gap: d.snout ? 11.5 : 10.5, s: d.snout ? 1.12 : 0.95, eye: d.eye, mouthY: d.snout ? 62 : 61 }} />
+      <FaceParts f={f} at={{ x: 50, y: d.snout ? 43 : 46, gap: d.snout ? 11.5 : 10.5, s: d.snout ? 1.12 : 0.95, eye: d.eye, mouthY: d.snout ? 61 : 61 }} />
     </g>
   );
 }
 
 const ART: Record<MateId, Draw> = {
   blueeyes: (f) => dragon(f, { id: 'blueeyes', hi: '#ffffff', lo: '#9fc0ec', belly: '#8fb8ee', wing: '#d6e6fb', wingEdge: '#3d7be0', spike: '#e8f2ff', eye: '#1f6fe8', horns: 'swept', big: true, snout: true }),
-  redeyes: (f) => dragon(f, { id: 'redeyes', hi: '#7a7a92', lo: '#34343f', belly: '#a2a2b6', wing: '#8a1e2a', wingEdge: '#a3242f', spike: '#9a9aa8', eye: '#ff2a2a', horns: 'spiky', big: true }),
+  redeyes: (f) => dragon(f, { id: 'redeyes', hi: '#5e5e74', lo: '#22222c', belly: '#8a8a9e', wing: '#b0222e', wingEdge: '#a3242f', spike: '#9a9aa8', eye: '#ff2a2a', horns: 'spiky', big: true }),
   babydragon: (f) => dragon(f, { id: 'babydragon', hi: '#ffc36b', lo: '#e47a1c', belly: '#fff0c8', wing: '#ffb04a', wingEdge: '#c25a10', spike: '#fff0c8', eye: INK, horns: 'one' }),
   kuriboh: (f) => (
     <g>
@@ -427,7 +428,7 @@ const ART: Record<MateId, Draw> = {
       <circle cx="47.5" cy="65" r="0.9" fill={INK} />
       <circle cx="52.5" cy="65" r="0.9" fill={INK} />
       <Gloss x={42} y={30} r={4} />
-      <FaceParts f={f} at={{ x: 50, y: 39, gap: 7, s: 0.8, eye: '#46e0ff', flat: true, noMouth: true }} />
+      <FaceParts f={f} at={{ x: 50, y: 39, gap: 7, s: 0.8, eye: '#46e0ff', brow: '#9feaff', flat: true, mouthY: 57 }} />
     </g>
   ),
   jinzo: (f) => (

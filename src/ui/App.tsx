@@ -247,7 +247,7 @@ export function App() {
     const oldMates = retireOldMates(s);
     if (oldMates) {
       s = oldMates.save;
-      if (oldMates.chips && id === profile?.id) retiredNews.push(`Mates now come from the cards! The Mates you bought were paid back: +${oldMates.chips} Duel Chips.`);
+      if (oldMates.chips && (settleLeft || id === profile?.id)) retiredNews.push(`Mates now come from the cards! The Mates you bought were paid back: +${oldMates.chips} Duel Chips.`);
     }
     if (retiredNews.length) setSpeedNews(retiredNews);
     const t = ticketOf(s);
