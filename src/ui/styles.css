@@ -2415,8 +2415,9 @@ p {
   margin-left: -10px;
   font-size: 17px;
   font-weight: 900;
-  color: #fff;
-  -webkit-text-stroke: 1px #0a0618;
+  /* the counter's own colour, heavily outlined: it reads over any figure or card art */
+  color: color-mix(in srgb, var(--ctr) 70%, #fff);
+  -webkit-text-stroke: 2.5px #0a0618;
   paint-order: stroke fill;
   text-shadow: 0 0 8px var(--ctr), 0 2px 3px #000;
   pointer-events: none;
