@@ -79,6 +79,11 @@ t('Mates bought before the cards came are paid back once, and the save is cleane
   const f = retireOldMates(save({ mate: 'pip' }))!;
   assert.equal(f.chips, 0);
   assert.equal(f.save.mate, undefined);
+  // an old free one in the list goes too, for nothing
+  const p = retireOldMates(save({ chips: 1, mates: ['pip', 'kuriboh'] }))!;
+  assert.equal(p.chips, 0);
+  assert.equal(p.save.chips, 1);
+  assert.deepEqual(p.save.mates, ['kuriboh']);
   // a Mate from a newer version is not this version's to throw away
   assert.equal(retireOldMates(save({ mates: ['exodia'], mate: 'exodia' })), null);
 });
