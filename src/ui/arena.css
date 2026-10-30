@@ -581,7 +581,13 @@
   position: relative;
   top: -8px;
 }
-/* the card preview stays over the turn row */
+/* the card preview stays over the turn row and the field figures: it sits in a zero-height
+   anchor at the top of the field box, outside the box's size containment (its own stacking layer) */
+.duel.touch .tdetail-anchor {
+  position: relative;
+  height: 0;
+  z-index: 8;
+}
 .duel.touch .tdetail {
   z-index: 8;
 }
@@ -809,4 +815,42 @@
   text-align: center;
   box-shadow: 0 1px 4px #000a;
   z-index: 2;
+}
+
+/* a monster's counter badge sticks out past the zone's left edge, clear of its standing figure */
+.duel.touch .tz-m .ctrmarks {
+  /* a share of the zone's width: on a small phone it stays off the neighbouring card */
+  left: -10%;
+  bottom: 17%;
+}
+/* Spell/Trap and Field zones (no figures): the top-left corner */
+.duel.touch :is(.tz-s, .tz-f) .ctrmarks {
+  left: -6px;
+  bottom: 6px;
+}
+
+/* a tapped card on the left half: the preview opens on the right, never over it */
+.duel.touch .tdetail.right {
+  left: auto;
+  right: 6px;
+}
+
+/* monster counter badges over the 3D figures (TouchDuel ctrBoxes): a flat layer like the turn row */
+.ctrfloat {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.ctrfloat-at {
+  position: absolute;
+  /* anchored at its bottom edge: several kinds stack upward, clear of the ATK label */
+  transform: translateY(-100%);
+}
+.ctrfloat .ctrmarks {
+  position: static;
+}
+/* (hidden while the field is still swinging in) */
+.duel.touch:not(.armed) .ctrfloat {
+  opacity: 0;
 }

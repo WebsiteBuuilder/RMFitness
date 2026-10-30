@@ -230,24 +230,32 @@ function payTiers(speed: SpeedSave, solo: SoloSave, p: RankedProgress, tier: num
 export interface RankedOpened {
   speed: SpeedSave;
   solo: SoloSave;
-  /** a Ranked Duel left unfinished (the game was closed) was filed as a loss */
-  forfeited: boolean;
+  /** a Ranked Duel cut off (the game was closed or reloaded) waits to be resumed */
+  resume: boolean;
+  /** a cut-off Ranked Duel that can't be resumed was dropped with no result */
+  dropped: boolean;
 }
 
 /**
- * Brings the ladder up to date when its screen opens: files a Ranked Duel that was never
- * finished as a loss, and starts a new season when the month has turned (paying the prizes
- * of the tiers it starts you in). Seasons only move forward, so turning the clock back
+ * Brings the ladder up to date when its screen opens: a Ranked Duel that was cut off (the
+ * game closed, the phone killed it, an update reloaded it) waits to be resumed when its moves
+ * were kept (`resumable`; it carries into a new month, so waiting can't dodge it), and is otherwise dropped with no result: a lost
+ * connection is never a loss. Starts a new season when the month has turned (paying the
+ * prizes of the tiers it starts you in). Seasons only move forward, so turning the clock back
  * can't replay one.
  */
-export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime()): RankedOpened {
+export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime(), resumable = false): RankedOpened {
   now = ladderClock(solo.ranked, now);
   let p: RankedProgress = { ...migrateRanked(rankedProgress(solo, now)), seen: now.getTime() };
-  let forfeited = false;
+  let resume = false;
+  let dropped = false;
   if (p.pending) {
-    p = applyResult(p, 'l', now, true).p;
-    p = { ...p, week: advanceWeek(p.week, LEFT_EVENT, now).week };
-    forfeited = true;
+    // (across a month's turn too: the result then goes to the new season, as a duel finished after midnight does)
+    if (resumable) resume = true;
+    else {
+      p = { ...p, pending: null, played: Math.max(0, p.played - 1) };
+      dropped = true;
+    }
   }
   const season = seasonOf(now);
   if (season > p.season) {
@@ -256,12 +264,12 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
     // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
     const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
-    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}) };
+    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending, played: 1 } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
-    return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, forfeited };
+    return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, resume, dropped };
   }
-  return { speed, solo: { ...solo, ranked: p }, forfeited };
+  return { speed, solo: { ...solo, ranked: p }, resume, dropped };
 }
 
 /** Ranked wins so far today (for the daily goal). */
@@ -328,7 +336,8 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     w: p.w + (result === 'w' ? 1 : 0),
     l: p.l + (result === 'l' ? 1 : 0),
     ...(result === 'd' ? { d: (p.d ?? 0) + 1 } : {}),
-    pending: null,
+    // (a link battle leaves a cut-off Ranked Duel against the computer waiting)
+    pending: link ? (p.pending ?? null) : null,
   };
   return { p: next, gained, bonus, streakBonus };
 }
@@ -554,7 +563,8 @@ export interface LinkRanked {
  * real duels (online, a few turns, not a quick surrender).
  */
 export function settleLinkRanked(speed: SpeedSave, solo: SoloSave, result: 'w' | 'l' | 'd', opp: string, now = new Date(), seed = now.getTime()): LinkRanked {
-  const opened = openRanked(speed, solo, now, seed);
+  // (a cut-off Ranked Duel against the computer keeps waiting to be resumed: a link battle never files or drops it)
+  const opened = openRanked(speed, solo, now, seed, true);
   speed = opened.speed;
   solo = opened.solo;
   now = ladderClock(solo.ranked, now);

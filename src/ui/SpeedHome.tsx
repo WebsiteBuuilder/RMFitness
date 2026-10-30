@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
+import { LESSONS, lessonsDone, nextLesson } from '../eds/tutorial';
 import { CONTROL_NAMES, type ControlStyle, type Profile } from '../eds/save';
 import type { SpeedDeck, SpeedSave } from '../eds/speedSave';
 import type { SealedCard } from '../art/shadow';
@@ -198,6 +199,14 @@ function TopRank({ profileId }: { profileId: string }) {
   );
 }
 
+/** Duel School: the beginner lessons, and how far you've got. */
+function SchoolTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
+  const done = lessonsDone(save).length;
+  const all = LESSONS.length;
+  const sub = done === 0 ? 'Never played? Learn everything step by step, with prizes' : done < all ? `${done}/${all} lessons done · next: ${nextLesson(save)?.title}` : 'All lessons done · play any again';
+  return <Tile art="Dark Magician" fy={26} title="Duel School" sub={sub} badge={done < all ? `${done}/${all}` : null} hot={done === 0} onPick={onPick} />;
+}
+
 /** A plain list row for things that don't need a picture. */
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
@@ -224,6 +233,7 @@ export function SpeedHome({
   controls,
   onControls,
   onSolo,
+  onSchool,
   onTag,
   onRaid,
   onExit,
@@ -245,6 +255,8 @@ export function SpeedHome({
   controls: ControlStyle;
   onControls: () => void;
   onSolo: (mode: 'campaign' | 'labyrinth' | 'practice' | 'legends' | 'ranked') => void;
+  /** Duel School: the beginner tutorial */
+  onSchool?: () => void;
   onTag?: () => void;
   onRaid?: () => void;
   onExit: () => void;
@@ -351,6 +363,12 @@ export function SpeedHome({
               </button>
             )}
 
+            {onSchool && save.wins + save.losses + save.draws === 0 && lessonsDone(save).length < LESSONS.length && (
+              <button class="sdh-note gold" onClick={() => (playBlip(), onSchool())}>
+                <span>🎓 New to Yu-Gi-Oh!? Learn to duel from zero in Duel School</span>
+                <b>Learn ›</b>
+              </button>
+            )}
             <MatchTile />
             <RankedTile profileId={profile.id} onPick={() => onSolo('ranked')} />
             <div class="sdh-pair">
@@ -366,6 +384,7 @@ export function SpeedHome({
         {tab === 'solo' && (
           <>
             <h2 class="sdh-h">Solo</h2>
+            {onSchool && <SchoolTile save={save} onPick={onSchool} />}
             <Tile art="Obelisk the Tormentor" fy={30} title="The Millennium Road" sub="Story campaign: earn cards, beat the bosses" onPick={() => onSolo('campaign')} />
             <Tile art="Dark Magician Girl" fy={30} title="Card Legends" sub="Stories told by the cards: earn Duel Chips" onPick={() => onSolo('legends')} />
             <Tile art="Labyrinth Wall" title="Duel Labyrinth" sub="Roguelite runs, a new map every time" onPick={() => onSolo('labyrinth')} />

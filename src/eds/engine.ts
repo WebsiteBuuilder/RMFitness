@@ -563,6 +563,14 @@ export class Engine {
       const f = this.find(extra.uid);
       if (f?.loc.zone === 'mz' && !(f.card as FieldCard).faceUp) this.state.fx.flippedDown = { uid: extra.uid, p: f.loc.player, turn: this.state.turn, seq: ev.seq };
     }
+    // A card turned face-down loses its counters (they would come back wrong when it flips up again).
+    if (kind === 'position' && extra.uid !== undefined) {
+      const fc = this.fieldCard(extra.uid);
+      if (fc && !fc.faceUp) {
+        fc.counters = 0;
+        if (fc.tags?.fog) fc.tags.fog = 0;
+      }
+    }
     if (list.length > 40) list.splice(0, list.length - 40);
     if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
@@ -2000,7 +2008,7 @@ export class Engine {
       ps.lp = rules.lp;
       ps.mz = Array(rules.monsterZones).fill(null);
       ps.sz = Array(rules.stZones).fill(null);
-      ps.deck = this.shuffle(a.decks[p].map((n) => this.newCard(n, p)));
+      ps.deck = a.setup?.[p]?.stacked ? a.decks[p].map((n) => this.newCard(n, p)) : this.shuffle(a.decks[p].map((n) => this.newCard(n, p)));
       ps.fusion = a.fusions[p].map((n) => this.newCard(n, p));
       ps.ready = true;
       const skill = a.skills?.[p] ?? null;
@@ -2057,6 +2065,17 @@ export class Engine {
       if (z < 0 || this.info(n).kind !== 'monster') continue;
       ps.mz[z] = this.toField(this.newCard(n, p), 'atk', true);
     }
+    for (const [list, pos, up] of [[su.defense, 'def', true], [su.facedown, 'def', false]] as const)
+      for (const n of list ?? []) {
+        const z = ps.mz.findIndex((x) => x === null);
+        if (z < 0 || this.info(n).kind !== 'monster') continue;
+        ps.mz[z] = this.toField(this.newCard(n, p), pos, up);
+      }
+    for (const n of su.set ?? []) {
+      const z = ps.sz.findIndex((x) => x === null);
+      if (z < 0 || this.info(n).kind === 'monster') continue;
+      ps.sz[z] = this.toField(this.newCard(n, p), 'atk', false);
+    }
     if (su.field && !ps.field && this.info(su.field).sub === 'Field') {
       ps.field = this.toField(this.newCard(su.field, p), 'atk', true);
       ps.field.active = true;
@@ -2069,7 +2088,7 @@ export class Engine {
       ps.sz[z] = fc;
     }
     for (const n of su.hand ?? []) ps.hand.push(this.newCard(n, p));
-    if (su.lp || su.monsters?.length || su.field || su.spells?.length || su.hand?.length) this.log(p, `${ps.name} starts under a Duel Condition`);
+    if (su.lp || su.monsters?.length || su.defense?.length || su.facedown?.length || su.set?.length || su.field || su.spells?.length || su.hand?.length) this.log(p, `${ps.name} starts under a Duel Condition`);
   }
 
   /** Skills that act at the start of the Duel, then the first Standby Phase. */

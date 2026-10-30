@@ -1,0 +1,804 @@
+/* Duel School (Tutorial.tsx): coach picker, lesson list, picture pages, quiz, and the coach over the duel. */
+.ds {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--sd-ink, #eef2ff);
+}
+.ds-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+  background: linear-gradient(180deg, #0b1226f2 60%, #0b122600);
+}
+.ds-top b {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ds-back {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid #ffffff2e;
+  background: #ffffff10;
+  color: inherit;
+  font-size: 26px;
+  line-height: 1;
+  padding: 0 0 3px;
+}
+.ds-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  animation: ds-in 0.28s ease-out;
+}
+@keyframes ds-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.ds-h1 {
+  margin: 4px 0 0;
+  font-size: clamp(22px, 6.4vw, 28px);
+  line-height: 1.15;
+}
+.ds-dim {
+  margin: 0;
+  color: var(--sd-dim, #aab4d4);
+  font-size: 15px;
+}
+
+/* buttons */
+.ds-go,
+.ds-btn {
+  min-height: 52px;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a1203;
+  background: linear-gradient(180deg, #ffd978, #e9a92c);
+  border: 0;
+  box-shadow: 0 6px 16px #0007, inset 0 1px 0 #fff8;
+  transition: transform 0.1s;
+}
+.ds-go:active,
+.ds-btn:active {
+  transform: scale(0.97);
+}
+.ds-btn {
+  color: inherit;
+  background: #ffffff14;
+  border: 1px solid #ffffff30;
+  box-shadow: none;
+  font-weight: 600;
+}
+.ds-btn.bad {
+  border-color: #ff7a7a88;
+  color: #ffc4c4;
+}
+.ds-link {
+  align-self: center;
+  background: none;
+  border: 0;
+  color: var(--sd-dim, #aab4d4);
+  text-decoration: underline;
+  font-size: 15px;
+  padding: 8px;
+}
+.ds-nav {
+  display: flex;
+  gap: 10px;
+}
+.ds-nav .ds-go {
+  flex: 1;
+}
+.ds-nav .ds-btn {
+  flex: 0 0 34%;
+}
+
+/* the coach's face and words */
+.ds-face {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid #f2c14e;
+  background-color: #1b2448;
+  /* a card picture cropped to the face in its art box */
+  background-size: 190% auto;
+  background-position: 50% 26%;
+  background-repeat: no-repeat;
+  box-shadow: 0 3px 10px #0008;
+}
+.ds-face.s {
+  width: 34px;
+  height: 34px;
+  border-width: 1.5px;
+}
+.ds-face.l {
+  width: 76px;
+  height: 76px;
+}
+.ds-says {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.ds-says-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 4px 14px 14px 14px;
+  background: #f7f3e8;
+  color: #1d1a12;
+  box-shadow: 0 6px 16px #0006;
+}
+.ds-says-box b {
+  display: block;
+  font-size: 13px;
+  color: #8a5a00;
+  margin-bottom: 2px;
+}
+.ds-says-box p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.38;
+}
+
+/* coach picker */
+.ds-coaches {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.ds-coach {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 10px;
+  border-radius: 14px;
+  border: 2px solid #ffffff20;
+  background: #101a38;
+  color: inherit;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.ds-coach.on {
+  border-color: #f2c14e;
+  box-shadow: 0 0 0 3px #f2c14e33, 0 8px 18px #0008;
+  transform: translateY(-2px);
+}
+.ds-coach-pic {
+  width: 100%;
+  aspect-ratio: 59 / 86;
+}
+.ds-coach-pic .cimg {
+  width: 100%;
+  height: 100%;
+}
+.ds-coach b {
+  font-size: 16px;
+}
+
+/* lesson list */
+.ds-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ds-progress i {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: #ffffff1c;
+}
+.ds-progress i.on {
+  background: linear-gradient(90deg, #ffd978, #e9a92c);
+}
+.ds-progress span {
+  font-size: 13px;
+  color: var(--sd-dim, #aab4d4);
+  min-width: 30px;
+  text-align: right;
+}
+.ds-lessons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ds-lesson {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 86px;
+  padding: 10px 12px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid #ffffff26;
+  background: #101a38;
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 6px 16px #0007;
+}
+.ds-lesson.next {
+  border-color: #f2c14e;
+  box-shadow: 0 0 0 1px #f2c14e55 inset, 0 8px 20px #0009;
+}
+.ds-lesson:disabled {
+  opacity: 0.55;
+}
+.ds-lesson-art {
+  position: absolute;
+  inset: 0 0 0 38%;
+  background-size: 132% auto;
+  background-position: 50% 32%;
+  background-repeat: no-repeat;
+  opacity: 0.55;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 60%);
+  mask-image: linear-gradient(90deg, transparent, #000 60%);
+}
+.ds-lesson-n {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ffffff1a;
+  border: 1px solid #ffffff40;
+  font-weight: 800;
+  font-size: 18px;
+}
+.ds-lesson.done .ds-lesson-n {
+  background: #3fbf6a;
+  border-color: #8ff0b0;
+}
+.ds-lesson.next .ds-lesson-n {
+  background: linear-gradient(180deg, #ffd978, #e9a92c);
+  color: #1a1203;
+  border: 0;
+}
+.ds-lesson-txt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-shadow: 0 1px 3px #000;
+}
+.ds-lesson-txt b {
+  font-size: 17px;
+}
+.ds-lesson-txt small {
+  font-size: 13px;
+  color: #d6dcf2;
+}
+.ds-lesson-txt em {
+  font-style: normal;
+  font-size: 12px;
+  color: #f2c14e;
+}
+
+/* picture pages */
+.ds-cards {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.ds-cards figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(30%, 140px);
+}
+.ds-cards.n1 figure {
+  width: min(46%, 200px);
+}
+.ds-cards.n2 figure {
+  width: min(40%, 170px);
+}
+.ds-cards .cimg {
+  width: 100%;
+  aspect-ratio: 59 / 86;
+  border-radius: 6px;
+  box-shadow: 0 8px 18px #000a;
+}
+.ds-cards figcaption {
+  font-size: 13px;
+  text-align: center;
+  color: #e6ebff;
+  line-height: 1.25;
+}
+.ds-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.ds-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff33;
+}
+.ds-dots i.on {
+  background: #f2c14e;
+  width: 22px;
+  border-radius: 4px;
+}
+
+/* quiz */
+.ds-q {
+  font-size: clamp(20px, 5.6vw, 24px);
+}
+.ds-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ds-answer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 2px solid #ffffff26;
+  background: #101a38;
+  color: inherit;
+  font-size: 16px;
+  text-align: left;
+  transition: transform 0.1s, background 0.2s, border-color 0.2s;
+}
+.ds-answer:active {
+  transform: scale(0.98);
+}
+.ds-answer i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ffffff1a;
+  font-style: normal;
+  font-weight: 800;
+}
+.ds-answer.right {
+  border-color: #5be38a;
+  background: #1d4d32;
+  animation: ds-pop 0.3s;
+}
+.ds-answer.right i {
+  background: #5be38a;
+  color: #08210f;
+}
+.ds-answer.wrong {
+  border-color: #ff7a7a;
+  background: #4d1d22;
+  animation: ds-shake 0.35s;
+}
+.ds-answer.off {
+  opacity: 0.5;
+}
+@keyframes ds-pop {
+  50% {
+    transform: scale(1.03);
+  }
+}
+@keyframes ds-shake {
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+/* lesson complete */
+.ds-done {
+  align-items: stretch;
+  text-align: center;
+  padding-top: calc(28px + env(safe-area-inset-top));
+}
+.ds-trophy {
+  font-size: 64px;
+  line-height: 1;
+  animation: ds-pop 0.6s ease-out;
+}
+.ds-stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-size: 38px;
+}
+.ds-stars i {
+  font-style: normal;
+  color: #ffffff26;
+}
+.ds-stars i.on {
+  color: #ffd25e;
+  text-shadow: 0 0 14px #ffb40088;
+  animation: ds-pop 0.5s ease-out backwards;
+}
+.ds-stars i.on:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ds-stars i.on:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.ds-prize {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #f2c14e;
+  background: #2a2208;
+  text-align: left;
+}
+.ds-prize b {
+  font-size: 18px;
+  color: #ffd978;
+}
+.ds-prize small {
+  grid-column: 2;
+  color: #e9dcb8;
+}
+.ds-prize-pack {
+  grid-row: span 2;
+  width: 34px;
+  height: 48px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #ff5f6d, #ffc371);
+  box-shadow: 0 4px 10px #0008, inset 0 0 0 2px #fff6;
+}
+.ds-done .ds-says {
+  text-align: left;
+}
+
+/* ---------- over the duel ---------- */
+/* the duel's own first-turn hints would sit under the coach: the coach says it instead */
+html.in-school .ttoast.hint,
+html.in-school .ol-pill,
+html.in-school .mm-bar {
+  display: none !important;
+}
+.ds-ring {
+  position: fixed;
+  z-index: 941;
+  pointer-events: none;
+  border-radius: 12px;
+  border: 3px solid #ffd25e;
+  box-shadow: 0 0 18px 4px #ffd25eaa;
+  animation: ds-ring 1.2s ease-in-out infinite;
+  transition: left 0.18s, top 0.18s, width 0.18s, height 0.18s;
+}
+/* everything but the target dims a little: four panes around it */
+.ds-shade {
+  position: fixed;
+  z-index: 940;
+  pointer-events: none;
+  background: #0000005c;
+  transition: all 0.18s;
+}
+.ds-shade.focus {
+  background: #00000094;
+}
+@keyframes ds-ring {
+  50% {
+    border-color: #fff3c4;
+    box-shadow: 0 0 26px 8px #ffd25ecc;
+  }
+}
+.ds-ring.focus {
+  animation: none;
+}
+.ds-finger {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  font-style: normal;
+  font-size: 30px;
+  filter: drop-shadow(0 2px 4px #000);
+  animation: ds-tap 1s ease-in-out infinite;
+}
+.ds-finger.up {
+  top: auto;
+  bottom: 100%;
+  transform: rotate(180deg);
+  animation-name: ds-tap-up;
+}
+@keyframes ds-tap {
+  0%,
+  100% {
+    transform: translate(-50%, 4px);
+  }
+  50% {
+    transform: translate(-50%, -6px);
+  }
+}
+@keyframes ds-tap-up {
+  0%,
+  100% {
+    transform: translate(-50%, -4px) rotate(180deg);
+  }
+  50% {
+    transform: translate(-50%, 6px) rotate(180deg);
+  }
+}
+.ds-bubble {
+  position: fixed;
+  z-index: 942;
+  left: 50%;
+  width: min(calc(100vw - 20px), 520px);
+  transform: translateX(-50%);
+  padding: 8px 12px 10px;
+  border-radius: 16px;
+  background: #f7f3e8;
+  color: #1d1a12;
+  border: 2px solid #f2c14e;
+  box-shadow: 0 10px 28px #000c;
+  animation: ds-bubble 0.25s ease-out;
+}
+.ds-bubble.high {
+  top: calc(6px + env(safe-area-inset-top));
+}
+.ds-bubble.low {
+  bottom: calc(6px + env(safe-area-inset-bottom));
+}
+@keyframes ds-bubble {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.97);
+  }
+}
+.ds-bubble-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ds-bubble-top b {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  color: #6b4400;
+}
+.ds-choice {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #7b3fe4;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ds-skip {
+  flex: none;
+  background: none;
+  border: 0;
+  color: #7a6f57;
+  font-size: 13px;
+  padding: 6px 2px 6px 6px;
+}
+.ds-bubble p {
+  margin: 6px 0 0;
+  font-size: 15.5px;
+  line-height: 1.36;
+}
+.ds-nudge {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #ffe1a6;
+  color: #5a3a00;
+  font-weight: 600;
+  animation: ds-shake 0.35s;
+}
+.ds-bubble-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.ds-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: #00000018;
+  overflow: hidden;
+}
+.ds-bar i {
+  display: block;
+  height: 100%;
+  background: #e9a92c;
+}
+.ds-next {
+  min-height: 40px;
+  min-width: 96px;
+  border-radius: 12px;
+  border: 0;
+  background: linear-gradient(180deg, #ffd978, #e9a92c);
+  color: #1a1203;
+  font-weight: 800;
+  font-size: 16px;
+  box-shadow: 0 3px 8px #0004;
+}
+.ds-yourmove {
+  font-size: 13px;
+  font-weight: 800;
+  color: #8a5a00;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ds-wait {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px;
+}
+.ds-wait i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b48a3a;
+  animation: ds-dot 1s infinite;
+}
+.ds-wait i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ds-wait i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes ds-dot {
+  50% {
+    opacity: 0.25;
+    transform: translateY(-3px);
+  }
+}
+.ds-ask {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ds-ask span {
+  grid-column: span 2;
+  font-size: 14px;
+}
+.ds-ask .ds-btn {
+  min-height: 44px;
+  color: #1d1a12;
+  background: #0000000f;
+  border-color: #00000026;
+}
+.ds-ask .ds-btn.bad {
+  color: #8a1010;
+}
+.ds-cheer-in {
+  flex: 1;
+  font-size: 15px;
+  color: #2f7a12;
+  animation: ds-pop 0.4s ease-out;
+}
+/* the final duel's tips: a slim bar along the bottom, tucked away with Hide tips */
+.ds-bubble.free {
+  padding: 6px 10px 8px;
+}
+.ds-bubble.free p {
+  margin-top: 2px;
+  font-size: 14.5px;
+}
+.ds-bubble.free.off {
+  left: auto;
+  right: 8px;
+  width: auto;
+  transform: none;
+  animation: none;
+}
+.ds-bubble.free.off .ds-bubble-top b {
+  display: none;
+}
+@media (max-height: 700px) {
+  .ds-bubble p {
+    font-size: 14.5px;
+  }
+  .ds-bubble {
+    padding: 6px 10px 8px;
+  }
+  .ds-next {
+    min-height: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-ring,
+  .ds-finger,
+  .ds-wait i,
+  .ds-cheer-in {
+    animation: none;
+  }
+}
+
+/* a nudge (or the leave question) while a window or a cinematic hides the bubble */
+.ds-toast {
+  position: fixed;
+  z-index: 1300;
+  left: 50%;
+  top: calc(64px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #ffe1a6;
+  color: #5a3a00;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 6px 18px #000a;
+  animation: ds-toast 2.6s ease-out forwards;
+  pointer-events: none;
+}
+.ds-toast.ask {
+  animation: ds-bubble 0.25s ease-out;
+  pointer-events: auto;
+  background: #f7f3e8;
+  border: 2px solid #f2c14e;
+}
+@keyframes ds-toast {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  8%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* the final duel's tip bubble stays small so the board shows */
+.ds-bubble.free {
+  padding: 5px 10px 6px;
+}
+.ds-bubble.free p {
+  margin-top: 3px;
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.ds-bubble.free .ds-bubble-top b {
+  font-size: 14px;
+}
+
+/* in school the card names in the hand are the words the coach says to tap: show them whole */
+html.in-school .duel.touch .hname {
+  font-size: 9px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  -webkit-line-clamp: 3;
+  max-height: calc(3.3em + 5px);
+}

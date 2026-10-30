@@ -8,6 +8,7 @@ import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
 import { playBlip, playDraw, playWin, setSoundEnabled, unlockAudio, useSoundEnabled } from './sound';
@@ -41,6 +42,8 @@ interface Props {
   locked?: boolean;
   /** an online duel between two phones: Master Duel's turn timer runs */
   clock?: boolean;
+  /** the beginner tutorial: a move this says no to is never sent */
+  vet?: (a: Parameters<DuelSession['send']>[0]) => boolean;
 }
 
 export type Mode = { kind: 'attack'; uid: number } | null;
@@ -51,7 +54,7 @@ export interface Command {
   disabled?: boolean;
 }
 
-export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock }: Props) {
+export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, onLeave, onFinished, spectator, locked, clock, vet }: Props) {
   const state = useShownState(view.state, hotseat ? null : mySeat);
   const e = session.engine;
   const acting: Pid = hotseat ? (state.prompt?.player ?? state.turnPlayer) : mySeat;
@@ -213,6 +216,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     onLeave();
   };
   const send = (a: Parameters<DuelSession['send']>[0]) => {
+    if (vet && !vet(a)) {
+      setSel(null);
+      setMode(null);
+      return;
+    }
     const moves = view.moves || view.log.length;
     if (sent.current && sent.current.moves === moves && Date.now() - sent.current.at < 1500) return;
     sent.current = { moves, at: Date.now() };
@@ -344,6 +352,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             )}
             {c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
             {(c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
+            <CounterMarks list={shownCounters(c)} />
           </div>
         ) : (
           <span class="zlabel">{kind === 'm' ? '' : ''}</span>
@@ -367,6 +376,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
           {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : fieldSkillOf(p) ? <CardImg name={fieldSkillOf(p)!} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
+          <CounterMarks list={ps.field ? shownCounters(ps.field) : fieldSkillOf(p) && ps.skillRevealed ? shownCounters(e.skillCard(p)) : []} />
         </div>
         {ps.removed.length > 0 && (
           <button class="pile small" onClick={() => setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed })}>
@@ -468,6 +478,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
               {info.kind === 'monster' ? `Lv${info.level} ${info.attribute}/${info.race} ATK ${info.atk} DEF ${info.def}` : `${info.sub} ${info.kind === 'spell' ? spellWord(e.speed) : 'Trap'}`}
             </div>
           )}
+          {canSeeSel && <CounterLines list={shownCounters(e.fieldCard(selCard.uid))} />}
           <Menu items={commands} />
         </Win>
       );
@@ -626,7 +637,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       )}
       {online && view.status !== 'connected' && state.winner === null && /^(Connection lost|Rejoining|Can't reach)/.test(view.detail) && <div class="net-lock"><span>Paused · reconnecting</span></div>}
       {/* (only the room's host can take a win on time: the host's phone vets the other phone's moves) */}
-      {runner && session.adapter.isHost && state.winner === null && <ClaimWin runner={runner} name={state.players[other(mySeat)].name} onClaim={() => session.send({ type: 'SURRENDER', player: other(mySeat) })} />}
+      {runner && session.adapter.isHost && state.winner === null && <ClaimWin runner={runner} name={state.players[other(mySeat)].name} onClaim={() => session.send({ type: 'SURRENDER', player: other(mySeat), timeout: true })} />}
       {online && view.status !== 'connected' && state.winner === null && (
         <div class="netwarn">
           <span>{view.detail || 'Connection lost. Rejoining…'}</span>
