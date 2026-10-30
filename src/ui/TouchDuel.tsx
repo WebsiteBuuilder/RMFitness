@@ -19,6 +19,7 @@ import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
 import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
@@ -83,6 +84,8 @@ interface Drag {
 export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: ComponentChildren }) {
   const { state, e, acting, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, send, tap, commands, highlight, anim, selCard, canSeeSel } = ctl;
   const oppId = other(acting);
+  /** the selected card when it is in play (its counters show in the preview) */
+  const selField = selCard ? e.fieldCard(selCard.uid) : null;
   const [phaseOpen, setPhaseOpen] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [bubble, setBubble] = useState<{ x: number; y: number; below: boolean } | null>(null);
@@ -230,6 +233,37 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
   }, [sel, actions.length, mode, me.hand.length, state.phase, state.turn, resized]);
+
+  // With the 3D figures up, a monster's counter badges ride in a flat layer over them (a figure
+  // drawn over its own zone hid them): placed at each holder's zone, measured when they change.
+  const fieldCards = [...me.mz, ...me.sz, me.field, ...opp.mz, ...opp.sz, opp.field];
+  // (counters already on the field as the screen opens are not "gained")
+  useState(() => primeCounters(fieldCards));
+  noteCounterless(fieldCards);
+  const ctrHolders = figuresOn ? [...me.mz, ...opp.mz].filter((c): c is FieldCard => shownCounters(c).length > 0) : [];
+  const ctrKey = ctrHolders.map((c) => `${c.uid}:${countersKey(shownCounters(c))}`).join(';');
+  const [ctrBoxes, setCtrBoxes] = useState<{ uid: number; x: number; y: number }[]>([]);
+  useLayoutEffect(() => {
+    const el = root.current;
+    const boxes: { uid: number; x: number; y: number }[] = [];
+    if (el)
+      for (const c of ctrHolders) {
+        const z = el.querySelector(`.tz-m[data-uid="${c.uid}"]`);
+        const r = z?.getBoundingClientRect();
+        if (r && r.width > 0) boxes.push({ uid: c.uid, x: Math.round(r.left - r.width * 0.1), y: Math.round(r.bottom - r.height * 0.2) });
+      }
+    setCtrBoxes((b) => (b.length === boxes.length && b.every((x, i) => x.uid === boxes[i].uid && x.x === boxes[i].x && x.y === boxes[i].y) ? b : boxes));
+  }, [ctrKey, resized]);
+
+  // The card preview opens on the side of the board away from a tapped field card (it never covers it).
+  const [detailRight, setDetailRight] = useState(false);
+  useLayoutEffect(() => {
+    if (sel === null) return;
+    const el = root.current?.querySelector(`[data-uid="${sel}"]`);
+    const r = el && el.closest('.tmat') ? el.getBoundingClientRect() : null;
+    const right = !!r && r.left + r.width / 2 < window.innerWidth * 0.58;
+    setDetailRight((d) => (d === right ? d : right));
+  }, [sel]);
 
   // ----- what a dragged card may be dropped on -----
   const dropSpots = (uid: number, from: 'hand' | 'mz'): Set<string> => {
@@ -380,7 +414,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${!!draggable}` : cls;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -408,6 +442,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {fc && <div class={`tfc ${fc.tone}`}>{fcShort}</div>}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
+        {!(kind === 'm' && figuresOn) && <CounterMarks list={shownCounters(c)} uid={c?.uid} />}
       </div>
     )} />;
   };
@@ -431,6 +466,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       >
         {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : fieldSkill ? <CardImg name={fieldSkill} class="tz-skillcard" /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
+        <CounterMarks list={ps.field ? shownCounters(ps.field) : fieldSkill && ps.skillRevealed ? shownCounters(e.skillCard(p)) : []} />
       </div>
     );
   };
@@ -493,6 +529,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={(ev) => (ev.stopPropagation(), ctl.openSkill(p))}
           >
             Skill
+            {ps.skillRevealed && <CounterMarks list={shownCounters(e.skillCard(p))} />}
           </button>
         )}
         <div class={`tlp ${hurt}`}>
@@ -724,6 +761,24 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         ))}
       </div>
 
+      {/* (outside the field box: its size containment would keep the preview under the figures and the turn row) */}
+      <div class="tdetail-anchor">
+        {selCard && canSeeSel && !drag && !mode && (
+          <div class={`tdetail${detailRight ? ' right' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
+            <span class="tdetail-pic">
+              <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
+            </span>
+            <div class="tdetail-text">
+              <b>{e.nameOf(selCard)}</b>
+              {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
+              <DetailLine name={selCard.name} />
+              <CounterLines list={shownCounters(selField)} />
+              <p>{cardInfo(selCard.name)?.desc}</p>
+              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
+            </div>
+          </div>
+        )}
+      </div>
       <div class="tboard">
         <div class="tarena" aria-hidden="true">
           <i class="tarena-glow" />
@@ -785,22 +840,21 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </button>
         </div>
 
-        {selCard && canSeeSel && !drag && !mode && (
-          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
-            <span class="tdetail-pic">
-              <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
-            </span>
-            <div class="tdetail-text">
-              <b>{e.nameOf(selCard)}</b>
-              {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
-              <DetailLine name={selCard.name} />
-              <p>{cardInfo(selCard.name)?.desc}</p>
-              <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
-            </div>
-          </div>
-        )}
       </div>
 
+      {/* a monster's counter badges, flat over the 3D field figures (see ctrBoxes) */}
+      {ctrBoxes.length > 0 && (
+        <div class="ctrfloat" aria-hidden="true">
+          {ctrBoxes.map((b) => {
+            const c = e.fieldCard(b.uid);
+            return c ? (
+              <div key={b.uid} class="ctrfloat-at" style={{ left: `${b.x}px`, top: `${b.y}px` }}>
+                <CounterMarks list={shownCounters(c)} uid={b.uid} />
+              </div>
+            ) : null;
+          })}
+        </div>
+      )}
       {/* the turn / phase row again, flat over the 3D field figures (the field's tilt keeps the
           row itself under the figures layer); only while the figures are on */}
       {midBox && (

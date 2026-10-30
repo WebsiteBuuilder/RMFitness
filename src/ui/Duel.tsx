@@ -8,6 +8,7 @@ import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
 import { playBlip, playDraw, playWin, setSoundEnabled, unlockAudio, useSoundEnabled } from './sound';
@@ -351,6 +352,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
             )}
             {c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
             {(c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
+            <CounterMarks list={shownCounters(c)} />
           </div>
         ) : (
           <span class="zlabel">{kind === 'm' ? '' : ''}</span>
@@ -374,6 +376,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
           {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : fieldSkillOf(p) ? <CardImg name={fieldSkillOf(p)!} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
+          <CounterMarks list={ps.field ? shownCounters(ps.field) : fieldSkillOf(p) && ps.skillRevealed ? shownCounters(e.skillCard(p)) : []} />
         </div>
         {ps.removed.length > 0 && (
           <button class="pile small" onClick={() => setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed })}>
@@ -475,6 +478,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
               {info.kind === 'monster' ? `Lv${info.level} ${info.attribute}/${info.race} ATK ${info.atk} DEF ${info.def}` : `${info.sub} ${info.kind === 'spell' ? spellWord(e.speed) : 'Trap'}`}
             </div>
           )}
+          {canSeeSel && <CounterLines list={shownCounters(e.fieldCard(selCard.uid))} />}
           <Menu items={commands} />
         </Win>
       );

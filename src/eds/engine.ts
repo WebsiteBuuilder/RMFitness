@@ -563,6 +563,14 @@ export class Engine {
       const f = this.find(extra.uid);
       if (f?.loc.zone === 'mz' && !(f.card as FieldCard).faceUp) this.state.fx.flippedDown = { uid: extra.uid, p: f.loc.player, turn: this.state.turn, seq: ev.seq };
     }
+    // A card turned face-down loses its counters (they would come back wrong when it flips up again).
+    if (kind === 'position' && extra.uid !== undefined) {
+      const fc = this.fieldCard(extra.uid);
+      if (fc && !fc.faceUp) {
+        fc.counters = 0;
+        if (fc.tags?.fog) fc.tags.fog = 0;
+      }
+    }
     if (list.length > 40) list.splice(0, list.length - 40);
     if (this.state.rules?.mode === 'speed') noteLevelEvent(this.state, ev, { source: this.levelSource, inChain: this.resolving > 0, find: (u) => this.find(u) });
   }
