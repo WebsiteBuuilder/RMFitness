@@ -69,6 +69,7 @@ import { deckOf } from '../eds/speedCampaign/campaign';
 import type { CpuDuelist } from '../eds/speedCampaign/types';
 import { online } from '../online/controller';
 import { setUiGame } from './gameUi';
+import { DuelSchool, schoolBack } from './Tutorial';
 import { replayOf, saveReplay, type Replay } from '../eds/replays';
 import { ReplayPlayer } from './Replay';
 
@@ -153,6 +154,10 @@ export function App() {
   const [speedFailed, setSpeedFailed] = useState(false);
   /** Speed Duel solo modes: which one is open, the duel in progress and the last result */
   const [soloMode, setSoloMode] = useState<SoloMode | null>(null);
+  /** Duel School is open ('first': a new duelist said "Teach me", straight into lesson one) */
+  const [school, setSchool] = useState<'open' | 'first' | null>(null);
+  /** a Speed Duel screen to open on the way back from Duel School */
+  const hubGo = useRef<'decks' | 'shop' | null>(null);
   const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
   /** stops keeping the Ranked Duel on screen's moves */
   const keepRanked = useRef<(() => void) | null>(null);
@@ -1093,6 +1098,11 @@ export function App() {
       closeResult();
       return true;
     }
+    // Duel School steps back to its lesson list, then closes.
+    if (screen === 'speed' && school) {
+      if (!schoolBack()) setSchool(null);
+      return true;
+    }
     // Speed Duel's own screens step back to the Speed Duel menu first.
     if (screen === 'speed' && !soloMode && speedHubBack()) return true;
     // The solo modes step back through their own sheets and screens.
@@ -1329,6 +1339,8 @@ export function App() {
             onBack={() => (setTagReport(null), setTagOpen(false))}
           />
         );
+      if (school)
+        return <DuelSchool key={profile.id} name={save.name} profileId={profile.id} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} start={school === 'first' ? 'first' : undefined} onExit={(to) => ((hubGo.current = to ?? null), setSchool(null))} />;
       if (soloMode)
         return (
           <>
@@ -1351,7 +1363,7 @@ export function App() {
         );
       return (
         <>
-          <SpeedHub key={profile.id} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub key={profile.id} open={hubGo.current} onOpened={() => (hubGo.current = null)} onSchool={(first) => setSchool(first ? 'first' : 'open')} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">

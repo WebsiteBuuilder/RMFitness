@@ -226,6 +226,12 @@ export interface SeatSetup {
   lp?: number;
   /** cards already face-up in Attack Position */
   monsters?: string[];
+  /** monsters already face-up in Defense Position (the beginner tutorial) */
+  defense?: string[];
+  /** monsters already Set face-down in Defense Position */
+  facedown?: string[];
+  /** Spells/Traps already Set face-down */
+  set?: string[];
   /** a Field Spell already face-up in the Field Zone */
   field?: string;
   /** Continuous Spells/Traps already face-up and active */
@@ -234,6 +240,8 @@ export interface SeatSetup {
   hand?: string[];
   /** draw this many more (or fewer, when negative) for the opening hand */
   openingHand?: number;
+  /** the Deck is not shuffled: cards are drawn in the order given (the beginner tutorial) */
+  stacked?: boolean;
 }
 
 /** What a player may ask the engine to do. */
