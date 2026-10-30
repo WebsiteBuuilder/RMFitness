@@ -6,6 +6,7 @@
 // own choice, and the coach says how it went either way.
 import type { Engine } from './engine';
 import { aiAction } from './ai';
+import { DEFAULT_TACTICS } from './tactics';
 import type { Action, Card, DuelState, FieldCard, Pid, SeatSetup } from './types';
 
 // ---------- the coaches ----------
@@ -71,8 +72,8 @@ export interface TutStep {
   title: string;
   /** plain words: what this is, then what to do (it may depend on how a choice went) */
   text: string | ((st: DuelState) => string);
-  /** info: read it, tap Next · do: make the move asked for · watch: the coach moves */
-  kind: 'info' | 'do' | 'watch';
+  /** info: read it, tap Next · do: make the move asked for · watch: the coach moves · free: a real duel, any move goes, the coach gives tips */
+  kind: 'info' | 'do' | 'watch' | 'free';
   /** a move the player gets to choose (the screen says so) */
   choice?: boolean;
   /** only shown when this holds (the other side of a choice skips it) */
@@ -212,7 +213,7 @@ const basics: Lesson = {
     { title: 'What is a duel?', text: 'Two duelists play cards against each other. Each starts with 4000 Life Points (LP). Knock your opponent down to 0 and you win!' },
     {
       title: 'Three kinds of cards',
-      text: 'Monsters fight for you. Spells are magic you use on your turn. Traps are set face-down and spring as a surprise, often on your opponent\'s turn.',
+      text: 'Monsters fight for you. Spells are magic you use on your turn (a few, called Quick-Play, work any time: you\'ll meet one later). Traps are Set face-down and spring as a surprise, often on your opponent\'s turn.',
       cards: [
         { name: 'La Jinn the Mystical Genie of the Lamp', label: 'Monster (yellow or orange)' },
         { name: 'Monster Reborn', label: 'Spell (green)' },
@@ -224,7 +225,7 @@ const basics: Lesson = {
       text: 'The stars at the top are its Level. ATK at the bottom is how hard it hits, DEF is how well it guards. Levels 1 to 4 are free to play. 5 and 6 need 1 Tribute, 7 and up need 2.',
       cards: [{ name: 'Summoned Skull', label: 'Level 6 · ATK 2500 · DEF 1200' }],
     },
-    { title: 'Taking turns', text: 'A turn goes: Draw a card, then Main Phase (play cards), then Battle Phase (attack), then End. Speed Duel is the quick kind of duel: 4 cards in your first hand, 3 spots for monsters and 3 for Spells and Traps.' },
+    { title: 'Taking turns', text: 'A turn goes: Draw a card, then Main Phase (play cards), then Battle Phase (attack), then End. Speed Duel is the quick kind of duel: 4 cards in your first hand, 3 spots for monsters and 3 for Spells and Traps, and no second Main Phase after battling, so play your cards before you attack.' },
   ],
   duel: {
     start: startAs(0, [L1.first, L1.trap, L1.big, 'Celtic Guardian', L1.spell], [L1.foe, 'Mystical Elf', 'Beaver Warrior', 'Feral Imp', 'Battle Ox'], [{}, {}], [], TUTORIAL_SKILL),
@@ -246,7 +247,7 @@ const basics: Lesson = {
     steps: [
       { id: 'board', kind: 'info', title: 'This is the duel', text: "Your side is the bottom half, the coach's is the top. The cards along the bottom are your hand: only you can see them.", aim: () => '.thand' },
       { id: 'lp', kind: 'info', title: 'Life Points', text: 'You both have 4000 Life Points (LP). Attacks take them away. Whoever hits 0 first loses.', aim: () => '.tbar.top .tlp' },
-      { id: 'skill', kind: 'info', title: 'Your Skill', text: 'This button is your Skill: a special power you pick before a duel. Yours is Destiny Draw: if you ever lose 2000 LP, you may pick any card from your Deck to draw. Tap it any time to read it.', aim: () => '.tbar.bottom .tskill' },
+      { id: 'skill', kind: 'info', title: 'Your Skill', text: 'This button is your Skill: a special power you pick before a duel. Yours is Destiny Draw: once per duel, after you have lost 2000 LP, you can pick any card from your Deck instead of your normal draw. Tap it any time to read it.', aim: () => '.tbar.bottom .tskill' },
       summonStep('summon', L1.first, 'Play a monster', 'La Jinn is Level 4 (4 stars), so it can be played for free. Tap La Jinn, then tap Summon. (You can also drag a card up onto the field.)', { nudge: 'Tap La Jinn (the green genie), then tap Summon.' }),
       { id: 'atk', kind: 'info', title: 'Attack Position', text: "La Jinn stands upright: that's Attack Position, ready to fight. The number under it is its ATK, 1800. You can only play one monster this way each turn.", aim: (st) => zoneOf(uidOf(onField(st, 0, L1.first))) },
       { id: 'tribute-later', kind: 'info', title: 'Big monsters cost more', text: "Summoned Skull is Level 6, too strong to play for free: it needs a Tribute (one of your monsters on the field goes to make room). You'll do that next turn.", aim: (st) => `.thand [data-uid="${uidOf(handCard(st, 0, L1.big))}"]` },
@@ -260,7 +261,7 @@ const basics: Lesson = {
         kind: 'do',
         noPass: true,
         title: 'Spring your Trap!',
-        text: 'Vorse Raider attacks La Jinn! If it hits, La Jinn is destroyed and you lose 100 LP (1900 minus 1800). Tap Sakuretsu Armor to spring it.',
+        text: 'Vorse Raider attacks La Jinn! If it hits, La Jinn is destroyed and you lose 100 LP (1900 minus 1800). Tap Sakuretsu Armor to spring it. ("Don\'t chain" would mean: do nothing, let the attack happen.)',
         aim: (_st, on) => (on('.tsheet .toptions') ? '.tsheet .toptions' : null),
         allow: (a) => is(a, 'CHOOSE'),
         done: (st) => inGy(st, 1, L1.foe),
@@ -284,7 +285,7 @@ const basics: Lesson = {
         kind: 'do',
         choice: true,
         title: 'Use a Spell',
-        text: "La Jinn went to the Graveyard. Monster Reborn brings back a monster from either Graveyard, even the coach's! Tap Monster Reborn, then Activate. Bring back La Jinn or Vorse Raider: you pick.",
+        text: "La Jinn went to the Graveyard. Monster Reborn brings back a monster from either Graveyard, even the coach's! Tap Monster Reborn, then Activate. Bring back La Jinn or Vorse Raider: you pick. Then tap Yes so it comes back in Attack Position, ready to fight.",
         aim: handAim(L1.spell, 'Activate'),
         allow: (a, st) => (is(a, 'ACTIVATE') && a.uid === uidOf(handCard(st, 0, L1.spell))) || is(a, 'CHOOSE') || is(a, 'CANCEL') || (is(a, 'YES') && st.prompt?.kind === 'yesno'),
         done: (st) => monsters(st, 0).length >= 2 && !st.prompt,
@@ -398,6 +399,105 @@ const battles: Lesson = {
     { q: 'Your 1800 ATK monster attacks a 1200 ATK monster in Attack Position. What happens?', options: ['Both are destroyed', 'Theirs is destroyed and they lose 600 LP', 'Nothing happens'], right: 1, why: 'Higher ATK wins, and the loser\'s owner takes the difference: 1800 minus 1200.' },
     { q: 'Your 1400 ATK monster attacks a monster in Defense Position with 2000 DEF. What happens?', options: ['Their monster is destroyed', 'They lose 600 LP', 'Nothing is destroyed and you lose 600 LP'], right: 2, why: 'A higher DEF bounces the attack back at you.' },
     { q: 'How can you tell a monster is in Defense Position?', options: ["It's turned sideways", 'It glows red', "It's upside down"], right: 0, why: 'Upright is Attack Position, sideways is Defense Position.' },
+  ],
+};
+
+// Lesson 3: more moves (positions, Flip Summon, Quick-Play, Field and Equip Spells)
+const LM = { celtic: 'Celtic Guardian', beaver: 'Beaver Warrior', mst: 'Mystical Space Typhoon', sogen: 'Sogen', axe: 'Axe of Despair', negate: 'Negate Attack' };
+const fieldOf = (st: DuelState, p: Pid) => st.players[p].field;
+const moves: Lesson = {
+  id: 'moves',
+  title: 'More moves',
+  blurb: 'Changing position, Flip Summons, Quick-Play, Field and Equip Spells',
+  art: 'Axe of Despair',
+  slides: [
+    { title: 'Spells come in kinds', text: 'Normal Spells work once and go to the Graveyard. Quick-Play Spells (a lightning bolt on the card) can even be used on the opponent\'s turn. Field Spells sit in your Field Zone and power up a whole type of monster. Equip Spells attach to one monster and stay there.', cards: [{ name: 'Mystical Space Typhoon', label: 'Quick-Play' }, { name: 'Sogen', label: 'Field' }, { name: 'Axe of Despair', label: 'Equip' }] },
+    { title: 'Moving your monsters', text: "Once per turn (not the turn it arrived) you can switch a monster between Attack and Defense Position, or flip a face-down monster face-up: that's a Flip Summon." },
+  ],
+  duel: {
+    start: startAs(1, [LM.mst, LM.sogen, LM.axe, 'Mystical Elf', 'Feral Imp'], [], [{ defense: [LM.celtic], facedown: [LM.beaver] }, { set: [LM.negate] }]),
+    coach: passing,
+    steps: [
+      coachPasses,
+      { id: 'yours', kind: 'info', title: 'Your monsters', text: 'You start with two monsters: Celtic Guardian, sideways in Defense Position, and a face-down monster of your own (only you can see what it is).', aim: (st) => zoneOf(uidOf(onField(st, 0, LM.celtic))) },
+      {
+        id: 'to-atk',
+        kind: 'do',
+        title: 'Stand up!',
+        text: 'Monsters in Defense Position can\'t attack. Tap Celtic Guardian, then To Attack.',
+        aim: (st, on) => {
+          const uid = uidOf(onField(st, 0, LM.celtic));
+          return on(`.tz.sel[data-uid="${uid}"]`) ? '.tactions .taction[data-label="To Attack"]' : zoneOf(uid);
+        },
+        allow: (a, st) => is(a, 'CHANGE_POS') && a.uid === uidOf(onField(st, 0, LM.celtic)),
+        done: (st) => onField(st, 0, LM.celtic)?.pos === 'atk',
+        nudge: 'Tap Celtic Guardian (the sideways one), then To Attack.',
+      },
+      {
+        id: 'flip-summon',
+        kind: 'do',
+        title: 'Flip Summon',
+        text: 'Now flip your face-down monster face-up and into Attack Position: tap it, then Flip Summon.',
+        aim: (st, on) => {
+          const m = monsters(st, 0).find((x) => !x.faceUp);
+          if (!m) return null;
+          return on(`.tz.sel[data-uid="${m.uid}"]`) ? '.tactions .taction[data-label="Flip Summon"]' : zoneOf(m.uid);
+        },
+        allow: (a, st) => is(a, 'FLIP_SUMMON') && a.uid === uidOf(onField(st, 0, LM.beaver)),
+        done: (st) => !!onField(st, 0, LM.beaver)?.faceUp && !st.prompt,
+        nudge: 'Tap your face-down monster, then Flip Summon.',
+      },
+      { id: 'their-trap', kind: 'info', title: 'A hidden Trap', text: "The coach Set a card. If it's a Trap like Negate Attack, it could stop your attacks. Let's get rid of it first.", aim: (st) => { const c = st.players[1].sz.find((x) => !!x); return c ? zoneOf(c.uid) : null; } },
+      {
+        id: 'mst',
+        kind: 'do',
+        title: 'A Quick-Play Spell',
+        text: 'Mystical Space Typhoon destroys one Spell or Trap. Tap it, then Activate, then pick the coach\'s Set card.',
+        aim: handAim(LM.mst, 'Activate'),
+        allow: (a, st) => (is(a, 'ACTIVATE') && a.uid === uidOf(handCard(st, 0, LM.mst))) || is(a, 'CHOOSE') || is(a, 'CANCEL'),
+        done: (st) => inGy(st, 1, LM.negate) && !st.prompt,
+        nudge: 'Tap Mystical Space Typhoon, then Activate.',
+      },
+      { id: 'mst-out', kind: 'info', title: 'Good call', text: 'It was Negate Attack: it would have stopped your attack. Normal and Quick-Play Spells go to the Graveyard once used.', aim: () => '.tpile.gy[data-pile="gy1"]' },
+      {
+        id: 'field',
+        kind: 'do',
+        title: 'A Field Spell',
+        text: 'Sogen gives every Warrior and Beast-Warrior +200 ATK and DEF, and stays in the Field Zone. Both your monsters qualify! Tap Sogen, then Activate.',
+        aim: handAim(LM.sogen, 'Activate'),
+        allow: (a, st) => is(a, 'ACTIVATE') && a.uid === uidOf(handCard(st, 0, LM.sogen)),
+        done: (st) => fieldOf(st, 0)?.name === LM.sogen && !st.prompt,
+        nudge: 'Tap Sogen (the green Field Spell), then Activate.',
+      },
+      {
+        id: 'equip',
+        kind: 'do',
+        choice: true,
+        title: 'An Equip Spell',
+        text: 'Axe of Despair gives one monster +1000 ATK. Tap it, then Activate, and pick which monster gets the axe.',
+        aim: handAim(LM.axe, 'Activate'),
+        allow: (a, st) => (is(a, 'ACTIVATE') && a.uid === uidOf(handCard(st, 0, LM.axe))) || is(a, 'CHOOSE') || is(a, 'CANCEL'),
+        done: (st) => st.players[0].sz.some((c) => c?.name === LM.axe) && !st.prompt,
+        nudge: 'Tap Axe of Despair, then Activate.',
+      },
+      { id: 'stays', kind: 'info', title: 'Cards that stay', text: (st) => `${monsters(st, 0).find((m) => m.equips.length)?.name ?? 'Your monster'} now carries the axe. Field and Equip Spells stay on the field and keep working, and so do Continuous Spells and Traps. Your monsters add up to exactly 4000 ATK: the coach's whole LP!` },
+      battleStep('bp-m', 'Tap the phase button, then Battle Phase.'),
+      {
+        id: 'hit-m',
+        kind: 'do',
+        title: 'Attack!',
+        text: 'The coach has no monsters. Attack directly with each of your monsters: each one may attack once per turn.',
+        aim: attackAim((st) => monsters(st, 0).find((m) => !m.attacked), () => null),
+        allow: (a) => is(a, 'ATTACK') && a.target === null,
+        done: (st) => st.winner !== null,
+        nudge: 'Tap one of your monsters, then Attack directly.',
+      },
+    ],
+  },
+  quiz: [
+    { q: 'When can you switch a monster from Defense to Attack Position?', options: ['Any time, as often as you like', 'Once per turn, in your Main Phase, if it didn\'t just arrive', 'Only during the Battle Phase'], right: 1, why: 'Once per turn in your Main Phase, and not the turn it was played.' },
+    { q: 'What is special about a Quick-Play Spell?', options: ['It can be used even on the opponent\'s turn', 'It costs Life Points', 'It stays on the field forever'], right: 0, why: 'Quick-Play Spells (lightning bolt) can be used at more moments than Normal Spells.' },
+    { q: 'What happens if you have to draw a card but your Deck is empty?', options: ['Nothing', 'You shuffle your Graveyard back in', 'You lose the duel'], right: 2, why: "Running out of cards to draw loses the duel, so don't make your deck too small!" },
   ],
 };
 
@@ -554,7 +654,7 @@ const game: Lesson = {
   slides: [
     { title: 'Building a deck', text: 'A Speed Duel Deck has 20 to 30 cards, plus an Extra Deck of up to 6. You can have up to 3 copies of any card. Build yours in the Deck tab, or let the game make one for you with Random deck.' },
     { title: 'Skills', text: 'Each deck may bring 1 Skill: a special power that is not a card. Some are always on, some you tap the Skill button to use, usually once per duel. Pick yours in the deck editor.', cards: [{ name: 'Destiny Draw (Skill Card)', label: 'Skill' }] },
-    { title: 'A few more rules', text: "Whoever goes first doesn't draw and can't attack on turn 1. You can Normal Summon (or Set) one monster per turn. At the end of your turn, you can't have more than 6 cards in hand: extras go to the Graveyard." },
+    { title: 'A few more rules', text: "Whoever goes first doesn't draw and can't attack on turn 1. You can Normal Summon (or Set) one monster per turn, and each monster attacks at most once per turn. There's no Main Phase after battle in Speed Duel. At the end of your turn you can't keep more than 6 cards in hand: extras go to the Graveyard. And if you have to draw but your Deck is empty, you lose!" },
     { title: 'Get more cards', text: 'Win duels to earn card packs, then open them in the Shop tab. Duel Chips are rare: spend them to craft exactly the card you want. Cards you use a lot level up and get shinier.', cards: [{ name: 'Jar of Greed', label: 'Card Shop' }] },
     { title: 'What to play next', text: 'Duel tab: VS Computer, Link Battle with your brother, and Ranked. Solo tab: The Millennium Road story, Card Legends, the Duel Labyrinth, and Practice Duel to try any deck with nothing at stake.' },
   ],
@@ -566,7 +666,44 @@ const game: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [basics, battles, chains, fusion, game];
+// The final duel: a real one against the coach, no script, any move goes; the coach gives tips
+const FINAL_ME = ['Summoned Skull', 'Celtic Guardian', 'La Jinn the Mystical Genie of the Lamp', 'Luster Dragon', 'Axe Raider', 'Battle Ox', 'Gaia The Fierce Knight', 'Feral Imp', 'Kuriboh', 'Old Vindictive Magician', 'Giant Soldier of Stone', 'Beaver Warrior', 'Monster Reborn', 'Fissure', 'Mystical Space Typhoon', 'Axe of Despair', 'Sakuretsu Armor', 'Sakuretsu Armor', 'Negate Attack', 'Celtic Guardian'];
+const FINAL_COACH = ['Feral Imp', 'Beaver Warrior', 'Mystical Elf', 'Battle Ox', 'Axe Raider', 'Celtic Guardian', 'Giant Soldier of Stone', 'Kuriboh', 'Archfiend Soldier', 'Vorse Raider', 'Mystic Tomato', 'Luster Dragon', 'Summoned Skull', 'Feral Imp', 'Beaver Warrior', 'Battle Ox', 'Axe Raider', 'Fissure', 'Negate Attack', 'Mystical Elf'];
+/** a tip for whatever is happening in a free duel */
+export function freeTip(st: DuelState): string {
+  const me = st.players[0];
+  if (st.prompt?.player === 0) return st.prompt.kind === 'response' ? 'The coach did something: you may answer with a card (tap it), or let it happen ("Don\'t chain").' : 'The game asks you a question at the bottom: pick an answer.';
+  if (st.turnPlayer === 1) return "The coach's turn. Your Set Traps can spring when they attack.";
+  if (st.phase === 'BP') return monsters(st, 0).some((m) => m.pos === 'atk' && !m.attacked) ? 'Battle Phase: tap a monster, then Attack. Higher ATK wins; no monsters in the way means a direct hit.' : 'All done? Tap the phase button, then End Turn.';
+  const then = st.turn === 1 ? 'Then tap the phase button and End Turn: nobody attacks on the very first turn.' : 'Then tap the phase button for the Battle Phase.';
+  if (!me.normalSummoned && me.hand.length > 0) return `Main Phase: play a monster (Level 5 and 6 need a Tribute), Set your Traps, use Spells. ${then}`;
+  if (st.turn === 1) return then;
+  return 'Use Spells or Set Traps if you like, then tap the phase button: Battle Phase to attack, or End Turn.';
+}
+const final: Lesson = {
+  id: 'final',
+  title: 'The final duel',
+  blurb: 'A real duel against your coach: no script, just tips',
+  art: 'Black Luster Soldier',
+  slides: [{ title: 'Your first real duel', text: "This time nothing is planned: the decks are shuffled and the coach plays to win. I'll give you tips along the way. Use everything you've learned. Good luck!" }],
+  duel: {
+    start: (me, coach) => ({ type: 'START', first: 0, seed: (Date.now() >>> 0) || 1, names: [me, coach], decks: [FINAL_ME, FINAL_COACH], fusions: [[], []], mode: 'speed', skills: [TUTORIAL_SKILL, null] }),
+    coach: (e) => {
+      const st = e.state;
+      if (st.winner !== null) return null;
+      if (st.prompt ? st.prompt.player !== 1 : st.turnPlayer !== 1) return null;
+      return aiAction(e, 1, { ...DEFAULT_TACTICS, level: 'easy' }) ?? (st.prompt ? { type: 'PASS', player: 1 } : { type: 'END_TURN', player: 1 });
+    },
+    steps: [{ id: 'free', kind: 'free', title: 'Tip', text: freeTip, done: (st) => st.winner !== null }],
+  },
+  quiz: [
+    { q: 'You have a 1500 ATK monster. The opponent has a 1200 ATK monster in Attack Position and 1000 LP. Can you win this turn by attacking it?', options: ['No: only 300 damage', 'Yes', 'Only with a Trap'], right: 0, why: 'Attacking a monster only deals the difference: 1500 minus 1200 is 300.' },
+    { q: 'Your opponent has no monsters. What can your monsters do?', options: ['Nothing', 'Attack their Life Points directly', 'Only defend'], right: 1, why: 'With no monsters in the way, each of yours can hit directly for its full ATK.' },
+    { q: "Which comes first in your turn?", options: ['Battle Phase', 'End Phase', 'Draw Phase'], right: 2, why: 'Draw, Main, Battle, End. Play your cards before you battle.' },
+  ],
+};
+
+export const LESSONS: Lesson[] = [basics, battles, moves, chains, fusion, game, final];
 
 // ---------- running a lesson's steps ----------
 /** The step after `i` that isn't over yet (a step already done when reached, or not meant for this game, is skipped). */
@@ -582,6 +719,7 @@ export function allowed(steps: TutStep[], i: number, a: Action, st: DuelState): 
   if (!s) return true;
   if (is(a, 'SURRENDER')) return true;
   if (is(a, 'PASS')) return !s.noPass;
+  if (s.kind === 'free') return true;
   if (s.kind !== 'do') return false;
   return !!s.allow?.(a, st);
 }
@@ -592,7 +730,7 @@ export function coachMayMove(steps: TutStep[], i: number, st: DuelState): boolea
   const s = steps[i];
   if (!s) return true;
   if (st.prompt?.player === 1) return s.kind !== 'info';
-  return s.kind === 'watch';
+  return s.kind === 'watch' || s.kind === 'free';
 }
 
 // ---------- the save: offered once, a one-time prize per lesson ----------
@@ -609,10 +747,41 @@ export const lessonOpen = (s: object, id: string): boolean => {
 };
 export const LESSON_PACKS = 1;
 
-/** A lesson finished: the first time ever it pays one card pack (finishing it again pays nothing). */
-export function finishLesson<S extends object>(s: S, id: string): { save: S; packs: number } {
+/** Lesson prizes per phone: like the welcome packs, at most this many profiles on one phone get them (new profiles aren't a pack farm). */
+export const SCHOOL_PROFILES = 2;
+const paidKey = 'eds.speed.schoolPaid';
+function paidHere(): string[] {
+  try {
+    const v = JSON.parse(globalThis.localStorage?.getItem(paidKey) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+/** May this profile still earn lesson prizes on this phone? (it already did, or there's room for one more) */
+export function prizesHere(profileId?: string): boolean {
+  if (!profileId) return true;
+  const list = paidHere();
+  return list.includes(profileId) || list.length < SCHOOL_PROFILES;
+}
+function notePaid(profileId?: string) {
+  if (!profileId) return;
+  const list = paidHere();
+  if (list.includes(profileId)) return;
+  try {
+    globalThis.localStorage?.setItem(paidKey, JSON.stringify([...list, profileId]));
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/** A lesson finished: the first time ever it pays one card pack (finishing it again pays nothing; nor does a third profile on the same phone). */
+export function finishLesson<S extends object>(s: S, id: string, profileId?: string): { save: S; packs: number } {
   if (!LESSONS.some((l) => l.id === id) || lessonsDone(s).includes(id)) return { save: s, packs: 0 };
-  return { save: { ...s, school: [...lessonsDone(s), id], packs: (W(s).packs ?? 0) + LESSON_PACKS }, packs: LESSON_PACKS };
+  const pays = prizesHere(profileId);
+  if (pays) notePaid(profileId);
+  const packs = pays ? LESSON_PACKS : 0;
+  return { save: { ...s, school: [...lessonsDone(s), id], packs: (W(s).packs ?? 0) + packs }, packs };
 }
 
 /** Should the menu offer Duel School? A duelist who has never dueled and hasn't said no or started it. */

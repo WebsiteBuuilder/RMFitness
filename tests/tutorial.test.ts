@@ -5,7 +5,8 @@ import { DB as KIT } from './speedkit';
 import { DB } from '../src/eds/db';
 import { Engine } from '../src/eds/engine';
 import type { Action, DuelState } from '../src/eds/types';
-import { LESSONS, allowed, coachMayMove, finishLesson, lessonOpen, nextLesson, nextStep, offerSchool, skipSchool, textOf, type TutStep } from '../src/eds/tutorial';
+import { aiAction } from '../src/eds/ai';
+import { LESSONS, lessonsDone, allowed, coachMayMove, finishLesson, freeTip, lessonOpen, nextLesson, SCHOOL_PROFILES, nextStep, offerSchool, skipSchool, textOf, type TutStep } from '../src/eds/tutorial';
 
 for (const [k, v] of KIT) DB.set(k, v);
 
@@ -37,6 +38,7 @@ function candidates(st: DuelState): Action[] {
   }
   for (const m of me.mz) {
     if (!m) continue;
+    out.push({ type: 'CHANGE_POS', player: 0, uid: m.uid }, { type: 'FLIP_SUMMON', player: 0, uid: m.uid });
     out.push({ type: 'ATTACK', player: 0, uid: m.uid, target: null });
     for (const t of st.players[1].mz) if (t) out.push({ type: 'ATTACK', player: 0, uid: m.uid, target: t.uid });
   }
@@ -44,7 +46,7 @@ function candidates(st: DuelState): Action[] {
   return out;
 }
 
-const sig = (st: DuelState) => JSON.stringify([st.turn, st.phase, st.prompt, st.players.map((p) => [p.lp, p.hand.length, p.mz.map((m) => m && [m.uid, m.faceUp, m.attacked]), p.sz.map((c) => c?.uid), p.gy.length])]);
+const sig = (st: DuelState) => JSON.stringify([st.turn, st.phase, st.prompt, st.players.map((p) => [p.lp, p.hand.length, p.mz.map((m) => m && [m.uid, m.faceUp, m.attacked, m.pos, m.equips.length]), p.field?.uid, p.sz.map((c) => c?.uid), p.gy.length])]);
 
 /** Plays a lesson's duel: `pick` chooses among the allowed moves (0 = the first, -1 = the last). */
 function play(lessonId: string, pick: number): { won: boolean; steps: string[]; e: Engine; blocked: number } {
@@ -107,6 +109,26 @@ for (const l of LESSONS) {
   ok(l.slides.length > 0 && l.quiz.length >= 3, `${l.id}: has pages and a quiz`);
   for (const q of l.quiz) ok(q.right >= 0 && q.right < q.options.length && q.why.length > 0, `${l.id}: quiz "${q.q}" has a right answer`);
   if (!l.duel) continue;
+  if (l.duel.steps.some((s) => s.kind === 'free')) {
+    // the final duel is a real one: the player (played by the computer here) and the coach take turns until someone wins
+    for (let round = 0; round < 3; round++) {
+      const e = new Engine(DB);
+      e.apply(l.duel.start('You', 'Yugi'));
+      const steps = l.duel.steps;
+      let n = 0;
+      for (; n < 3000 && e.state.winner === null; n++) {
+        const st = e.state;
+        const a = coachMayMove(steps, 0, st) ? l.duel.coach(e) : null;
+        const b = a ?? aiAction(e, 0) ?? (st.prompt?.player === 0 ? { type: 'PASS' as const, player: 0 as const } : st.turnPlayer === 0 ? { type: 'END_TURN' as const, player: 0 as const } : null);
+        if (!b) break;
+        ok(a !== null || allowed(steps, 0, b, st), `${l.id}: any move of yours goes in the final duel`);
+        e.apply(b);
+        ok(freeTip(e.state).length > 10, `${l.id}: there is always a tip`);
+      }
+      ok(e.state.winner !== null, `${l.id} (game ${round}): the final duel ends (${n} moves, LP ${e.state.players.map((p) => p.lp).join('/')})`);
+    }
+    continue;
+  }
   for (const pick of [0, -1]) {
     const r = play(l.id, pick);
     ok(r.won, `${l.id} (choice ${pick}): the duel ends in your win (LP ${r.e.state.players.map((p) => p.lp).join('/')}, at ${r.steps[r.steps.length - 1]})`);
@@ -125,6 +147,9 @@ for (const l of LESSONS) {
   const f0 = play('fusion', 0).e.state.players[0].mz.find((m) => m)?.name;
   const f1 = play('fusion', -1).e.state.players[0].mz.find((m) => m)?.name;
   ok(f0 !== f1, `fusion: either Fusion Monster can be made (${f0} | ${f1})`);
+  const m0 = play('moves', 0).e.state.players[0].mz.find((m) => m?.equips.length)?.name;
+  const m1 = play('moves', -1).e.state.players[0].mz.find((m) => m?.equips.length)?.name;
+  ok(!!m0 && !!m1 && m0 !== m1, `moves: the axe can go to either monster (${m0} | ${m1})`);
   const c0 = play('chains', 0);
   ok(c0.steps.includes('chain') && c0.e.state.players[1].gy.some((c) => c.name === 'Trap Jammer'), 'chains: the coach answers your Trap with Trap Jammer');
   const c1 = play('chains', -1);
@@ -153,6 +178,17 @@ for (const l of LESSONS) {
     total += r.packs;
   }
   ok(total === LESSONS.length && nextLesson(s) === null, `all ${LESSONS.length} lessons pay ${LESSONS.length} packs in all, once`);
+}
+
+// one phone: only the first SCHOOL_PROFILES profiles get lesson prizes
+{
+  const store = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+  const s0 = { wins: 0, losses: 0, draws: 0 };
+  const paid = ['a', 'b', 'c'].map((id) => finishLesson(s0, 'basics', id).packs);
+  ok(paid.join() === [...Array(SCHOOL_PROFILES).fill(1), 0].join(), `the first ${SCHOOL_PROFILES} profiles on a phone get lesson packs, a third doesn't (${paid.join()})`);
+  ok(finishLesson(s0, 'battles', 'a').packs === 1, 'a profile that already got prizes here keeps getting them');
+  ok(lessonsDone(finishLesson(s0, 'basics', 'c').save).includes('basics'), 'a third profile still gets the lesson marked done');
 }
 
 if (fails) {

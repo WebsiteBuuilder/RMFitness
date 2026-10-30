@@ -696,45 +696,29 @@ html.in-school .mm-bar {
 .ds-ask .ds-btn.bad {
   color: #8a1010;
 }
-.ds-cheer {
-  position: fixed;
-  z-index: 943;
-  left: 50%;
-  top: calc(45% - 28px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 8px;
-  border-radius: 30px;
-  background: linear-gradient(180deg, #ffd978, #e9a92c);
-  color: #1a1203;
-  box-shadow: 0 8px 22px #000a;
-  pointer-events: none;
-  animation: ds-cheer 1.4s ease-out forwards;
+.ds-cheer-in {
+  flex: 1;
+  font-size: 15px;
+  color: #2f7a12;
+  animation: ds-pop 0.4s ease-out;
 }
-.ds-cheer b {
-  font-size: 18px;
-  white-space: nowrap;
+/* the final duel's tips: a slim bar along the bottom, tucked away with Hide tips */
+.ds-bubble.free {
+  padding: 6px 10px 8px;
 }
-@keyframes ds-cheer {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, 10px) scale(0.8);
-  }
-  15% {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1.05);
-  }
-  25% {
-    transform: translate(-50%, 0) scale(1);
-  }
-  80% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -16px);
-  }
+.ds-bubble.free p {
+  margin-top: 2px;
+  font-size: 14.5px;
+}
+.ds-bubble.free.off {
+  left: auto;
+  right: 8px;
+  width: auto;
+  transform: none;
+  animation: none;
+}
+.ds-bubble.free.off .ds-bubble-top b {
+  display: none;
 }
 @media (max-height: 700px) {
   .ds-bubble p {
@@ -751,7 +735,7 @@ html.in-school .mm-bar {
   .ds-ring,
   .ds-finger,
   .ds-wait i,
-  .ds-cheer {
+  .ds-cheer-in {
     animation: none;
   }
 }

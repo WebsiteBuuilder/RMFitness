@@ -14,27 +14,32 @@ import { cpuDelay, spotUid, spotlight } from './cpuPace';
 import { artBusy, onArtChange, whenArtIdle } from '../art/cues';
 import { getAnimSpeed } from '../art/settings';
 import type { SpeedSave } from '../eds/speedSave';
-import { COACHES, LESSONS, allowed, coachMayMove, coachOf, finishLesson, lessonOpen, lessonsDone, nextStep, schoolCoach, textOf, withCoach, LESSON_PACKS, type Coach, type Lesson, type QuizQ, type TutStep } from '../eds/tutorial';
+import { COACHES, LESSONS, allowed, coachMayMove, coachOf, finishLesson, lessonOpen, prizesHere, lessonsDone, nextStep, schoolCoach, textOf, withCoach, LESSON_PACKS, type Coach, type Lesson, type QuizQ, type TutStep } from '../eds/tutorial';
 import './tutorial.css';
 
-type Stage = { kind: 'map' } | { kind: 'coach' } | { kind: 'slides' | 'duel' | 'quiz'; lesson: Lesson } | { kind: 'done'; lesson: Lesson; packs: number; score: number };
+type Stage = { kind: 'map' } | { kind: 'coach' } | { kind: 'slides' | 'duel' | 'quiz' | 'lost'; lesson: Lesson } | { kind: 'done'; lesson: Lesson; packs: number; score: number };
 
 /** Android back inside Duel School: steps back to the lesson list first */
 let back: (() => boolean) | null = null;
+/** Android back inside a lesson's duel: asks "Leave this lesson?" (a second back keeps dueling) */
+let duelBack: (() => void) | null = null;
 export const schoolBack = (): boolean => (back ? back() : false);
 
-export function DuelSchool({ name, save, onSave, onExit, start }: { name: string; save: SpeedSave; onSave: (s: SpeedSave) => void; onExit: () => void; start?: 'first' }) {
+export function DuelSchool({ name, profileId, save, onSave, onExit, start }: { name: string; profileId: string; save: SpeedSave; onSave: (s: SpeedSave) => void; onExit: (to?: 'decks' | 'shop') => void; start?: 'first' }) {
   const coach = coachOf(schoolCoach(save));
   const [stage, setStage] = useState<Stage>(() => (!schoolCoach(save) ? { kind: 'coach' } : start === 'first' && !lessonsDone(save).length ? { kind: 'slides', lesson: LESSONS[0] } : { kind: 'map' }));
   const begin = (l: Lesson) => (playBlip(), setStage({ kind: 'slides', lesson: l }));
   const finish = (l: Lesson, s: number) => {
-    const r = finishLesson(save, l.id);
+    const r = finishLesson(save, l.id, profileId);
     if (r.packs) onSave(r.save);
     setStage({ kind: 'done', lesson: l, packs: r.packs, score: s });
   };
   useEffect(() => {
     back = () => {
       if (stage.kind === 'map' || (stage.kind === 'coach' && !schoolCoach(save))) return false;
+      // a duel asks first; the quiz stays put (leaving it would lose the lesson's prize)
+      if (stage.kind === 'duel') return (duelBack?.(), true);
+      if (stage.kind === 'quiz') return true;
       setStage({ kind: 'map' });
       return true;
     };
@@ -56,18 +61,34 @@ export function DuelSchool({ name, save, onSave, onExit, start }: { name: string
           onSave(withCoach(save, c.id));
           setStage(lessonsDone(save).length || !start ? { kind: 'map' } : { kind: 'slides', lesson: LESSONS[0] });
         }}
-        onBack={schoolCoach(save) ? () => setStage({ kind: 'map' }) : onExit}
+        onBack={schoolCoach(save) ? () => setStage({ kind: 'map' }) : () => onExit()}
       />
     );
   if (stage.kind === 'slides') return <Slides key={stage.lesson.id} lesson={stage.lesson} coach={coach} onDone={() => setStage(stage.lesson.duel ? { kind: 'duel', lesson: stage.lesson } : { kind: 'quiz', lesson: stage.lesson })} onBack={() => setStage({ kind: 'map' })} />;
-  if (stage.kind === 'duel') return <LessonDuel key={stage.lesson.id} lesson={stage.lesson} coach={coach} name={name} onWon={() => setStage({ kind: 'quiz', lesson: stage.lesson })} onLeave={() => setStage({ kind: 'map' })} />;
+  if (stage.kind === 'duel') return <LessonDuel key={stage.lesson.id} lesson={stage.lesson} coach={coach} name={name} onWon={() => setStage({ kind: 'quiz', lesson: stage.lesson })} onLost={() => setStage({ kind: 'lost', lesson: stage.lesson })} onLeave={() => setStage({ kind: 'map' })} />;
+  if (stage.kind === 'lost')
+    return (
+      <div class="ds">
+        <main class="ds-page ds-done">
+          <div class="ds-trophy">💪</div>
+          <h1 class="ds-h1">So close!</h1>
+          <Says coach={coach}>Losing is part of learning: every duelist does it. Shuffle up and try again, you've got this.</Says>
+          <button class="ds-go" onClick={() => (playBlip(), setStage({ kind: 'slides', lesson: stage.lesson }))}>
+            Try again
+          </button>
+          <button class="ds-btn" onClick={() => (playBlip(), setStage({ kind: 'map' }))}>
+            All lessons
+          </button>
+        </main>
+      </div>
+    );
   if (stage.kind === 'quiz') return <Quiz key={stage.lesson.id} lesson={stage.lesson} coach={coach} onDone={(s) => finish(stage.lesson, s)} />;
   if (stage.kind === 'done') {
     const i = LESSONS.indexOf(stage.lesson);
     const next = LESSONS[i + 1];
-    return <Done lesson={stage.lesson} coach={coach} packs={stage.packs} score={stage.score} next={next} onNext={() => (next ? begin(next) : onExit())} onMap={() => setStage({ kind: 'map' })} />;
+    return <Done lesson={stage.lesson} coach={coach} packs={stage.packs} score={stage.score} next={next} onNext={() => (next ? begin(next) : onExit())} onMap={() => setStage({ kind: 'map' })} onGo={stage.lesson.id === 'game' ? onExit : undefined} />;
   }
-  return <SchoolMap save={save} coach={coach} onLesson={begin} onCoach={() => setStage({ kind: 'coach' })} onBack={onExit} />;
+  return <SchoolMap save={save} prizes={prizesHere(profileId)} coach={coach} onLesson={begin} onCoach={() => setStage({ kind: 'coach' })} onBack={() => onExit()} />;
 }
 
 // ---------- the coach's face and a line from them ----------
@@ -127,7 +148,7 @@ function CoachPick({ current, onPick, onBack }: { current?: string; onPick: (c: 
 }
 
 // ---------- the lesson list ----------
-function SchoolMap({ save, coach, onLesson, onCoach, onBack }: { save: SpeedSave; coach: Coach; onLesson: (l: Lesson) => void; onCoach: () => void; onBack: () => void }) {
+function SchoolMap({ save, prizes, coach, onLesson, onCoach, onBack }: { save: SpeedSave; prizes: boolean; coach: Coach; onLesson: (l: Lesson) => void; onCoach: () => void; onBack: () => void }) {
   const done = lessonsDone(save);
   const next = LESSONS.find((l) => !done.includes(l.id));
   return (
@@ -145,8 +166,8 @@ function SchoolMap({ save, coach, onLesson, onCoach, onBack }: { save: SpeedSave
         </div>
         <ol class="ds-lessons">
           {LESSONS.map((l, i) => {
-            const open = lessonOpen(save, l.id);
             const isDone = done.includes(l.id);
+            const open = isDone || lessonOpen(save, l.id);
             const url = imageUrl(l.art);
             return (
               <li key={l.id}>
@@ -156,7 +177,7 @@ function SchoolMap({ save, coach, onLesson, onCoach, onBack }: { save: SpeedSave
                   <span class="ds-lesson-txt">
                     <b>{l.title}</b>
                     <small>{l.blurb}</small>
-                    <em>{isDone ? 'Done · play again' : open ? `${l.duel ? 'Duel + quiz' : 'Pages + quiz'} · prize: ${LESSON_PACKS} card pack` : 'Finish the lesson before'}</em>
+                    <em>{isDone ? 'Done · play again' : open ? `${l.duel ? 'Duel + quiz' : 'Pages + quiz'}${prizes ? ` · prize: ${LESSON_PACKS} card pack` : ''}` : 'Finish the lesson before'}</em>
                   </span>
                 </button>
               </li>
@@ -220,7 +241,7 @@ function Slides({ lesson, coach, onDone, onBack }: { lesson: Lesson; coach: Coac
 // ---------- the guided duel ----------
 const THINK = 300;
 
-function LessonDuel({ lesson, coach, name, onWon, onLeave }: { lesson: Lesson; coach: Coach; name: string; onWon: () => void; onLeave: () => void }) {
+function LessonDuel({ lesson, coach, name, onWon, onLost, onLeave }: { lesson: Lesson; coach: Coach; name: string; onWon: () => void; onLost: () => void; onLeave: () => void }) {
   const d = lesson.duel!;
   const session = useMemo(() => {
     const s = new DuelSession(new MemoryAdapter());
@@ -291,9 +312,21 @@ function LessonDuel({ lesson, coach, name, onWon, onLeave }: { lesson: Lesson; c
     return false;
   };
   const step = steps[idx];
+  const [askLeave, setAskLeave] = useState(false);
+  useEffect(() => {
+    duelBack = () => {
+      // a window open over the duel (card text, a pile) closes first
+      const ov = document.querySelector('.overlay') as HTMLElement | null;
+      if (ov) ov.click();
+      else setAskLeave((v) => !v);
+    };
+    return () => {
+      duelBack = null;
+    };
+  }, []);
   return (
     <>
-      <Duel session={session} view={view} mySeat={0} hotseat={false} controlsFor={() => 'touch'} onLeave={onLeave} onFinished={(w) => (w === 0 ? onWon() : onLeave())} vet={vet} />
+      <Duel session={session} view={view} mySeat={0} hotseat={false} controlsFor={() => 'touch'} onLeave={onLeave} onFinished={(w) => (w === 0 ? onWon() : onLost())} vet={vet} />
       {st.winner === null && step && (
         <CoachBubble
           key={step.id}
@@ -304,42 +337,50 @@ function LessonDuel({ lesson, coach, name, onWon, onLeave }: { lesson: Lesson; c
           text={textOf(step, st)}
           aim={step.aim ? (on) => step.aim!(session.engine.state, on) : undefined}
           nudge={nudge}
+          cheer={cheer?.text ?? null}
           onNext={() => (playBlip(), setNudge(null), setIdx(nextStep(steps, idx + 1, session.engine.state)))}
+          askLeave={askLeave}
+          setAskLeave={setAskLeave}
           onSkip={onLeave}
         />
-      )}
-      {cheer && (
-        <div key={cheer.key} class="ds-cheer">
-          <Face coach={coach} size="s" />
-          <b>{cheer.text}</b>
-        </div>
       )}
     </>
   );
 }
 
 /** The coach's line over the duel, and a ring around what to tap. */
-function CoachBubble({ coach, step, n, total, text, aim, nudge, onNext, onSkip }: { coach: Coach; step: TutStep; n: number; total: number; text: string; aim?: (on: (sel: string) => boolean) => string | null; nudge: { text: string; key: number } | null; onNext: () => void; onSkip: () => void }) {
+function CoachBubble({ coach, step, n, total, text, aim, nudge, cheer, askLeave: askSkip, setAskLeave: setAskSkip, onNext, onSkip }: { coach: Coach; step: TutStep; n: number; total: number; text: string; aim?: (on: (sel: string) => boolean) => string | null; nudge: { text: string; key: number } | null; cheer: string | null; askLeave: boolean; setAskLeave: (v: boolean) => void; onNext: () => void; onSkip: () => void }) {
   const [rect, setRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [busy, setBusy] = useState(artBusy());
   // a window over the duel (card text, a pile, the menu): the coach steps aside until it closes
   const [covered, setCovered] = useState(false);
   const hidden = busy || covered;
-  const [askSkip, setAskSkip] = useState(false);
   useEffect(() => onArtChange(() => setBusy(artBusy())), []);
   useEffect(() => {
     const t = setInterval(() => setCovered(!!document.querySelector('.overlay')), 250);
     return () => clearInterval(t);
   }, []);
+  const aimRef = useRef(aim);
+  aimRef.current = aim;
+  // where the coach's own bar ends: a bubble at the top sits under it, so the coach's Life Points stay in sight
+  const [barBottom, setBarBottom] = useState(0);
+  const [tipsOff, setTipsOff] = useState(false);
   // follow the target: the board moves (hand fans, sheets open), so look again a few times a second
   useLayoutEffect(() => {
-    if (!aim) return setRect(null);
+    const bar = () => setBarBottom(Math.round(document.querySelector('.tbar.top')?.getBoundingClientRect().bottom ?? 0));
+    bar();
+    if (!aimRef.current) {
+      setRect(null);
+      const t = setInterval(bar, 500);
+      return () => clearInterval(t);
+    }
     const on = (sel: string) => {
       const el = document.querySelector(sel) as HTMLElement | null;
       return !!el && el.getClientRects().length > 0;
     };
     const find = () => {
-      const sel = aim(on);
+      bar();
+      const sel = aimRef.current?.(on) ?? null;
       const el = sel ? (document.querySelector(sel) as HTMLElement | null) : null;
       const r = el?.getBoundingClientRect();
       const next = r && r.width > 0 ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null;
@@ -348,11 +389,12 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, onNext, onSkip }
     find();
     const t = setInterval(find, 220);
     return () => clearInterval(t);
-  }, [aim, step.id]);
+  }, [step.id]);
   if (hidden) return null;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   // the bubble sits on the half of the screen away from what it points at
   const low = !!rect && rect.y + rect.h / 2 < vh * 0.42;
+  const free = step.kind === 'free';
   const pad = 6;
   return (
     <>
@@ -374,26 +416,36 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, onNext, onSkip }
           {step.kind === 'do' && <i class={`ds-finger ${rect.y > vh * 0.6 ? 'up' : ''}`}>👆</i>}
         </div>
       )}
-      <div class={`ds-bubble ${low ? 'low' : 'high'} ${step.kind}`} key={nudge?.key ?? 0} onClick={(ev) => ev.stopPropagation()}>
+      <div class={`ds-bubble ${low ? 'low' : 'high'} ${step.kind}${free && tipsOff ? ' off' : ''}`} style={!low && barBottom > 0 && barBottom < vh * 0.2 ? { top: `${barBottom + 4}px` } : undefined} key={nudge?.key ?? 0} onClick={(ev) => ev.stopPropagation()}>
         <div class="ds-bubble-top">
           <Face coach={coach} size="s" />
           <b>{step.title}</b>
           {step.choice && <span class="ds-choice">Your choice</span>}
+          {free && (
+            <button class="ds-skip" onClick={() => (playBlip(), setTipsOff(!tipsOff))}>
+              {tipsOff ? 'Show tips' : 'Hide tips'}
+            </button>
+          )}
           <button class="ds-skip" onClick={() => (playBlip(), setAskSkip(true))}>
             Leave
           </button>
         </div>
-        <p>{text}</p>
+        {!(free && tipsOff) && !nudge && <p>{text}</p>}
         {nudge && (
           <p class="ds-nudge">
             {step.kind === 'do' ? `${coach.oops} ` : ''}
             {nudge.text}
           </p>
         )}
+        {!free && (
         <div class="ds-bubble-foot">
-          <i class="ds-bar">
-            <i style={{ width: `${Math.round(((n + 1) / total) * 100)}%` }} />
-          </i>
+          {cheer ? (
+            <b class="ds-cheer-in">{cheer}</b>
+          ) : (
+            <i class="ds-bar">
+              <i style={{ width: `${Math.round(((n + 1) / total) * 100)}%` }} />
+            </i>
+          )}
           {step.kind === 'info' ? (
             <button class="ds-next" onClick={onNext}>
               Next ›
@@ -408,6 +460,7 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, onNext, onSkip }
             <span class="ds-yourmove">Your move</span>
           )}
         </div>
+        )}
         {askSkip && (
           <div class="ds-ask">
             <span>Leave this lesson? You can start it again any time.</span>
@@ -428,41 +481,53 @@ function CoachBubble({ coach, step, n, total, text, aim, nudge, onNext, onSkip }
 function Quiz({ lesson, coach, onDone }: { lesson: Lesson; coach: Coach; onDone: (score: number) => void }) {
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
+  // answers already tried and wrong on this question (they stay greyed out); a star needs the first try
+  const [tried, setTried] = useState<number[]>([]);
   const [right, setRight] = useState(0);
   const q: QuizQ = lesson.quiz[i];
   const last = i === lesson.quiz.length - 1;
+  const ok = picked === q.right;
   const answer = (k: number) => {
-    if (picked !== null) return;
+    if (ok || tried.includes(k)) return;
     playBlip();
     navigator.vibrate?.(k === q.right ? 20 : [30, 40, 30]);
     setPicked(k);
-    if (k === q.right) setRight((r) => r + 1);
+    if (k === q.right && tried.length === 0) setRight((r) => r + 1);
+    if (k !== q.right) setTried([...tried, k]);
+  };
+  const next = () => {
+    playBlip();
+    if (last) return onDone(right);
+    setI(i + 1);
+    setPicked(null);
+    setTried([]);
   };
   return (
     <div class="ds">
       <header class="ds-top">
-        <b>Quick quiz · {i + 1} of {lesson.quiz.length}</b>
+        <b>
+          Quick quiz · {i + 1} of {lesson.quiz.length}
+        </b>
       </header>
       <main class="ds-page" key={i}>
         <h1 class="ds-h1 ds-q">{q.q}</h1>
         <div class="ds-answers">
           {q.options.map((o, k) => (
-            <button key={k} class={`ds-answer ${picked === null ? '' : k === q.right ? 'right' : k === picked ? 'wrong' : 'off'}`} onClick={() => answer(k)}>
+            <button key={k} class={`ds-answer ${ok && k === q.right ? 'right' : k === picked && !ok ? 'wrong' : tried.includes(k) || (ok && k !== q.right) ? 'off' : ''}`} onClick={() => answer(k)}>
               <i>{'ABC'[k]}</i>
               <span>{o}</span>
             </button>
           ))}
         </div>
         {picked !== null && (
-          <>
-            <Says coach={coach}>
-              {picked === q.right ? `${coach.cheers[i % coach.cheers.length]} ` : 'Not quite! '}
-              {q.why}
-            </Says>
-            <button class="ds-go" onClick={() => (playBlip(), last ? onDone(right) : (setI(i + 1), setPicked(null)))}>
-              {last ? 'Finish the lesson' : 'Next question'}
-            </button>
-          </>
+          <Says coach={coach}>
+            {ok ? `${coach.cheers[i % coach.cheers.length]} ${q.why}` : 'Not quite! Have another look and pick again.'}
+          </Says>
+        )}
+        {ok && (
+          <button class="ds-go" onClick={next}>
+            {last ? 'Finish the lesson' : 'Next question'}
+          </button>
         )}
       </main>
     </div>
@@ -470,7 +535,7 @@ function Quiz({ lesson, coach, onDone }: { lesson: Lesson; coach: Coach; onDone:
 }
 
 // ---------- lesson complete ----------
-function Done({ lesson, coach, packs, score, next, onNext, onMap }: { lesson: Lesson; coach: Coach; packs: number; score: number; next?: Lesson; onNext: () => void; onMap: () => void }) {
+function Done({ lesson, coach, packs, score, next, onNext, onMap, onGo }: { lesson: Lesson; coach: Coach; packs: number; score: number; next?: Lesson; onNext: () => void; onMap: () => void; onGo?: (to: 'decks' | 'shop') => void }) {
   const all = lesson.quiz.length;
   const stars = score === all ? 3 : score >= all - 1 ? 2 : 1;
   return (
@@ -486,7 +551,7 @@ function Done({ lesson, coach, packs, score, next, onNext, onMap }: { lesson: Le
           ))}
         </div>
         <p class="ds-dim">
-          Quiz: {score} of {all} right
+          Quiz: {score} of {all} right on the first try
         </p>
         {packs > 0 && (
           <div class="ds-prize">
@@ -501,6 +566,16 @@ function Done({ lesson, coach, packs, score, next, onNext, onMap }: { lesson: Le
         <button class="ds-go" onClick={() => (playBlip(), onNext())}>
           {next ? `Next lesson: ${next.title}` : 'Back to Speed Duel'}
         </button>
+        {onGo && (
+          <div class="ds-nav">
+            <button class="ds-btn" onClick={() => (playBlip(), onGo('decks'))}>
+              Build a deck
+            </button>
+            <button class="ds-btn" onClick={() => (playBlip(), onGo('shop'))}>
+              Open my packs
+            </button>
+          </div>
+        )}
         <button class="ds-btn" onClick={() => (playBlip(), onMap())}>
           All lessons
         </button>

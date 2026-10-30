@@ -154,6 +154,8 @@ export function App() {
   const [soloMode, setSoloMode] = useState<SoloMode | null>(null);
   /** Duel School is open ('first': a new duelist said "Teach me", straight into lesson one) */
   const [school, setSchool] = useState<'open' | 'first' | null>(null);
+  /** a Speed Duel screen to open on the way back from Duel School */
+  const hubGo = useRef<'decks' | 'shop' | null>(null);
   const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
   const [soloReport, setSoloReport] = useState<SoloReport | null>(null);
   /** 2v2 Tag Duels: the menu is open, the last tag duel's result, and the room this phone hosts */
@@ -1271,7 +1273,7 @@ export function App() {
           />
         );
       if (school)
-        return <DuelSchool key={profile.id} name={save.name} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} start={school === 'first' ? 'first' : undefined} onExit={() => setSchool(null)} />;
+        return <DuelSchool key={profile.id} name={save.name} profileId={profile.id} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} start={school === 'first' ? 'first' : undefined} onExit={(to) => ((hubGo.current = to ?? null), setSchool(null))} />;
       if (soloMode)
         return (
           <>
@@ -1293,7 +1295,7 @@ export function App() {
         );
       return (
         <>
-          <SpeedHub key={profile.id} onSchool={(first) => setSchool(first ? 'first' : 'open')} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub key={profile.id} open={hubGo.current} onOpened={() => (hubGo.current = null)} onSchool={(first) => setSchool(first ? 'first' : 'open')} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">

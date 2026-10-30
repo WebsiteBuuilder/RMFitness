@@ -111,6 +111,8 @@ type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings'
 const notNow = new Set<string>();
 
 export function SpeedHub({
+  open,
+  onOpened,
   controls,
   onControls,
   onSolo,
@@ -124,6 +126,9 @@ export function SpeedHub({
   onCpu,
   onLink,
 }: {
+  /** a screen to open straight away (Duel School's "Build a deck" and "Open my packs") */
+  open?: 'decks' | 'shop' | null;
+  onOpened?: () => void;
   /** this profile's Speed Duel control style (EDS keeps its own) */
   controls: ControlStyle;
   onControls: () => void;
@@ -142,7 +147,10 @@ export function SpeedHub({
   onCpu: (o: SpeedOpponent) => void;
   onLink: (c: SpeedLinkChoice) => void;
 }) {
-  const [sub, setSub] = useState<Sub>('menu');
+  const [sub, setSub] = useState<Sub>(() => open ?? 'menu');
+  useEffect(() => {
+    if (open) onOpened?.();
+  }, []);
   const [tab, setTab] = useState<HomeTab>(rememberedTab);
   const [editing, setEditing] = useState<string | null>(null);
   const [editRandom, setEditRandom] = useState(false);
