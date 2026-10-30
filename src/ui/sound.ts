@@ -182,3 +182,12 @@ export function buzz(pattern: number | number[]) {
 export function audioContext(): AudioContext | null {
   return soundOff ? null : ctx;
 }
+
+/** A Mate's chirp: a little two-note call in its own voice, shaped by the reaction. */
+export function playMate(voice: number, mood: 'up' | 'down' | 'flat' = 'up') {
+  if (!ctx) return;
+  const a = mood === 'down' ? voice : voice * 0.8;
+  const b = mood === 'down' ? voice * 0.7 : mood === 'up' ? voice * 1.25 : voice;
+  tone(a, 0.07, 'triangle', 0.07);
+  tone(b, 0.1, 'triangle', 0.07, 0.07);
+}

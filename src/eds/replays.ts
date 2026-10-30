@@ -28,7 +28,7 @@ export interface Replay {
 }
 
 /** Room entries a replay doesn't need: chat lines and rematch votes. */
-const SKIP = new Set(['CHAT', 'REMATCH']);
+const SKIP = new Set(['CHAT', 'MATE', 'REMATCH']);
 
 /** A replay of a finished duel from its room log, or null (not finished, not a Speed Duel, a Tag Duel or Boss Raid). */
 export function replayOf(log: readonly { type: string }[], st: DuelState, seat: Pid, kind: ReplayKind, at = Date.now()): Replay | null {

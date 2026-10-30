@@ -310,6 +310,7 @@ function viewOf(rs: RaidSession, b: Pid): SessionView {
     round: 0,
     chat: [],
     moves: 0,
+    mates: [null, null],
   };
 }
 
