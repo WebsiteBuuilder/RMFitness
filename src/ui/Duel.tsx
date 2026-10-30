@@ -376,7 +376,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
           {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && p !== acting && !spectator} owner={ps.field.owner} /> : fieldSkillOf(p) ? <CardImg name={fieldSkillOf(p)!} /> : <span class="zlabel">F</span>}
           {ps.field && !ps.field.faceUp && (p === acting || spectator) && <span class="setmark">SET</span>}
-          <CounterMarks list={shownCounters(ps.field)} />
+          <CounterMarks list={ps.field ? shownCounters(ps.field) : fieldSkillOf(p) && ps.skillRevealed ? shownCounters(e.skillCard(p)) : []} />
         </div>
         {ps.removed.length > 0 && (
           <button class="pile small" onClick={() => setPile({ title: `${ps.name}'s removed cards`, cards: ps.removed })}>

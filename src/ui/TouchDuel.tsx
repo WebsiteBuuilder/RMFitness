@@ -19,7 +19,7 @@ import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
-import { CounterLines, CounterMarks, countersKey, shownCounters } from './counters';
+import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
 import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
@@ -236,6 +236,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   // With the 3D figures up, a monster's counter badges ride in a flat layer over them (a figure
   // drawn over its own zone hid them): placed at each holder's zone, measured when they change.
+  const fieldCards = [...me.mz, ...me.sz, me.field, ...opp.mz, ...opp.sz, opp.field];
+  // (counters already on the field as the screen opens are not "gained")
+  useState(() => primeCounters(fieldCards));
+  noteCounterless(fieldCards);
   const ctrHolders = figuresOn ? [...me.mz, ...opp.mz].filter((c): c is FieldCard => shownCounters(c).length > 0) : [];
   const ctrKey = ctrHolders.map((c) => `${c.uid}:${countersKey(shownCounters(c))}`).join(';');
   const [ctrBoxes, setCtrBoxes] = useState<{ uid: number; x: number; y: number }[]>([]);

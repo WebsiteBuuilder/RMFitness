@@ -61,6 +61,10 @@ export const counterText = ({ kind, n, max }: Counters): string =>
 
 /** The count each card's badges last showed (uid → kind → n), so a counter gained floats a "+1". */
 const lastShown = new Map<number, Map<string, number>>();
+/** Counters just gained ("uid:kind" → when, how many, the count then): their "+N" is in flight. */
+const gains = new Map<string, { at: number; d: number; n: number }>();
+/** How long a "+N" floats (arena's ctr-plus animation). */
+const GAIN_MS = 1600;
 
 /** The counters a card in play shows: face-up cards only (a face-down card shows nothing of itself). */
 export const shownCounters = (c: FieldCard | null | undefined): Counters[] => (c && c.faceUp ? countersOf(c) : []);
@@ -73,26 +77,44 @@ export const countersKey = (list: Counters[]): string => list.map((x) => `${x.ki
  * gold for the rest) with the count, one per kind. Each is keyed by its count, so every counter
  * added or spent pops it again.
  */
+/**
+ * Notes the counters these cards hold now without floating "+N" for them: a duel screen does
+ * this for the field as it opens, so counters already there are not shown as just gained.
+ */
+export function primeCounters(cards: (FieldCard | null | undefined)[]): void {
+  for (const c of cards) if (c) lastShown.set(c.uid, new Map(shownCounters(c).map((x) => [x.kind, x.n])));
+}
+
+/** Notes the cards holding no counters right now, so the first one they gain floats "+1". */
+export function noteCounterless(cards: (FieldCard | null | undefined)[]): void {
+  for (const c of cards) if (c && shownCounters(c).length === 0 && lastShown.get(c.uid)?.size !== 0) lastShown.set(c.uid, new Map());
+}
+
 export function CounterMarks({ list, uid }: { list: Counters[]; uid?: number }) {
-  // what changed since this card's badges were last drawn (a gain floats "+1")
-  const seen = uid === undefined ? null : lastShown.get(uid) ?? new Map<string, number>();
-  if (seen && uid !== undefined) {
-    if (list.length) lastShown.set(uid, seen);
-    else lastShown.delete(uid);
+  // what changed since this card's badges were last drawn (a gain floats "+1"); a card never
+  // seen before floats nothing for counters it already had (an opponent's card turning up)
+  const before = uid === undefined ? undefined : lastShown.get(uid);
+  if (uid !== undefined) {
+    lastShown.set(uid, new Map(list.map((x) => [x.kind, x.n])));
     if (lastShown.size > 64) lastShown.delete(lastShown.keys().next().value!);
+    if (gains.size > 32) gains.delete(gains.keys().next().value!);
   }
   if (list.length === 0) return null;
   return (
     <div class="ctrmarks">
       {list.map((x) => {
-        const was = seen?.get(x.kind) ?? 0;
-        seen?.set(x.kind, x.n);
+        const was = before ? before.get(x.kind) ?? 0 : x.n;
         const full = x.max !== undefined && x.n >= x.max;
+        // a gain is remembered for the floater's whole flight (the screen redraws meanwhile)
+        const gk = `${uid}:${x.kind}`;
+        if (uid !== undefined && x.n > was) gains.set(gk, { at: performance.now(), d: x.n - was, n: x.n });
+        const gain = gains.get(gk);
+        const flying = gain && gain.n === x.n && performance.now() - gain.at < GAIN_MS ? gain : null;
         return (
           <div key={`${x.kind}${x.n}`} class={`ctrmark k-${(x.kind || 'other').toLowerCase()}${full ? ' full' : ''}`} title={counterText(x)} aria-label={counterText(x)}>
             <i />
             {full ? `${x.n}/${x.max}` : x.n}
-            {seen && x.n > was && <b class="ctrplus">+{x.n - was}</b>}
+            {flying && <b key={flying.at} class="ctrplus">+{flying.d}</b>}
           </div>
         );
       })}

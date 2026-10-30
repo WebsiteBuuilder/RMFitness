@@ -1679,6 +1679,8 @@ export function installMore(E: Record<string, EffectDef>, h: Helpers) {
       const hidden = mine[pk[0]];
       hidden.faceUp = false;
       hidden.pos = 'def';
+      // turned face-down: its counters go (the engine's 'position' event clears them)
+      e.event('position', { uid: hidden.uid });
       const decoys = ps.deck.filter((c) => e.info(c.name).kind !== 'monster');
       if (e.speed && decoys.length < 2) return;
       const dp = decoys.length ? yield* e.select(p, 'Magical Hats: pick 2 Spells/Traps from your Deck as decoys', e.optionsFor(decoys), Math.min(2, decoys.length), 2) : [];
