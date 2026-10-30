@@ -211,6 +211,10 @@ export class FirebaseAdapter extends AdapterBase implements SyncAdapter {
     if (this.otherWon && !this.closed) this.later(1500, () => this.fail(NET_TOOK_WIN));
   }
 
+  gaveUp(): boolean {
+    return this.otherQuit && !this.otherWon;
+  }
+
   abandoned(): boolean {
     if (this.otherQuit && !this.otherWon) return true;
     return this.everLinked && !this.otherHere && this.online && !this.otherWon && this.status !== 'error' && this.goneSince > 0 && Date.now() - this.goneSince >= ABANDON_MS;

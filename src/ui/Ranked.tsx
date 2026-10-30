@@ -182,7 +182,7 @@ export function Ranked(p: Ctx) {
         </div>
 
         <div class="rk-foe">
-          <Portrait d={shownFoe.duelist} size="m" />
+          <Portrait d={resuming && live && live.spec.cpu.name !== shownFoe.duelist.name && live.spec.vs ? { name: live.spec.cpu.name, portrait: live.spec.vs.cpuPortrait } : shownFoe.duelist} size="m" />
           <div>
             <span class="so-label">{resuming ? 'DUEL IN PROGRESS' : 'NEXT OPPONENT'}</span>
             {resuming && live ? (
@@ -304,7 +304,7 @@ export function Ranked(p: Ctx) {
       )}
       {askResume && live && !rep && (
         <Sheet title="Ranked Duel cut off" onClose={() => setAskResume(false)}>
-          <p>The game closed during your Ranked Duel against {live.spec.cpu.name}. Nothing was lost: pick it up right where it stopped.</p>
+          <p>The game closed or reloaded during your Ranked Duel against {live.spec.cpu.name}. Nothing was lost: pick it up right where it stopped.</p>
           <Btn kind="gold" onClick={resume}>
             Resume duel
           </Btn>
@@ -312,7 +312,7 @@ export function Ranked(p: Ctx) {
       )}
       {dropped && !rep && !askResume && (
         <Sheet title="Ranked Duel cut off" onClose={() => setDropped(false)}>
-          <p>The game closed during your last Ranked Duel. It doesn't count: no star lost.</p>
+          <p>The game closed or reloaded during your last Ranked Duel. It doesn't count: no star lost.</p>
           <Btn kind="gold" onClick={() => setDropped(false)}>
             OK
           </Btn>

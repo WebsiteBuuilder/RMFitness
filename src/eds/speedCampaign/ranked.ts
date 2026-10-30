@@ -264,7 +264,7 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
     // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
     const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
-    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending } : {}) };
+    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending, played: 1 } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
     return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, resume, dropped };

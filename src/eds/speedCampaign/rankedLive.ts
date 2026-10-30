@@ -6,7 +6,7 @@ import type { LoggedEvent } from '../../sync/events';
 import type { CpuDuelSpec } from './types';
 
 export interface RankedLive {
-  /** the season the duel was started in (a turned month drops it) */
+  /** the season the duel was started in (it must match the ladder's pending duel; it carries into a new month) */
   season: string;
   spec: CpuDuelSpec;
   startLp: number;

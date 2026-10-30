@@ -541,6 +541,16 @@ export function App() {
   /** A solo duel (practice, campaign, Labyrinth) against the computer. */
   const startSoloDuel = (spec: CpuDuelSpec, resume?: RankedLive) => {
     if (!save) return;
+    // (a kept duel resumes only while the ladder still waits on it: never one already filed)
+    if (resume && profile) {
+      const fresh = loadRankedLive(profile.id);
+      const pend = loadSolo(profile.id).ranked?.pending;
+      if (!fresh || !pend || pend.season !== fresh.season || fresh.at !== resume.at) {
+        if (!pend) clearRankedLive(profile.id);
+        setCutOff(null);
+        return;
+      }
+    }
     session?.close();
     keepRanked.current?.();
     keepRanked.current = null;
@@ -821,6 +831,7 @@ export function App() {
   const [cutOff, setCutOff] = useState<RankedLive | null>(null);
   const cutOffAsked = useRef(new Set<string>());
   useEffect(() => {
+    if (soloMode || screen !== 'speed') setCutOff(null);
     if (screen !== 'speed' || soloMode || !profile) return;
     if (cutOffAsked.current.has(profile.id)) return;
     cutOffAsked.current.add(profile.id);
@@ -865,9 +876,10 @@ export function App() {
         let rankedLine: string | null = null;
         const base = left0?.save ?? speedSave;
         if (base && profile && st.turn >= RIVAL_MIN_TURNS && !activeDeck(base)?.open) {
-          if (won) rankedLine = "Ranked: your opponent's connection dropped, so this duel doesn't count on the ladder.";
+          // (an opponent who chose to give up took a real loss: that win counts; one who just dropped off doesn't)
+          if (won && !session.adapter.gaveUp?.()) rankedLine = "Ranked: your opponent's connection dropped, so this duel doesn't count on the ladder.";
           else {
-            const lr = settleLinkRanked(base, loadSolo(profile.id), 'l', st.players[other(mySeat)].name);
+            const lr = settleLinkRanked(base, loadSolo(profile.id), won ? 'w' : 'l', st.players[other(mySeat)].name);
             writeSolo(profile.id, lr.solo);
             postProfileRank(profile, save?.name || profile.alias, lr.solo.ranked);
             rankedLine = lr.line;
@@ -1354,7 +1366,7 @@ export function App() {
           {cutOff && !speedNews.length && !unfinished && (
             <Overlay onClose={() => setCutOff(null)}>
               <Win title="Ranked Duel cut off" onClose={() => setCutOff(null)}>
-                <p>The game closed during your Ranked Duel against {cutOff.spec.cpu.name}. Nothing was lost: pick it up right where it stopped. (It also waits on the Ranked Duel screen.)</p>
+                <p>The game closed or reloaded during your Ranked Duel against {cutOff.spec.cpu.name}. Nothing was lost: pick it up right where it stopped. (It also waits on the Ranked Duel screen.)</p>
                 <Menu
                   items={[
                     { label: 'Resume duel', onPick: () => {
