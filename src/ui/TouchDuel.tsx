@@ -19,7 +19,7 @@ import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
-import { CounterMark, counterText, showsCounters } from './counters';
+import { CounterLines, CounterMarks, countersKey, shownCounters } from './counters';
 import './arena.css';
 
 type Action = Parameters<DuelSession['send']>[0];
@@ -234,6 +234,16 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     return () => window.removeEventListener('resize', place);
   }, [sel, actions.length, mode, me.hand.length, state.phase, state.turn, resized]);
 
+  // The card preview opens on the side of the board away from a tapped field card (it never covers it).
+  const [detailRight, setDetailRight] = useState(false);
+  useLayoutEffect(() => {
+    if (sel === null) return;
+    const el = root.current?.querySelector(`[data-uid="${sel}"]`);
+    const r = el && el.closest('.tmat') ? el.getBoundingClientRect() : null;
+    const right = !!r && r.left + r.width / 2 < window.innerWidth * 0.58;
+    setDetailRight((d) => (d === right ? d : right));
+  }, [sel]);
+
   // ----- what a dragged card may be dropped on -----
   const dropSpots = (uid: number, from: 'hand' | 'mz'): Set<string> => {
     const out = new Set<string>();
@@ -383,7 +393,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${c.counters}|${!!draggable}` : cls;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${!!draggable}` : cls;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -411,7 +421,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {fc && <div class={`tfc ${fc.tone}`}>{fcShort}</div>}
         {c && c.equips.length > 0 && <div class="eqmark">{c.equips.length}</div>}
         {c && (c.mats?.length ?? 0) > 0 && <div class="matmark" title="Xyz Materials">{c.mats!.length}</div>}
-        {showsCounters(c) && <CounterMark c={c} />}
+        <CounterMarks list={shownCounters(c)} uid={c?.uid} />
       </div>
     )} />;
   };
@@ -435,7 +445,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       >
         {ps.field ? <CardImg name={ps.field.name} back={!ps.field.faceUp && !mine && !ctl.spectator} owner={ps.field.owner} /> : fieldSkill ? <CardImg name={fieldSkill} class="tz-skillcard" /> : <span class="tz-label">FIELD</span>}
         {ps.field && !ps.field.faceUp && (mine || ctl.spectator) && <span class="setmark">SET</span>}
-        {showsCounters(ps.field) && <CounterMark c={ps.field} />}
+        <CounterMarks list={ps.field ? shownCounters(ps.field) : fieldSkill && ps.skillRevealed ? shownCounters(e.skillCard(p)) : []} />
       </div>
     );
   };
@@ -498,6 +508,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             onClick={(ev) => (ev.stopPropagation(), ctl.openSkill(p))}
           >
             Skill
+            {ps.skillRevealed && <CounterMarks list={shownCounters(e.skillCard(p))} />}
           </button>
         )}
         <div class={`tlp ${hurt}`}>
@@ -732,7 +743,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       {/* (outside the field box: its size containment would keep the preview under the figures and the turn row) */}
       <div class="tdetail-anchor">
         {selCard && canSeeSel && !drag && !mode && (
-          <div class="tdetail" onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
+          <div class={`tdetail${detailRight ? ' right' : ''}`} onClick={(ev) => (ev.stopPropagation(), ctl.setInfo(selCard.name, selCard.owner))}>
             <span class="tdetail-pic">
               <CardImg name={selCard.name} class="tdetail-img" owner={selCard.owner} />
             </span>
@@ -740,12 +751,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               <b>{e.nameOf(selCard)}</b>
               {e.nameOf(selCard) !== selCard.name && <small class="tdetail-printed">Card: {selCard.name} (its name is changed)</small>}
               <DetailLine name={selCard.name} />
-              {showsCounters(selField) && (
-                <span class="tdetail-ctr">
-                  <CounterMark c={selField} />
-                  <span>{counterText(selField)}</span>
-                </span>
-              )}
+              <CounterLines list={shownCounters(selField)} />
               <p>{cardInfo(selCard.name)?.desc}</p>
               <span class="tdetail-more">{document.documentElement.classList.contains('pad-on') ? 'Y: full text' : 'Tap for full text'}</span>
             </div>
