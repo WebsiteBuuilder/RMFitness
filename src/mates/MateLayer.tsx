@@ -11,6 +11,8 @@ import { EMOTES, isMate, isReact, mateDef, type MateId, type MateReact } from '.
 import { canSend, cuesFor, endCues, REACT_SPEC, tapReact, type Bubble } from './react';
 import { useMatesShown } from './settings';
 import { playMate, unlockAudio } from '../ui/sound';
+import { setStageMates } from './onStage';
+import { CALLOUT_SHOUT, type CalloutShout } from '../art/callouts';
 import './mates.css';
 
 export interface MatePlan {
@@ -61,6 +63,11 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     // (one this version doesn't know, from an older or newer app: still show one of ours)
     return id ? plan.idFor(p) : null;
   };
+
+  // (the 3D stage shows the attacker's Mate yelling along with its callout: only Mates shown here)
+  const stageIds = ([0, 1] as Pid[]).map((p) => (seats.includes(p) ? idOf(p) : null)) as [MateId | null, MateId | null];
+  setStageMates(stageIds, [stageIds[0] ? mateDef(stageIds[0])!.voice : 0, stageIds[1] ? mateDef(stageIds[1])!.voice : 0]);
+  useEffect(() => () => setStageMates([null, null]), []);
 
   // ----- what each one is doing -----
   const [playing, setPlaying] = useState<[Playing, Playing]>([
@@ -128,6 +135,22 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     for (const c of cuesFor(fresh, bigSummon(state), lost)) play(c.player, c.react);
     quietSince.current = Date.now();
   }, [topSeq]);
+
+  // (the newest session and play(), for listeners added once)
+  const live = useRef({ session, play });
+  live.current = { session, play };
+  // An attack callout: once the cinematic is over, the attacker's Mate is still cheering it on.
+  useEffect(() => {
+    let t = 0;
+    const on = (ev: Event) => {
+      const d = (ev as CustomEvent<CalloutShout>).detail;
+      if (!d || (d.seat !== 0 && d.seat !== 1)) return;
+      clearTimeout(t);
+      t = window.setTimeout(() => live.current.session.engine.state.winner === null && live.current.play(d.seat, 'cheer', false), 1500);
+    };
+    window.addEventListener(CALLOUT_SHOUT, on);
+    return () => (clearTimeout(t), window.removeEventListener(CALLOUT_SHOUT, on));
+  }, []);
 
   // The duel's end: the winner's Mate celebrates, the loser's slumps.
   useEffect(() => {

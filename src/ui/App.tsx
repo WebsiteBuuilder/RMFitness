@@ -11,6 +11,7 @@ import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
 import type { MatePlan } from '../mates/MateLayer';
+import { aceFromWire, aceOf, aceToWire, showDuelAces, withAceWin } from '../ace/ace';
 import { chosenMate, mateForName, retireOldMates, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
@@ -537,7 +538,7 @@ export function App() {
     o = { ...o, main: unsealedCpuMain(speedSave, o.name, o.main) };
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]) });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]), ace: aceToWire(aceOf(speedSave)) });
     ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill });
     tossThenStart(ses, (first) => ({ type: 'START', first, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] }), o.name, () => fresh.current.startSpeedCpu?.(o));
     setHotseat(false);
@@ -599,7 +600,7 @@ export function App() {
     // Rock-paper-scissors decides who goes first, unless the duel says (or watching the computer duel itself).
     const fixed = spec.first === 'me' || spec.first === 'cpu' || spec.seed !== undefined || !!spec.watch;
     const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
-    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill });
+    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)) });
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
     const startAs = (f: Pid): Action => ({ type: 'START', first: f, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     if (fixed) ses.send(startAs(first));
@@ -649,7 +650,13 @@ export function App() {
       setSpeedNews(req.lines);
       setNewsCards([{ who: '', won: req.cards, lost: [] }]);
     }
-    const speedOut = req ? req.save : r.speed;
+    // Ace bond: a won Road, Labyrinth, Legends or Ranked duel with the Ace in the deck (never Practice, watching or Anything goes).
+    const aw = withAceWin(req ? req.save : r.speed, { won: !left && o.result === 'w', counts: !left && sd.ctx.kind !== 'practice' && !sd.spec.watch && !anyGoes, deck: [...sd.spec.me.main, ...sd.spec.me.extra] });
+    if (aw.line) {
+      setSpeedNews([...(req?.lines ?? []), aw.line]);
+      if (!req?.lines.length) setNewsCards([]);
+    }
+    const speedOut = aw.save;
     if (speedOut !== speedNow) setSpeedSave(speedOut);
     setSoloReport(left && sd.ctx.kind !== 'labyrinth' && sd.ctx.kind !== 'ranked' ? null : r.report);
     lastSoloSpec.current = sd.spec;
@@ -706,7 +713,7 @@ export function App() {
     session?.close();
     tagHost.current = null;
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, ace: aceToWire(aceOf(speedSave)) });
     ses.send({ type: 'JOIN', player: 1, name: plan.foes[0].name, deck: deckOf(plan.foes[0]).main, fusion: deckOf(plan.foes[0]).extra, mode: 'speed', skill: plan.foes[0].skill });
     ses.send(tagStart(tagTeams(plan, [{ name: save.name, deck: d.main, fusion: d.extra, skill: d.skill }]), Math.random() < 0.5 ? 0 : 1, randomSeed(), plan.ctx));
     setHotseat(false);
@@ -1013,14 +1020,24 @@ export function App() {
         if (r.cards.length) cards.push({ who, won: r.cards, lost: [] });
         return r.save;
       };
+      // Ace bond: a won duel that counts, with the Ace in the deck played, grows its entrance (nothing else).
+      const ace = (s: SpeedSave, seat: Pid, result: 'w' | 'l' | 'd'): SpeedSave => {
+        const sd = session?.seats[seat];
+        if (!st || !sd) return s;
+        // (one phone against a guest seat could farm it: two phones, or two profiles on one phone)
+        const counts = (!hotseat || (!!p2Profile && p2Profile !== profile?.id)) && !activeDeck(s)?.open && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
+        const r = withAceWin(s, { won: result === 'w', counts, deck: [...sd.deck, ...sd.fusion] });
+        if (r.line) news.push(hotseat && !cpu ? `${sd.name}: ${r.line}` : r.line);
+        return r.save;
+      };
       // A rescue frees the rescued card through the Shadow Realm's own "a win frees one".
       const first = (s: SpeedSave, seat: Pid) => (!cpu && st && seats ? rescueFirst(s, seat, st, [seats[0], seats[1]], winner) : s);
-      const mineAfter = speedSave ? withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), mySeat), null) : null;
+      const mineAfter = speedSave ? ace(withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), mySeat), null), mySeat, mine) : null;
       if (mineAfter) setSpeedSave(mineAfter);
       if (hotseat && p2Profile && p2Profile !== profile?.id) {
         const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
         const seat2 = other(mySeat);
-        writeSpeedSave(p2Profile, withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2), seat2), null));
+        writeSpeedSave(p2Profile, ace(withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSaveOf(p2Profile), theirs, save.name), seat2), theirs, sr, seat2, save.name, false).save, seat2, theirs, save.name), seat2), seat2), null), seat2, theirs));
       }
       const allNews = [...carryNews.current, ...news];
       setSpeedNews(allNews);
@@ -1237,14 +1254,14 @@ export function App() {
       .map((p) => {
         const ss = speedSaveOf(p.id);
         const d = activeDeck(ss);
-        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
+        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, ace: aceToWire(aceOf(ss)), stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
       });
 
   const myFullDeck = speedSave ? activeDeck(speedSave) : null;
   const myDeck = speedSave && myFullDeck ? unsealedDeck(speedSave, myFullDeck) : null;
   const entries: Partial<Record<GameMode, SeatEntry>> = {
     eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
-    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), ace: aceToWire(aceOf(speedSave)), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
   };
 
   switch (screen) {
@@ -1698,7 +1715,13 @@ function Running({
     return Object.assign({}, ...c.filter((x): x is Pid => x !== 'cpu').map((x) => view.seats[x].rarity ?? {}));
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
-  useEffect(() => () => showDuelRarity(null), []);
+  useEffect(() => () => (showDuelRarity(null), showDuelAces(null)), []);
+  // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none), only a card in that seat's deck.
+  const seatAce = (p: Pid) => {
+    const a = aceFromWire(view.seats[p].ace);
+    return a && (view.seats[p].deck.includes(a.name) || view.seats[p].fusion.includes(a.name)) ? a : null;
+  };
+  showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatAce(0), seatAce(1)] : null);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
   // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.

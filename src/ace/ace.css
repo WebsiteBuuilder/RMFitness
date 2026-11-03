@@ -1,0 +1,302 @@
+/* ---- the Ace page (src/ace/AceScreen.tsx) ---- */
+.screen.aces .win-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.ac-hero {
+  --gold: #ffd56a;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #ffd56a44;
+  background: radial-gradient(circle at 22% 50%, #6a4a0e88, transparent 55%), linear-gradient(130deg, #2a1f08, #120c22);
+}
+.ac-card {
+  position: relative;
+  flex: none;
+  width: min(34vw, 132px);
+  aspect-ratio: 59 / 86;
+}
+.ac-card .card-img,
+.ac-card img {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--gold), 0 6px 18px #000a;
+}
+.ac-aura {
+  position: absolute;
+  inset: -14%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffd56a66 0%, #ffd56a22 40%, transparent 70%);
+  animation: ac-breathe 2.6s ease-in-out infinite;
+}
+.ac-hero.lv3 .ac-aura,
+.ac-hero.lv4 .ac-aura {
+  background: conic-gradient(from 0deg, #ffd56a00, #ffd56a88, #fff6d800, #ffd56a88, #ffd56a00);
+  animation: ac-spin 4s linear infinite;
+  -webkit-mask: radial-gradient(circle, transparent 38%, #000 40%, #000 68%, transparent 70%);
+  mask: radial-gradient(circle, transparent 38%, #000 40%, #000 68%, transparent 70%);
+}
+.ac-hero.lv5 .ac-aura {
+  inset: -22%;
+  background: conic-gradient(from 0deg, #ff4fd088, #ffd56a, #7cff9e88, #4fe0ff, #a24fff88, #ff4fd088);
+  animation: ac-spin 3s linear infinite;
+  -webkit-mask: radial-gradient(circle, transparent 36%, #000 39%, #000 66%, transparent 70%);
+  mask: radial-gradient(circle, transparent 36%, #000 39%, #000 66%, transparent 70%);
+}
+.ac-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ac-name {
+  font-size: 18px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.ac-title {
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.03em;
+}
+.ac-shout {
+  font: italic 900 14px/1.2 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
+  color: #fff;
+  text-shadow: 0 0 8px #ffb000;
+}
+.ac-meter {
+  height: 8px;
+  border-radius: 6px;
+  background: #ffffff1a;
+  overflow: hidden;
+}
+.ac-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #c8961e, #ffd56a, #fff6d8);
+  box-shadow: 0 0 10px #ffd56a;
+  transition: width 0.5s ease;
+}
+.ac-info small {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.ac-info small.ac-warn {
+  color: #ffb36a;
+  opacity: 1;
+}
+.ac-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.ac-go {
+  background: linear-gradient(180deg, #ffe58a, #e0a82a);
+  color: #2a1a00;
+  font-weight: 800;
+}
+.ac-is {
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: #2a1a00;
+  font-weight: 900;
+  background: linear-gradient(180deg, #fff2b8, #ffc94a);
+  box-shadow: 0 0 12px #ffc94a88;
+}
+.ac-off {
+  opacity: 0.75;
+}
+.ac-note {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: #ffe9a8;
+}
+.ac-levels {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ac-levels li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: #ffffff0a;
+  border: 1px solid #ffffff14;
+  opacity: 0.7;
+}
+.ac-levels li.got {
+  opacity: 1;
+  border-color: #ffd56a55;
+  background: linear-gradient(90deg, #ffd56a1c, #ffffff08);
+}
+.ac-levels b {
+  font-size: 14px;
+}
+.ac-levels li.got b {
+  color: #ffe58a;
+}
+.ac-levels span {
+  font-size: 12px;
+  opacity: 0.8;
+  align-self: center;
+}
+.ac-levels small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.ac-q {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid #ffffff2a;
+  background: #0006;
+  color: inherit;
+  font-size: 15px;
+}
+.ac-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+.ac-pick {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: none;
+  aspect-ratio: 59 / 86;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ac-pick img,
+.ac-pick .card-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.ac-pick.on {
+  border-color: #fff;
+  box-shadow: 0 0 10px #fff8;
+}
+.ac-pick.ace {
+  border-color: #ffd56a;
+  box-shadow: 0 0 12px #ffd56a;
+}
+.ac-tag {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font: 900 10px/1.3 system-ui, sans-serif;
+  font-style: normal;
+  color: #2a1a00;
+  background: #ffd56a;
+}
+.ac-tag.dim {
+  background: #000b;
+  color: #ffe58a;
+}
+.ac-dot {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4fe08a;
+  box-shadow: 0 0 0 2px #000a;
+}
+.ac-foot {
+  margin: 12px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+/* the home tab's tile */
+.sdh-ace {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 34px 8px 10px;
+  border-radius: 14px;
+  border: 1px solid #ffd56a44;
+  background: radial-gradient(circle at 12% 60%, #8a641aaa, transparent 45%), linear-gradient(120deg, #2e2410, #141024);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sdh-ace-pic {
+  position: relative;
+  flex: none;
+  width: 44px;
+  aspect-ratio: 59 / 86;
+}
+.sdh-ace-pic img,
+.sdh-ace-pic .card-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px #ffd56a, 0 0 10px #ffd56a77;
+}
+.sdh-ace-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sdh-ace-txt b {
+  font-size: 17px;
+}
+.sdh-ace-txt span {
+  font-size: 13px;
+  opacity: 0.85;
+}
+@keyframes ac-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+@keyframes ac-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ac-aura {
+    animation: none;
+  }
+}
+.screen.aces .gbtn.ac-go {
+  background: linear-gradient(180deg, #ffe58a, #e0a82a);
+  border-color: #fff2b8;
+  color: #2a1a00;
+  text-shadow: none;
+}
+.screen.aces .ac-levels li {
+  padding: 5px 10px;
+}

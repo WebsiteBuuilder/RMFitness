@@ -11,7 +11,8 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
-import { playBlip, playDraw, playWin, setSoundEnabled, unlockAudio, useSoundEnabled } from './sound';
+import { playBlip, playDraw, playWin, setMusicEnabled, setSoundEnabled, unlockAudio, useMusicEnabled, useSoundEnabled } from './sound';
+import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
@@ -28,6 +29,7 @@ import { isMate } from '../mates/roster';
 import { DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
 import { FaceOff, introDue, startIntro } from './faceoff';
 import { getCinematics } from '../art/settings';
+import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -89,6 +91,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [pass, setPass] = useState(false);
   const artItems = useCinematicsMenu();
   const soundOn = useSoundEnabled();
+  const musicOn = useMusicEnabled();
+  // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
+  useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
   const matesShown = useMatesShown();
   const drawStyle = useDrawStyle();
   // The face-off before the first turn (decided on the first render, before the board's own effects run).
@@ -99,6 +104,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   });
   // Heart of the Cards: your Draw Phase card waits on your deck for your swipe.
   const [drawGate, drawDone] = useHeartDraw(state, acting, !!e.speed && canAct && !vet && drawStyle === 'swipe' && state.turnPlayer === acting);
+  const [callouts, setCallouts] = useState(calloutMode);
+  useEffect(() => {
+    const on = () => setCallouts(calloutMode());
+    window.addEventListener(CALLOUT_EVT, on);
+    return () => window.removeEventListener(CALLOUT_EVT, on);
+  }, []);
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -652,7 +663,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 ...(e.speed ? artItems : []),
                 ...(e.speed ? [{ label: `Draw: ${DRAW_STYLE_NAMES[drawStyle]}`, note: drawStyle === 'swipe' ? 'switch to Automatic' : 'swipe up on your deck to draw', onPick: () => setDrawStyle(drawStyle === 'swipe' ? 'auto' : 'swipe') }] : []),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
+                ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
+                ...(e.speed ? [{ label: `Attack callouts: ${CALLOUT_LABEL[callouts]}`, note: 'tap to change', onPick: () => setCalloutMode(NEXT_CALLOUT[callouts]) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),

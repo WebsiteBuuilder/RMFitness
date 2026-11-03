@@ -4,6 +4,8 @@
 import { MateArt } from '../mates/MateArt';
 import { chosenMate, hasMate, mateDef, MATES } from '../mates/roster';
 import '../mates/mates.css';
+import { aceOf, bondTitle, nextBond } from '../ace/ace';
+import '../ace/ace.css';
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
@@ -15,7 +17,7 @@ import { CardImg } from './CardImg';
 import { Avatar } from './Profiles';
 import { Menu, Overlay, Win } from './Window';
 import { DeckMenu } from './DeckPick';
-import { playBlip } from './sound';
+import { playBlip, setMusicEnabled, setSoundEnabled, useMusicEnabled, useSoundEnabled } from './sound';
 import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
 import { stampsToClaim } from '../collection/stamps';
@@ -30,7 +32,7 @@ import './speedhome.css';
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -247,6 +249,21 @@ function MatesTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
   );
 }
 
+function AceTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
+  const a = aceOf(save);
+  const nx = a ? nextBond(a.wins) : null;
+  return (
+    <button class="sdh-ace" onClick={() => (playBlip(), onPick())}>
+      <span class="sdh-ace-pic">{a ? <CardImg name={a.name} /> : <CardImg name="Blue-Eyes White Dragon" back />}</span>
+      <span class="sdh-ace-txt">
+        <b>Ace Monster</b>
+        <span>{a ? `${a.name} · ★ ${bondTitle(a.lv)}${nx ? ` · ${nx.need} win${nx.need === 1 ? '' : 's'} → Bond ${nx.lv}` : ''}` : 'Pick a monster: its own entrance, grander with every win'}</span>
+      </span>
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
     <button class="sdh-row" onClick={() => (playBlip(), onPick())}>
@@ -308,6 +325,8 @@ export function SpeedHome({
 }) {
   const [deckMenu, setDeckMenu] = useState(false);
   const [settings, setSettings] = useState(false);
+  const soundOn = useSoundEnabled();
+  const musicOn = useMusicEnabled();
   const [rules, setRules] = useState(false);
   lastTab = tab;
   // Lift the floating Friends button above the tab bar while the home screen is up.
@@ -468,6 +487,7 @@ export function SpeedHome({
               </div>
             </div>
             <MatesTile save={save} onPick={() => go('mates')} />
+            <AceTile save={save} onPick={() => go('ace')} />
             <Tile art="Slifer the Sky Dragon" fy={28} title="Duelist Rankings" sub="Leaderboard, rivals and titles" onPick={() => go('rankings')} />
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">
@@ -496,6 +516,8 @@ export function SpeedHome({
             <Menu
               items={[
                 { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
+                { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'duel sound effects', onPick: () => setSoundEnabled(!soundOn) },
+                { label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'the duel soundtrack', onPick: () => setMusicEnabled(!musicOn) },
                 { label: 'Speed Duel rules', onPick: () => (setSettings(false), setRules(true)) },
                 { label: 'Back to Eternal Duelist Soul', onPick: onExit },
               ]}
