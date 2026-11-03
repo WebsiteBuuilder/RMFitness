@@ -41,7 +41,8 @@ const merge = (h: WearHit): Drawn => ({
   chipLit: h.chips.map((c) => c.lit).join(' '),
 });
 
-const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const rmq = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+const reduced = () => !!rmq?.matches;
 
 /** Embers smouldering round a card that stands on a worn zone (seeded: the same every render). */
 function embersOf(p: number, zone: number, lv: number, seed: number): string {

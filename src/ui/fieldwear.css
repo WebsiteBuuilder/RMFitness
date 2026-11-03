@@ -1,18 +1,25 @@
 /* ---------- field wear: scorch marks and cracks where monsters were destroyed (fieldWear.tsx) ---------- */
-/* The marks paint over the zone's own floor and under everything else in it: the card (made
-   positioned here so it stacks after the marks), the empty-zone emblem, the stat and forecast
-   badges. The marks get a compositor layer of their own, so a zone highlight pulsing or a drag
-   over the zone never re-paints them. */
-.tz.worn > .fcard,
-.zone.worn > .fcard {
-  position: relative;
+/* The marks paint over the zone's own floor and under everything else in it. No stacking tricks:
+   the marks and the card share the zone's one grid cell and stay in normal flow, the marks first,
+   so the card paints over them; the empty-zone emblem and the stat/forecast badges (positioned)
+   paint over both, and their own z-index still reaches past the 3D figures canvas. Nothing in the
+   card changes what it is positioned against (the zone has no padding: a badge's grid area is the
+   same box it had). */
+.tz.worn > *,
+.zone.worn > * {
+  grid-area: 1 / 1;
 }
-.fwear {
-  position: absolute;
-  inset: 0;
+.fwear,
+.fwear-held {
+  align-self: stretch;
+  justify-self: stretch;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   pointer-events: none;
+}
+.fwear {
   overflow: hidden;
   border-radius: inherit;
 }
@@ -110,11 +117,6 @@
 }
 /* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */
 .fwear-held {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
   overflow: visible;
 }
 .fwear-held .fw-held-soot {
