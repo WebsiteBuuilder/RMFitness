@@ -17,7 +17,8 @@ import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
 import { savedDifficulty, type Difficulty } from '../eds/difficulty';
-import { cpuDelay, spotUid, spotlight } from './cpuPace';
+import { BANNER_MS, cpuDelay, spotUid, spotlight } from './cpuPace';
+import { introLeft, whenIntroAt } from './immersionState';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
@@ -1652,6 +1653,7 @@ function Running({
     // so its thinking never lands in the middle of an animation as a stutter.
     let t = 0;
     let dead = false;
+    let stopIntro = () => {};
     const think = () => {
       if (dead) return;
       // Watching: whichever seat has something to do moves, each with its own pep talk.
@@ -1694,11 +1696,16 @@ function Running({
         session.send(action!);
         if (uid !== null) spotlight(uid);
       };
-      t = window.setTimeout(send, Math.max(0, pace - THINK_BEAT));
+      // (the face-off before the first turn plays out first, then the turn banner gets its beat)
+      if (introLeft() > 0)
+        stopIntro = whenIntroAt(0, () => {
+          if (!dead) t = window.setTimeout(send, Math.max(0, BANNER_MS + 250 - THINK_BEAT));
+        });
+      else t = window.setTimeout(send, Math.max(0, pace - THINK_BEAT));
     };
     // ...and never in the middle of a 3D cinematic.
     const stopWaiting = whenArtIdle(() => (t = window.setTimeout(think, THINK_BEAT)));
-    return () => ((dead = true), stopWaiting(), clearTimeout(t));
+    return () => ((dead = true), stopWaiting(), stopIntro(), clearTimeout(t));
   }, [cpu, cpuLevel, view.moves, view.state.started, view.state.winner, session, mySeat, watch?.paused, watch?.speed]);
   // Card leveling: each card in the duel shows its owner's rarity.
   // (a tag duel: each side shows the rarities of the phones playing on it; computers have none)

@@ -25,6 +25,10 @@ import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
 import { MateLayer, type MatePlan } from '../mates/MateLayer';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
+import { isMate } from '../mates/roster';
+import { DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
+import { FaceOff, introDue, startIntro } from './faceoff';
+import { getCinematics } from '../art/settings';
 import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
@@ -91,6 +95,15 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
   useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
   const matesShown = useMatesShown();
+  const drawStyle = useDrawStyle();
+  // The face-off before the first turn (decided on the first render, before the board's own effects run).
+  const [intro, setIntro] = useState(() => {
+    const due = !vet && introDue(state) && getCinematics() !== 'off';
+    if (due) startIntro();
+    return due;
+  });
+  // Heart of the Cards: your Draw Phase card waits on your deck for your swipe.
+  const [drawGate, drawDone] = useHeartDraw(state, acting, !!e.speed && canAct && !vet && drawStyle === 'swipe' && state.turnPlayer === acting);
   const [callouts, setCallouts] = useState(calloutMode);
   useEffect(() => {
     const on = () => setCallouts(calloutMode());
@@ -385,7 +398,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <div class="pile-stack">{ps.gy.length > 0 && <CardImg name={ps.gy[ps.gy.length - 1].name} owner={ps.gy[ps.gy.length - 1].owner} />}</div>
           <span>GY {ps.gy.length}</span>
         </button>
-        <div class="pile">
+        <div class="pile" data-pile={`deck${p}`}>
           <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
           <span>Deck {ps.deck.length}</span>
         </div>
@@ -522,6 +535,19 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {drawGate && <DrawGate key={drawGate.key} gate={drawGate} state={state} acting={acting} blocked={pass || intro} prompted={!!prompt} onDone={drawDone} />}
+      {intro && (
+        <FaceOff
+          state={state}
+          acting={acting}
+          mateOf={(p) => {
+            if (!mates || matesShown === 'off') return null;
+            const id = view.mates[p]?.id;
+            return isMate(id) ? id : mates.idFor(p);
+          }}
+          onDone={() => setIntro(false)}
+        />
+      )}
       {mates && e.speed && <MateLayer session={session} view={view} state={state} acting={acting} plan={mates} touch={style === 'touch'} />}
       {roll && (
         <div key={roll.seq} class="roll-chip" aria-live="polite">
@@ -635,6 +661,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
               items={[
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
+                ...(e.speed ? [{ label: `Draw: ${DRAW_STYLE_NAMES[drawStyle]}`, note: drawStyle === 'swipe' ? 'switch to Automatic' : 'swipe up on your deck to draw', onPick: () => setDrawStyle(drawStyle === 'swipe' ? 'auto' : 'swipe') }] : []),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
