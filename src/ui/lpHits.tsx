@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { Pid } from '../eds/types';
-import { crackPaths, lpBarMemory, lpHit, lpListeners, sparkCount, seeded, MAX_SCARS, OPP_SHAKE, startLp, type Crack, type LpHit } from './lpHitRules';
+import { crackPaths, lpBarMemory, lpHit, lpListeners, lpResetListeners, sparkCount, seeded, MAX_SCARS, OPP_SHAKE, startLp, type Crack, type LpHit } from './lpHitRules';
 import { lpCrack, lpSpark } from './duelSfx';
 import { whenArtIdle } from '../art/cues';
 import './lphit.css';
@@ -21,7 +21,7 @@ type Listener = (who: Pid, from: number, to: number) => void;
 const listeners = lpListeners;
 
 /** A hit waits at most this long for a cinematic to leave the stage. */
-const ART_WAIT_MS = 700;
+const ART_WAIT_MS = 300;
 
 function useLpHits(fn: Listener) {
   const ref = useRef(fn);
@@ -129,6 +129,11 @@ export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
   // (kept per duelist: a hotseat board swaps the bars, keyed by duelist, every turn)
   const [scars, setScars] = useState<Scar[]>(() => (lpBarMemory.get(who) as Scar[] | undefined) ?? []);
   useEffect(() => void lpBarMemory.set(who, scars), [scars]);
+  useEffect(() => {
+    const l = (w: Pid) => w === who && (setScars([]), setMending(false));
+    lpResetListeners.add(l);
+    return () => void lpResetListeners.delete(l);
+  }, []);
   const [fresh, setFresh] = useState(0);
   const [mending, setMending] = useState(false);
   const mend = useRef<ReturnType<typeof setTimeout> | null>(null);
