@@ -33,7 +33,7 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { TiltCard } from './TiltCard';
 import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
-import { DeckChat, forgetDeckChat, stopDeckChat } from './DeckChat';
+import { DeckChat, forgetDeckChat, preloadDeckChat, stopDeckChat } from './deckChatLazy';
 import { DeckSwitch } from './DeckPick';
 import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
@@ -557,6 +557,8 @@ function savedSize(): TileSize {
 }
 
 export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false, openChat = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean; openChat?: boolean }) {
+  // Deck chat's code downloads while the editor is open, so tapping Chat opens it at once.
+  useEffect(() => void preloadDeckChat().catch(() => {}), []);
   const [random, setRandom] = useState(openRandom);
   /** the deck chat sheet (Claude builds and edits the deck) */
   const [chat, setChat] = useState(openChat);

@@ -100,6 +100,9 @@ export class PeerTransport implements Transport {
   private ice = 0;
   private troubles = 0;
   private openedAt = 0;
+  /** broker failures in a row since it last opened: each retry waits longer (4 s .. 60 s), sparing the battery offline */
+  private fails = 0;
+  private lastDrop = 0;
 
   start(myCode: string, h: TransportHandlers) {
     this.code = myCode;
@@ -132,6 +135,7 @@ export class PeerTransport implements Transport {
       this.reopen = null;
       this.ready = true;
       this.takenSince = 0;
+      this.fails = 0;
       h.onState('ready');
     });
     peer.on('connection', (conn) => {
@@ -140,8 +144,14 @@ export class PeerTransport implements Transport {
     });
     peer.on('disconnected', () => {
       if (this.peer !== peer || this.stopped) return;
-      // The broker dropped; links already open keep working. Get back on it.
       this.ready = false;
+      // Dropped again right after a reconnect: the broker can't be reached (no signal). The
+      // retry timer, backing off, takes it from here instead of reconnecting in a tight loop.
+      const now = Date.now();
+      const again = now - this.lastDrop < 2_000;
+      this.lastDrop = now;
+      if (again && this.retry) return;
+      // The broker dropped; links already open keep working. Get back on it.
       h.onState('connecting');
       try {
         peer.reconnect();
@@ -171,7 +181,7 @@ export class PeerTransport implements Transport {
       } else if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed' || type === 'disconnected') {
         this.ready = false;
         h.onState('offline');
-        this.later(RETRY_MS);
+        this.later(Math.min(60_000, RETRY_MS * 2 ** Math.min(4, this.fails++)));
       }
       // other errors belong to a single link; its close handles them
     });
