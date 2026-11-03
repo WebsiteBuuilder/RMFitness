@@ -804,6 +804,10 @@
     animation-duration: 0.01s !important;
     animation-iteration-count: 1 !important;
   }
+  /* (a bubble just shows, and goes when its reaction ends) */
+  .mate-emote {
+    animation: none !important;
+  }
 }
 
 /* ---- the Mates page ---- */

@@ -364,7 +364,10 @@ function bigSummon(state: DuelState) {
 function whereIs(state: DuelState, uid: number): { name: string; controller: Pid } | null {
   for (const p of [0, 1] as Pid[]) {
     const ps = state.players[p];
-    for (const c of [...ps.mz, ...ps.sz, ps.field, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.deck, ...ps.fusion]) if (c && c.uid === uid) return { name: c.name, controller: p };
+    if (ps.field?.uid === uid) return { name: ps.field.name, controller: p };
+    // (where an activated card or the card it answers will be: the field, then where it went)
+    for (const list of [ps.mz, ps.sz, ps.gy, ps.removed, ps.hand, ps.fusion, ps.deck] as ({ uid: number; name: string } | null)[][])
+      for (const c of list) if (c && c.uid === uid) return { name: c.name, controller: p };
   }
   return null;
 }
