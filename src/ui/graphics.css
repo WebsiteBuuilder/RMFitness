@@ -40,7 +40,6 @@
   border-radius: 7px;
   pointer-events: none;
   box-shadow: 0 0 0 2px #8fd8ff, 0 0 14px 2px #3aa0ff, inset 0 0 10px #3aa0ff80;
-  animation: tcan 1.8s ease-in-out infinite alternate;
 }
 .duel.touch.turn-me .thcard.can.sel::before {
   box-shadow: 0 0 0 2px #ffe08a, 0 0 16px 3px #ffb400;
@@ -101,8 +100,8 @@
 }
 
 /* ---- foil and depth on the cards in a duel ----
-   A band of light glides over every face-up card now and then (staggered, so the hand
-   shimmers in a wave), each card has an edge (it reads as a real card, not a picture),
+   A band of light glides once over each card as it arrives (in hand: staggered, so a new hand
+   shimmers in a wave; nothing keeps running afterwards, which keeps an idle duel cheap), each card has an edge (it reads as a real card, not a picture),
    and the picked hand card leans toward you. Transform/opacity only. */
 .tshine {
   position: absolute;
@@ -121,20 +120,17 @@
   width: 45%;
   background: linear-gradient(100deg, transparent 0%, #ffffff10 25%, #fff6d855 46%, #ffffffa0 50%, #c8f0ff55 54%, #ffffff10 75%, transparent 100%);
   transform: translateX(-130%) skewX(-18deg);
-  animation: tshine 7s ease-in-out infinite;
-  animation-delay: calc(var(--arc, 0) * 0.18s + 1.2s);
+  animation: tshine 1.6s ease-out 1 both;
+  animation-delay: calc(var(--arc, 0) * 0.12s + 0.5s);
 }
 /* (a field card's shine waits a different beat from the hand's) */
 .duel.touch .fcard .tshine::before {
-  animation-duration: 9s;
-  animation-delay: 3s;
+  animation-delay: 0.6s;
 }
 @keyframes tshine {
-  0%,
-  72% {
+  0% {
     transform: translateX(-130%) skewX(-18deg);
   }
-  92%,
   100% {
     transform: translateX(330%) skewX(-18deg);
   }
@@ -160,4 +156,31 @@
     animation: none;
     opacity: 0;
   }
+}
+
+/* ---- depth, all static (nothing redraws while the duel is idle) ----
+   your hand fans in 3D like cards held in a hand; a monster on the field throws a soft shadow
+   on the slab; the cards on your side catch your turn's light along their top edge */
+.duel.touch .thand {
+  perspective: 900px;
+}
+.duel.touch .thcard:not(.sel):not(:active) {
+  transform: translateY(calc(var(--arc2, 0) * 1.6px)) rotate(calc(var(--arc, 0) * 2.6deg)) rotateY(calc(var(--arc, 0) * -7deg));
+}
+.duel.touch .tz.tz-m:not(.empty)::before {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -6%;
+  height: 26%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, #000000b0, transparent);
+}
+.duel.touch .tz:not(.empty):not(.pick)::after {
+  box-shadow: inset 0 1px 0 #ffffff40;
+}
+/* the 3D hand and a picked card's lean reach past the screen's edge: the duel never scrolls to follow them */
+.duel.touch {
+  overflow: clip;
 }
