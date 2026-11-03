@@ -133,7 +133,7 @@ export function ZoneWear({ state, p, zone }: Props) {
         </radialGradient>
       </defs>
       {/* the third hit darkens the whole slab */}
-      {lv >= 3 && <rect class="fw-soot" x="0" y="0" width={W} height={H} />}
+      {lv >= 3 && <ellipse class="fw-soot" cx={W / 2} cy={H / 2} rx={W * 0.48} ry={H * 0.44} fill={`url(#${id}c)`} />}
       {/* a monster standing on the damage: its scorched edge still shows round the card */}
       {hits.map(({ h, specks, gap, core, chipSh, chipFace, chipLit }, i) => {
         const k = i + 1;
@@ -145,9 +145,9 @@ export function ZoneWear({ state, p, zone }: Props) {
             {k >= 2 && (
               // a crater: dark pit, a lit rim toward the light (up-left), a shadowed lip opposite
               <g class="fw-crater">
-                <ellipse class="fw-lip-lit" cx={h.x - 0.7} cy={h.y - 0.8} rx={h.r * 0.42} ry={h.r * 0.52} />
+                <ellipse class="fw-lip-lit" cx={h.x - 0.7} cy={h.y - 0.8} rx={h.r * 0.42} ry={h.r * 0.52} pathLength={100} />
                 <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.4} ry={h.r * 0.5} fill={`url(#${id}p)`} />
-                <ellipse class="fw-lip-dark" cx={h.x + 0.5} cy={h.y + 0.7} rx={h.r * 0.33} ry={h.r * 0.42} />
+                <ellipse class="fw-lip-dark" cx={h.x + 0.5} cy={h.y + 0.7} rx={h.r * 0.33} ry={h.r * 0.42} pathLength={100} />
               </g>
             )}
             <path class="fw-speck" d={specks} />

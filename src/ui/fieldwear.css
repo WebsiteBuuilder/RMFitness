@@ -31,7 +31,7 @@
   --fw-chip-edge: #b7c3ff;
   --fw-speck: #8a7e74;
   --fw-flash: #ffd38a;
-  --fw-rest: 0.3; /* the embers left in the cracks once they cool (burnt stone, not lightning) */
+  --fw-rest: 0.4; /* the embers left in the cracks once they cool (burnt stone, not lightning) */
 }
 .fw-s-core { stop-color: var(--fw-core); stop-opacity: 0.97; }
 .fw-s-mid { stop-color: var(--fw-mid); stop-opacity: 0.9; }
@@ -44,8 +44,7 @@
 .fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.5; }
 
 .fwear .fw-soot {
-  fill: var(--fw-mid);
-  opacity: 0.78;
+  opacity: 0.55;
 }
 .fwear .fw-blot {
   opacity: 0.9;
@@ -77,12 +76,15 @@
 }
 .fwear .fw-lip-lit {
   fill: none;
+  /* (a broken rim catching the light on its far, upper-left side: not a ring) */
+  stroke-dasharray: 0 52 9 3 14 4 8 10;
   stroke: var(--fw-chip-edge);
   stroke-opacity: 0.85;
   stroke-width: 1.9px;
 }
 .fwear .fw-lip-dark {
   fill: none;
+  stroke-dasharray: 3 4 26 6 9 52;
   stroke: #000;
   stroke-opacity: 0.85;
   stroke-width: 2.4px;
@@ -118,18 +120,19 @@
 .fwear-held .fw-held-soot {
   fill: none;
   stroke: var(--fw-rim);
-  stroke-opacity: 0.75;
+  stroke-opacity: 0.95;
   stroke-width: 5px;
 }
 .fwear-held .fw-held-heat {
   fill: none;
   stroke: var(--fw-glow);
-  stroke-opacity: 0.3;
-  stroke-width: 1px;
+  stroke-opacity: 0.6;
+  stroke-width: 1.4px;
+  stroke-dasharray: 9 4 3 6 14 5;
 }
 .fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.85; }
 .fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.95; stroke-width: 6px; }
-.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.45; }
+.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.8; }
 .fwear-held .fw-held-embers {
   fill: var(--fw-flash);
   opacity: 0.95;
@@ -169,14 +172,14 @@
   --fw-mid: #031722;
   --fw-out: #03172200;
   --fw-dark: #000a10;
-  --fw-glow: #5fe6ff;
+  --fw-glow: #3fb8c8;
   --fw-pit0: #04324a;
   --fw-pit1: #0a5a74;
   --fw-chip: #0c3346;
   --fw-chip-edge: #a8f2ff;
   --fw-speck: #9be8ff;
   --fw-flash: #cdf8ff;
-  --fw-rest: 0.32;
+  --fw-rest: 0.26;
 }
 .fwear.st-forest,
 .fwear-held.st-forest {
