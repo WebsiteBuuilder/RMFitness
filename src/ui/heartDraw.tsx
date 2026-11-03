@@ -152,11 +152,12 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
 
   // a question of yours opened (a Draw Phase Skill, a trigger): the card is in your hand at once
   useEffect(() => {
-    if (!prompted || phase !== 'wait' || finished.current) return;
+    if (!prompted || finished.current) return;
+    if (phase === 'reveal') return skipTo.current();
     const from = deckEl(acting)?.getBoundingClientRect() ?? deck;
     if (from) land(from);
     else ((finished.current = true), onDone());
-  }, [prompted]);
+  }, [prompted, phase]);
 
   /** The card flies from `from` into its place in your hand. */
   const land = (from: DOMRect) => {
@@ -181,7 +182,7 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
     if (!gate.destiny || reduced() || !from) {
       sfx.drawSwipe();
       try {
-        navigator.vibrate?.(12);
+        if (user) navigator.vibrate?.(12);
       } catch {
         /* no vibration here */
       }
@@ -234,7 +235,7 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
         sfx.destinyReveal();
         setNamed(true);
         try {
-          navigator.vibrate?.([30, 40, 70]);
+          if ((navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive !== false) navigator.vibrate?.([30, 40, 70]);
         } catch {
           /* no vibration here */
         }
