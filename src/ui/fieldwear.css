@@ -47,6 +47,9 @@
 .fw-s-f0 { stop-color: #ffffff; stop-opacity: 1; }
 .fw-s-f1 { stop-color: var(--fw-flash); stop-opacity: 0.85; }
 .fw-s-f2 { stop-color: var(--fw-glow); stop-opacity: 0; }
+.fw-s-g0 { stop-color: var(--fw-flash); stop-opacity: 1; }
+.fw-s-g1 { stop-color: var(--fw-glow); stop-opacity: 0.9; }
+.fw-s-g2 { stop-color: var(--fw-glow); stop-opacity: 0.25; }
 .fw-s-pit0 { stop-color: var(--fw-pit0); stop-opacity: 0.95; }
 .fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.5; }
 
@@ -149,21 +152,21 @@
   opacity: 0.55;
 }
 .fwear .fw-plate-fire {
-  opacity: 0.7;
+  opacity: 0.8;
 }
 .fwear .fw-plate-face {
   fill: var(--fw-chip);
-  fill-opacity: 0.6;
+  fill-opacity: 0.55;
 }
+/* the plates are the same burnt stone as the lighter hits: the char runs across them */
 .fwear .fw-plate-char {
-  fill: var(--fw-core);
-  fill-opacity: 0.45;
+  opacity: 0.85;
 }
 .fwear .fw-plate-lit {
   fill: none;
   stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.7;
-  stroke-width: 0.9px;
+  stroke-opacity: 0.35;
+  stroke-width: 0.7px;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
 }

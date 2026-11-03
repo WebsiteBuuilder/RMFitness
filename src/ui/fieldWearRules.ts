@@ -233,7 +233,21 @@ function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
     const k = 0.85;
     const sx = (r() - 0.5) * 1.6;
     const sy = (r() - 0.5) * 1.6;
-    const q = pts.map(([px, py]): [number, number] => [mx + (px - mx) * k + sx, my + (py - my) * k + sy]);
+    const q0 = pts.map(([px, py]): [number, number] => [mx + (px - mx) * k + sx, my + (py - my) * k + sy]);
+    // chipped, uneven edges: each edge breaks into a few jagged steps (stone, not glass)
+    const q: [number, number][] = [];
+    for (let j = 0; j < q0.length; j++) {
+      const [ax, ay] = q0[j];
+      const [bx, by] = q0[(j + 1) % q0.length];
+      q.push([ax, ay]);
+      const len = Math.hypot(bx - ax, by - ay);
+      const steps = Math.min(4, Math.floor(len / 7));
+      for (let t = 1; t <= steps; t++) {
+        const f = t / (steps + 1) + (r() - 0.5) * 0.12;
+        const jag = (r() - 0.5) * 2.2;
+        q.push([ax + (bx - ax) * f - ((by - ay) / len) * jag, ay + (by - ay) * f + ((bx - ax) / len) * jag]);
+      }
+    }
     const path = (v: [number, number][], dx = 0, dy = 0) => 'M' + v.map(([px, py]) => `${f1(px + dx)} ${f1(py + dy)}`).join(' L') + ' Z';
     let lit = '';
     for (let j = 0; j < q.length; j++) {

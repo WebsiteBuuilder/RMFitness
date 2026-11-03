@@ -136,6 +136,11 @@ export function ZoneWear({ state, p, zone }: Props) {
           <stop offset="0.45" class="fw-s-f1" />
           <stop offset="1" class="fw-s-f2" />
         </radialGradient>
+        <radialGradient id={`${id}g`}>
+          <stop offset="0" class="fw-s-g0" />
+          <stop offset="0.5" class="fw-s-g1" />
+          <stop offset="1" class="fw-s-g2" />
+        </radialGradient>
         <radialGradient id={`${id}p`}>
           <stop offset="0" class="fw-s-pit0" />
           <stop offset="1" class="fw-s-pit1" />
@@ -171,10 +176,10 @@ export function ZoneWear({ state, p, zone }: Props) {
             {plFace && (
               // the slab breaks into plates; the fire shows in the gaps between them
               <g class="fw-plates">
-                <ellipse class="fw-plate-fire" cx={h.x} cy={h.y} rx={W * 0.42} ry={H * 0.4} fill={`url(#${id}f)`} />
+                <ellipse class="fw-plate-fire" cx={h.x} cy={h.y} rx={W * 0.5} ry={H * 0.46} fill={`url(#${id}g)`} />
                 <path class="fw-plate-sh" d={plSh} />
                 <path class="fw-plate-face" d={plFace} />
-                <path class="fw-plate-char" d={plFace} />
+                <path class="fw-plate-char" d={plFace} fill={`url(#${id}c)`} />
                 <path class="fw-plate-lit" d={plLit} />
               </g>
             )}
