@@ -29,7 +29,6 @@ const reveals = [0.42, 0.52, 0.62, 0.82];
 for (const p of [0, 1, 2] as const)
   for (const E of Es)
     for (const rv of reveals) {
-      if (rv > E - 0.6) continue;
       const h = holoPlan(p, rv, E);
       const tag = `power ${p} E ${E} reveal ${rv}`;
       ok(h.solidEnd <= E - 0.3 + 1e-9, `${tag}: solid before it flies to its card`);

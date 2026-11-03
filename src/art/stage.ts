@@ -1714,7 +1714,7 @@ void main(){
     float lines = 0.8 + 0.2 * sin(p.y * 70.0 - uTime * 22.0);
     float n = 0.75 + 0.5 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
     float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0));
-    c = (uColor * (inside * 0.16 * lines + walls * 0.75) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
+    c = (uColor * (inside * 0.06 * lines * (1.0 - ax / max(w, 0.01)) + walls * 0.75) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;

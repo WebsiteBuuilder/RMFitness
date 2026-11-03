@@ -13,6 +13,8 @@ export type HoloPower = 0 | 1 | 2;
 
 export interface HoloPlan {
   power: HoloPower;
+  /** the monster first shows */
+  reveal: number;
   /** the beam fires (s from the summon's start) */
   beamAt: number;
   /** the solidify front starts climbing / reaches the top */
@@ -50,13 +52,14 @@ export function holoPlan(power: HoloPower, reveal: number, end: number): HoloPla
   // it must be solid (and its flash over) before the monster flies to its card
   const latest = end - 0.3;
   const solidEnd = Math.min(latest, reveal + hold + climb);
-  const solidAt = Math.max(reveal + 0.08, solidEnd - climb);
+  // (never after the end, however short the window)
+  const solidAt = Math.min(solidEnd - 0.05, Math.max(reveal + 0.08, solidEnd - climb));
   const glitches: [number, number][] = [[reveal + 0.02, 0.1]];
   if (power >= 1) glitches.push([solidAt - 0.12, 0.08]);
   if (power >= 2) glitches.push([reveal + hold * 0.5, 0.07]);
   // (in a short summon the tears squeeze into the hologram's own time, or drop out)
   const fit = glitches.map(([a, d]): [number, number] => [Math.max(reveal, a), Math.min(a + d, solidEnd) - Math.max(reveal, a)]).filter(([, d]) => d >= 0.04);
-  return { power, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.28), glitches: fit };
+  return { power, reveal, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.28), glitches: fit };
 }
 
 /** 0..1 signal tearing at time t (s) of a plan. */

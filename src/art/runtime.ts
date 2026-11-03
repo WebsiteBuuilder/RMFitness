@@ -1275,7 +1275,9 @@ export class Director {
     // the hum stops with the summon (a tap that skips it silences it too)
     let stopHum: (() => void) | null = null;
     tl.own({ update: () => true, dispose: () => stopHum?.() });
-    at(h.beamAt, () => (stopHum = holoHum((h.solidEnd - h.beamAt + 0.12) / tl.rate, pw / 2)));
+    // the signal tears with a flick of color split
+    if (!calm) for (const [g] of h.glitches) at(g, () => st.pulse('chroma', 0.18 + pw * 0.08));
+    at(h.beamAt, () => (stopHum = holoHum(((h.solidEnd - h.beamAt + 0.12) * tl.slow) / tl.rate, pw / 2)));
     // the source: a hot flare on the card as the beam fires
     const src = tl.own(new Glow(1.4 * U, 1.4 * U, 'flare', beamCol, HOLO_CORE));
     src.mesh.position.set(0, o.ground + 0.06 * U, 0.4);
@@ -1300,7 +1302,8 @@ export class Director {
       span(0, h.solidEnd + 0.04, (t) => {
         u.uHolo.value = 1;
         u.uHoloLine.value = t < h.solidAt ? lo - 0.02 : lerp(lo, hi, easeInOut(clamp01((t - h.solidAt) / (h.solidEnd - h.solidAt))));
-        u.uFlick.value = calm ? 0 : flickerAt(t, o.seed) * (t < h.solidAt ? 1 : 0.35);
+        // it builds up: fainter as it first forms, fuller as the lock comes
+        u.uFlick.value = (calm ? 0 : flickerAt(t, o.seed) * (t < h.solidAt ? 1 : 0.35)) + 0.18 * (1 - clamp01((t - h.reveal) / Math.max(0.05, h.solidAt - h.reveal)));
         u.uGlitch.value = calm ? 0 : glitchAt(h, t) * (0.6 + pw * 0.25);
       });
       // (not cosmetic: a skipped summon still ends on a solid monster)
@@ -1840,7 +1843,7 @@ export class Director {
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
 
     // the summon method's own shot (Xyz galaxy, Synchro rings, Link arrows, Tribute souls...)
-    if (method && method !== 'normal') this.methodFx(tl, method, S, { x: 0, y: restY, z: 0 }, ground, size, col, info, r);
+    if (method && method !== 'normal') this.methodFx(tl, method, S, { x: 0, y: restY, z: 0 }, ground, size, col, info, r, !!holo);
 
     // the circle on the ground
     const star = entr === 'fusion' ? 6 : entr === 'ritual' ? 5 : 0;
@@ -1903,7 +1906,8 @@ export class Director {
       shock.u.uK.value = easeOut(k);
       shock.u.uOpacity.value = 1 - k * 0.3;
     });
-    switch (entr) {
+    // a hologram rises out of its card: no falling from the sky or bursting from the floor under one
+    switch (holo && (entr === 'descend' || entr === 'erupt') ? 'rise' : entr) {
       case 'descend':
         span(showAt, showAt + 0.5, (k) => {
           if (!fig) return;
@@ -2103,7 +2107,7 @@ export class Director {
    * material orbs, Synchro rings with stars rising through them, Link arrows lighting,
    * Tribute souls rising and the light falling, or a Special Summon's gate.
    */
-  private methodFx(tl: Timeline, method: SummonHow, S: number, c: P3, ground: number, size: number, col: Colors, info: ReturnType<typeof card>, r: () => number) {
+  private methodFx(tl: Timeline, method: SummonHow, S: number, c: P3, ground: number, size: number, col: Colors, info: ReturnType<typeof card>, r: () => number, soft = false) {
     const st = this.stage;
     const U = this.U;
     const P = st.particles;
@@ -2248,7 +2252,8 @@ export class Director {
         }
         const fall = own(new Glow(1.8 * U, 6 * U, 'shaft', col.light, 0xffffff));
         fall.mesh.position.set(c.x, ground + 2.8 * U, -0.4);
-        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, 1);
+        // (softer under a hologram, so the falling light never drowns it)
+        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, soft ? 0.4 : 1);
         tl.at(S + 0.02, () => (whoosh(0.35, 300, 1800, 0.18), chime(0.3)));
         tl.at(show - 0.05, () => (boom(0.4), this.flash(0xfff0d0, 0.18)));
         break;

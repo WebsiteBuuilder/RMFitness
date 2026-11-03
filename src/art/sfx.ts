@@ -157,8 +157,16 @@ export function holoHum(dur = 0.8, power = 0.5, when = 0): () => void {
   lfo.stop(t + dur + 0.05);
   // the click of the projector switching on, and the whine of it powering up
   osc('square', 2300, 1800, 0.03, 0.05, when);
-  osc('sine', 520, 1300 + power * 900, dur * 0.9, 0.025 + power * 0.02, when + 0.05);
-  whoosh(dur * 0.8, 1800, 5200, 0.04 + power * 0.03, when);
+  // (through the hum's own output, so a skip silences it too)
+  const wh = ctx.createOscillator();
+  const whG = ctx.createGain();
+  wh.type = 'sine';
+  wh.frequency.setValueAtTime(520, t + 0.05);
+  wh.frequency.exponentialRampToValueAtTime(1300 + power * 900, t + dur * 0.9);
+  whG.gain.value = (0.025 + power * 0.02) / peak;
+  wh.connect(whG).connect(out);
+  wh.start(t + 0.05);
+  wh.stop(t + dur + 0.05);
   // skipped (tap): the hum dies away at once instead of running on
   return () => {
     try {

@@ -178,6 +178,8 @@ interface Piece {
   /** comes in as a hologram (Hologram summons on; decided when it is placed) */
   holo: boolean;
   holoStarted: boolean;
+  /** silences its arrival hum (it leaves, or the field closes, mid-arrival) */
+  stopHum: (() => void) | null;
   /** the phone asks for reduced motion: no flicker or tearing */
   calm: boolean;
 }
@@ -315,6 +317,7 @@ export class BoardLayer {
         flourishT: -1,
         holo: getHolo() && performance.now() - this.born > 1200,
         holoStarted: false,
+        stopHum: null,
         calm: calmMotion(),
         finish: m.finish ?? 0,
       };
@@ -351,6 +354,7 @@ export class BoardLayer {
   }
 
   private drop(p: Piece) {
+    p.stopHum?.();
     p.fig?.dispose();
     p.disc?.dispose();
     p.pivot.removeFromParent();
@@ -561,7 +565,7 @@ export class BoardLayer {
           // one hum for monsters arriving together, none for one hidden under a cinematic
           if (p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
             this.lastHum = now;
-            holoHum(0.6, 0);
+            p.stopHum = holoHum(0.6, 0);
           }
         }
         u.uHolo.value = hb.holo;
