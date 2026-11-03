@@ -76,6 +76,14 @@ export function swell(dur = 0.8, when = 0) {
   whoosh(dur, 200, 3000, 0.12, when);
 }
 
+/** Time slows ("Not so fast!", the finishing blow's replay): a falling tape-stop sweep over two slow heartbeats. */
+export function slowdown(dur = 1.2, when = 0) {
+  osc('sawtooth', 420, 55, dur, 0.05, when);
+  whoosh(dur, 2600, 140, 0.13, when);
+  osc('sine', 72, 46, 0.2, 0.42, when + 0.12);
+  osc('sine', 72, 46, 0.2, 0.3, when + 0.12 + dur * 0.45);
+}
+
 /** The Shadow Realm: a low, wavering drone. */
 export function drone(dur = 5) {
   const ctx = audioContext();

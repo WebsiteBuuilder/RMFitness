@@ -167,9 +167,52 @@ function owner(c: Cue): Pid | null {
       return c.attacker.controller;
     case 'hit':
       return c.attacker?.controller ?? (c.defender === 0 ? 1 : 0);
+    case 'slam':
+      return c.trap.controller;
     default:
       return null;
   }
+}
+
+/** A "Not so fast!" slam plays only with its Trap's activation right behind it. */
+function slamsWithTrap(cues: Cue[]): Cue[] {
+  return cues.filter((c, i) => c.kind !== 'slam' || (cues[i + 1]?.kind === 'activate' && (cues[i + 1] as { card: { uid: number } }).card.uid === c.trap.uid));
+}
+
+/**
+ * The finishing blow, again in slow motion, before the finish (`cues` is a chain that wins the
+ * duel): the attack that dealt it (`attack`, played earlier, maybe in another chain) and its blow,
+ * with what it destroyed; or the card whose effect dealt the last damage. Empty when there is
+ * nothing to replay (a draw, a win by decking out or by a card's own rule).
+ */
+export function finishingReplay(cues: Cue[], attack: Cue | null): Cue[] {
+  const w = cues.findIndex((c) => c.kind === 'win');
+  if (w < 0) return [];
+  const win = cues[w];
+  if (win.kind !== 'win' || win.winner === 'draw') return [];
+  const loser: Pid = win.winner === 0 ? 1 : 0;
+  const again = (c: Cue): Cue => ({ ...c, replay: true });
+  // the last blow that hurt the loser
+  for (let i = w - 1; i >= 0; i--) {
+    const c = cues[i];
+    if (c.kind === 'hit' && c.dmg && c.dmg.player === loser) {
+      const out: Cue[] = [];
+      if (attack?.kind === 'attack' && c.attacker && attack.attacker.uid === c.attacker.uid) out.push(again(attack));
+      out.push(again(c));
+      for (let j = i + 1; j < w && cues[j].kind === 'destroy'; j++) out.push(again(cues[j]));
+      return out;
+    }
+    if (c.kind === 'damage' && c.player === loser) {
+      // an effect's damage: the card that dealt it, then the damage
+      for (let j = i - 1; j >= 0; j--) {
+        const a = cues[j];
+        if (a.kind === 'activate' || a.kind === 'skill') return [again(a), again(c)];
+        if (a.kind === 'hit' || a.kind === 'damage') break;
+      }
+      return [again(c)];
+    }
+  }
+  return [];
 }
 
 /** The cues a chain plays under the Cinematics setting. */
@@ -203,6 +246,11 @@ export class Flow {
   private activated = new Set<number>();
   /** Spell/Trap names already seen activated this duel (a repeat plays faster) */
   private stSeen = new Set<string>();
+  /** the last attack declared (the finishing blow's replay starts from it) */
+  private lastAttack: Cue | null = null;
+  /** the replay waiting to go into this update's chain, and where */
+  private replay: Cue[] = [];
+  private replayAt = 0;
   /** hold to skip all: no cinematics until this opponent turn is over */
   private skipTurn: number | null = null;
   private watchdog = 0;
@@ -278,8 +326,16 @@ export class Flow {
         // a card that leaves the field or is Set again starts over: its next activation plays
         else if (c.kind === 'leave' || c.kind === 'destroy' || c.kind === 'set') this.activated.delete(c.card.uid);
       }
+      cues = slamsWithTrap(cues);
       // what gets no cinematic still makes its sound, a beat apart
       all.filter((c) => !cues.includes(c)).forEach((c, i) => cueSound(c, i * 0.12));
+      for (const c of all) if (c.kind === 'attack') this.lastAttack = c;
+      // the duel is won: the finishing blow replays in slow motion before the finish
+      if (cues.some((c) => c.kind === 'win')) {
+        const w = cues.findIndex((c) => c.kind === 'win');
+        this.replay = finishingReplay(cues, this.lastAttack);
+        this.replayAt = w;
+      }
     }
     this.memo = memoField(real, viewer, host, this.memo);
     if (cues.length) {
@@ -310,9 +366,15 @@ export class Flow {
         if (c.card.controller !== viewer && !isBig(c)) return OPP_SUMMON_SCALE;
         return again ? 2 : 1;
       });
+      const lands = landings(cues);
+      // the finishing blow's replay goes in just before the finish (at its full length: the stage slows it)
+      if (this.replay.length) {
+        cues.splice(this.replayAt, 0, ...this.replay);
+        scales.splice(this.replayAt, 0, ...this.replay.map(() => 1));
+        this.replay = [];
+      }
       // the board keeps showing the duel as it was before this chain
       if (!this.pending.length) this.show(before);
-      const lands = landings(cues);
       this.pending.push({ id: batch, state: this.snap, cine: true, prompt: humanPrompt(real, seat), lands, commits: 0 });
       this.outbox.push({ cues, batch, scales });
       // the computer waits from this very moment; the field figures in it step aside

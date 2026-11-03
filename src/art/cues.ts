@@ -27,7 +27,12 @@ export interface CardRef {
   dies?: boolean;
 }
 
-export type Cue =
+export type Cue = CueBody & {
+  /** a slow-motion replay of a cue already played (the finishing blow, before the result) */
+  replay?: boolean;
+};
+
+type CueBody =
   /** how: the summon method when known (Fusion, Ritual, Xyz, Synchro, Link, Tribute...) */
   | { kind: 'summon'; card: CardRef; special: boolean; how?: SummonHow }
   /** a card leaves the field (or the GY) without being destroyed: banished, bounced, shuffled away */
@@ -47,7 +52,9 @@ export type Cue =
   | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid; dmg?: { player: Pid; amount: number } }
   | { kind: 'damage'; player: Pid; amount: number }
   | { kind: 'destroy'; card: CardRef }
-  | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null };
+  | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null }
+  /** "Not so fast!": a Trap answers the opponent's card (its attacker, its summon, its Spell): time slows and the two slam together */
+  | { kind: 'slam'; trap: CardRef; onto: CardRef };
 
 /** What an effect targets, and whether it is destroyed in the same update. */
 export interface Target {
@@ -255,6 +262,13 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         // the face-up monsters on the field as they stood before this update (board-wide effects strike them)
         const doomed = gone(events, i);
         const field: CardRef[] = [...memo.values()].filter((m) => m.faceUp && m.name).map((m) => ({ ...m, rect: rectOf(m.uid, host) ?? m.rect, dies: doomed.has(m.uid) }));
+        // a Trap answering the opponent's card: the "Not so fast!" beat comes first
+        if (ev.kind === 'activate' && k === 'trap' && ev.answers !== undefined) {
+          const onto = r(ev.answers);
+          if (onto && onto.controller !== c.controller && onto.uid !== c.uid) {
+            out.push({ kind: 'slam', trap: { ...c, name, faceUp: true }, onto });
+          }
+        }
         out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field, ...(ev.kind === 'effect' ? { lazy: true } : {}) });
         break;
       }
@@ -342,6 +356,7 @@ export function weight(c: Cue): number {
     case 'damage':
     case 'flip':
     case 'skill':
+    case 'slam':
       return 4;
     case 'activate':
     case 'target':

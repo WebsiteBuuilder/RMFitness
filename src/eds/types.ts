@@ -175,6 +175,8 @@ export interface EngineEvent {
   down?: boolean;
   /** draw: drawn by an effect, not the Draw Phase (or opening hand) draw */
   effect?: boolean;
+  /** activate (a response): the card it answers (the attacker, the summoned monster, the card it chains to) */
+  answers?: number;
   seq: number;
 }
 

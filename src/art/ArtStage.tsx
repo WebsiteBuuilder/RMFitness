@@ -80,6 +80,19 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     clear: () => layer.replaceChildren(),
+    replay: (on) => {
+      // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
+      const host = layer.parentElement;
+      if (!host) return;
+      let el = host.querySelector<HTMLElement>(":scope > .art-replay");
+      if (!el && on) {
+        el = document.createElement("div");
+        el.className = "art-replay";
+        el.innerHTML = '<i class="bar top"></i><i class="bar bottom"></i><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b>';
+        host.appendChild(el);
+      }
+      el?.classList.toggle("on", on);
+    },
   };
 }
 
