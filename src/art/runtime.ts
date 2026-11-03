@@ -9,7 +9,7 @@ import { DataTexture, PerspectiveCamera, RGBAFormat, Vector2, Vector3, type Mesh
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
 import { CHAIN_CUES, cueUids, type CardRef, type ChainCard, type Cue, type SummonHow, type Target } from './cues';
-import { END_DURATION, resolveDuration, stackDuration } from './chainRules';
+import { END_DURATION, liftStep, resolveDuration, stackDuration } from './chainRules';
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
@@ -1567,7 +1567,8 @@ export class Director {
     tl.at(0, () => ui.stack(stack, added), false);
     tl.span(0, D, (k) => ui.stackAt(k * D));
     // each card's number lands with a note, a step higher per link
-    for (const l of stack) tl.at((l.n - 1) * 0.25 + 0.3, () => chainLift(l.n, l.n === added));
+    const step = liftStep(n);
+    for (const l of stack) tl.at((l.n - 1) * step + 0.24, () => chainLift(l.n, l.n === added));
     return tl;
   }
 
@@ -1586,7 +1587,7 @@ export class Director {
     this.stage.backdrop.u.uColor.value.multiplyScalar(0.12);
     tl.at(0, () => ui.resolve(stack, n, negated, D), false);
     tl.span(0, D, (k) => ui.resolveAt(k * D));
-    tl.at(0.28, () => {
+    tl.at(0.22, () => {
       this.flash(color, negated ? 0.12 : 0.22);
       this.stage.pulse('flash', negated ? 0.08 : 0.16);
       chainResolve(l.what, n);

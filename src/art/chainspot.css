@@ -108,7 +108,7 @@
     opacity 0.25s;
 }
 .chs-card.ghost {
-  opacity: 0.25 !important;
+  opacity: 0.18 !important;
 }
 .chs-pic {
   position: absolute;
@@ -425,5 +425,26 @@ body.chs-on .pass .win {
 }
 /* the board's own chain list (Touch view) steps aside while the spotlight shows the chain */
 body.chs-on .tchain {
+  visibility: hidden;
+}
+
+/* reading a card: only it shows (nothing of the spotlight under it) */
+.art-chain.reading > :not(.chs-inspect) {
+  visibility: hidden;
+}
+/* the slot of the link in the spotlight is empty while it is out */
+.chs-card.ghost .chs-badge {
+  display: none;
+}
+/* in the row the number sits above the card, clear of its name */
+.art-chain:not(.docked) .chs-card .chs-badge {
+  left: 50%;
+  top: -15px;
+  transform: translateX(-50%) scale(var(--b, 1));
+}
+/* nothing else talks over the chain (the turn row's "is choosing", toasts) */
+body.chs-on .tturn.ask,
+body.chs-on .ttab,
+body.chs-on .tspot {
   visibility: hidden;
 }

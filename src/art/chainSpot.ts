@@ -13,7 +13,7 @@ import { card } from '../eds/db';
 import { CardImg } from '../ui/CardImg';
 import { spellWord } from '../ui/gameUi';
 import type { ChainCard } from './cues';
-import { END_DURATION } from './chainRules';
+import { END_DURATION, liftStep } from './chainRules';
 
 export { END_DURATION, resolveDuration, stackDuration } from './chainRules';
 
@@ -85,6 +85,10 @@ export class ChainSpot {
   /** the link in the spotlight (resolve beat), its pose there and its place in the chain */
   private live: { n: number; at: Pose; slot: Pose; negated: boolean; D: number; flashed: boolean } | null = null;
   private endTimer = 0;
+  /** the stage went idle mid-chain (the grace runs, or waits for a card being read) */
+  private idleArmed = false;
+  /** how long a card may be read (shorter while a choice for the player waits behind it) */
+  pauseLimit: () => number = () => INSPECT_MAX_MS;
   /** the stage pauses (true) and goes on (false) while a card is read */
   onPause: (on: boolean) => void = () => {};
 
@@ -121,8 +125,9 @@ export class ChainSpot {
   /** The row the chain lifts into, across the middle of the screen. */
   private rowPose(i: number, n: number): Pose {
     const { W, H } = this;
-    const w = Math.min(W * 0.25, H * 0.15, 132);
-    const step = n > 1 ? Math.min(w * 0.86, (W * 0.94 - w) / (n - 1)) : 0;
+    // a long chain shrinks so every card's name stays readable (each card covers only the next one's right edge)
+    const w = Math.min(W * (n >= 4 ? 0.21 : 0.25), H * 0.15, 132);
+    const step = n > 1 ? Math.min(w * 0.92, (W * 0.94 - w) / (n - 1)) : 0;
     const c = i - (n - 1) / 2;
     return { x: W / 2 + c * step, y: H * 0.42 + Math.abs(c) * 4, w, rot: c * 3.5, op: 1 };
   }
@@ -218,6 +223,7 @@ export class ChainSpot {
 
   private show() {
     clearTimeout(this.endTimer);
+    this.idleArmed = false;
     this.root.classList.remove('out');
     this.root.classList.add('on');
     document.body.classList.add('chs-on');
@@ -249,16 +255,18 @@ export class ChainSpot {
   /** The lift at `t` cinematic seconds: link i rises from 0.25 i s, for 0.4 s, and its number pops. */
   stackAt(t: number) {
     const n = this.n;
+    const step = liftStep(n);
     for (const s of this.slots.values()) {
       const i = s.link.n - 1;
       const to = this.rowPose(i, n);
-      const k = clamp01((t - i * 0.25) / 0.4);
+      const k = clamp01((t - i * step) / 0.3);
       const from = s.from ?? { ...to, y: to.y + 50, w: to.w * 0.7, op: 0 };
       if (k <= 0) this.place(s.el, { ...from, op: s.from ? 0 : 0 });
       else this.between(s.el, { ...from, op: s.from ? 1 : 0 }, to, easeOut(k));
       // (it lifts off the card on the field: a lift, then a little settle)
-      s.el.style.setProperty('--b', backOut(clamp01((k - 0.7) / 0.3)).toFixed(3));
-      s.el.classList.toggle('up', k > 0);
+      const b = backOut(clamp01((k - 0.7) / 0.3)).toFixed(2);
+      if (s.el.style.getPropertyValue('--b') !== b) s.el.style.setProperty('--b', b);
+      if (s.el.classList.contains('up') !== k > 0) s.el.classList.toggle('up', k > 0);
     }
   }
 
@@ -293,7 +301,8 @@ export class ChainSpot {
     this.big.classList.toggle('neg', negated);
     this.stamp.classList.remove('hit');
     const info = card(l.card.name);
-    this.tag.textContent = `Chain Link ${n} · ${linkOwner(l)}${negated ? ' · Negated' : ''}`;
+    // (a link always answers the one below it: that is what a chain is)
+    this.tag.textContent = `Chain Link ${n} · ${linkOwner(l)}${negated ? ' · Negated' : n > 1 ? ` · answers Link ${n - 1}` : ''}`;
     (this.text.querySelector('.chs-name') as HTMLElement).textContent = l.card.name;
     (this.text.querySelector('.chs-kind') as HTMLElement).textContent = kindLine(l.card.name);
     const desc = this.text.querySelector('.chs-desc') as HTMLElement;
@@ -314,7 +323,7 @@ export class ChainSpot {
   resolveAt(t: number) {
     const lv = this.live;
     if (!lv) return;
-    const OUT = 0.28;
+    const OUT = 0.22;
     const BACK = 0.3;
     if (t < OUT) this.between(this.big, { ...lv.slot, op: 0.6 }, lv.at, easeOut(t / OUT));
     else if (t < lv.D - BACK) this.place(this.big, lv.at);
@@ -331,7 +340,7 @@ export class ChainSpot {
         this.flashEl.classList.add('go');
       }
     }
-    const txt = clamp01((t - OUT * 0.8) / 0.2) * (1 - clamp01((t - (lv.D - BACK)) / (BACK * 0.6)));
+    const txt = clamp01((t - OUT * 0.4) / 0.15) * (1 - clamp01((t - (lv.D - BACK)) / (BACK * 0.6)));
     const op = txt.toFixed(2);
     if (Number(this.text.style.opacity) !== Number(op) || this.text.style.opacity === '') this.text.style.opacity = op;
     if (this.text.classList.contains('on') !== txt > 0.05) this.text.classList.toggle('on', txt > 0.05);
@@ -370,7 +379,10 @@ export class ChainSpot {
    * not blink out and back; nothing comes, it goes.
    */
   idle(ms = IDLE_GRACE_MS) {
-    if (!this.showing || this.inspectEl) return;
+    if (!this.showing) return;
+    this.idleArmed = true;
+    // (a card being read stays up: the grace starts again once it is closed)
+    if (this.inspectEl) return;
     clearTimeout(this.endTimer);
     this.endTimer = window.setTimeout(() => this.hide(), ms);
   }
@@ -378,6 +390,7 @@ export class ChainSpot {
   /** Gone at once (a skip, a choice for the player, leaving): what it holds is dropped. */
   hide() {
     clearTimeout(this.endTimer);
+    this.idleArmed = false;
     this.closeInspect();
     this.live = null;
     this.root.classList.remove('on', 'out', 'docked');
@@ -441,9 +454,12 @@ export class ChainSpot {
       if (pressed) this.closeInspect();
     });
     this.root.appendChild(el);
+    this.root.classList.add('reading');
     this.inspectEl = el;
     document.addEventListener('keydown', this.onKey, true);
-    this.inspectTimer = window.setTimeout(() => this.closeInspect(), INSPECT_MAX_MS);
+    // reading pauses the hide that waits for an idle stage too
+    clearTimeout(this.endTimer);
+    this.inspectTimer = window.setTimeout(() => this.closeInspect(), this.pauseLimit());
     this.onPause(true);
   }
 
@@ -465,9 +481,11 @@ export class ChainSpot {
     const el = this.inspectEl;
     if (!el) return;
     this.inspectEl = null;
+    this.root.classList.remove('reading');
     const pic = el.querySelector<HTMLElement>('.chs-pic');
     if (pic) render(null, pic);
     el.remove();
     if (resume) this.onPause(false);
+    if (this.idleArmed && this.showing) this.idle();
   }
 }

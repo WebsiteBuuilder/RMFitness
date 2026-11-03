@@ -555,7 +555,9 @@ export class Engine {
 
   event(kind: string, extra: Omit<EngineEvent, 'kind' | 'seq'> = {}) {
     const ev = { kind, ...extra, seq: ++this.seq };
-    this.state.lastEvent = ev;
+    // the chain spotlight's bookkeeping ('chain', 'resolve', 'chain-end') is for the screen only:
+    // rules, sounds and skills that look at the last event keep seeing the card's own event
+    if (!SCREEN_ONLY.has(kind)) this.state.lastEvent = ev;
     const list = (this.state.events ??= []);
     list.push(ev);
     // audit-09: the last face-up monster turned face-down (scripts report it with a 'position' event): Subterror Behemoth Stalagmo.
@@ -4046,6 +4048,9 @@ export class Engine {
 }
 
 /** A response's activate event names the card it answers (the trap slam beat shows the two meeting). */
+/** Events only the screen reads (never the duel's last event). */
+const SCREEN_ONLY = new Set(['chain', 'resolve', 'chain-end']);
+
 const answered = (ctx: ChainCtx): { answers?: number } => {
   const u = ctx.link?.card.uid ?? ctx.uid;
   return u === undefined ? {} : { answers: u };

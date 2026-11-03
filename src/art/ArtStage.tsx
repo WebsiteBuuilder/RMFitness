@@ -190,6 +190,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
           makeUi(layer.current, (): number => d.stage.speed * d.rate, spot),
         );
         // reading a chain card: everything on stage holds still, and the board waits with it
+        // a choice for the player waiting behind the chain: a card is read for 8 s at most
+        spot.pauseLimit = () => (promptWaiting() ? 8000 : 25000);
         spot.onPause = (on) => {
           d.stage.pause = on;
           pauseBoard(on);
@@ -265,6 +267,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (stateRef.current.winner !== null) return skipAll(false);
     tapToResult();
     clearLayer();
+    chainSpot.current?.hide();
     if (dir.current) dir.current.skip();
     else dropWaiting();
     hideNow();
@@ -275,6 +278,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     // a hold that fires: a short buzz says so
     if (buzz) navigator.vibrate?.(15);
     clearLayer();
+    chainSpot.current?.hide();
     skipAllChains();
     dropWaiting();
     dir.current?.skipEverything();
@@ -345,6 +349,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       // a choice for the player is up: everything on stage goes, at once
       skip: () => {
         clearLayer();
+        chainSpot.current?.hide();
         // (the board already shows everything: whatever is still queued is behind it)
         dir.current?.skipEverything();
         hideNow();

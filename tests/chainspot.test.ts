@@ -5,7 +5,7 @@ import type { Card, FieldCard, Pid, Pos } from '../src/eds/types';
 import { toCues, coalesce, CHAIN_CUES, type Cue, type CardRef, type CueTrack } from '../src/art/cues';
 import { Flow, pickCues } from '../src/art/flow';
 import { CUE_KINDS_DRAWN } from '../src/art/runtime';
-import { resolveDuration, stackDuration, END_DURATION } from '../src/art/chainRules';
+import { liftStep, resolveDuration, stackDuration, END_DURATION } from '../src/art/chainRules';
 
 import { DB } from './speedkit';
 
@@ -276,10 +276,11 @@ function twoLinks(t: string) {
 // ---------- timing ----------
 {
   const ref = { uid: 1, name: 'Sakuretsu Armor', faceUp: true, controller: 0 as Pid, rect: null, def: false };
-  check(stackDuration(2) >= 0.9 && stackDuration(2) <= 1.1 && stackDuration(5) < 1.8, 'the lift is about a second (a long chain a little longer)');
-  check(resolveDuration({ card: ref, negated: false }) >= 1.5 && resolveDuration({ card: ref, negated: false }) <= 2.6, 'a link stays up long enough to read its first lines');
+  check(stackDuration(2) >= 0.6 && stackDuration(2) <= 0.9 && stackDuration(8) <= 1.05, 'the lift is under a second, even for a long chain');
+  for (const n of [2, 3, 5, 8]) check((n - 1) * liftStep(n) + 0.3 <= stackDuration(n), `every card of a ${n}-link chain has landed before the lift ends`);
+  check(resolveDuration({ card: ref, negated: false }) >= 1.3 && resolveDuration({ card: ref, negated: false }) <= 2.1, 'a link stays up long enough to read its first lines, at Master Duel pace');
   check(resolveDuration({ card: { ...ref, name: 'Seven Tools of the Bandit' }, negated: true }) <= 1.6, 'a negated link is quick');
-  check(resolveDuration({ card: { ...ref, name: 'x'.repeat(5) }, negated: false }) >= 1.5, 'an unknown card still gets its beat');
+  check(resolveDuration({ card: { ...ref, name: 'x'.repeat(5) }, negated: false }) >= 1.3, 'an unknown card still gets its beat');
   check(END_DURATION < 0.5, 'the fold is quick');
 }
 

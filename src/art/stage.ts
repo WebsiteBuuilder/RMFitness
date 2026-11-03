@@ -2486,6 +2486,7 @@ export class Stage {
   warp = 1;
   /** a chain card is being read (chain spotlight): everything on stage holds still */
   pause = false;
+  private pauseDrawn = false;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
   running = false;
@@ -2794,6 +2795,13 @@ export class Stage {
   private loop = (now: number) => {
     this.raf = 0;
     if (!this.running) return;
+    // paused (a chain card being read): the frame already drawn stays; nothing is drawn or measured
+    if (this.pause && this.pauseDrawn) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
+    this.pauseDrawn = this.pause;
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
