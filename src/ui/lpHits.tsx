@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { Pid } from '../eds/types';
-import { crackPaths, lpHit, lpListeners, sparkCount, seeded, MAX_SCARS, OPP_SHAKE, startLp, type Crack, type LpHit } from './lpHitRules';
+import { crackPaths, lpBarMemory, lpHit, lpListeners, sparkCount, seeded, MAX_SCARS, OPP_SHAKE, startLp, type Crack, type LpHit } from './lpHitRules';
 import { lpCrack, lpSpark } from './duelSfx';
 import './lphit.css';
 
@@ -29,6 +29,17 @@ function useLpHits(fn: Listener) {
   }, []);
 }
 
+/** setTimeout that is cleared when the component goes away. */
+function useLater() {
+  const ts = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => () => ts.current.forEach(clearTimeout), []);
+  return (fn: () => void, ms: number) => {
+    const t = setTimeout(() => (ts.current.delete(t), fn()), ms);
+    ts.current.add(t);
+    return t;
+  };
+}
+
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let seq = 0;
 
@@ -42,13 +53,14 @@ interface Pop {
 /** The numbers that pop out of `who`'s LP plate. `below`: the plate is at the top of the screen. */
 export function LpPops({ who, speed, below }: { who: Pid; speed: boolean; below: boolean }) {
   const [pops, setPops] = useState<Pop[]>([]);
+  const later = useLater();
   useLpHits((w, from, to) => {
     if (w !== who) return;
     const hit = lpHit(from, to, speed);
     if (!hit) return;
     const id = ++seq;
     setPops((p) => [...p.slice(-2), { id, hit }]);
-    setTimeout(() => setPops((p) => p.filter((x) => x.id !== id)), hit.intoDanger ? 1700 : 1300);
+    later(() => setPops((p) => p.filter((x) => x.id !== id)), hit.intoDanger ? 1700 : 1300);
   });
   if (!pops.length) return null;
   return (
@@ -90,8 +102,13 @@ interface Scar {
  */
 export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
   const box = useRef<HTMLDivElement>(null);
-  const [scars, setScars] = useState<Scar[]>([]);
+  // (kept per duelist: a hotseat board swaps the bars, keyed by duelist, every turn)
+  const [scars, setScars] = useState<Scar[]>(() => (lpBarMemory.get(who) as Scar[] | undefined) ?? []);
+  useEffect(() => void lpBarMemory.set(who, scars), [scars]);
+  const [fresh, setFresh] = useState(0);
   const [mending, setMending] = useState(false);
+  const mend = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const later = useLater();
   const [sparks, setSparks] = useState<{ id: number; x: number; y: number; n: number } | null>(null);
   useLpHits((w, from, to) => {
     if (w !== who) return;
@@ -100,9 +117,14 @@ export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
     if (!hit || !el) return;
     if (hit.kind === 'heal') {
       // a heal mends the bar: the scars fade out
-      if (scars.length) {
+      if (scars.length && !mend.current) {
         setMending(true);
-        setTimeout(() => (setScars([]), setMending(false)), 520);
+        const healed = new Set(scars.map((x) => x.id));
+        mend.current = later(() => {
+          mend.current = null;
+          setScars((s) => s.filter((x) => !healed.has(x.id)));
+          setMending(false);
+        }, 520);
       }
       return;
     }
@@ -125,7 +147,9 @@ export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
     }
     const id = ++seq;
     const cracks = crackPaths(hit, x, y, r.width, r.height, id * 7919 + to);
+    // (a blow mid-mend: the old scars still go, the new one stays and shows)
     setMending(false);
+    setFresh(id);
     setScars((s) => [...s.slice(-(MAX_SCARS - 1)), { id, w: r.width, h: r.height, x, y, cracks, hit }]);
     if (hit.tier > 0 || hit.danger) lpCrack(hit.sev, hit.danger || hit.ko);
     // breaking under 1000: the gauge throws sparks from where its fill now ends
@@ -133,11 +157,11 @@ export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
     if (n) {
       const end = gauge && gauge.width > 0 ? gauge.left - r.left + gauge.width * Math.max(0, to) / Math.max(startLp(speed), from) : x;
       setSparks({ id, x: end, y, n });
-      setTimeout(() => setSparks((sp) => (sp?.id === id ? null : sp)), 1200);
+      later(() => setSparks((sp) => (sp?.id === id ? null : sp)), 1200);
       if (hit.intoDanger) lpSpark();
     }
   });
-  const last = scars[scars.length - 1]?.id;
+  const last = fresh;
   let sparkEls: preact.JSX.Element[] = [];
   if (sparks) {
     const rnd = seeded(sparks.id);
@@ -170,11 +194,18 @@ export function LpCracks({ who, speed }: { who: Pid; speed: boolean }) {
             {s.cracks.map((c, i) => (
               <g key={i} class={c.main ? 'm' : 'b'} style={{ '--i': String(i % 6) } as Record<string, string>}>
                 <path class="sh" d={c.d} pathLength={1} />
-                <path class="gl" d={c.d} pathLength={1} />
                 <path class="co" d={c.d} pathLength={1} />
               </g>
             ))}
           </svg>
+          {s.id === last && (
+            // the hot glow: its own layer, so fading it out is a composited opacity change
+            <svg class="lpcr-hot" viewBox={`0 0 ${s.w.toFixed(1)} ${s.h.toFixed(1)}`} preserveAspectRatio="none">
+              {s.cracks.map((c, i) => (
+                <path key={i} class="gl" d={c.d} pathLength={1} style={{ '--i': String(i % 6) } as Record<string, string>} />
+              ))}
+            </svg>
+          )}
           {s.id === last && (
             <i
               class="lpcr-flash"
@@ -195,12 +226,13 @@ const shaking = new WeakMap<Element, Animation>();
 /**
  * Shakes the parts of the board that `sel` picks inside `root` when Life Points drop:
  * scaled to the hit, more for `me`'s own (the player at this screen, null: both are).
+ * `off`: a replay or a spectator's view (it shows the hits, not the jolts).
  * Moves them with `translate` alone, so it never fights a `transform` animation.
  */
-export function useLpShake(root: RefObject<HTMLElement>, me: Pid | null, speed: boolean, sel: string) {
+export function useLpShake(root: RefObject<HTMLElement>, me: Pid | null, speed: boolean, sel: string, off = false) {
   useLpHits((who, from, to) => {
     const hit = lpHit(from, to, speed);
-    if (!hit || hit.kind !== 'damage' || !root.current || reduced()) return;
+    if (off || !hit || hit.kind !== 'damage' || !root.current || reduced()) return;
     const amp = hit.shake * (me === null || who === me ? 1 : OPP_SHAKE);
     if (amp < 1) return;
     const els = root.current.querySelectorAll<HTMLElement>(sel);
@@ -215,6 +247,8 @@ export function useLpShake(root: RefObject<HTMLElement>, me: Pid | null, speed: 
     }
     frames.push({ translate: '0 0' });
     for (const el of els) {
+      // the finishing blow: the field has its own KO shake (arena.css ko-shake), on the same property
+      if (hit.ko && el.classList.contains('tmat')) continue;
       shaking.get(el)?.cancel();
       const a = el.animate(frames, { duration: hit.shakeMs, easing: 'linear' });
       shaking.set(el, a);

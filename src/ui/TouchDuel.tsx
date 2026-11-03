@@ -121,7 +121,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
 
   useFlights(root, state, acting);
   // Life Points dropping shake the board, scaled to the hit (lpHits.tsx)
-  useLpShake(root, ctl.hotseat ? null : acting, !!e.speed, '.tmat, .tbar, .thand');
+  useLpShake(root, ctl.hotseat ? null : acting, !!e.speed, '.tmat, .tbar, .thand', !!ctl.spectator);
 
   // The opening swing starts two frames after the screen opens, once its first heavy frame is painted.
   const [armed, setArmed] = useState(false);
@@ -524,7 +524,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         data-drop={top ? 'direct' : undefined}
         onClick={() => top && mode && canDirect() && (send({ type: 'ATTACK', player: acting, uid: mode.uid, target: null }), setMode(null))}
       >
-        <LpCracks who={p} speed={!!e.speed} />
+        <LpCracks key={`cr${p}`} who={p} speed={!!e.speed} />
         <div class="tavatar">{ps.name.slice(0, 1).toUpperCase()}</div>
         <div class="tname">
           <b>{ps.name}</b>
@@ -546,7 +546,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
           <LpCount value={ps.lp} who={p} />
-          <LpPops who={p} speed={!!e.speed} below={top} />
+          <LpPops key={`pop${p}`} who={p} speed={!!e.speed} below={top} />
         </div>
         <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />

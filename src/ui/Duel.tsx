@@ -89,7 +89,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [showMenu, setShowMenu] = useState(false);
   // Classic controls: Life Points dropping shake the board (Touch does its own, TouchDuel.tsx)
   const classicRoot = useRef<HTMLDivElement>(null);
-  useLpShake(classicRoot, hotseat ? null : acting, !!e.speed, '.pbar, .field, .hand');
+  useLpShake(classicRoot, hotseat ? null : acting, !!e.speed, '.pbar, .field, .hand', !!spectator);
   const [askSurrender, setAskSurrender] = useState(false);
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
@@ -737,7 +737,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   return (
     <div ref={classicRoot} class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
       <div class="pbar top">
-        <LpCracks who={other(acting)} speed={!!e.speed} />
+        <LpCracks key={`cr${other(acting)}`} who={other(acting)} speed={!!e.speed} />
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
           LP <LpCount value={opp.lp} who={other(acting)} />
@@ -797,7 +797,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         {sideBox(acting, false)}
       </div>
       <div class="pbar bottom">
-        <LpCracks who={acting} speed={!!e.speed} />
+        <LpCracks key={`cr${acting}`} who={acting} speed={!!e.speed} />
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
           LP <LpCount value={me.lp} who={acting} />

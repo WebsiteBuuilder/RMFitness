@@ -9,6 +9,12 @@ type LpListener = (who: Pid, from: number, to: number) => void;
 /** Who hears Life Points move on screen (lpHits.tsx: the pops, cracks and shake). */
 export const lpListeners = new Set<LpListener>();
 
+/** What a duelist's LP bar keeps between remounts (its scars), per duelist: a new duel screen clears it. */
+export const lpBarMemory = new Map<Pid, unknown>();
+export function resetLpHits() {
+  lpBarMemory.clear();
+}
+
 /** The on-screen Life Points of `who` started moving from `from` to `to` (art/flow.tsx LpCount). */
 export function emitLpHit(who: Pid, from: number, to: number) {
   // (a counter coming back from 0 is a new duel on the same screen, not a heal)

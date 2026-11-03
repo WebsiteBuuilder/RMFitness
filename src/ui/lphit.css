@@ -47,7 +47,6 @@
   -webkit-text-stroke: 2px #ff1030;
   text-shadow:
     0 0 14px #ff1030,
-    0 0 28px #ff103088,
     0 3px 2px #000;
 }
 .lppop em {
@@ -67,7 +66,7 @@
   order: -1;
   margin: 0 0 3px;
 }
-/* (transform-only keyframes: the position comes from `translate`, so they never fight it) */
+/* (transform and opacity only: composited, no layout) */
 @keyframes lppop-up {
   0% {
     opacity: 0;
@@ -181,9 +180,16 @@
   stroke-width: 1.6;
 }
 .lpcr .gl {
-  stroke: #ff5a48;
+  stroke: #ff7a50;
   stroke-width: 2.6;
+}
+.lpcr-hot {
   opacity: 0;
+  will-change: opacity;
+  animation: lpcr-glow 0.9s ease-out;
+}
+.lpcr-scar.crit .lpcr-hot {
+  animation-duration: 1.6s;
 }
 .lpcr-scar.crit .co {
   stroke: #ffc4c4;
@@ -201,15 +207,7 @@
   animation: lpcr-draw 0.2s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
   animation-delay: calc(var(--i, 0) * 14ms);
 }
-.lpcr-scar.fresh .gl {
-  animation:
-    lpcr-draw 0.2s cubic-bezier(0.1, 0.8, 0.3, 1) forwards,
-    lpcr-glow 0.9s ease-out forwards;
-  animation-delay: calc(var(--i, 0) * 14ms), 0s;
-}
-.lpcr-scar.fresh.crit .gl {
-  animation-duration: 0.2s, 1.6s;
-}
+
 @keyframes lpcr-draw {
   to {
     stroke-dashoffset: 0;
@@ -218,15 +216,9 @@
 @keyframes lpcr-glow {
   0% {
     opacity: 0.95;
-    stroke: #fff6d0;
-  }
-  25% {
-    opacity: 0.8;
-    stroke: #ff6a40;
   }
   100% {
     opacity: 0;
-    stroke: #ff2030;
   }
 }
 /* the flash where it hit */
@@ -264,7 +256,7 @@
     animation: none;
     stroke-dashoffset: 0;
   }
-  .lpcr-scar.fresh .gl,
+  .lpcr-hot,
   .lpcr-flash {
     animation: none;
     opacity: 0;
