@@ -1,0 +1,163 @@
+// The rules behind field wear (fieldWear.tsx): how worn each Monster Zone is and the shape of
+// its scorch marks. The engine counts the monsters destroyed in each zone (state.fx.wear, see
+// Engine.sendToGrave); the marks are drawn from that count with a seeded generator, so the same
+// zone looks the same on every render, on both phones of an online duel, after a rejoin and in
+// a replay. No DOM here (the tests run it in Node).
+import type { DuelState, Pid } from '../eds/types';
+import type { Terrain } from '../art/families';
+
+/** The zone box the marks are drawn in (a card's shape, 59 × 86). */
+export const W = 59;
+export const H = 86;
+/** Wear looks get worse up to this many destructions (more keep the worst look). */
+export const MAX_LOOK = 3;
+
+/** Monsters destroyed in a duelist's Monster Zone so far this duel (0: untouched). */
+export function wearOf(state: DuelState, p: Pid, zone: number): number {
+  const w = state.fx?.wear as (number | null)[][] | undefined;
+  return Math.max(0, Number(w?.[p]?.[zone]) || 0);
+}
+
+/** How the marks are drawn on each landscape (the duelist's own Field Spell; null: the plain slab). */
+export type WearStyle = Terrain | 'plain';
+export const wearStyle = (t: Terrain | null): WearStyle => t ?? 'plain';
+
+/** A small seeded random generator (the same marks every render). */
+export function rng(seed: number) {
+  let s = seed >>> 0 || 1;
+  return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+}
+
+export interface WearCrack {
+  /** the crack's centre line */
+  d: string;
+  /** stroke width scale: trunks are thick, branches thinner */
+  w: number;
+  /** the crack as a filled sliver, wide where it starts and narrowing to a point (the dark gap) */
+  gap: string;
+  /** ...and its hot core, thinner */
+  core: string;
+}
+
+/** A filled outline around a line of points, `half` wide at the start and tapering to nothing. */
+export function taper(pts: [number, number][], half: number): string {
+  const n = pts.length;
+  if (n < 2) return '';
+  const left: string[] = [];
+  const right: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = pts[Math.max(0, i - 1)];
+    const [bx, by] = pts[Math.min(n - 1, i + 1)];
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    const nx = -(by - ay) / len;
+    const ny = (bx - ax) / len;
+    const h = half * (1 - (0.92 * i) / (n - 1));
+    const [x, y] = pts[i];
+    left.push(`${f1(x + nx * h)} ${f1(y + ny * h)}`);
+    right.push(`${f1(x - nx * h)} ${f1(y - ny * h)}`);
+  }
+  return `M${left.join(' L')} L${right.reverse().join(' L')} Z`;
+}
+
+export interface WearHit {
+  /** where the monster fell */
+  x: number;
+  y: number;
+  /** the scorched patch around it (a closed, rough outline) */
+  blot: string;
+  /** its size (the blot's mean radius) */
+  r: number;
+  cracks: WearCrack[];
+  /** chipped pieces of the slab (the third hit shatters it) */
+  chips: string[];
+  /** ash or embers lying in the scorch: [x, y, size] */
+  specks: [number, number, number][];
+}
+
+const f1 = (n: number) => n.toFixed(1);
+const clampX = (x: number) => Math.max(1, Math.min(W - 1, x));
+const clampY = (y: number) => Math.max(1, Math.min(H - 1, y));
+
+/**
+ * The marks of one destruction: the k-th monster destroyed in this zone (k from 1). Each one
+ * lands somewhere new and reaches further: the first leaves a scorch and hairline cracks, the
+ * second a crater and cracks to the zone's edges, the third shatters the slab.
+ * `grid`: the cracks run in straight lines and right angles (a machine floor, Tech landscapes).
+ */
+export function wearHit(seed: number, k: number, grid = false): WearHit {
+  const r = rng(seed * 2654435761 + k * 40503);
+  const lv = Math.min(k, MAX_LOOK);
+  // the first lands near the middle; later ones off to a side
+  const spread = k === 1 ? 0.18 : 0.42;
+  const x = W / 2 + (r() - 0.5) * 2 * spread * W * 0.5;
+  const y = H / 2 + (r() - 0.5) * 2 * spread * H * 0.45;
+  const rad = [0, 17, 21, 24][lv] + r() * 4;
+  // a rough outline: 16 points, the radius wandering
+  let blot = '';
+  const pts = 16;
+  let wob = 1;
+  for (let i = 0; i < pts; i++) {
+    wob = Math.max(0.62, Math.min(1.3, wob + (r() - 0.5) * 0.45));
+    const a = (i / pts) * Math.PI * 2;
+    // (taller than wide: the zone is a card's shape)
+    blot += `${i ? 'L' : 'M'}${f1(x + Math.cos(a) * rad * wob)} ${f1(y + Math.sin(a) * rad * wob * 1.25)} `;
+  }
+  blot += 'Z';
+  const cracks: WearCrack[] = [];
+  const reach = [0, 15, 30, 44][lv];
+  const grow = (cx: number, cy: number, ang: number, len: number, w: number, depth: number) => {
+    const pts: [number, number][] = [[cx, cy]];
+    const steps = grid ? 3 + Math.floor(r() * 2) : 6 + Math.floor(r() * 4);
+    if (grid) ang = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+    const heading = ang;
+    for (let i = 0; i < steps; i++) {
+      if (grid) {
+        if (i && r() < 0.55) ang += (r() < 0.5 ? -1 : 1) * (Math.PI / 2);
+      } else ang = heading + (r() - 0.5) * 1.3; // (jagged: each step zigs off the crack's heading)
+      const l = (len / steps) * (0.6 + r() * 0.8);
+      cx = clampX(cx + Math.cos(ang) * l);
+      cy = clampY(cy + Math.sin(ang) * l);
+      pts.push([cx, cy]);
+      if (depth < 1 + (lv > 1 ? 1 : 0) && i > 1 && r() < 0.3) grow(cx, cy, heading + (r() < 0.5 ? -1 : 1) * (grid ? Math.PI / 2 : 0.5 + r() * 0.6), len * 0.45, w * 0.6, depth + 1);
+    }
+    const d = 'M' + pts.map(([x, y]) => `${f1(x)} ${f1(y)}`).join(' L');
+    cracks.push({ d, w, gap: taper(pts, 1.25 * w), core: taper(pts, 0.5 * w) });
+  };
+  const trunks = [0, 4, 5, 7][lv];
+  const turn0 = r() * Math.PI * 2;
+  for (let t = 0; t < trunks; t++) grow(x, y, turn0 + (t / trunks) * Math.PI * 2 + (r() - 0.5) * 0.5, reach * (0.7 + r() * 0.5), 1, 0);
+  // the third hit breaks pieces out of the slab
+  const chips: string[] = [];
+  if (lv >= 3) {
+    const n = 4 + Math.floor(r() * 3);
+    for (let i = 0; i < n; i++) {
+      const a = r() * Math.PI * 2;
+      const dist = rad * (0.35 + r() * 0.7);
+      const cx = clampX(x + Math.cos(a) * dist);
+      const cy = clampY(y + Math.sin(a) * dist * 1.25);
+      const s = 2.4 + r() * 3.2;
+      let d = '';
+      const corners = 4 + Math.floor(r() * 2);
+      for (let j = 0; j < corners; j++) {
+        const b = (j / corners) * Math.PI * 2 + r() * 0.6;
+        d += `${j ? 'L' : 'M'}${f1(clampX(cx + Math.cos(b) * s * (0.6 + r() * 0.5)))} ${f1(clampY(cy + Math.sin(b) * s * (0.6 + r() * 0.5)))} `;
+      }
+      chips.push(d + 'Z');
+    }
+  }
+  const specks: [number, number, number][] = [];
+  const ns = 3 + lv * 2;
+  for (let i = 0; i < ns; i++) {
+    const a = r() * Math.PI * 2;
+    const dist = rad * Math.sqrt(r()) * 0.95;
+    specks.push([+f1(clampX(x + Math.cos(a) * dist)), +f1(clampY(y + Math.sin(a) * dist * 1.25)), +(0.5 + r() * 0.9).toFixed(2)]);
+  }
+  return { x: +f1(x), y: +f1(y), blot, r: +f1(rad), cracks, chips, specks };
+}
+
+/** Every mark in a zone that has seen `count` monsters destroyed (the worst look from the third on). */
+export function wearHits(p: Pid, zone: number, count: number, grid = false): WearHit[] {
+  const out: WearHit[] = [];
+  for (let k = 1; k <= Math.min(count, MAX_LOOK); k++) out.push(wearHit(1 + p * 977 + zone * 131, k, grid));
+  return out;
+}
