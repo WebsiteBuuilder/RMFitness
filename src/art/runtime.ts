@@ -12,7 +12,7 @@ import { cueUids, type CardRef, type Cue, type SummonHow, type Target } from './
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
-import { boom, chime, drone, swell, whoosh, zap } from './sfx';
+import { boom, chime, drone, slowdown, swell, whoosh, zap } from './sfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
@@ -35,6 +35,8 @@ export interface Ui {
    * stands by that seat) leans in yelling it too. `ace`: the attacker is its duelist's Ace.
    */
   callout?(o: { text: string; card: string; seat: Pid; side: 'near' | 'far'; color: number; light: number; dur: number; ace?: { lv: number; title: string } | null }): void;
+  /** a slow-motion replay starts (true) or ends (false): its letterbox and tag */
+  replay?(on: boolean): void;
 }
 
 /** The Life Points plate on one side of the screen (Classic and Touch both show one per duelist). */
@@ -98,6 +100,8 @@ export class Timeline implements Fx {
    * shatter begins). null: the next one waits for the end.
    */
   handoff: number | null = null;
+  /** how much longer than `duration / rate` it takes in real time (its slow motion) */
+  slow = 1;
   private items: { t0: number; t1: number; fn: SpanFn; done: boolean; cosmetic: boolean }[] = [];
   owned: Fx[] = [];
   constructor(
@@ -223,6 +227,8 @@ export function cueOwner(c: Cue): Pid | null {
       return c.card.controller;
     case 'skill':
       return c.player;
+    case 'slam':
+      return c.trap.controller;
     case 'attack':
       return c.attacker.controller;
     case 'hit':
@@ -258,6 +264,15 @@ const PARTICLE_TAIL = 0.25;
  */
 const HOLD = 1.1;
 const HOLD_MIN = 0.6;
+/** "Not so fast!": how fast time runs while the two cards close in. */
+export const SLAM_WARP = 0.35;
+/** The finishing blow's replay: the declaration at this speed, the blow itself slower still. */
+export const REPLAY_WARP = { attack: 0.6, hit: 0.55, other: 0.6 };
+/** The replay's dutch angle (radians). */
+export const REPLAY_ROLL = 0.12;
+/** ...and the replayed cinematic itself plays this much brisker (the slow motion stays, the wait does not). */
+export const REPLAY_RATE = 1.7;
+
 /** Report the stage idle once the dim is under this (what is left is particles fading on their own). */
 const IDLE_DIM = 0.1;
 
@@ -327,6 +342,12 @@ export class Director {
   private battleSide: 'near' | 'far' = 'near';
   /** camera roll (radians): the dutch-angle punch on impacts */
   private roll = 0;
+  /** the Trap a "Not so fast!" slam just put in the middle of the screen (its activation starts there) */
+  private slammed = -1;
+  /** the replay's extra camera tilt (eases toward REPLAY_ROLL while one plays) */
+  private tilt = 0;
+  /** a replay is on screen (its letterbox is up) */
+  private replaying = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -457,6 +478,8 @@ export class Director {
   /** The current cinematic plays out underneath while the next one of its chain starts. */
   private handOff() {
     const tl = this.current!;
+    // the tail plays out in real time; the next cinematic sets its own speed when it starts
+    this.stage.warp = 1;
     this.trailing.push(tl);
     this.current = null;
     this.next();
@@ -498,6 +521,8 @@ export class Director {
    */
   hideNow(): boolean {
     if (this.current || this.queue.length || this.trailing.length) return false;
+    this.stage.warp = 1;
+    this.setReplay(false);
     this.dropHeld();
     for (const a of this.actors.values()) this.dropActor(a);
     this.actors.clear();
@@ -535,6 +560,8 @@ export class Director {
     const tl = this.current;
     if (!tl) return;
     if (skipped) tl.finish();
+    this.stage.warp = 1;
+    if (!this.queue[0]?.cue.replay) this.setReplay(false);
     // An attack declaration with nothing behind it: the fighters hold their pose for the blow.
     if (!skipped && this.curKind === 'attack' && !this.queue.length && !this.fastFade && !this.skipAll && this.actors.size) {
       this.dropHeld();
@@ -552,8 +579,18 @@ export class Director {
     this.next();
   }
 
+  /** The replay's letterbox goes up (or down) with it. */
+  private setReplay(on: boolean) {
+    if (on === this.replaying) return;
+    this.replaying = on;
+    this.ui.replay?.(on);
+  }
+
   /** Leaving (or 3D turned off): drop everything. */
   clear() {
+    this.stage.warp = 1;
+    this.slammed = -1;
+    this.setReplay(false);
     const rest = [...new Set([this.curBatch, ...this.queue.map((q) => q.batch)])].filter((b) => b >= 0);
     this.queue = [];
     this.current?.finish();
@@ -622,6 +659,10 @@ export class Director {
     }
     if (this.current) {
       const tl = this.current;
+      // a replay is seen from a new angle: tilted (see veils), and creeping in
+      if (this.replaying) {
+        this.stage.punch(2.5, 0.2);
+      }
       this.watchdog += dt;
       if (!tl.update(dt) || this.watchdog > tl.duration / tl.rate + 3) this.endCurrent(false);
       else if (tl.handoff !== null && tl.t >= tl.handoff && this.queue[0]?.batch === this.curBatch) this.handOff();
@@ -702,7 +743,10 @@ export class Director {
     f.uCrackOp.value *= fade;
     // the dutch angle eases back level unless a cinematic holds it
     if (!this.current) this.roll *= Math.exp(-dt * 8);
-    this.stage.camera.up.set(Math.sin(this.roll), Math.cos(this.roll), 0);
+    // (a replay's tilt eases in on top of whatever the cinematic does with the roll)
+    this.tilt = lerp(this.tilt, this.replaying ? REPLAY_ROLL : 0, 1 - Math.exp(-dt * 4));
+    const r = this.roll + this.tilt;
+    this.stage.camera.up.set(Math.sin(r), Math.cos(r), 0);
     if (!this.current && !following) {
       const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6) * this.timeScale);
       this.stage.camBase.lerp(REST.pos, c);
@@ -735,7 +779,10 @@ export class Director {
     // (an opponent cue with more queued behind it: shifted off already, so one left means two were waiting)
     // (a cue already sped up, like their everyday summon, is fast enough)
     const oppBacklog = this.queue.length >= 1 && own !== null && own !== this.viewer && item.scale < OPP_BACKLOG_RATE;
-    const rate = this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
+    // a replay plays at its full length, in slow motion (the stage's warp), whatever the chain around it
+    const replay = !!item.cue.replay;
+    const rate = replay ? this.timeScale * REPLAY_RATE : this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
+    const warp = replay ? (REPLAY_WARP[item.cue.kind as 'attack' | 'hit'] ?? REPLAY_WARP.other) : 1;
     // Never draw a cinematic before its shaders are ready (a first-use link stalls for a whole second on some phones).
     const warm = Promise.race([this.stage.prewarm(), new Promise((ok) => setTimeout(ok, 2500))]);
     warm
@@ -750,12 +797,16 @@ export class Director {
           return;
         }
         tl.rate = rate;
+        // (a slam sets its own warp as it goes)
+        this.stage.warp = warp;
+        if (replay) tl.slow = Math.max(tl.slow, 1 / warp);
+        this.setReplay(replay);
         tl.onCommit = () => this.onCommit?.(item.batch);
         // the attack declaration held for this blow gives way to it
         if (this.held) this.dropHeld();
         this.current = tl;
         if (!this.skipAll) cueSting(item.cue);
-        this.onCueStart?.(item.batch, tl.duration / rate);
+        this.onCueStart?.(item.batch, (tl.duration / rate) * tl.slow);
         if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
@@ -1474,6 +1525,8 @@ export class Director {
         return cue.amount > 0 ? this.heal(cue.player, cue.amount) : null;
       case 'draw':
         return cue.count > 0 ? this.draw(cue.player, cue.count) : null;
+      case 'slam':
+        return this.slam(cue.trap, cue.onto);
     }
   }
 
@@ -2415,7 +2468,10 @@ export class Director {
     this.dimTarget = 0.82;
     this.focus.set(0.5, 0.52);
     this.stage.backdrop.u.uColor.value.set(what === 'spell' ? 0.02 : 0.08, what === 'spell' ? 0.08 : 0.02, what === 'spell' ? 0.06 : 0.07);
-    const from = this.anchor(c, side);
+    // (after a "Not so fast!" slam the card is already in the middle of the screen)
+    const slammed = this.slammed === c.uid;
+    this.slammed = -1;
+    const from = slammed ? { x: 0, y: 0.15 * U } : this.anchor(c, side);
     const struck = figs.length > 0 || targets.length > 0;
     const H = (struck ? 1.25 : 2.1) * U;
     // the stage's center; a card that strikes monsters hovers over its own zone instead, out of their way
@@ -2499,7 +2555,7 @@ export class Director {
         const e = easeIn(k);
         panel.mesh.position.set(lerp(from.x, cx, easeOut(k)), lerp(from.y, cy, easeOut(k)), lerp(0, 2.2, e));
         panel.mesh.scale.setScalar(lerp(0.3, 1.08, e));
-        panel.mesh.rotation.set(lerp(-1.45, 0.1, easeOut(k)), 0, lerp(0.3, -0.05, k));
+        panel.mesh.rotation.set(lerp(slammed ? 0 : -1.45, 0.1, easeOut(k)), 0, lerp(slammed ? 0 : 0.3, -0.05, k));
         panel.u.uOpacity.value = clamp01(k * 3);
       });
       tl.span(open, open + 0.25, (k) => {
@@ -2517,17 +2573,19 @@ export class Director {
         boom(0.5);
         zap(0.3);
         this.flash(TRAP, 0.35);
-        this.ui.banner({ title: 'TRAP!', color: TRAP, big: true, dur: 0.75, pos: 'top' });
+        // (after a slam, "NOT SO FAST!" was the call)
+        if (!slammed) this.ui.banner({ title: 'TRAP!', color: TRAP, big: true, dur: 0.75, pos: 'top' });
         // the screen's edge cracks like glass
         this.crackAt.set(side === 'near' ? 0.88 : 0.12, 0.8);
         setRgb(this.front.u.uCrackColor.value, 0xebf5ff);
       });
-      tl.span(open, open + 0.18, (k) => {
+      // (after a slam the glass already broke)
+      if (!slammed) tl.span(open, open + 0.18, (k) => {
         this.front.u.uCrack.value = easeOut(k);
         this.front.u.uCrackOp.value = 1;
         this.front.u.uCrackAt.value.copy(this.crackAt);
       });
-      tl.span(open + 0.18, open + 0.75, (k) => (this.front.u.uCrackOp.value = 1 - easeIn(k)));
+      if (!slammed) tl.span(open + 0.18, open + 0.75, (k) => (this.front.u.uCrackOp.value = 1 - easeIn(k)));
     }
     tl.span(open - 0.15, open + 0.25, (k) => (ring.mesh.scale.setScalar(easeOut(k) * 1.05), (ring.u.uOpacity.value = k)));
     tl.span(open, open + 0.5, (k) => (panel.u.uSheen.value = lerp(-0.4, 1.8, k)));
@@ -2613,6 +2671,134 @@ export class Director {
     }, false);
     // the effect has landed: what follows in the chain (a destruction) starts as the card flies home
     tl.handoff = D - 0.35;
+    return tl;
+  }
+
+  /**
+   * "Not so fast!": a Trap answers the opponent's card. Both cards rise off the
+   * field and rush at each other; time slows to a crawl as they close (speed
+   * lines, the screen holds its breath, the call goes up), then the Trap slams
+   * into the other card, knocks it spinning away and takes the middle of the
+   * screen, where its own activation picks it up.
+   */
+  private async slam(trap: CardRef, onto: CardRef): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    const [tArt, oArt] = await Promise.all([this.art(trap.name), onto.name && onto.faceUp ? this.art(onto.name) : Promise.resolve(null)]);
+    const oInfo = onto.name ? card(onto.name) : undefined;
+    const oColor = oInfo?.kind === 'spell' ? SPELL : oInfo?.kind === 'trap' ? TRAP : oArt ? brighten(oArt.palette[0]) : 0xd0d0e0;
+    const tSide = this.side(trap.controller);
+    const oSide = this.side(onto.controller);
+    // the slow stretch (cinematic seconds): it plays at SLAM_WARP of real time
+    const A = 0.26;
+    const B = 0.66;
+    const D = 1.2;
+    const tl = new Timeline(D, st);
+    tl.slow = (A + (B - A) / SLAM_WARP + (D - B)) / D;
+    this.bgTarget = 0.5;
+    this.dimTarget = 0.9;
+    this.focus.set(0.5, 0.5);
+    st.backdrop.u.uColor.value.set(0.09, 0.02, 0.07);
+    const H = 1.5 * U;
+    const y0 = 0.1 * U;
+    // a tall phone: the answered card on its owner's side (above or below), the Trap on the other; they meet in the middle
+    const ty = tSide === 'near' ? -1 : 1;
+    const oFrom = this.anchor(onto, oSide);
+    const tFrom = this.anchor(trap, tSide);
+    const oPanel = tl.own(new CardPanel(oArt?.full ?? null, H, oColor));
+    const tPanel = tl.own(new CardPanel(tArt?.full ?? null, H * 1.06, TRAP));
+    oPanel.u.uOpacity.value = 0;
+    tPanel.u.uOpacity.value = 0;
+    const far = 1.4 * U;
+    const near = 0.84 * U;
+    // the camera frames both cards and creeps in through the slow stretch
+    const box: Box[] = [{ x: 0, y: y0, z: 0.6, w: H * 0.36, h: far + H * 0.45 }];
+    const wide = this.fit(box, 0, 0.02, { fill: 0.9 });
+    const tight = this.fit(box, 0.06, 0.04, { fill: 1 });
+    let s0: Shot | null = null;
+    tl.span(0, A, (k) => this.setShot((s0 ??= this.shot()), wide, easeOut(k)));
+    tl.span(A, B, (k) => this.setShot(wide, tight, easeInOut(k)));
+    let s1: Shot | null = null;
+    tl.span(D - 0.3, D, (k) => this.setShot((s1 ??= this.shot()), REST, easeInOut(k)));
+    // rise: off their zones, the answered card to its owner's side of the middle, the Trap to the other
+    tl.span(0, A, (k) => {
+      const e = easeOut(k);
+      oPanel.mesh.position.set(lerp(oFrom.x, 0, e), lerp(oFrom.y, y0 - ty * far, e), lerp(0, 0.6, e));
+      oPanel.mesh.rotation.set(lerp(-1.2, ty * 0.25, e), 0, onto.def ? lerp(Math.PI / 2, 0.1, e) : lerp(0, 0.1, e));
+      oPanel.u.uOpacity.value = clamp01(k * 3);
+      tPanel.mesh.position.set(lerp(tFrom.x, 0, e), lerp(tFrom.y, y0 + ty * far, e), lerp(0, 0.7, e));
+      tPanel.mesh.rotation.set(lerp(-1.45, -ty * 0.25, e), 0, lerp(0.3, -0.1, e));
+      tPanel.u.uOpacity.value = clamp01(k * 3);
+    });
+    tl.at(0, () => (zap(0.25), whoosh(0.3, 400, 2600, 0.18)));
+    // time slows as they rush at each other: a crawl, the screen holds its breath
+    tl.at(A, () => {
+      slowdown(1.3);
+      this.ui.banner({ title: 'NOT SO FAST!', color: TRAP, big: true, dur: 1.1, pos: 'mid' });
+    });
+    tl.span(A - 0.08, A + 0.06, (k) => (st.warp = lerp(1, SLAM_WARP, k)));
+    tl.span(A, B, (k) => {
+      const e = easeInOut(k);
+      oPanel.mesh.position.y = y0 - ty * lerp(far, near, e);
+      tPanel.mesh.position.y = y0 + ty * lerp(far, near - 0.1 * U, e);
+      oPanel.mesh.rotation.x = ty * lerp(0.25, 0.4, e);
+      tPanel.mesh.rotation.x = -ty * lerp(0.25, 0.45, e);
+      tPanel.mesh.position.z = lerp(0.7, 1, e);
+      tPanel.u.uSheen.value = lerp(-0.4, 1.6, k);
+      this.front.u.uSpeed.value = 0.55 + 0.35 * k;
+      this.front.u.uRed.value = 0.25 * k;
+    });
+    // sparks hang in the air between them
+    tl.span(A, B, (k, dt) => {
+      const n = Math.floor(70 * this.q * dt + Math.random());
+      for (let i = 0; i < n; i++) st.particles.emit({ x: (Math.random() - 0.5) * H * 0.8, y: y0 + (Math.random() - 0.5) * 0.5 * U, z: 0.7, burst: 0.5 * U, life: 0.5, size: 0.05 * U, color: Math.random() < 0.5 ? TRAP : oColor, drag: 2 }, 1);
+    });
+    // SLAM: back to full speed in one frame
+    tl.at(B, () => (st.warp = 1), false);
+    tl.at(B, () => {
+      st.hitStop(0.08);
+      st.shake(1);
+      st.punch(5);
+      st.pulse('chroma', 0.8);
+      st.pulse('flash', 0.35);
+      this.flash(TRAP, 0.4);
+      boom(0.8);
+      zap(0.3);
+      navigator.vibrate?.(30);
+      st.particles.emit({ x: 0, y: y0, z: 0.8, burst: 6 * U, life: 0.8, size: 0.1 * U, color: TRAP, drag: 2 }, Math.round(90 * this.q));
+      st.particles.emit({ x: 0, y: y0, z: 0.8, burst: 4 * U, life: 0.7, size: 0.08 * U, color: oColor, drag: 2 }, Math.round(50 * this.q));
+      this.crackAt.set(0.5, 0.5);
+      setRgb(this.front.u.uCrackColor.value, 0xffd0f0);
+    });
+    tl.span(B, B + 0.15, (k) => {
+      this.front.u.uCrack.value = 0.7 * easeOut(k);
+      this.front.u.uCrackOp.value = 1;
+      this.front.u.uCrackAt.value.copy(this.crackAt);
+    });
+    tl.span(B + 0.15, D, (k) => (this.front.u.uCrackOp.value = 1 - easeIn(k)));
+    const wave = tl.own(new Ring(2.6 * U, TRAP, 7, { inner: 0.86, outer: 0.93 }));
+    wave.mesh.position.set(0, y0, 0.7);
+    wave.u.uOpacity.value = 0;
+    tl.span(B, B + 0.45, (k) => (wave.mesh.scale.setScalar(lerp(0.2, 1.4, easeOut(k))), (wave.u.uOpacity.value = 1 - k)));
+    const flare = tl.own(new Glow(2.2 * U, 2.2 * U, 'flare', TRAP, 0xffffff));
+    flare.mesh.position.set(0, y0, 0.9);
+    flare.u.uOpacity.value = 0;
+    tl.span(B, B + 0.35, (k) => ((flare.u.uOpacity.value = 0.75 * (1 - easeOut(k))), flare.mesh.scale.setScalar(lerp(0.4, 1.2, easeOut(k)))));
+    // the answered card is knocked spinning away; the Trap takes the middle
+    tl.span(B, D, (k) => {
+      const e = easeOut(k);
+      oPanel.mesh.position.set(lerp(0, 0.9 * U, e), y0 - ty * lerp(near, 2.6 * U, e), lerp(0.6, -1, e));
+      oPanel.mesh.rotation.set(ty * lerp(0.4, 1.4, e), lerp(0, 1.8, e), lerp(0.1, 1.6, e));
+      oPanel.u.uOpacity.value = 1 - easeIn(k);
+      tPanel.mesh.position.set(0, lerp(y0 + ty * (near - 0.1 * U), 0.15 * U, e), lerp(1, 0.8, e));
+      tPanel.mesh.rotation.x = -ty * lerp(0.45, 0, e);
+      tPanel.mesh.rotation.z = lerp(-0.1, 0, e);
+    });
+    tl.span(B, B + 0.12, (k) => tPanel.mesh.scale.setScalar(lerp(1.12, 1, easeOut(k))));
+    // the Trap's own activation takes over from here (its card starts where this one stands)
+    tl.span(D - 0.22, D, (k) => (tPanel.u.uOpacity.value = 1 - k));
+    tl.handoff = D - 0.22;
+    this.slammed = trap.uid;
     return tl;
   }
 
@@ -3314,6 +3500,8 @@ export class Director {
   }
 
   private damageNumber(side: 'top' | 'bottom', text: string, size: number) {
+    // (a replay shows the blow, not the number again)
+    if (this.replaying) return;
     this.ui.number({ text, color: 0xff4a4a, side, size });
     if (typeof document === 'undefined') return;
     const all = document.querySelectorAll<HTMLElement>('.art-number');
@@ -6491,5 +6679,5 @@ export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
 /** The summon methods with their own shot ('normal' keeps the plain summon). */
 export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
 /** The cue kinds the director draws. */
-export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw'];
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam'];
 export { css };

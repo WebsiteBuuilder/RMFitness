@@ -5,6 +5,7 @@ import { card, skillCards, speedCards } from '../eds/db';
 import { Win } from '../ui/Window';
 import { unlockAudio } from '../ui/sound';
 import { bannerOnce, type CardRef, type Cue } from './cues';
+import { finishingReplay } from './flow';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { classify, FX_FAMILIES, type FxFamily } from './families';
 import type { Director } from './runtime';
@@ -95,6 +96,18 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
           callout: (o) => void showCallout(ui, o, d.stage.speed * d.rate),
           clear: (keep) => (keep ? ui.querySelectorAll(':scope > :not(.art-callout)').forEach((x) => x.remove()) : (ui.replaceChildren(), stopShout())),
+          replay: (on) => {
+            const host = ui.parentElement;
+            if (!host) return;
+            let el = host.querySelector<HTMLElement>(':scope > .art-replay');
+            if (!el && on) {
+              el = document.createElement('div');
+              el.className = 'art-replay';
+              el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+              host.appendChild(el);
+            }
+            el?.classList.toggle('on', on);
+          },
         });
         dir.current = d;
         void d.prewarm();
@@ -196,6 +209,18 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
           },
         },
         {
+          label: 'Final blow',
+          go: () => {
+            const a = me();
+            const atk: Cue = { kind: 'attack', attacker: a, target: null, defender: 1 };
+            const chain: Cue[] = [
+              { kind: 'hit', attacker: a, target: null, defender: 1, dmg: { player: 1, amount: info?.atk ?? 2500 } },
+              { kind: 'win', winner: 0, shadow: null },
+            ];
+            run([atk, chain[0], ...finishingReplay(chain), chain[1]]);
+          },
+        },
+        {
           label: 'Shadow Realm',
           go: () => {
             const a = me();
@@ -210,6 +235,21 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
       ]
     : [
         { label: 'Activate', go: () => run([{ kind: 'activate', card: me(), what: info?.kind === 'trap' ? 'trap' : 'spell', field: field() }]) },
+        ...(info?.kind === 'trap'
+          ? [
+              {
+                label: 'Not so fast!',
+                go: () => {
+                  const t = me();
+                  const f = field();
+                  run([
+                    { kind: 'slam', trap: t, onto: f[0] },
+                    { kind: 'activate', card: t, what: 'trap', field: f },
+                  ]);
+                },
+              },
+            ]
+          : []),
         {
           label: 'On a target',
           go: () => {
