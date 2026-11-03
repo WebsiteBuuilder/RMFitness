@@ -91,7 +91,7 @@ vec3 land(vec2 g, float t, float ter){
       vec3 water = mix(vec3(0.015, 0.12, 0.2), vec3(0.08, 0.50, 0.62), sstep(wy - 0.4, wy - 0.02, y));
       c = mix(c, water * k, sstep(wy + 0.02, wy - 0.04, y));
       float foam = exp(-pow((y - wy) * (11.0 + fi * 4.0), 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
-      c += vec3(0.95, 1.0, 1.0) * foam * 1.1 * k;
+      c += vec3(0.95, 1.0, 1.0) * foam * 0.8 * k;
     }
     float glint = dots(g * vec2(9.0, 12.0) + vec2(t * 0.4, 0.0), 0.05, 0.12) * (0.5 + 0.5 * sin(t * 4.0 + g.x * 20.0));
     return c + vec3(0.8, 0.95, 1.0) * glint * sstep(3.6, 0.3, y);
@@ -132,7 +132,7 @@ vec3 land(vec2 g, float t, float ter){
     // SHADOW (Yami and the dark fields): grey-violet fog rolling over the board, eyes blinking in it
     float fog = fbm(g * 1.3 + vec2(t * 0.12, -t * 0.05)) * fbm(g * 0.7 - vec2(t * 0.07, 0.0));
     vec3 c = vec3(0.07, 0.04, 0.12) + vec3(0.42, 0.26, 0.62) * fog * 1.6 + vec3(0.16, 0.08, 0.26) * sstep(0.35, 0.7, fbm(g * 0.6 + vec2(-t * 0.05, t * 0.03)));
-    vec2 ec = g * vec2(2.0, 2.3) + vec2(0.0, t * 0.02);
+    vec2 ec = g * vec2(1.4, 1.6) + vec2(0.0, t * 0.02);
     vec2 cell = floor(ec);
     vec2 f = fract(ec) - vec2(0.5);
     float h = hash12(cell + 3.0);
@@ -146,8 +146,9 @@ vec3 land(vec2 g, float t, float ter){
     float slit = sstep(0.018, 0.008, abs(e1.x)) * al1 + sstep(0.018, 0.008, abs(e2.x)) * al2;
     float eye = (al1 + al2 - slit * 0.9) * step(0.55, h) * open;
     // (they watch from the sides and the far end, faintest over the middle of the board)
-    eye *= 0.35 + 0.65 * sstep(0.25, 0.75, abs(g.x));
-    float halo = sstep(0.3, 0.0, length(f * vec2(0.7, 1.4))) * step(0.6, h) * open * 0.25;
+    eye *= sstep(0.55, 0.85, abs(g.x));
+    float hl = sstep(0.55, 0.85, abs(g.x));
+    float halo = sstep(0.3, 0.0, length(f * vec2(0.7, 1.4))) * step(0.55, h) * open * 0.25 * hl;
     return c + vec3(1.0, 0.25, 0.55) * (eye * 1.3 + halo);
   } else if (ter < 7.5) {
     // ARCANE: magenta magic circles turning, runes running around their bands, sparks
