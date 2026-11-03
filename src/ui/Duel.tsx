@@ -24,6 +24,7 @@ import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
 import { MateLayer, type MatePlan } from '../mates/MateLayer';
+import { DuelAtmosphere } from './Atmosphere';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 import { isMate } from '../mates/roster';
 import { DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
@@ -535,6 +536,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {e.speed && <DuelAtmosphere state={state} me={acting} speed />}
       {drawGate && <DrawGate key={drawGate.key} gate={drawGate} state={state} acting={acting} blocked={pass || intro} prompted={!!prompt} onDone={drawDone} />}
       {intro && (
         <FaceOff

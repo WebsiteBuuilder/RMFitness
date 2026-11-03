@@ -266,6 +266,30 @@ export function chatPing() {
   tone(1319, 0.14, 0.045, 0.07, { type: 'triangle' });
 }
 
+// ------------------------------------------------------------ danger
+
+/**
+ * One heartbeat at low Life Points: a deep lub-dub, felt more than heard (low sines
+ * under a lowpass, quiet so it never covers the duel's own sounds). `hard` (very low
+ * LP) is a little louder and closer.
+ */
+export function heartbeat(hard = false) {
+  const g = hard ? 0.34 : 0.24;
+  tone(62, 0.16, g, 0, { type: 'sine', to: 38, attack: 0.008 });
+  tone(124, 0.07, g * 0.25, 0, { type: 'triangle', to: 70, lp: 300 });
+  tone(55, 0.2, g * 0.75, 0.2, { type: 'sine', to: 34, attack: 0.01 });
+  if (hard) rumble(0.25, 0.1, 90);
+}
+
+/** The ground cracks under a duelist at low Life Points: a stony split and a deep groan. */
+export function groundCrack() {
+  rumble(0.6, 0.4, 220);
+  hiss(0.28, 1800, 260, 0.2, 0, 'bandpass', 0.002);
+  hiss(0.6, 500, 90, 0.12, 0.05, 'lowpass', 0.01);
+  tone(70, 0.6, 0.18, 0.02, { type: 'sine', to: 32 });
+  for (let i = 0; i < 4; i++) tone(900 + Math.random() * 700, 0.05, 0.03, 0.03 + i * 0.05, { type: 'triangle', to: 500 });
+}
+
 // ------------------------------------------------------------ Heart of the Cards draw, face-off intro
 
 /** Your deck is ready to draw from: a soft shimmer. `destiny`: a low swell under it, the room going quiet. */
