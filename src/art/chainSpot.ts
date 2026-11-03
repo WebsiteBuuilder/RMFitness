@@ -128,6 +128,7 @@ export class ChainSpot {
     // a long chain shrinks so every card's name stays readable (each card covers only the next one's right edge)
     const w = Math.min(W * (n >= 4 ? 0.21 : 0.25), H * 0.15, 132);
     const step = n > 1 ? Math.min(w * 0.92, (W * 0.94 - w) / (n - 1)) : 0;
+    this.root.style.setProperty('--step', `${step.toFixed(1)}px`);
     const c = i - (n - 1) / 2;
     return { x: W / 2 + c * step, y: H * 0.42 + Math.abs(c) * 4, w, rot: c * 3.5, op: 1 };
   }
@@ -137,7 +138,8 @@ export class ChainSpot {
     const { W, H } = this;
     const w = Math.min(W * 0.15, H * 0.09, 68);
     const hh = w * 1.46;
-    const step = n > 1 ? Math.min(hh * 0.74, (H * 0.46 - hh) / (n - 1)) : 0;
+    // one under the other with a gap when they fit, overlapping only on a long chain
+    const step = n > 1 ? Math.min(hh + 10, (H * 0.5 - hh) / (n - 1)) : 0;
     return { x: 8 + w / 2, y: H * 0.24 + hh / 2 + (n - nLink) * step, w, rot: 0, op: 1 };
   }
 
@@ -188,7 +190,8 @@ export class ChainSpot {
     if (!s) {
       const el = document.createElement('div');
       el.className = `chs-card k-${l.what}`;
-      el.innerHTML = `<i class="chs-pic"></i><b class="chs-badge">${l.n}</b><i class="chs-done"></i>`;
+      // (link 2 and up: an arrow back to the link it answers, in the row)
+      el.innerHTML = `<i class="chs-pic"></i><b class="chs-badge">${l.n}</b><i class="chs-done"></i>${l.n > 1 ? '<i class="chs-ans" aria-hidden="true"></i>' : ''}`;
       el.style.setProperty('--kc', KIND_COLOR[l.what]);
       const n = l.n;
       el.addEventListener('pointerdown', (ev) => this.press(ev, n));
@@ -459,7 +462,9 @@ export class ChainSpot {
     document.addEventListener('keydown', this.onKey, true);
     // reading pauses the hide that waits for an idle stage too
     clearTimeout(this.endTimer);
-    this.inspectTimer = window.setTimeout(() => this.closeInspect(), this.pauseLimit());
+    // (checked each second: a choice for the player arriving meanwhile shortens it)
+    const opened = performance.now();
+    this.inspectTimer = window.setInterval(() => performance.now() - opened >= this.pauseLimit() && this.closeInspect(), 1000);
     this.onPause(true);
   }
 
@@ -476,7 +481,7 @@ export class ChainSpot {
   }
 
   closeInspect(resume = true) {
-    clearTimeout(this.inspectTimer);
+    clearInterval(this.inspectTimer);
     document.removeEventListener('keydown', this.onKey, true);
     const el = this.inspectEl;
     if (!el) return;

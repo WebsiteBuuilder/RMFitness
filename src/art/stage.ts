@@ -2686,6 +2686,8 @@ export class Stage {
   }
 
   resize() {
+    // (a resize clears the canvas: a paused stage draws its frame again)
+    this.pauseDrawn = false;
     if (!this.levels.length) return;
     this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
