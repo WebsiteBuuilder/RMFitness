@@ -30,6 +30,7 @@ import {
   type Starter,
 } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { TiltCard } from './TiltCard';
 import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
 import { DeckChat, forgetDeckChat, stopDeckChat } from './DeckChat';
@@ -1314,8 +1315,10 @@ function CraftButton({ name, craft: crafter, andAdd = false, onCrafted }: { name
 function CardZoom({ name, onClose }: { name: string; onClose: () => void }) {
   return (
     <div class="dk-zoom" role="dialog" aria-label={`${name}, full size`} onClick={(ev) => (ev.stopPropagation(), playBlip(), onClose())}>
-      <CardImg name={name} class="dk-zoom-img" />
-      <span class="dk-zoom-hint">Tap to close</span>
+      <TiltCard>
+        <CardImg name={name} class="dk-zoom-img" />
+      </TiltCard>
+      <span class="dk-zoom-hint">Drag to turn the card · tap to close</span>
     </div>
   );
 }
