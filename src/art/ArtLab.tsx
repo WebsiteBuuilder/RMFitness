@@ -12,6 +12,7 @@ import { getArtSetting } from './ArtStage';
 import { showDuelRarity } from '../level/duelRarity';
 import { FINISH_TAG } from './finish';
 import { showCallout } from './calloutDom';
+import { stopShout } from './callouts';
 import { BOND_LEVELS, bondTitle, showDuelAces } from '../ace/ace';
 import { setStageMates } from '../mates/onStage';
 import { mateDef, type MateId } from '../mates/roster';
@@ -93,7 +94,7 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
           callout: (o) => void showCallout(ui, o, d.stage.speed * d.rate),
-          clear: () => ui.replaceChildren(),
+          clear: (keep) => (keep ? ui.querySelectorAll(':scope > :not(.art-callout)').forEach((x) => x.remove()) : (ui.replaceChildren(), stopShout())),
         });
         dir.current = d;
         void d.prewarm();
@@ -109,6 +110,7 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
       dir.current?.dispose();
       showDuelRarity(null);
       showDuelAces(null);
+      stopShout();
       setStageMates([null, null]);
     };
   }, []);

@@ -1055,12 +1055,12 @@
   left: 0;
   right: 0;
   top: calc(13% + env(safe-area-inset-top));
-  height: calc(var(--fs) * 2.5);
+  height: calc(min(var(--fs), 72px) * 2.5);
   pointer-events: none;
   animation: co-life var(--d) linear forwards;
 }
-.art-callout:has(.co-text.two) {
-  height: calc(var(--fs) * 3.9);
+.art-callout.two {
+  height: calc(min(var(--fs), 72px) * 3.9);
 }
 .co-band {
   position: absolute;
@@ -1133,7 +1133,7 @@
   gap: 6px;
   align-items: center;
   transform: skewY(-5deg);
-  font: 800 11px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font: 800 12px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--c2);
@@ -1163,12 +1163,12 @@
 }
 .side-near .co-mate {
   left: 1%;
-  top: 86%;
+  top: calc(100% - 2px);
   --from: translate(-120%, 30%) rotate(-25deg);
 }
 .side-far .co-mate {
   right: 1%;
-  bottom: 84%;
+  bottom: calc(100% - 2px);
   --from: translate(120%, -30%) rotate(25deg);
 }
 .co-fig,

@@ -20,7 +20,7 @@ export function showCallout(layer: HTMLElement, o: CalloutOpts, speed = 1): HTML
   let n = 0;
   const lines = shoutLines(o.text.toUpperCase()).map((l) => `<span class="co-line">${l.map((w) => `<b style="--i:${n++}">${esc(w)}</b>`).join(' ')}</span>`);
   const el = document.createElement('div');
-  el.className = `art-callout side-${o.side}${o.ace ? ' ace' : ''}`;
+  el.className = `art-callout side-${o.side}${o.ace ? ' ace' : ''}${lines.length > 1 ? ' two' : ''}`;
   const d = o.dur / Math.max(0.25, speed);
   el.style.setProperty('--d', `${d}s`);
   el.style.setProperty('--c', hex(o.color));
@@ -40,7 +40,7 @@ export function showCallout(layer: HTMLElement, o: CalloutOpts, speed = 1): HTML
     render(h(MateArt, { id: mate, face: 'laugh', class: o.side === 'far' ? 'flip' : '' }), fig);
     el.appendChild(m);
     const v = stageMateVoice(o.seat);
-    if (v) window.setTimeout(() => playMate(v, 'up'), 220 / Math.max(0.25, speed));
+    if (v) window.setTimeout(() => el.isConnected && playMate(v, 'up'), 220 / Math.max(0.25, speed));
   }
   layer.appendChild(el);
   window.setTimeout(() => {

@@ -29,7 +29,7 @@ export interface Ui {
   flash(color: number, strength: number): void;
   caption(text: string, dur: number, cls?: string): void;
   /** removes every banner, caption and number still showing (a new chain, or leaving) */
-  clear?(): void;
+  clear?(keepShout?: boolean): void;
   /**
    * An attack callout: the shout slams across the screen, and the attacker's Mate (when one
    * stands by that seat) leans in yelling it too. `ace`: the attacker is its duelist's Ace.
@@ -273,6 +273,8 @@ export class Director {
   private fastFade = false;
   /** Animation speed setting: 1, 1.5 or 2 */
   timeScale = 1;
+  /** Aces whose full entrance has played on this stage (owner:name) */
+  private acesShown = new Set<string>();
   /** a chain reached its impact or landing */
   onCommit: ((batch: number) => void) | null = null;
   /** a chain is over (played, skipped, cleared or failed) */
@@ -717,7 +719,8 @@ export class Director {
     this.idleFor = 0;
     this.fastFade = false;
     // a new chain: whatever the last one left on screen (captions, banners) goes
-    if (item.batch !== this.lastBatch) this.ui.clear?.();
+    // (an attack callout rides on into the blow: the damage step is a chain of its own)
+    if (item.batch !== this.lastBatch) this.ui.clear?.(true);
     this.lastBatch = item.batch;
     this.curBatch = item.batch;
     const placeholder = new Timeline(99, this.stage);
@@ -1012,7 +1015,7 @@ export class Director {
    * it and its title; 2 pillars and rising embers; 3 time stops as it arrives and shockwaves roll out;
    * 4 a crown of stars orbits it and the field shakes; 5 a sky-wide aurora and a golden title.
    */
-  private aceEntrance(tl: Timeline, S: number, E: number, showAt: number, o: { ground: number; restY: number; size: number; col: Colors; lv: number; fig: Figure | null; r: () => number }) {
+  private aceEntrance(tl: Timeline, S: number, E: number, showAt: number, o: { ground: number; restY: number; size: number; col: Colors; lv: number; fig: Figure | null }) {
     const st = this.stage;
     const U = this.U;
     const q = this.q;
@@ -1066,8 +1069,10 @@ export class Director {
         });
       });
     }
-    // 4: a crown of stars orbits it
+    // 4: a crown of stars orbits it, the whole sky turns gold
     if (lv >= 4) {
+      tl.at(t0 - 0.2, () => this.stage.backdrop.u.uColor.value.set(0.16, 0.11, 0.02));
+      tl.at(t0, () => (this.flash(0xffd56a, 0.45), st.pulse('flash', 0.4)));
       const n = 8;
       const stars = Array.from({ length: n }, (_, i) => {
         const g = tl.own(new Glow(0.55 * U, 0.55 * U, 'star', i % 2 ? GOLD_A : col.light, 0xffffff));
@@ -1108,7 +1113,6 @@ export class Director {
         fig.u.uRimAmt.value = 1.1 + 0.18 * lv * g;
       });
     }
-    void o.r;
   }
 
   /**
@@ -1513,10 +1517,15 @@ export class Director {
     const mill = fin >= FIN.MI;
     const finPal = finishPalette(fin);
     // the duelist's Ace (Ace bond): always the cut-in, and an entrance of its own that grows with its bond
-    const ace = c.faceUp !== false ? aceFor(c.owner ?? c.controller, c.name) : null;
+    // (the full entrance plays once a duel; summoned again, it keeps its crest and title without the extra time)
+    const aceSeen = c.faceUp !== false ? aceFor(c.owner ?? c.controller, c.name) : null;
+    const aceKey = aceSeen ? `${c.owner ?? c.controller}:${c.name}` : '';
+    const aceFull = !!aceSeen && !this.acesShown.has(aceKey);
+    if (aceFull) this.acesShown.add(aceKey);
+    const ace = aceSeen;
     const aceLv = ace?.lv ?? 0;
-    const C = (big || over || ace) && art ? 0.62 : 0;
-    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0) + (mill ? 0.35 : 0) + (aceLv ? ACE_EXTRA[aceLv - 1] : 0);
+    const C = (big || over || aceFull) && art ? 0.62 : 0;
+    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0) + (mill ? 0.35 : 0) + (aceFull ? ACE_EXTRA[aceLv - 1] : 0);
     const LAND = 0.42;
     // the summon starts under the cut-in's exit (no dead air between them)
     const S = C ? C - 0.3 : 0;
@@ -1865,9 +1874,9 @@ export class Director {
         }),
       );
     }
-    if (ace) this.aceEntrance(tl, S, E, showAt, { ground, restY, size, col, lv: aceLv, fig, r });
+    if (ace) this.aceEntrance(tl, S, E, showAt, { ground, restY, size, col, lv: aceFull ? aceLv : 1, fig });
     // name plate (with the card's finish on it)
-    at(showAt + 0.2, () => this.ui.banner({ title: c.name, sub: [ace ? `★ ACE` : '', how, sub].filter(Boolean).join(' · '), color: col.main, big: tier >= 2 || over, dur: E - showAt - 0.15, pos: 'bottom', finish: finishId(fin) || undefined }));
+    at(showAt + 0.2, () => this.ui.banner({ title: c.name, sub: [how, sub].filter(Boolean).join(' · '), color: col.main, big: tier >= 2 || over, dur: E - showAt - 0.15, pos: 'bottom', finish: finishId(fin) || undefined }));
 
     // ...then it flies onto its card on the field (the board's figure takes over there)
     let pose: ReturnType<Director['landingPose']> | null = null;

@@ -98,9 +98,13 @@ export function calloutFor(name: string, attackName: string, ace = false): Callo
   return t ? { text: `${t}!`, card: name, ace } : null;
 }
 
-/** The Mate's line: it yells the same thing, louder ("WHITE LIGHTNING!!"). */
+/** The Mate's line: it yells the end of the shout along with its monster ("…LIGHTNING!!"). */
 export function mateEcho(text: string): string {
-  return `${text.replace(/[!.]+$/, '').toUpperCase()}!!`;
+  const words = text.replace(/[!.]+$/, '').toUpperCase().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return `${words[0] ?? ''}!!`;
+  const last = words[words.length - 1];
+  // (a short last word takes the one before with it: "MAGIC ATTACK", not "ATTACK")
+  return `…${last.length <= 6 && words.length > 2 ? `${words[words.length - 2]} ${last}` : last}!!`;
 }
 
 /** The shout in lines of words: one line, or two balanced ones when it is long (each word slams in on its own beat). */
@@ -119,7 +123,7 @@ export function shoutLines(text: string): string[][] {
 /** How big the shout is drawn (in vw): sized by its longest line so the whole shout fits a phone's width. */
 export function shoutSize(text: string): number {
   const n = Math.max(...shoutLines(text).map((l) => l.join(' ').length));
-  return Math.max(5, Math.min(13, 116 / Math.max(8, n)));
+  return Math.max(4.6, Math.min(13, 105 / Math.max(8, n)));
 }
 
 // ---------- the setting ----------
@@ -181,6 +185,15 @@ export function speakShout(text: string, pitch: number, rate = 1.12): void {
     u.rate = rate;
     u.volume = 1;
     ss.speak(u);
+  } catch {
+    /* no speech on this phone */
+  }
+}
+
+/** Stops a shout still being said (the duel left, a skip, the result screen). */
+export function stopShout(): void {
+  try {
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
   } catch {
     /* no speech on this phone */
   }

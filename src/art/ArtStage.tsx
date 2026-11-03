@@ -15,6 +15,7 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
+import { stopShout } from "./callouts";
 import "./art.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
@@ -81,7 +82,8 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
-    clear: () => layer.replaceChildren(),
+    // (a shout still on screen rides through: the blow is the next chain after the declaration)
+    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout())),
   };
 }
 
@@ -108,6 +110,8 @@ const idle = (f: () => void) => {
 };
 
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
+  // (a shout still being said stops when the duel screen goes)
+  useEffect(() => () => stopShout(), []);
   const enabled = state.rules?.mode === "speed";
   const cine = useCinematics();
   const speed = useAnimSpeed();

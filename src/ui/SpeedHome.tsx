@@ -257,7 +257,7 @@ function AceTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
       <span class="sdh-ace-pic">{a ? <CardImg name={a.name} /> : <CardImg name="Blue-Eyes White Dragon" back />}</span>
       <span class="sdh-ace-txt">
         <b>Ace Monster</b>
-        <span>{a ? `${a.name} · ★ ${bondTitle(a.lv)}${nx ? ` · ${nx.need} win${nx.need === 1 ? '' : 's'} to bond ${nx.lv}` : ''}` : 'Pick a monster: its own entrance, grander with every win'}</span>
+        <span>{a ? `${a.name} · ★ ${bondTitle(a.lv)}${nx ? ` · ${nx.need} win${nx.need === 1 ? '' : 's'} → Bond ${nx.lv}` : ''}` : 'Pick a monster: its own entrance, grander with every win'}</span>
       </span>
       <span class="sdh-tile-go">›</span>
     </button>

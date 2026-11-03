@@ -136,6 +136,9 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     quietSince.current = Date.now();
   }, [topSeq]);
 
+  // (the newest session and play(), for listeners added once)
+  const live = useRef({ session, play });
+  live.current = { session, play };
   // An attack callout: once the cinematic is over, the attacker's Mate is still cheering it on.
   useEffect(() => {
     let t = 0;
@@ -143,7 +146,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       const d = (ev as CustomEvent<CalloutShout>).detail;
       if (!d || (d.seat !== 0 && d.seat !== 1)) return;
       clearTimeout(t);
-      t = window.setTimeout(() => session.engine.state.winner === null && play(d.seat, 'cheer', false), 1500);
+      t = window.setTimeout(() => live.current.session.engine.state.winner === null && live.current.play(d.seat, 'cheer', false), 1500);
     };
     window.addEventListener(CALLOUT_SHOUT, on);
     return () => (clearTimeout(t), window.removeEventListener(CALLOUT_SHOUT, on));

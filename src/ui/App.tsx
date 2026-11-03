@@ -599,7 +599,7 @@ export function App() {
     // Rock-paper-scissors decides who goes first, unless the duel says (or watching the computer duel itself).
     const fixed = spec.first === 'me' || spec.first === 'cpu' || spec.seed !== undefined || !!spec.watch;
     const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
-    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: aceToWire(aceOf(speedSave)) });
+    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)) });
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
     const startAs = (f: Pid): Action => ({ type: 'START', first: f, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     if (fixed) ses.send(startAs(first));
@@ -1023,7 +1023,8 @@ export function App() {
       const ace = (s: SpeedSave, seat: Pid, result: 'w' | 'l' | 'd'): SpeedSave => {
         const sd = session?.seats[seat];
         if (!st || !sd) return s;
-        const counts = !activeDeck(s)?.open && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
+        // (one phone against a guest seat could farm it: two phones, or two profiles on one phone)
+        const counts = (!hotseat || (!!p2Profile && p2Profile !== profile?.id)) && !activeDeck(s)?.open && !tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) });
         const r = withAceWin(s, { won: result === 'w', counts, deck: [...sd.deck, ...sd.fusion] });
         if (r.line) news.push(hotseat && !cpu ? `${sd.name}: ${r.line}` : r.line);
         return r.save;
