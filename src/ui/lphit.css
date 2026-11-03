@@ -197,7 +197,7 @@
 }
 /* older scars fade back: the newest reads first */
 .lpcr-scar:not(.fresh) {
-  opacity: 0.6;
+  opacity: 0.3;
 }
 
 /* the fresh crack draws out from the impact in a blink, glowing hot, then cools */
@@ -314,6 +314,44 @@
 }
 .duel.touch .tgauge .fill {
   box-shadow: none;
+  /* drains in step with the count (LpCount: 0.6 s, easing out) */
+  transition: transform 0.6s cubic-bezier(0.33, 1, 0.68, 1), background 0.4s;
+}
+/* the 1000 LP line (a quarter of the gauge): a red notch the fill breaks through */
+.duel.touch .tgauge::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: calc(25% - 1px);
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: #ff4a5acc;
+  box-shadow: 0 0 4px #ff304099;
+  pointer-events: none;
+}
+.duel.touch .tgauge::after {
+  z-index: 2;
+}
+/* the Duel Disk readout: the Life Points sit in a dark glass display in a metal frame */
+.duel.touch .tlp {
+  padding: 0 8px 0 6px;
+  border-radius: 5px 2px 5px 2px;
+  background:
+    repeating-linear-gradient(#0000 0 2px, #ffffff07 2px 3px),
+    linear-gradient(#04060f, #0d1430 60%, #070a1a);
+  box-shadow:
+    0 0 0 1px #8ea2d066,
+    0 0 0 2px #04071299,
+    inset 0 0 10px #000c,
+    inset 0 1px 0 #ffffff1a;
+}
+.duel.touch .tbar:has(.tgauge.low) .tlp {
+  box-shadow:
+    0 0 0 1px #ff5a6a88,
+    0 0 0 2px #04071299,
+    0 0 10px #ff304055,
+    inset 0 0 10px #000c;
 }
 .duel.touch .tgauge.low {
   box-shadow:

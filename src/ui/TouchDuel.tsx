@@ -548,7 +548,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <LpCount value={ps.lp} who={p} />
           <LpPops key={`pop${p}`} who={p} speed={!!e.speed} below={top} />
         </div>
-        <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
+        <i class={`tgauge ${dangerLevel(ps.lp, !!e.speed) ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
           <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
         </i>

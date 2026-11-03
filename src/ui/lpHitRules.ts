@@ -61,7 +61,8 @@ export function lpHit(from: number, to: number, speed: boolean): LpHit | null {
   const start = startLp(speed);
   const kind = to < from ? 'damage' : 'heal';
   const amount = Math.abs(to - from);
-  const sev = Math.min(1, amount / (start / 2));
+  // (the finishing blow always lands as the heaviest hit, whatever was left)
+  const sev = to <= 0 && to < from ? 1 : Math.min(1, amount / (start / 2));
   const tier: LpHit['tier'] = sev >= 0.75 ? 3 : sev >= 0.4 ? 2 : sev >= 0.125 ? 1 : 0;
   const ko = kind === 'damage' && to <= 0;
   const danger = kind === 'damage' && !ko && dangerLevel(to, speed) > 0;

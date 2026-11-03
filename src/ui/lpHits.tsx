@@ -14,18 +14,42 @@ import type { RefObject } from 'preact';
 import type { Pid } from '../eds/types';
 import { crackPaths, lpBarMemory, lpHit, lpListeners, sparkCount, seeded, MAX_SCARS, OPP_SHAKE, startLp, type Crack, type LpHit } from './lpHitRules';
 import { lpCrack, lpSpark } from './duelSfx';
+import { whenArtIdle } from '../art/cues';
 import './lphit.css';
 
 type Listener = (who: Pid, from: number, to: number) => void;
 const listeners = lpListeners;
 
+/** A hit waits at most this long for a cinematic to leave the stage. */
+const ART_WAIT_MS = 700;
+
 function useLpHits(fn: Listener) {
   const ref = useRef(fn);
   ref.current = fn;
   useEffect(() => {
-    const l: Listener = (w, f, t) => ref.current(w, f, t);
+    // (after any cinematic has left the stage and two frames on: the stage's closing frame is
+    // a heavy one, and a pop started inside it would lose its opening punch)
+    const cancels = new Set<() => void>();
+    const l: Listener = (w, f, t) => {
+      let raf = 0;
+      let stop = () => {};
+      let started = false;
+      const done = () => cancels.delete(cancel);
+      // (a long chain still playing: never later than ART_WAIT_MS behind the count)
+      const cap = setTimeout(() => go(), ART_WAIT_MS);
+      const cancel = () => (stop(), clearTimeout(cap), cancelAnimationFrame(raf), done());
+      const go = () => {
+        if (started) return;
+        started = true;
+        stop();
+        clearTimeout(cap);
+        raf = requestAnimationFrame(() => (raf = requestAnimationFrame(() => (done(), ref.current(w, f, t)))));
+      };
+      cancels.add(cancel);
+      stop = whenArtIdle(go);
+    };
     listeners.add(l);
-    return () => void listeners.delete(l);
+    return () => (listeners.delete(l), cancels.forEach((c) => c()));
   }, []);
 }
 
