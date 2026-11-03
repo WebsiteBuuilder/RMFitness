@@ -41,6 +41,8 @@ const merge = (h: WearHit): Drawn => ({
   chipLit: h.chips.map((c) => c.lit).join(' '),
 });
 
+const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 interface Props {
   state: DuelState;
   p: Pid;
@@ -56,7 +58,7 @@ export function ZoneWear({ state, p, zone }: Props) {
   //  (the flag stays on the newest mark, so a later re-render never cuts its animation short)
   const seen = useRef<number | null>(null);
   const freshN = useRef(0);
-  if (seen.current !== null && n > seen.current) freshN.current = n;
+  if (seen.current !== null && n > seen.current && !reduced()) freshN.current = n;
   const cooled = useRef(0);
   if (n < (seen.current ?? 0)) freshN.current = cooled.current = 0; // (a replay stepping back)
   seen.current = n;
@@ -71,8 +73,16 @@ export function ZoneWear({ state, p, zone }: Props) {
   const lv = Math.min(n, MAX_LOOK);
   const id = `fw${uid.replace(/[^\w-]/g, '')}`;
   return (
+    <>
+    {/* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */}
+    {held && (
+      <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <rect class="fw-held-soot" x="-2" y="-2" width={W + 4} height={H + 4} rx="6" />
+        <rect class="fw-held" x="-1" y="-1" width={W + 2} height={H + 2} rx="5" />
+      </svg>
+    )}
     <svg
-      class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}`}
+      class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}${fresh ? ' landing' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
       aria-hidden="true"
@@ -103,7 +113,6 @@ export function ZoneWear({ state, p, zone }: Props) {
       {/* the third hit darkens the whole slab */}
       {lv >= 3 && <rect class="fw-soot" x="0" y="0" width={W} height={H} />}
       {/* a monster standing on the damage: its scorched edge still shows round the card */}
-      {held && <rect class="fw-held" x="1" y="1" width={W - 2} height={H - 2} rx="4" />}
       {hits.map(({ h, specks, gap, core, chipSh, chipFace, chipLit }, i) => {
         const k = i + 1;
         // the newest mark flares; a 4th+ destruction re-lights the worst one
@@ -111,7 +120,14 @@ export function ZoneWear({ state, p, zone }: Props) {
         return (
           <g key={isFresh ? `${k}-${fresh}` : k} class={`fw-hit${isFresh ? ' fresh' : ''}`} style={{ '--hx': `${h.x}px`, '--hy': `${h.y}px` } as Record<string, string>}>
             <path class="fw-blot" d={h.blot} fill={`url(#${id}c)`} />
-            {k >= 2 && <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.36} ry={h.r * 0.45} fill={`url(#${id}p)`} />}
+            {k >= 2 && (
+              // a crater: dark pit, a lit rim toward the light (up-left), a shadowed lip opposite
+              <g class="fw-crater">
+                <ellipse class="fw-lip-lit" cx={h.x - 0.7} cy={h.y - 0.8} rx={h.r * 0.42} ry={h.r * 0.52} />
+                <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.4} ry={h.r * 0.5} fill={`url(#${id}p)`} />
+                <ellipse class="fw-lip-dark" cx={h.x + 0.5} cy={h.y + 0.7} rx={h.r * 0.33} ry={h.r * 0.42} />
+              </g>
+            )}
             <path class="fw-speck" d={specks} />
             <g class="fw-dark">
               <path d={gap} />
@@ -132,5 +148,6 @@ export function ZoneWear({ state, p, zone }: Props) {
         );
       })}
     </svg>
+    </>
   );
 }

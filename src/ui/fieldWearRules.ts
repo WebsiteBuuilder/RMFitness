@@ -133,7 +133,7 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
       if (depth < 1 + (lv > 1 ? 1 : 0) && i > 1 && r() < 0.3) grow(cx, cy, heading + (r() < 0.5 ? -1 : 1) * (grid ? Math.PI / 2 : 0.5 + r() * 0.6), len * 0.45, w * 0.6, depth + 1);
     }
     const d = 'M' + pts.map(([x, y]) => `${f1(x)} ${f1(y)}`).join(' L');
-    cracks.push({ d, w, gap: taper(pts, 1.25 * w), core: taper(pts, 0.5 * w) });
+    cracks.push({ d, w, gap: taper(pts, 1.75 * w), core: taper(pts, 0.42 * w) });
   };
   const trunks = [0, 5, 6, 7][lv];
   const turn0 = r() * Math.PI * 2;
@@ -141,12 +141,12 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
   // the third hit breaks pieces out of the slab
   const chips: WearChip[] = [];
   if (lv >= 3) {
-    const n = Math.min(joints.length, 5 + Math.floor(r() * 3));
+    const n = Math.min(joints.length, 7 + Math.floor(r() * 3));
     const picks = joints.map((j) => [r(), j] as const).sort((a, b) => a[0] - b[0]).slice(0, n).map(([, j]) => j);
     for (const [jx, jy, ang] of picks) {
       // a sharp sliver lying along the crack: long axis on the crack, two or three cutting corners
-      const len = 6 + r() * 4;
-      const wid = 3 + r() * 2.2;
+      const len = 8 + r() * 5;
+      const wid = 4 + r() * 3;
       const side = r() < 0.5 ? -1 : 1;
       const ca = Math.cos(ang);
       const sa = Math.sin(ang);
