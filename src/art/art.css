@@ -1128,7 +1128,7 @@
 .co-who {
   position: absolute;
   right: 6%;
-  bottom: calc(100% - 4px);
+  bottom: calc(100% + 3px);
   display: flex;
   gap: 6px;
   align-items: center;
@@ -1186,7 +1186,7 @@
 .co-bubble {
   position: absolute;
   top: 8%;
-  max-width: 62vw;
+  max-width: 52vw;
   padding: 5px 11px 6px;
   border: 3px solid #111;
   border-radius: 16px;
@@ -1360,4 +1360,9 @@
   to {
     background-position: -100% 0;
   }
+}
+.co-who span {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(5, 6, 16, 0.78);
 }

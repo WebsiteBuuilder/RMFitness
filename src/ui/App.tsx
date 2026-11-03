@@ -1709,8 +1709,12 @@ function Running({
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
   useEffect(() => () => (showDuelRarity(null), showDuelAces(null)), []);
-  // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none).
-  showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [aceFromWire(view.seats[0].ace), aceFromWire(view.seats[1].ace)] : null);
+  // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none), only a card in that seat's deck.
+  const seatAce = (p: Pid) => {
+    const a = aceFromWire(view.seats[p].ace);
+    return a && (view.seats[p].deck.includes(a.name) || view.seats[p].fusion.includes(a.name)) ? a : null;
+  };
+  showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatAce(0), seatAce(1)] : null);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
   // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.

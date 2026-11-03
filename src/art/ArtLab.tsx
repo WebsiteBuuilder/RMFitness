@@ -123,6 +123,7 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
     unlockAudio();
     showDuelRarity(finish === null ? null : [{ [name]: finish }, {}]);
     if (ace) {
+      dir.current?.resetAces();
       showDuelAces([{ name, lv: bond, wins: BOND_LEVELS[bond - 1].wins }, null]);
       const m = ace.mate ?? null;
       setStageMates([m, null], [m ? (mateDef(m)?.voice ?? 0) : 0, 0]);

@@ -112,6 +112,11 @@ const idle = (f: () => void) => {
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   // (a shout still being said stops when the duel screen goes)
   useEffect(() => () => stopShout(), []);
+  // (a new duel or a rematch on the same screen: each Ace's full entrance plays again)
+  const fresh = state.turn <= 1;
+  useEffect(() => {
+    if (fresh) dir.current?.resetAces();
+  }, [fresh]);
   const enabled = state.rules?.mode === "speed";
   const cine = useCinematics();
   const speed = useAnimSpeed();

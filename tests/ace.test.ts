@@ -50,8 +50,8 @@ t('a long shout splits in two balanced lines and every line fits the screen', ()
 });
 
 t('the Mate echoes the shout louder; voices go low for big monsters', () => {
-  assert.equal(mateEcho('White Lightning!'), '…LIGHTNING!!');
-  assert.equal(mateEcho('Dark Magic Attack!'), '…MAGIC ATTACK!!');
+  assert.equal(mateEcho('White Lightning!'), 'LIGHTNING!!');
+  assert.equal(mateEcho('Dark Magic Attack!'), 'MAGIC ATTACK!!');
   assert.equal(mateEcho('Burstfire!'), 'BURSTFIRE!!');
   assert.ok(voicePitch(8, 'Blue-Eyes White Dragon') < voicePitch(1, 'Kuriboh'));
   assert.equal(NEXT_CALLOUT.voice, 'text');

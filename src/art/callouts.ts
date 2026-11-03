@@ -98,13 +98,13 @@ export function calloutFor(name: string, attackName: string, ace = false): Callo
   return t ? { text: `${t}!`, card: name, ace } : null;
 }
 
-/** The Mate's line: it yells the end of the shout along with its monster ("…LIGHTNING!!"). */
+/** The Mate's line: it yells the end of the shout along with its monster ("LIGHTNING!!"). */
 export function mateEcho(text: string): string {
   const words = text.replace(/[!.]+$/, '').toUpperCase().split(/\s+/).filter(Boolean);
   if (words.length <= 1) return `${words[0] ?? ''}!!`;
   const last = words[words.length - 1];
   // (a short last word takes the one before with it: "MAGIC ATTACK", not "ATTACK")
-  return `…${last.length <= 6 && words.length > 2 ? `${words[words.length - 2]} ${last}` : last}!!`;
+  return `${last.length <= 6 && words.length > 2 ? `${words[words.length - 2]} ${last}` : last}!!`;
 }
 
 /** The shout in lines of words: one line, or two balanced ones when it is long (each word slams in on its own beat). */

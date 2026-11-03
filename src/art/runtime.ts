@@ -275,6 +275,10 @@ export class Director {
   timeScale = 1;
   /** Aces whose full entrance has played on this stage (owner:name) */
   private acesShown = new Set<string>();
+  /** A new duel (or a fresh preview): each Ace's full entrance plays again. */
+  resetAces() {
+    this.acesShown.clear();
+  }
   /** a chain reached its impact or landing */
   onCommit: ((batch: number) => void) | null = null;
   /** a chain is over (played, skipped, cleared or failed) */
@@ -1071,8 +1075,8 @@ export class Director {
     }
     // 4: a crown of stars orbits it, the whole sky turns gold
     if (lv >= 4) {
-      tl.at(t0 - 0.2, () => this.stage.backdrop.u.uColor.value.set(0.16, 0.11, 0.02));
-      tl.at(t0, () => (this.flash(0xffd56a, 0.45), st.pulse('flash', 0.4)));
+      tl.at(t0 - 0.2, () => this.stage.backdrop.u.uColor.value.set(0.2, 0.13, 0.025));
+      tl.at(t0, () => (this.flash(0xffe08a, 0.22), st.pulse('flash', 0.25)));
       const n = 8;
       const stars = Array.from({ length: n }, (_, i) => {
         const g = tl.own(new Glow(0.55 * U, 0.55 * U, 'star', i % 2 ? GOLD_A : col.light, 0xffffff));
