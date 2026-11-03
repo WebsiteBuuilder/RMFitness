@@ -18,6 +18,7 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
 import { lpCount as lpCountSound } from '../ui/duelSfx';
+import { emitLpHit } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
 import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
@@ -663,6 +664,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
     lpCountSound(value - from, value, LP_TICK_MS);
+    if (who !== undefined) emitLpHit(who, from, value);
     const t0 = performance.now();
     let raf = 0;
     let k = 0;
