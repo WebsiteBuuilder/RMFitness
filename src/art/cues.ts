@@ -55,7 +55,32 @@ type CueBody =
   | { kind: 'destroy'; card: CardRef }
   | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null }
   /** "Not so fast!": a Trap answers the opponent's card (its attacker, its summon, its Spell): time slows and the two slam together */
-  | { kind: 'slam'; trap: CardRef; onto: CardRef };
+  | { kind: 'slam'; trap: CardRef; onto: CardRef }
+  /** Chain spotlight: the chain so far lifts off the field in order, numbered (`added`: the link just put on it) */
+  | { kind: 'chain'; stack: ChainCard[]; added: number }
+  /** ...link `n` resolves: it comes forward, bigger, with its effect text and its own flash */
+  | { kind: 'resolve'; stack: ChainCard[]; n: number; negated: boolean }
+  /** ...the chain has resolved: the stack folds away */
+  | { kind: 'chainEnd' };
+
+/** One link of a chain, as the chain spotlight shows it. */
+export interface ChainCard {
+  /** its chain link number (1 = activated first, resolves last) */
+  n: number;
+  card: CardRef;
+  what: 'spell' | 'trap' | 'monster';
+  /** its controller's name */
+  who: string;
+  /** the viewer's own card */
+  mine: boolean;
+  /** already resolved */
+  done: boolean;
+  /** resolved with no effect (negated) */
+  negated: boolean;
+}
+
+/** The chain cue kinds (the chain spotlight; they play under every Cinematics setting but Off). */
+export const CHAIN_CUES = new Set<Cue['kind']>(['chain', 'resolve', 'chainEnd']);
 
 /** What an effect targets, and whether it is destroyed in the same update. */
 export interface Target {
@@ -153,6 +178,8 @@ function gone(events: EngineEvent[], i: number): Set<number> {
   for (let j = i + 1; j < events.length; j++) {
     const e = events[j];
     if (e.kind === 'activate') break;
+    // a chain: what another link destroys as it resolves is not this card's doing
+    if (e.kind === 'resolve' && e.uid !== events[i].uid) break;
     if (e.kind === 'to-gy' && e.uid !== undefined) s.add(e.uid);
   }
   return s;
@@ -232,7 +259,12 @@ function shownLeave(zone: string | undefined, to: 'hand' | 'deck' | 'banish' | '
 export interface CueTrack {
   /** the attack being animated (its hit can arrive in a later batch, after responses) */
   battle: { attacker: number; target: number | null } | null;
+  /** the chain being built or resolved (its links can arrive over several batches, around the players' responses) */
+  chain?: ChainCard[];
 }
+
+/** A copy of the chain for one cue (later cues mark links done; this one keeps what it saw). */
+const stackOf = (links: ChainCard[]) => links.filter(Boolean).map((l) => ({ ...l }));
 
 export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, host: HTMLElement | null, memo: FieldMemo, track: CueTrack = { battle: null }): Cue[] {
   const out: Cue[] = [];
@@ -349,6 +381,43 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
       }
       case 'win':
         out.push({ kind: 'win', winner: state.winner ?? 'draw', shadow: shadowRealmOf(state) });
+        break;
+      case 'chain':
+      case 'resolve': {
+        const n = ev.link ?? 0;
+        if (n < 1 || ev.uid === undefined) break;
+        const links = (track.chain ??= []);
+        const fresh = (): ChainCard | null => {
+          const c = r(ev.uid);
+          if (!c) return null;
+          const name = locate(state, c.uid)?.card.name ?? c.name;
+          const what = card(name)?.kind ?? 'spell';
+          return { n, card: { ...c, name, faceUp: true }, what, who: state.players[c.controller]?.name ?? '', mine: c.controller === viewer, done: false, negated: false };
+        };
+        if (ev.kind === 'chain') {
+          // a new link n: anything numbered n or more is left over from an earlier chain
+          links.length = Math.min(links.length, n - 1);
+          const l = fresh();
+          if (!l) break;
+          links[n - 1] = l;
+          if (n >= 2) out.push({ kind: 'chain', stack: stackOf(links), added: n });
+          break;
+        }
+        // resolving: links above n are done (a chain resolves from its last link down)
+        if (!links[n - 1] || links[n - 1].card.uid !== ev.uid) {
+          const l = fresh();
+          if (!l) break;
+          links[n - 1] = l;
+        }
+        for (const l of links) if (l && l.n > n) l.done = true;
+        links[n - 1].negated = !!ev.negated;
+        out.push({ kind: 'resolve', stack: stackOf(links), n, negated: !!ev.negated });
+        links[n - 1].done = true;
+        break;
+      }
+      case 'chain-end':
+        if (track.chain?.length) out.push({ kind: 'chainEnd' });
+        track.chain = [];
         break;
     }
   }
