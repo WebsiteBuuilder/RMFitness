@@ -1,0 +1,416 @@
+/* ---------- Whose turn, whose choice (Touch screen) ----------
+   One look says who the duel waits on: the turn player's bar is lit in their colour (blue you,
+   red them), a tab hangs off it toward the field ("Your turn", "Joey is choosing…", "Your
+   choice!"), the edge of the screen on their side glows, and the row across the middle points
+   at their side. Everything that moves here moves by transform/opacity only. */
+
+/* ---- the tab on a player's bar ---- */
+.ttab {
+  position: absolute;
+  left: 50px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 120px);
+  height: 21px;
+  padding: 0 11px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #fff;
+  background: linear-gradient(180deg, #3f7bff, #1d46c8);
+  box-shadow: 0 0 0 1px #9cc0ff80, 0 4px 14px #2a62ff90;
+  animation: ttab-in 0.35s cubic-bezier(.2, .9, .3, 1.25) both;
+}
+.ttab.top {
+  top: 100%;
+  border-radius: 0 0 10px 10px;
+  transform-origin: 50% 0;
+}
+.ttab.bottom {
+  bottom: 100%;
+  border-radius: 10px 10px 0 0;
+  transform-origin: 50% 100%;
+}
+.ttab b {
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #0008;
+}
+.ttab small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+.ttab.theirs {
+  background: linear-gradient(180deg, #ff4a64, #b0122e);
+  box-shadow: 0 0 0 1px #ffb0bc80, 0 4px 14px #ff2a4a90;
+}
+/* the duel waits on someone else: the turn player's tab steps back */
+.ttab.wait {
+  opacity: 0.55;
+  box-shadow: none;
+}
+/* a choice is open: the deciding player's tab is the loudest thing on the screen */
+.ttab.ask {
+  height: 25px;
+  font-size: 12px;
+}
+.ttab.mine.ask {
+  color: #1b1100;
+  background: linear-gradient(180deg, #ffe58a, #f0a800);
+  box-shadow: 0 0 0 1px #fff3c0, 0 0 18px #ffc400c0;
+}
+.ttab.mine.ask b {
+  text-shadow: none;
+}
+.ttab.ask::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px currentColor;
+  opacity: 0;
+  animation: ttab-ping 1.3s ease-out 0.3s infinite;
+}
+.ttab.theirs.ask::after {
+  color: #ff8a9c;
+}
+.ttab.mine.ask::after {
+  color: #ffd84a;
+}
+@keyframes ttab-in {
+  from {
+    transform: scaleY(0) translateY(-6px);
+    opacity: 0;
+  }
+}
+@keyframes ttab-ping {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15, 1.6);
+  }
+}
+/* thinking dots */
+.tdots {
+  display: inline-flex;
+  gap: 3px;
+}
+.tdots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: tdot 1s ease-in-out infinite;
+}
+.tdots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.tdots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes tdot {
+  0%,
+  60%,
+  100% {
+    transform: none;
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ---- the bars: the turn player's is lit, the other one steps back ---- */
+.duel.touch .tbar.turn {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--turn) 34%, #0b1030) 0%, #121a4ae6 55%, color-mix(in srgb, var(--turn) 22%, #0b1030) 100%);
+  box-shadow: inset 0 0 26px -8px var(--turn);
+}
+.duel.touch .tbar.turn::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--turn) 15%, #fff 50%, var(--turn) 85%, transparent);
+  box-shadow: 0 0 12px 1px var(--turn);
+  pointer-events: none;
+}
+.duel.touch .tbar.top.turn::after {
+  bottom: -1px;
+}
+.duel.touch .tbar.bottom.turn::after {
+  top: -1px;
+}
+.duel.touch .tbar.idle-bar .tname,
+.duel.touch .tbar.idle-bar .tlp {
+  opacity: 0.72;
+}
+/* the player the duel waits on: a ring runs round their portrait */
+.duel.touch .tavatar {
+  position: relative;
+}
+.duel.touch .tbar.acts .tavatar::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 55%, var(--ring, #9cc0ff) 85%, #fff 100%);
+  -webkit-mask: radial-gradient(closest-side, transparent 78%, #000 80%);
+  mask: radial-gradient(closest-side, transparent 78%, #000 80%);
+  animation: tring 1.1s linear infinite;
+  pointer-events: none;
+}
+.duel.touch .tbar.top.acts .tavatar::after {
+  --ring: #ff8a9c;
+}
+@keyframes tring {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ---- the edge of the screen on the turn player's side ---- */
+.duel.touch .tedge {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 26vh;
+  z-index: 0;
+  pointer-events: none;
+  bottom: 0;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--turn) 55%, transparent), transparent);
+  opacity: 0.55;
+  animation: tedge-in 1.4s ease-out both;
+}
+.duel.touch.turn-opp .tedge {
+  bottom: auto;
+  top: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--turn) 55%, transparent), transparent);
+}
+@keyframes tedge-in {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+}
+
+/* ---- the row across the middle: whose turn, the phase, and an arrow to their side ---- */
+.duel.touch .tmid .tturn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #fff;
+  background: linear-gradient(90deg, #0a1440e8, #1f4ad0f0 50%, #0a1440e8);
+  box-shadow: 0 0 0 1px #9cc0ff70, 0 0 16px #2a62ff70;
+  animation: tturn-in 0.45s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+.duel.touch.turn-opp .tmid .tturn {
+  color: #fff;
+  background: linear-gradient(90deg, #3a0814e8, #b0122ef0 50%, #3a0814e8);
+  box-shadow: 0 0 0 1px #ffb0bc70, 0 0 16px #ff2a4a70;
+}
+.duel.touch .tturn b {
+  font-weight: 900;
+  letter-spacing: 1.4px;
+}
+.duel.touch .tturn-ph {
+  font-weight: 700;
+  letter-spacing: 1px;
+  opacity: 0.8;
+  padding-left: 7px;
+  border-left: 1px solid #ffffff50;
+}
+.tturn-arrow {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  animation: tarrow 0.9s ease-in-out 6 alternate;
+}
+.tturn-arrow.down {
+  border-top: 7px solid #cfe0ff;
+}
+.tturn-arrow.up {
+  border-bottom: 7px solid #ffc0ca;
+  animation-name: tarrow-up;
+}
+@keyframes tarrow {
+  to {
+    transform: translateY(3px);
+  }
+}
+@keyframes tarrow-up {
+  to {
+    transform: translateY(-3px);
+  }
+}
+@keyframes tturn-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* ---- your choice: the sheet says it's you, in gold ---- */
+.duel.touch .tsheet.mine-choice {
+  border-top-color: #ffd04a;
+  box-shadow: 0 -8px 24px #000c, 0 -2px 22px #ffc40055;
+}
+.tsheet-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #ffd84a;
+}
+.tsheet-who::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd84a;
+  box-shadow: 0 0 8px #ffc400;
+  animation: tdot 1.2s ease-in-out infinite;
+}
+
+/* ---- the turn banner: a lit band with a light sweeping across ---- */
+.duel.touch .tbanner {
+  overflow: hidden;
+  padding: 16px 0 14px;
+  background: linear-gradient(90deg, transparent, #0d2a9ae8 14%, #1640c8f0 50%, #0d2a9ae8 86%, transparent);
+  border: 0;
+  box-shadow: 0 0 40px #2a62ff80;
+  animation-duration: 1.3s;
+}
+.duel.touch .tbanner::before,
+.duel.touch .tbanner::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #cfe0ff 30%, #fff 50%, #cfe0ff 70%, transparent);
+  box-shadow: 0 0 10px #8fb0ff;
+}
+.duel.touch .tbanner::before {
+  top: 0;
+}
+.duel.touch .tbanner::after {
+  bottom: 0;
+}
+.duel.touch .tbanner b {
+  position: relative;
+  font-size: 34px;
+  font-style: italic;
+  letter-spacing: 5px;
+  text-shadow: 0 0 18px #6f8cff, 0 2px 0 #0a1a6a;
+  animation: tbanner-word 1.3s cubic-bezier(.15, .8, .3, 1) both;
+}
+.duel.touch .tbanner small {
+  position: relative;
+  font-weight: 700;
+}
+/* the light that sweeps across the band */
+.duel.touch .tbanner i.tsweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, #ffffff55 45%, #ffffffaa 50%, #ffffff55 55%, transparent);
+  transform: translateX(-120%) skewX(-20deg);
+  animation: tsweep 0.9s 0.12s ease-out both;
+}
+.duel.touch .tbanner.theirs {
+  background: linear-gradient(90deg, transparent, #7a0c22e8 14%, #c41436f0 50%, #7a0c22e8 86%, transparent);
+  box-shadow: 0 0 40px #ff2a4a80;
+}
+.duel.touch .tbanner.theirs::before,
+.duel.touch .tbanner.theirs::after {
+  background: linear-gradient(90deg, transparent, #ffc0ca 30%, #fff 50%, #ffc0ca 70%, transparent);
+  box-shadow: 0 0 10px #ff8a9c;
+}
+.duel.touch .tbanner.theirs b {
+  text-shadow: 0 0 18px #ff5a5a, 0 2px 0 #5a0010;
+}
+.duel.touch .tbanner.duel {
+  background: linear-gradient(90deg, transparent, #2a1a00e8 14%, #6a4200f0 50%, #2a1a00e8 86%, transparent);
+  box-shadow: 0 0 40px #ffb40080;
+}
+.duel.touch .tbanner.duel b {
+  font-size: 48px;
+  font-style: normal;
+  text-shadow: 0 0 18px #ffb400, 0 2px 0 #5a3a00;
+}
+.duel.touch .tbanner.phase {
+  padding: 7px 0;
+  box-shadow: none;
+  background: linear-gradient(90deg, transparent, #0b1550d8 20%, #0b1550d8 80%, transparent);
+}
+.duel.touch .tbanner.phase::before,
+.duel.touch .tbanner.phase::after {
+  background: linear-gradient(90deg, transparent, var(--turn), transparent);
+  box-shadow: none;
+}
+.duel.touch .tbanner.phase b {
+  font-size: 18px;
+  font-style: normal;
+  animation: none;
+  text-shadow: 0 0 10px var(--turn);
+}
+@keyframes tbanner-word {
+  0% {
+    transform: translateX(40px);
+    letter-spacing: 14px;
+    opacity: 0;
+  }
+  25% {
+    transform: none;
+    letter-spacing: 5px;
+    opacity: 1;
+  }
+}
+@keyframes tsweep {
+  to {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ttab,
+  .ttab.ask::after,
+  .tdots i,
+  .duel.touch .tbar.acts .tavatar::after,
+  .tturn-arrow,
+  .duel.touch .tbanner b,
+  .duel.touch .tbanner i.tsweep {
+    animation: none;
+  }
+}
+
+/* a cinematic owns the top of the screen for a moment (its skip hint sits there) */
+body.art-on .ttab.top {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
