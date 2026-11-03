@@ -10,6 +10,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
+import { drawHeld, whenIntroAt } from './immersionState';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -147,6 +148,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
   const prev = useRef<{ places: Map<number, Where>; snaps: Map<string, Snap>; key: string } | null>(null);
   const seat = useRef(acting);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const stopIntroWait = useRef<() => void>(() => {});
   /** The screen's layout changed (a resize): measure every card at the next move. */
   const stale = useRef(true);
   useLayoutEffect(() => {
@@ -206,7 +208,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     } else
       places.forEach((w, uid) => {
         const was = before!.places.get(uid);
-        if (was !== undefined && was !== w) moved.push([uid, was, w]);
+        // (your Draw Phase card waiting for your swipe flies when you draw it: ./heartDraw)
+        if (was !== undefined && was !== w && !drawHeld(uid)) moved.push([uid, was, w]);
       });
     if (moved.length === 0 || moved.length > 12) return;
     let draws = 0;
@@ -241,6 +244,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // the art loader stands back until the cards are in hand (its first pictures stalled the deal)
     hush(3500);
     const go = () => {
+      // (after a face-off, the deal starts now: the art loader stands back from here)
+      hush(3000);
       const now = root.current;
       for (const f of flights) {
         const uid = f.target?.dataset.uid;
@@ -260,7 +265,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
       if (done || (ev && ev.target !== mat)) return;
       done = true;
       mat?.removeEventListener('animationend', once);
-      go();
+      // (under the face-off: the deal starts as its two halves split apart)
+      stopIntroWait.current = whenIntroAt(450, go);
     };
     // (the swing starts once the screen is armed, a couple of frames after it opens)
     const armed = el.classList.contains('armed');
@@ -268,5 +274,5 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     else timers.current.push(setTimeout(once, 50));
     timers.current.push(setTimeout(once, armed ? 1500 : 2500));
   });
-  useLayoutEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useLayoutEffect(() => () => (timers.current.forEach(clearTimeout), stopIntroWait.current()), []);
 }

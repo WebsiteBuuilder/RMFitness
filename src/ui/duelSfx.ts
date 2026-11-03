@@ -289,3 +289,62 @@ export function groundCrack() {
   tone(70, 0.6, 0.18, 0.02, { type: 'sine', to: 32 });
   for (let i = 0; i < 4; i++) tone(900 + Math.random() * 700, 0.05, 0.03, 0.03 + i * 0.05, { type: 'triangle', to: 500 });
 }
+
+// ------------------------------------------------------------ Heart of the Cards draw, face-off intro
+
+/** Your deck is ready to draw from: a soft shimmer. `destiny`: a low swell under it, the room going quiet. */
+export function deckReady(destiny = false) {
+  tone(1318, 0.5, 0.025, 0, { type: 'sine', attack: 0.12 });
+  tone(1760, 0.5, 0.02, 0.08, { type: 'sine', attack: 0.12 });
+  if (!destiny) return;
+  tone(55, 2.2, 0.12, 0, { type: 'sawtooth', attack: 0.8, lp: 260, to: 62 });
+  tone(110, 2.0, 0.05, 0.1, { type: 'sine', attack: 0.9 });
+  hiss(2.2, 200, 900, 0.035, 0, 'lowpass', 0.9);
+}
+
+/** The normal draw, by your own swipe: a quick slide and a crisp snap. */
+export function drawSwipe() {
+  rumble(0.25, 0.1, 70);
+  hiss(0.14, 1400, 5200, 0.12);
+  tone(2400, 0.035, 0.06, 0.1, { type: 'square', lp: 4000 });
+}
+
+/** A destiny draw: the card lifts off the deck in a rising wind... */
+export function destinyRise() {
+  rumble(0.4, 0.2, 260);
+  hiss(0.9, 300, 3200, 0.09, 0, 'bandpass', 0.2);
+  tone(220, 1.0, 0.05, 0, { type: 'sawtooth', to: 880, lp: 1800, attack: 0.3 });
+  tone(330, 1.0, 0.035, 0.05, { type: 'triangle', to: 1320, attack: 0.3 });
+}
+
+/** ...and turns over: a bright burst and a held major chord. */
+export function destinyReveal() {
+  rumble(0.8, 0.6, 320);
+  hiss(0.5, 6000, 1200, 0.12, 0, 'highpass');
+  thud(0.6);
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 1.4, 0.05, 0.02 + i * 0.03, { type: 'sawtooth', lp: 2400, attack: 0.02 }));
+  tone(2093, 0.9, 0.03, 0.12, { type: 'sine' });
+}
+
+/** The face-off: both duelists sweep in... */
+export function faceoffSweep() {
+  hiss(0.45, 500, 4000, 0.11, 0, 'bandpass', 0.05);
+  hiss(0.45, 600, 3600, 0.09, 0.08, 'bandpass', 0.05);
+}
+
+/** ...and meet in the middle with a crack of lightning. */
+export function faceoffClash() {
+  rumble(0.6, 0.4, 200);
+  hiss(0.35, 7000, 900, 0.14, 0, 'highpass', 0.002);
+  thud(0.5);
+  tone(1760, 0.18, 0.04, 0, { type: 'square', to: 220 });
+}
+
+/** "DUEL!": a heavy slam and a brass hit. */
+export function duelSlam() {
+  rumble(1, 0.8, 420);
+  thud(1);
+  thud(0.6, 0.05);
+  hiss(0.6, 3000, 200, 0.12, 0, 'lowpass', 0.003);
+  [196, 247, 294, 392].forEach((f) => tone(f, 0.9, 0.06, 0.01, { type: 'sawtooth', lp: 1500, attack: 0.01 }));
+}
