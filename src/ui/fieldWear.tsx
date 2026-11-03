@@ -24,6 +24,10 @@ export function wearKey(state: DuelState, p: Pid, zone: number): string {
 interface Drawn {
   h: WearHit;
   specks: string;
+  embers: string;
+  plSh: string;
+  plFace: string;
+  plLit: string;
   gap: string;
   core: string;
   chipSh: string;
@@ -34,6 +38,10 @@ const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y
 const merge = (h: WearHit): Drawn => ({
   h,
   specks: h.specks.map(dot).join(''),
+  embers: h.embers.map(dot).join(''),
+  plSh: h.plates.map((c) => c.shadow).join(''),
+  plFace: h.plates.map((c) => c.face).join(''),
+  plLit: h.plates.map((c) => c.lit).join(' '),
   gap: h.cracks.map((c) => c.gap).join(''),
   core: h.cracks.map((c) => c.core).join(''),
   chipSh: h.chips.map((c) => c.shadow).join(''),
@@ -53,7 +61,7 @@ function embersOf(p: number, zone: number, lv: number, seed: number): string {
     // along the frame: pick an edge, a spot on it, just outside or on the line
     const e = Math.floor(r() * 4);
     const t = r();
-    const o = -1.5 + r() * 2.5;
+    const o = 0.8 + r() * 1.6;
     const x = e === 0 ? t * W : e === 1 ? W - o : e === 2 ? t * W : o;
     const y = e === 0 ? o : e === 1 ? t * H : e === 2 ? H - o : t * H;
     const rr = 0.5 + r() * 0.8;
@@ -102,8 +110,8 @@ export function ZoneWear({ state, p, zone }: Props) {
     {/* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */}
     {held && (
       <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <rect class="fw-held-soot" x="-1.5" y="-1.5" width={W + 3} height={H + 3} rx="6" />
-        <rect class="fw-held-heat" x="-0.5" y="-0.5" width={W + 1} height={H + 1} rx="5" />
+        <rect class="fw-held-soot" x="1.5" y="1.5" width={W - 3} height={H - 3} rx="4" />
+        <rect class="fw-held-heat" x="1" y="1" width={W - 2} height={H - 2} rx="4" />
         <path class="fw-held-embers" d={embersOf(p, zone, lv, seed)} />
       </svg>
     )}
@@ -136,12 +144,12 @@ export function ZoneWear({ state, p, zone }: Props) {
       {/* the third hit darkens the whole slab */}
       {lv >= 3 && <ellipse class="fw-soot" cx={W / 2} cy={H / 2} rx={W * 0.48} ry={H * 0.44} fill={`url(#${id}c)`} />}
       {/* a monster standing on the damage: its scorched edge still shows round the card */}
-      {hits.map(({ h, specks, gap, core, chipSh, chipFace, chipLit }, i) => {
+      {hits.map(({ h, specks, embers, plSh, plFace, plLit, gap, core, chipSh, chipFace, chipLit }, i) => {
         const k = i + 1;
         // the newest mark flares; a 4th+ destruction re-lights the worst one
         const isFresh = fresh && k === Math.min(fresh, MAX_LOOK);
         return (
-          <g key={isFresh ? `${k}-${fresh}` : k} class={`fw-hit${isFresh ? ' fresh' : ''}`} style={{ '--hx': `${h.x}px`, '--hy': `${h.y}px` } as Record<string, string>}>
+          <g key={k < MAX_LOOK ? k : `${k}-${n}`} class={`fw-hit${isFresh ? ' fresh' : ''}`} style={{ '--hx': `${h.x}px`, '--hy': `${h.y}px` } as Record<string, string>}>
             <path class="fw-blot" d={h.blot} fill={`url(#${id}c)`} />
             {k >= 2 && (
               // a crater: dark pit, a lit rim toward the light (up-left), a shadowed lip opposite
@@ -152,12 +160,24 @@ export function ZoneWear({ state, p, zone }: Props) {
               </g>
             )}
             <path class="fw-speck" d={specks} />
+            <path class="fw-ember" d={embers} />
             <g class="fw-dark">
               <path d={gap} />
             </g>
             <g class="fw-glow">
               <path d={core} />
             </g>
+            {isFresh && <path class="fw-hot" d={core} />}
+            {plFace && (
+              // the slab breaks into plates; the fire shows in the gaps between them
+              <g class="fw-plates">
+                <ellipse class="fw-plate-fire" cx={h.x} cy={h.y} rx={W * 0.42} ry={H * 0.4} fill={`url(#${id}f)`} />
+                <path class="fw-plate-sh" d={plSh} />
+                <path class="fw-plate-face" d={plFace} />
+                <path class="fw-plate-char" d={plFace} />
+                <path class="fw-plate-lit" d={plLit} />
+              </g>
+            )}
             {chipFace && (
               <g class="fw-chip">
                 <path class="fw-chip-sh" d={chipSh} />

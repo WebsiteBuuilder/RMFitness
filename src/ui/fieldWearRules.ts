@@ -79,8 +79,12 @@ export interface WearHit {
   cracks: WearCrack[];
   /** broken-out pieces of the slab along the cracks (the third hit shatters it) */
   chips: WearChip[];
-  /** ash or embers lying in the scorch: [x, y, size] */
+  /** ash lying in the scorch: [x, y, size] */
   specks: [number, number, number][];
+  /** embers still glowing in it: [x, y, size] */
+  embers: [number, number, number][];
+  /** the third hit: the zone's face broken into plates reaching the frame, pushed apart over the fire */
+  plates: WearChip[];
 }
 
 const f1 = (n: number) => n.toFixed(1);
@@ -113,7 +117,7 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
   }
   blot += 'Z';
   const cracks: WearCrack[] = [];
-  const reach = [0, 19, 32, 54][lv];
+  const reach = [0, 19, 24, 54][lv];
   /** where cracks bend (shards break out there) */
   const joints: [number, number, number][] = [];
   const grow = (cx: number, cy: number, ang: number, len: number, w: number, depth: number) => {
@@ -178,7 +182,69 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
     const dist = rad * Math.sqrt(r()) * 0.95;
     specks.push([+f1(clampX(x + Math.cos(a) * dist)), +f1(clampY(y + Math.sin(a) * dist * 1.25)), +(0.5 + r() * 0.9).toFixed(2)]);
   }
-  return { x: +f1(x), y: +f1(y), blot, r: +f1(rad), cracks, chips, specks };
+  const embers: [number, number, number][] = [];
+  for (let i = 0; i < 2 + lv; i++) {
+    const a = r() * Math.PI * 2;
+    const dist = rad * Math.sqrt(r()) * 0.7;
+    embers.push([+f1(clampX(x + Math.cos(a) * dist)), +f1(clampY(y + Math.sin(a) * dist * 1.25)), +(0.6 + r() * 0.6).toFixed(2)]);
+  }
+  const plates = lv >= 3 ? platesOf(r, x, y) : [];
+  return { x: +f1(x), y: +f1(y), blot, r: +f1(rad), cracks, chips, specks, embers, plates };
+}
+
+/**
+ * The slab broken into plates: rays from the blow out to the zone's frame cut it into wedges;
+ * each wedge shrinks back from its neighbours (the gaps show the fire below) and is shoved a
+ * little out of place (raised and tilted).
+ */
+function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
+  const n = 4 + Math.floor(r() * 2);
+  const a0 = r() * Math.PI * 2;
+  const angs = Array.from({ length: n }, (_, i) => a0 + (i / n) * Math.PI * 2 + (r() - 0.5) * (Math.PI / n) * 0.8);
+  // where a ray from the blow meets the frame
+  const hit = (a: number): [number, number] => {
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let t = Infinity;
+    if (dx > 1e-6) t = Math.min(t, (W - cx) / dx);
+    if (dx < -1e-6) t = Math.min(t, -cx / dx);
+    if (dy > 1e-6) t = Math.min(t, (H - cy) / dy);
+    if (dy < -1e-6) t = Math.min(t, -cy / dy);
+    return [cx + dx * t, cy + dy * t];
+  };
+  const corners: [number, number][] = [[W, H], [0, H], [0, 0], [W, 0]];
+  const angOf = ([px, py]: [number, number]) => Math.atan2(py - cy, px - cx);
+  const norm = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const out: WearChip[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = angs[i];
+    const b = angs[(i + 1) % n] + (i === n - 1 ? Math.PI * 2 : 0);
+    const span = b - a;
+    const pts: [number, number][] = [[cx, cy], hit(a)];
+    corners
+      .map((c) => [c, norm(angOf(c) - a)] as const)
+      .filter(([, d]) => d > 0 && d < span)
+      .sort((p, q) => p[1] - q[1])
+      .forEach(([c]) => pts.push(c));
+    pts.push(hit(b));
+    // shrink toward the plate's middle (the gap), then shove it out of place
+    const mx = pts.reduce((t, p) => t + p[0], 0) / pts.length;
+    const my = pts.reduce((t, p) => t + p[1], 0) / pts.length;
+    const k = 0.85;
+    const sx = (r() - 0.5) * 1.6;
+    const sy = (r() - 0.5) * 1.6;
+    const q = pts.map(([px, py]): [number, number] => [mx + (px - mx) * k + sx, my + (py - my) * k + sy]);
+    const path = (v: [number, number][], dx = 0, dy = 0) => 'M' + v.map(([px, py]) => `${f1(px + dx)} ${f1(py + dy)}`).join(' L') + ' Z';
+    let lit = '';
+    for (let j = 0; j < q.length; j++) {
+      const [ax, ay] = q[j];
+      const [bx, by] = q[(j + 1) % q.length];
+      // the edges facing up-left catch the light (outward normal for this winding points that way)
+      if ((by - ay) + -(bx - ax) < 0) lit += `M${f1(ax)} ${f1(ay)} L${f1(bx)} ${f1(by)} `;
+    }
+    out.push({ face: path(q), shadow: path(q, 1.1, 1.5), lit: lit.trim() });
+  }
+  return out;
 }
 
 /** Every mark in a zone that has seen `count` monsters destroyed (the worst look from the third on). */

@@ -117,27 +117,55 @@
 }
 /* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */
 .fwear-held {
-  overflow: visible;
+  overflow: hidden;
 }
 .fwear-held .fw-held-soot {
   fill: none;
-  stroke: var(--fw-rim);
-  stroke-opacity: 0.95;
+  stroke: #000;
+  stroke-opacity: 0.7;
   stroke-width: 5px;
 }
 .fwear-held .fw-held-heat {
   fill: none;
   stroke: var(--fw-glow);
-  stroke-opacity: 0.6;
-  stroke-width: 1.4px;
-  stroke-dasharray: 9 4 3 6 14 5;
+  stroke-opacity: 0.4;
+  stroke-width: 1px;
+  stroke-dasharray: 3 9 2 14 5 11;
 }
 .fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.85; }
 .fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.95; stroke-width: 6px; }
-.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.8; }
+.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.55; }
 .fwear-held .fw-held-embers {
   fill: var(--fw-flash);
   opacity: 0.95;
+}
+.fwear .fw-ember {
+  fill: var(--fw-glow);
+  opacity: 0.95;
+}
+/* the third hit's plates: the slab's own face, sooty, lifted, edges catching the light */
+.fwear .fw-plate-sh {
+  fill: #000;
+  opacity: 0.55;
+}
+.fwear .fw-plate-fire {
+  opacity: 0.7;
+}
+.fwear .fw-plate-face {
+  fill: var(--fw-chip);
+  fill-opacity: 0.6;
+}
+.fwear .fw-plate-char {
+  fill: var(--fw-core);
+  fill-opacity: 0.45;
+}
+.fwear .fw-plate-lit {
+  fill: none;
+  stroke: var(--fw-chip-edge);
+  stroke-opacity: 0.7;
+  stroke-width: 0.9px;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
 }
 .fwear .fw-speck {
   fill: var(--fw-speck);
@@ -309,6 +337,7 @@
 .fwear .fw-hit.fresh .fw-blot,
 .fwear .fw-hit.fresh .fw-pit,
 .fwear .fw-hit.fresh .fw-chip,
+.fwear .fw-hit.fresh .fw-plates,
 .fwear .fw-hit.fresh .fw-speck {
   transform-box: view-box;
   transform-origin: var(--hx) var(--hy);
@@ -340,10 +369,24 @@
   to { transform: none; }
 }
 @keyframes fw-cool {
-  0% { opacity: 1; fill: #ffffff; }
-  18% { opacity: 1; fill: var(--fw-flash); }
-  45% { opacity: 1; fill: var(--fw-glow); }
-  100% { opacity: calc(var(--fw-rest) + var(--fw-lift)); fill: var(--fw-glow); }
+  0%, 35% { opacity: 1; }
+  100% { opacity: calc(var(--fw-rest) + var(--fw-lift)); }
+}
+/* (white-hot first: a white copy of the cracks fades off them; opacity only, no colour animation) */
+.fwear .fw-hot {
+  fill: #fff8e8;
+  opacity: 0;
+}
+.fwear .fw-hit.fresh .fw-hot {
+  transform-box: view-box;
+  transform-origin: var(--hx) var(--hy);
+  animation:
+    fw-run 0.6s ease-out 0.4s both,
+    fw-hot 0.9s ease-out 0.4s both;
+}
+@keyframes fw-hot {
+  0%, 20% { opacity: 1; }
+  100% { opacity: 0; }
 }
 @keyframes fw-flash {
   0% { opacity: 1; transform: scale(0.45); }
