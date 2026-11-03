@@ -23,7 +23,7 @@
   transform: rotateX(var(--rx)) rotateY(var(--ry));
   transition: transform 0.55s cubic-bezier(.2, .9, .25, 1.35);
   border-radius: 4px;
-  box-shadow: 0 18px 30px #000000c0, 0 0 0 1px #00000080;
+  box-shadow: 0 22px 40px #000000e0, 0 0 0 1px #ffffff30, 0 0 0 2px #00000090;
 }
 .tilt.held .tilt-in {
   transition: transform 0.06s linear;
@@ -67,5 +67,26 @@
   width: 100%;
 }
 .dk-zoom:has(.tilt) {
-  background: radial-gradient(70% 50% at 50% 45%, #1a2460, #000 75%);
+  background: radial-gradient(80% 55% at 50% 45%, #10142c, #000 80%);
+}
+
+/* a lit edge round the card, brighter on the side the light comes from */
+.tilt-in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px #ffffff40, inset 0 2px 0 #ffffff50;
+}
+.dk-zoom:has(.tilt) .dk-zoom-hint {
+  margin-top: 14px;
+}
+/* the scans' soft outer rim is trimmed: a crisp edge instead */
+.dk-zoom .tilt-in {
+  overflow: hidden;
+}
+.dk-zoom .tilt .dk-zoom-img {
+  transform: scale(1.045);
 }

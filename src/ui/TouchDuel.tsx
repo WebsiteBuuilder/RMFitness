@@ -523,8 +523,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (!isTurn && !asked) return null;
     // your own choice: the sheet that slides up over your bar says it in gold
     if (mine && asked && canAct) return null;
-    // (the colour goes by side: blue at the bottom, red at the top, even when watching)
-    let kind = top ? 'theirs' : 'mine';
+    let kind = 'mine';
     let text: string;
     let dots = false;
     if (asked) {
@@ -538,7 +537,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     } else {
       // your turn, but the duel waits on the other player's answer
       kind += ' wait';
-      text = mine ? 'Your turn' : `${first(p)}'s turn`;
+      text = mine ? `Waiting on ${first(decider)}` : `${first(p)}'s turn`;
+      dots = true;
     }
     return (
       <span class={`ttab ${top ? 'top' : 'bottom'} ${kind}`} key={`${kind}|${text}`}>

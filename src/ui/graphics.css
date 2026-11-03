@@ -86,3 +86,47 @@
     animation: none;
   }
 }
+
+/* ---- Life Points: lit metal numbers ---- */
+.duel.touch .tlp .lp-count {
+  background: linear-gradient(180deg, #ffffff 0%, #e8eeff 42%, #9fb2ff 52%, #dfe7ff 78%, #ffffff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+.duel.touch .tbar.top .tlp .lp-count {
+  background-image: linear-gradient(180deg, #ffffff 0%, #ffe8ec 42%, #ff9fb0 52%, #ffe0e6 78%, #ffffff 100%);
+}
+.duel.touch .tlp {
+  text-shadow: none;
+}
+
+.duel.touch .tstat.up::before,
+.duel.touch .tstat.down::before {
+  font-size: 8px;
+  margin-right: 2px;
+  vertical-align: 1px;
+}
+.duel.touch .tstat.up::before {
+  content: '▲';
+}
+.duel.touch .tstat.down::before {
+  content: '▼';
+}
+.duel.touch .tstat.def.up {
+  color: #e6ffb0;
+}
+
+/* ---- cards on the field: the same clear-coat sheen as in your hand ---- */
+.duel.touch .tz:not(.empty):not(.pick)::after {
+  content: '';
+  position: absolute;
+  inset: 4%;
+  border-radius: 3px;
+  pointer-events: none;
+  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff26 0, transparent 9%);
+}
+.duel.touch .tz.tz-m:has(.fcard.def):not(.pick)::after {
+  inset: 18% 4%;
+}

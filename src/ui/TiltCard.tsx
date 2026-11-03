@@ -9,7 +9,7 @@ const MAX = 26;
 
 export function TiltCard({ children, class: cls = '' }: { children: ComponentChildren; class?: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const press = useRef<{ x: number; y: number; id: number; moved: boolean } | null>(null);
+  const press = useRef<{ x: number; y: number; id: number; moved: boolean; w: number; h: number } | null>(null);
   const moved = useRef(false);
   const aim = (rx: number, ry: number, gx: number, gy: number) => {
     const el = ref.current;
@@ -24,21 +24,21 @@ export function TiltCard({ children, class: cls = '' }: { children: ComponentChi
       ref={ref}
       class={`tilt ${cls}`}
       onPointerDown={(ev) => {
-        press.current = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, moved: false };
+        // measured once per press: reading layout on every move after writing the angle forces a layout each time
+        const r = ref.current?.getBoundingClientRect();
+        press.current = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, moved: false, w: Math.max(1, r?.width ?? 1), h: Math.max(1, r?.height ?? 1) };
         moved.current = false;
         (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
         ref.current?.classList.add('held');
       }}
       onPointerMove={(ev) => {
         const p = press.current;
-        const el = ref.current;
-        if (!p || p.id !== ev.pointerId || !el) return;
+        if (!p || p.id !== ev.pointerId) return;
         const dx = ev.clientX - p.x;
         const dy = ev.clientY - p.y;
         if (Math.hypot(dx, dy) > 8) p.moved = true;
-        const r = el.getBoundingClientRect();
-        const ry = Math.max(-MAX, Math.min(MAX, (dx / Math.max(1, r.width)) * 70));
-        const rx = Math.max(-MAX, Math.min(MAX, (-dy / Math.max(1, r.height)) * 70));
+        const ry = Math.max(-MAX, Math.min(MAX, (dx / p.w) * 70));
+        const rx = Math.max(-MAX, Math.min(MAX, (-dy / p.h) * 70));
         aim(rx, ry, 50 + ry * 2.2, 40 - rx * 2.2);
       }}
       onPointerUp={(ev) => {

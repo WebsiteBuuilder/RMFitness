@@ -302,6 +302,8 @@
   background: linear-gradient(90deg, transparent, #0d2a9ae8 14%, #1640c8f0 50%, #0d2a9ae8 86%, transparent);
   border: 0;
   box-shadow: 0 0 40px #2a62ff80;
+}
+.duel.touch .tbanner:not(.phase) {
   animation-duration: 1.3s;
 }
 .duel.touch .tbanner::before,
@@ -443,7 +445,7 @@ body.art-on .ttab.top {
   transition: opacity 0.35s;
 }
 .duel.touch.turn-opp .thand {
-  opacity: 0.78;
+  opacity: 0.88;
 }
 .duel.touch.wait-them .thand {
   opacity: 0.55;
@@ -456,7 +458,7 @@ body.art-on .ttab.top {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: linear-gradient(180deg, #00000020 0%, #000000a0 60%, #000000c8 100%);
+  background: linear-gradient(180deg, transparent 0%, transparent 40%, #00000070 70%, #000000b0 100%);
   animation: tedge-in 0.3s ease-out both;
 }
 .duel.touch .tsheet.mine-choice .topt {
