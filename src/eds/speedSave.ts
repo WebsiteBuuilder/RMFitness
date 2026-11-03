@@ -45,6 +45,10 @@ export interface SpeedSave {
   mates?: string[];
   /** the mate that stands beside this duelist's field */
   mate?: string;
+  /** the Ace monster (src/ace): its own entrance, grander with each win */
+  ace?: string;
+  /** wins with each card as the Ace, kept per card */
+  aceWins?: Record<string, number>;
 }
 
 export const CHIP_CAP = 30;

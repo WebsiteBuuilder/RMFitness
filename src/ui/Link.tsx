@@ -61,7 +61,7 @@ export interface SeatProfile {
   save: SaveFile | null;
   /** their Speed Duel deck, when they have one */
   /** `play` is the deck as dealt: without cards sealed in the Shadow Realm */
-  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null; rarity?: Record<string, number>; stakes?: Stakes; problems?: string[] };
+  speed?: { deck: SpeedDeck | null; play?: SpeedDeck | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; stakes?: Stakes; problems?: string[] };
 }
 
 /** What a player brings to the table for one of the two games. */
@@ -72,6 +72,8 @@ export interface SeatEntry {
   skill?: string | null;
   /** Speed Duel card rarities (card leveling) */
   rarity?: Record<string, number>;
+  /** Speed Duel Ace (src/ace): its entrance on the other phone */
+  ace?: { name: string; lv: number };
   /** Speed Duel bets and rescues (a profile's seat) */
   stakes?: Stakes;
   problems: string[];
@@ -174,7 +176,7 @@ export function Lobby({
   const sameGame = (seats[0].mode ?? 'eds') === (seats[1].mode ?? 'eds');
   const iAmReady = seats[mySeat].ready && (seats[mySeat].mode ?? 'eds') === roomMode;
 
-  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null, ...(roomMode === 'speed' && e.rarity ? { rarity: e.rarity } : {}), ...(roomMode === 'speed' && e.stakes ? { stakes: e.stakes } : {}) });
+  const join = (player: Pid, e: SeatEntry) => session.send({ type: 'JOIN', player, name: e.name, deck: e.deck, fusion: e.fusion, mode: roomMode, skill: e.skill ?? null, ...(roomMode === 'speed' && e.rarity ? { rarity: e.rarity } : {}), ...(roomMode === 'speed' && e.ace ? { ace: e.ace } : {}), ...(roomMode === 'speed' && e.stakes ? { stakes: e.stakes } : {}) });
   /** A rematch carries last duel's bet when this profile can still cover it. */
   const carried = (seat: Pid, e: SeatEntry): SeatEntry => {
     const prev = session.prevSeats?.[seat].stakes?.ante;
@@ -197,7 +199,7 @@ export function Lobby({
   const seatFor = (o: SeatProfile): SeatEntry | null => {
     if (roomMode === 'speed') {
       const d = o.speed?.deck;
-      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, rarity: o.speed?.rarity, stakes: o.speed?.stakes, problems: [...speedDeckProblems(d), ...(o.speed?.problems ?? [])] } : null;
+      return d ? { name: o.profile.alias, deck: (o.speed?.play ?? d).main, fusion: d.extra, skill: d.skill, rarity: o.speed?.rarity, ace: o.speed?.ace, stakes: o.speed?.stakes, problems: [...speedDeckProblems(d), ...(o.speed?.problems ?? [])] } : null;
     }
     return o.save ? { name: o.profile.alias, deck: o.save.main, fusion: o.save.fusion, problems: deckProblems(o.save) } : null;
   };

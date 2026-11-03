@@ -14,6 +14,8 @@ import type { Director, Ui } from "./runtime";
 import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
+import { showCallout } from "./calloutDom";
+import { stopShout } from "./callouts";
 import "./art.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
@@ -79,7 +81,9 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     flash: (c, s) =>
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
-    clear: () => layer.replaceChildren(),
+    callout: (o) => void showCallout(layer, o, speed()),
+    // (a shout still on screen rides through: the blow is the next chain after the declaration)
+    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout())),
     replay: (on) => {
       // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
       const host = layer.parentElement;
@@ -120,6 +124,13 @@ const idle = (f: () => void) => {
 };
 
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
+  // (a shout still being said stops when the duel screen goes)
+  useEffect(() => () => stopShout(), []);
+  // (a new duel or a rematch on the same screen: each Ace's full entrance plays again)
+  const fresh = state.turn <= 1;
+  useEffect(() => {
+    if (fresh) dir.current?.resetAces();
+  }, [fresh]);
   const enabled = state.rules?.mode === "speed";
   const cine = useCinematics();
   const speed = useAnimSpeed();

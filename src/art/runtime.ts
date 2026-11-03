@@ -18,6 +18,9 @@ import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClas
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
 import { fullArtCard, goldArt, millenniumEyeCanvas } from './fullArt';
+import { calloutFor, calloutMode, CALLOUT_SHOUT, speakShout, voicePitch } from './callouts';
+import { aceFor, bondTitle } from '../ace/ace';
+import { soundEnabled } from '../ui/sound';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
@@ -26,7 +29,12 @@ export interface Ui {
   flash(color: number, strength: number): void;
   caption(text: string, dur: number, cls?: string): void;
   /** removes every banner, caption and number still showing (a new chain, or leaving) */
-  clear?(): void;
+  clear?(keepShout?: boolean): void;
+  /**
+   * An attack callout: the shout slams across the screen, and the attacker's Mate (when one
+   * stands by that seat) leans in yelling it too. `ace`: the attacker is its duelist's Ace.
+   */
+  callout?(o: { text: string; card: string; seat: Pid; side: 'near' | 'far'; color: number; light: number; dur: number; ace?: { lv: number; title: string } | null }): void;
   /** a slow-motion replay starts (true) or ends (false): its letterbox and tag */
   replay?(on: boolean): void;
 }
@@ -280,6 +288,12 @@ export class Director {
   private fastFade = false;
   /** Animation speed setting: 1, 1.5 or 2 */
   timeScale = 1;
+  /** Aces whose full entrance has played on this stage (owner:name) */
+  private acesShown = new Set<string>();
+  /** A new duel (or a fresh preview): each Ace's full entrance plays again. */
+  resetAces() {
+    this.acesShown.clear();
+  }
   /** a chain reached its impact or landing */
   onCommit: ((batch: number) => void) | null = null;
   /** a chain is over (played, skipped, cleared or failed) */
@@ -753,7 +767,8 @@ export class Director {
     this.idleFor = 0;
     this.fastFade = false;
     // a new chain: whatever the last one left on screen (captions, banners) goes
-    if (item.batch !== this.lastBatch) this.ui.clear?.();
+    // (an attack callout rides on into the blow: the damage step is a chain of its own)
+    if (item.batch !== this.lastBatch) this.ui.clear?.(true);
     this.lastBatch = item.batch;
     this.curBatch = item.batch;
     const placeholder = new Timeline(99, this.stage);
@@ -1047,6 +1062,112 @@ export class Director {
       for (const [c, n] of [[0xffd56a, 26], [0xfff6d8, 12], [0xc8961e, 10]] as const) st.particles.emit({ x: P.x, y: P.y, z: P.z + 0.2, burst: 4.2 * U, life: 0.8, size: 0.1 * U, color: c, drag: 1.8 }, Math.round(n * q));
       chime(0.95);
     });
+  }
+
+  /**
+   * The Ace's entrance (Ace bond), on top of its summon (S: the summon's start; E: its length before
+   * the landing; showAt: the monster's reveal). It grows with the bond: 1 a crest of gold light behind
+   * it and its title; 2 pillars and rising embers; 3 time stops as it arrives and shockwaves roll out;
+   * 4 a crown of stars orbits it and the field shakes; 5 a sky-wide aurora and a golden title.
+   */
+  private aceEntrance(tl: Timeline, S: number, E: number, showAt: number, o: { ground: number; restY: number; size: number; col: Colors; lv: number; fig: Figure | null }) {
+    const st = this.stage;
+    const U = this.U;
+    const q = this.q;
+    const { ground, restY, size, col, lv } = o;
+    const P = st.particles;
+    const GOLD_A = 0xffd56a;
+    const t0 = S + showAt;
+    const t1 = S + E;
+    const emit = (rate: number, dt: number, f: () => void) => {
+      const n = Math.floor(rate * dt + Math.random());
+      for (let i = 0; i < n; i++) f();
+    };
+    // 1: the crest, a gold star ring standing behind the monster, and the Ace's title
+    const crest = tl.own(new Ring(2.9 * U, GOLD_A, 8080, { inner: 0.8, outer: 0.93, star: 8 }));
+    crest.mesh.renderOrder = -4;
+    crest.mesh.position.set(0, restY + size * 0.08, -0.7);
+    crest.spinSpeed = 0.5;
+    crest.u.uOpacity.value = 0;
+    tl.span(t0 - 0.15, t0 + 0.35, (k) => {
+      crest.u.uOpacity.value = 0.85 * easeOut(k);
+      crest.mesh.scale.setScalar(lerp(0.4, 1, backOut(k)));
+    });
+    tl.span(t1 - 0.35, t1, (k) => (crest.u.uOpacity.value = 0.85 * (1 - k)));
+    tl.at(t0 + 0.05, () => {
+      chime(0.9);
+      this.ui.caption(lv >= 5 ? '★ LEGENDARY ACE ★' : `★ ACE · ${bondTitle(lv).toUpperCase()} ★`, Math.max(0.9, t1 - t0 - 0.2), `art-ace lv${lv}`);
+    });
+    // 2: pillars in the Ace's colors and gold, embers rising all through it
+    if (lv >= 2) {
+      this.shafts(tl, { x: 0, y: ground, z: -0.3 }, 5.4 * U, col.main, t0 - 0.1, t1, 4, 0.75);
+      this.shafts(tl, { x: 0, y: ground, z: -0.5 }, 6 * U, GOLD_A, t0, t1, 2, 0.5);
+      tl.span(t0 - 0.1, t1 - 0.1, (_k, dt) =>
+        emit(90 * q, dt, () => P.emit({ x: (Math.random() - 0.5) * size * 1.4, y: ground + Math.random() * 0.4 * U, z: 0.3, vy: (1.2 + Math.random() * 1.8) * U, life: 1, size: (0.04 + Math.random() * 0.06) * U, color: Math.random() < 0.5 ? GOLD_A : col.light, drag: 0.4 })),
+      );
+    }
+    // 3: time stops as it arrives, two shockwaves roll out, the field shakes
+    if (lv >= 3) {
+      tl.at(t0, () => {
+        st.hitStop(0.16);
+        st.pulse('flash', 0.3);
+        st.shake(0.45);
+        boom(0.7);
+      });
+      [0, 0.14].forEach((d, i) => {
+        const g = tl.own(new Glow(6 * U, 6 * U, 'shock', i ? col.main : GOLD_A, i ? col.light : 0xfff6d8));
+        g.mesh.position.set(0, restY, 0.3);
+        g.u.uOpacity.value = 0;
+        tl.span(t0 + d, t0 + d + 0.7, (k) => {
+          g.u.uK.value = easeOut(k);
+          g.u.uOpacity.value = 1 - k;
+        });
+      });
+    }
+    // 4: a crown of stars orbits it, the whole sky turns gold
+    if (lv >= 4) {
+      tl.at(t0 - 0.2, () => this.stage.backdrop.u.uColor.value.set(0.2, 0.13, 0.025));
+      tl.at(t0, () => (this.flash(0xffe08a, 0.22), st.pulse('flash', 0.25)));
+      const n = 8;
+      const stars = Array.from({ length: n }, (_, i) => {
+        const g = tl.own(new Glow(0.55 * U, 0.55 * U, 'star', i % 2 ? GOLD_A : col.light, 0xffffff));
+        g.u.uOpacity.value = 0;
+        return g;
+      });
+      tl.span(t0, t1, (k) => {
+        const rr = lerp(0.4, 1, easeOut(clamp01(k * 3))) * size * 0.72;
+        stars.forEach((g, i) => {
+          const a = (i / n) * Math.PI * 2 + k * Math.PI * 2.2;
+          g.mesh.position.set(Math.cos(a) * rr, restY + size * 0.42 + Math.sin(a) * rr * 0.28, Math.sin(a) * 0.6 + 0.4);
+          g.u.uOpacity.value = clamp01(k * 4) * (1 - clamp01((k - 0.85) / 0.15)) * (0.75 + 0.25 * Math.sin(k * 30 + i));
+        });
+      });
+      tl.at(t0 + 0.35, () => (st.pulse('chroma', 0.5), st.shake(0.35), boom(0.5)));
+    }
+    // 5: a sky-wide aurora behind everything, and a golden burst
+    if (lv >= 5) {
+      const au = tl.own(new Glow(11 * U, 7 * U, 'flare', col.main, GOLD_A));
+      au.mesh.renderOrder = -6;
+      au.mesh.position.set(0, restY + size * 0.3, -1.4);
+      au.u.uOpacity.value = 0;
+      tl.span(t0 - 0.2, t1, (k) => {
+        au.u.uOpacity.value = 0.55 * clamp01(k * 3) * (1 - clamp01((k - 0.8) / 0.2));
+        au.mesh.scale.set(lerp(0.6, 1.1, easeOut(k)), lerp(0.4, 1, easeOut(k)), 1);
+      });
+      tl.at(t0 + 0.1, () => {
+        for (const [cc, m] of [[GOLD_A, 40], [0xffffff, 18], [col.light, 22]] as const) P.emit({ x: 0, y: restY, z: 0.4, burst: 6 * U, life: 1.1, size: 0.12 * U, color: cc, drag: 1.4 }, Math.round(m * q));
+        this.flash(0xfff2c0, 0.35);
+      });
+    }
+    // the Ace's rim glows gold while it stands there
+    if (o.fig) {
+      const fig = o.fig;
+      tl.span(t0, t1, (k) => {
+        const g = 0.5 + 0.5 * Math.sin(k * 9);
+        rimColor(0xffd56a, fig.u.uRim.value as Vector3);
+        fig.u.uRimAmt.value = 1.1 + 0.18 * lv * g;
+      });
+    }
   }
 
   /**
@@ -1452,8 +1573,16 @@ export class Director {
     // card shatters, and the monster rises in a pillar of gold over a ring of hieroglyphs
     const mill = fin >= FIN.MI;
     const finPal = finishPalette(fin);
-    const C = (big || over) && art ? 0.62 : 0;
-    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0) + (mill ? 0.35 : 0);
+    // the duelist's Ace (Ace bond): always the cut-in, and an entrance of its own that grows with its bond
+    // (the full entrance plays once a duel; summoned again, it keeps its crest and title without the extra time)
+    const aceSeen = c.faceUp !== false ? aceFor(c.owner ?? c.controller, c.name) : null;
+    const aceKey = aceSeen ? `${c.owner ?? c.controller}:${c.name}` : '';
+    const aceFull = !!aceSeen && !this.acesShown.has(aceKey);
+    if (aceFull) this.acesShown.add(aceKey);
+    const ace = aceSeen;
+    const aceLv = ace?.lv ?? 0;
+    const C = (big || over || aceFull) && art ? 0.62 : 0;
+    const E = [1.35, 1.55, 1.85, 2.15][tier] + (fusionish ? 0.3 : 0) + (over ? 0.3 : 0) + (mill ? 0.35 : 0) + (aceFull ? ACE_EXTRA[aceLv - 1] : 0);
     const LAND = 0.42;
     // the summon starts under the cut-in's exit (no dead air between them)
     const S = C ? C - 0.3 : 0;
@@ -1476,7 +1605,7 @@ export class Director {
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
-      const ci = tl.own(new CutIn(mill ? goldArt(art.art) : art.art, c.name, (over ? [mill ? '◈ MILLENNIUM ◈' : '✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')]).filter(Boolean).join('  ·  '), mill ? 0x2a1a00 : over ? 0xff4fd0 : col.main, mill ? 0xffd56a : over ? 0x4fe0ff : GOLD));
+      const ci = tl.own(new CutIn(mill ? goldArt(art.art) : art.art, c.name, [...(ace ? [`★ ACE · ${bondTitle(aceLv)}`] : []), ...(over ? [mill ? '◈ MILLENNIUM ◈' : '✦ OVERFRAME ✦', how] : [how, sub.replace(/★+\s*/, '')])].filter(Boolean).join('  ·  '), mill ? 0x2a1a00 : over ? 0xff4fd0 : col.main, mill ? 0xffd56a : over ? 0x4fe0ff : GOLD));
       tl.span(0, C, (k) => {
         ci.u.uK.value = k;
         ci.u.uAspect.value = st.camera.aspect;
@@ -1802,6 +1931,7 @@ export class Director {
         }),
       );
     }
+    if (ace) this.aceEntrance(tl, S, E, showAt, { ground, restY, size, col, lv: aceFull ? aceLv : 1, fig });
     // name plate (with the card's finish on it)
     at(showAt + 0.2, () => this.ui.banner({ title: c.name, sub: [how, sub].filter(Boolean).join(' · '), color: col.main, big: tier >= 2 || over, dur: E - showAt - 0.15, pos: 'bottom', finish: finishId(fin) || undefined }));
 
@@ -3110,7 +3240,23 @@ export class Director {
     sig?.windup?.({ d: this, st, tl, U, at: att, M, col, t0: 0.3, t1: D });
     const mill = finishOf(a) >= FIN.MI;
     if (mill) this.millenniumWindup(tl, att, M, D);
-    tl.at(0.3, () => this.ui.banner({ title: `${att.prof.attackName}!`, sub: mill ? `◈ ${a.name} ◈` : a.name, color: mill ? 0xffd56a : col.main, big: true, dur: 1.2, pos: 'bottom', finish: mill ? 'MI' : undefined }));
+    // a signature monster (or the duelist's Ace) shouts its attack's name across the screen
+    const ace = a.faceUp !== false ? aceFor(a.owner ?? a.controller, a.name) : null;
+    const mode = calloutMode();
+    const co = mode !== 'off' && this.ui.callout && a.name && a.faceUp !== false ? calloutFor(a.name, att.prof.attackName, !!ace) : null;
+    if (co) {
+      tl.at(0.18, () => {
+        this.ui.callout!({ text: co.text, card: a.name, seat: a.controller, side: this.side(a.controller), color: mill ? 0xffd56a : col.main, light: mill ? 0xfff6d8 : col.light, dur: 1.6, ace: ace ? { lv: ace.lv, title: bondTitle(ace.lv) } : null });
+        if (mode === 'voice' && soundEnabled()) speakShout(co.text, voicePitch(card(a.name)?.level ?? 4, a.name), Math.min(1.7, 1.08 * Math.max(1, this.timeScale)));
+        boom(0.32);
+        whoosh(0.3, 700, 3600, 0.22);
+        try {
+          window.dispatchEvent(new CustomEvent(CALLOUT_SHOUT, { detail: { seat: a.controller, text: co.text } }));
+        } catch {
+          /* no window */
+        }
+      });
+    } else tl.at(0.3, () => this.ui.banner({ title: `${att.prof.attackName}!`, sub: mill ? `◈ ${a.name} ◈` : a.name, color: mill ? 0xffd56a : col.main, big: true, dur: 1.2, pos: 'bottom', finish: mill ? 'MI' : undefined }));
     return tl;
   }
 
@@ -4001,6 +4147,8 @@ const REST: Shot = { pos: new Vector3(0, 0, 10), look: new Vector3(0, 0, 0) };
 const SAFE_TOP = 0.11;
 const SAFE_BOTTOM = 0.2;
 const GOLD = 0xffc94a;
+/** How much longer an Ace's summon runs, by bond level (s). */
+const ACE_EXTRA = [0.25, 0.35, 0.5, 0.6, 0.75];
 const SUMMON_LABEL: Record<SummonHow, string> = { normal: '', tribute: 'Tribute Summon', special: 'Special Summon', fusion: 'Fusion Summon', ritual: 'Ritual Summon', xyz: 'Xyz Summon', synchro: 'Synchro Summon', link: 'Link Summon' };
 
 /** Big monsters get the cut-in: level 7+, Fusion/Ritual, or an iconic signature at tier 2+. */

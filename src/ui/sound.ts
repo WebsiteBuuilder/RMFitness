@@ -76,11 +76,8 @@ export function unlockAudio() {
 
 // Every tap is a chance to (re)start audio; so is coming back to the tab.
 if (typeof window !== 'undefined') {
-  const onGesture = () => {
-    if (!ctx) return;
-    wake();
-    prime();
-  };
+  // (it also makes the context on the first tap anywhere, so someone who only watches gets the music)
+  const onGesture = () => unlockAudio();
   window.addEventListener('pointerdown', onGesture, { capture: true, passive: true });
   window.addEventListener('touchend', onGesture, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => {
@@ -190,4 +187,45 @@ export function playMate(voice: number, mood: 'up' | 'down' | 'flat' = 'up') {
   const b = mood === 'down' ? voice * 0.7 : mood === 'up' ? voice * 1.25 : voice;
   tone(a, 0.07, 'triangle', 0.07);
   tone(b, 0.1, 'triangle', 0.07, 0.07);
+}
+
+/** The shared audio context whatever the Sound setting (the duel music has its own Music setting). */
+export function rawAudioContext(): AudioContext | null {
+  return ctx;
+}
+
+// The Music setting (the duel soundtrack). On by default, unless this phone had Sound turned Off
+// before Music existed: that player asked for quiet, so the soundtrack starts Off for them too.
+const MUSIC_KEY = 'eds.music';
+const MUSIC_EVT = 'eds-music';
+let musicOff = (() => {
+  try {
+    const v = localStorage.getItem(MUSIC_KEY);
+    return v ? v === 'off' : localStorage.getItem(SOUND_KEY) === 'off';
+  } catch {
+    return false;
+  }
+})();
+
+export const musicEnabled = () => !musicOff;
+
+export function setMusicEnabled(on: boolean) {
+  musicOff = !on;
+  try {
+    localStorage.setItem(MUSIC_KEY, on ? 'on' : 'off');
+  } catch {
+    /* storage blocked */
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(MUSIC_EVT));
+}
+
+/** The Music setting as a hook (re-renders when it changes). */
+export function useMusicEnabled(): boolean {
+  const [on, setOn] = useState(musicEnabled);
+  useEffect(() => {
+    const fn = () => setOn(musicEnabled());
+    window.addEventListener(MUSIC_EVT, fn);
+    return () => window.removeEventListener(MUSIC_EVT, fn);
+  }, []);
+  return on;
 }
