@@ -88,7 +88,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
       if (!el && on) {
         el = document.createElement("div");
         el.className = "art-replay";
-        el.innerHTML = '<i class="bar top"></i><i class="bar bottom"></i><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b>';
+        el.innerHTML = '<i class="bar top"></i><i class="bar bottom"></i><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i>';
         host.appendChild(el);
       }
       el?.classList.toggle("on", on);

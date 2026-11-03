@@ -1049,7 +1049,9 @@
 
 /* The finishing blow's slow-motion replay: letterbox bars, a soft film vignette and a REPLAY tag. */
 .art-replay {
-  position: absolute;
+  /* over the Life Points bars (z 61) and the skip pill: a real letterbox; taps still skip */
+  position: fixed;
+  z-index: 63;
   inset: 0;
   pointer-events: none;
   opacity: 0;
@@ -1097,6 +1099,15 @@
   font-size: 15px;
   font-style: italic;
   letter-spacing: 0.08em;
+}
+.art-replay .skiphint {
+  position: absolute;
+  right: 14px;
+  bottom: calc(max(46px, 9vh) / 2 - 8px + env(safe-area-inset-bottom) / 2);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .art-replay .tag span {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
