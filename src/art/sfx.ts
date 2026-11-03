@@ -116,3 +116,55 @@ export function drone(dur = 5) {
   lfo.stop(t + dur);
   whoosh(dur * 0.8, 120, 900, 0.1, 0.4);
 }
+
+/**
+ * The Duel Disk's projector (holographic summon): a click, then a low electric hum with a
+ * whine climbing over it while the hologram forms. `power` 0..1 (Normal .. Fusion/Ritual/Ace).
+ */
+export function holoHum(dur = 0.8, power = 0.5, when = 0) {
+  const ctx = audioContext();
+  if (!ctx) return;
+  const t = ctx.currentTime + when;
+  const out = ctx.createGain();
+  const peak = 0.07 + power * 0.06;
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(peak, t + 0.07);
+  out.gain.setValueAtTime(peak, t + dur * 0.75);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  // the hum flutters like a projector's lamp
+  const trem = ctx.createGain();
+  trem.gain.value = 0.75;
+  const lfo = ctx.createOscillator();
+  const lfoG = ctx.createGain();
+  lfo.frequency.value = 11;
+  lfoG.gain.value = 0.25;
+  lfo.connect(lfoG).connect(trem.gain);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(380, t);
+  lp.frequency.exponentialRampToValueAtTime(900 + power * 700, t + dur);
+  trem.connect(lp).connect(out).connect(ctx.destination);
+  for (const [f, type] of [[98, 'sawtooth'], [98.7, 'sawtooth'], [196, 'square']] as [number, OscillatorType][]) {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * (1.06 + power * 0.08), t + dur);
+    o.connect(trem);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+  lfo.start(t);
+  lfo.stop(t + dur + 0.05);
+  // the click of the projector switching on, and the whine of it powering up
+  osc('square', 2300, 1800, 0.03, 0.05, when);
+  osc('sine', 520, 1300 + power * 900, dur * 0.9, 0.025 + power * 0.02, when + 0.05);
+  whoosh(dur * 0.8, 1800, 5200, 0.04 + power * 0.03, when);
+}
+
+/** The hologram locks solid: a bright shimmer and a soft thump. */
+export function holoLock(power = 0.5, when = 0) {
+  osc('triangle', 1320, 1980, 0.22, 0.05 + power * 0.03, when);
+  osc('triangle', 1980, 2640, 0.28, 0.03 + power * 0.02, when + 0.04);
+  osc('sine', 110 + power * 30, 46, 0.3 + power * 0.2, 0.18 + power * 0.14, when);
+  whoosh(0.18, 5200, 1400, 0.05, when);
+}
