@@ -46,10 +46,11 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
   const edge = useRef<HTMLDivElement>(null);
   const field = useRef<LivingField | null>(null);
   /** each duelist's danger level last time (by seat, so a hotseat hand-over never replays the crack) */
-  const lastLv = useRef<number[]>([0, 0]);
+  const lastLv = useRef<number[]>(lv); // (joining mid-duel, a rejoin or a replay seek is not news: no crack)
   const burstUntil = useRef(0);
   const lastLp = useRef(myLp);
   const lastTurn = useRef(state.turnPlayer);
+  const lastMe = useRef(me);
 
   // one canvas for the whole app (a rematch or the next duel reuses it)
   useEffect(() => {
@@ -74,9 +75,9 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
   useEffect(() => {
     const f = field.current;
     if (!f) return;
-    // each sweep starts from its own Field Zone card
-    const zones = document.querySelectorAll('.duel.touch .tz.tz-f');
-    if (zones.length >= 2) f.setOrigins(zones[0].getBoundingClientRect(), zones[zones.length - 1].getBoundingClientRect());
+    // a hotseat hand-over flips the board: the halves trade places at once (no new sweep)
+    if (lastMe.current !== me) f.swapSides();
+    lastMe.current = me;
     f.setFields(oppT, mineT);
   }, [mineT, oppT, me]);
 
@@ -183,6 +184,16 @@ function crackPaths(seed: number, level: number): Crack[] {
   return out;
 }
 
+/** The impact points (where trunks start on the duelist's edge). */
+function impactsOf(paths: Crack[]): [number, number][] {
+  const seen = new Map<string, [number, number]>();
+  for (const c of paths) {
+    const m = /^M([\d.]+) 100(\.0)?\b/.exec(c.d);
+    if (m && c.w === 1) seen.set(m[1], [Number(m[1]), 100]);
+  }
+  return [...seen.values()];
+}
+
 /** Red cracks over one duelist's half of the mat (level 0 draws nothing). */
 export function FieldCracks({ level, side }: { level: number; side: 'me' | 'opp' }) {
   const paths = useMemo(() => (level ? crackPaths(side === 'me' ? 7 : 19, level) : []), [side, level]);
@@ -196,14 +207,30 @@ export function FieldCracks({ level, side }: { level: number; side: 'me' | 'opp'
       </g>
       <g class="tcracks-glow">
         {paths.map((c, i) => (
-          <path key={i} d={c.d} style={{ strokeWidth: `${(5 * c.w).toFixed(2)}px` }} />
+          <path key={i} d={c.d} style={{ strokeWidth: `${(8 * c.w).toFixed(2)}px` }} />
         ))}
       </g>
       <g class="tcracks-core">
         {paths.map((c, i) => (
-          <path key={i} d={c.d} style={{ strokeWidth: `${(1.6 * c.w + 0.3).toFixed(2)}px` }} />
+          <path key={i} d={c.d} style={{ strokeWidth: `${(2.2 * c.w + 0.4).toFixed(2)}px` }} />
         ))}
       </g>
+      <g class="tcracks-hot">
+        {paths.map((c, i) => (
+          <path key={i} d={c.d} style={{ strokeWidth: `${(0.9 * c.w).toFixed(2)}px` }} />
+        ))}
+      </g>
+      {/* a starburst where the ground took the blow */}
+      <defs>
+        <radialGradient id={`tburst-${side}`}>
+          <stop offset="0" stop-color="#fff2e0" stop-opacity="1" />
+          <stop offset="0.35" stop-color="#ff5a2a" stop-opacity="0.75" />
+          <stop offset="1" stop-color="#ff2a1a" stop-opacity="0" />
+        </radialGradient>
+      </defs>
+      {impactsOf(paths).map(([x, y], i) => (
+        <ellipse key={`b${i}`} class="tcracks-burst" cx={x} cy={y} rx={10} ry={8} fill={`url(#tburst-${side})`} />
+      ))}
     </svg>
   );
 }

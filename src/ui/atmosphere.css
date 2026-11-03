@@ -153,6 +153,14 @@ body.danger-opp .duel.touch .tbar.top .tlp {
 .tcracks-core path {
   stroke: #ff3b2f;
 }
+/* a white-hot center down each crack */
+.tcracks-hot path {
+  stroke: #fff2e0;
+  opacity: 0.85;
+}
+.tcracks-burst {
+  opacity: 0.9;
+}
 .tcracks.lv-2 .tcracks-core path {
   stroke: #ff6a3a;
 }

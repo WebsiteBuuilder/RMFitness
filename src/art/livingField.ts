@@ -60,22 +60,24 @@ vec3 land(vec2 g, float t, float ter){
     // VOLCANO: a black-red sky, a lava glow along your edge, glowing cracks in the rock, embers rising
     vec3 c = mix(vec3(0.16, 0.03, 0.02), vec3(0.04, 0.01, 0.01), sstep(0.3, 3.8, y));
     float rim = sstep(1.5, 0.1, y + 0.35 * fbm(vec2(g.x * 1.4, t * 0.12)));
-    float crack = 1.0 - sstep(0.0, 0.07, vedge(g * 2.0 + vec2(0.0, -t * 0.05)));
+    // pools of lava glowing through the black rock, slowly churning (no branching lines: those are the danger cracks)
+    float pool = sstep(0.56, 0.68, fbm(g * vec2(1.3, 2.2) + vec2(t * 0.04, -t * 0.03))) * sstep(2.8, 0.4, y);
+    float churn = 0.75 + 0.25 * sin(t * 1.1 + fbm(g * 3.0) * 6.0);
     c += vec3(1.0, 0.30, 0.04) * rim * (0.75 + 0.25 * sin(t * 1.3 + g.x * 2.0));
-    c += vec3(1.0, 0.42, 0.08) * crack * sstep(2.6, 0.6, y) * 0.75;
+    c += mix(vec3(0.9, 0.18, 0.02), vec3(1.0, 0.62, 0.15), churn) * pool * 0.85;
     float emb = dots(vec2(g.x * 7.0 + sin(y * 2.0 + t) * 0.3, y * 6.0 - t * 2.6), 0.10, 0.17) * sstep(4.2, 0.4, y);
     return c + vec3(1.0, 0.65, 0.25) * emb * 1.2;
   } else if (ter < 2.5) {
     // OCEAN: a deep sea with rows of waves rolling in toward you, foam on every crest, glints
-    vec3 c = mix(vec3(0.03, 0.16, 0.36), vec3(0.01, 0.05, 0.16), sstep(0.0, 4.2, y));
+    vec3 c = mix(vec3(0.04, 0.31, 0.42), vec3(0.03, 0.17, 0.27), sstep(0.0, 4.2, y));
     for (int i = 5; i >= 0; i--) {
       float fi = float(i);
       float base = 0.25 + fi * 0.55;
-      float wy = base + 0.09 * sin(g.x * (2.2 + fi * 0.35) + t * (1.4 - fi * 0.12) + fi * 1.7) + 0.035 * sin(g.x * 7.0 - t * 2.1 + fi * 2.3);
+      float wy = base + 0.11 * sin(g.x * (2.2 + fi * 0.35) + t * (2.0 - fi * 0.15) + fi * 1.7) + 0.04 * sin(g.x * 7.0 - t * 2.8 + fi * 2.3) - 0.06 * sin(t * 0.9 + fi);
       float k = 1.0 - fi * 0.13;
-      c = mix(c, vec3(0.05, 0.28, 0.62) * k, sstep(wy + 0.02, wy - 0.06, y));
-      float foam = exp(-pow((y - wy) * 24.0, 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
-      c += vec3(0.75, 0.92, 1.0) * foam * 0.7 * k;
+      c = mix(c, mix(vec3(0.03, 0.22, 0.34), vec3(0.08, 0.50, 0.62), sstep(wy - 0.45, wy, y)) * k, sstep(wy + 0.02, wy - 0.06, y));
+      float foam = exp(-pow((y - wy) * 18.0, 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
+      c += vec3(0.85, 0.97, 1.0) * foam * 0.95 * k;
     }
     float glint = dots(g * vec2(9.0, 12.0) + vec2(t * 0.4, 0.0), 0.05, 0.12) * (0.5 + 0.5 * sin(t * 4.0 + g.x * 20.0));
     return c + vec3(0.8, 0.95, 1.0) * glint * sstep(3.6, 0.3, y);
@@ -115,14 +117,14 @@ vec3 land(vec2 g, float t, float ter){
   } else if (ter < 6.5) {
     // SHADOW (Yami and the dark fields): grey-violet fog rolling over the board, eyes blinking in it
     float fog = fbm(g * 1.3 + vec2(t * 0.12, -t * 0.05)) * fbm(g * 0.7 - vec2(t * 0.07, 0.0));
-    vec3 c = vec3(0.05, 0.04, 0.08) + vec3(0.30, 0.26, 0.40) * fog * 1.4;
+    vec3 c = vec3(0.07, 0.04, 0.12) + vec3(0.42, 0.26, 0.62) * fog * 1.6 + vec3(0.16, 0.08, 0.26) * sstep(0.35, 0.7, fbm(g * 0.6 + vec2(-t * 0.05, t * 0.03)));
     vec2 ec = g * vec2(1.4, 1.8) + vec2(0.0, t * 0.02);
     vec2 cell = floor(ec);
     vec2 f = fract(ec) - vec2(0.5);
     float h = hash12(cell + 3.0);
     float open = sstep(-0.2, 0.25, sin(t * 0.9 + h * 40.0));
     float sq = 2.2 - open * 1.2;
-    float eye = (sstep(0.07, 0.03, length((f - vec2(0.11, 0.0)) * vec2(1.0, sq))) + sstep(0.07, 0.03, length((f + vec2(0.11, 0.0)) * vec2(1.0, sq)))) * step(0.82, h) * open;
+    float eye = (sstep(0.07, 0.03, length((f - vec2(0.11, 0.0)) * vec2(1.0, sq))) + sstep(0.07, 0.03, length((f + vec2(0.11, 0.0)) * vec2(1.0, sq)))) * step(0.7, h) * open;
     return c + vec3(1.0, 0.25, 0.55) * eye * 1.2;
   } else if (ter < 7.5) {
     // ARCANE: magenta magic circles turning, runes running around their bands, sparks
@@ -192,7 +194,7 @@ void main(){
   vec2 p = s * uAspect;               // ...in square units (the short side is 1)
   float H = uAspect.y;
   // whose ground each pixel is: the opponent's half on top, yours below, a soft seam
-  float top = sstep(-0.12, 0.12, s.y);
+  float top = sstep(-0.2, 0.2, s.y);
   float splitA = mix(1.0, top, uOnB);
   float splitB = mix(1.0, 1.0 - top, uOnA);
   // the landscape sweeps out from its Field Zone as it lands (and draws back as it leaves)
@@ -204,31 +206,32 @@ void main(){
   float mB = sstep(RB, RB - 0.45, dB) * splitB;
   // the field's own night: deep navy, a little lighter toward the middle
   vec3 c = mix(vec3(0.03, 0.04, 0.10), vec3(0.08, 0.11, 0.26), exp(-dot(s, s) * 1.2));
-  if (uAmtA > 0.0) {
+  // (each landscape is only worked out where it shows: a hidden half costs nothing)
+  float fA = exp(-pow((dA - RA + 0.2) * 5.0, 2.0)) * (1.0 - uAmtA) * splitA * step(0.0001, uAmtA);
+  float fB = exp(-pow((dB - RB + 0.2) * 5.0, 2.0)) * (1.0 - uAmtB) * splitB * step(0.0001, uAmtB);
+  if (mA > 0.003 || fA > 0.003) {
     vec3 l = land(vec2(-p.x, H - p.y - 0.55) * 0.95, uT, uA);
-    c = mix(c, l, mA);
-    // the sweep's bright front
-    c += (l * 1.4 + vec3(0.25)) * exp(-pow((dA - RA + 0.2) * 5.0, 2.0)) * (1.0 - uAmtA) * splitA;
+    // ...behind the sweep's bright front
+    c = mix(c, l, mA) + (l * 1.4 + vec3(0.25)) * fA;
   }
-  if (uAmtB > 0.0) {
+  if (mB > 0.003 || fB > 0.003) {
     vec3 l = land(vec2(p.x, p.y + H - 0.95) * 0.95, uT, uB);
-    c = mix(c, l, mB);
-    c += (l * 1.4 + vec3(0.25)) * exp(-pow((dB - RB + 0.2) * 5.0, 2.0)) * (1.0 - uAmtB) * splitB;
+    c = mix(c, l, mB) + (l * 1.4 + vec3(0.25)) * fB;
   }
   // Danger: red cracks over a duelist's ground, flaring with the heartbeat
   if (uDanger + uDangerOpp > 0.002) {
     float mine = uDanger * (1.0 - top);
-    float theirs = uDangerOpp * top * 0.45;
+    float theirs = uDangerOpp * top * 0.25;
     float d = mine + theirs;
-    if (d > 0.002) {
+    // the cracks reach out from the duelist's own edge, further the lower they are
+    float reach = d > 0.002 ? sstep(0.85 - d * 0.9, 1.0, abs(s.y) + 0.1 * vnoise(p * 4.0)) : 0.0;
+    if (reach > 0.002) {
       vec2 cq = p * 2.6 + vec2(0.0, s.y > 0.0 ? 7.0 : 0.0);
       float e = vedge(cq);
       float crack = 1.0 - sstep(0.0, 0.035 + 0.02 * d, e);
       float heat = 1.0 - sstep(0.0, 0.3, e);
-      // the cracks reach out from the duelist's own edge, further the lower they are
-      float reach = sstep(0.85 - d * 0.9, 1.0, abs(s.y) + 0.1 * vnoise(p * 4.0));
       float pulse = 0.6 + 0.4 * (s.y < 0.0 ? uBeat : 0.0);
-      c = mix(c, c * vec3(0.75, 0.45, 0.45), d * 0.45);
+      c = mix(c, c * vec3(0.8, 0.5, 0.5), d * 0.3);
       c += vec3(1.0, 0.2, 0.1) * (crack * 1.0 + heat * 0.15) * reach * d * pulse;
     }
   }
@@ -339,6 +342,7 @@ export class LivingField {
     const m = Math.min(w, h);
     gl.uniform2f(this.u.uAspect, w / m, h / m);
     this.drawnAt = 0;
+    this.measure();
     this.kick();
   }
 
@@ -352,17 +356,29 @@ export class LivingField {
     };
     set(this.sides[0], opp);
     set(this.sides[1], mine);
+    this.measure();
     this.kick();
   }
 
-  /** Where each Field Zone sits on screen (client px), so each sweep starts from its card. */
-  setOrigins(opp: DOMRect | null, mine: DOMRect | null) {
-    const at = (r: DOMRect | null, side: Side) => {
-      if (!r || !r.width) return;
+  /** Where each Field Zone sits on screen, so each sweep starts from its card (measured on a new field and on resize). */
+  private measure() {
+    const zones = document.querySelectorAll('.duel.touch .tz.tz-f');
+    if (zones.length < 2) return;
+    const at = (r: DOMRect, side: Side) => {
+      if (!r.width) return;
       side.origin = [((r.left + r.width / 2) / window.innerWidth) * 2 - 1, 1 - ((r.top + r.height / 2) / window.innerHeight) * 2];
     };
-    at(opp, this.sides[0]);
-    at(mine, this.sides[1]);
+    at(zones[0].getBoundingClientRect(), this.sides[0]);
+    at(zones[zones.length - 1].getBoundingClientRect(), this.sides[1]);
+  }
+
+  /** The board flipped (a hotseat hand-over): the two halves trade places as they are, with no new sweep. */
+  swapSides() {
+    const [a, b] = this.sides;
+    this.sides = [b, a];
+    this.danger.reverse();
+    this.dangerAmt.reverse();
+    this.measure();
   }
 
   /** Danger levels (0 none, 1 low LP, 2 very low) for you and the opponent. */
