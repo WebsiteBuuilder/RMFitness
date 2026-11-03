@@ -1,0 +1,163 @@
+/* ---------- Card and board finish (every screen that shows cards) ----------
+   The card back is drawn once as an SVG (a lit vortex in a gold frame) and shared by every
+   face-down card: decks, the opponent's hand, Set cards, cards in flight. */
+:root {
+  --card-back-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 146'%3E%3Cdefs%3E%3CradialGradient id='b' cx='50%' cy='50%' r='70%'%3E%3Cstop offset='0' stop-color='%234a2810'/%3E%3Cstop offset='.55' stop-color='%23241208'/%3E%3Cstop offset='1' stop-color='%230e0703'/%3E%3C/radialGradient%3E%3CradialGradient id='s' cx='50%' cy='50%' r='50%'%3E%3Cstop offset='.3' stop-color='%23ffb04a' stop-opacity='.9'/%3E%3Cstop offset='1' stop-color='%238a3e10' stop-opacity='.3'/%3E%3C/radialGradient%3E%3CradialGradient id='c' cx='50%' cy='42%' r='60%'%3E%3Cstop offset='0' stop-color='%23fff4c8'/%3E%3Cstop offset='.25' stop-color='%23ffc04a'/%3E%3Cstop offset='.6' stop-color='%23d0581a'/%3E%3Cstop offset='1' stop-color='%234a1206'/%3E%3C/radialGradient%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f2d28a'/%3E%3Cstop offset='.5' stop-color='%239a6a2a'/%3E%3Cstop offset='1' stop-color='%23e8c070'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='146' fill='url(%23b)'/%3E%3Cg opacity='1'%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(0 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(15 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(30 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(45 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(60 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(75 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(90 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(105 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(120 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(135 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(150 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3Cellipse cx='50' cy='73' rx='40' ry='12' transform='rotate(165 50 73)' fill='none' stroke='url(%23s)' stroke-width='2'/%3E%3C/g%3E%3Cellipse cx='50' cy='73' rx='15' ry='22' fill='url(%23c)' stroke='url(%23g)' stroke-width='2.2'/%3E%3Cellipse cx='50' cy='73' rx='19.5' ry='27' fill='none' stroke='%23e8c070' stroke-opacity='.55' stroke-width='.8'/%3E%3Cellipse cx='46' cy='64' rx='4' ry='6' fill='%23fff' fill-opacity='.35'/%3E%3Crect x='4.5' y='4.5' width='91' height='137' rx='3' fill='none' stroke='url(%23g)' stroke-width='1.4'/%3E%3Crect x='7' y='7' width='86' height='132' rx='2' fill='none' stroke='%23e8c070' stroke-opacity='.3' stroke-width='.6'/%3E%3Cpath d='M7 18V7h11M93 18V7H82M7 128v11h11M93 128v11H82' fill='none' stroke='%23f2d28a' stroke-width='2'/%3E%3C/svg%3E");
+}
+.cback {
+  background: #170b04 var(--card-back-img) center / 100% 100% no-repeat;
+  border: 0;
+  box-shadow: inset 0 0 0 1px #000000c0;
+}
+.tflight.back {
+  background: #170b04 var(--card-back-img) center / 100% 100% no-repeat;
+  border: 0;
+}
+/* your own Set card: the back over a faint peek of the art */
+.duel.touch .fcard.myset::before {
+  background: var(--card-back-img) center / 100% 100% no-repeat;
+  border: 0;
+  opacity: 0.84;
+}
+
+/* ---- your hand: a clear-coat sheen on every card, and a light round the ones you can play ---- */
+.duel.touch .thcard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  pointer-events: none;
+  background:
+    linear-gradient(118deg, transparent 32%, #ffffff26 44%, #ffffff08 52%, transparent 60%),
+    linear-gradient(180deg, #ffffff30 0, transparent 7%, transparent 88%, #00000040 100%);
+  box-shadow: inset 0 0 0 1px #ffffff26;
+}
+.duel.touch.turn-me .thcard.can::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: 0;
+  border-radius: 7px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px #8fd8ff, 0 0 14px 2px #3aa0ff, inset 0 0 10px #3aa0ff80;
+  animation: tcan 1.8s ease-in-out infinite alternate;
+}
+.duel.touch.turn-me .thcard.can.sel::before {
+  box-shadow: 0 0 0 2px #ffe08a, 0 0 16px 3px #ffb400;
+}
+@keyframes tcan {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- a monster's ATK / DEF plate: green when raised, red when lowered (as in Master Duel) ---- */
+.duel.touch .tstat {
+  bottom: -7px;
+  min-width: 34px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  padding: 1px 6px;
+  color: #fff;
+  background: linear-gradient(#24356f, #0b1236);
+  border: 1px solid #a8bcff;
+  box-shadow: 0 2px 6px #000000c0, inset 0 1px 0 #ffffff30;
+  text-shadow: 0 1px 1px #000;
+}
+.duel.touch .tstat.def {
+  background: linear-gradient(#1d5a40, #0a2a1c);
+}
+.duel.touch .tstat.up {
+  color: #8dffb0;
+  border-color: #6fe89a;
+}
+.duel.touch .tstat.down {
+  color: #ff9aa6;
+  border-color: #ff6a7c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duel.touch.turn-me .thcard.can::before {
+    animation: none;
+  }
+}
+
+/* ---- cards on the field: the same clear-coat sheen as in your hand ---- */
+.duel.touch .tz:not(.empty):not(.pick)::after {
+  content: '';
+  position: absolute;
+  inset: 4%;
+  border-radius: 3px;
+  pointer-events: none;
+  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff26 0, transparent 9%);
+}
+.duel.touch .tz.tz-m:has(.fcard.def):not(.pick)::after {
+  inset: 18% 4%;
+}
+
+/* ---- foil and depth on the cards in a duel ----
+   A band of light glides over every face-up card now and then (staggered, so the hand
+   shimmers in a wave), each card has an edge (it reads as a real card, not a picture),
+   and the picked hand card leans toward you. Transform/opacity only. */
+.tshine {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.tshine::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(100deg, transparent 0%, #ffffff10 25%, #fff6d855 46%, #ffffffa0 50%, #c8f0ff55 54%, #ffffff10 75%, transparent 100%);
+  transform: translateX(-130%) skewX(-18deg);
+  animation: tshine 7s ease-in-out infinite;
+  animation-delay: calc(var(--arc, 0) * 0.18s + 1.2s);
+}
+/* (a field card's shine waits a different beat from the hand's) */
+.duel.touch .fcard .tshine::before {
+  animation-duration: 9s;
+  animation-delay: 3s;
+}
+@keyframes tshine {
+  0%,
+  72% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  92%,
+  100% {
+    transform: translateX(330%) skewX(-18deg);
+  }
+}
+/* the card's edge under it: a printed card has thickness */
+.duel.touch .thcard .cimg {
+  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 8px 14px #000000d0;
+}
+.duel.touch .tz .fcard .cimg {
+  box-shadow:
+    0 1px 0 #e9dcc0,
+    0 2px 0 #7a6c50,
+    0 3px 1px #000000a0,
+    0 8px 12px -2px #000000d0,
+    0 0 12px -2px var(--turn-soft);
+}
+/* the picked card leans toward you */
+.duel.touch .thcard.sel {
+  transform: perspective(700px) translateY(-10px) rotateX(-10deg) scale(1.07);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tshine::before {
+    animation: none;
+    opacity: 0;
+  }
+}
