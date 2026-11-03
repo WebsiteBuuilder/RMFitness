@@ -4,7 +4,7 @@ import type { VNode } from 'preact';
 import type { MateId } from './roster';
 
 /** The face a mate pulls. */
-export type Face = 'idle' | 'happy' | 'laugh' | 'wow' | 'hurt' | 'sad' | 'angry' | 'love' | 'sleep';
+export type Face = 'idle' | 'happy' | 'laugh' | 'wow' | 'hurt' | 'sad' | 'angry' | 'love' | 'sleep' | 'smirk' | 'nervous';
 
 const INK = '#2a1a2e';
 
@@ -115,6 +115,30 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
     case 'love':
       eyes = <g>{heart(lx)}{heart(rx)}</g>;
       mouth = <path d={`M${x - 3 * s} ${my - 1 * s} Q${x} ${my + 3 * s} ${x + 3 * s} ${my - 1 * s}`} stroke={ink} stroke-width={sw * 0.8} fill="none" stroke-linecap="round" />;
+      break;
+    case 'smirk':
+      // (one eye squeezed shut, one brow up, a crooked grin)
+      eyes = (
+        <g>
+          {dot(lx, 0.85)}
+          {arc(rx, true)}
+          <path d={`M${lx - 4 * s} ${y - 6 * s} Q${lx} ${y - 9 * s} ${lx + 4 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} fill="none" stroke-linecap="round" />
+        </g>
+      );
+      mouth = <path d={`M${x - 4.5 * s} ${my} Q${x + 0.5 * s} ${my + 3.5 * s} ${x + 4.5 * s} ${my - 2.5 * s}`} stroke={ink} stroke-width={sw * 0.8} fill="none" stroke-linecap="round" />;
+      break;
+    case 'nervous':
+      // (small eyes, worried brows, a wobbly mouth and a bead of sweat)
+      eyes = (
+        <g>
+          {dot(lx, 0.7)}
+          {dot(rx, 0.7)}
+          <path d={`M${lx - 4 * s} ${y - 5 * s} L${lx + 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
+          <path d={`M${rx + 4 * s} ${y - 5 * s} L${rx - 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
+          <path class="mt-sweatbead" d={`M${rx + 7 * s} ${y - 9 * s} q${-2.2 * s} ${3.6 * s} 0 ${5.4 * s} q${2.2 * s} ${-1.8 * s} 0 ${-5.4 * s}Z`} fill="#7cd3ff" stroke="#1d3b5c" stroke-width={0.6 * s} />
+        </g>
+      );
+      mouth = <path d={`M${x - 4 * s} ${my} q${s} ${-2 * s} ${2 * s} 0 t${2 * s} 0 t${2 * s} 0 t${2 * s} 0`} stroke={ink} stroke-width={sw * 0.7} fill="none" stroke-linecap="round" />;
       break;
     case 'sleep':
       eyes = <g>{arc(lx, false)}{arc(rx, false)}</g>;

@@ -1,7 +1,8 @@
 // The Mates on the duel screen, like Master Duel's: yours stands in the empty spot left of
 // your monsters, theirs in the spot right of theirs. Tap yours and it reacts (both phones see
 // it); hold it for a row of emotes; tap theirs to poke it (only you see that). Both react by
-// themselves to Summons, hits, lost monsters, the win and the loss. Nothing here touches the duel.
+// themselves to Summons, attacks, hits, low Life Points, lost monsters, sprung Traps (with a
+// taunt), the win and the loss. Nothing here touches the duel.
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { DuelSession, SessionView } from '../eds/session';
 import type { DuelState, EngineEvent, Pid } from '../eds/types';
@@ -32,6 +33,8 @@ interface Box {
 interface Playing {
   react: MateReact | null;
   key: number;
+  /** a taunt's words */
+  line?: string;
 }
 
 const HOLD_MS = 420;
@@ -41,6 +44,8 @@ const DOZE_MS = 28_000;
 const other = (p: Pid): Pid => (p === 0 ? 1 : 0);
 
 const BIG_HOW = new Set(['fusion', 'ritual', 'synchro', 'xyz', 'link']);
+/** a taunt's beat after the Trap lands (the duel screen already holds new events back until its card animations play) */
+const TAUNT_DELAY_MS = 350;
 
 export function MateLayer({ session, view, state, acting, plan, touch }: { session: DuelSession; view: SessionView; state: DuelState; acting: Pid; plan: MatePlan; touch: boolean }) {
   const shown = useMatesShown();
@@ -79,13 +84,13 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   const quietSince = useRef(Date.now());
   const seatsRef = useRef(seats);
   seatsRef.current = seats;
-  const play = (p: Pid, r: MateReact, voice = true) => {
+  const play = (p: Pid, r: MateReact, voice = true, line?: string) => {
     quietSince.current = Date.now();
     const spec = REACT_SPEC[r];
     clearTimeout(timers.current[p]);
     setPlaying((cur) => {
       const next = [...cur] as [Playing, Playing];
-      next[p] = { react: r, key: cur[p].key + 1 };
+      next[p] = { react: r, key: cur[p].key + 1, line };
       return next;
     });
     if (!spec.loop)
@@ -100,7 +105,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
         spec.ms,
       );
     const id = idOf(p);
-    if (voice && id && seatsRef.current.includes(p)) playMate(mateDef(id)!.voice, r === 'sad' || r === 'hurt' || r === 'lose' ? 'down' : r === 'sleep' ? 'flat' : 'up');
+    if (voice && id && seatsRef.current.includes(p)) playMate(mateDef(id)!.voice, r === 'sad' || r === 'hurt' || r === 'lose' || r === 'flinch' || r === 'sweat' ? 'down' : r === 'sleep' ? 'flat' : 'up');
   };
   useEffect(() => () => (clearTimeout(timers.current[0]), clearTimeout(timers.current[1])), []);
 
@@ -132,9 +137,17 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     const summoned = (p: Pid) => fresh.filter((x) => x.kind === 'summon' && x.player === p).length;
     // (a side that Summoned in this batch gave up its Tributes or materials: not a loss to be sad about)
     const lost = ([0, 1] as Pid[]).map((p) => (summoned(p) ? 0 : Math.max(0, was[p] - now[p]))) as [number, number];
-    for (const c of cuesFor(fresh, bigSummon(state), lost)) play(c.player, c.react);
+    for (const c of cuesFor(fresh, bigSummon(state), lost, sprungOn(state))) {
+      // (a taunt waits out the "Not so fast!" slam, so it lands as the Trap does)
+      if (c.react === 'taunt') {
+        clearTimeout(tauntT.current);
+        tauntT.current = window.setTimeout(() => live.current.session.engine.state.winner === null && live.current.play(c.player, 'taunt', true, c.line), TAUNT_DELAY_MS);
+      } else play(c.player, c.react);
+    }
     quietSince.current = Date.now();
   }, [topSeq]);
+  const tauntT = useRef(0);
+  useEffect(() => () => clearTimeout(tauntT.current), []);
 
   // (the newest session and play(), for listeners added once)
   const live = useRef({ session, play });
@@ -297,7 +310,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
             <div key={pl.key} class={`mate-act ${pl.react ? `r-${pl.react}` : 'r-idle'}`}>
               <MateArt id={id} face={spec?.face ?? 'idle'} class={top ? 'flip' : ''} />
             </div>
-            {spec?.emote && <Emote key={`e${pl.key}`} kind={spec.emote} />}
+            {spec?.emote && <Emote key={`e${pl.key}`} kind={spec.emote} line={pl.line} />}
           </div>
         );
       })}
@@ -338,8 +351,29 @@ function bigSummon(state: DuelState) {
   };
 }
 
+/** Where a card is now (on the field, in a hand, the Graveyard...) and whose it is. */
+function whereIs(state: DuelState, uid: number): { name: string; controller: Pid } | null {
+  for (const p of [0, 1] as Pid[]) {
+    const ps = state.players[p];
+    for (const c of [...ps.mz, ...ps.sz, ps.field, ...ps.hand, ...ps.gy, ...ps.removed, ...ps.deck, ...ps.fusion]) if (c && c.uid === uid) return { name: c.name, controller: p };
+  }
+  return null;
+}
+
+/** A Trap answering the other side's card (an attack, a Summon, a Spell): the seat it caught. */
+function sprungOn(state: DuelState) {
+  return (ev: EngineEvent): Pid | null => {
+    if (ev.uid === undefined || ev.answers === undefined || ev.player === undefined) return null;
+    const trap = whereIs(state, ev.uid);
+    if (!trap || cardInfo(trap.name)?.kind !== 'trap') return null;
+    const onto = whereIs(state, ev.answers);
+    const caught = onto ? onto.controller : other(ev.player);
+    return caught === ev.player ? null : caught;
+  };
+}
+
 /** The speech bubble over a Mate's head. */
-export function Emote({ kind, still }: { kind: Bubble; still?: boolean }) {
+export function Emote({ kind, still, line }: { kind: Bubble; still?: boolean; line?: string }) {
   const body =
     kind === 'sweat' ? (
       <svg viewBox="0 0 20 20">
@@ -349,9 +383,11 @@ export function Emote({ kind, still }: { kind: Bubble; still?: boolean }) {
       <svg viewBox="0 0 20 20">
         <path d="M3 8 Q8 8 8 3 M12 3 Q12 8 17 8 M17 12 Q12 12 12 17 M8 17 Q8 12 3 12" fill="none" stroke="#ff2e44" stroke-width="2.8" stroke-linecap="round" />
       </svg>
+    ) : kind === 'taunt' ? (
+      <span>{line ?? 'Gotcha!'}</span>
     ) : (
       <span>{BUBBLE_TEXT[kind]}</span>
     );
   return <div class={`mate-emote em-${kind}${still ? ' still' : ''}`}>{body}</div>;
 }
-const BUBBLE_TEXT: Record<Exclude<Bubble, 'sweat' | 'anger'>, string> = { note: '♪', star: '★', yay: 'Yay!', wow: '!?', dots: '…', heart: '♥', zzz: 'zzz', ha: 'Haha!', gg: 'GG!' };
+const BUBBLE_TEXT: Record<Exclude<Bubble, 'sweat' | 'anger' | 'taunt'>, string> = { note: '♪', star: '★', yay: 'Yay!', wow: '!?', dots: '…', heart: '♥', zzz: 'zzz', ha: 'Haha!', gg: 'GG!' };

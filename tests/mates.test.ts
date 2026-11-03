@@ -2,7 +2,7 @@
 // room's log (screened by the host, never a duel move, never in a replay).
 import assert from 'node:assert/strict';
 import { buyMate, cantBuy, retireOldMates, chosenMate, DEFAULT_MATE, hasMate, isMate, isReact, MATES, mateForName, pickMate, EMOTES } from '../src/mates/roster';
-import { canSend, cuesFor, endCues, REACT_SPEC, SEND_GAP_MS, tapReact } from '../src/mates/react';
+import { canSend, cuesFor, endCues, REACT_SPEC, SEND_GAP_MS, tapReact, TAUNTS } from '../src/mates/react';
 import { DuelSession, mateWord, screenProposal } from '../src/eds/session';
 import { MemoryAdapter } from '../src/sync/memory';
 import { newSpeedSave, type SpeedSave } from '../src/eds/speedSave';
@@ -108,7 +108,7 @@ t('a summon: its side hops, a big one is a cheer and the other side gasps', () =
 
 t('damage: the hit side winces (a big hit is sad), the other laughs', () => {
   assert.deepEqual(cuesFor([ev({ kind: 'damage', player: 1, amount: 500 })], never), [
-    { player: 0, react: 'hop' },
+    { player: 0, react: 'grin' },
     { player: 1, react: 'hurt' },
   ]);
   assert.deepEqual(cuesFor([ev({ kind: 'damage', player: 0, amount: 2500 })], never), [
@@ -122,10 +122,52 @@ t('one reaction per side per moment: the strongest wins', () => {
   // a monster lost in battle and damage on the same side: sad over hurt
   const cues = cuesFor([ev({ kind: 'damage', player: 1, amount: 300 }, 1), ev({ kind: 'activate', player: 1 }, 2)], never, [0, 1]);
   assert.deepEqual(cues, [
-    { player: 0, react: 'hop' },
+    { player: 0, react: 'grin' },
     { player: 1, react: 'sad' },
   ]);
   assert.deepEqual(cuesFor([ev({ kind: 'draw', player: 0 })], never), [], 'a draw is no moment');
+});
+
+t('an attack makes the side it comes at flinch', () => {
+  assert.deepEqual(cuesFor([ev({ kind: 'attack', player: 0, uid: 3, target: null })], never), [{ player: 1, react: 'flinch' }]);
+});
+
+t('Life Points running low: a sweat, not just a wince', () => {
+  assert.deepEqual(cuesFor([ev({ kind: 'damage', player: 1, amount: 600, from: 1400 })], never), [
+    { player: 0, react: 'grin' },
+    { player: 1, react: 'sweat' },
+  ]);
+  // (still plenty left: an ordinary wince; knocked out: that's the loss, not a sweat)
+  assert.equal(cuesFor([ev({ kind: 'damage', player: 1, amount: 600, from: 4000 })], never)[1].react, 'hurt');
+  assert.equal(cuesFor([ev({ kind: 'damage', player: 1, amount: 600, from: 600 })], never)[1].react, 'hurt');
+});
+
+t('a sprung Trap: its side taunts with a line both phones agree on, the caught side flinches', () => {
+  const trap = ev({ kind: 'activate', player: 1, uid: 9, answers: 4 }, 13);
+  const cues = cuesFor([ev({ kind: 'attack', player: 0, uid: 4, target: null }, 12), trap], never, [0, 0], (e) => (e.uid === 9 ? 0 : null));
+  assert.deepEqual(cues, [
+    { player: 0, react: 'flinch' },
+    { player: 1, react: 'taunt', line: TAUNTS[13 % TAUNTS.length] },
+  ]);
+  assert.deepEqual(cuesFor([trap], never, [0, 0], (e) => (e.uid === 9 ? 0 : null)), cues, 'the same moment, the same line');
+  // a card that isn't a Trap sprung on them (a Spell, a Quick effect on its own side): no taunt
+  assert.deepEqual(cuesFor([trap], never), []);
+  // ...and the taunt beats the side's other reactions in the moment
+  assert.equal(cuesFor([trap, ev({ kind: 'summon', player: 1, uid: 2 }, 14)], never, [0, 0], () => 0)[1].react, 'taunt');
+  for (const l of TAUNTS) assert.ok(l.length <= 22, `"${l}" fits a bubble`);
+});
+
+t('a monster knocked off the field: that side is sad, the other grins', () => {
+  assert.deepEqual(cuesFor([ev({ kind: 'to-gy', player: 0, uid: 6 })], never, [1, 0]), [
+    { player: 0, react: 'sad' },
+    { player: 1, react: 'grin' },
+  ]);
+  // both lost one (a trade): both sad, nobody gloats
+  assert.deepEqual(cuesFor([ev({ kind: 'to-gy', player: 0, uid: 6 })], never, [1, 1]).map((c) => c.react), ['sad', 'sad']);
+});
+
+t('every reaction has a face and lasts', () => {
+  for (const r of Object.keys(REACT_SPEC) as (keyof typeof REACT_SPEC)[]) assert.ok(isReact(r) && (REACT_SPEC[r].ms > 0 || REACT_SPEC[r].loop), r);
 });
 
 t('the end: winner celebrates, loser slumps, both loop', () => {
