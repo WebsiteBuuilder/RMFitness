@@ -571,7 +571,8 @@ export class BoardLayer {
         u.uHolo.value = hb.holo;
         u.uHoloLine.value = lerp(fig.foot.v - 0.04, Math.min(1.06, fig.foot.top + 0.05), clamp01((hb.line + 0.05) / 1.12));
         u.uFlick.value = p.calm || hb.line > 0 ? 0 : flickerAt(t, p.seed);
-        u.uGlitch.value = p.calm ? 0 : p.show < 0.12 ? 0.5 : 0;
+        // (no tearing at card size: it only reads as broken bars)
+        u.uGlitch.value = 0;
       } else if (u.uHolo.value > 0) {
         u.uHolo.value = 0;
         u.uFlick.value = 0;

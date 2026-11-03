@@ -1282,8 +1282,12 @@ export class Director {
     const src = tl.own(new Glow(1.4 * U, 1.4 * U, 'flare', beamCol, HOLO_CORE));
     src.mesh.position.set(0, o.ground + 0.06 * U, 0.4);
     src.u.uOpacity.value = 0;
-    span(h.beamAt, h.beamAt + 0.35, (_t, k) => {
-      src.u.uOpacity.value = 0.38 * (k < 0.15 ? k / 0.15 : 1 - easeOut((k - 0.15) / 0.85));
+    // (a flash as it fires, then the emitter keeps glowing on the card until the lock)
+    span(h.beamAt, h.solidEnd + 0.1, (t, k) => {
+      const f = (t - h.beamAt) / 0.35;
+      const lockFade = 1 - clamp01((t - h.solidEnd) / 0.1);
+      src.u.uOpacity.value = (f < 1 ? 0.38 * (f < 0.15 ? f / 0.15 : 1 - easeOut((f - 0.15) / 0.85)) : 0) + 0.2 * clamp01(f) * lockFade;
+      k = clamp01(f);
       src.mesh.scale.set(lerp(0.6, 1.4, easeOut(k)), lerp(0.6, 0.5, k), 1);
     });
     // light motes climbing the beam while the hologram forms
@@ -1325,7 +1329,8 @@ export class Director {
       const cols = o.finPal && o.fin >= FIN.GL ? o.finPal : [beamCol, HOLO_CORE];
       cols.forEach((fc, i) => P.emit({ x: 0, y: o.restY, z: 0.35, burst: (2.2 + pw * 0.6 + i * 0.3) * U, life: 0.6, size: 0.07 * U, color: fc, drag: 2.2 }, Math.round((10 + pw * 8) * q)));
     });
-    if (pw >= 1) {
+    {
+      // the lock snaps off as a ring of light
       const ring = tl.own(new Glow((2.6 + pw * 0.8) * U, (2.6 + pw * 0.8) * U, 'shock', beamCol, HOLO_CORE));
       ring.mesh.position.set(0, o.restY, 0.32);
       ring.u.uOpacity.value = 0;
