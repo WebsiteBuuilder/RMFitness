@@ -79,7 +79,7 @@
   inset: 4%;
   border-radius: 3px;
   pointer-events: none;
-  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff26 0, transparent 9%);
+  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff38 0, #ffffff0c 14%, transparent 22%);
 }
 .duel.touch .tz.tz-m:has(.fcard.def):not(.pick)::after {
   inset: 18% 4%;
@@ -123,7 +123,7 @@
 }
 /* the card's edge under it: a printed card has thickness */
 .duel.touch .thcard .cimg {
-  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 8px 14px #000000d0;
+  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 10px 18px #000000e0;
 }
 .duel.touch .tz .fcard .cimg {
   box-shadow:
@@ -135,7 +135,8 @@
 }
 /* the picked card leans toward you */
 .duel.touch .thcard.sel {
-  transform: perspective(700px) translateY(-10px) rotateX(-10deg) scale(1.07);
+  /* (same function list as the fan's, then more: it eases in without a wobble) */
+  transform: perspective(900px) translateY(-10px) rotate(0deg) rotateY(0deg) rotateX(-10deg) scale(1.07);
 }
 @media (prefers-reduced-motion: reduce) {
   .tshine::before {
@@ -160,7 +161,7 @@
   pointer-events: none;
   background: radial-gradient(closest-side, #000000b0, transparent);
 }
-/* the 3D hand and a picked card's lean reach past the screen's edge: the duel never scrolls to follow them */
+/* the 3D hand and a picked card's lean reach past the screen's edge: clip (not just hidden) so focusing a card can't scroll the duel by a few pixels */
 .duel.touch {
   overflow: clip;
 }
@@ -182,4 +183,20 @@
 /* picking a card from your hand: it stays bright, the rest of the fan steps back */
 .duel.touch .thand:has(.thcard.sel) .thcard:not(.sel) {
   opacity: 0.62;
+}
+
+/* your turn, in gold: the tab on your bar and the row across the middle wear the gold of the phase orb */
+.duel.touch.turn-me .ttab.bottom.mine:not(.ask):not(.wait) {
+  box-shadow: 0 0 0 1.5px #ffd76a, 0 4px 14px #2a62ff90;
+}
+.duel.touch.turn-me .ttab.bottom.mine:not(.ask):not(.wait) b,
+.duel.touch.turn-me .tmid .tturn.mine:not(.ask) b {
+  color: #ffe08a;
+}
+.duel.touch.turn-me .tmid .tturn.mine:not(.ask) {
+  box-shadow: 0 0 0 1.5px #ffd76a, 0 0 16px #2a62ff70;
+}
+/* on your turn the opponent's half of the board sits a step back, so your side reads as the stage */
+.duel.touch.turn-me .tmat > .trow:has(~ .tmid) {
+  opacity: 0.86;
 }

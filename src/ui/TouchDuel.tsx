@@ -779,7 +779,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const theirAsk = state.winner === null && !!state.prompt && state.prompt.player !== acting;
   const midText = (
     <>
-      <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
+      <span class={`tturn ${state.turnPlayer === acting && !ctl.spectator ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
         {(state.turnPlayer !== acting || theirAsk) && <i class="tturn-arrow up" aria-hidden="true" />}
         <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked && !ctl.spectator ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
         {theirAsk || decider !== acting ? (
