@@ -17,6 +17,7 @@ import { mixedSides, sideLabel } from './sideLabel';
 import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
+import { LpCracks, LpPops, useLpShake } from './lpHits';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
 import { introLeft, whenIntroAt } from './immersionState';
@@ -121,6 +122,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   }, [resized, figuresOn, state.winner]);
 
   useFlights(root, state, acting);
+  // Life Points dropping shake the board, scaled to the hit (lpHits.tsx)
+  useLpShake(root, ctl.hotseat ? null : acting, !!e.speed, '.tmat, .tbar, .thand', !!ctl.spectator);
 
   // The opening swing starts two frames after the screen opens, once its first heavy frame is painted.
   const [armed, setArmed] = useState(false);
@@ -570,13 +573,15 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const hurt = anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '';
     const isTurn = state.turnPlayer === p;
     const directOk = top && spots?.has('direct');
-    const frac = Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp)));
+    // the Duel Disk gauge lights whole cells (20 of them: lphit.css), so any Life Points left keep one lit
+    const frac = Math.ceil(Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp))) * 20) / 20;
     return (
       <div
         class={`tbar ${top ? 'top' : 'bottom'} ${isTurn ? 'turn' : 'idle-bar'}${decider === p ? ' acts' : ''}${directOk ? (drag?.over === 'direct' ? ' drop-on' : ' drop-ok') : ''} ${mode && top && canDirect() ? 'drop-ok' : ''}`}
         data-drop={top ? 'direct' : undefined}
         onClick={() => top && mode && canDirect() && (send({ type: 'ATTACK', player: acting, uid: mode.uid, target: null }), setMode(null))}
       >
+        <LpCracks key={`cr${p}`} who={p} speed={!!e.speed} />
         <div class="tavatar">{ps.name.slice(0, 1).toUpperCase()}</div>
         <div class="tname">
           <b>{ps.name}</b>
@@ -599,9 +604,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
           <LpCount value={ps.lp} who={p} />
-          {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
+          <LpPops key={`pop${p}`} who={p} speed={!!e.speed} below={top} />
         </div>
-        <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
+        <i class={`tgauge ${dangerLevel(ps.lp, !!e.speed) ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
           <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
         </i>
