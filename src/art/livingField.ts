@@ -68,8 +68,12 @@ vec3 land(vec2 g, float t, float ter){
     float core = sstep(0.6, 0.7, n) * fade;
     float churn = 0.7 + 0.3 * sin(t * 1.6 + fbm(g * 3.0 + t * 0.2) * 6.0);
     c += vec3(1.0, 0.30, 0.04) * rim * (0.75 + 0.25 * sin(t * 1.3 + g.x * 2.0));
+    // dark seams in the rock between the pools, a hot bright rim round each pool
+    float seam = 1.0 - sstep(0.0, 0.05, vedge(g * 2.4 + 3.0));
+    c *= 1.0 - seam * 0.6 * (1.0 - pool);
     c = mix(c, vec3(1.0, 0.29, 0.0) * (0.8 + 0.2 * churn), pool);
     c = mix(c, vec3(1.0, 0.83, 0.42) * (0.85 + 0.15 * churn), core * 0.85);
+    c += vec3(1.0, 0.85, 0.5) * (pool - sstep(0.6, 0.615, n) * fade) * 0.9;
     float emb = dots(vec2(g.x * 5.0 + sin(y * 2.0 + t) * 0.3, y * 4.5 - t * 2.2), 0.12, 0.2) * sstep(4.4, 0.2, y);
     return c + vec3(1.0, 0.75, 0.35) * emb * 1.5;
   } else if (ter < 2.5) {
@@ -87,7 +91,7 @@ vec3 land(vec2 g, float t, float ter){
       vec3 water = mix(vec3(0.015, 0.12, 0.2), vec3(0.08, 0.50, 0.62), sstep(wy - 0.4, wy - 0.02, y));
       c = mix(c, water * k, sstep(wy + 0.02, wy - 0.04, y));
       float foam = exp(-pow((y - wy) * (11.0 + fi * 4.0), 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
-      c += vec3(0.9, 0.98, 1.0) * foam * 0.85 * k;
+      c += vec3(0.95, 1.0, 1.0) * foam * 1.1 * k;
     }
     float glint = dots(g * vec2(9.0, 12.0) + vec2(t * 0.4, 0.0), 0.05, 0.12) * (0.5 + 0.5 * sin(t * 4.0 + g.x * 20.0));
     return c + vec3(0.8, 0.95, 1.0) * glint * sstep(3.6, 0.3, y);
@@ -134,7 +138,13 @@ vec3 land(vec2 g, float t, float ter){
     float h = hash12(cell + 3.0);
     float open = sstep(-0.2, 0.25, sin(t * (0.7 + h * 0.6) + h * 40.0));
     float sq = 2.2 - open * 1.2;
-    float eye = (sstep(0.1, 0.045, length((f - vec2(0.14, 0.0)) * vec2(1.0, sq))) + sstep(0.1, 0.045, length((f + vec2(0.14, 0.0)) * vec2(1.0, sq)))) * step(0.6, h) * open;
+    // almond eyes (pointed corners) with a dark slit pupil
+    vec2 e1 = f - vec2(0.13, 0.0);
+    vec2 e2 = f + vec2(0.13, 0.0);
+    float al1 = sstep(0.085, 0.06, abs(e1.x) + abs(e1.y) * sq * 1.6 + e1.x * e1.x * 2.0);
+    float al2 = sstep(0.085, 0.06, abs(e2.x) + abs(e2.y) * sq * 1.6 + e2.x * e2.x * 2.0);
+    float slit = sstep(0.018, 0.008, abs(e1.x)) * al1 + sstep(0.018, 0.008, abs(e2.x)) * al2;
+    float eye = (al1 + al2 - slit * 0.9) * step(0.55, h) * open;
     // (they watch from the sides and the far end, faintest over the middle of the board)
     eye *= 0.35 + 0.65 * sstep(0.25, 0.75, abs(g.x));
     float halo = sstep(0.3, 0.0, length(f * vec2(0.7, 1.4))) * step(0.6, h) * open * 0.25;
