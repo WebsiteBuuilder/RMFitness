@@ -23,6 +23,7 @@ import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
 import { MateLayer, type MatePlan } from '../mates/MateLayer';
+import { DuelAtmosphere } from './Atmosphere';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
@@ -511,6 +512,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
+      {e.speed && <DuelAtmosphere state={state} me={acting} speed />}
       {mates && e.speed && <MateLayer session={session} view={view} state={state} acting={acting} plan={mates} touch={style === 'touch'} />}
       {roll && (
         <div key={roll.seq} class="roll-chip" aria-live="polite">

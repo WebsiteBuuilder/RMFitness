@@ -1,0 +1,186 @@
+/* ---------- Living Field + Danger state (Atmosphere.tsx, art/livingField.ts) ---------- */
+
+/* The landscape canvas sits behind the whole duel screen (under every layer of it). */
+.living-field {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+.living-field.on {
+  opacity: 1;
+}
+/* (the body's own painted background would sit over a z-index -1 layer) */
+html body.lf-on {
+  background: transparent;
+}
+
+/* While it is up, the duel's own painted night turns to a light veil over it, so the
+   landscape shows as the arena while the turn colors still tint the field. */
+body.lf-on .duel.touch {
+  background:
+    radial-gradient(120% 60% at 50% 105%, #4f86ff22, transparent 60%),
+    radial-gradient(ellipse at 50% 45%, #0c123810 0%, #04060f55 100%);
+}
+body.lf-on .duel.touch.turn-opp {
+  background:
+    radial-gradient(120% 55% at 50% -8%, #ff506822, transparent 60%),
+    radial-gradient(ellipse at 50% 45%, #120c3010 0%, #05040d55 100%);
+}
+body.lf-on .duel:not(.touch) {
+  background: linear-gradient(180deg, #06091ca0, #0a0f2a50 50%, #06091ca0);
+}
+/* the floor grid and turn glow step back so the landscape reads */
+body.lf-on .duel.touch .tarena-floor {
+  opacity: 0.35;
+}
+/* the slab turns to glass: the landscape shows through it, the zones keep their frames */
+body.lf-on .duel.touch .tmat::before {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%23a9c0ff' stroke-opacity='.22'%3E%3Ccircle cx='100' cy='100' r='96' stroke-width='1.5'/%3E%3Ccircle cx='100' cy='100' r='80' stroke-dasharray='3 5'/%3E%3Ccircle cx='100' cy='100' r='52' stroke-width='2'/%3E%3Cpath d='M100 8 L180 146 L20 146 Z M100 192 L20 54 L180 54 Z' stroke-width='1.2'/%3E%3Cpath d='M100 48 L145 100 L100 152 L55 100 Z' stroke-width='1'/%3E%3C/g%3E%3C/svg%3E") center / min(78%, 300px) no-repeat,
+    linear-gradient(170deg, #ffffff10 0%, transparent 28%, transparent 70%, #00000030 100%),
+    linear-gradient(180deg, #1a0a2a50 0%, #0c0c2a38 46%, #0a12303a 54%, #08102e58 100%);
+}
+body.lf-on .duel.touch .tz:not(.drop-ok):not(.drop-on) {
+  background:
+    linear-gradient(#cfe0ff 0 0) top left / 9px 1.5px no-repeat,
+    linear-gradient(#cfe0ff 0 0) top left / 1.5px 9px no-repeat,
+    linear-gradient(#cfe0ff 0 0) top right / 9px 1.5px no-repeat,
+    linear-gradient(#cfe0ff 0 0) top right / 1.5px 9px no-repeat,
+    linear-gradient(#cfe0ff 0 0) bottom left / 9px 1.5px no-repeat,
+    linear-gradient(#cfe0ff 0 0) bottom left / 1.5px 9px no-repeat,
+    linear-gradient(#cfe0ff 0 0) bottom right / 9px 1.5px no-repeat,
+    linear-gradient(#cfe0ff 0 0) bottom right / 1.5px 9px no-repeat,
+    radial-gradient(90% 70% at 50% 50%, #2a3f9a1c, #0a113a70);
+}
+body.lf-on .duel.touch .tz.tz-s:not(.drop-ok):not(.drop-on) {
+  background:
+    linear-gradient(#e2d0ff 0 0) top left / 9px 1.5px no-repeat,
+    linear-gradient(#e2d0ff 0 0) top left / 1.5px 9px no-repeat,
+    linear-gradient(#e2d0ff 0 0) top right / 9px 1.5px no-repeat,
+    linear-gradient(#e2d0ff 0 0) top right / 1.5px 9px no-repeat,
+    linear-gradient(#e2d0ff 0 0) bottom left / 9px 1.5px no-repeat,
+    linear-gradient(#e2d0ff 0 0) bottom left / 1.5px 9px no-repeat,
+    linear-gradient(#e2d0ff 0 0) bottom right / 9px 1.5px no-repeat,
+    linear-gradient(#e2d0ff 0 0) bottom right / 1.5px 9px no-repeat,
+    radial-gradient(90% 70% at 50% 50%, #5a2f9a1c, #160b3a70);
+}
+
+/* ---------- danger: the screen's edges pulse with the heartbeat ---------- */
+.danger-edge {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.6s;
+  /* (centered high: the glow gathers along the bottom, your side, and only rims the top) */
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 38%, transparent 64%, #ff1a2a38 82%, #ff1a2ab8 100%);
+}
+.danger-edge.on {
+  opacity: 0.35;
+}
+.danger-edge.lv-2 {
+  background:
+    radial-gradient(ellipse 76% 66% at 50% 38%, transparent 56%, #ff1a2a48 78%, #ff1020c8 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .danger-edge.on {
+    opacity: 0.6;
+  }
+}
+
+/* your Life Points glow red while you are in danger */
+body.danger-me .duel.touch .tbar.bottom .tlp {
+  color: #ff8a80;
+  text-shadow: 0 0 10px #ff2a3acc;
+}
+body.danger-opp .duel.touch .tbar.top .tlp {
+  color: #ffb0a8;
+  text-shadow: 0 0 8px #ff2a3a99;
+}
+body.danger-me .duel:not(.touch) .pbar.bottom .lp {
+  color: #ff8a80;
+  text-shadow: 0 0 8px #ff2a3acc;
+}
+
+/* ---------- danger: cracks across a duelist's half of the mat ---------- */
+.tcracks {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  height: 52%;
+  width: calc(100% + 12px);
+  z-index: -1;
+  pointer-events: none;
+  overflow: visible;
+}
+.tcracks.me {
+  bottom: -6px;
+}
+.tcracks.opp {
+  top: -6px;
+  transform: scaleY(-1);
+}
+.tcracks {
+  animation: crack-run 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.tcracks path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.tcracks-dark path {
+  stroke: #000000b0;
+  stroke-width: 4.5px;
+}
+.tcracks-glow path {
+  stroke: #ff5a3a;
+  stroke-width: 1.6px;
+}
+.tcracks-glow {
+  filter: drop-shadow(0 0 3px #ff2a1a);
+  animation: crack-glow 2.3s ease-in-out infinite;
+}
+.tcracks.lv-2 .tcracks-glow path {
+  stroke: #ff7a4a;
+  stroke-width: 2px;
+}
+.tcracks.lv-2 .tcracks-glow {
+  animation-duration: 1.6s;
+}
+.tcracks.opp .tcracks-glow {
+  opacity: 0.75;
+}
+/* the cracks run up from the duelist's edge (the opponent's svg is flipped, so theirs run down) */
+@keyframes crack-run {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes crack-glow {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tcracks {
+    animation: none;
+  }
+  .tcracks-glow {
+    animation: none;
+  }
+}

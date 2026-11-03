@@ -14,7 +14,7 @@ import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, typ
 import { cueSting } from './cueSound';
 import { boom, chime, drone, swell, whoosh, zap } from './sfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
-import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
+import { characterName, classify, effectText, FX_FAMILIES, TERRAIN_COLORS, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
 import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
 import { fullArtCard, goldArt, millenniumEyeCanvas } from './fullArt';
@@ -6247,19 +6247,6 @@ function flourishOf(who: string, seed: number): Flourish {
   return { color, light: known.light ?? 0xffffff, mode: known.mode ?? MODES[Math.floor(r() * MODES.length)], star: known.star ?? 4 + Math.floor(r() * 4), spin: (r() < 0.5 ? -1 : 1) * (1 + r()) };
 }
 
-/** The colors each terrain paints (sky color, light color). */
-const TERRAIN_COLORS: Record<Terrain, [number, number]> = {
-  volcano: [0xff4a1a, 0xffc040],
-  ocean: [0x1a6aff, 0x9ae8ff],
-  forest: [0x2a9a3a, 0xd8ff8a],
-  sky: [0x4a8aff, 0xf0f8ff],
-  holy: [0xffe08a, 0xffffff],
-  shadow: [0x6a2aaa, 0xff4ad8],
-  arcane: [0x8a4aff, 0x7affff],
-  tech: [0x1ad8ff, 0x7aff9a],
-  wasteland: [0xc08a4a, 0xffe0a0],
-  cosmos: [0x5a3aff, 0xffffff],
-};
 
 /** A family cinematic's colors for one card: the family's own, leaning toward the card's art and seeded. */
 function famColors(fam: FxFamily, r: () => number, art: ArtData | null): Colors {
