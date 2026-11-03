@@ -11,7 +11,8 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
-import { playBlip, playDraw, playWin, setSoundEnabled, unlockAudio, useSoundEnabled } from './sound';
+import { playBlip, playDraw, playWin, setMusicEnabled, setSoundEnabled, unlockAudio, useMusicEnabled, useSoundEnabled } from './sound';
+import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
@@ -85,6 +86,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [pass, setPass] = useState(false);
   const artItems = useCinematicsMenu();
   const soundOn = useSoundEnabled();
+  const musicOn = useMusicEnabled();
+  // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
+  useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
   const matesShown = useMatesShown();
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
@@ -625,6 +629,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
+                ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
