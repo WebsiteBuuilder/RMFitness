@@ -19,6 +19,7 @@ import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { introLeft } from './immersionState';
 import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
 import './arena.css';
 
@@ -165,8 +166,13 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
-    if (state.turn === 1 && state.log.length < 6) showBanner('DUEL!', 'duel', 1300, turnWho);
-    else showBanner(turnWho, state.turnPlayer === acting ? 'mine' : 'theirs', 1100, `Turn ${state.turn}`);
+    if (state.turn === 1 && state.log.length < 6) {
+      // after the face-off (which has its own "DUEL!"), straight to whose turn it is
+      const wait = introLeft();
+      if (wait <= 0) return showBanner('DUEL!', 'duel', 1300, turnWho);
+      const t = setTimeout(() => showBanner(turnWho, state.turnPlayer === acting ? 'mine' : 'theirs', 1100, 'Turn 1'), wait + 60);
+      return () => clearTimeout(t);
+    } else showBanner(turnWho, state.turnPlayer === acting ? 'mine' : 'theirs', 1100, `Turn ${state.turn}`);
   }, [state.turn]);
   const lastPhase = useRef(state.phase);
   useEffect(() => {

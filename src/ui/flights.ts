@@ -10,6 +10,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
+import { drawHeld, introLeft } from './immersionState';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -206,7 +207,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     } else
       places.forEach((w, uid) => {
         const was = before!.places.get(uid);
-        if (was !== undefined && was !== w) moved.push([uid, was, w]);
+        // (your Draw Phase card waiting for your swipe flies when you draw it: ./heartDraw)
+        if (was !== undefined && was !== w && !drawHeld(uid)) moved.push([uid, was, w]);
       });
     if (moved.length === 0 || moved.length > 12) return;
     let draws = 0;
@@ -239,7 +241,8 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // hands hidden meanwhile; then every rect is measured again and the cards fly.
     flights.forEach((f) => f.target && (f.target.style.opacity = '0'));
     // the art loader stands back until the cards are in hand (its first pictures stalled the deal)
-    hush(3500);
+    const introWait = Math.max(0, introLeft() - 450);
+    hush(3500 + introWait);
     const go = () => {
       const now = root.current;
       for (const f of flights) {
@@ -260,7 +263,10 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
       if (done || (ev && ev.target !== mat)) return;
       done = true;
       mat?.removeEventListener('animationend', once);
-      go();
+      // (under the face-off: the deal starts as its two halves split apart)
+      const wait = Math.max(0, introLeft() - 450);
+      if (wait > 0) timers.current.push(setTimeout(go, wait));
+      else go();
     };
     // (the swing starts once the screen is armed, a couple of frames after it opens)
     const armed = el.classList.contains('armed');

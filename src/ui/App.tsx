@@ -16,7 +16,8 @@ import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
 import { DEFAULT_TACTICS, type Tactics } from '../eds/tactics';
 import { savedDifficulty, type Difficulty } from '../eds/difficulty';
-import { cpuDelay, spotUid, spotlight } from './cpuPace';
+import { BANNER_MS, cpuDelay, spotUid, spotlight } from './cpuPace';
+import { introLeft } from './immersionState';
 import { applyPackUnlocks, displayName, type Duelist } from '../eds/campaign';
 import { randomSeed } from '../eds/rng';
 import { PeerAdapter } from '../sync/peer';
@@ -1671,7 +1672,9 @@ function Running({
       // Master Duel pacing: nothing under the turn banner, then a readable beat per move (shorter at a
       // faster Animation speed) with a spotlight on the card it moves...
       const st = session.engine.state;
-      const pace = watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() });
+      // (and the face-off before the first turn plays out first, with the turn banner after it)
+      const intro = introLeft();
+      const pace = Math.max(intro > 0 ? intro + BANNER_MS + 250 : 0, watch ? (quick ? 250 : 900) / watch.speed : cpuDelay(action, { sinceTurn: Date.now() - turnAt.current.at, firstTurn: st.turn === 1, ownTurn: st.turnPlayer === seat && !st.prompt, animSpeed: getAnimSpeed() }));
       const send = () => {
         const uid = spotUid(action!);
         session.send(action!);
