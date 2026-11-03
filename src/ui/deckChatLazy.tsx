@@ -20,17 +20,38 @@ export function preloadDeckChat(): Promise<Mod> {
 
 export function DeckChat(p: ComponentProps<Mod['DeckChat']>) {
   const [m, setM] = useState<Mod | null>(mod);
+  const [failed, setFailed] = useState(false);
+  const load = () => {
+    setFailed(false);
+    preloadDeckChat().then(setM, () => setFailed(true));
+  };
   useEffect(() => {
-    if (!m) preloadDeckChat().then(setM, () => {});
+    if (!m) load();
   }, []);
-  return m ? <m.DeckChat {...p} /> : null;
+  if (m) return <m.DeckChat {...p} />;
+  // (still downloading: a moment at most, it started when the editor opened)
+  if (!failed) return null;
+  return (
+    <div role="alert" style="position:fixed;left:50%;bottom:18%;transform:translateX(-50%);z-index:70;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 10px;align-items:center;width:min(92vw,360px);padding:12px 14px;border-radius:12px;background:#0d1236f2;border:1px solid #ffffff30;color:#e8ecff;font-size:14px;box-shadow:0 8px 24px #0008">
+      <span>Chat couldn't load. Check your connection.</span>
+      <button class="gbtn" onClick={load}>
+        Try again
+      </button>
+      <button class="gbtn" onClick={p.onClose}>
+        Close
+      </button>
+    </div>
+  );
 }
+
+/** Where a deck's chat is saved on the phone (DeckChat.tsx uses the same key). */
+export const chatStoreKey = (deckId: string) => `eds.deckChat.${deckId}`;
 
 /** A deleted deck's chat goes with it (its saved copy, even if the chat never opened this session). */
 export function forgetDeckChat(deckId: string) {
   if (mod) return mod.forgetDeckChat(deckId);
   try {
-    localStorage.removeItem(`eds.deckChat.${deckId}`);
+    localStorage.removeItem(chatStoreKey(deckId));
   } catch {
     /* nothing saved */
   }

@@ -136,6 +136,9 @@ export class PeerTransport implements Transport {
       this.ready = true;
       this.takenSince = 0;
       this.fails = 0;
+      // on the broker again (a wake() or a reconnect beat the retry timer): a stale retry must not rebuild it
+      if (this.retry) clearTimeout(this.retry);
+      this.retry = null;
       h.onState('ready');
     });
     peer.on('connection', (conn) => {

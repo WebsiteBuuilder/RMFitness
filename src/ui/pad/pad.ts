@@ -252,8 +252,11 @@ function drawRing() {
   if (!ring) return;
   if (!on || !focused || !focused.isConnected) {
     ring.style.opacity = '0';
+    // a hidden ring doesn't pulse: its box-shadow pulse would redraw the page 60 times a second on every screen
+    ring.style.animationPlayState = 'paused';
     return;
   }
+  ring.style.animationPlayState = '';
   // (a screen redraw may have rewritten its class list)
   if (!focused.classList.contains('pad-focus')) focused.classList.add('pad-focus');
   const r = focused.getBoundingClientRect();
@@ -1047,6 +1050,7 @@ export function installPad() {
   installed = true;
   ring = document.createElement('div');
   ring.className = 'pad-ring pad-ui';
+  ring.style.animationPlayState = 'paused'; // (pulses only while shown: see drawRing)
   hints = document.createElement('div');
   hints.className = 'pad-hints pad-ui';
   toast = document.createElement('div');
