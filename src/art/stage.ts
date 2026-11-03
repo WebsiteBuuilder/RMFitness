@@ -2482,6 +2482,8 @@ export class Stage {
   halfH = 1;
   /** time scale: Fast mode plays everything quicker */
   speed = 1;
+  /** slow motion: everything on stage (cinematic, particles, figures) runs at this speed; 1 = real time */
+  warp = 1;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
   running = false;
@@ -2793,7 +2795,7 @@ export class Stage {
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
-    let dt = Math.min(0.2, ms / 1000) * this.speed;
+    let dt = Math.min(0.2, ms / 1000) * this.speed * this.warp;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;

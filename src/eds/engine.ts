@@ -3391,10 +3391,10 @@ export class Engine {
             if (n >= 2) dropped.add(fc.uid);
             continue;
           } else if (ok === false) {
-            this.event('activate', { uid: fc.uid, player: responder });
+            this.event('activate', { uid: fc.uid, player: responder, ...answered(ctx) });
             yield* this.afterResolve(link);
           } else {
-            this.event('activate', { uid: fc.uid, player: responder });
+            this.event('activate', { uid: fc.uid, player: responder, ...answered(ctx) });
             this.targetEvent(link);
             this.state.chain.push(link);
             depth++;
@@ -4027,6 +4027,12 @@ export class Engine {
     for (const uid of uids) this.toHand(uid);
   }
 }
+
+/** A response's activate event names the card it answers (the trap slam beat shows the two meeting). */
+const answered = (ctx: ChainCtx): { answers?: number } => {
+  const u = ctx.link?.card.uid ?? ctx.uid;
+  return u === undefined ? {} : { answers: u };
+};
 
 export interface ChainCtx {
   uid?: number;
