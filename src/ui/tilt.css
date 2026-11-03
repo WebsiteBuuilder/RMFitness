@@ -61,7 +61,7 @@
 
 /* the full-size card view: the card as wide as the screen allows, on black */
 .dk-zoom .tilt {
-  width: min(94vw, calc((100dvh - 90px) * 59 / 86));
+  width: min(84vw, calc((100dvh - 110px) * 59 / 86));
 }
 .dk-zoom .tilt .dk-zoom-img {
   width: 100%;

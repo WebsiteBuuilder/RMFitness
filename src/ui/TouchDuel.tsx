@@ -438,6 +438,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
+            {c.faceUp && <i class="tshine" aria-hidden="true" />}
             {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && named !== c.name && <span class="namechg">{named}</span>}
           </div>
@@ -665,14 +666,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       );
     if (prompt?.kind === 'response')
       return (
-        <div class="tsheet mine-choice">
+        <div class="tsheet mine-choice resp">
           <div class="tsheet-who">Your choice</div>
           <div class="tsheet-title">{prompt.title}</div>
           <div class="toptions">
             {prompt.options.map((o, i) => (
               <button key={i} class="topt" onClick={() => send({ type: 'CHOOSE', player: acting, picks: [i] })}>
                 {optionCard(o) ? <CardImg name={optionCard(o)!} /> : <span class="topt-text">{o.label}</span>}
-                <span class="topt-label">Activate</span>
+                <span class="topt-label">{optionCard(o) ? `Activate ${optionCard(o)}` : 'Activate'}</span>
               </button>
             ))}
           </div>
@@ -952,6 +953,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
                   {...liveDrag(c, 'hand')}
                 >
                   <CardImg name={c.name} back={!shown} owner={c.owner} />
+                  {shown && <i class="tshine" aria-hidden="true" />}
                   {shown && <span class="hname">{c.name}</span>}
                 </div>
               )}

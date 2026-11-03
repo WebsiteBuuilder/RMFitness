@@ -87,37 +87,6 @@
   }
 }
 
-/* ---- Life Points: lit metal numbers ---- */
-.duel.touch .tlp .lp-count {
-  background: linear-gradient(180deg, #ffffff 0%, #e8eeff 42%, #9fb2ff 52%, #dfe7ff 78%, #ffffff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: none;
-}
-.duel.touch .tbar.top .tlp .lp-count {
-  background-image: linear-gradient(180deg, #ffffff 0%, #ffe8ec 42%, #ff9fb0 52%, #ffe0e6 78%, #ffffff 100%);
-}
-.duel.touch .tlp {
-  text-shadow: none;
-}
-
-.duel.touch .tstat.up::before,
-.duel.touch .tstat.down::before {
-  font-size: 8px;
-  margin-right: 2px;
-  vertical-align: 1px;
-}
-.duel.touch .tstat.up::before {
-  content: '▲';
-}
-.duel.touch .tstat.down::before {
-  content: '▼';
-}
-.duel.touch .tstat.def.up {
-  color: #e6ffb0;
-}
-
 /* ---- cards on the field: the same clear-coat sheen as in your hand ---- */
 .duel.touch .tz:not(.empty):not(.pick)::after {
   content: '';
@@ -129,4 +98,66 @@
 }
 .duel.touch .tz.tz-m:has(.fcard.def):not(.pick)::after {
   inset: 18% 4%;
+}
+
+/* ---- foil and depth on the cards in a duel ----
+   A band of light glides over every face-up card now and then (staggered, so the hand
+   shimmers in a wave), each card has an edge (it reads as a real card, not a picture),
+   and the picked hand card leans toward you. Transform/opacity only. */
+.tshine {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.tshine::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(100deg, transparent 0%, #ffffff10 25%, #fff6d855 46%, #ffffffa0 50%, #c8f0ff55 54%, #ffffff10 75%, transparent 100%);
+  transform: translateX(-130%) skewX(-18deg);
+  animation: tshine 7s ease-in-out infinite;
+  animation-delay: calc(var(--arc, 0) * 0.18s + 1.2s);
+}
+/* (a field card's shine waits a different beat from the hand's) */
+.duel.touch .fcard .tshine::before {
+  animation-duration: 9s;
+  animation-delay: 3s;
+}
+@keyframes tshine {
+  0%,
+  72% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  92%,
+  100% {
+    transform: translateX(330%) skewX(-18deg);
+  }
+}
+/* the card's edge under it: a printed card has thickness */
+.duel.touch .thcard .cimg {
+  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 8px 14px #000000d0;
+}
+.duel.touch .tz .fcard .cimg {
+  box-shadow:
+    0 1px 0 #e9dcc0,
+    0 2px 0 #7a6c50,
+    0 3px 1px #000000a0,
+    0 8px 12px -2px #000000d0,
+    0 0 12px -2px var(--turn-soft);
+}
+/* the picked card leans toward you */
+.duel.touch .thcard.sel {
+  transform: perspective(700px) translateY(-10px) rotateX(10deg) scale(1.07);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tshine::before {
+    animation: none;
+    opacity: 0;
+  }
 }

@@ -384,13 +384,11 @@
 }
 @keyframes tbanner-word {
   0% {
-    transform: translateX(40px);
-    letter-spacing: 14px;
+    transform: translateX(40px) scaleX(1.25);
     opacity: 0;
   }
   25% {
     transform: none;
-    letter-spacing: 5px;
     opacity: 1;
   }
 }
@@ -411,11 +409,7 @@
   }
 }
 
-/* a cinematic owns the top of the screen for a moment (its skip hint sits there) */
-body.art-on .ttab.top {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
+
 
 /* ---- the other player has a choice open: the middle row says it, with the question under it ---- */
 .duel.touch .tmid .tturn .tdots {
@@ -461,18 +455,18 @@ body.art-on .ttab.top {
   background: linear-gradient(180deg, transparent 0%, transparent 40%, #00000070 70%, #000000b0 100%);
   animation: tedge-in 0.3s ease-out both;
 }
-.duel.touch .tsheet.mine-choice .topt {
+.duel.touch .tsheet.mine-choice:not(.resp) .topt {
   width: 84px;
 }
-.duel.touch .tsheet.mine-choice .topt .cimg {
+.duel.touch .tsheet.mine-choice:not(.resp) .topt .cimg {
   width: 78px;
   height: 114px;
 }
 @media (max-height: 700px) {
-  .duel.touch .tsheet.mine-choice .topt {
+  .duel.touch .tsheet.mine-choice:not(.resp) .topt {
     width: 76px;
   }
-  .duel.touch .tsheet.mine-choice .topt .cimg {
+  .duel.touch .tsheet.mine-choice:not(.resp) .topt .cimg {
     width: 70px;
     height: 102px;
   }
