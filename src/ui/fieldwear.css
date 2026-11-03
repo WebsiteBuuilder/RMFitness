@@ -37,9 +37,9 @@
   --fw-flash: #ffd38a;
   --fw-rest: 0.3; /* the embers left in the cracks once they cool (burnt stone, not lightning) */
 }
-.fw-s-core { stop-color: var(--fw-core); stop-opacity: 0.95; }
-.fw-s-mid { stop-color: var(--fw-mid); stop-opacity: 0.78; }
-.fw-s-rim { stop-color: var(--fw-rim); stop-opacity: 0.62; }
+.fw-s-core { stop-color: var(--fw-core); stop-opacity: 0.97; }
+.fw-s-mid { stop-color: var(--fw-mid); stop-opacity: 0.9; }
+.fw-s-rim { stop-color: var(--fw-rim); stop-opacity: 0.75; }
 .fw-s-out { stop-color: var(--fw-out); stop-opacity: 0; }
 .fw-s-f0 { stop-color: #ffffff; stop-opacity: 1; }
 .fw-s-f1 { stop-color: var(--fw-flash); stop-opacity: 0.85; }
@@ -49,7 +49,7 @@
 
 .fwear .fw-soot {
   fill: var(--fw-mid);
-  opacity: 0.62;
+  opacity: 0.78;
 }
 .fwear .fw-blot {
   opacity: 0.9;
@@ -77,24 +77,19 @@
 .fwear.lv-3 { --fw-lift: 0.2; }
 .fwear.more { --fw-lift: 0.28; }
 .fwear .fw-pit {
-  stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.45;
-  stroke-width: 0.9px;
-}
-.fwear .fw-pit {
   stroke: none;
 }
 .fwear .fw-lip-lit {
   fill: none;
   stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.5;
-  stroke-width: 1.1px;
+  stroke-opacity: 0.6;
+  stroke-width: 1.7px;
 }
 .fwear .fw-lip-dark {
   fill: none;
   stroke: #000;
-  stroke-opacity: 0.75;
-  stroke-width: 1.6px;
+  stroke-opacity: 0.85;
+  stroke-width: 2.4px;
 }
 .fwear .fw-chip-sh {
   fill: #000;
@@ -121,19 +116,16 @@
 }
 .fwear-held .fw-held-soot {
   fill: none;
-  stroke: var(--fw-mid);
-  stroke-opacity: 0.85;
-  stroke-width: 4px;
-}
-.fwear-held .fw-held {
-  fill: none;
-  stroke: var(--fw-glow);
+  stroke: #000;
   stroke-opacity: 0.55;
-  stroke-width: 1.2px;
-  stroke-dasharray: 7 3 2 5 11 4;
+  stroke-width: 5px;
 }
-.fwear-held.lv-2 .fw-held { stroke-opacity: 0.7; }
-.fwear-held.lv-3 .fw-held { stroke-opacity: 0.85; stroke-width: 1.6px; }
+.fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.7; }
+.fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.82; stroke-width: 6px; }
+.fwear-held .fw-held-embers {
+  fill: var(--fw-glow);
+  opacity: 0.85;
+}
 .fwear .fw-speck {
   fill: var(--fw-speck);
   opacity: 0.55;
@@ -149,7 +141,8 @@
 }
 
 /* ---- each landscape scars its own way (the duelist's own Field Spell; re-tints when it changes) ---- */
-:is(.fwear, .fwear-held).st-volcano {
+.fwear.st-volcano,
+.fwear-held.st-volcano {
   --fw-rim: #8a2a06;
   --fw-mid: #1a0503;
   --fw-glow: #ff5a14;
@@ -161,7 +154,8 @@
   --fw-flash: #ffcf6a;
   --fw-rest: 0.55;
 }
-:is(.fwear, .fwear-held).st-ocean {
+.fwear.st-ocean,
+.fwear-held.st-ocean {
   --fw-rim: #0a4a5e;
   --fw-core: #01080e;
   --fw-mid: #031722;
@@ -176,7 +170,8 @@
   --fw-flash: #cdf8ff;
   --fw-rest: 0.32;
 }
-:is(.fwear, .fwear-held).st-forest {
+.fwear.st-forest,
+.fwear-held.st-forest {
   --fw-rim: #4a2a0a;
   --fw-mid: #0d0904;
   --fw-glow: #ffb43a;
@@ -187,7 +182,8 @@
   --fw-flash: #ffe08a;
   --fw-rest: 0.3;
 }
-:is(.fwear, .fwear-held).st-sky {
+.fwear.st-sky,
+.fwear-held.st-sky {
   --fw-rim: #3a4a6a;
   --fw-core: #10141f;
   --fw-mid: #1c2436;
@@ -201,7 +197,8 @@
   --fw-flash: #ffffff;
   --fw-rest: 0.3;
 }
-:is(.fwear, .fwear-held).st-holy {
+.fwear.st-holy,
+.fwear-held.st-holy {
   --fw-rim: #6a4a10;
   --fw-core: #120c02;
   --fw-mid: #22180a;
@@ -215,7 +212,8 @@
   --fw-flash: #fff6d0;
   --fw-rest: 0.32;
 }
-:is(.fwear, .fwear-held).st-shadow {
+.fwear.st-shadow,
+.fwear-held.st-shadow {
   --fw-rim: #3a0e52;
   --fw-core: #000000;
   --fw-mid: #12061c;
@@ -229,7 +227,8 @@
   --fw-flash: #e8a8ff;
   --fw-rest: 0.4;
 }
-:is(.fwear, .fwear-held).st-arcane {
+.fwear.st-arcane,
+.fwear-held.st-arcane {
   --fw-rim: #5a0e52;
   --fw-mid: #1a0418;
   --fw-out: #1a041800;
@@ -241,7 +240,8 @@
   --fw-flash: #ffc8f6;
   --fw-rest: 0.36;
 }
-:is(.fwear, .fwear-held).st-tech {
+.fwear.st-tech,
+.fwear-held.st-tech {
   --fw-rim: #0a4a4a;
   --fw-mid: #021012;
   --fw-out: #02101200;
@@ -255,7 +255,8 @@
   --fw-flash: #b8fff6;
   --fw-rest: 0.4;
 }
-:is(.fwear, .fwear-held).st-wasteland {
+.fwear.st-wasteland,
+.fwear-held.st-wasteland {
   --fw-rim: #6a4418;
   --fw-core: #140c04;
   --fw-mid: #2a1c0c;
@@ -269,7 +270,8 @@
   --fw-flash: #ffd89a;
   --fw-rest: 0.28;
 }
-:is(.fwear, .fwear-held).st-cosmos {
+.fwear.st-cosmos,
+.fwear-held.st-cosmos {
   --fw-rim: #1a2266;
   --fw-core: #000000;
   --fw-mid: #060818;
@@ -299,12 +301,15 @@
   transform-origin: var(--hx) var(--hy);
   animation: fw-spread 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.35s both;
 }
+.fwear .fw-hit.fresh .fw-dark,
+.fwear .fw-hit.fresh .fw-glow {
+  transform-box: view-box;
+  transform-origin: var(--hx) var(--hy);
+}
 .fwear .fw-hit.fresh .fw-dark {
-  clip-path: circle(0% at var(--hx) var(--hy)) view-box;
   animation: fw-run 0.6s ease-out 0.4s both;
 }
 .fwear .fw-hit.fresh .fw-glow {
-  clip-path: circle(0% at var(--hx) var(--hy)) view-box;
   animation:
     fw-run 0.6s ease-out 0.4s both,
     fw-cool 2s ease-out 0.4s both;
@@ -316,9 +321,10 @@
   from { transform: scale(0.35); opacity: 0; }
   to { transform: none; }
 }
+/* (the cracks run out from the blow: a transform, which every phone's WebView animates) */
 @keyframes fw-run {
-  from { clip-path: circle(0% at var(--hx) var(--hy)) view-box; }
-  to { clip-path: circle(120% at var(--hx) var(--hy)) view-box; }
+  from { transform: scale(0.12); }
+  to { transform: none; }
 }
 @keyframes fw-cool {
   0% { opacity: 1; fill: #ffffff; }
@@ -351,7 +357,6 @@ body.art-on .fwear .fw-hit.fresh {
   .fwear .fw-hit.fresh *,
   .fwear .fw-hit.fresh {
     animation: none !important;
-    clip-path: none !important;
   }
 }
 
@@ -359,9 +364,14 @@ body.art-on .fwear .fw-hit.fresh {
 
 /* ---- a zone being aimed at, dropped on or picked: its highlight wins over the marks ---- */
 .tz.drop-ok .fwear,
+.tz.drop-ok .fwear-held,
 .tz.drop-on .fwear,
+.tz.drop-on .fwear-held,
 .tz.pick .fwear,
+.tz.pick .fwear-held,
 .zone.sel .fwear,
-.zone.pick .fwear {
+.zone.sel .fwear-held,
+.zone.pick .fwear,
+.zone.pick .fwear-held {
   opacity: 0.4;
 }

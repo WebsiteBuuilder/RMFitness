@@ -3,7 +3,7 @@
 import { Engine } from '../src/eds/engine';
 import { DB as APP_DB } from '../src/eds/db';
 import type { FieldCard, Pid } from '../src/eds/types';
-import { MAX_LOOK, W, H, wearHit, wearHits, wearOf, wearStyle } from '../src/ui/fieldWearRules';
+import { landed, landingAt, MAX_LOOK, newLanding, W, H, wearHit, wearHits, wearOf, wearStyle } from '../src/ui/fieldWearRules';
 import { DB } from './speedkit';
 
 for (const [k, v] of DB) APP_DB.set(k, v);
@@ -106,6 +106,22 @@ const inBox = (d: string) => [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].every(([,
   });
   check(straight, 'a machine floor (Tech) cracks along straight seams');
   check(wearStyle(null) === 'plain' && wearStyle('volcano') === 'volcano', "the marks follow the duelist's own landscape");
+}
+
+// --- a mark lands (flash and cooling) only when it appears in front of you
+{
+  const l = newLanding();
+  check(landingAt(l, 2, false) === 0, 'marks already there when the board appears (rejoin, hand-over) do not land again');
+  check(landingAt(l, 2, false) === 0, 'a re-render does not replay anything');
+  check(landingAt(l, 3, false) === 3, 'a new destruction lands');
+  check(landingAt(l, 3, false) === 3, '...and keeps landing through re-renders until it is done');
+  landed(l, 3);
+  check(landingAt(l, 3, false) === 0, 'once it has cooled, nothing is left running');
+  check(landingAt(l, 4, false) === 4, 'a 4th destruction re-lights the worst mark');
+  check(landingAt(l, 1, false) === 0 && landingAt(l, 2, false) === 2, 'a replay stepping back clears it; stepping on lands again');
+  const q = newLanding();
+  landingAt(q, 0, true);
+  check(landingAt(q, 1, true) === 0, 'reduced motion: marks just appear');
 }
 
 if (fails) {

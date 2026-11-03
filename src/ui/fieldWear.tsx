@@ -6,10 +6,10 @@
 // The count lives in the engine state (fx.wear), so it is the same on both phones online, after
 // a rejoin and in a replay; a new duel starts clean. The marks sit under the card and under the
 // zone's highlights, and never take a tap.
-import { useId, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useMemo, useRef, useState } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { fieldTerrain } from './atmosphereRules';
-import { H, MAX_LOOK, W, wearHits, wearOf, wearStyle, type WearHit } from './fieldWearRules';
+import { H, landed, landingAt, MAX_LOOK, newLanding, W, wearHits, wearOf, wearStyle, type Landing, type WearHit } from './fieldWearRules';
 import './fieldwear.css';
 
 export { wearOf };
@@ -43,6 +43,24 @@ const merge = (h: WearHit): Drawn => ({
 
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** Embers smouldering round a card that stands on a worn zone (seeded: the same every render). */
+function embersOf(p: number, zone: number, lv: number): string {
+  let s = (p * 977 + zone * 131 + 7) >>> 0;
+  const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  let d = '';
+  for (let i = 0; i < 5 + lv * 3; i++) {
+    // along the frame: pick an edge, a spot on it, just outside or on the line
+    const e = Math.floor(r() * 4);
+    const t = r();
+    const o = -1.5 + r() * 2.5;
+    const x = e === 0 ? t * W : e === 1 ? W - o : e === 2 ? t * W : o;
+    const y = e === 0 ? o : e === 1 ? t * H : e === 2 ? H - o : t * H;
+    const rr = 0.5 + r() * 0.8;
+    d += dot([+x.toFixed(1), +y.toFixed(1), +rr.toFixed(2)]);
+  }
+  return d;
+}
+
 interface Props {
   state: DuelState;
   p: Pid;
@@ -56,15 +74,20 @@ export function ZoneWear({ state, p, zone }: Props) {
   // (a mark that appears while this zone is on screen is fresh: it lands with a flare and cools;
   //  one already there when the board mounts, after a rejoin or a hand-over, is simply there)
   //  (the flag stays on the newest mark, so a later re-render never cuts its animation short)
-  const seen = useRef<number | null>(null);
-  const freshN = useRef(0);
-  if (seen.current !== null && n > seen.current && !reduced()) freshN.current = n;
-  const cooled = useRef(0);
-  if (n < (seen.current ?? 0)) freshN.current = cooled.current = 0; // (a replay stepping back)
-  seen.current = n;
-  // (once the landing has played, the mark drops its animation classes: nothing left running or clipped)
+  const land = useRef<Landing>(newLanding());
   const [, setTick] = useState(0);
-  const fresh = freshN.current > cooled.current ? freshN.current : 0;
+  const fresh = landingAt(land.current, n, reduced());
+  const done = () => {
+    if (!fresh || land.current.cooled >= fresh) return;
+    landed(land.current, fresh);
+    setTick((t) => t + 1);
+  };
+  // (a fallback: a landing paused under a long cinematic, or cancelled by a settings change, still ends)
+  useEffect(() => {
+    if (!fresh) return;
+    const id = setTimeout(done, 15000);
+    return () => clearTimeout(id);
+  }, [fresh]);
   const uid = useId();
   const grid = style === 'tech';
   // (drawn once per new mark, not on every render of the board)
@@ -77,8 +100,8 @@ export function ZoneWear({ state, p, zone }: Props) {
     {/* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */}
     {held && (
       <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <rect class="fw-held-soot" x="-2" y="-2" width={W + 4} height={H + 4} rx="6" />
-        <rect class="fw-held" x="-1" y="-1" width={W + 2} height={H + 2} rx="5" />
+        <rect class="fw-held-soot" x="-1.5" y="-1.5" width={W + 3} height={H + 3} rx="6" />
+        <path class="fw-held-embers" d={embersOf(p, zone, lv)} />
       </svg>
     )}
     <svg
@@ -86,19 +109,15 @@ export function ZoneWear({ state, p, zone }: Props) {
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
       aria-hidden="true"
-      onAnimationEnd={(ev) => {
-        if ((ev as AnimationEvent).animationName === 'fw-cool' && fresh) {
-          cooled.current = fresh;
-          setTick((t) => t + 1);
-        }
-      }}
+      onAnimationEnd={(ev) => (ev as AnimationEvent).animationName === 'fw-cool' && done()}
     >
       <defs>
         <radialGradient id={`${id}c`}>
           <stop offset="0" class="fw-s-core" />
-          <stop offset="0.5" class="fw-s-mid" />
-          <stop offset="0.84" class="fw-s-rim" />
-          <stop offset="0.95" class="fw-s-out" />
+          <stop offset="0.42" class="fw-s-core" />
+          <stop offset="0.66" class="fw-s-mid" />
+          <stop offset="0.82" class="fw-s-rim" />
+          <stop offset="0.9" class="fw-s-out" />
         </radialGradient>
         <radialGradient id={`${id}f`}>
           <stop offset="0" class="fw-s-f0" />

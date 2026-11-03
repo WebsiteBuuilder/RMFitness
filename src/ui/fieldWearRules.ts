@@ -135,18 +135,24 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
     const d = 'M' + pts.map(([x, y]) => `${f1(x)} ${f1(y)}`).join(' L');
     cracks.push({ d, w, gap: taper(pts, 1.75 * w), core: taper(pts, 0.42 * w) });
   };
-  const trunks = [0, 5, 6, 7][lv];
+  const trunks = [0, 5, 6, 6][lv];
   const turn0 = r() * Math.PI * 2;
-  for (let t = 0; t < trunks; t++) grow(x, y, turn0 + (t / trunks) * Math.PI * 2 + (r() - 0.5) * 0.5, reach * (0.7 + r() * 0.5), 1, 0);
+  // (the first two burst from where the monster fell; the third breaks the slab along a fault: its
+  //  cracks start from points scattered round the blow, so it reads as broken stone, not a star in glass)
+  for (let t = 0; t < trunks; t++) {
+    const fa = r() * Math.PI * 2;
+    const fd = lv >= 3 ? rad * (0.15 + r() * 0.55) : 0;
+    grow(clampX(x + Math.cos(fa) * fd), clampY(y + Math.sin(fa) * fd * 1.25), turn0 + (t / trunks) * Math.PI * 2 + (r() - 0.5) * (lv >= 3 ? 1.4 : 0.5), reach * (0.7 + r() * 0.5), 1, 0);
+  }
   // the third hit breaks pieces out of the slab
   const chips: WearChip[] = [];
   if (lv >= 3) {
-    const n = Math.min(joints.length, 7 + Math.floor(r() * 3));
+    const n = Math.min(joints.length, 5 + Math.floor(r() * 2));
     const picks = joints.map((j) => [r(), j] as const).sort((a, b) => a[0] - b[0]).slice(0, n).map(([, j]) => j);
     for (const [jx, jy, ang] of picks) {
       // a sharp sliver lying along the crack: long axis on the crack, two or three cutting corners
-      const len = 8 + r() * 5;
-      const wid = 4 + r() * 3;
+      const len = 10 + r() * 6;
+      const wid = 5.5 + r() * 3.5;
       const side = r() < 0.5 ? -1 : 1;
       const ca = Math.cos(ang);
       const sa = Math.sin(ang);
@@ -162,7 +168,7 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
         const ny = -(bx - ax); // (outward normal for a clockwise outline; either way, the up-left ones)
         if (nx + ny < 0) lit += `M${f1(ax)} ${f1(ay)} L${f1(bx)} ${f1(by)} `;
       }
-      chips.push({ face: path(pts), shadow: path(pts, 0.9, 1.2), lit: lit.trim() || `M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}` });
+      chips.push({ face: path(pts), shadow: path(pts, 1.3, 1.7), lit: lit.trim() || `M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}` });
     }
   }
   const specks: [number, number, number][] = [];
@@ -180,4 +186,30 @@ export function wearHits(p: Pid, zone: number, count: number, grid = false): Wea
   const out: WearHit[] = [];
   for (let k = 1; k <= Math.min(count, MAX_LOOK); k++) out.push(wearHit(1 + p * 977 + zone * 131, k, grid));
   return out;
+}
+
+/**
+ * Which mark of a zone is landing right now (its flash and cooling play), from the zone's count
+ * as it changes. A mark already there when the board appears (a rejoin, a hand-over, a replay
+ * opened midway) is simply there; a replay stepping back clears it; reduced motion never lands.
+ * Returns the count whose newest mark is landing (0: none).
+ */
+export interface Landing {
+  /** the count last seen (null: not seen yet, the zone just appeared) */
+  seen: number | null;
+  /** the count whose newest mark started landing */
+  fresh: number;
+  /** ...and the one whose landing finished */
+  cooled: number;
+}
+export const newLanding = (): Landing => ({ seen: null, fresh: 0, cooled: 0 });
+export function landingAt(l: Landing, n: number, reduced: boolean): number {
+  if (l.seen !== null && n > l.seen && !reduced) l.fresh = n;
+  if (n < (l.seen ?? 0)) l.fresh = l.cooled = 0;
+  l.seen = n;
+  return l.fresh > l.cooled ? l.fresh : 0;
+}
+/** The landing finished (its animation ended, was cancelled, or its time ran out). */
+export function landed(l: Landing, fresh: number) {
+  if (fresh > l.cooled) l.cooled = fresh;
 }
