@@ -32,7 +32,7 @@ export const REACT_SPEC: Record<MateReact, ReactSpec> = {
   lose: { face: 'sad', emote: 'dots', ms: 0, loop: true },
   // (the duel's own moments: an attack coming at it, Life Points running low, a gloat, a sprung Trap)
   flinch: { face: 'wow', emote: 'sweat', ms: 900 },
-  sweat: { face: 'nervous', emote: 'sweat', ms: 1700 },
+  sweat: { face: 'nervous', emote: 'sweat', ms: 1900 },
   grin: { face: 'smirk', emote: null, ms: 1300 },
   taunt: { face: 'smirk', emote: 'taunt', ms: 2400 },
 };
@@ -88,7 +88,8 @@ export function cuesFor(evs: EngineEvent[], big: (ev: EngineEvent) => boolean, l
     } else if (ev.kind === 'damage' && ev.player !== undefined && (ev.amount ?? 0) > 0) {
       const a = ev.amount ?? 0;
       const left = ev.from !== undefined ? ev.from - a : null;
-      offer(ev.player, a >= 2000 ? 'sad' : left !== null && left > 0 && left <= LOW_LP ? 'sweat' : 'hurt');
+      // (hanging on by a thread beats how hard the hit was)
+      offer(ev.player, left !== null && left > 0 && left <= LOW_LP ? 'sweat' : a >= 2000 ? 'sad' : 'hurt');
       offer(otherSeat(ev.player), a >= 1000 ? 'laugh' : 'grin');
     }
   }

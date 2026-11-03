@@ -122,10 +122,16 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
         <g>
           {dot(lx, 0.85)}
           {arc(rx, true)}
-          <path d={`M${lx - 4 * s} ${y - 6 * s} Q${lx} ${y - 9 * s} ${lx + 4 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} fill="none" stroke-linecap="round" />
+          <path d={`M${lx - 4.5 * s} ${y - 6 * s} Q${lx} ${y - 10.5 * s} ${lx + 4.5 * s} ${y - 8 * s}`} stroke={brow} stroke-width={sw * 0.8} fill="none" stroke-linecap="round" />
+          <path d={`M${rx - 4 * s} ${y - 5.5 * s} L${rx + 4 * s} ${y - 4 * s}`} stroke={brow} stroke-width={sw * 0.8} stroke-linecap="round" />
         </g>
       );
-      mouth = <path d={`M${x - 4.5 * s} ${my} Q${x + 0.5 * s} ${my + 3.5 * s} ${x + 4.5 * s} ${my - 2.5 * s}`} stroke={ink} stroke-width={sw * 0.8} fill="none" stroke-linecap="round" />;
+      mouth = (
+        <g>
+          <path d={`M${x - 5 * s} ${my + 0.5 * s} Q${x + 0.5 * s} ${my + 4 * s} ${x + 5 * s} ${my - 3.5 * s}`} stroke={ink} stroke-width={sw * 0.85} fill="none" stroke-linecap="round" />
+          <path d={`M${x + 5 * s} ${my - 3.5 * s} l${1.6 * s} ${-0.6 * s}`} stroke={ink} stroke-width={sw * 0.7} stroke-linecap="round" />
+        </g>
+      );
       break;
     case 'nervous':
       // (small eyes, worried brows, a wobbly mouth and a bead of sweat)
@@ -135,7 +141,7 @@ function FaceParts({ f, at }: { f: Face; at: FaceSpot }): VNode {
           {dot(rx, 0.7)}
           <path d={`M${lx - 4 * s} ${y - 5 * s} L${lx + 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
           <path d={`M${rx + 4 * s} ${y - 5 * s} L${rx - 3 * s} ${y - 7 * s}`} stroke={brow} stroke-width={sw * 0.7} stroke-linecap="round" />
-          <path class="mt-sweatbead" d={`M${rx + 7 * s} ${y - 9 * s} q${-2.2 * s} ${3.6 * s} 0 ${5.4 * s} q${2.2 * s} ${-1.8 * s} 0 ${-5.4 * s}Z`} fill="#7cd3ff" stroke="#1d3b5c" stroke-width={0.6 * s} />
+          <path class="mt-sweatbead" d={`M${rx + 7.5 * s} ${y - 11 * s} q${-3.4 * s} ${5.4 * s} 0 ${8 * s} q${3.4 * s} ${-2.6 * s} 0 ${-8 * s}Z`} fill="#7cd3ff" stroke="#1d3b5c" stroke-width={0.8 * s} />
         </g>
       );
       mouth = <path d={`M${x - 4 * s} ${my} q${s} ${-2 * s} ${2 * s} 0 t${2 * s} 0 t${2 * s} 0 t${2 * s} 0`} stroke={ink} stroke-width={sw * 0.7} fill="none" stroke-linecap="round" />;

@@ -465,7 +465,7 @@
   }
 }
 .mt-sweatbead {
-  animation: mate-bead 1.6s ease-in forwards;
+  animation: mate-bead 1.9s ease-in forwards;
 }
 @keyframes mate-bead {
   0% {
@@ -626,6 +626,11 @@
   font-weight: 900;
   letter-spacing: 0.01em;
   animation-duration: 2.4s;
+}
+.mate-spot.top .mate-emote.em-taunt {
+  /* (theirs stands under its own bubble: lift it clear of the eyes) */
+  top: -34%;
+  right: 66%;
 }
 .mate-emote.em-taunt::after {
   background: #fff3f0;

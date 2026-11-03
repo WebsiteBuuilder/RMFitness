@@ -140,6 +140,8 @@ t('Life Points running low: a sweat, not just a wince', () => {
   // (still plenty left: an ordinary wince; knocked out: that's the loss, not a sweat)
   assert.equal(cuesFor([ev({ kind: 'damage', player: 1, amount: 600, from: 4000 })], never)[1].react, 'hurt');
   assert.equal(cuesFor([ev({ kind: 'damage', player: 1, amount: 600, from: 600 })], never)[1].react, 'hurt');
+  // a huge hit that still leaves them hanging on: a sweat beats the sad slump
+  assert.equal(cuesFor([ev({ kind: 'damage', player: 1, amount: 2500, from: 3000 })], never)[1].react, 'sweat');
 });
 
 t('a sprung Trap: its side taunts with a line both phones agree on, the caught side flinches', () => {

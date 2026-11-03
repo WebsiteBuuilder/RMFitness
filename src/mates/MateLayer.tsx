@@ -9,7 +9,7 @@ import type { DuelState, EngineEvent, Pid } from '../eds/types';
 import { card as cardInfo } from '../eds/db';
 import { MateArt } from './MateArt';
 import { EMOTES, isMate, isReact, mateDef, type MateId, type MateReact } from './roster';
-import { canSend, cuesFor, endCues, REACT_SPEC, tapReact, type Bubble } from './react';
+import { canSend, cuesFor, endCues, LOW_LP, REACT_SPEC, tapReact, type Bubble, type Cue } from './react';
 import { useMatesShown } from './settings';
 import { playMate, unlockAudio } from '../ui/sound';
 import { setStageMates } from './onStage';
@@ -126,28 +126,35 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   const monsters = (s: DuelState): [number, number] => [s.players[0].mz.filter(Boolean).length, s.players[1].mz.filter(Boolean).length];
   const lastCount = useRef(monsters(state));
   const topSeq = state.events?.length ? state.events[state.events.length - 1].seq : 0;
+  // A moment with a sprung Trap waits out the "Not so fast!" slam, so the taunt and the caught
+  // side's flinch land together, as the Trap does. A newer moment plays it at once first, so a
+  // late taunt never covers what came after it.
+  const pending = useRef<{ t: number; cues: Cue[] } | null>(null);
+  const flush = (run: boolean) => {
+    const pend = pending.current;
+    if (!pend) return;
+    pending.current = null;
+    clearTimeout(pend.t);
+    if (run && live.current.session.engine.state.winner === null) for (const c of pend.cues) live.current.play(c.player, c.react, true, c.line);
+  };
   useEffect(() => {
     const fresh = (state.events ?? []).filter((x) => x.seq > lastSeq.current);
     const now = monsters(state);
     const was = lastCount.current;
     lastCount.current = now;
-    if (topSeq < lastSeq.current) lastSeq.current = topSeq; // the duel was rebuilt from its log
-    if (!fresh.length || state.winner !== null) return;
+    if (topSeq < lastSeq.current) (lastSeq.current = topSeq), flush(false); // the duel was rebuilt from its log
+    if (!fresh.length || state.winner !== null) return flush(false);
     lastSeq.current = fresh[fresh.length - 1].seq;
+    flush(true);
     const summoned = (p: Pid) => fresh.filter((x) => x.kind === 'summon' && x.player === p).length;
     // (a side that Summoned in this batch gave up its Tributes or materials: not a loss to be sad about)
     const lost = ([0, 1] as Pid[]).map((p) => (summoned(p) ? 0 : Math.max(0, was[p] - now[p]))) as [number, number];
-    for (const c of cuesFor(fresh, bigSummon(state), lost, sprungOn(state))) {
-      // (a taunt waits out the "Not so fast!" slam, so it lands as the Trap does)
-      if (c.react === 'taunt') {
-        clearTimeout(tauntT.current);
-        tauntT.current = window.setTimeout(() => live.current.session.engine.state.winner === null && live.current.play(c.player, 'taunt', true, c.line), TAUNT_DELAY_MS);
-      } else play(c.player, c.react);
-    }
+    const cues = cuesFor(fresh, bigSummon(state), lost, sprungOn(state));
+    if (cues.some((c) => c.react === 'taunt')) pending.current = { cues, t: window.setTimeout(() => flush(true), TAUNT_DELAY_MS) };
+    else for (const c of cues) play(c.player, c.react);
     quietSince.current = Date.now();
   }, [topSeq]);
-  const tauntT = useRef(0);
-  useEffect(() => () => clearTimeout(tauntT.current), []);
+  useEffect(() => () => flush(false), []);
 
   // (the newest session and play(), for listeners added once)
   const live = useRef({ session, play });
@@ -176,7 +183,9 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     const hi = state.turn <= 1 ? window.setTimeout(() => (play(0, 'wave', false), play(1, 'wave', false)), 1400) : 0;
     const doze = window.setInterval(() => {
       if (session.engine.state.winner !== null || Date.now() - quietSince.current < DOZE_MS) return;
-      play(other(session.engine.state.turnPlayer), 'sleep', false);
+      // (one hanging on by its last few Life Points sweats it out instead)
+      const p = other(session.engine.state.turnPlayer);
+      play(p, session.engine.state.players[p].lp <= LOW_LP ? 'sweat' : 'sleep', false);
     }, 4000);
     return () => (clearTimeout(hi), clearInterval(doze));
   }, []);
