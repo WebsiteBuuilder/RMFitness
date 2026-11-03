@@ -348,3 +348,25 @@ export function duelSlam() {
   hiss(0.6, 3000, 200, 0.12, 0, 'lowpass', 0.003);
   [196, 247, 294, 392].forEach((f) => tone(f, 0.9, 0.06, 0.01, { type: 'sawtooth', lp: 1500, attack: 0.01 }));
 }
+
+// ------------------------------------------------------------ damage counter pop
+
+/** The LP bar cracks: a glassy snap with a few tinkles, heavier (and lower) the bigger the hit. `crit`: a deep crunch under it. */
+export function lpCrack(sev: number, crit = false) {
+  const s = Math.max(0, Math.min(1, sev));
+  hiss(0.08 + s * 0.12, 5200, 1400, 0.08 + s * 0.1, 0, 'highpass', 0.001);
+  tone(1800 - s * 600, 0.04, 0.05 + s * 0.04, 0, { type: 'square', to: 600, lp: 5000 });
+  const n = 2 + Math.round(s * 4);
+  for (let i = 0; i < n; i++) tone(2200 + Math.random() * 1800, 0.04, 0.02 + s * 0.015, 0.03 + i * 0.035, { type: 'triangle', to: 1400 });
+  if (crit || s > 0.6) {
+    tone(80, 0.35, 0.16, 0.01, { type: 'sine', to: 38 });
+    hiss(0.3, 600, 120, 0.08, 0.02, 'lowpass', 0.005);
+  }
+}
+
+/** The LP gauge breaks under 1000: an electric crackle, a short fizz and a falling zap. */
+export function lpSpark() {
+  for (let i = 0; i < 6; i++) hiss(0.03, 7000, 3000, 0.06, 0.02 + i * 0.045 + Math.random() * 0.02, 'highpass', 0.001);
+  tone(2600, 0.25, 0.04, 0.02, { type: 'sawtooth', to: 300, lp: 4000 });
+  tone(120, 0.18, 0.05, 0.03, { type: 'square', lp: 500 });
+}

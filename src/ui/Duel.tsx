@@ -19,6 +19,7 @@ import { TouchDuel } from './TouchDuel';
 import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
+import { LpCracks, LpPops, useLpShake } from './lpHits';
 import { artBusy, onArtChange } from '../art/cues';
 import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
@@ -86,6 +87,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const setInfo = (name: string | null, owner?: Pid) => (setInfoName(name), setInfoOwner(owner));
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // Classic controls: Life Points dropping shake the board (Touch does its own, TouchDuel.tsx)
+  const classicRoot = useRef<HTMLDivElement>(null);
+  useLpShake(classicRoot, hotseat ? null : acting, !!e.speed, '.pbar, .field, .hand', !!spectator);
   const [askSurrender, setAskSurrender] = useState(false);
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
@@ -731,12 +735,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
 
   return (
-    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
+    <div ref={classicRoot} class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
       <div class="pbar top">
+        <LpCracks key={`cr${other(acting)}`} who={other(acting)} speed={!!e.speed} />
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
           LP <LpCount value={opp.lp} who={other(acting)} />
-          {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
+          <LpPops who={other(acting)} speed={!!e.speed} below={true} />
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
         {clockFor(other(acting))}
@@ -792,10 +797,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         {sideBox(acting, false)}
       </div>
       <div class="pbar bottom">
+        <LpCracks key={`cr${acting}`} who={acting} speed={!!e.speed} />
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
           LP <LpCount value={me.lp} who={acting} />
-          {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
+          <LpPops who={acting} speed={!!e.speed} below={false} />
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
         {clockFor(acting)}
