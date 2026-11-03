@@ -153,7 +153,7 @@
 }
 /* the picked card leans toward you */
 .duel.touch .thcard.sel {
-  transform: perspective(700px) translateY(-10px) rotateX(10deg) scale(1.07);
+  transform: perspective(700px) translateY(-10px) rotateX(-10deg) scale(1.07);
 }
 @media (prefers-reduced-motion: reduce) {
   .tshine::before {
