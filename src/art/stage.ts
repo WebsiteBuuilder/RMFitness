@@ -273,6 +273,7 @@ uniform vec3 uRim;
 uniform float uHolo;
 uniform float uHoloLine;
 uniform float uFlick;
+uniform float uHoloScroll;
 uniform vec3 uHoloCol;
 varying vec2 vUv;
 varying vec2 vMesh;
@@ -377,15 +378,18 @@ void main(){
     if (uWall > 0.5) holoA = 1.0 - holo;
     else {
       float lum = dot(c, vec3(0.299, 0.587, 0.114));
-      float lines = 0.5 + 0.5 * sin(vMesh.y * 240.0 - uTime * 14.0);
-      float roll = smoothstep(0.82, 1.0, fract(vMesh.y * 1.4 - uTime * 1.15));
+      float ht = uTime * uHoloScroll;
+      float lines = 0.5 + 0.5 * sin(vMesh.y * 300.0 - ht * 14.0);
+      float roll = smoothstep(0.82, 1.0, fract(vMesh.y * 1.4 - ht * 1.15)) * uHoloScroll;
       // bright projected light, the painting's light and dark kept as its detail, a glowing outline
       float sEdge = 1.0 - abs(subj * 2.0 - 1.0);
-      vec3 h = uHoloCol * (0.36 + lum * 1.7) * (0.6 + 0.4 * lines) + uHoloCol * (roll * 0.45 + sEdge * 0.9);
-      // a little of the painting's own color stays: it still reads as this monster
-      h = mix(h, c * 0.6 + uHoloCol * 0.4, 0.25);
+      // the painting's light and dark carry its detail (face, weapon, pose): contrast stretched, then tinted
+      float det = clamp((lum - 0.12) * 1.6, 0.0, 1.0);
+      vec3 h = uHoloCol * (0.18 + det * 1.45) * (0.72 + 0.28 * lines) + uHoloCol * (roll * 0.3 + sEdge * 1.1);
+      // a third of the painting's own color stays: it still reads as this monster
+      h = mix(h, c * 0.8 + uHoloCol * 0.25, 0.33);
       c = mix(c, h, holo);
-      holoA = 1.0 - holo * (0.3 - 0.15 * lines - roll * 0.12 + uFlick);
+      holoA = 1.0 - holo * (0.3 - 0.12 * lines - roll * 0.1 + uFlick);
     }
   }
   // capped below white before the bloom (hue kept): a bright figure under a flash stays a painting
@@ -1707,11 +1711,10 @@ void main(){
     float inside = 1.0 - smoothstep(w * 0.82, w, ax);
     float walls = exp(-pow((ax - w * 0.9) / (0.04 + 0.06 * y01), 2.0));
     float fy = smoothstep(-1.0, -0.9, p.y) * (1.0 - smoothstep(0.1, 1.0, p.y));
-    float lines = 0.7 + 0.3 * sin(p.y * 70.0 - uTime * 22.0);
-    float rings = smoothstep(0.9, 1.0, fract(y01 * 3.0 - uTime * 1.6)) * inside;
+    float lines = 0.8 + 0.2 * sin(p.y * 70.0 - uTime * 22.0);
     float n = 0.75 + 0.5 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
     float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0));
-    c = (uColor * (inside * 0.22 * lines + walls * 0.75 + rings * 0.5) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
+    c = (uColor * (inside * 0.16 * lines + walls * 0.75) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;
@@ -2250,6 +2253,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uHolo: 0,
         uHoloLine: -1,
         uFlick: 0,
+        uHoloScroll: 1,
         uGlitch: 0,
         uHoloCol: new Vector3(0.55, 0.9, 1.2),
       }),

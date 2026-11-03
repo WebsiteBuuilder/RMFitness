@@ -121,9 +121,9 @@ export function drone(dur = 5) {
  * The Duel Disk's projector (holographic summon): a click, then a low electric hum with a
  * whine climbing over it while the hologram forms. `power` 0..1 (Normal .. Fusion/Ritual/Ace).
  */
-export function holoHum(dur = 0.8, power = 0.5, when = 0) {
+export function holoHum(dur = 0.8, power = 0.5, when = 0): () => void {
   const ctx = audioContext();
-  if (!ctx) return;
+  if (!ctx) return () => {};
   const t = ctx.currentTime + when;
   const out = ctx.createGain();
   const peak = 0.07 + power * 0.06;
@@ -159,6 +159,17 @@ export function holoHum(dur = 0.8, power = 0.5, when = 0) {
   osc('square', 2300, 1800, 0.03, 0.05, when);
   osc('sine', 520, 1300 + power * 900, dur * 0.9, 0.025 + power * 0.02, when + 0.05);
   whoosh(dur * 0.8, 1800, 5200, 0.04 + power * 0.03, when);
+  // skipped (tap): the hum dies away at once instead of running on
+  return () => {
+    try {
+      const n = ctx.currentTime;
+      out.gain.cancelScheduledValues(n);
+      out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), n);
+      out.gain.exponentialRampToValueAtTime(0.0001, n + 0.06);
+    } catch {
+      /* already stopped */
+    }
+  };
 }
 
 /** The hologram locks solid: a bright shimmer and a soft thump. */

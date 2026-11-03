@@ -19,7 +19,12 @@ ok(holoPower(undefined, { over: true }) === 2, 'Overframe is the big show');
 ok(holoPower(undefined, { ace: true }) === 2, "an Ace's entrance is the big show");
 
 // the summon's real windows (runtime.ts): E = [1.35, 1.55, 1.85, 2.15][tier] + extras; reveal 0.42 / 0.62 (Overframe) (+0.2 Fusion/Ritual, +0.1 materialize)
-const Es = [1.35, 1.55, 1.85, 2.15, 2.45, 2.8];
+// every E the summon can have: tier base + Fusion-ish 0.3 + Overframe 0.3 + Millennium 0.35 + Ace extras
+const Es: number[] = [];
+for (const base of [1.35, 1.55, 1.85, 2.15])
+  for (const fus of [0, 0.3])
+    for (const ov of [0, 0.3, 0.65])
+      for (const ace of [0, 0.4, 0.8, 1.2]) Es.push(+(base + fus + ov + ace).toFixed(2));
 const reveals = [0.42, 0.52, 0.62, 0.82];
 for (const p of [0, 1, 2] as const)
   for (const E of Es)
@@ -27,7 +32,7 @@ for (const p of [0, 1, 2] as const)
       if (rv > E - 0.6) continue;
       const h = holoPlan(p, rv, E);
       const tag = `power ${p} E ${E} reveal ${rv}`;
-      ok(h.solidEnd <= E - 0.22 + 1e-9, `${tag}: solid before it flies to its card`);
+      ok(h.solidEnd <= E - 0.3 + 1e-9, `${tag}: solid before it flies to its card`);
       ok(h.solidAt > rv && h.solidAt < h.solidEnd, `${tag}: the front climbs after the reveal`);
       ok(h.beamAt < rv && h.beamAt >= 0.28, `${tag}: the beam fires just before the monster shows, after the card lands`);
       ok(h.beamEnd <= E, `${tag}: the beam is gone before the flight ends`);

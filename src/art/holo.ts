@@ -46,9 +46,9 @@ export function holoPower(method: SummonHow | undefined, opts: { tribute?: boole
 export function holoPlan(power: HoloPower, reveal: number, end: number): HoloPlan {
   const beamAt = Math.max(0.28, reveal - 0.14);
   const hold = [0.3, 0.4, 0.52][power];
-  const climb = [0.26, 0.32, 0.4][power];
+  const climb = [0.18, 0.22, 0.28][power];
   // it must be solid (and its flash over) before the monster flies to its card
-  const latest = end - 0.22;
+  const latest = end - 0.3;
   const solidEnd = Math.min(latest, reveal + hold + climb);
   const solidAt = Math.max(reveal + 0.08, solidEnd - climb);
   const glitches: [number, number][] = [[reveal + 0.02, 0.1]];
@@ -56,7 +56,7 @@ export function holoPlan(power: HoloPower, reveal: number, end: number): HoloPla
   if (power >= 2) glitches.push([reveal + hold * 0.5, 0.07]);
   // (in a short summon the tears squeeze into the hologram's own time, or drop out)
   const fit = glitches.map(([a, d]): [number, number] => [Math.max(reveal, a), Math.min(a + d, solidEnd) - Math.max(reveal, a)]).filter(([, d]) => d >= 0.04);
-  return { power, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.2), glitches: fit };
+  return { power, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.28), glitches: fit };
 }
 
 /** 0..1 signal tearing at time t (s) of a plan. */
@@ -79,9 +79,23 @@ export function flickerAt(t: number, seed = 0): number {
  * A field figure appearing without a cinematic (board.ts): its 0..1 arrival `show` →
  * hologram strength and the solidify front's height (in the figure's 0..1 mesh height).
  */
-export function boardHolo(show: number): { holo: number; line: number; reveal: number } {
-  if (show >= 1) return { holo: 0, line: -1, reveal: 1 };
-  const reveal = Math.min(1, show * 2.4);
-  const line = show < 0.5 ? -0.05 : -0.05 + ((show - 0.5) / 0.45) * 1.12;
-  return { holo: 1, line: Math.min(1.07, line), reveal };
+export interface BoardHolo {
+  holo: number;
+  line: number;
+  reveal: number;
 }
+export function boardHolo(show: number, out: BoardHolo = { holo: 0, line: -1, reveal: 1 }): BoardHolo {
+  if (show >= 1) {
+    out.holo = 0;
+    out.line = -1;
+    out.reveal = 1;
+    return out;
+  }
+  out.holo = 1;
+  out.reveal = Math.min(1, show * 2.4);
+  out.line = Math.min(1.07, show < 0.5 ? -0.05 : -0.05 + ((show - 0.5) / 0.45) * 1.12);
+  return out;
+}
+
+/** Several monsters arriving at once share one projector hum (ms between hums). */
+export const HUM_GAP_MS = 150;

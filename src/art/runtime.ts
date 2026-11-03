@@ -1257,7 +1257,9 @@ export class Director {
     // the beam: a cone opening up out of the card
     const bh = o.size * (1.15 + pw * 0.08);
     const beam = tl.own(new Glow(o.size * (0.95 + pw * 0.15), bh, 'beam', beamCol, HOLO_CORE));
-    beam.mesh.position.set(0, o.ground + bh * 0.47, 0.25);
+    // behind the monster: the hologram draws over its own light
+    beam.mesh.position.set(0, o.ground + bh * 0.47, -0.2);
+    beam.mesh.renderOrder = -5;
     beam.u.uOpacity.value = 0;
     const peak = [0.62, 0.7, 0.78][pw];
     span(h.beamAt, h.beamEnd, (t) => {
@@ -1265,15 +1267,21 @@ export class Director {
       const down = 1 - clamp01((t - h.solidEnd) / Math.max(0.05, h.beamEnd - h.solidEnd));
       const fl = calm ? 0 : flickerAt(t * 1.3, o.seed) * 0.6;
       beam.u.uOpacity.value = peak * easeOut(up) * down * (1 - fl);
-      beam.mesh.scale.set(lerp(0.4, 1, easeOut(up)), lerp(0.2, 1, easeOut(up)), 1);
+      // it shoots up out of the card: grows from its base, not from its middle
+      const sy = lerp(0.2, 1, easeOut(up));
+      beam.mesh.scale.set(lerp(0.4, 1, easeOut(up)), sy, 1);
+      beam.mesh.position.y = o.ground + bh * 0.47 * sy;
     });
-    at(h.beamAt, () => holoHum((h.solidEnd - h.beamAt + 0.12) / tl.rate, pw / 2));
+    // the hum stops with the summon (a tap that skips it silences it too)
+    let stopHum: (() => void) | null = null;
+    tl.own({ update: () => true, dispose: () => stopHum?.() });
+    at(h.beamAt, () => (stopHum = holoHum((h.solidEnd - h.beamAt + 0.12) / tl.rate, pw / 2)));
     // the source: a hot flare on the card as the beam fires
     const src = tl.own(new Glow(1.4 * U, 1.4 * U, 'flare', beamCol, HOLO_CORE));
     src.mesh.position.set(0, o.ground + 0.06 * U, 0.4);
     src.u.uOpacity.value = 0;
     span(h.beamAt, h.beamAt + 0.35, (_t, k) => {
-      src.u.uOpacity.value = 0.6 * (k < 0.15 ? k / 0.15 : 1 - easeOut((k - 0.15) / 0.85));
+      src.u.uOpacity.value = 0.38 * (k < 0.15 ? k / 0.15 : 1 - easeOut((k - 0.15) / 0.85));
       src.mesh.scale.set(lerp(0.6, 1.4, easeOut(k)), lerp(0.6, 0.5, k), 1);
     });
     // light motes climbing the beam while the hologram forms
@@ -1285,6 +1293,7 @@ export class Director {
       const u = fig.u;
       const col = o.mill ? HOLO_GOLD_RGB : HOLO_RGB;
       (u.uHoloCol.value as Vector3).set(col[0], col[1], col[2]);
+      u.uHoloScroll.value = calm ? 0 : 1;
       // the front climbs the subject itself (its feet to the top of its head), not the empty art above it
       const lo = fig.foot.v - 0.04;
       const hi = Math.min(1.06, (fig.foot.top ?? 0.92) + 0.05);
@@ -1294,11 +1303,16 @@ export class Director {
         u.uFlick.value = calm ? 0 : flickerAt(t, o.seed) * (t < h.solidAt ? 1 : 0.35);
         u.uGlitch.value = calm ? 0 : glitchAt(h, t) * (0.6 + pw * 0.25);
       });
-      at(h.solidEnd + 0.04, () => {
-        u.uHolo.value = 0;
-        u.uFlick.value = 0;
-        u.uGlitch.value = 0;
-      });
+      // (not cosmetic: a skipped summon still ends on a solid monster)
+      tl.at(
+        S + h.solidEnd + 0.04,
+        () => {
+          u.uHolo.value = 0;
+          u.uFlick.value = 0;
+          u.uGlitch.value = 0;
+        },
+        false,
+      );
     }
     // it locks solid: a flash of light, a ring, sparks in the finish's colors (or the hologram's)
     at(h.solidEnd, () => {
@@ -1802,7 +1816,7 @@ export class Director {
         flyer.u.uTint.value = 0.35 * (1 - e) + 0.18 * e;
       });
       span(0.46, holo.solidEnd, (k) => {
-        flyer.u.uTint.value = 0.18 + 0.08 * Math.sin(k * 40);
+        flyer.u.uTint.value = 0.1 + 0.05 * Math.sin(k * 40);
         flyer.u.uSheen.value = -0.4 + ((k * 2.5) % 1) * 2.2;
       });
       span(holo.solidEnd, holo.beamEnd + 0.12, (k) => (flyer.u.uOpacity.value = 1 - easeIn(k)));
@@ -1854,7 +1868,9 @@ export class Director {
     // light shafts behind the monster
     const showAt = over ? 0.62 : 0.42;
     // (softer under a hologram: the projected monster is the light to look at)
-    this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, (0.6 + tier * 0.1) * (holo ? 0.5 : 1));
+    // (under a hologram the projector is the only light until it locks solid; the shafts come up with the lock)
+    if (holo) this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + holo.solidEnd - 0.05, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    else this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
 
     // the monster
     const fig = art ? tl.own(this.figure(art, size, prof, col.main)) : null;
@@ -2008,7 +2024,8 @@ export class Director {
         // rise
         span(showAt, showAt + 0.55, (k) => {
           if (!fig) return;
-          fig.mesh.position.y = lerp(ground - 0.2 * U, restY, easeOut(k));
+          // (a hologram rises out of the card itself, never from under the floor)
+          fig.mesh.position.y = lerp(holo ? restY - 0.12 * U : ground - 0.2 * U, restY, easeOut(k));
           fig.u.uOpacity.value = 1;
           fig.u.uReveal.value = easeOut(k);
         });

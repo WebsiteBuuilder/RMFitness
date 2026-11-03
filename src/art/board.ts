@@ -21,7 +21,7 @@ import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
-import { boardHolo, flickerAt, HOLO_RGB } from "./holo";
+import { boardHolo, flickerAt, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
 import { calmMotion, getHolo } from "./settings";
 import { holoHum, holoLock } from "./sfx";
 
@@ -204,6 +204,9 @@ export class BoardLayer {
   private pieces = new Map<number, Piece>();
   /** the field it found when it opened (a resumed duel, a view switch) appears plainly: only new arrivals are holograms */
   private born = performance.now();
+  private lastHum = 0;
+  /** scratch for the field holograms (no allocation per frame) */
+  private hb: BoardHolo = { holo: 0, line: -1, reveal: 1 };
   private raf = 0;
   private last = 0;
   private unsub: () => void;
@@ -548,12 +551,18 @@ export class BoardLayer {
       const u = fig.u;
       // a monster arriving without a cinematic still comes in as a Duel Disk hologram (holographic
       // summon): projected light first, then a line of light climbs it and it locks solid
-      const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show) : null;
+      const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show, this.hb) : null;
       if (hb && hb.holo > 0) {
         if (!p.holoStarted) {
           p.holoStarted = true;
-          (u.uHoloCol.value as Vector3).set(HOLO_RGB[0], HOLO_RGB[1], HOLO_RGB[2]);
-          holoHum(0.6, 0);
+          const hc = p.finish >= FIN.MI ? HOLO_GOLD_RGB : HOLO_RGB;
+          (u.uHoloCol.value as Vector3).set(hc[0], hc[1], hc[2]);
+          u.uHoloScroll.value = p.calm ? 0 : 1;
+          // one hum for monsters arriving together, none for one hidden under a cinematic
+          if (p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
+            this.lastHum = now;
+            holoHum(0.6, 0);
+          }
         }
         u.uHolo.value = hb.holo;
         u.uHoloLine.value = lerp(fig.foot.v - 0.04, Math.min(1.06, fig.foot.top + 0.05), clamp01((hb.line + 0.05) / 1.12));
@@ -563,7 +572,10 @@ export class BoardLayer {
         u.uHolo.value = 0;
         u.uFlick.value = 0;
         u.uGlitch.value = 0;
-        if (p.holoStarted && !p.leaving) holoLock(0);
+        if (p.holoStarted && !p.leaving && p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
+          this.lastHum = now;
+          holoLock(0);
+        }
       }
       u.uReveal.value = p.quick ? 1 : hb ? hb.reveal : k;
       u.uOpacity.value = (p.leaving ? Math.max(0, p.show) : p.quick ? k : 1) * p.vis;
