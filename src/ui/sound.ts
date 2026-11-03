@@ -76,11 +76,8 @@ export function unlockAudio() {
 
 // Every tap is a chance to (re)start audio; so is coming back to the tab.
 if (typeof window !== 'undefined') {
-  const onGesture = () => {
-    if (!ctx) return;
-    wake();
-    prime();
-  };
+  // (it also makes the context on the first tap anywhere, so someone who only watches gets the music)
+  const onGesture = () => unlockAudio();
   window.addEventListener('pointerdown', onGesture, { capture: true, passive: true });
   window.addEventListener('touchend', onGesture, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => {

@@ -37,6 +37,12 @@ const ARPS = [
   [2, 1, 0, 1, 2, 3, 2, 1],
   [0, 1, 2, 3, 2, 1, 0, 1],
 ];
+// drum grooves for the drums level: [kicks, snares] as 16th steps
+const GROOVES: [number[], number[]][] = [
+  [[0, 6, 8, 11], [4, 12]],
+  [[0, 3, 8, 10], [4, 12]],
+  [[0, 7, 10], [4, 12, 15]],
+];
 // lead rhythms for the driving levels: [16th step, length in 16ths]
 const RHYTHMS: [number, number][][] = [
   [[0, 3], [3, 3], [6, 2], [8, 6], [14, 2]],
@@ -80,6 +86,8 @@ export class DuelMusic {
   private bar = 0;
   private prog: Chord[] = CALM[0];
   private arp = ARPS[0];
+  private groove = GROOVES[0];
+  private arpWave: OscillatorType = 'triangle';
   private motif: { rhythm: [number, number][]; tones: number[] } = { rhythm: RHYTHMS[0], tones: [] };
   /** semitones up from D minor (the final stretch climbs a step) */
   private key = 0;
@@ -131,6 +139,10 @@ export class DuelMusic {
 
   get playingLevel(): Level {
     return this.level;
+  }
+  /** semitones above D minor right now */
+  get keyShift(): number {
+    return this.key;
   }
   get isEnded(): boolean {
     return this.ended;
@@ -193,6 +205,8 @@ export class DuelMusic {
     const set = this.level === 0 ? CALM : DRIVE;
     this.prog = set[Math.floor(this.rand() * set.length)];
     this.arp = ARPS[Math.floor(this.rand() * ARPS.length)];
+    this.groove = GROOVES[Math.floor(this.rand() * GROOVES.length)];
+    this.arpWave = (['triangle', 'triangle', 'sine', 'square'] as OscillatorType[])[Math.floor(this.rand() * 4)];
     // a lead motif in chord tones; bars 1 and 3 repeat it, bar 2 answers, bar 4 breathes
     const rhythm = RHYTHMS[Math.floor(this.rand() * RHYTHMS.length)];
     let at = 2 + Math.floor(this.rand() * 2);
@@ -231,8 +245,8 @@ export class DuelMusic {
       if (step % 8 === 6 && this.rand() < 0.3) n += 12;
       this.pluck(n, t, beat * (lv === 2 ? 0.3 : 0.6), lv === 0 ? 0.07 : 0.06, this.mood.myTurn ? 2400 : 1300);
     }
-    // a sparse bell melody when it's calm
-    if (lv === 0 && (step === 0 || step === 8) && this.rand() < 0.45) {
+    // a sparse bell melody when it's calm (and answering the lead in the drums level's quiet bar)
+    if (((lv === 0 && (step === 0 || step === 8)) || (lv === 1 && inPhrase === 3 && step % 4 === 0)) && this.rand() < 0.45) {
       const ns = voiced(chord, 74);
       this.bell(ns[Math.floor(this.rand() * 3)], t);
     }
@@ -251,10 +265,12 @@ export class DuelMusic {
       return;
     }
     // drums
-    const kick = lv === 2 ? step % 4 === 0 : step === 0 || step === 6 || step === 8 || step === 11;
+    // every 16th bar of the drums level breaks down to half time before building again
+    const half = lv === 1 && this.bar % 16 === 0;
+    const kick = lv === 2 ? step % 4 === 0 : half ? step === 0 : this.groove[0].includes(step);
     if (kick) this.kick(t);
-    if (step === 4 || step === 12) this.snare(t, 0.22);
-    const hat = lv === 2 ? true : step % 2 === 0;
+    if (half ? step === 8 : this.groove[1].includes(step)) this.snare(t, step === 15 ? 0.1 : 0.22);
+    const hat = lv === 2 ? true : half ? step % 4 === 0 : step % 2 === 0;
     if (hat) this.hat(t, step % 4 === 2 ? 0.07 : 0.04);
     if (this.fill && step >= 12) this.snare(t, 0.06 + (step - 12) * 0.035);
     if (step === 15) this.fill = false;
@@ -398,7 +414,7 @@ export class DuelMusic {
   private pluck(n: number, t: number, dur: number, gain: number, bright: number) {
     const f = this.lp(bright, t, 400, dur);
     f.connect(this.env(t, gain, 0.004, dur, 0.4));
-    this.osc('triangle', mtof(n), t, dur, f);
+    this.osc(this.arpWave, mtof(n), t, dur, f);
     this.osc('square', mtof(n), t, dur * 0.5, this.env(t, gain * 0.15, 0.004, dur * 0.5, 0.3));
   }
 
@@ -506,7 +522,7 @@ export function musicAce(mine: boolean) {
 }
 
 function take(ctx: AudioContext, seed: number, over: boolean): DuelMusic | null {
-  if (current && current.seed === seed && !current.m.isStopped && current.m.isEnded === over) {
+  if (current && current.seed === seed && !current.m.isStopped && !(current.m.isEnded && !over)) {
     if (current.bye) clearTimeout(current.bye);
     current.bye = null;
     return current.m;
@@ -571,7 +587,7 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
         seen.current = Math.max(seen.current, ev.seq);
         if (ev.kind !== 'summon' || ev.uid === undefined) continue;
         const name = e.find(ev.uid)?.card.name;
-        if (isAceSummon(name ? e.info(name) : undefined, ev.how)) m.ace(tb || ev.player === me);
+        if (s.winner === null && isAceSummon(name ? e.info(name) : undefined, ev.how)) m.ace(tb || ev.player === me);
       }
       if (s.winner !== null) {
         endSeen ||= Date.now();

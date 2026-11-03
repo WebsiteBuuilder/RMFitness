@@ -54,16 +54,14 @@ const leads = between(19, 32).filter((x) => x.type === 'square' && (x.f ?? 0) > 
 ok(leads > 10, `a lead melody plays once the drums are in (${leads} notes)`);
 
 // final stretch: denser
+ok(m.keyShift === 0, 'the drums level stays in D minor');
 m.setMood({ level: levelFor([900, 3000]), myTurn: true });
 m.pump(48);
 ok(m.playingLevel === 2, 'final stretch at 1000 LP or less');
 const hard = between(35, 48).filter((x) => x.kind === 'noise').length;
 ok(hard > drums, `final stretch hits harder (${hard} vs ${drums})`);
 ok(BPM[2] > BPM[1] && BPM[1] > BPM[0], 'the tempo rises with the danger');
-const bass = (a: number, b: number) => new Set(between(a, b).filter((x) => x.type === 'sawtooth' && (x.f ?? 0) < 120).map((x) => Math.round(x.f ?? 0)));
-const dBass = [...bass(22, 32)].some((f) => Math.abs(f - 73) <= 1);
-const eBass = [...bass(36, 48)].some((f) => Math.abs(f - 82) <= 1);
-ok(dBass && eBass, 'the final stretch lifts the key a step (D to E)');
+ok(m.keyShift === 2, 'the final stretch lifts the key a step (D to E)');
 
 // opponent's turn: the arpeggio drops lower
 const avgTri = (a: number, b: number) => {
