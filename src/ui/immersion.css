@@ -17,11 +17,11 @@
   animation: hd-fade 0.35s ease-out both;
 }
 .hd-gate.destiny .hd-shade {
-  background: radial-gradient(circle at var(--hx) var(--hy), #ffd56a22 0, #00000000 70px, #000000c8 230px, #000000e8 100%);
+  background: radial-gradient(circle at var(--hx) var(--hy), #ffd56a22 0, #00000000 70px, #000000d8 200px, #000000ee 100%);
   animation: hd-fade 0.9s ease-out both;
 }
-.hd-gate.destiny.reveal .hd-shade {
-  background: radial-gradient(circle at 50% 42%, #3a2a0a66 0, #000000d8 55%, #000000f0 100%);
+.hd-gate.destiny.hd-reveal .hd-shade {
+  background: radial-gradient(circle at 50% 40%, #3a2a0a99 0, #000000ea 55%, #000000f6 100%);
   transition: background 0.4s;
 }
 @keyframes hd-fade {
@@ -149,9 +149,9 @@
 
 .hd-chip {
   position: absolute;
-  left: clamp(70px, var(--hx), calc(100vw - 70px));
-  top: calc(var(--hy) - var(--hh) / 2 - 76px);
-  translate: -50% -100%;
+  right: calc(100vw - var(--hx) + var(--hw) / 2 + 10px);
+  top: var(--hy);
+  translate: 0 -50%;
   white-space: nowrap;
   padding: 6px 12px;
   border-radius: 999px;
@@ -167,9 +167,9 @@
 .hd-words {
   position: absolute;
   left: 50%;
-  top: 34%;
-  translate: -50% -50%;
-  width: min(92vw, 420px);
+  top: 16%;
+  translate: -50% 0;
+  width: min(90vw, 420px);
   text-align: center;
   pointer-events: none;
   display: grid;
@@ -185,6 +185,17 @@
   color: transparent;
   filter: drop-shadow(0 2px 0 #4a2600) drop-shadow(0 0 14px #ffb02e80);
   animation: hd-words 1.1s 0.25s cubic-bezier(.2,.8,.2,1) both;
+}
+.hd-words.hd-low {
+  /* the deck sits high (Classic on a short phone): the words go below it */
+  top: 58%;
+}
+.hd-words em {
+  font: 800 13px/1 system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  color: #ff9a8a;
+  animation: hd-fade 0.6s 0.6s ease-out both;
 }
 .hd-words span {
   font: 700 14px/1.2 system-ui, sans-serif;
@@ -214,9 +225,12 @@
   -webkit-mask: radial-gradient(circle, #000 0 8%, transparent 45%);
   animation: hd-spin 14s linear infinite, hd-fade 1s ease-out both;
 }
+.hd-gate.hd-reveal {
+  perspective: 900px;
+}
 .hd-card {
   position: absolute;
-  perspective: 900px;
+  transform-style: preserve-3d;
   pointer-events: none;
   will-change: transform;
 }
@@ -240,8 +254,21 @@
   height: 100%;
   display: block;
 }
+.hd-back {
+  transform: rotateY(0deg);
+}
 .hd-front {
   transform: rotateY(180deg);
+}
+.hd-skip {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
 }
 .hd-aura {
   position: absolute;
@@ -284,9 +311,10 @@
   color: #ffd35a;
 }
 .hd-name b {
-  font: italic 900 clamp(20px, 6.2vw, 30px)/1.1 system-ui, sans-serif;
+  font: italic 900 clamp(26px, 8vw, 40px)/1.05 system-ui, sans-serif;
   color: #fff;
-  text-shadow: 0 2px 0 #3b2400, 0 0 18px #ffb02e;
+  -webkit-text-stroke: 1px #ffd35a;
+  text-shadow: 0 3px 0 #3b2400, 0 0 22px #ffb02e;
 }
 @keyframes hd-name {
   from {
@@ -677,4 +705,37 @@
   to {
     background-color: #04050b00;
   }
+}
+
+/* the moment the destiny card turns over: the screen jolts */
+.hd-gate.destiny.hd-reveal.hd-hit {
+  animation: fo-shake 0.32s linear;
+}
+.hd-gate,
+.fo {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hd-rays,
+  .hd-stage-rays,
+  .hd-chev,
+  .hd-glow,
+  .fo-streaks {
+    animation: none !important;
+  }
+}
+
+.fo-skip {
+  position: absolute;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  background: #0006;
+  color: #ffffffb0;
+  border: 1px solid #ffffff30;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: 700 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  animation: hd-fade 0.4s 0.6s both;
 }

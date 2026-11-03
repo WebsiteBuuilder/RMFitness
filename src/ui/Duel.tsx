@@ -524,7 +524,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const overlays = (
     <>
       <ArtStage state={state} viewer={acting} />
-      {drawGate && <DrawGate key={drawGate.key} gate={drawGate} state={state} acting={acting} blocked={pass || intro} onDone={drawDone} />}
+      {drawGate && <DrawGate key={drawGate.key} gate={drawGate} state={state} acting={acting} blocked={pass || intro || !!prompt} onDone={drawDone} />}
       {intro && (
         <FaceOff
           state={state}

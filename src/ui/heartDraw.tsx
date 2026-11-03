@@ -53,7 +53,7 @@ export { DESTINY_GAP, DESTINY_LOW, isDestiny, topSeq, freshDraw } from './heartR
 import { isDestiny, topSeq, freshDraw } from './heartRules';
 
 /** How long the card waits for you before drawing itself (ms). */
-export const AUTO_MS = { normal: 7000, destiny: 12000 };
+export const AUTO_MS = { normal: 5000, destiny: 12000 };
 
 // ----------------------------------------------------------------- the hook
 
@@ -94,6 +94,24 @@ export function useHeartDraw(state: DuelState, acting: Pid, on: boolean): [DrawG
 
 // ----------------------------------------------------------------- the screen
 
+/** The "Swipe up to draw" words show for your first few draws on this phone; the chevrons always do. */
+const HINT_TIMES = 4;
+const HINT_KEY = 'eds.drawHints';
+const hintCount = () => {
+  try {
+    return Number(localStorage.getItem(HINT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+};
+const bumpHint = () => {
+  try {
+    localStorage.setItem(HINT_KEY, String(hintCount() + 1));
+  } catch {
+    /* storage blocked */
+  }
+};
+
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const handEl = (uid: number) => document.querySelector(`.thand [data-uid="${uid}"], .hand [data-uid="${uid}"]`) as HTMLElement | null;
 const deckEl = (p: Pid) => document.querySelector(`[data-pile="deck${p}"]`) as HTMLElement | null;
@@ -120,10 +138,15 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
     return () => removeEventListener('resize', measure);
   }, [acting]);
 
+  // the card draws itself by this time (counted from when the gate first opened, not again after a cinematic)
+  const deadline = useRef(0);
   useEffect(() => {
     if (!up || phase !== 'wait') return;
-    sfx.deckReady(gate.destiny);
-    const t = setTimeout(() => release(), gate.destiny ? AUTO_MS.destiny : AUTO_MS.normal);
+    if (!deadline.current) {
+      deadline.current = Date.now() + (gate.destiny ? AUTO_MS.destiny : AUTO_MS.normal);
+      sfx.deckReady(gate.destiny);
+    }
+    const t = setTimeout(() => release(), Math.max(1500, deadline.current - Date.now()));
     return () => clearTimeout(t);
   }, [up, phase]);
 
@@ -141,6 +164,8 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
 
   const release = () => {
     if (phase !== 'wait' || finished.current) return;
+    bumpHint();
+    swallowClick();
     const from = deckEl(acting)?.getBoundingClientRect() ?? deck;
     if (!gate.destiny || reduced() || !from) {
       sfx.drawSwipe();
@@ -192,6 +217,11 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
       window.setTimeout(() => {
         sfx.destinyReveal();
         setNamed(true);
+        try {
+          navigator.vibrate?.([30, 40, 70]);
+        } catch {
+          /* no vibration here */
+        }
       }, T(1430)),
     );
     // ...and flies into your hand
@@ -212,6 +242,9 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
     if (!up) return;
     const key = (ev: KeyboardEvent) => {
       if (ev.key !== 'ArrowUp' && ev.key !== 'Enter' && ev.key !== ' ') return;
+      // (typing in the chat, or a key held down from before, is not a draw)
+      const t = ev.target as HTMLElement | null;
+      if (ev.repeat || t?.isContentEditable || t?.matches?.('input, textarea, select')) return;
       ev.preventDefault();
       if (phase === 'wait') release();
       else skipTo.current();
@@ -227,6 +260,7 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
     const s = start.current;
     if (!s || s.id !== ev.pointerId) return;
     if (s.y - ev.clientY > 28 && Math.abs(ev.clientX - s.x) < (s.y - ev.clientY) * 1.6) {
+      // drawn the moment the swipe reads (the finger still down: the click that follows is swallowed)
       start.current = null;
       release();
     }
@@ -247,10 +281,10 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
   const cy = deck ? deck.top + deck.height / 2 : innerHeight - 120;
   const vars = { '--hx': `${cx}px`, '--hy': `${cy}px`, '--hw': `${deck?.width ?? 50}px`, '--hh': `${deck?.height ?? 72}px` } as Record<string, string>;
   // the destiny card: big in the middle of the screen
-  const w = Math.min(innerWidth * 0.46, innerHeight * 0.36 * 0.686, 260);
+  const w = Math.min(innerWidth * 0.62, innerHeight * 0.44 * 0.686, 300);
   return (
     <div
-      class={`hd-gate ${gate.destiny ? 'destiny' : 'normal'} ${phase}`}
+      class={`hd-gate ${gate.destiny ? 'destiny' : 'normal'} hd-${phase} ${named ? 'hd-hit' : ''}`}
       style={vars}
       role="dialog"
       aria-label={gate.destiny ? 'Destiny draw' : 'Draw'}
@@ -272,19 +306,22 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
           </div>
           <button class="hd-deck main" aria-label="Draw your card" onClick={(ev) => (ev.stopPropagation(), release())} />
           {gate.destiny ? (
-            <div class="hd-words">
+            <div class={`hd-words ${cy < innerHeight * 0.45 ? 'hd-low' : ''}`}>
               <b>Believe in the heart of the cards</b>
+              <em>
+                {state.players[acting].lp} LP vs {state.players[acting === 0 ? 1 : 0].lp} LP
+              </em>
               <span>Swipe up for your destiny draw</span>
             </div>
           ) : (
-            <div class="hd-chip">Swipe up to draw</div>
+            hintCount() < HINT_TIMES && <div class="hd-chip">Swipe up to draw</div>
           )}
         </>
       )}
       {phase === 'reveal' && (
         <>
           <div class="hd-stage-rays" />
-          <div ref={cardRef} class="hd-card" style={{ width: `${w}px`, height: `${w * 1.458}px`, left: `${innerWidth / 2 - w / 2}px`, top: `${innerHeight * 0.42 - w * 0.729}px` }}>
+          <div ref={cardRef} class="hd-card" style={{ width: `${w}px`, height: `${w * 1.458}px`, left: `${innerWidth / 2 - w / 2}px`, top: `${innerHeight * 0.4 - w * 0.729}px` }}>
             <div ref={auraRef} class="hd-aura" />
             <div ref={flipRef} class="hd-flip">
               <div class="hd-face hd-back">
@@ -295,9 +332,10 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
               </div>
             </div>
           </div>
+          <button class="hd-skip main" aria-label="Skip" onClick={() => skipTo.current()} />
           {named && <div class="hd-burst" />}
           {named && (
-            <div class="hd-name" style={{ top: `${innerHeight * 0.42 + w * 0.78}px` }}>
+            <div class="hd-name" style={{ top: `${innerHeight * 0.4 + w * 0.76}px` }}>
               <small>Destiny draw</small>
               <b>{card.name}</b>
             </div>
@@ -306,6 +344,16 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
       )}
     </div>
   );
+}
+
+/** The tap that ends a swipe or a tap on the deck lands on nothing underneath (the gate is gone by then). */
+function swallowClick() {
+  const eat = (ev: Event) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+  };
+  document.addEventListener('click', eat, true);
+  setTimeout(() => document.removeEventListener('click', eat, true), 450);
 }
 
 const hideCss = (uid: number) => `.thand [data-uid="${uid}"], .hand [data-uid="${uid}"] { visibility: hidden !important; }`;

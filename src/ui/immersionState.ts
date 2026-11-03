@@ -13,6 +13,23 @@ export function setIntroFor(ms: number) {
   introEnd = ms > 0 ? now() + ms : 0;
 }
 
+/**
+ * Runs `f` once the face-off has `left` ms or less to go (at once if none is playing; sooner when it
+ * is skipped). Returns a cancel function.
+ */
+export function whenIntroAt(left: number, f: () => void): () => void {
+  if (introLeft() <= left) {
+    f();
+    return () => {};
+  }
+  const t = setInterval(() => {
+    if (introLeft() > left) return;
+    clearInterval(t);
+    f();
+  }, 60);
+  return () => clearInterval(t);
+}
+
 let held: number | null = null;
 /** the card held back from your hand right now (the board's flights leave it alone) */
 export const drawHeld = (uid: number) => held === uid;

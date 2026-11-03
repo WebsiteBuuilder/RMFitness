@@ -82,6 +82,9 @@ export function FaceOff({ state, acting, mateOf, onDone }: { state: DuelState; a
         <polyline points="-2,55.5 14,53.2 22,54.4 37,51.4 46,52.6 58,49.6 69,50.5 81,47.6 90,48.3 102,44.5" />
       </svg>
       <div class="fo-vs">VS</div>
+      <button class="fo-skip main" onClick={skip}>
+        Tap to skip
+      </button>
       {stage >= 2 && (
         <>
           <div class="fo-flash" />
