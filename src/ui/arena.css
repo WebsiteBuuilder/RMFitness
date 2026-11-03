@@ -155,10 +155,10 @@
   display: none;
 }
 /* your own zones on your turn breathe a little light */
-.duel.touch.turn-me .trow:nth-child(n + 4) .tz.tz-m {
+.duel.touch.turn-me .tmid ~ .trow .tz.tz-m {
   border-color: #8ea6ff60;
 }
-.duel.touch.turn-opp .trow:nth-child(-n + 2) .tz.tz-m {
+.duel.touch.turn-opp .trow:has(~ .tmid) .tz.tz-m {
   border-color: #ff8ea060;
 }
 

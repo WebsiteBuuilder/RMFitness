@@ -149,7 +149,7 @@
    your hand fans in 3D like cards held in a hand; a monster on the field throws a soft shadow
    on the slab; the cards on your side catch your turn's light along their top edge */
 .duel.touch .thcard:not(.sel):not(:active) {
-  transform: perspective(900px) translateY(calc(var(--arc2, 0) * 1.6px)) rotate(calc(var(--arc, 0) * 2.6deg)) rotateY(calc(var(--arc, 0) * -7deg));
+  transform: perspective(900px) translateY(calc(var(--arc2, 0) * 2.6px)) rotate(calc(var(--arc, 0) * 3.4deg)) rotateY(calc(var(--arc, 0) * -7deg));
 }
 .duel.touch .tz.tz-m:not(.empty)::before {
   content: '';
@@ -181,15 +181,15 @@
   box-shadow: inset 0 1px 0 #fff4dc66, inset 0 -1.5px 0 #000000a0;
 }
 /* picking a card from your hand: it stays bright, the rest of the fan steps back */
-.duel.touch .thand:has(.thcard.sel) .thcard:not(.sel) {
+.duel.touch .thand:has(.thcard.sel) .thcard:not(.sel):not(.lifted) {
   opacity: 0.62;
 }
 
 /* your turn, in gold: the tab on your bar and the row across the middle wear the gold of the phase orb */
-.duel.touch.turn-me .ttab.bottom.mine:not(.ask):not(.wait) {
+.duel.touch.turn-me .ttab.bottom.me:not(.ask):not(.wait) {
   box-shadow: 0 0 0 1.5px #ffd76a, 0 4px 14px #2a62ff90;
 }
-.duel.touch.turn-me .ttab.bottom.mine:not(.ask):not(.wait) b,
+.duel.touch.turn-me .ttab.bottom.me:not(.ask):not(.wait) b,
 .duel.touch.turn-me .tmid .tturn.mine:not(.ask) b {
   color: #ffe08a;
 }
@@ -198,5 +198,5 @@
 }
 /* on your turn the opponent's half of the board sits a step back, so your side reads as the stage */
 .duel.touch.turn-me .tmat > .trow:has(~ .tmid) {
-  opacity: 0.86;
+  opacity: 0.76;
 }
