@@ -6,7 +6,6 @@ import { TIERS, meterOf, tierIndex } from '../level/leveling';
 import { figUrl, useFigs } from '../level/figs';
 import { profileXpOf, rarityFor } from '../level/view';
 import { spellWord } from './gameUi';
-import { TiltCard } from './TiltCard';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
@@ -133,9 +132,7 @@ export function CardInfoPanel({ name, owner }: { name: string; /** in a duel: wh
   return (
     <div class="cinfo">
       <span class="cinfo-pic">
-        <TiltCard>
-          <CardImg name={name} class="cinfo-img" owner={owner} />
-        </TiltCard>
+        <CardImg name={name} class="cinfo-img" owner={owner} />
       </span>
       <div class="cinfo-text">
         <div class="cinfo-name">{name}</div>

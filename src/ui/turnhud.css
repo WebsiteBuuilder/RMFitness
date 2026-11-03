@@ -414,3 +414,69 @@ body.art-on .ttab.top {
   opacity: 0;
   transition: opacity 0.2s;
 }
+
+/* ---- the other player has a choice open: the middle row says it, with the question under it ---- */
+.duel.touch .tmid .tturn .tdots {
+  margin-left: -2px;
+}
+.duel.touch .tmid .tturn.ask {
+  color: #fff;
+  background: linear-gradient(90deg, #4a1a00e8, #d0561af0 50%, #4a1a00e8);
+  box-shadow: 0 0 0 1px #ffc08a90, 0 0 20px #ff7a2a90;
+}
+.duel.touch .tmid .tturn.ask::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px #ffb070;
+  opacity: 0;
+  animation: ttab-ping 1.3s ease-out 0.3s infinite;
+  pointer-events: none;
+}
+.duel.touch .tmid .tturn {
+  position: relative;
+}
+
+/* not your turn, or the duel is waiting on their answer: your hand steps back */
+.duel.touch .thand {
+  transition: opacity 0.35s;
+}
+.duel.touch.turn-opp .thand {
+  opacity: 0.78;
+}
+.duel.touch.wait-them .thand {
+  opacity: 0.55;
+}
+
+/* your choice: the board darkens behind the sheet, and the cards to pick from are bigger */
+.duel.touch.my-choice .tsheet-wrap::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, #00000020 0%, #000000a0 60%, #000000c8 100%);
+  animation: tedge-in 0.3s ease-out both;
+}
+.duel.touch .tsheet.mine-choice .topt {
+  width: 84px;
+}
+.duel.touch .tsheet.mine-choice .topt .cimg {
+  width: 78px;
+  height: 114px;
+}
+@media (max-height: 700px) {
+  .duel.touch .tsheet.mine-choice .topt {
+    width: 76px;
+  }
+  .duel.touch .tsheet.mine-choice .topt .cimg {
+    width: 70px;
+    height: 102px;
+  }
+}
+
+/* a hand card's buttons sit where your tab hangs: the tab steps aside */
+.duel.touch:has(.tactions) .ttab.bottom {
+  opacity: 0;
+}

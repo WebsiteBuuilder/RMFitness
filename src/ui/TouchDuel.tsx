@@ -515,7 +515,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
    * waiting on (their choice, or yours). One look at either bar says who moves next.
    */
   const statusTab = (p: Pid, top: boolean) => {
-    if (decider === null) return null;
+    // (the opponent's side: the middle row carries it, the tab would sit on their hand)
+    if (decider === null || top) return null;
     const mine = p === acting && !ctl.locked && !ctl.spectator;
     const isTurn = state.turnPlayer === p;
     const asked = state.prompt?.player === p;
@@ -526,12 +527,11 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     let kind = top ? 'theirs' : 'mine';
     let text: string;
     let dots = false;
-    let what = '';
     if (asked) {
       // a choice open (a chain, a trap's question, a Skill's pick): it's the big news
       kind += ' ask';
       if (mine) text = 'Your choice!';
-      else ((text = `${first(p)} is choosing`), (dots = true), (what = state.prompt!.title));
+      else ((text = `${first(p)} is choosing`), (dots = true));
     } else if (decider === p) {
       text = mine ? 'Your turn' : `${first(p)}'s turn`;
       dots = !mine;
@@ -550,7 +550,6 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
             <i />
           </i>
         )}
-        {what && <small>{what}</small>}
       </span>
     );
   };
@@ -728,7 +727,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
       );
     }
-    // (someone else's choice: the tab on their bar says so, with what they are choosing)
+    // (someone else's choice: the middle row says so)
     if (state.prompt && state.prompt.player !== acting) return null;
     if (mode)
       return (
@@ -768,13 +767,23 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const room = Math.min(window.innerWidth, 560) - 20;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
+  // the other player has a choice open: the middle row says so (never what: a prompt's title can name
+  // a card in their hand, their Extra Deck or a Set card)
+  const theirAsk = state.winner === null && !!state.prompt && state.prompt.player !== acting;
   const midText = (
     <>
-      <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}`} key={`t${state.turn}`}>
-        {state.turnPlayer !== acting && <i class="tturn-arrow up" aria-hidden="true" />}
-        <b>{myTurn && !ctl.locked ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
-        <span class="tturn-ph">{PHASE_NAMES[state.phase]}</span>
-        {state.turnPlayer === acting && <i class="tturn-arrow down" aria-hidden="true" />}
+      <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
+        {(state.turnPlayer !== acting || theirAsk) && <i class="tturn-arrow up" aria-hidden="true" />}
+        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
+        {theirAsk || decider !== acting ? (
+          <i class="tdots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </i>
+        ) : null}
+        {!theirAsk && <span class="tturn-ph">{PHASE_NAMES[state.phase]}</span>}
+        {state.turnPlayer === acting && !theirAsk && <i class="tturn-arrow down" aria-hidden="true" />}
       </span>
     </>
   );
@@ -806,7 +815,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   return (
     <div
       {...({ onpady: padCardText } as object)}
-      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${mode ? 'aiming' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
+      class={`duel touch${armed ? ' armed' : ''} ${canAct ? '' : 'spectate'} ${drag ? 'dragging' : ''} ${mode ? 'aiming' : ''} ${e.speed ? 'speed' : ''} ${state.turnPlayer === acting ? 'turn-me' : 'turn-opp'}${theirAsk ? ' wait-them' : ''}${prompt && canAct && state.prompt?.player === acting ? ' my-choice' : ''} ph-${state.phase}${koOn && !resultUp ? ' ko' : ''}${loser !== null ? ` ko-${loser === acting ? 'me' : 'opp'}` : ''}`}
       ref={root}
       onClick={() => {
         setSel(null);
