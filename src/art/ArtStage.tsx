@@ -180,6 +180,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
           "full",
           makeUi(layer.current, (): number => d.stage.speed * d.rate),
         );
+        // (dev builds: the duel's director, for the browser checks)
+        if (import.meta.env.DEV) (window as unknown as { __artDuel?: Director }).__artDuel = d;
         d.timeScale = getAnimSpeed();
         d.onBusy = () => (setArtBusy(true), setArmed(true));
         // the computer goes on (the stage may still hold the fighters for the blow, or fade out)
