@@ -190,6 +190,19 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     return () => (clearTimeout(hi), clearInterval(doze));
   }, []);
 
+  // A blink now and then: a class for a moment (a looping blink would repaint every frame).
+  const layerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let off = 0;
+    const blink = window.setInterval(() => {
+      const spots = layerRef.current?.querySelectorAll('.mate-spot');
+      if (!spots?.length || document.hidden) return;
+      spots.forEach((el) => el.classList.add('blink'));
+      off = window.setTimeout(() => spots.forEach((el) => el.classList.remove('blink')), 300);
+    }, 4300);
+    return () => (clearInterval(blink), clearTimeout(off));
+  }, []);
+
   // ----- where they stand -----
   const [boxes, setBoxes] = useState<[Box | null, Box | null]>([null, null]);
   const measure = () => {
@@ -292,7 +305,7 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   if (!seats.length) return null;
   const ownBox = boxes[own];
   return (
-    <div class={`mates-layer ${touch ? 'on-touch' : 'on-classic'}`}>
+    <div ref={layerRef} class={`mates-layer ${touch ? 'on-touch' : 'on-classic'}`}>
       {seats.map((p) => {
         const id = idOf(p);
         const b = boxes[p];
