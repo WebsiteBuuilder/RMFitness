@@ -237,15 +237,15 @@ void main(){
     float theirs = uDangerOpp * top * 0.25;
     float d = mine + theirs;
     // the cracks reach out from the duelist's own edge, further the lower they are
-    float reach = d > 0.002 ? sstep(0.85 - d * 0.9, 1.0, abs(s.y) + 0.1 * vnoise(p * 4.0)) : 0.0;
+    float reach = d > 0.002 ? sstep(0.85 - d * 0.6, 1.0, abs(s.y) + 0.1 * vnoise(p * 4.0)) : 0.0;
     if (reach > 0.002) {
       vec2 cq = p * 2.6 + vec2(0.0, s.y > 0.0 ? 7.0 : 0.0);
       float e = vedge(cq);
       float crack = 1.0 - sstep(0.0, 0.035 + 0.02 * d, e);
       float heat = 1.0 - sstep(0.0, 0.3, e);
       float pulse = 0.6 + 0.4 * (s.y < 0.0 ? uBeat : 0.0);
-      c = mix(c, c * vec3(0.8, 0.5, 0.5), d * 0.3);
-      c += vec3(1.0, 0.2, 0.1) * (crack * 1.0 + heat * 0.15) * reach * d * pulse;
+      c = mix(c, c * vec3(0.85, 0.6, 0.6), d * 0.2);
+      c += vec3(1.0, 0.2, 0.1) * (crack * 1.0 + heat * 0.08) * reach * d * pulse;
     }
   }
   // a light vignette keeps the board's frame dark
