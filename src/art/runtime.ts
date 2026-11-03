@@ -330,6 +330,8 @@ export class Director {
   private roll = 0;
   /** the Trap a "Not so fast!" slam just put in the middle of the screen (its activation starts there) */
   private slammed = -1;
+  /** the replay's extra camera tilt (eases toward REPLAY_ROLL while one plays) */
+  private tilt = 0;
   /** a replay is on screen (its letterbox is up) */
   private replaying = false;
 
@@ -643,9 +645,8 @@ export class Director {
     }
     if (this.current) {
       const tl = this.current;
-      // a replay is seen from a new angle: tilted, and creeping in
+      // a replay is seen from a new angle: tilted (see veils), and creeping in
       if (this.replaying) {
-        this.roll = lerp(this.roll, REPLAY_ROLL, 1 - Math.exp(-dt * 3));
         this.stage.punch(2.5, 0.2);
       }
       this.watchdog += dt;
@@ -728,7 +729,10 @@ export class Director {
     f.uCrackOp.value *= fade;
     // the dutch angle eases back level unless a cinematic holds it
     if (!this.current) this.roll *= Math.exp(-dt * 8);
-    this.stage.camera.up.set(Math.sin(this.roll), Math.cos(this.roll), 0);
+    // (a replay's tilt eases in on top of whatever the cinematic does with the roll)
+    this.tilt = lerp(this.tilt, this.replaying ? REPLAY_ROLL : 0, 1 - Math.exp(-dt * 4));
+    const r = this.roll + this.tilt;
+    this.stage.camera.up.set(Math.sin(r), Math.cos(r), 0);
     if (!this.current && !following) {
       const c = 1 - Math.exp(-dt * (this.fastFade ? 20 : 6) * this.timeScale);
       this.stage.camBase.lerp(REST.pos, c);
