@@ -10,6 +10,7 @@ import './ui/styles.css';
 import './ui/polish.css';
 import './ui/speedui.css';
 import './ui/layout.css';
+import './ui/graphics.css';
 
 render(
   <>

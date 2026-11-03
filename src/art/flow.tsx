@@ -18,6 +18,7 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
 import { lpCount as lpCountSound } from '../ui/duelSfx';
+import { emitLpHit, resetLpHits } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
 import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
@@ -642,6 +643,7 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
     ref.current = new Flow();
     // a new duel screen: Life Points start where they are
     lpShown.clear();
+    resetLpHits();
   }
   const f = ref.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
@@ -679,8 +681,22 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
   const [v, setV] = useState(start);
   const [hits, setHits] = useState(0);
   const cur = useRef(start);
+  // where the count is heading (a new change mid-count is measured from here, not the half-counted number)
+  const target = useRef(start);
+  // whose Life Points this counter shows (a hotseat board swaps them between the bars)
+  const shows = useRef(who);
   useEffect(() => {
+    if (shows.current !== who) {
+      // the bar now shows the other duelist: start from their own count, not as a change
+      shows.current = who;
+      const theirs = (who !== undefined ? lpShown.get(who) : undefined) ?? value;
+      cur.current = theirs;
+      target.current = theirs;
+      setV(theirs);
+    }
     const from = cur.current;
+    const aimed = target.current;
+    target.current = value;
     const show = (n: number) => {
       cur.current = n;
       if (who !== undefined) lpShown.set(who, n);
@@ -689,6 +705,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
     lpCountSound(value - from, value, LP_TICK_MS);
+    if (who !== undefined && aimed !== value) emitLpHit(who, aimed, value);
     const t0 = performance.now();
     let raf = 0;
     let k = 0;
@@ -710,7 +727,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     raf = requestAnimationFrame(step);
     const backup = setInterval(() => tick(false) && clearInterval(backup), 100);
     return () => (cancelAnimationFrame(raf), clearInterval(backup));
-  }, [value]);
+  }, [value, who]);
   return (
     <span key={hits} class={`lp-count ${hits ? 'lp-hit' : ''}`}>
       {v}
