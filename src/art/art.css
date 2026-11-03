@@ -1049,7 +1049,7 @@
 
 /* The finishing blow's slow-motion replay: letterbox bars, a soft film vignette and a REPLAY tag. */
 .art-replay {
-  /* over the Life Points bars (z 61) and the skip pill: a real letterbox; taps still skip */
+  /* inside the art stage, under the Life Points bars (they stay readable); taps still skip */
   position: fixed;
   z-index: 63;
   inset: 0;
