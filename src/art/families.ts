@@ -69,20 +69,6 @@ export const FX_FAMILIES: readonly { id: FxFamily; label: string }[] = [
 export type Terrain = 'volcano' | 'ocean' | 'forest' | 'sky' | 'holy' | 'shadow' | 'arcane' | 'tech' | 'wasteland' | 'cosmos';
 export const TERRAINS: readonly Terrain[] = ['volcano', 'ocean', 'forest', 'sky', 'holy', 'shadow', 'arcane', 'tech', 'wasteland', 'cosmos'];
 
-/** The colors each terrain paints (sky color, light color). */
-export const TERRAIN_COLORS: Record<Terrain, [number, number]> = {
-  volcano: [0xff4a1a, 0xffc040],
-  ocean: [0x1a6aff, 0x9ae8ff],
-  forest: [0x2a9a3a, 0xd8ff8a],
-  sky: [0x4a8aff, 0xf0f8ff],
-  holy: [0xffe08a, 0xffffff],
-  shadow: [0x6a2aaa, 0xff4ad8],
-  arcane: [0x8a4aff, 0x7affff],
-  tech: [0x1ad8ff, 0x7aff9a],
-  wasteland: [0xc08a4a, 0xffe0a0],
-  cosmos: [0x5a3aff, 0xffffff],
-};
-
 export interface FxClass {
   family: FxFamily;
   /** Field Spells: the terrain */

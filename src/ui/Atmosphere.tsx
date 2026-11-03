@@ -1,11 +1,15 @@
-// The duel's atmosphere around the cards (Speed Duels and the classic game alike):
+// The duel's atmosphere around the cards (Speed Duels):
 //   Living Field: a face-up Field Spell's landscape stays up as the arena behind the
-//     board for as long as the card is on the field (src/art/livingField.ts).
+//     board for as long as the card is on the field, sweeping out from its Field Zone
+//     when it lands (src/art/livingField.ts).
 //   Danger state: at low Life Points (a quarter of the starting LP, then an eighth)
-//     your half of the field cracks, the screen's edges pulse red with a heartbeat
-//     and you hear it (only with Sound on). The opponent's half cracks too when
-//     they are the one in danger, so you can see the kill is close.
-// Nothing here takes a tap: every layer is pointer-events: none.
+//     your half of the field cracks and the screen's edges glow red. Your heart beats
+//     in bursts of a few seconds (the edge, the cracks and, with Sound on, a heartbeat
+//     you hear): when you fall into danger or deeper, when you take damage in it, and
+//     at the start of your turn; a faint glow holds in between. The opponent's half
+//     cracks (dimmer) when they are the one in danger, so you can see the kill is close.
+// Nothing here takes a tap: every layer is pointer-events: none, and the red never
+// lies over the cards in your hand.
 import { useEffect, useMemo, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { dangerLevel, fieldTerrain } from './atmosphereRules';
@@ -17,6 +21,8 @@ export { dangerLevel };
 
 /** Heartbeat periods (ms) for danger levels 1 and 2. */
 const BEAT_MS = [0, 1150, 800];
+/** How long a burst of heartbeats lasts (ms). */
+const BURST_MS = 6000;
 
 let shared: LivingField | null = null;
 let users = 0;
@@ -33,11 +39,17 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
   const over = state.winner !== null && state.winner !== undefined;
   const mineT = fieldTerrain(state, me);
   const oppT = fieldTerrain(state, opp);
-  const dMe = over ? 0 : dangerLevel(state.players[me].lp, speed);
-  const dOpp = over ? 0 : dangerLevel(state.players[opp].lp, speed);
+  const lv = [0, 1].map((p) => (over ? 0 : dangerLevel(state.players[p].lp, speed)));
+  const dMe = lv[me];
+  const dOpp = lv[opp];
+  const myLp = state.players[me].lp;
   const edge = useRef<HTMLDivElement>(null);
   const field = useRef<LivingField | null>(null);
-  const lastDanger = useRef<[number, number]>([0, 0]);
+  /** each duelist's danger level last time (by seat, so a hotseat hand-over never replays the crack) */
+  const lastLv = useRef<number[]>([0, 0]);
+  const burstUntil = useRef(0);
+  const lastLp = useRef(myLp);
+  const lastTurn = useRef(state.turnPlayer);
 
   // one canvas for the whole app (a rematch or the next duel reuses it)
   useEffect(() => {
@@ -60,43 +72,58 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
   }, []);
 
   useEffect(() => {
-    field.current?.setFields(oppT, mineT);
-    document.body.dataset.lfMe = mineT ?? '';
-    document.body.dataset.lfOpp = oppT ?? '';
-  }, [mineT, oppT]);
+    const f = field.current;
+    if (!f) return;
+    // each sweep starts from its own Field Zone card
+    const zones = document.querySelectorAll('.duel.touch .tz.tz-f');
+    if (zones.length >= 2) f.setOrigins(zones[0].getBoundingClientRect(), zones[zones.length - 1].getBoundingClientRect());
+    f.setFields(oppT, mineT);
+  }, [mineT, oppT, me]);
 
+  // danger: the ground cracks when a duelist first falls into (deeper) danger
   useEffect(() => {
     field.current?.setDanger(dMe, dOpp);
-    const [pm, po] = lastDanger.current;
-    // the ground gives way: a crack when a duelist first falls into (deeper) danger
-    if ((dMe > pm || dOpp > po) && !document.body.classList.contains('art-on')) groundCrack();
-    lastDanger.current = [dMe, dOpp];
+    const prev = lastLv.current;
+    const deeper = lv.some((l, p) => l > prev[p]);
+    if (deeper && !document.body.classList.contains('art-on')) groundCrack();
+    if (lv[me] > prev[me]) burstUntil.current = performance.now() + BURST_MS;
+    lastLv.current = lv;
     document.body.classList.toggle('danger-me', dMe > 0);
     document.body.classList.toggle('danger-me-2', dMe > 1);
     document.body.classList.toggle('danger-opp', dOpp > 0);
-  }, [dMe, dOpp]);
+  }, [lv[0], lv[1]]);
 
-  // the heartbeat: sound, edge pulse and the cracks' flare, all on one clock
+  // ...and the heart races again when you take damage while in danger, and at the start of your turn
+  useEffect(() => {
+    if (dMe && myLp < lastLp.current) burstUntil.current = performance.now() + BURST_MS;
+    lastLp.current = myLp;
+  }, [myLp]);
+  useEffect(() => {
+    if (dMe && state.turnPlayer === me && lastTurn.current !== me) burstUntil.current = performance.now() + BURST_MS;
+    lastTurn.current = state.turnPlayer;
+  }, [state.turnPlayer]);
+  // (a hotseat hand-over: the new duelist's own danger is not news, no burst)
+  useEffect(() => {
+    lastLp.current = myLp;
+  }, [me]);
+
+  // the heartbeat: sound, edge pulse and the cracks' flare, on one clock
   useEffect(() => {
     if (!dMe) return;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const beat = () => {
       if (document.hidden) return;
-      field.current?.beat();
-      const el = edge.current;
-      if (el && !reduced)
-        el.animate(
-          [
-            { opacity: 0.35 },
-            { opacity: 1, offset: 0.12 },
-            { opacity: 0.55, offset: 0.3 },
-            { opacity: 0.85, offset: 0.42 },
-            { opacity: 0.35 },
-          ],
-          { duration: Math.min(900, BEAT_MS[dMe] - 50), easing: 'ease-out' },
-        );
+      const loud = performance.now() < burstUntil.current;
+      if (loud) field.current?.beat();
+      if (!reduced) {
+        const k = loud ? 1 : 0.4;
+        const keys = [{ opacity: 0.3 }, { opacity: 0.3 + 0.7 * k, offset: 0.12 }, { opacity: 0.3 + 0.3 * k, offset: 0.3 }, { opacity: 0.3 + 0.5 * k, offset: 0.42 }, { opacity: 0.3 }];
+        const opts = { duration: Math.min(900, BEAT_MS[dMe] - 50), easing: 'ease-out' };
+        edge.current?.animate(keys, opts);
+        if (loud) document.querySelector('.tcracks.me .tcracks-glow')?.animate([{ opacity: 0.55 }, { opacity: 1, offset: 0.15 }, { opacity: 0.55 }], opts);
+      }
       // (under a cinematic the heartbeat holds its breath: the cinematic has its own sound)
-      if (!document.body.classList.contains('art-on')) heartbeat(dMe > 1);
+      if (loud && !document.body.classList.contains('art-on')) heartbeat(dMe > 1);
     };
     beat();
     const id = setInterval(beat, BEAT_MS[dMe]);
@@ -106,8 +133,6 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
   useEffect(
     () => () => {
       for (const c of ['danger-me', 'danger-me-2', 'danger-opp']) document.body.classList.remove(c);
-      delete document.body.dataset.lfMe;
-      delete document.body.dataset.lfOpp;
     },
     [],
   );
@@ -120,50 +145,63 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
 /** A small seeded random generator (the same cracks every render). */
 function rng(seed: number) {
   let s = seed >>> 0 || 1;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 }
 
-/** Jagged crack lines spreading from a few impact points along the duelist's edge of the mat. */
-function crackPaths(seed: number, count: number): string[] {
+interface Crack {
+  d: string;
+  /** stroke width scale: the trunk is thick, branches taper */
+  w: number;
+}
+
+/**
+ * Ground cracks: one or two impact points on the duelist's edge of the mat, a few
+ * trunks splitting from each and tapering branches off them (100×100 box, y = 100 the
+ * duelist's edge). Level 2 adds a second impact and longer reach.
+ */
+function crackPaths(seed: number, level: number): Crack[] {
   const r = rng(seed);
-  const out: string[] = [];
-  const grow = (x: number, y: number, ang: number, len: number, depth: number) => {
+  const out: Crack[] = [];
+  const grow = (x: number, y: number, ang: number, len: number, w: number, depth: number) => {
     let d = `M${x.toFixed(1)} ${y.toFixed(1)}`;
-    const steps = 4 + Math.floor(r() * 4);
+    const steps = 5 + Math.floor(r() * 3);
     for (let i = 0; i < steps; i++) {
-      ang += (r() - 0.5) * 0.9;
-      const l = (len / steps) * (0.6 + r() * 0.8);
+      ang += (r() - 0.5) * 0.7;
+      const l = (len / steps) * (0.7 + r() * 0.6);
       x += Math.cos(ang) * l;
       y += Math.sin(ang) * l;
       d += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
-      if (depth < 2 && r() < 0.35) grow(x, y, ang + (r() < 0.5 ? -1 : 1) * (0.5 + r() * 0.6), len * 0.45, depth + 1);
+      if (depth < 2 && i > 0 && r() < 0.32) grow(x, y, ang + (r() < 0.5 ? -1 : 1) * (0.5 + r() * 0.5), len * 0.42, w * 0.55, depth + 1);
     }
-    out.push(d);
+    out.push({ d, w });
   };
-  for (let i = 0; i < count; i++) {
-    // impact points along the near edge (y = 100), cracks running up into the half
-    const x = 8 + ((i + r() * 0.8) / count) * 84;
-    grow(x, 100, -Math.PI / 2 + (r() - 0.5) * 1.3, 45 + r() * 35, 0);
+  const impacts = level > 1 ? [28 + r() * 12, 64 + r() * 14] : [38 + r() * 24];
+  for (const x of impacts) {
+    const trunks = 3;
+    for (let k = 0; k < trunks; k++) grow(x, 100, -Math.PI / 2 + (k - 1) * (0.55 + r() * 0.3), (level > 1 ? 70 : 52) + r() * 20, 1, 0);
   }
   return out;
 }
 
 /** Red cracks over one duelist's half of the mat (level 0 draws nothing). */
 export function FieldCracks({ level, side }: { level: number; side: 'me' | 'opp' }) {
-  const paths1 = useMemo(() => crackPaths(side === 'me' ? 7 : 19, 4), [side]);
-  const paths2 = useMemo(() => crackPaths(side === 'me' ? 31 : 43, 4), [side]);
+  const paths = useMemo(() => (level ? crackPaths(side === 'me' ? 7 : 19, level) : []), [side, level]);
   if (!level) return null;
-  const all = level > 1 ? [...paths1, ...paths2] : paths1;
   return (
     <svg class={`tcracks ${side} lv-${level}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <g class="tcracks-dark">
-        {all.map((d, i) => (
-          <path key={i} d={d} />
+        {paths.map((c, i) => (
+          <path key={i} d={c.d} style={{ strokeWidth: `${(4 * c.w).toFixed(2)}px` }} />
         ))}
       </g>
       <g class="tcracks-glow">
-        {all.map((d, i) => (
-          <path key={i} d={d} />
+        {paths.map((c, i) => (
+          <path key={i} d={c.d} style={{ strokeWidth: `${(5 * c.w).toFixed(2)}px` }} />
+        ))}
+      </g>
+      <g class="tcracks-core">
+        {paths.map((c, i) => (
+          <path key={i} d={c.d} style={{ strokeWidth: `${(1.6 * c.w + 0.3).toFixed(2)}px` }} />
         ))}
       </g>
     </svg>
