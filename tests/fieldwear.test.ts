@@ -92,7 +92,7 @@ const inBox = (d: string) => [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].every(([,
   check(JSON.stringify(two[0]) === JSON.stringify(one[0]), 'a second destruction adds to the first marks (they stay)');
   check(two[1].cracks.length > one[0].cracks.length && two[1].r > one[0].r, 'the second hit is bigger, with more cracks');
   check(three[2].chips.length >= 4 && one[0].chips.length === 0 && two[1].chips.length === 0, 'the third hit shatters the slab (chipped pieces)');
-  const all = three.flatMap((h) => [...h.cracks.map((c) => c.d), ...h.chips]);
+  const all = three.flatMap((h) => [...h.cracks.map((c) => c.d), ...h.chips.flatMap((c) => [c.face, c.shadow])]);
   check(all.every(inBox), 'cracks and chips stay inside the zone');
   const grid = wearHit(5, 2, true);
   const straight = grid.cracks.every((c) => {

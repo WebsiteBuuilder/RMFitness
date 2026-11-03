@@ -6,10 +6,10 @@
 // The count lives in the engine state (fx.wear), so it is the same on both phones online, after
 // a rejoin and in a replay; a new duel starts clean. The marks sit under the card and under the
 // zone's highlights, and never take a tap.
-import { useMemo, useRef } from 'preact/hooks';
+import { useId, useMemo, useRef, useState } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { fieldTerrain } from './atmosphereRules';
-import { H, MAX_LOOK, W, wearHits, wearOf, wearStyle } from './fieldWearRules';
+import { H, MAX_LOOK, W, wearHits, wearOf, wearStyle, type WearHit } from './fieldWearRules';
 import './fieldwear.css';
 
 export { wearOf };
@@ -20,6 +20,27 @@ export function wearKey(state: DuelState, p: Pid, zone: number): string {
   return n ? `${n}:${wearStyle(fieldTerrain(state, p))}` : '';
 }
 
+/** One hit's marks merged into one path per layer (a handful of nodes per zone, not hundreds). */
+interface Drawn {
+  h: WearHit;
+  specks: string;
+  gap: string;
+  core: string;
+  chipSh: string;
+  chipFace: string;
+  chipLit: string;
+}
+const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y}a${r} ${r} 0 1 0 ${(2 * r).toFixed(2)} 0a${r} ${r} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
+const merge = (h: WearHit): Drawn => ({
+  h,
+  specks: h.specks.map(dot).join(''),
+  gap: h.cracks.map((c) => c.gap).join(''),
+  core: h.cracks.map((c) => c.core).join(''),
+  chipSh: h.chips.map((c) => c.shadow).join(''),
+  chipFace: h.chips.map((c) => c.face).join(''),
+  chipLit: h.chips.map((c) => c.lit).join(' '),
+});
+
 interface Props {
   state: DuelState;
   p: Pid;
@@ -27,6 +48,7 @@ interface Props {
 }
 
 export function ZoneWear({ state, p, zone }: Props) {
+  const held = !!state.players[p].mz[zone];
   const n = wearOf(state, p, zone);
   const style = wearStyle(fieldTerrain(state, p));
   // (a mark that appears while this zone is on screen is fresh: it lands with a flare and cools;
@@ -35,23 +57,38 @@ export function ZoneWear({ state, p, zone }: Props) {
   const seen = useRef<number | null>(null);
   const freshN = useRef(0);
   if (seen.current !== null && n > seen.current) freshN.current = n;
-  if (n < (seen.current ?? 0)) freshN.current = 0;
+  const cooled = useRef(0);
+  if (n < (seen.current ?? 0)) freshN.current = cooled.current = 0; // (a replay stepping back)
   seen.current = n;
-  const fresh = freshN.current;
+  // (once the landing has played, the mark drops its animation classes: nothing left running or clipped)
+  const [, setTick] = useState(0);
+  const fresh = freshN.current > cooled.current ? freshN.current : 0;
+  const uid = useId();
   const grid = style === 'tech';
   // (drawn once per new mark, not on every render of the board)
-  const hits = useMemo(() => (n ? wearHits(p, zone, n, grid) : []), [p, zone, Math.min(n, MAX_LOOK), grid]);
+  const hits = useMemo(() => (n ? wearHits(p, zone, n, grid).map(merge) : []), [p, zone, Math.min(n, MAX_LOOK), grid]);
   if (!n) return null;
   const lv = Math.min(n, MAX_LOOK);
-  const id = `fw${p}${zone}`;
+  const id = `fw${uid.replace(/[^\w-]/g, '')}`;
   return (
-    <svg class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+    <svg
+      class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}`}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      onAnimationEnd={(ev) => {
+        if ((ev as AnimationEvent).animationName === 'fw-cool' && fresh) {
+          cooled.current = fresh;
+          setTick((t) => t + 1);
+        }
+      }}
+    >
       <defs>
         <radialGradient id={`${id}c`}>
           <stop offset="0" class="fw-s-core" />
           <stop offset="0.5" class="fw-s-mid" />
-          <stop offset="0.8" class="fw-s-rim" />
-          <stop offset="1" class="fw-s-out" />
+          <stop offset="0.84" class="fw-s-rim" />
+          <stop offset="0.95" class="fw-s-out" />
         </radialGradient>
         <radialGradient id={`${id}f`}>
           <stop offset="0" class="fw-s-f0" />
@@ -65,30 +102,30 @@ export function ZoneWear({ state, p, zone }: Props) {
       </defs>
       {/* the third hit darkens the whole slab */}
       {lv >= 3 && <rect class="fw-soot" x="0" y="0" width={W} height={H} />}
-      {hits.map((h, i) => {
+      {/* a monster standing on the damage: its scorched edge still shows round the card */}
+      {held && <rect class="fw-held" x="1" y="1" width={W - 2} height={H - 2} rx="4" />}
+      {hits.map(({ h, specks, gap, core, chipSh, chipFace, chipLit }, i) => {
         const k = i + 1;
         // the newest mark flares; a 4th+ destruction re-lights the worst one
-        const isFresh = fresh && (k === Math.min(fresh, MAX_LOOK));
+        const isFresh = fresh && k === Math.min(fresh, MAX_LOOK);
         return (
           <g key={isFresh ? `${k}-${fresh}` : k} class={`fw-hit${isFresh ? ' fresh' : ''}`} style={{ '--hx': `${h.x}px`, '--hy': `${h.y}px` } as Record<string, string>}>
             <path class="fw-blot" d={h.blot} fill={`url(#${id}c)`} />
             {k >= 2 && <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.36} ry={h.r * 0.45} fill={`url(#${id}p)`} />}
-            {h.specks.map(([x, y, s], j) => (
-              <circle key={j} class="fw-speck" cx={x} cy={y} r={s} />
-            ))}
+            <path class="fw-speck" d={specks} />
             <g class="fw-dark">
-              {h.cracks.map((c, j) => (
-                <path key={j} d={c.gap} />
-              ))}
+              <path d={gap} />
             </g>
             <g class="fw-glow">
-              {h.cracks.map((c, j) => (
-                <path key={j} d={c.core} />
-              ))}
+              <path d={core} />
             </g>
-            {h.chips.map((d, j) => (
-              <path key={`c${j}`} class="fw-chip" d={d} />
-            ))}
+            {chipFace && (
+              <g class="fw-chip">
+                <path class="fw-chip-sh" d={chipSh} />
+                <path class="fw-chip-face" d={chipFace} />
+                <path class="fw-chip-lit" d={chipLit} />
+              </g>
+            )}
             {isFresh && <ellipse class="fw-flash" cx={h.x} cy={h.y} rx={h.r * 1.3} ry={h.r * 1.5} fill={`url(#${id}f)`} />}
             {isFresh && <ellipse class="fw-ring" cx={h.x} cy={h.y} rx={h.r * 0.8} ry={h.r} />}
           </g>

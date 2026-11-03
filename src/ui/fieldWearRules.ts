@@ -59,6 +59,15 @@ export function taper(pts: [number, number][], half: number): string {
   return `M${left.join(' L')} L${right.reverse().join(' L')} Z`;
 }
 
+export interface WearChip {
+  /** the shard's top face */
+  face: string;
+  /** the dark gap it lifted out of (offset down-right: it sits raised) */
+  shadow: string;
+  /** its lit edges (up-left, toward the light) */
+  lit: string;
+}
+
 export interface WearHit {
   /** where the monster fell */
   x: number;
@@ -68,8 +77,8 @@ export interface WearHit {
   /** its size (the blot's mean radius) */
   r: number;
   cracks: WearCrack[];
-  /** chipped pieces of the slab (the third hit shatters it) */
-  chips: string[];
+  /** broken-out pieces of the slab along the cracks (the third hit shatters it) */
+  chips: WearChip[];
   /** ash or embers lying in the scorch: [x, y, size] */
   specks: [number, number, number][];
 }
@@ -104,7 +113,9 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
   }
   blot += 'Z';
   const cracks: WearCrack[] = [];
-  const reach = [0, 15, 30, 44][lv];
+  const reach = [0, 19, 32, 54][lv];
+  /** where cracks bend (shards break out there) */
+  const joints: [number, number, number][] = [];
   const grow = (cx: number, cy: number, ang: number, len: number, w: number, depth: number) => {
     const pts: [number, number][] = [[cx, cy]];
     const steps = grid ? 3 + Math.floor(r() * 2) : 6 + Math.floor(r() * 4);
@@ -118,31 +129,40 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
       cx = clampX(cx + Math.cos(ang) * l);
       cy = clampY(cy + Math.sin(ang) * l);
       pts.push([cx, cy]);
+      if (depth === 0 && i > 0) joints.push([cx, cy, ang]);
       if (depth < 1 + (lv > 1 ? 1 : 0) && i > 1 && r() < 0.3) grow(cx, cy, heading + (r() < 0.5 ? -1 : 1) * (grid ? Math.PI / 2 : 0.5 + r() * 0.6), len * 0.45, w * 0.6, depth + 1);
     }
     const d = 'M' + pts.map(([x, y]) => `${f1(x)} ${f1(y)}`).join(' L');
     cracks.push({ d, w, gap: taper(pts, 1.25 * w), core: taper(pts, 0.5 * w) });
   };
-  const trunks = [0, 4, 5, 7][lv];
+  const trunks = [0, 5, 6, 7][lv];
   const turn0 = r() * Math.PI * 2;
   for (let t = 0; t < trunks; t++) grow(x, y, turn0 + (t / trunks) * Math.PI * 2 + (r() - 0.5) * 0.5, reach * (0.7 + r() * 0.5), 1, 0);
   // the third hit breaks pieces out of the slab
-  const chips: string[] = [];
+  const chips: WearChip[] = [];
   if (lv >= 3) {
-    const n = 4 + Math.floor(r() * 3);
-    for (let i = 0; i < n; i++) {
-      const a = r() * Math.PI * 2;
-      const dist = rad * (0.35 + r() * 0.7);
-      const cx = clampX(x + Math.cos(a) * dist);
-      const cy = clampY(y + Math.sin(a) * dist * 1.25);
-      const s = 2.4 + r() * 3.2;
-      let d = '';
-      const corners = 4 + Math.floor(r() * 2);
-      for (let j = 0; j < corners; j++) {
-        const b = (j / corners) * Math.PI * 2 + r() * 0.6;
-        d += `${j ? 'L' : 'M'}${f1(clampX(cx + Math.cos(b) * s * (0.6 + r() * 0.5)))} ${f1(clampY(cy + Math.sin(b) * s * (0.6 + r() * 0.5)))} `;
+    const n = Math.min(joints.length, 5 + Math.floor(r() * 3));
+    const picks = joints.map((j) => [r(), j] as const).sort((a, b) => a[0] - b[0]).slice(0, n).map(([, j]) => j);
+    for (const [jx, jy, ang] of picks) {
+      // a sharp sliver lying along the crack: long axis on the crack, two or three cutting corners
+      const len = 6 + r() * 4;
+      const wid = 3 + r() * 2.2;
+      const side = r() < 0.5 ? -1 : 1;
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      const at = (u: number, v: number): [number, number] => [clampX(jx + ca * u - sa * v * side), clampY(jy + sa * u + ca * v * side)];
+      const pts = [at(-len * 0.5, 0.6), at(len * 0.5, 0.5), at(len * (0.15 + r() * 0.25), wid), at(-len * (0.15 + r() * 0.2), wid * (0.6 + r() * 0.3))];
+      const path = (q: [number, number][], dx = 0, dy = 0) => 'M' + q.map(([a, b]) => `${f1(clampX(a + dx))} ${f1(clampY(b + dy))}`).join(' L') + ' Z';
+      // the lit edges: the ones facing up-left
+      let lit = '';
+      for (let i = 0; i < pts.length; i++) {
+        const [ax, ay] = pts[i];
+        const [bx, by] = pts[(i + 1) % pts.length];
+        const nx = by - ay;
+        const ny = -(bx - ax); // (outward normal for a clockwise outline; either way, the up-left ones)
+        if (nx + ny < 0) lit += `M${f1(ax)} ${f1(ay)} L${f1(bx)} ${f1(by)} `;
       }
-      chips.push(d + 'Z');
+      chips.push({ face: path(pts), shadow: path(pts, 0.9, 1.2), lit: lit.trim() || `M${f1(pts[0][0])} ${f1(pts[0][1])} L${f1(pts[1][0])} ${f1(pts[1][1])}` });
     }
   }
   const specks: [number, number, number][] = [];
