@@ -16,10 +16,6 @@
   overflow: hidden;
   border-radius: inherit;
 }
-/* (a layer of its own only while a mark is landing) */
-.fwear.landing {
-  will-change: transform;
-}
 .fwear,
 .fwear-held {
   /* the plain slab: soot and an ember glow */
@@ -82,8 +78,8 @@
 .fwear .fw-lip-lit {
   fill: none;
   stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.6;
-  stroke-width: 1.7px;
+  stroke-opacity: 0.85;
+  stroke-width: 1.9px;
 }
 .fwear .fw-lip-dark {
   fill: none;
@@ -94,6 +90,11 @@
 .fwear .fw-chip-sh {
   fill: #000;
   opacity: 0.85;
+}
+.fwear .fw-chip-char {
+  /* (the plates take the burn's colour: scorched stone, not glass) */
+  fill: var(--fw-rim);
+  opacity: 0.55;
 }
 .fwear .fw-chip-face {
   fill: var(--fw-chip);
@@ -116,15 +117,22 @@
 }
 .fwear-held .fw-held-soot {
   fill: none;
-  stroke: #000;
-  stroke-opacity: 0.55;
+  stroke: var(--fw-rim);
+  stroke-opacity: 0.75;
   stroke-width: 5px;
 }
-.fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.7; }
-.fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.82; stroke-width: 6px; }
+.fwear-held .fw-held-heat {
+  fill: none;
+  stroke: var(--fw-glow);
+  stroke-opacity: 0.3;
+  stroke-width: 1px;
+}
+.fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.85; }
+.fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.95; stroke-width: 6px; }
+.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.45; }
 .fwear-held .fw-held-embers {
-  fill: var(--fw-glow);
-  opacity: 0.85;
+  fill: var(--fw-flash);
+  opacity: 0.95;
 }
 .fwear .fw-speck {
   fill: var(--fw-speck);
@@ -333,8 +341,8 @@
   100% { opacity: calc(var(--fw-rest) + var(--fw-lift)); fill: var(--fw-glow); }
 }
 @keyframes fw-flash {
-  0% { opacity: 0; transform: scale(0.3); }
-  18% { opacity: 1; transform: scale(0.8); }
+  0% { opacity: 1; transform: scale(0.45); }
+  10% { opacity: 1; transform: scale(0.75); }
   100% { opacity: 0; transform: scale(1.15); }
 }
 @keyframes fw-ring {
@@ -374,4 +382,18 @@ body.art-on .fwear .fw-hit.fresh {
 .zone.pick .fwear,
 .zone.pick .fwear-held {
   opacity: 0.4;
+}
+
+/* ---- a worn empty zone: the damage replaces the zone's emblem (cut into the stone, not a decal under glass) ---- */
+.duel.touch .tz.worn.empty::after {
+  opacity: 0.05;
+}
+
+/* (strokes keep their width when a zone is not exactly a card's shape) */
+.fwear-held rect,
+.fwear .fw-lip-lit,
+.fwear .fw-lip-dark,
+.fwear .fw-chip-lit,
+.fwear .fw-ring {
+  vector-effect: non-scaling-stroke;
 }

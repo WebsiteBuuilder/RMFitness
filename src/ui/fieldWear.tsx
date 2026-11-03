@@ -44,8 +44,8 @@ const merge = (h: WearHit): Drawn => ({
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Embers smouldering round a card that stands on a worn zone (seeded: the same every render). */
-function embersOf(p: number, zone: number, lv: number): string {
-  let s = (p * 977 + zone * 131 + 7) >>> 0;
+function embersOf(p: number, zone: number, lv: number, seed: number): string {
+  let s = (p * 977 + zone * 131 + 7 + Math.imul(seed, 2246822519)) >>> 0;
   const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
   let d = '';
   for (let i = 0; i < 5 + lv * 3; i++) {
@@ -91,7 +91,8 @@ export function ZoneWear({ state, p, zone }: Props) {
   const uid = useId();
   const grid = style === 'tech';
   // (drawn once per new mark, not on every render of the board)
-  const hits = useMemo(() => (n ? wearHits(p, zone, n, grid).map(merge) : []), [p, zone, Math.min(n, MAX_LOOK), grid]);
+  const seed = state.seed | 0;
+  const hits = useMemo(() => (n ? wearHits(p, zone, n, grid, seed).map(merge) : []), [p, zone, Math.min(n, MAX_LOOK), grid, seed]);
   if (!n) return null;
   const lv = Math.min(n, MAX_LOOK);
   const id = `fw${uid.replace(/[^\w-]/g, '')}`;
@@ -101,11 +102,12 @@ export function ZoneWear({ state, p, zone }: Props) {
     {held && (
       <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         <rect class="fw-held-soot" x="-1.5" y="-1.5" width={W + 3} height={H + 3} rx="6" />
-        <path class="fw-held-embers" d={embersOf(p, zone, lv)} />
+        <rect class="fw-held-heat" x="-0.5" y="-0.5" width={W + 1} height={H + 1} rx="5" />
+        <path class="fw-held-embers" d={embersOf(p, zone, lv, seed)} />
       </svg>
     )}
     <svg
-      class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}${fresh ? ' landing' : ''}`}
+      class={`fwear st-${style} lv-${lv}${n > MAX_LOOK ? ' more' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
       aria-hidden="true"
@@ -121,7 +123,8 @@ export function ZoneWear({ state, p, zone }: Props) {
         </radialGradient>
         <radialGradient id={`${id}f`}>
           <stop offset="0" class="fw-s-f0" />
-          <stop offset="0.35" class="fw-s-f1" />
+          <stop offset="0.22" class="fw-s-f0" />
+          <stop offset="0.45" class="fw-s-f1" />
           <stop offset="1" class="fw-s-f2" />
         </radialGradient>
         <radialGradient id={`${id}p`}>
@@ -158,6 +161,7 @@ export function ZoneWear({ state, p, zone }: Props) {
               <g class="fw-chip">
                 <path class="fw-chip-sh" d={chipSh} />
                 <path class="fw-chip-face" d={chipFace} />
+                <path class="fw-chip-char" d={chipFace} />
                 <path class="fw-chip-lit" d={chipLit} />
               </g>
             )}

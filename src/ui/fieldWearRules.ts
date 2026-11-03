@@ -103,10 +103,10 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
   const rad = [0, 17, 21, 24][lv] + r() * 4;
   // a rough outline: 16 points, the radius wandering
   let blot = '';
-  const pts = 16;
+  const pts = 22;
   let wob = 1;
   for (let i = 0; i < pts; i++) {
-    wob = Math.max(0.62, Math.min(1.3, wob + (r() - 0.5) * 0.45));
+    wob = Math.max(0.5, Math.min(1.4, wob + (r() - 0.5) * 0.75)); // (ragged: a burn, not a soft oval)
     const a = (i / pts) * Math.PI * 2;
     // (taller than wide: the zone is a card's shape)
     blot += `${i ? 'L' : 'M'}${f1(x + Math.cos(a) * rad * wob)} ${f1(y + Math.sin(a) * rad * wob * 1.25)} `;
@@ -182,9 +182,10 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
 }
 
 /** Every mark in a zone that has seen `count` monsters destroyed (the worst look from the third on). */
-export function wearHits(p: Pid, zone: number, count: number, grid = false): WearHit[] {
+export function wearHits(p: Pid, zone: number, count: number, grid = false, duelSeed = 0): WearHit[] {
   const out: WearHit[] = [];
-  for (let k = 1; k <= Math.min(count, MAX_LOOK); k++) out.push(wearHit(1 + p * 977 + zone * 131, k, grid));
+  // (the duel's own seed: each duel scars differently, and both phones of an online duel alike)
+  for (let k = 1; k <= Math.min(count, MAX_LOOK); k++) out.push(wearHit((1 + p * 977 + zone * 131 + Math.imul(duelSeed | 0, 2246822519)) >>> 0, k, grid));
   return out;
 }
 
