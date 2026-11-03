@@ -370,3 +370,28 @@ export function lpSpark() {
   tone(2600, 0.25, 0.04, 0.02, { type: 'sawtooth', to: 300, lp: 4000 });
   tone(120, 0.18, 0.05, 0.03, { type: 'square', lp: 500 });
 }
+
+// ------------------------------------------------------------ chain spotlight
+
+/** A chain link's number lands as the chain lifts: a bright note, a step higher per link (the newest one rings). */
+export function chainLift(n: number, fresh = false) {
+  const f = 523 * 2 ** (Math.min(n - 1, 7) * (2 / 12));
+  tone(f, 0.22, fresh ? 0.05 : 0.03, 0, { type: 'triangle' });
+  tone(f * 1.5, 0.18, fresh ? 0.025 : 0.012, 0.03, { type: 'sine' });
+  if (fresh) hiss(0.25, 2000, 7000, 0.05, 0, 'highpass');
+}
+
+/** A chain link resolves: a rush up into its flash, coloured by its kind. */
+export function chainResolve(what: 'spell' | 'trap' | 'monster', n = 1) {
+  hiss(0.3, 600, 5000, 0.07, 0, 'bandpass', 0.04);
+  const base = what === 'trap' ? 311 : what === 'monster' ? 262 : 392;
+  const f = base * 2 ** (Math.min(n - 1, 6) / 12);
+  tone(f, 0.38, 0.05, 0.05, { type: what === 'trap' ? 'sawtooth' : 'triangle', lp: 2400 });
+  tone(f * 2, 0.3, 0.025, 0.08, { type: 'sine' });
+}
+
+/** A negated link: a dull buzz down. */
+export function chainNegate() {
+  thud(0.4);
+  tone(220, 0.35, 0.06, 0, { type: 'square', to: 90, lp: 1200 });
+}
