@@ -58,26 +58,36 @@ vec3 land(vec2 g, float t, float ter){
   float y = g.y;
   if (ter < 1.5) {
     // VOLCANO: a black-red sky, a lava glow along your edge, glowing cracks in the rock, embers rising
-    vec3 c = mix(vec3(0.16, 0.03, 0.02), vec3(0.04, 0.01, 0.01), sstep(0.3, 3.8, y));
+    vec3 c = mix(vec3(0.10, 0.025, 0.02), vec3(0.03, 0.01, 0.01), sstep(0.3, 3.8, y));
     float rim = sstep(1.5, 0.1, y + 0.35 * fbm(vec2(g.x * 1.4, t * 0.12)));
     // pools of lava glowing through the black rock, slowly churning (no branching lines: those are the danger cracks)
-    float pool = sstep(0.56, 0.68, fbm(g * vec2(1.3, 2.2) + vec2(t * 0.04, -t * 0.03))) * sstep(2.8, 0.4, y);
-    float churn = 0.75 + 0.25 * sin(t * 1.1 + fbm(g * 3.0) * 6.0);
+    // (hard bright rims on black rock: molten, not a sunset)
+    float n = fbm(g * vec2(1.3, 2.2) + vec2(t * 0.04, -t * 0.03)) + 0.06 * sin(t * 1.4 + g.x * 5.0 + g.y * 3.0);
+    float fade = sstep(2.8, 0.4, y);
+    float pool = sstep(0.57, 0.6, n) * fade;
+    float core = sstep(0.6, 0.7, n) * fade;
+    float churn = 0.7 + 0.3 * sin(t * 1.6 + fbm(g * 3.0 + t * 0.2) * 6.0);
     c += vec3(1.0, 0.30, 0.04) * rim * (0.75 + 0.25 * sin(t * 1.3 + g.x * 2.0));
-    c += mix(vec3(0.9, 0.18, 0.02), vec3(1.0, 0.62, 0.15), churn) * pool * 0.85;
-    float emb = dots(vec2(g.x * 7.0 + sin(y * 2.0 + t) * 0.3, y * 6.0 - t * 2.6), 0.10, 0.17) * sstep(4.2, 0.4, y);
-    return c + vec3(1.0, 0.65, 0.25) * emb * 1.2;
+    c = mix(c, vec3(1.0, 0.29, 0.0) * (0.8 + 0.2 * churn), pool);
+    c = mix(c, vec3(1.0, 0.83, 0.42) * (0.85 + 0.15 * churn), core * 0.85);
+    float emb = dots(vec2(g.x * 5.0 + sin(y * 2.0 + t) * 0.3, y * 4.5 - t * 2.2), 0.12, 0.2) * sstep(4.4, 0.2, y);
+    return c + vec3(1.0, 0.75, 0.35) * emb * 1.5;
   } else if (ter < 2.5) {
     // OCEAN: a deep sea with rows of waves rolling in toward you, foam on every crest, glints
     vec3 c = mix(vec3(0.04, 0.31, 0.42), vec3(0.03, 0.17, 0.27), sstep(0.0, 4.2, y));
     for (int i = 5; i >= 0; i--) {
       float fi = float(i);
-      float base = 0.25 + fi * 0.55;
-      float wy = base + 0.11 * sin(g.x * (2.2 + fi * 0.35) + t * (2.0 - fi * 0.15) + fi * 1.7) + 0.04 * sin(g.x * 7.0 - t * 2.8 + fi * 2.3) - 0.06 * sin(t * 0.9 + fi);
-      float k = 1.0 - fi * 0.13;
-      c = mix(c, mix(vec3(0.03, 0.22, 0.34), vec3(0.08, 0.50, 0.62), sstep(wy - 0.45, wy, y)) * k, sstep(wy + 0.02, wy - 0.06, y));
-      float foam = exp(-pow((y - wy) * 18.0, 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
-      c += vec3(0.85, 0.97, 1.0) * foam * 0.95 * k;
+      // (rows closer together and flatter toward the far side: the sea in perspective; each row rolls in)
+      float base = 0.2 + fi * 0.62 - fi * fi * 0.045;
+      float amp = 0.07 - fi * 0.009;
+      float wy = base + amp * sin(g.x * (1.3 + fi * 0.5) + fi * 1.7 - t * 0.6) + amp * 0.35 * sin(g.x * (4.0 + fi) - t * 1.9 + fi * 2.3) - 0.08 * (0.5 + 0.5 * sin(t * 0.8 + fi * 0.9)) * (1.0 - fi * 0.12);
+      float k = 1.0 - fi * 0.11;
+      // (choppy crests, a dark trough under each wave)
+      wy += 0.025 * (vnoise(vec2(g.x * 9.0 - t * 1.5, fi * 5.0)) - 0.5);
+      vec3 water = mix(vec3(0.015, 0.12, 0.2), vec3(0.08, 0.50, 0.62), sstep(wy - 0.4, wy - 0.02, y));
+      c = mix(c, water * k, sstep(wy + 0.02, wy - 0.04, y));
+      float foam = exp(-pow((y - wy) * (11.0 + fi * 4.0), 2.0)) * (0.55 + 0.45 * vnoise(vec2(g.x * 5.0 - t * 0.8, fi * 3.0)));
+      c += vec3(0.9, 0.98, 1.0) * foam * 0.85 * k;
     }
     float glint = dots(g * vec2(9.0, 12.0) + vec2(t * 0.4, 0.0), 0.05, 0.12) * (0.5 + 0.5 * sin(t * 4.0 + g.x * 20.0));
     return c + vec3(0.8, 0.95, 1.0) * glint * sstep(3.6, 0.3, y);
@@ -118,14 +128,17 @@ vec3 land(vec2 g, float t, float ter){
     // SHADOW (Yami and the dark fields): grey-violet fog rolling over the board, eyes blinking in it
     float fog = fbm(g * 1.3 + vec2(t * 0.12, -t * 0.05)) * fbm(g * 0.7 - vec2(t * 0.07, 0.0));
     vec3 c = vec3(0.07, 0.04, 0.12) + vec3(0.42, 0.26, 0.62) * fog * 1.6 + vec3(0.16, 0.08, 0.26) * sstep(0.35, 0.7, fbm(g * 0.6 + vec2(-t * 0.05, t * 0.03)));
-    vec2 ec = g * vec2(1.4, 1.8) + vec2(0.0, t * 0.02);
+    vec2 ec = g * vec2(2.0, 2.3) + vec2(0.0, t * 0.02);
     vec2 cell = floor(ec);
     vec2 f = fract(ec) - vec2(0.5);
     float h = hash12(cell + 3.0);
-    float open = sstep(-0.2, 0.25, sin(t * 0.9 + h * 40.0));
+    float open = sstep(-0.2, 0.25, sin(t * (0.7 + h * 0.6) + h * 40.0));
     float sq = 2.2 - open * 1.2;
-    float eye = (sstep(0.07, 0.03, length((f - vec2(0.11, 0.0)) * vec2(1.0, sq))) + sstep(0.07, 0.03, length((f + vec2(0.11, 0.0)) * vec2(1.0, sq)))) * step(0.7, h) * open;
-    return c + vec3(1.0, 0.25, 0.55) * eye * 1.2;
+    float eye = (sstep(0.1, 0.045, length((f - vec2(0.14, 0.0)) * vec2(1.0, sq))) + sstep(0.1, 0.045, length((f + vec2(0.14, 0.0)) * vec2(1.0, sq)))) * step(0.6, h) * open;
+    // (they watch from the sides and the far end, faintest over the middle of the board)
+    eye *= 0.35 + 0.65 * sstep(0.25, 0.75, abs(g.x));
+    float halo = sstep(0.3, 0.0, length(f * vec2(0.7, 1.4))) * step(0.6, h) * open * 0.25;
+    return c + vec3(1.0, 0.25, 0.55) * (eye * 1.3 + halo);
   } else if (ter < 7.5) {
     // ARCANE: magenta magic circles turning, runes running around their bands, sparks
     vec2 o = vec2(0.0, 2.1);

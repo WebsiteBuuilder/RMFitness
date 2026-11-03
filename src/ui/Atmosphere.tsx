@@ -92,7 +92,7 @@ export function DuelAtmosphere({ state, me, speed }: Props) {
     document.body.classList.toggle('danger-me', dMe > 0);
     document.body.classList.toggle('danger-me-2', dMe > 1);
     document.body.classList.toggle('danger-opp', dOpp > 0);
-  }, [lv[0], lv[1]]);
+  }, [lv[0], lv[1], me]);
 
   // ...and the heart races again when you take damage while in danger, and at the start of your turn
   useEffect(() => {
@@ -179,7 +179,7 @@ function crackPaths(seed: number, level: number): Crack[] {
   const impacts = level > 1 ? [28 + r() * 12, 64 + r() * 14] : [38 + r() * 24];
   for (const x of impacts) {
     const trunks = 3;
-    for (let k = 0; k < trunks; k++) grow(x, 100, -Math.PI / 2 + (k - 1) * (0.55 + r() * 0.3), (level > 1 ? 70 : 52) + r() * 20, 1, 0);
+    for (let k = 0; k < trunks; k++) grow(x, 100, -Math.PI / 2 + (k - 1) * (0.55 + r() * 0.3), (level > 1 ? 50 : 38) + r() * 14, 1, 0);
   }
   return out;
 }

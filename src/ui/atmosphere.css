@@ -132,7 +132,7 @@ body.danger-opp .duel.touch .tbar.top .tlp {
 .tcracks.opp {
   top: -6px;
   transform: scaleY(-1);
-  opacity: 0.45;
+  opacity: 0.25;
 }
 .tcracks path {
   fill: none;
