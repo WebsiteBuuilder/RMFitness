@@ -6,6 +6,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { rawAudioContext, useMusicEnabled } from './sound';
 import { artBusy } from '../art/cues';
+import { aceFor } from '../ace/ace';
 import type { CardInfo, DuelState, EngineEvent, Pid } from '../eds/types';
 
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -553,7 +554,7 @@ function release(m: DuelMusic) {
 }
 
 interface Engine {
-  find(uid: number): { card: { name: string } } | null;
+  find(uid: number): { card: { name: string; owner: Pid } } | null;
   info(name: string): CardInfo;
 }
 
@@ -592,8 +593,9 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
       for (const ev of fresh) {
         seen.current = Math.max(seen.current, ev.seq);
         if (ev.kind !== 'summon' || ev.uid === undefined) continue;
-        const name = e.find(ev.uid)?.card.name;
-        if (s.winner === null && isAceSummon(name ? e.info(name) : undefined, ev.how)) m.ace(tb || ev.player === me);
+        const c = e.find(ev.uid)?.card;
+        // a big monster, or the duelist's own chosen Ace whatever its size
+        if (s.winner === null && c && (isAceSummon(e.info(c.name), ev.how) || aceFor(c.owner, c.name))) m.ace(tb || ev.player === me);
       }
       if (s.winner !== null) {
         endSeen ||= Date.now();

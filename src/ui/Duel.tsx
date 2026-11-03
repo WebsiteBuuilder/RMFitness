@@ -25,6 +25,7 @@ import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
 import { MateLayer, type MatePlan } from '../mates/MateLayer';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
+import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
 
@@ -90,6 +91,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
   useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
   const matesShown = useMatesShown();
+  const [callouts, setCallouts] = useState(calloutMode);
+  useEffect(() => {
+    const on = () => setCallouts(calloutMode());
+    window.addEventListener(CALLOUT_EVT, on);
+    return () => window.removeEventListener(CALLOUT_EVT, on);
+  }, []);
   const [anim, setAnim] = useState<{ kind: string; uid?: number; player?: Pid; amount?: number; seq: number } | null>(null);
   const [styles, setStyles] = useState<[ControlStyle, ControlStyle]>(() => [controlsFor?.(0) ?? 'classic', controlsFor?.(1) ?? 'classic']);
   const style = styles[acting];
@@ -631,6 +638,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
+                ...(e.speed ? [{ label: `Attack callouts: ${CALLOUT_LABEL[callouts]}`, note: 'tap to change', onPick: () => setCalloutMode(NEXT_CALLOUT[callouts]) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),

@@ -19,6 +19,8 @@ export interface Seat {
   skill?: string | null;
   /** Speed Duel: their cards' rarity tiers (card leveling), for the other player to see */
   rarity?: Record<string, number>;
+  /** Speed Duel: their Ace monster and its bond level (src/ace), for its entrance on the other phone */
+  ace?: { name: string; lv: number };
   /** Speed Duel: bets, Shadow Realm rescues and whether the duel pays prizes */
   stakes?: Stakes;
   /** pressed Accept on both players' bets */
@@ -26,7 +28,7 @@ export interface Seat {
 }
 
 export type LobbyAction =
-  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; stakes?: Stakes }
+  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; stakes?: Stakes }
   /** changes a seat's bet; both players have to Accept again */
   | { type: 'STAKE'; player: Pid; ante: Ante | null }
   | { type: 'ACCEPT'; player: Pid }
@@ -329,7 +331,7 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, stakes: a.stakes };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, ace: a.ace, stakes: a.stakes };
       this.seats[a.player === 0 ? 1 : 0].accepted = false;
       return;
     }
