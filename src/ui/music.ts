@@ -75,7 +75,8 @@ export class DuelMusic {
   private bed: GainNode; // the groove, lowered under cinematics
   private loop: GainNode; // the groove, stepping back under a swell
   private dry: GainNode;
-  private wet: GainNode;
+  private wet: GainNode; // the groove's reverb send (ducks with it)
+  private wetLead: GainNode; // the swells' and cadence's reverb send
   private noiseBuf: AudioBuffer;
   private rand: () => number;
   private mood: Mood = { level: 0, myTurn: true };
@@ -126,7 +127,12 @@ export class DuelMusic {
     verb.buffer = ir;
     this.wet = ctx.createGain();
     this.wet.gain.value = 0.32;
-    this.wet.connect(verb).connect(this.master);
+    this.wet.connect(verb).connect(this.loop); // the groove's hall ducks and steps back with it
+    const verb2 = ctx.createConvolver();
+    verb2.buffer = ir;
+    this.wetLead = ctx.createGain();
+    this.wetLead.gain.value = 0.32;
+    this.wetLead.connect(verb2).connect(this.master);
     this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const n = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
@@ -371,7 +377,7 @@ export class DuelMusic {
     if (wet > 0) {
       const s = this.ctx.createGain();
       s.gain.value = wet;
-      g.connect(s).connect(this.wet);
+      g.connect(s).connect(dest === this.dry ? this.wet : this.wetLead);
     }
     return g;
   }
