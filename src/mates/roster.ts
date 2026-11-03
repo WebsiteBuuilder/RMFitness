@@ -40,7 +40,7 @@ export interface MateDef {
 }
 
 /** What a mate can do: a short animation with a face and a little symbol over its head. */
-export type MateReact = 'wave' | 'hop' | 'spin' | 'cheer' | 'laugh' | 'wow' | 'hurt' | 'sad' | 'angry' | 'love' | 'sleep' | 'win' | 'lose';
+export type MateReact = 'wave' | 'hop' | 'spin' | 'cheer' | 'laugh' | 'wow' | 'hurt' | 'sad' | 'angry' | 'love' | 'sleep' | 'win' | 'lose' | 'flinch' | 'sweat' | 'grin' | 'taunt';
 
 /** The reactions anyone can send from the hold menu (both phones see them). */
 export const EMOTES: { react: MateReact; label: string }[] = [
@@ -52,7 +52,7 @@ export const EMOTES: { react: MateReact; label: string }[] = [
   { react: 'angry', label: 'Angry' },
 ];
 
-export const REACTS: readonly MateReact[] = ['wave', 'hop', 'spin', 'cheer', 'laugh', 'wow', 'hurt', 'sad', 'angry', 'love', 'sleep', 'win', 'lose'];
+export const REACTS: readonly MateReact[] = ['wave', 'hop', 'spin', 'cheer', 'laugh', 'wow', 'hurt', 'sad', 'angry', 'love', 'sleep', 'win', 'lose', 'flinch', 'sweat', 'grin', 'taunt'];
 
 export const MATES: MateDef[] = [
   { id: 'blueeyes', name: 'Blue-Eyes', card: 'Blue-Eyes White Dragon', blurb: 'The legendary dragon, pocket size. Still roars like it owns the field.', cost: { free: true }, voice: 520, taps: ['cheer', 'spin', 'angry', 'wave'] },
