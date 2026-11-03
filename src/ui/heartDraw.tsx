@@ -117,7 +117,7 @@ const handEl = (uid: number) => document.querySelector(`.thand [data-uid="${uid}
 const deckEl = (p: Pid) => document.querySelector(`[data-pile="deck${p}"]`) as HTMLElement | null;
 const faceOf = (el: HTMLElement | null) => (el?.querySelector('img.cimg') as HTMLImageElement | null)?.src ?? '';
 
-export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawGateInfo; state: DuelState; acting: Pid; blocked: boolean; onDone: () => void }) {
+export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { gate: DrawGateInfo; state: DuelState; acting: Pid; blocked: boolean; /** a question of yours is up: the card goes straight to your hand (it may be one of the answers) */ prompted: boolean; onDone: () => void }) {
   const card = state.players[acting].hand.find((c) => c.uid === gate.uid);
   // the gate opens once no cinematic is playing (and the phone has been handed over)
   const [idle, setIdle] = useState(!artBusy());
@@ -146,9 +146,17 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
       deadline.current = Date.now() + (gate.destiny ? AUTO_MS.destiny : AUTO_MS.normal);
       sfx.deckReady(gate.destiny);
     }
-    const t = setTimeout(() => release(), Math.max(1500, deadline.current - Date.now()));
+    const t = setTimeout(() => release(false), Math.max(1500, deadline.current - Date.now()));
     return () => clearTimeout(t);
   }, [up, phase]);
+
+  // a question of yours opened (a Draw Phase Skill, a trigger): the card is in your hand at once
+  useEffect(() => {
+    if (!prompted || phase !== 'wait' || finished.current) return;
+    const from = deckEl(acting)?.getBoundingClientRect() ?? deck;
+    if (from) land(from);
+    else ((finished.current = true), onDone());
+  }, [prompted]);
 
   /** The card flies from `from` into its place in your hand. */
   const land = (from: DOMRect) => {
@@ -162,13 +170,21 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
     onDone();
   };
 
-  const release = () => {
+  /** `user`: by your swipe, tap or key (the timer and a question don't count as learning to swipe) */
+  const release = (user = true) => {
     if (phase !== 'wait' || finished.current) return;
-    bumpHint();
-    swallowClick();
+    if (user) {
+      bumpHint();
+      swallowClick();
+    }
     const from = deckEl(acting)?.getBoundingClientRect() ?? deck;
     if (!gate.destiny || reduced() || !from) {
       sfx.drawSwipe();
+      try {
+        navigator.vibrate?.(12);
+      } catch {
+        /* no vibration here */
+      }
       return from ? land(from) : ((finished.current = true), onDone());
     }
     setPhase('reveal');
@@ -210,7 +226,7 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
         { duration: T(380), delay: T(760), iterations: 1, easing: 'linear' },
       ),
     );
-    if (aura) anims.push(aura.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }, { opacity: 1, transform: 'scale(1.15)' }], { duration: T(1150), easing: 'ease-out', fill: 'both' }));
+    if (aura) anims.push(aura.animate([{ opacity: 0, scale: '.6' }, { opacity: 1, scale: '1' }, { opacity: 1, scale: '1.15' }], { duration: T(1150), easing: 'ease-out', fill: 'both' }));
     // ...turns over...
     anims.push(flip.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(180deg)' }], { duration: T(620), delay: T(1140), easing: 'cubic-bezier(.5,0,.3,1)', fill: 'both' }));
     timers.push(
@@ -309,7 +325,7 @@ export function DrawGate({ gate, state, acting, blocked, onDone }: { gate: DrawG
             <div class={`hd-words ${cy < innerHeight * 0.45 ? 'hd-low' : ''}`}>
               <b>Believe in the heart of the cards</b>
               <em>
-                {state.players[acting].lp} LP vs {state.players[acting === 0 ? 1 : 0].lp} LP
+                <i class="hd-you">You {state.players[acting].lp}</i> · <i class="hd-them">{state.players[acting === 0 ? 1 : 0].name.split(' ')[0]} {state.players[acting === 0 ? 1 : 0].lp}</i>
               </em>
               <span>Swipe up for your destiny draw</span>
             </div>

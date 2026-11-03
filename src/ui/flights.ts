@@ -10,7 +10,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
-import { drawHeld, introLeft, whenIntroAt } from './immersionState';
+import { drawHeld, whenIntroAt } from './immersionState';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -242,9 +242,10 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
     // hands hidden meanwhile; then every rect is measured again and the cards fly.
     flights.forEach((f) => f.target && (f.target.style.opacity = '0'));
     // the art loader stands back until the cards are in hand (its first pictures stalled the deal)
-    const introWait = Math.max(0, introLeft() - 450);
-    hush(3500 + introWait);
+    hush(3500);
     const go = () => {
+      // (after a face-off, the deal starts now: the art loader stands back from here)
+      hush(3000);
       const now = root.current;
       for (const f of flights) {
         const uid = f.target?.dataset.uid;

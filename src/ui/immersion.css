@@ -149,7 +149,7 @@
 
 .hd-chip {
   position: absolute;
-  right: calc(100vw - var(--hx) + var(--hw) / 2 + 10px);
+  right: clamp(8px, calc(100% - var(--hx) + var(--hw) / 2 + 10px), calc(100% - 170px));
   top: var(--hy);
   translate: 0 -50%;
   white-space: nowrap;
@@ -186,6 +186,23 @@
   filter: drop-shadow(0 2px 0 #4a2600) drop-shadow(0 0 14px #ffb02e80);
   animation: hd-words 1.1s 0.25s cubic-bezier(.2,.8,.2,1) both;
 }
+.hd-words::before {
+  /* a dark pool behind the words, so the board under them never reads through */
+  content: '';
+  position: absolute;
+  inset: -28px -16px;
+  z-index: -1;
+  background: radial-gradient(closest-side, #000000d0, #00000080 60%, transparent);
+}
+.hd-words i {
+  font-style: normal;
+}
+.hd-words .hd-you {
+  color: #8fc4ff;
+}
+.hd-words .hd-them {
+  color: #ff8f8f;
+}
 .hd-words.hd-low {
   /* the deck sits high (Classic on a short phone): the words go below it */
   top: 58%;
@@ -194,7 +211,7 @@
   font: 800 13px/1 system-ui, sans-serif;
   font-style: normal;
   letter-spacing: 0.12em;
-  color: #ff9a8a;
+  color: #ffffffd0;
   animation: hd-fade 0.6s 0.6s ease-out both;
 }
 .hd-words span {
@@ -272,6 +289,8 @@
 }
 .hd-aura {
   position: absolute;
+  /* behind the card in its 3D space: the turning card never cuts through the haze */
+  transform: translateZ(-40px);
   inset: -28%;
   border-radius: 50%;
   background: radial-gradient(closest-side, #fff6d0 0, #ffd35acc 30%, #ff9a1f55 60%, transparent 100%);
@@ -720,6 +739,9 @@
   .hd-stage-rays,
   .hd-chev,
   .hd-glow,
+  .hd-hint,
+  .hd-name,
+  .hd-words b,
   .fo-streaks {
     animation: none !important;
   }
