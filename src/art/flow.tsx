@@ -20,7 +20,7 @@ import type { DuelState, Pid } from '../eds/types';
 import { lpCount as lpCountSound } from '../ui/duelSfx';
 import { emitLpHit, resetLpHits } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
-import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
+import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
 import { FIN, finishOf } from './finish';
@@ -220,9 +220,10 @@ export function pickCues(cues: Cue[], mode: Cinematics, viewer: Pid): Cue[] {
   if (mode === 'off') return [];
   if (mode === 'all') return cues;
   if (mode === 'big') return cues.filter(isBig);
+  // the chain spotlight shows every chain, whoever built it
   // My actions only: what I do, and what follows from it (its damage, its destruction, the finish).
   const mine = cues.some((c) => owner(c) === viewer);
-  return cues.filter((c) => c.kind === 'win' || owner(c) === viewer || (owner(c) === null && mine));
+  return cues.filter((c) => c.kind === 'win' || CHAIN_CUES.has(c.kind) || owner(c) === viewer || (owner(c) === null && mine));
 }
 
 /** The board-sync logic behind useShownState (exported for the tests). */
@@ -271,6 +272,26 @@ export class Flow {
   }
 
   /** The watchdog sleeps while the tab is hidden (nothing draws, so no cinematic can finish). */
+  /** a chain card is being read (chain spotlight): the watchdog waits */
+  private paused = false;
+
+  /** The chain spotlight pauses the stage while a card is read: the board waits for it too. */
+  setPaused(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    if (on) {
+      if (this.dogAt) {
+        this.dogLeft = Math.max(0, this.dogAt - performance.now());
+        clearTimeout(this.watchdog);
+        this.dogAt = 0;
+      }
+    } else if (this.dogLeft >= 0 && !(typeof document !== 'undefined' && document.hidden)) {
+      const left = this.dogLeft;
+      this.dogLeft = -1;
+      this.setDog(left);
+    }
+  }
+
   private onVisibility = () => {
     if (document.hidden) {
       if (this.dogAt) {
@@ -278,7 +299,7 @@ export class Flow {
         clearTimeout(this.watchdog);
         this.dogAt = 0;
       }
-    } else if (this.dogLeft >= 0) {
+    } else if (this.dogLeft >= 0 && !this.paused) {
       const left = this.dogLeft;
       this.dogLeft = -1;
       this.setDog(left);
@@ -508,7 +529,7 @@ export class Flow {
     this.dogAt = 0;
     this.dogLeft = -1;
     if (ms < 0 || !this.pending.length) return;
-    if (typeof document !== 'undefined' && document.hidden) {
+    if ((typeof document !== 'undefined' && document.hidden) || this.paused) {
       this.dogLeft = ms;
       return;
     }
@@ -583,6 +604,11 @@ export function chainStarted(batch: number, seconds: number) {
 /** 3D just failed under the cinematic (WebGL context lost): the board shows the duel as it is, now. */
 export function releaseBoard() {
   flow?.flushAll();
+}
+
+/** A chain card is being read (on) or not: the board's watchdog waits meanwhile. */
+export function pauseBoard(on: boolean) {
+  flow?.setPaused(on);
 }
 
 /** Long press / double tap on the art stage. */
