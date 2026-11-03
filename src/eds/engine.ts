@@ -2913,8 +2913,8 @@ export class Engine {
     if (!eff.ignition!.repeat) m.effectUsed = true;
     if (onChain) {
       // Speed Duel: the effect goes on a chain the opponent can respond to (targets and costs happen as it resolves).
-      this.state.chain.push(link);
       this.event('activate', { uid, player });
+      this.pushLink(link);
       yield* this.responseWindow('effect', { uid, link });
       yield* this.resolveChain();
       return;
@@ -3139,17 +3139,31 @@ export class Engine {
     // announced once its targets are chosen: its cinematic plays aimed at them (and never for a card taken back)
     this.event('activate', { uid: fc.uid, player });
     this.targetEvent(link);
-    this.state.chain.push(link);
+    this.pushLink(link);
     yield* this.responseWindow(this.info(fc.name).kind === 'spell' ? 'spell' : 'trap', { uid: fc.uid, link });
     yield* this.resolveChain();
+  }
+
+  /** Puts a link on the chain (the 'chain' event carries its number: the chain spotlight lifts it). */
+  private pushLink(link: ChainLink) {
+    this.state.chain.push(link);
+    this.event('chain', { uid: link.card.uid, player: link.player, link: this.state.chain.length });
+  }
+
+  /** A link of a chain of two or more starts resolving ('resolve': the chain spotlight shows it, negated or not). */
+  private resolveEvent(link: ChainLink, n: number, spot: boolean) {
+    if (spot) this.event('resolve', { uid: link.card.uid, player: link.player, link: n, ...(link.negated ? { negated: true } : {}) });
   }
 
   private *resolveChain(): Step {
     this.resolving++;
     const prevSource = this.levelSource;
+    // only a real chain (two links or more) gets the spotlight
+    const spot = this.speed && this.state.chain.length >= 2;
     try {
       while (this.state.chain.length > 0 && this.state.winner === null) {
         this.restoreKeptPositions(); // skills-2024b
+        const n = this.state.chain.length;
         const link = this.state.chain.pop()!;
         this.levelSource = link.card.uid;
         if (this.speed && !link.negated) yield* this.chainLinkWatch(link);
@@ -3164,6 +3178,7 @@ export class Engine {
           const prevScope = this.targetScope;
           const scope = this.speed && link.targetUid === undefined ? { cands: new Set<number>(), picked: new Set<number>() } : null;
           this.targetScope = scope;
+          this.resolveEvent(link, n, spot);
           try {
             if (link.negated) this.log(link.player, `${link.card.name}'s effect was negated`);
             else if (effectLink === 'quick' && eff?.quick) yield* this.as(link.player, eff.quick.run(this, link.card, link.player, link));
@@ -3182,6 +3197,7 @@ export class Engine {
         const cannotNegate = this.speed && !!(link.payload as { cannotNegate?: boolean } | undefined)?.cannotNegate;
         if (!link.negated && !cannotNegate && kind === 'spell' && this.spellsNegated()) link.negated = true;
         if (!link.negated && !cannotNegate && kind === 'trap' && this.trapsNegated(link.card.name)) link.negated = true;
+        this.resolveEvent(link, n, spot);
         if (link.negated) {
           this.log(link.player, `${link.card.name}'s effect was negated`);
         } else if (eff?.resolve && (stillThere || cannotNegate || this.resolvesFromGrave(link))) {
@@ -3195,6 +3211,7 @@ export class Engine {
       this.resolving--;
       this.levelSource = prevSource;
     }
+    if (spot) this.event('chain-end');
     this.state.chain = [];
     yield* this.flushLeaves();
     yield* this.damageWindow(false);
@@ -3396,7 +3413,7 @@ export class Engine {
           } else {
             this.event('activate', { uid: fc.uid, player: responder, ...answered(ctx) });
             this.targetEvent(link);
-            this.state.chain.push(link);
+            this.pushLink(link);
             depth++;
             passes = 0;
             ctx = { ...ctx, link };
@@ -3485,7 +3502,7 @@ export class Engine {
     }
     if (!q.repeat) this.useOnce(`quick:${f.card.name}:${from === 'field' ? uid : 0}`, player);
     this.targetEvent(link);
-    this.state.chain.push(link);
+    this.pushLink(link);
     return link;
   }
 

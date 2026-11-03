@@ -7,7 +7,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { DuelState, Pid } from "../eds/types";
 import { bannerOnce, clearArtFocus, setArtBusy, type Cue } from "./cues";
 import { FINISH_TAG, finishOf } from "./finish";
-import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, promptWaiting, releaseBoard, skipAllChains, tapToResult } from "./flow";
+import { attachArtSink, boardHeld, chainCommitted, chainEnded, chainStarted, pauseBoard, promptWaiting, releaseBoard, skipAllChains, tapToResult } from "./flow";
+import { ChainSpot } from "./chainSpot";
 import { shadowRealmOf } from "./shadow";
 import { getAnimSpeed, useAnimSpeed, useCinematics } from "./settings";
 import type { Director, Ui } from "./runtime";
@@ -17,6 +18,7 @@ import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
 import { stopShout } from "./callouts";
 import "./art.css";
+import "./chainspot.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
 
@@ -39,10 +41,10 @@ const DOUBLE_TAP_MS = 350;
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
 /** Taps on these never skip a cinematic: they belong to a prompt, a menu or a button. */
-const INTERACTIVE = "button, a, input, select, textarea, label, [role=button], .tsheet, .tbtn, .topt, .taction, .tphase-btn, .tphase-item, .menu, .msgwin, .tresult, .win, .art-skip";
+const INTERACTIVE = "button, a, input, select, textarea, label, [role=button], .tsheet, .tbtn, .topt, .taction, .tphase-btn, .tphase-item, .menu, .msgwin, .tresult, .win, .art-skip, .chs-card, .chs-big, .chs-inspect";
 
 /** Text, numbers and flashes over the canvas. */
-function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
+function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): Ui {
   const add = (
     cls: string,
     html: string,
@@ -83,7 +85,8 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
-    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout())),
+    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
+    chain,
     replay: (on) => {
       // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
       const host = layer.parentElement;
@@ -139,6 +142,7 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const dir = useRef<Director | null>(null);
+  const chainSpot = useRef<ChainSpot | null>(null);
   const loading = useRef<Promise<Director | null> | null>(null);
   const broken = useRef(false);
   const waiting = useRef<{ cues: Cue[]; batch: number; scales: number[] }[]>([]);
@@ -175,16 +179,26 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
       .then(({ Director }) => {
         if (!canvas.current || !layer.current)
           throw new Error("art stage unmounted");
+        // the chain spotlight's cards live on the page itself, over the stage (a new chain of cues
+        // clears the layer, not them) and over the hotseat's "Pass the phone" screen, so both
+        // players on one phone watch the chain resolve while the next hand stays hidden
+        const spot = new ChainSpot(document.body);
+        chainSpot.current = spot;
         const d: Director = new Director(
           canvas.current,
           "full",
-          makeUi(layer.current, (): number => d.stage.speed * d.rate),
+          makeUi(layer.current, (): number => d.stage.speed * d.rate, spot),
         );
+        // reading a chain card: everything on stage holds still, and the board waits with it
+        spot.onPause = (on) => {
+          d.stage.pause = on;
+          pauseBoard(on);
+        };
         d.timeScale = getAnimSpeed();
         d.onBusy = () => (setArtBusy(true), setArmed(true));
         // the computer goes on (the stage may still hold the fighters for the blow, or fade out)
         d.onSettle = () => setArtBusy(false);
-        d.onIdle = () => (setArtBusy(false), setArmed(false), setActive(false), clearArtFocus());
+        d.onIdle = () => (setArtBusy(false), setArmed(false), setActive(false), clearArtFocus(), spot.idle());
         d.onCommit = chainCommitted;
         d.onBatchEnd = chainEnded;
         // the stage turns on with the first cinematic actually built: a chain with nothing
@@ -451,6 +465,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     return () => {
       window.removeEventListener("resize", onResize);
       clearTimeout(holdTimer.current);
+      chainSpot.current?.dispose();
+      chainSpot.current = null;
       dir.current?.dispose();
       dir.current = null;
       board.current?.dispose();
