@@ -456,9 +456,9 @@ body.chs-on .tspot {
   top: -8px;
   left: calc(50% - var(--step, 80px) / 2);
   width: calc(var(--step, 80px) - 40px);
-  height: 2px;
+  height: 3px;
   transform: translateX(-50%) scaleX(var(--b, 1));
-  background: linear-gradient(90deg, #fff, var(--kc));
+  background: linear-gradient(90deg, #fff, var(--kc) 45%);
   box-shadow: 0 0 6px var(--kc);
   border-radius: 1px;
 }
@@ -466,9 +466,9 @@ body.chs-on .tspot {
   content: '';
   position: absolute;
   left: -2px;
-  top: -4px;
-  border: 5px solid transparent;
-  border-right: 7px solid #fff;
+  top: -4.5px;
+  border: 6px solid transparent;
+  border-right: 8px solid #fff;
   border-left: 0;
 }
 .art-chain:not(.docked) .chs-card.up .chs-ans {

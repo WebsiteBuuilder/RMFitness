@@ -305,7 +305,7 @@ export class ChainSpot {
     this.stamp.classList.remove('hit');
     const info = card(l.card.name);
     // (a link always answers the one below it: that is what a chain is)
-    this.tag.textContent = `Chain Link ${n} · ${linkOwner(l)}${negated ? ' · Negated' : n > 1 ? ` · answers Link ${n - 1}` : ''}`;
+    this.tag.textContent = `Chain Link ${n} · ${linkOwner(l)}${negated ? ' · Negated' : n > 1 ? ` · ↩ Link ${n - 1}` : ''}`;
     (this.text.querySelector('.chs-name') as HTMLElement).textContent = l.card.name;
     (this.text.querySelector('.chs-kind') as HTMLElement).textContent = kindLine(l.card.name);
     const desc = this.text.querySelector('.chs-desc') as HTMLElement;
