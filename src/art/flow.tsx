@@ -181,11 +181,10 @@ function slamsWithTrap(cues: Cue[]): Cue[] {
 
 /**
  * The finishing blow, again in slow motion, before the finish (`cues` is a chain that wins the
- * duel): the attack that dealt it (`attack`, played earlier, maybe in another chain) and its blow,
- * with what it destroyed; or the card whose effect dealt the last damage. Empty when there is
+ * duel): the blow from its swing (the declaration and its wind-up were just seen), with what it destroyed; or the card whose effect dealt the last damage. Empty when there is
  * nothing to replay (a draw, a win by decking out or by a card's own rule).
  */
-export function finishingReplay(cues: Cue[], attack: Cue | null): Cue[] {
+export function finishingReplay(cues: Cue[]): Cue[] {
   const w = cues.findIndex((c) => c.kind === 'win');
   if (w < 0) return [];
   const win = cues[w];
@@ -197,7 +196,7 @@ export function finishingReplay(cues: Cue[], attack: Cue | null): Cue[] {
     const c = cues[i];
     if (c.kind === 'hit' && c.dmg && c.dmg.player === loser) {
       const out: Cue[] = [];
-      if (attack?.kind === 'attack' && c.attacker && attack.attacker.uid === c.attacker.uid) out.push(again(attack));
+      // (from the swing: the declaration and its wind-up were just seen)
       out.push(again(c));
       for (let j = i + 1; j < w && cues[j].kind === 'destroy'; j++) out.push(again(cues[j]));
       return out;
@@ -246,8 +245,6 @@ export class Flow {
   private activated = new Set<number>();
   /** Spell/Trap names already seen activated this duel (a repeat plays faster) */
   private stSeen = new Set<string>();
-  /** the last attack declared (the finishing blow's replay starts from it) */
-  private lastAttack: Cue | null = null;
   /** the replay waiting to go into this update's chain, and where */
   private replay: Cue[] = [];
   private replayAt = 0;
@@ -329,11 +326,10 @@ export class Flow {
       cues = slamsWithTrap(cues);
       // what gets no cinematic still makes its sound, a beat apart
       all.filter((c) => !cues.includes(c)).forEach((c, i) => cueSound(c, i * 0.12));
-      for (const c of all) if (c.kind === 'attack') this.lastAttack = c;
       // the duel is won: the finishing blow replays in slow motion before the finish
       if (cues.some((c) => c.kind === 'win')) {
         const w = cues.findIndex((c) => c.kind === 'win');
-        this.replay = finishingReplay(cues, this.lastAttack);
+        this.replay = finishingReplay(cues);
         this.replayAt = w;
       }
     }

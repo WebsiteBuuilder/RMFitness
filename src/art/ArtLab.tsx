@@ -93,7 +93,7 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
             if (!el && on) {
               el = document.createElement('div');
               el.className = 'art-replay';
-              el.innerHTML = '<i class="bar top"></i><i class="bar bottom"></i><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i>';
+              el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
               host.appendChild(el);
             }
             el?.classList.toggle('on', on);
@@ -196,7 +196,7 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
               { kind: 'hit', attacker: a, target: null, defender: 1, dmg: { player: 1, amount: info?.atk ?? 2500 } },
               { kind: 'win', winner: 0, shadow: null },
             ];
-            run([atk, chain[0], ...finishingReplay(chain, atk), chain[1]]);
+            run([atk, chain[0], ...finishingReplay(chain), chain[1]]);
           },
         },
         {

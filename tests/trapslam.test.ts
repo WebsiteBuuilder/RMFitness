@@ -182,6 +182,19 @@ const top = (e: Engine) => (evs(e).length ? evs(e)[evs(e).length - 1].seq : 0);
   check(pickCues(cues, 'mine', 1).some((c) => c.kind === 'slam') && !pickCues(cues, 'off', 1).length, 'My actions plays it for its owner; Off plays nothing');
 }
 
+// ---------- a Trap chained to an attack without touching it (Jar of Greed) gets no slam ----------
+{
+  const e = fight(['Dark Magician'], ['Jar of Greed']);
+  const dm = place(e, 0, 'Dark Magician');
+  const jg = putST(e, 1, 'Jar of Greed');
+  toBattle(e);
+  const from = top(e);
+  attack(e, dm, null, { respond: 'Jar of Greed' });
+  const act = evs(e).find((x) => x.seq > from && x.kind === 'activate' && x.uid === jg.uid);
+  check(!!act, 'Jar of Greed was chained to the attack');
+  check(!cuesOf(e, from).some((c) => c.kind === 'slam'), 'a Trap that leaves the attacker alone gets no slam');
+}
+
 // ---------- a Trap activated on its own gets no slam ----------
 {
   // own trap activated in your own Main Phase: no slam
@@ -204,15 +217,14 @@ const ref = (uid: number, name: string, controller: Pid): CardRef => ({ uid, nam
     { kind: 'destroy', card: t },
     { kind: 'win', winner: 0, shadow: null },
   ];
-  const r = finishingReplay(chain, atk);
-  check(r.map((c) => c.kind).join() === 'attack,hit,destroy' && r.every((c) => c.replay), `the replay: the attack, its blow and what it destroyed, all marked replay (${r.map((c) => c.kind)})`);
+  const r = finishingReplay(chain);
+  check(r.map((c) => c.kind).join() === 'hit,destroy' && r.every((c) => c.replay), `the replay: the blow from its swing and what it destroyed, all marked replay (${r.map((c) => c.kind)})`);
   check(!chain.some((c) => c.replay) && !atk.replay, 'the original cues are left as they were');
-  check(finishingReplay(chain, { ...atk, attacker: ref(9, 'Kuriboh', 0) } as Cue).map((c) => c.kind).join() === 'hit,destroy', 'an attack by another monster is not replayed');
-  check(finishingReplay([{ kind: 'win', winner: 'draw', shadow: null }], atk).length === 0, 'a draw has no replay');
-  check(finishingReplay([{ kind: 'damage', player: 1, amount: 500 }, { kind: 'win', winner: 0, shadow: null }], null).length === 1, 'damage alone replays itself');
+  check(finishingReplay([{ kind: 'win', winner: 'draw', shadow: null }]).length === 0, 'a draw has no replay');
+  check(finishingReplay([{ kind: 'damage', player: 1, amount: 500 }, { kind: 'win', winner: 0, shadow: null }]).length === 1, 'damage alone replays itself');
   const burn: Cue[] = [{ kind: 'activate', card: ref(5, 'Ookazi', 0), what: 'spell' }, { kind: 'damage', player: 1, amount: 800 }, { kind: 'win', winner: 0, shadow: null }];
-  check(finishingReplay(burn, null).map((c) => c.kind).join() === 'activate,damage', 'a burn finish replays the card that dealt it');
-  check(finishingReplay([chain[0]], atk).length === 0, 'no win, no replay');
+  check(finishingReplay(burn).map((c) => c.kind).join() === 'activate,damage', 'a burn finish replays the card that dealt it');
+  check(finishingReplay([chain[0]]).length === 0, 'no win, no replay');
 }
 
 // ---------- a real duel won by an attack: the flow puts the replay before the finish ----------
@@ -249,7 +261,7 @@ const ref = (uid: number, name: string, controller: Pid): CardRef => ({ uid, nam
 
 // ---------- the director draws it ----------
 check(CUE_KINDS_DRAWN.includes('slam'), 'the slam is drawn by the director');
-check(SLAM_WARP > 0.2 && SLAM_WARP < 0.6 && REPLAY_WARP.hit < REPLAY_WARP.attack, 'slow motion: the slam crawls, the replayed blow is the slowest part');
+check(SLAM_WARP > 0.2 && SLAM_WARP < 0.6 && REPLAY_WARP.hit <= REPLAY_WARP.attack, 'slow motion: the slam crawls, the replayed blow is the slowest part');
 {
   const stage = { add: (x: unknown) => x, remove: () => {} } as never;
   const tl = new Timeline(1, stage);

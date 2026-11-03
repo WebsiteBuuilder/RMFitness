@@ -1071,11 +1071,6 @@
   background: #000;
   transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.2, 1);
 }
-.art-replay .bar.top {
-  top: 0;
-  border-bottom: 2px solid rgba(255, 201, 74, 0.7);
-  transform: translateY(-100%);
-}
 .art-replay .bar.bottom {
   bottom: 0;
   border-top: 2px solid rgba(255, 201, 74, 0.7);
@@ -1084,47 +1079,49 @@
 .art-replay.on .bar {
   transform: none;
 }
-.art-replay .tag {
-  position: absolute;
-  top: calc(max(46px, 9vh) + 10px);
-  left: 14px;
+.art-replay .bar.bottom {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 10px 4px 8px;
-  border-left: 3px solid #ffc94a;
-  background: rgba(0, 0, 0, 0.55);
+  justify-content: space-between;
+  padding: 0 16px env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}
+.art-replay .tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: #fff;
   font-family: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-style: italic;
   letter-spacing: 0.08em;
-}
-.art-replay .skiphint {
-  position: absolute;
-  right: 14px;
-  bottom: calc(max(46px, 9vh) / 2 - 8px + env(safe-area-inset-bottom) / 2);
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
 }
 .art-replay .tag span {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-style: normal;
-  font-weight: 700;
-  font-size: 11px;
+  font-weight: 800;
+  font-size: 13px;
   letter-spacing: 0.06em;
   color: #ffc94a;
   text-transform: uppercase;
 }
+.art-replay .skiphint {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+}
 .art-replay .dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: #ff3b3b;
   box-shadow: 0 0 6px #ff3b3b;
   animation: art-rec 0.9s steps(2, jump-none) infinite;
+}
+/* one skip hint during the replay: the pill in the opponent's bar steps aside */
+body.art-replaying .art-skip {
+  visibility: hidden;
 }
 @keyframes art-rec {
   50% {

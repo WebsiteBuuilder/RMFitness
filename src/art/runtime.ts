@@ -259,7 +259,11 @@ const HOLD_MIN = 0.6;
 /** "Not so fast!": how fast time runs while the two cards close in. */
 export const SLAM_WARP = 0.35;
 /** The finishing blow's replay: the declaration at this speed, the blow itself slower still. */
-export const REPLAY_WARP = { attack: 0.85, hit: 0.45, other: 0.55 };
+export const REPLAY_WARP = { attack: 0.6, hit: 0.55, other: 0.6 };
+/** The replay's dutch angle (radians). */
+export const REPLAY_ROLL = 0.12;
+/** ...and the replayed cinematic itself plays this much brisker (the slow motion stays, the wait does not). */
+export const REPLAY_RATE = 1.7;
 
 /** Report the stage idle once the dim is under this (what is left is particles fading on their own). */
 const IDLE_DIM = 0.1;
@@ -458,6 +462,8 @@ export class Director {
   /** The current cinematic plays out underneath while the next one of its chain starts. */
   private handOff() {
     const tl = this.current!;
+    // the tail plays out in real time; the next cinematic sets its own speed when it starts
+    this.stage.warp = 1;
     this.trailing.push(tl);
     this.current = null;
     this.next();
@@ -637,6 +643,11 @@ export class Director {
     }
     if (this.current) {
       const tl = this.current;
+      // a replay is seen from a new angle: tilted, and creeping in
+      if (this.replaying) {
+        this.roll = lerp(this.roll, REPLAY_ROLL, 1 - Math.exp(-dt * 3));
+        this.stage.punch(2.5, 0.2);
+      }
       this.watchdog += dt;
       if (!tl.update(dt) || this.watchdog > tl.duration / tl.rate + 3) this.endCurrent(false);
       else if (tl.handoff !== null && tl.t >= tl.handoff && this.queue[0]?.batch === this.curBatch) this.handOff();
@@ -751,7 +762,7 @@ export class Director {
     const oppBacklog = this.queue.length >= 1 && own !== null && own !== this.viewer && item.scale < OPP_BACKLOG_RATE;
     // a replay plays at its full length, in slow motion (the stage's warp), whatever the chain around it
     const replay = !!item.cue.replay;
-    const rate = replay ? this.timeScale : this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
+    const rate = replay ? this.timeScale * REPLAY_RATE : this.timeScale * item.scale * flowRate(item.cue, this.queue[0], item.batch, oppBacklog);
     const warp = replay ? (REPLAY_WARP[item.cue.kind as 'attack' | 'hit'] ?? REPLAY_WARP.other) : 1;
     // Never draw a cinematic before its shaders are ready (a first-use link stalls for a whole second on some phones).
     const warm = Promise.race([this.stage.prewarm(), new Promise((ok) => setTimeout(ok, 2500))]);
@@ -2428,7 +2439,8 @@ export class Director {
         boom(0.5);
         zap(0.3);
         this.flash(TRAP, 0.35);
-        this.ui.banner({ title: 'TRAP!', color: TRAP, big: true, dur: 0.75, pos: 'top' });
+        // (after a slam, "NOT SO FAST!" was the call)
+        if (!slammed) this.ui.banner({ title: 'TRAP!', color: TRAP, big: true, dur: 0.75, pos: 'top' });
         // the screen's edge cracks like glass
         this.crackAt.set(side === 'near' ? 0.88 : 0.12, 0.8);
         setRgb(this.front.u.uCrackColor.value, 0xebf5ff);
@@ -2588,7 +2600,7 @@ export class Director {
     // time slows as they rush at each other: a crawl, the screen holds its breath
     tl.at(A, () => {
       slowdown(1.3);
-      this.ui.banner({ title: 'NOT SO FAST!', sub: trap.name, color: TRAP, big: true, dur: 1.6, pos: tSide === 'near' ? 'bottom' : 'top' });
+      this.ui.banner({ title: 'NOT SO FAST!', color: TRAP, big: true, dur: 1.1, pos: 'mid' });
     });
     tl.span(A - 0.08, A + 0.06, (k) => (st.warp = lerp(1, SLAM_WARP, k)));
     tl.span(A, B, (k) => {
@@ -3338,6 +3350,8 @@ export class Director {
   }
 
   private damageNumber(side: 'top' | 'bottom', text: string, size: number) {
+    // (a replay shows the blow, not the number again)
+    if (this.replaying) return;
     this.ui.number({ text, color: 0xff4a4a, side, size });
     if (typeof document === 'undefined') return;
     const all = document.querySelectorAll<HTMLElement>('.art-number');

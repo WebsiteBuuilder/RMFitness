@@ -4,6 +4,7 @@
 import { card } from '../eds/db';
 import type { Card, DuelState, EngineEvent, FieldCard, Pid } from '../eds/types';
 import { shadowRealmOf, type ShadowResult } from './shadow';
+import { classify, type FxFamily } from './families';
 
 export interface Rect {
   x: number;
@@ -157,6 +158,17 @@ function gone(events: EngineEvent[], i: number): Set<number> {
   return s;
 }
 
+/** Trap families that stop, strike or turn the card they answer (a Jar of Greed chained to an attack does not). */
+const INTERRUPTS = new Set<FxFamily>(['destroy', 'destroyAll', 'banish', 'bounce', 'toDeck', 'negate', 'powerDown', 'position', 'control', 'lock', 'protect']);
+
+/** The Trap activated at event `i` really answers `uid`: it targets it, it is gone by the next activation, or the Trap is one that interrupts. */
+function interferes(name: string, uid: number, events: EngineEvent[], i: number): boolean {
+  if (gone(events, i).has(uid)) return true;
+  for (let j = i + 1; j < events.length && events[j].kind !== 'activate'; j++) if (events[j].kind === 'target' && events[j].target === uid) return true;
+  const info = card(name);
+  return !!info && INTERRUPTS.has(classify(info).family);
+}
+
 /** A battle's damage plays with the blow that dealt it (one moment, not two). */
 export function coalesce(cues: Cue[]): Cue[] {
   const out: Cue[] = [];
@@ -265,7 +277,7 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         // a Trap answering the opponent's card: the "Not so fast!" beat comes first
         if (ev.kind === 'activate' && k === 'trap' && ev.answers !== undefined) {
           const onto = r(ev.answers);
-          if (onto && onto.controller !== c.controller && onto.uid !== c.uid) {
+          if (onto && onto.controller !== c.controller && onto.uid !== c.uid && interferes(name, onto.uid, events, i)) {
             out.push({ kind: 'slam', trap: { ...c, name, faceUp: true }, onto });
           }
         }
