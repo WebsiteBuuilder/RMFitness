@@ -169,7 +169,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
   // (a tag duel: while your teammate is in, it's their turn, by name)
-  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
+  const turnWho = state.turnPlayer === acting && !ctl.locked && !ctl.spectator ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) {
@@ -781,7 +781,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     <>
       <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
         {(state.turnPlayer !== acting || theirAsk) && <i class="tturn-arrow up" aria-hidden="true" />}
-        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
+        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked && !ctl.spectator ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
         {theirAsk || decider !== acting ? (
           <i class="tdots" aria-hidden="true">
             <i />

@@ -44,14 +44,6 @@
 .duel.touch.turn-me .thcard.can.sel::before {
   box-shadow: 0 0 0 2px #ffe08a, 0 0 16px 3px #ffb400;
 }
-@keyframes tcan {
-  from {
-    opacity: 0.55;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 /* ---- a monster's ATK / DEF plate: green when raised, red when lowered (as in Master Duel) ---- */
 .duel.touch .tstat {
@@ -78,12 +70,6 @@
 .duel.touch .tstat.down {
   color: #ff9aa6;
   border-color: #ff6a7c;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .duel.touch.turn-me .thcard.can::before {
-    animation: none;
-  }
 }
 
 /* ---- cards on the field: the same clear-coat sheen as in your hand ---- */
@@ -161,11 +147,8 @@
 /* ---- depth, all static (nothing redraws while the duel is idle) ----
    your hand fans in 3D like cards held in a hand; a monster on the field throws a soft shadow
    on the slab; the cards on your side catch your turn's light along their top edge */
-.duel.touch .thand {
-  perspective: 900px;
-}
 .duel.touch .thcard:not(.sel):not(:active) {
-  transform: translateY(calc(var(--arc2, 0) * 1.6px)) rotate(calc(var(--arc, 0) * 2.6deg)) rotateY(calc(var(--arc, 0) * -7deg));
+  transform: perspective(900px) translateY(calc(var(--arc2, 0) * 1.6px)) rotate(calc(var(--arc, 0) * 2.6deg)) rotateY(calc(var(--arc, 0) * -7deg));
 }
 .duel.touch .tz.tz-m:not(.empty)::before {
   content: '';
@@ -177,10 +160,26 @@
   pointer-events: none;
   background: radial-gradient(closest-side, #000000b0, transparent);
 }
-.duel.touch .tz:not(.empty):not(.pick)::after {
-  box-shadow: inset 0 1px 0 #ffffff40;
-}
 /* the 3D hand and a picked card's lean reach past the screen's edge: the duel never scrolls to follow them */
 .duel.touch {
   overflow: clip;
+}
+
+/* ---- the slab: empty zones are carved into it, cards sit on top (static) ----
+   An empty zone is a recess: shadow under its top lip, light on its bottom lip, a darker floor.
+   Highlighted zones (pick / drop targets) keep their own glow. */
+.duel.touch .tz.empty:not(.pick):not(.drop-ok):not(.drop-on) {
+  box-shadow:
+    inset 0 5px 8px -2px #000000c0,
+    inset 0 -1px 0 #9fb4ff2e,
+    inset 0 0 0 1px #00000070,
+    inset 0 0 18px #02051acc;
+}
+/* a card on the field has a bevel: light catches its top edge, its bottom edge sits in shade */
+.duel.touch .tz:not(.empty):not(.pick)::after {
+  box-shadow: inset 0 1px 0 #fff4dc66, inset 0 -1.5px 0 #000000a0;
+}
+/* picking a card from your hand: it stays bright, the rest of the fan steps back */
+.duel.touch .thand:has(.thcard.sel) .thcard:not(.sel) {
+  opacity: 0.62;
 }
