@@ -84,6 +84,20 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     callout: (o) => void showCallout(layer, o, speed()),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
     clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout())),
+    replay: (on) => {
+      // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
+      const host = layer.parentElement;
+      if (!host) return;
+      let el = host.querySelector<HTMLElement>(":scope > .art-replay");
+      if (!el && on) {
+        el = document.createElement("div");
+        el.className = "art-replay";
+        el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+        host.appendChild(el);
+      }
+      el?.classList.toggle("on", on);
+      document.body.classList.toggle("art-replaying", on);
+    },
   };
 }
 
