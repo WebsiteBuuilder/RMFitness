@@ -1,6 +1,7 @@
 // Speed Duel: the second game. Its own menu, decks (Speed Duel cards only), Skills,
 // computer opponents and record, sharing profiles and the duel screen with EDS.
 import { MatesScreen } from '../mates/MatesScreen';
+import { AceScreen } from '../ace/AceScreen';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { card, skillCards, speedCards } from '../eds/db';
 import { loadSave, type ControlStyle, type Profile } from '../eds/save';
@@ -108,7 +109,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace';
 
 /** profiles whose presents were put off with "Not now": none show again until the game is next opened */
 const notNow = new Set<string>();
@@ -217,6 +218,7 @@ export function SpeedHub({
   if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'mates') return <MatesScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'ace') return <AceScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
   if (sub === 'replays') return <ReplayList profileId={profile.id} controls={controls} onBack={() => setSub('menu')} />;
   if (sub === 'rankings') return <Rankings profile={profile} speed={save} eds={loadSave(profile.id)} onBack={() => setSub('menu')} />;

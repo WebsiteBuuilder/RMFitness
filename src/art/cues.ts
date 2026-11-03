@@ -4,6 +4,7 @@
 import { card } from '../eds/db';
 import type { Card, DuelState, EngineEvent, FieldCard, Pid } from '../eds/types';
 import { shadowRealmOf, type ShadowResult } from './shadow';
+import { classify, type FxFamily } from './families';
 
 export interface Rect {
   x: number;
@@ -27,7 +28,12 @@ export interface CardRef {
   dies?: boolean;
 }
 
-export type Cue =
+export type Cue = CueBody & {
+  /** a slow-motion replay of a cue already played (the finishing blow, before the result) */
+  replay?: boolean;
+};
+
+type CueBody =
   /** how: the summon method when known (Fusion, Ritual, Xyz, Synchro, Link, Tribute...) */
   | { kind: 'summon'; card: CardRef; special: boolean; how?: SummonHow }
   /** a card leaves the field (or the GY) without being destroyed: banished, bounced, shuffled away */
@@ -47,7 +53,9 @@ export type Cue =
   | { kind: 'hit'; attacker: CardRef | null; target: CardRef | null; defender: Pid; dmg?: { player: Pid; amount: number } }
   | { kind: 'damage'; player: Pid; amount: number }
   | { kind: 'destroy'; card: CardRef }
-  | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null };
+  | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null }
+  /** "Not so fast!": a Trap answers the opponent's card (its attacker, its summon, its Spell): time slows and the two slam together */
+  | { kind: 'slam'; trap: CardRef; onto: CardRef };
 
 /** What an effect targets, and whether it is destroyed in the same update. */
 export interface Target {
@@ -148,6 +156,17 @@ function gone(events: EngineEvent[], i: number): Set<number> {
     if (e.kind === 'to-gy' && e.uid !== undefined) s.add(e.uid);
   }
   return s;
+}
+
+/** Trap families that stop, strike or turn the card they answer (a Jar of Greed chained to an attack does not). */
+const INTERRUPTS = new Set<FxFamily>(['destroy', 'destroyAll', 'banish', 'bounce', 'toDeck', 'negate', 'powerDown', 'position', 'control', 'lock', 'protect']);
+
+/** The Trap activated at event `i` really answers `uid`: it targets it, it is gone by the next activation, or the Trap is one that interrupts. */
+function interferes(name: string, uid: number, events: EngineEvent[], i: number): boolean {
+  if (gone(events, i).has(uid)) return true;
+  for (let j = i + 1; j < events.length && events[j].kind !== 'activate'; j++) if (events[j].kind === 'target' && events[j].target === uid) return true;
+  const info = card(name);
+  return !!info && INTERRUPTS.has(classify(info).family);
 }
 
 /** A battle's damage plays with the blow that dealt it (one moment, not two). */
@@ -255,6 +274,13 @@ export function toCues(events: EngineEvent[], state: DuelState, viewer: Pid, hos
         // the face-up monsters on the field as they stood before this update (board-wide effects strike them)
         const doomed = gone(events, i);
         const field: CardRef[] = [...memo.values()].filter((m) => m.faceUp && m.name).map((m) => ({ ...m, rect: rectOf(m.uid, host) ?? m.rect, dies: doomed.has(m.uid) }));
+        // a Trap answering the opponent's card: the "Not so fast!" beat comes first
+        if (ev.kind === 'activate' && k === 'trap' && ev.answers !== undefined) {
+          const onto = r(ev.answers);
+          if (onto && onto.controller !== c.controller && onto.uid !== c.uid && interferes(name, onto.uid, events, i)) {
+            out.push({ kind: 'slam', trap: { ...c, name, faceUp: true }, onto });
+          }
+        }
         out.push({ kind: 'activate', card: { ...c, name, faceUp: true }, what: k, field, ...(ev.kind === 'effect' ? { lazy: true } : {}) });
         break;
       }
@@ -342,6 +368,7 @@ export function weight(c: Cue): number {
     case 'damage':
     case 'flip':
     case 'skill':
+    case 'slam':
       return 4;
     case 'activate':
     case 'target':

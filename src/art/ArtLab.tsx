@@ -5,12 +5,18 @@ import { card, skillCards, speedCards } from '../eds/db';
 import { Win } from '../ui/Window';
 import { unlockAudio } from '../ui/sound';
 import { bannerOnce, type CardRef, type Cue } from './cues';
+import { finishingReplay } from './flow';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { classify, FX_FAMILIES, type FxFamily } from './families';
 import type { Director } from './runtime';
 import { getArtSetting } from './ArtStage';
 import { showDuelRarity } from '../level/duelRarity';
 import { FINISH_TAG } from './finish';
+import { showCallout } from './calloutDom';
+import { stopShout } from './callouts';
+import { BOND_LEVELS, bondTitle, showDuelAces } from '../ace/ace';
+import { setStageMates } from '../mates/onStage';
+import { mateDef, type MateId } from '../mates/roster';
 import './art.css';
 
 const ref = (uid: number, name: string, controller: 0 | 1, faceUp = true, rect: CardRef['rect'] = null): CardRef => ({ uid, name, faceUp, controller, rect, def: false });
@@ -25,7 +31,11 @@ const FINISHES: [string, number | null][] = [
   ['Overframe', 6],
   ['Millennium', 7],
 ];
-export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: string }) {
+/**
+ * `ace`: opened from the Ace page to watch that card's Ace entrance at each bond level
+ * (`lv`: its bond now; `mate`: the duelist's Mate, who yells along with its callout).
+ */
+export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?: string; ace?: { lv: number; mate?: MateId | null } }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const dir = useRef<Director | null>(null);
@@ -84,7 +94,20 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
           number: (o) => add(`art-number side-${o.side}`, esc(o.text), 1.3, { '--c': hx(o.color), '--s': String(o.size) }),
           flash: (c, s) => add('art-flash', '', 0.35, { '--c': hx(c), '--s': String(s) }),
           caption: (t, dur, cls = '') => add(`art-caption ${cls}`, esc(t), dur, {}),
-          clear: () => ui.replaceChildren(),
+          callout: (o) => void showCallout(ui, o, d.stage.speed * d.rate),
+          clear: (keep) => (keep ? ui.querySelectorAll(':scope > :not(.art-callout)').forEach((x) => x.remove()) : (ui.replaceChildren(), stopShout())),
+          replay: (on) => {
+            const host = ui.parentElement;
+            if (!host) return;
+            let el = host.querySelector<HTMLElement>(':scope > .art-replay');
+            if (!el && on) {
+              el = document.createElement('div');
+              el.className = 'art-replay';
+              el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+              host.appendChild(el);
+            }
+            el?.classList.toggle('on', on);
+          },
         });
         dir.current = d;
         void d.prewarm();
@@ -99,14 +122,25 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
       window.removeEventListener('resize', onResize);
       dir.current?.dispose();
       showDuelRarity(null);
+      showDuelAces(null);
+      stopShout();
+      setStageMates([null, null]);
     };
   }, []);
 
   /** the finish to watch the card in (null: this profile's own) */
   const [finish, setFinish] = useState<number | null>(null);
+  /** the bond level being watched (Ace page only) */
+  const [bond, setBond] = useState(ace?.lv ?? 1);
   const run = (cues: Cue[]) => {
     unlockAudio();
     showDuelRarity(finish === null ? null : [{ [name]: finish }, {}]);
+    if (ace) {
+      dir.current?.resetAces();
+      showDuelAces([{ name, lv: bond, wins: BOND_LEVELS[bond - 1].wins }, null]);
+      const m = ace.mate ?? null;
+      setStageMates([m, null], [m ? (mateDef(m)?.voice ?? 0) : 0, 0]);
+    }
     dir.current?.clear();
     dir.current?.push(cues);
     setWatching(true);
@@ -175,6 +209,18 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
           },
         },
         {
+          label: 'Final blow',
+          go: () => {
+            const a = me();
+            const atk: Cue = { kind: 'attack', attacker: a, target: null, defender: 1 };
+            const chain: Cue[] = [
+              { kind: 'hit', attacker: a, target: null, defender: 1, dmg: { player: 1, amount: info?.atk ?? 2500 } },
+              { kind: 'win', winner: 0, shadow: null },
+            ];
+            run([atk, chain[0], ...finishingReplay(chain), chain[1]]);
+          },
+        },
+        {
           label: 'Shadow Realm',
           go: () => {
             const a = me();
@@ -189,6 +235,21 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
       ]
     : [
         { label: 'Activate', go: () => run([{ kind: 'activate', card: me(), what: info?.kind === 'trap' ? 'trap' : 'spell', field: field() }]) },
+        ...(info?.kind === 'trap'
+          ? [
+              {
+                label: 'Not so fast!',
+                go: () => {
+                  const t = me();
+                  const f = field();
+                  run([
+                    { kind: 'slam', trap: t, onto: f[0] },
+                    { kind: 'activate', card: t, what: 'trap', field: f },
+                  ]);
+                },
+              },
+            ]
+          : []),
         {
           label: 'On a target',
           go: () => {
@@ -264,6 +325,23 @@ export function ArtLab({ onBack, initial }: { onBack: () => void; initial?: stri
                 </button>
               ))}
             </div>
+          )}
+          {ace && isMonster && (
+            <div class="artlab-btns artlab-fin">
+              <span class="hint">Ace bond:</span>
+              {BOND_LEVELS.map((b) => (
+                <button key={b.lv} class={`gbtn ${bond === b.lv ? 'on' : ''}`} onClick={() => setBond(b.lv)} title={bondTitle(b.lv)}>
+                  {b.lv}
+                  {b.lv > ace.lv ? ' 🔒' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+          {ace && isMonster && (
+            <p class="hint">
+              Bond {bond}, {bondTitle(bond)}: {BOND_LEVELS[bond - 1].adds.toLowerCase()}
+              {bond > ace.lv ? ` (a preview: ${BOND_LEVELS[bond - 1].wins} wins to unlock)` : ''}.
+            </p>
           )}
           {isMonster && <p class="hint">Opponent: {foe}</p>}
           <details class="artlab-show">
