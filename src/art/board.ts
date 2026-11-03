@@ -271,7 +271,11 @@ export class BoardLayer {
     const want = new Map(list.map((m) => [m.uid, m]));
     for (const p of this.pieces.values()) {
       const m = want.get(p.uid);
-      if (!m || m.name !== p.name) p.leaving = true;
+      if (!m || m.name !== p.name) {
+        p.leaving = true;
+        p.stopHum?.();
+        p.stopHum = null;
+      }
       else {
         p.def = m.def;
         p.ready = !!m.ready;
@@ -577,6 +581,8 @@ export class BoardLayer {
         u.uHolo.value = 0;
         u.uFlick.value = 0;
         u.uGlitch.value = 0;
+        // (its hum has run its course: let go of its nodes)
+        p.stopHum = null;
         if (p.holoStarted && !p.leaving && p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
           this.lastHum = now;
           holoLock(0);

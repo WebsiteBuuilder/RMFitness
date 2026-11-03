@@ -13,7 +13,7 @@ import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
 import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
-import { flickerAt, glitchAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
+import { flickerAt, glitchAt, holoReveal, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
 import { calmMotion, getHolo } from './settings';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
@@ -1256,7 +1256,8 @@ export class Director {
     const span = (a: number, b: number, fn: (t: number, k: number, dt: number) => void) => tl.span(S + a, S + b, (k, dt) => fn(a + k * (b - a), k, dt));
     // the beam: a cone opening up out of the card
     const bh = o.size * (1.15 + pw * 0.08);
-    const beam = tl.own(new Glow(o.size * (0.95 + pw * 0.15), bh, 'beam', beamCol, HOLO_CORE));
+    // (narrower on a phone the governor turned down: less additive overdraw)
+    const beam = tl.own(new Glow(o.size * (0.95 + pw * 0.15) * (q < 1 ? 0.8 : 1), bh, 'beam', beamCol, HOLO_CORE));
     // behind the monster: the hologram draws over its own light
     beam.mesh.position.set(0, o.ground + bh * 0.47, -0.2);
     beam.mesh.renderOrder = -5;
@@ -1323,8 +1324,9 @@ export class Director {
     }
     // it locks solid: a flash of light, a ring, sparks in the finish's colors (or the hologram's)
     at(h.solidEnd, () => {
-      st.pulse('flash', [0.14, 0.2, 0.3][pw]);
-      this.flash(o.mill ? HOLO_GOLD : HOLO_CORE, [0.1, 0.16, 0.24][pw]);
+      const fk = calm ? 0.5 : 1;
+      st.pulse('flash', [0.14, 0.2, 0.3][pw] * fk);
+      this.flash(o.mill ? HOLO_GOLD : HOLO_CORE, [0.1, 0.16, 0.24][pw] * fk);
       holoLock(pw / 2);
       const cols = o.finPal && o.fin >= FIN.GL ? o.finPal : [beamCol, HOLO_CORE];
       cols.forEach((fc, i) => P.emit({ x: 0, y: o.restY, z: 0.35, burst: (2.2 + pw * 0.6 + i * 0.3) * U, life: 0.6, size: 0.07 * U, color: fc, drag: 2.2 }, Math.round((10 + pw * 8) * q)));
@@ -1710,8 +1712,8 @@ export class Director {
     // holographic summon (Duel Disk projector, like the anime): planned inside the summon's own
     // reveal window, so it never makes the summon longer
     const holoOn = getHolo() && !!art;
-    const showAt0 = over ? 0.62 : 0.42;
-    const revealAt = entr === 'fusion' || entr === 'ritual' ? showAt0 + 0.2 : entr === 'materialize' ? showAt0 + 0.1 : showAt0;
+    const revealAt = holoReveal(entr, over);
+    const calmHolo = calmMotion();
     const hp = holoPower(method, { tribute: how === 'Tribute Summon', over, ace: aceFull, fusionish });
     const holo = holoOn ? holoPlan(hp, revealAt, E) : null;
 
@@ -1824,10 +1826,10 @@ export class Director {
         flyer.u.uTint.value = 0.35 * (1 - e) + 0.18 * e;
       });
       span(0.46, holo.solidEnd, (k) => {
-        flyer.u.uTint.value = 0.1 + 0.05 * Math.sin(k * 40);
+        flyer.u.uTint.value = 0.1 + (calmHolo ? 0 : 0.05 * Math.sin(k * 40));
         flyer.u.uSheen.value = -0.4 + ((k * 2.5) % 1) * 2.2;
       });
-      span(holo.solidEnd, holo.beamEnd + 0.12, (k) => (flyer.u.uOpacity.value = 1 - easeIn(k)));
+      span(holo.solidEnd, Math.min(E, holo.beamEnd + 0.12), (k) => (flyer.u.uOpacity.value = 1 - easeIn(k)));
       span(0.4, 0.5, (_k, dt) => {
         const n = Math.floor(140 * this.q * dt + 0.5);
         for (let i = 0; i < n; i++) st.particles.emit({ x: (r() - 0.5) * 1.1 * U, y: ground + 0.05 * U, z: 0.2, vy: (1.5 + r()) * U, life: 0.45, size: 0.07 * U, color: i % 2 ? HOLO_CORE : HOLO_COLOR, drag: 1.2 });

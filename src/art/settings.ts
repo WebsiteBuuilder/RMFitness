@@ -55,7 +55,11 @@ const HOLO_KEY = 'eds.holo';
 export const getHolo = (): boolean => read(HOLO_KEY) !== 'off';
 export const setHolo = (on: boolean) => write(HOLO_KEY, on ? 'on' : 'off');
 /** Motion kept calm (the phone's Reduce motion): no signal tearing or flicker on the holograms. */
-export const calmMotion = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+let calmQuery: MediaQueryList | null | undefined;
+export const calmMotion = (): boolean => {
+  if (calmQuery === undefined) calmQuery = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  return !!calmQuery?.matches;
+};
 
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));

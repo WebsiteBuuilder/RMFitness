@@ -1,7 +1,7 @@
 // Holographic summons (src/art/holo.ts): the hologram's beats fit inside the summon (it is never
 // made longer), bigger summons get the bigger show, and the field figures' arrival ends solid.
 // Run: npx tsx tests/holo.test.ts
-import { boardHolo, flickerAt, glitchAt, holoPlan, holoPower } from '../src/art/holo';
+import { boardHolo, flickerAt, glitchAt, holoPlan, holoPower, holoReveal } from '../src/art/holo';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -25,7 +25,8 @@ for (const base of [1.35, 1.55, 1.85, 2.15])
   for (const fus of [0, 0.3])
     for (const ov of [0, 0.3, 0.65])
       for (const ace of [0, 0.4, 0.8, 1.2]) Es.push(+(base + fus + ov + ace).toFixed(2));
-const reveals = [0.42, 0.52, 0.62, 0.82];
+const reveals = [...new Set(['rise', 'descend', 'erupt', 'splash', 'materialize', 'portal', 'fusion', 'ritual'].flatMap((e) => [holoReveal(e, false), holoReveal(e, true)]))];
+ok(reveals.length >= 5, 'reveal times come from the shared helper');
 for (const p of [0, 1, 2] as const)
   for (const E of Es)
     for (const rv of reveals) {

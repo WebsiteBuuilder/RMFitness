@@ -8,6 +8,12 @@
 // summon's own reveal window, which is decided before the hologram is.
 import type { SummonHow } from './cues';
 
+/** When the monster first shows in a summon (s from its start): runtime.ts's reveal, shared with the tests. */
+export function holoReveal(entrance: string, over: boolean): number {
+  const show = over ? 0.62 : 0.42;
+  return entrance === 'fusion' || entrance === 'ritual' ? show + 0.2 : entrance === 'materialize' ? show + 0.1 : show;
+}
+
 /** How big the show is: 0 Normal, 1 Tribute / Special / Flip, 2 Fusion, Ritual, Xyz, Synchro, Link, Overframe, an Ace. */
 export type HoloPower = 0 | 1 | 2;
 
