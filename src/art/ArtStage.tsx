@@ -14,6 +14,7 @@ import type { Director, Ui } from "./runtime";
 import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
+import { showCallout } from "./calloutDom";
 import "./art.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
@@ -79,6 +80,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number): Ui {
     flash: (c, s) =>
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
+    callout: (o) => void showCallout(layer, o, speed()),
     clear: () => layer.replaceChildren(),
   };
 }
