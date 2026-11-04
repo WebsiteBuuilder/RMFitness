@@ -1,0 +1,534 @@
+/* ---------- Playmats (src/playmats) ----------
+   Each duelist's half of the Touch field lies on their mat. A half is four elements in the field
+   slab's own layer (under the zones, the field wear and the danger cracks): three still pictures
+   decoded once, and one layer of ambient motion that moves on transform/opacity only. The motion
+   holds while a 3D cinematic plays, at the end of a duel, and for reduced motion. */
+
+.pm-half {
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  height: calc(50% + 9px);
+  z-index: -1;
+  pointer-events: none;
+  /* (a plain rectangular clip: no rounded mask layer over the moving one) */
+  overflow: hidden;
+}
+.pm-half.me {
+  bottom: -9px;
+}
+/* the opponent's mat faces them: turned round, its near edge along the top of the board */
+.pm-half.opp {
+  top: -9px;
+  transform: rotate(180deg);
+}
+.pm-half > i {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pm-art {
+  background: var(--pm-img) center / cover no-repeat;
+  transition: opacity 0.8s;
+}
+/* the grain: one small tile of fixed dots over the scene (no SVG filter, so nothing is
+   rasterised on the CPU when the board scales in, turns or the picker draws its grid) */
+.pm-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--pm-grain-img) 0 0 / 96px 96px repeat;
+  opacity: calc(var(--pm-grain, 0) * 1.4);
+}
+.pm-trim {
+  background: var(--pm-trim) center / 100% 100% no-repeat;
+}
+/* the seam where the two mats meet: a dark line so the halves read as two mats, not one picture */
+.pm-half::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 34px;
+  z-index: 1;
+  background: linear-gradient(#02030ae0, #02030a80 35%, transparent);
+}
+/* danger: a red shade from the near edge of the duelist in trouble (no motion: it fades in once) */
+.pm-half::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.8s;
+  background: radial-gradient(120% 90% at 50% 105%, #ff1a2a70, #8a000a30 45%, transparent 75%);
+}
+body.danger-me .pm-half.me::after,
+body.danger-opp .pm-half.opp::after {
+  opacity: 0.55;
+}
+body.danger-me-2 .pm-half.me::after {
+  opacity: 1;
+}
+/* (the living field draws the cracked red ground under the board in danger: let it through) */
+body.lf-on.danger-me .pm-half.me .pm-art,
+body.lf-on.danger-opp .pm-half.opp .pm-art {
+  opacity: 0.6;
+}
+
+/* ---- ambient motion ----
+   Plays in bursts: from the start of each turn for about 20 s, then the mat rests until the next
+   turn (the halves' pm-t-odd class flips with the turn number, swapping the animation name, which restarts it). A resting mat has no running
+   animation at all, so nothing above it is kept on extra layers and nothing composites per frame.
+   Every moving layer is the half's own size or a narrow band, never a wide overscan. */
+.pm-fx {
+  --pm-n: 2;
+  animation-iteration-count: var(--pm-n);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+/* things that rise from your edge toward the middle: embers, bubbles, motes */
+.pm-fx-embers .pm-fx,
+.pm-fx-bubbles .pm-fx,
+.pm-fx-motes .pm-fx {
+  inset: 0 0 -120px 0;
+  background: var(--pm-fx) 0 0 / 120px 120px repeat;
+  animation-name: pm-rise-a;
+  animation-duration: 10s;
+  opacity: 0.8;
+}
+.pm-fx-embers .pm-fx {
+  animation-duration: 7s;
+  --pm-n: 3;
+}
+.pm-fx-motes .pm-fx {
+  opacity: 0.55;
+  animation-duration: 20s;
+  --pm-n: 1;
+}
+/* things the wind carries across: leaves, fog */
+.pm-fx-leaves .pm-fx {
+  inset: 0 -120px 0 0;
+  background: var(--pm-fx) 0 0 / 120px 120px repeat;
+  animation-name: pm-drift-a;
+  animation-duration: 10s;
+  opacity: 0.85;
+}
+.pm-fx-fog .pm-fx {
+  inset: 0 -240px 0 0;
+  background: var(--pm-fx) 0 0 / 240px 120px repeat;
+  animation-name: pm-fog-a;
+  animation-duration: 22s;
+  --pm-n: 1;
+}
+/* stars and sparkles twinkle in place (an even count: they settle back dim) */
+.pm-fx-stars .pm-fx,
+.pm-fx-sparkle .pm-fx {
+  background: var(--pm-fx) 0 0 / 120px 120px repeat;
+  opacity: 0.15;
+  animation-name: pm-twinkle-a;
+  animation-duration: 3.4s;
+  animation-timing-function: ease-in-out;
+  animation-direction: alternate;
+  --pm-n: 6;
+}
+.pm-fx-sparkle .pm-fx {
+  background-position: 40px 30px;
+  animation-duration: 2.6s;
+  --pm-n: 8;
+}
+/* a scan line that runs from your edge to the middle (Duel Disk Grid, Kaiba Dome) */
+.pm-fx-scan .pm-fx {
+  inset: auto 0 0 0;
+  height: 22%;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--pm-fx-c) 30%, transparent) 70%, color-mix(in srgb, var(--pm-fx-c) 85%, transparent) 92%, transparent);
+  animation-name: pm-scan-a;
+  animation-duration: 5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  --pm-n: 4;
+}
+/* a narrow band of light across the mat (Tournament Blue, the castle, the Millennium Stone) */
+.pm-fx-sweep .pm-fx {
+  inset: 0 auto 0 0;
+  width: 34%;
+  background: linear-gradient(105deg, transparent 10%, color-mix(in srgb, var(--pm-fx-c) 12%, transparent) 35%, color-mix(in srgb, var(--pm-fx-c) 40%, transparent) 50%, color-mix(in srgb, var(--pm-fx-c) 12%, transparent) 65%, transparent 90%);
+  animation-name: pm-sweep-a;
+  animation-duration: 6.5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --pm-n: 3;
+}
+/* a band of rainbow foil drifting under the cards (Holo Arena) */
+.pm-fx-holo .pm-fx {
+  inset: 0 auto 0 0;
+  width: 60%;
+  background: linear-gradient(115deg, transparent, #ff6ad540 15%, #94d0ff48 32%, #8cffd848 50%, #fff59a48 68%, #ffb37a40 85%, transparent);
+  animation-name: pm-holo-a;
+  animation-duration: 5s;
+  animation-timing-function: ease-in-out;
+  animation-direction: alternate;
+  --pm-n: 4;
+}
+/* the opponent's turn plays the same moves under another name, so each turn starts a new burst */
+.pm-half.pm-t-odd.pm-fx-embers .pm-fx,
+.pm-half.pm-t-odd.pm-fx-bubbles .pm-fx,
+.pm-half.pm-t-odd.pm-fx-motes .pm-fx {
+  animation-name: pm-rise-b;
+}
+.pm-half.pm-t-odd.pm-fx-leaves .pm-fx {
+  animation-name: pm-drift-b;
+}
+.pm-half.pm-t-odd.pm-fx-fog .pm-fx {
+  animation-name: pm-fog-b;
+}
+.pm-half.pm-t-odd.pm-fx-stars .pm-fx,
+.pm-half.pm-t-odd.pm-fx-sparkle .pm-fx {
+  animation-name: pm-twinkle-b;
+}
+.pm-half.pm-t-odd.pm-fx-scan .pm-fx {
+  animation-name: pm-scan-b;
+}
+.pm-half.pm-t-odd.pm-fx-sweep .pm-fx {
+  animation-name: pm-sweep-b;
+}
+.pm-half.pm-t-odd.pm-fx-holo .pm-fx {
+  animation-name: pm-holo-b;
+}
+@keyframes pm-rise-a {
+  to {
+    transform: translateY(-120px);
+  }
+}
+@keyframes pm-rise-b {
+  to {
+    transform: translateY(-120px);
+  }
+}
+@keyframes pm-drift-a {
+  to {
+    transform: translateX(-120px);
+  }
+}
+@keyframes pm-drift-b {
+  to {
+    transform: translateX(-120px);
+  }
+}
+@keyframes pm-fog-a {
+  to {
+    transform: translateX(-240px);
+  }
+}
+@keyframes pm-fog-b {
+  to {
+    transform: translateX(-240px);
+  }
+}
+@keyframes pm-twinkle-a {
+  to {
+    opacity: 0.9;
+  }
+}
+@keyframes pm-twinkle-b {
+  to {
+    opacity: 0.9;
+  }
+}
+@keyframes pm-scan-a {
+  0% {
+    transform: translateY(110%);
+  }
+  100% {
+    transform: translateY(-480%);
+  }
+}
+@keyframes pm-scan-b {
+  0% {
+    transform: translateY(110%);
+  }
+  100% {
+    transform: translateY(-480%);
+  }
+}
+@keyframes pm-sweep-a {
+  0%,
+  45% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+@keyframes pm-sweep-b {
+  0%,
+  45% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+@keyframes pm-holo-a {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(95%);
+  }
+}
+@keyframes pm-holo-b {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(95%);
+  }
+}
+/* the picker plays its mat's motion on a loop */
+.pmp-mat .pm-fx {
+  --pm-n: infinite;
+}
+
+/* nothing moves while a 3D cinematic plays, once the duel is decided, or for reduced motion */
+body.art-on .pm-fx,
+.duel.ko .pm-fx {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm-fx {
+    animation: none !important;
+  }
+}
+
+/* ---- a Field Spell's landscape takes the half: the scene steps back, the trim stays ---- */
+body.lf-on .pm-half.fieldup .pm-art {
+  opacity: 0.12;
+}
+body.lf-on .pm-half.fieldup .pm-fx {
+  display: none;
+}
+
+/* ---- the zones on a mat: clear frames in the mat's colour, a firm backing under cards ---- */
+.duel.touch .trow.pm-row .tz:not(.drop-ok):not(.drop-on) {
+  border-color: color-mix(in srgb, var(--pm-line) 42%, transparent);
+  background:
+    linear-gradient(var(--pm-line) 0 0) top left / 9px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top left / 1.5px 9px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top right / 9px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top right / 1.5px 9px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom left / 9px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom left / 1.5px 9px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom right / 9px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom right / 1.5px 9px no-repeat,
+    radial-gradient(90% 70% at 50% 50%, #00000008, #00000052);
+  box-shadow:
+    inset 0 0 0 1px #00000070,
+    inset 0 0 12px color-mix(in srgb, var(--pm-line) 16%, transparent),
+    0 0 0 1px #0000002a;
+}
+.duel.touch .trow.pm-row .tz.tz-s:not(.drop-ok):not(.drop-on) {
+  background-color: #0000002e;
+}
+/* bright and busy mats: a deeper well under each zone, and frames with a dark edge so they still read */
+.duel.touch .trow.pm-row.pm-bright .tz:not(.drop-ok):not(.drop-on) {
+  background-color: #00000059;
+  box-shadow:
+    inset 0 0 0 1px #000000a0,
+    0 0 0 1px #00000060,
+    inset 0 0 12px #00000080;
+}
+.duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) {
+  background-color: #04071ca8;
+}
+.duel.touch .trow.pm-row .tpile {
+  background: radial-gradient(90% 70% at 50% 50%, #00000030, #00000070);
+  border-color: color-mix(in srgb, var(--pm-line) 30%, transparent);
+}
+.duel.touch .trow.pm-row .tz.empty::after {
+  opacity: 0.22;
+}
+/* on a Field Spell's landscape the zones go back to the clear glass the landscape uses */
+body.lf-on .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) {
+  background-color: #04071c99;
+}
+
+/* ---------- the Playmats page ---------- */
+.pmp-stage {
+  padding: 8px 2px 2px;
+}
+.pmp-board {
+  position: relative;
+  perspective: 900px;
+  padding: 14px 18px 18px;
+  border-radius: 16px;
+  background: radial-gradient(120% 80% at 50% 100%, color-mix(in srgb, var(--pm-glow) 30%, transparent), transparent 70%), radial-gradient(ellipse at 50% 45%, #1c2a66, #0c1238 50%, #04060f);
+  overflow: hidden;
+}
+.pmp-mat {
+  position: relative;
+  width: min(100%, 300px);
+  margin: 0 auto;
+  transform: rotateX(16deg);
+  transform-origin: 50% 60%;
+  animation: pmp-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  isolation: isolate;
+  box-shadow:
+    0 10px 0 -2px #060a1e,
+    0 22px 30px #000000c0,
+    0 0 40px color-mix(in srgb, var(--pm-glow) 35%, transparent);
+  border-radius: 14px;
+}
+@keyframes pmp-in {
+  from {
+    opacity: 0.3;
+    transform: rotateX(16deg) translateY(10px) scale(0.97);
+  }
+}
+.pmp-mat > .pm-half {
+  left: 0;
+  right: 0;
+  height: 50%;
+}
+.pmp-mat > .pm-half.me {
+  bottom: 0;
+}
+.pmp-mat > .pm-half.opp {
+  top: 0;
+}
+.pmp-rows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+}
+.pmp-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+.pmp-mid {
+  height: 8px;
+}
+.pmp-z {
+  aspect-ratio: 59 / 86;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--pm-line) 42%, transparent);
+  background:
+    linear-gradient(var(--pm-line) 0 0) top left / 7px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top left / 1.5px 7px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top right / 7px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) top right / 1.5px 7px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom left / 7px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom left / 1.5px 7px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom right / 7px 1.5px no-repeat,
+    linear-gradient(var(--pm-line) 0 0) bottom right / 1.5px 7px no-repeat,
+    radial-gradient(90% 70% at 50% 50%, #00000014, #00000066);
+  box-shadow: inset 0 0 0 1px #00000070;
+}
+.pm-bright .pmp-z {
+  background-color: #0000002e;
+}
+.pmp-z.gap {
+  visibility: hidden;
+}
+.pmp-z.pile {
+  border-color: #ffffff22;
+  background: radial-gradient(90% 70% at 50% 50%, #00000030, #00000070);
+  display: grid;
+  place-items: center;
+}
+.pmp-z.pile .cimg {
+  width: 90%;
+  height: 90%;
+  border-radius: 3px;
+  box-shadow: 1px 1px 0 #00000080, 2px 2px 0 #1a1208, 3px 4px 6px #000000b0;
+}
+.pmp-info {
+  padding: 10px 4px 2px;
+}
+@media (max-height: 700px) {
+  .pmp-mat {
+    width: min(100%, 132px);
+  }
+  .pmp-board {
+    padding: 6px 14px 8px;
+  }
+  /* (iPhone SE: the grid comes up under the preview; the "lies on this mat" line is said by the badge) */
+  .pmp-hint {
+    display: none;
+  }
+}
+.pmp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.pmp-pic {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 380 / 220;
+  border-radius: 6px;
+  background: center / cover no-repeat;
+  box-shadow:
+    0 0 0 1px #ffffff26,
+    0 2px 6px #000a;
+}
+.pmp-card.locked .pmp-pic {
+  filter: brightness(0.72) saturate(0.8);
+}
+.pmp-card .slv-lock {
+  right: 3px;
+  bottom: 2px;
+}
+
+/* the Duelist tab's Playmats tile */
+.sdh-mat-pic {
+  position: relative;
+  flex: none;
+  width: 76px;
+  aspect-ratio: 380 / 220;
+  border-radius: 6px;
+  background: 50% 62% / 190% auto no-repeat;
+  box-shadow:
+    0 0 0 1px #ffffff30,
+    0 2px 6px #000b,
+    0 0 12px -2px var(--pm-glow, transparent);
+  transform: perspective(200px) rotateX(18deg);
+}
+
+/* ---- Classic controls: the same halves under the rows ---- */
+.rows.pm-rows {
+  position: relative;
+  isolation: isolate;
+}
+.rows.pm-rows > .pm-half {
+  left: -3px;
+  right: -3px;
+  height: calc(50% + 3px);
+}
+.rows.pm-rows > .pm-half.me {
+  bottom: -3px;
+}
+.rows.pm-rows > .pm-half.opp {
+  top: -3px;
+}
+.rows.pm-rows .zone {
+  background-color: #04071c88;
+}
+
+.pmp-price {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pmp-price b {
+  font-size: 14px;
+  color: #ffe36e;
+}
+.pmp-price small {
+  font-size: 11.5px;
+  opacity: 0.75;
+}
