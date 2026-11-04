@@ -2,7 +2,7 @@
 // (original sounds, no audio files): the Life Point counter draining, attacks and
 // clashes, cards shattering, a sting per Summon method, Spells, Traps, Skills.
 // Silent until the player's first tap (phones) and while Sound is Off.
-import { audioContext } from './sound';
+import { audioContext, soundEnabled } from './sound';
 import { rumble } from './pad/rumble';
 
 let noiseBuf: AudioBuffer | null = null;
@@ -76,38 +76,109 @@ const thud = (size = 0.5, when = 0) => tone(95 + size * 30, 0.3 + size * 0.3, 0.
 
 // ------------------------------------------------------------ Life Points
 
+/** The counter sound now playing (a new count cuts it off: counts never stack). */
+let counting: { ctx: BaseAudioContext; osc: OscillatorNode[]; gate: GainNode; at: number; amt: number } | null = null;
+
+
+// Sound turned Off mid-count: the rattle stops at once
+if (typeof window !== 'undefined')
+  window.addEventListener('eds-sound', () => {
+    if (!counting || soundEnabled()) return;
+    const t = counting.ctx.currentTime;
+    counting.gate.gain.cancelScheduledValues(t);
+    counting.gate.gain.setTargetAtTime(0, t, 0.004);
+  });
+
+/** Tick spacing of the counter (s): about 30 a second, the rolling-digits rattle of the show's counter. */
+export const LP_TICK_S = 0.034;
+
 /**
- * The Life Point counter: rapid electronic ticks that thin out as the number
- * settles (they follow the on-screen count, `ms` long, easing out), over a
- * falling whir, then a two-note stop. Gains tick upward and brighter.
+ * The Life Point counter, as on the show: a fast, even rattle of digital beeps for as long
+ * as the digits roll (`ms`), stopping the instant the number lands with one longer beep.
+ * Damage ticks high and slides down as the points drain; gains tick upward. A bigger change
+ * rolls longer and ticks louder. One pair of oscillators through a gate (a few nodes, however
+ * long the count), and a new count cuts off the last one rather than stacking on it.
  * `delta` is the change (negative for damage), `left` the Life Points after it.
  */
 export function lpCount(delta: number, left: number, ms = 600) {
   // (a controller feels the hit: harder for more damage)
-  if (delta < 0) rumble(Math.min(1, 0.25 + -delta / 3000), 0.5, Math.min(ms, 500));
+  if (delta < 0) rumble(Math.min(1, 0.25 + -delta / 3000), 0.5, Math.min(ms, 600));
   const ctx = audioContext();
   if (!ctx || delta === 0) return;
+  lpCountInto(ctx, ctx.destination, delta, left, ms);
+  if (delta < 0 && left <= 0) lpZero(ms / 1000);
+}
+
+/** The counter's beeps into `out` (the speakers, or an offline render in a test). */
+export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number, left: number, ms: number) {
+  const now = ctx.currentTime;
   const amt = Math.abs(delta);
+  // both duelists' counters starting together (a battle, a Skill hitting both): one rattle, the bigger change's
+  if (counting && counting.ctx === ctx && now - counting.at < 0.05 && counting.amt >= amt) return;
+  if (counting && counting.ctx === ctx) {
+    counting.gate.gain.cancelScheduledValues(now);
+    counting.gate.gain.setTargetAtTime(0, now, 0.004);
+    for (const o of counting.osc) {
+      try {
+        o.stop(now + 0.03);
+      } catch {
+        // (already stopped)
+      }
+    }
+  }
+  counting = null;
   const dmg = delta < 0;
   const s = ms / 1000;
-  const n = Math.round(Math.min(36, Math.max(10, 8 + amt / 120)));
+  // (bigger hits tick a little louder, but mostly longer: never harsher than the other duel sounds)
+  const vol = (dmg ? 0.042 : 0.035) + Math.min(1, amt / 2000) * 0.022;
+  const f0 = dmg ? 1976 : 1568;
+  const f1 = dmg ? 1568 : 2093;
+  // a bright square for the beep, an octave-down square under it for body, softened a touch
+  const hi = ctx.createOscillator();
+  const lo = ctx.createOscillator();
+  hi.type = 'square';
+  lo.type = 'square';
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 5200;
+  const mix = ctx.createGain();
+  mix.gain.value = 0.35;
+  const gate = ctx.createGain();
+  gate.gain.setValueAtTime(0, now);
+  hi.connect(gate);
+  lo.connect(mix).connect(gate);
+  gate.connect(lp).connect(out);
+  hi.frequency.setValueAtTime(f0, now);
+  hi.frequency.linearRampToValueAtTime(f1, now + s);
+  lo.frequency.setValueAtTime(f0 / 2, now);
+  lo.frequency.linearRampToValueAtTime(f1 / 2, now + s);
+  // the rattle: evenly spaced beeps for as long as the digits roll
+  const n = Math.max(3, Math.floor(s / LP_TICK_S));
+  const on = LP_TICK_S * 0.5;
   for (let i = 0; i < n; i++) {
-    const p = i / n;
-    // the counter shows from + Δ·(1-(1-k)^3): the tick for value-share p lands at k = 1-(1-p)^(1/3)
-    const at = s * (1 - Math.cbrt(1 - p));
-    const f = dmg ? 1900 - 800 * p : 1000 + 900 * p;
-    tone(f, 0.022, dmg ? 0.05 : 0.04, at, { type: dmg ? 'square' : 'triangle' });
+    const t = now + i * LP_TICK_S;
+    // (each beep's edges ramp over ~1 ms: crisp, no clicks)
+    gate.gain.setTargetAtTime(vol, t, 0.0006);
+    gate.gain.setTargetAtTime(0, t + on, 0.0006);
   }
-  if (dmg) {
-    // the drain's whir, deeper for a bigger hit
-    tone(320, s + 0.15, 0.05 + Math.min(0.06, amt / 40000), 0, { type: 'sawtooth', to: amt >= 2000 ? 60 : 110, lp: 900 });
-    if (left <= 0) return lpZero(s);
-    tone(660, 0.09, 0.07, s + 0.02, { type: 'square' });
-    tone(440, 0.16, 0.07, s + 0.11, { type: 'square' });
-  } else {
-    tone(1568, 0.1, 0.06, s + 0.02, { type: 'sine' });
-    tone(2093, 0.22, 0.05, s + 0.09, { type: 'sine' });
+  const end = now + s;
+  const stopAt = left <= 0 ? end : end + 0.16;
+  if (left > 0) {
+    // the number lands: one longer beep, a step down for damage, up for a gain
+    hi.frequency.setValueAtTime(dmg ? f1 * 0.75 : f1 * 1.19, end);
+    lo.frequency.setValueAtTime(dmg ? (f1 * 0.75) / 2 : (f1 * 1.19) / 2, end);
+    gate.gain.setTargetAtTime(vol * 1.1, end + 0.012, 0.0006);
+    gate.gain.setTargetAtTime(0, end + 0.07, 0.015);
   }
+  hi.start(now);
+  lo.start(now);
+  hi.stop(stopAt);
+  lo.stop(stopAt);
+  const me = { ctx, osc: [hi, lo], gate, at: now, amt };
+  counting = me;
+  hi.onended = () => {
+    if (counting === me) counting = null;
+  };
 }
 
 /** Life Points hit 0: a long falling wail and a flat buzz. */

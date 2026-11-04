@@ -24,7 +24,7 @@ import { stampsToClaim } from '../collection/stamps';
 import { online } from '../online/controller';
 import { chatBadge } from '../online/GlobalChatUi';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { ladderClock, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
+import { TOP, ladderClock, pharaohLevel, rankName, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
 import './speedhome.css';
@@ -199,14 +199,14 @@ function RankedTile({ profileId, onPick }: { profileId: string; onPick: () => vo
   const now = ladderClock(rp);
   const fresh = rp.season < seasonOf(now);
   const bonus = rp.bonusDay !== todayString(now);
-  return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
+  return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" asc={fresh ? 0 : (rp.asc ?? 0)} level={!fresh && rp.step === TOP ? pharaohLevel(rp.kp) : 0} />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
 }
 
 /** The Duelist page's Ranked line: this season's rank and the best past season. */
 function RankedRow({ profileId, onPick }: { profileId: string; onPick: () => void }) {
   const rp = rankedProgress(loadSolo(profileId));
   const best = rp.history.reduce((a, h) => Math.max(a, h.peak), -1);
-  return <Row label="Ranked" note={`${stepName(rp.step)} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
+  return <Row label="Ranked" note={`${rankName(rp)}${rp.asc ? ` ${"★".repeat(Math.min(3, rp.asc))}` : ""} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
 }
 
 /** Your Ranked tier's shield beside your name, once you've played Ranked this season: something to show off. */
@@ -215,7 +215,7 @@ function TopRank({ profileId }: { profileId: string }) {
   if (rp.season !== seasonOf(ladderClock(rp)) || rp.w + rp.l === 0) return null;
   return (
     <span class="sdh-toprank">
-      <RankEmblem step={rp.step} size="s" />
+      <RankEmblem step={rp.step} size="s" asc={rp.asc ?? 0} level={rp.step === TOP ? pharaohLevel(rp.kp) : 0} />
     </span>
   );
 }

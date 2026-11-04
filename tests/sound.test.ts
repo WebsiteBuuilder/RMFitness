@@ -13,10 +13,16 @@ const ok = (c: boolean, msg: string) => {
 
 // A stand-in AudioContext that counts the sound sources started.
 let started = 0;
-const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} });
+// (and the value changes scheduled: the Life Point counter's beeps are gate steps on one pair of oscillators)
+let steps = 0;
+const param = () => ({ value: 0, setValueAtTime: () => steps++, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime: () => steps++, cancelScheduledValues() {} });
 const node = () => ({ connect: (n: unknown) => n });
+let clockT = 0;
 class FakeCtx {
-  currentTime = 0;
+  // (time moves on between sounds: counts asked for at the same moment would merge)
+  get currentTime() {
+    return (clockT += 0.1);
+  }
   sampleRate = 8000;
   state = 'running';
   destination = node();
@@ -39,12 +45,18 @@ ok(count(() => sfx.attack()) === 0, 'silent before the first tap (no audio conte
 unlockAudio();
 ok(soundEnabled(), 'Sound is on by default');
 
-// Life Points: the counter's ticks scale with the hit, and a finish wails
-const small = count(() => sfx.lpCount(-300, 7700));
-const big = count(() => sfx.lpCount(-3000, 5000));
-ok(small >= 10 && big > small, `LP drain ticks: 300 damage → ${small} sounds, 3000 damage → ${big}`);
-ok(count(() => sfx.lpCount(-2000, 0)) > count(() => sfx.lpCount(-2000, 100)) - 2, 'LP hitting 0 plays the falling wail');
-ok(count(() => sfx.lpCount(500, 8500)) >= 10, 'LP gain ticks upward');
+// Life Points: the show's counter rattle, as long as the roll (bigger hits roll longer), then a wail at 0
+const ticks = (fn: () => void) => {
+  const before = steps;
+  fn();
+  return steps - before;
+};
+const small = ticks(() => sfx.lpCount(-300, 7700, 534));
+const big = ticks(() => sfx.lpCount(-3000, 5000, 1290));
+ok(small >= 20 && big > small * 2, `LP drain beeps: a short roll → ${small} gate steps, a long roll → ${big}`);
+ok(count(() => sfx.lpCount(-1000, 3000, 730)) <= 3, 'the rattle is one pair of oscillators, however long (cheap on a phone)');
+ok(count(() => sfx.lpCount(-2000, 0, 1010)) > count(() => sfx.lpCount(-2000, 100, 1010)), 'LP hitting 0 plays the falling wail');
+ok(ticks(() => sfx.lpCount(500, 8500, 590)) >= 20, 'LP gain ticks too');
 ok(count(() => sfx.lpCount(0, 8000)) === 0, 'no change, no sound');
 
 const named: [string, () => void][] = [
