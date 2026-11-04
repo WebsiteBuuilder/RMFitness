@@ -246,6 +246,8 @@ export function cueOwner(c: Cue): Pid | null {
       return c.player;
     case 'slam':
       return c.trap.controller;
+    case 'finale':
+      return c.card.controller;
     case 'attack':
       return c.attacker.controller;
     case 'hit':
@@ -1691,6 +1693,8 @@ export class Director {
         return cue.count > 0 ? this.draw(cue.player, cue.count) : null;
       case 'slam':
         return this.slam(cue.trap, cue.onto);
+      case 'finale':
+        return this.finale(cue.card, cue.line, cue.lv, cue.ace);
       case 'chain':
         return this.chainLift(cue.stack, cue.added);
       case 'resolve':
@@ -3519,6 +3523,160 @@ export class Director {
     return tl;
   }
 
+  /**
+   * The ending cutscene, before the winning blow's replay (an iconic monster, or its duelist's
+   * Ace): its art slams across the screen with its title line, then a low hero shot as it
+   * powers up under its own wind-up, and it shouts its attack. An Ace's grows with its bond:
+   * pillars of light (2), time stops (3), a crown of stars (4), an aurora in gold (5).
+   */
+  private async finale(a: CardRef, line: string, lv: number, ace: boolean): Promise<Timeline> {
+    const st = this.stage;
+    const U = this.U;
+    if (!this.actors.size) this.battleSide = this.side(a.controller);
+    const att = this.actors.get(a.uid) ?? (await this.actor(a, 'att'));
+    if (!att.entered) this.enter(att, 1);
+    const mill = finishOf(a) >= FIN.MI;
+    const col = mill ? MILL_COLS : this.colors(att.prof, att.art);
+    const sig = SIG_ATTACKS[att.name];
+    const GOLD_A = 0xffd56a;
+    const aura = ace ? GOLD_A : col.main;
+    // the cut-in, then the hero shot (longer for the grandest bonds)
+    const C = 0.78;
+    const H = 1.2 + (lv >= 4 ? 0.2 : 0) + (lv >= 5 ? 0.2 : 0);
+    const D = C + H;
+    const tl = new Timeline(D, st);
+    this.bgTarget = 1;
+    this.dimTarget = 0.95;
+    this.focus.set(0.5, 0.5);
+    st.backdrop.u.uColor.value.set(0.04, 0.02, 0.08);
+    const q = this.q;
+    const P = st.particles;
+    const emit = (r: number, dt: number, f: () => void) => {
+      const n = Math.floor(r * q * dt + Math.random());
+      for (let i = 0; i < n; i++) f();
+    };
+
+    // 1: the cut-in: its art races across a slanted band, its name and title line slam in
+    if (att.art) {
+      const sub = [ace ? `★ ACE · ${bondTitle(lv)}` : 'FINAL STRIKE', line.toUpperCase()].join('  ·  ');
+      const ci = tl.own(new CutIn(mill ? goldArt(att.art.art) : att.art.art, a.name, sub, mill ? 0x2a1a00 : col.main, ace || mill ? GOLD_A : col.light));
+      tl.span(0, C, (k) => {
+        ci.u.uK.value = k;
+        ci.u.uAspect.value = st.camera.aspect;
+      });
+      tl.at(C, () => (ci.u.uOpacity.value = 0));
+    }
+    tl.at(0, () => (swell(0.8), whoosh(0.4, 500, 3200, 0.22)));
+    tl.at(C - 0.07, () => {
+      st.pulse('flash', 0.3);
+      this.flash(0xffffff, 0.25);
+      boom(0.5);
+    });
+
+    // 2: the hero shot: low, close, a slow orbit as it powers up
+    const box = this.boxOf(att);
+    const m = this.battleSide === 'near' ? 1 : -1;
+    // framed with room for its crest (and the crown of stars at the grandest bonds)
+    const room = lv >= 4 ? 0.35 : 0.15;
+    const hero = { ...box, y: box.y + box.h * (0.15 + room / 2), h: box.h * (1.05 + room), w: box.w * 1.25 };
+    const from = this.fit([hero], -0.28 * m, -0.12, { fill: 0.66 });
+    const to = this.fit([hero], 0.26 * m, -0.05, { fill: 0.76 });
+    tl.at(C - 0.03, () => this.setShot(from, from, 1));
+    tl.span(C, D, (k) => this.setShot(from, to, easeInOut(k)));
+    const foot = { x: att.x, y: att.y - att.size * 0.46, z: att.z };
+    const M = this.muzzle(att);
+    // it rears back, glowing in its colors
+    tl.span(C, D, (k) => {
+      att.lean = -0.28 * easeOut(Math.min(1, k * 1.6));
+      att.oz = -0.2 * easeOut(Math.min(1, k * 1.6));
+      if (att.fig) att.fig.u.uTint.value = 0.18 * Math.sin(k * Math.PI);
+      this.place(att);
+    });
+    tl.at(D, () => ((att.lean = 0), (att.oz = 0), att.fig && (att.fig.u.uTint.value = 0), this.place(att)), false);
+    // its crest: a star ring standing behind it
+    const crest = tl.own(new Ring(att.size * 1.55, aura, 8080, { inner: 0.8, outer: 0.93, star: 8 }));
+    crest.mesh.renderOrder = -4;
+    crest.mesh.position.set(att.x, att.y + att.size * 0.08, att.z - 0.7);
+    crest.spinSpeed = 0.6;
+    crest.u.uOpacity.value = 0;
+    tl.span(C, C + 0.35, (k) => ((crest.u.uOpacity.value = 0.85 * easeOut(k)), crest.mesh.scale.setScalar(lerp(0.4, 1, backOut(k)))));
+    // the energy gathering at its muzzle
+    const charge = tl.own(new Glow(1.3 * U, 1.3 * U, 'flare', mill ? 0xffc93a : col.main, mill ? 0xffe9a8 : col.light));
+    charge.mesh.position.set(M.x, M.y, M.z + 0.1);
+    tl.span(C + 0.2, D, (k, dt) => {
+      charge.u.uOpacity.value = 0.5 * easeIn(k);
+      charge.mesh.scale.setScalar(lerp(0.3, 1, easeOut(k)));
+      emit(110, dt, () => {
+        const ang = Math.random() * Math.PI * 2;
+        const rr = (1 + Math.random() * 0.6) * U;
+        P.emit({ x: M.x + Math.cos(ang) * rr, y: M.y + Math.sin(ang) * rr, z: M.z, life: 0.4, size: 0.08 * U, color: Math.random() < 0.5 ? col.main : col.light, drag: 0, pull: { x: M.x, y: M.y, strength: 22 * U, swirl: 5 * U } });
+      });
+    });
+    tl.at(C + 0.05, () => (att.prof.tier >= 2 ? drone(H) : swell(0.6)));
+    // its own wind-up (Dark Magician's pentagram, Summoned Skull's lightning...)
+    sig?.windup?.({ d: this, st, tl, U, at: att, M, col, t0: C + 0.1, t1: D });
+    if (mill) this.millenniumWindup(tl, att, M, D);
+
+    // bond 2: pillars of light and rising embers
+    if (lv >= 2) {
+      this.shafts(tl, foot, 4.2 * U, aura, C + 0.05, D + 0.5, 3, 0.65);
+      tl.span(C, D, (_k, dt) =>
+        emit(50, dt, () => P.emit({ x: foot.x + (Math.random() - 0.5) * att.size, y: foot.y, z: foot.z + 0.2, vy: 1.6 * U, life: 1, size: 0.06 * U, color: Math.random() < 0.5 ? aura : 0xffffff, drag: 0.4 })),
+      );
+    }
+    // bond 3: time stops for a beat, a shockwave rolls out
+    if (lv >= 3) {
+      const t3 = C + 0.4;
+      const ring = tl.own(new Glow(4.2 * U, 4.2 * U, 'shock', aura, 0xffffff));
+      ring.mesh.position.set(foot.x, foot.y + 0.05 * U, foot.z);
+      ring.mesh.rotation.x = -1.2;
+      tl.span(t3, t3 + 0.55, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k)));
+      tl.at(t3, () => (st.hitStop(0.14), st.pulse('chroma', 0.6), st.shake(0.5), slowdown(0.5)));
+    }
+    // bond 4: a crown of stars orbits it
+    if (lv >= 4) {
+      const top = att.y + att.size * 0.62;
+      for (let i = 0; i < 6; i++) {
+        const g = tl.own(new Glow(0.5 * U, 0.5 * U, 'star', GOLD_A, 0xffffff));
+        const ph = (i / 6) * Math.PI * 2;
+        tl.span(C + 0.2, D, (k) => {
+          const a2 = ph + k * 5;
+          g.mesh.position.set(att.x + Math.cos(a2) * att.size * 0.42, top + Math.sin(a2) * 0.12 * U, att.z + Math.sin(a2) * 0.4);
+          g.u.uOpacity.value = Math.min(1, k * 4) * (0.75 + 0.25 * Math.sin(k * 30 + i));
+        });
+      }
+      tl.at(C + 0.25, () => (chime(0.9), st.shake(0.35)));
+    }
+    // bond 5: an aurora splits the sky behind it
+    if (lv >= 5) {
+      const sky = tl.own(new Glow(8 * U, 4.5 * U, 'galaxy', GOLD_A, 0x4fe0ff));
+      sky.mesh.position.set(att.x, att.y + att.size * 0.9, att.z - 2);
+      sky.u.uOpacity.value = 0;
+      tl.span(C, D, (k) => (sky.u.uOpacity.value = 0.7 * easeOut(Math.min(1, k * 2))));
+    }
+
+    // 3: it shouts its attack (the replay's finisher follows at once)
+    const mode = calloutMode();
+    const shout = `${(att.prof.attackName || 'Attack').trim().replace(/[!.]+$/, '')}!`;
+    const co = mode !== 'off' ? (calloutFor(a.name, att.prof.attackName, true) ?? { text: shout }) : null;
+    const cueAt = D - 0.5;
+    if (co && this.ui.callout) {
+      tl.at(cueAt, () => {
+        this.ui.callout!({ text: co.text, card: a.name, seat: a.controller, side: this.side(a.controller), color: mill ? 0xffd56a : col.main, light: mill ? 0xfff6d8 : col.light, dur: 1.4, ace: ace ? { lv, title: bondTitle(lv) } : null });
+        if (mode === 'voice' && soundEnabled()) speakShout(co.text, voicePitch(card(a.name)?.level ?? 4, a.name), Math.min(1.7, 1.08 * Math.max(1, this.timeScale)), this.timeScale);
+        boom(0.35);
+        try {
+          window.dispatchEvent(new CustomEvent(CALLOUT_SHOUT, { detail: { seat: a.controller, text: co.text } }));
+        } catch {
+          /* no window */
+        }
+      });
+    } else tl.at(cueAt, () => this.ui.banner({ title: shout, sub: a.name, color: col.main, big: true, dur: 1.1, pos: 'bottom' }));
+    // the finisher picks up straight from its wind-up
+    tl.handoff = D - 0.04;
+    return tl;
+  }
+
   /** The blow lands: wind-up release, the attacker's own attack style, impact, and a clash when the defender survives. */
   private async hit(a: CardRef | null, t: CardRef | null, defender: Pid, dmg?: { player: Pid; amount: number }, replay = false): Promise<Timeline> {
     const st = this.stage;
@@ -3533,7 +3691,7 @@ export class Director {
     const sig = att ? SIG_ATTACKS[att.name] : undefined;
     const M = att ? this.muzzle(att) : { x: 0, y: -1.2 * U, z: 1.5 };
     // the winning blow's replay: the attacker's signature finisher (styled after its Type)
-    const fin0 = replay && att && a ? finisherFor(card(a.name)) : null;
+    const fin0 = replay && att && a ? finisherFor(card(a.name), a.name) : null;
     // (a finisher's direct hit lands off to one side and nearer: its move crosses the screen,
     // where straight down the camera's line it would read as a dot)
     const T = tgt ? this.center(tgt) : fin0 ? this.finisherPoint() : this.directPoint();
@@ -7347,5 +7505,5 @@ export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
 /** The summon methods with their own shot ('normal' keeps the plain summon). */
 export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
 /** The cue kinds the director draws. */
-export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd'];
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd', 'finale'];
 export { css };

@@ -221,6 +221,21 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
           },
         },
         {
+          label: 'Ace finale',
+          go: () => {
+            // the ending cutscene as a duelist's Ace at bond 5, then its finisher
+            const a = me();
+            const hit: Cue = { kind: 'hit', attacker: a, target: null, defender: 1, dmg: { player: 1, amount: info?.atk ?? 2500 } };
+            run([
+              { kind: 'attack', attacker: a, target: null, defender: 1 },
+              hit,
+              { kind: 'finale', card: a, line: 'Your Ace ends it', lv: 5, ace: true, replay: true },
+              { ...hit, replay: true },
+              { kind: 'win', winner: 0, shadow: null },
+            ]);
+          },
+        },
+        {
           label: 'Shadow Realm',
           go: () => {
             const a = me();
