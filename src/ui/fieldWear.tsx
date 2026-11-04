@@ -91,11 +91,16 @@ export function ZoneWear({ state, p, zone }: Props) {
     landed(land.current, fresh);
     setTick((t) => t + 1);
   };
-  // (a fallback: a landing paused under a long cinematic, or cancelled by a settings change, still ends)
+  // (a fallback: a landing whose animation never reports its end still ends; the clock only runs
+  //  while no cinematic is up, since a cinematic holds the landing paused on purpose)
   useEffect(() => {
     if (!fresh) return;
-    const id = setTimeout(done, 15000);
-    return () => clearTimeout(id);
+    let left = 6000;
+    const id = setInterval(() => {
+      if (!document.body.classList.contains('art-on')) left -= 500;
+      if (left <= 0) done();
+    }, 500);
+    return () => clearInterval(id);
   }, [fresh]);
   const uid = useId();
   const grid = style === 'tech';
