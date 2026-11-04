@@ -534,7 +534,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       );
     }
     return (
-      <Win title={myTurn && !locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} class="msgwin">
+      <Win title={myTurn && !locked && !spectator ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} class="msgwin">
         <p class="hint">
           {!myTurn
             ? 'Waiting for your opponent.'
