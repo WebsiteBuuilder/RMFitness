@@ -15,7 +15,7 @@ export function landscapeBig(): boolean {
 export function handCardW(): number {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  if (bigScreen()) return Math.round(Math.min(200, Math.max(96, h * 0.17)) * 0.685);
+  if (bigScreen()) return Math.round(Math.min(w >= 1800 && h >= 900 ? 260 : 200, Math.max(96, h * 0.17)) * 0.685);
   return w <= 380 ? 64 : h >= 880 ? 100 : h >= 820 ? 88 : h >= 760 ? 78 : 70;
 }
 
@@ -34,7 +34,7 @@ export function handRoom(): number {
   const w = window.innerWidth;
   // (landscape: between the two corner bars, --fit-bar)
   if (landscapeBig()) {
-    const bar = w >= 1800 && window.innerHeight >= 900 ? Math.min(620, Math.max(440, w * 0.24)) : Math.min(440, Math.max(250, w * 0.3));
+    const bar = w >= 1800 && window.innerHeight >= 900 ? Math.min(640, Math.max(480, w * 0.29)) : Math.min(440, Math.max(250, w * 0.3));
     return w - 2 * (bar + 24) - 20;
   }
   return (bigScreen() ? w * 0.9 : Math.min(w, 560)) - 20;

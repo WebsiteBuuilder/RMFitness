@@ -123,6 +123,9 @@
     font-size: 11px;
   }
 
+  :root .duel.touch .tmid .tturn {
+    font-size: 14px;
+  }
   /* the action buttons over a picked card */
   :root .duel.touch .taction {
     font-size: 15px;
@@ -563,7 +566,14 @@
   :root .sdh-deck-txt > span,
   :root .sdh-note,
   :root .sdh-friends {
+    font-size: 19px;
+  }
+  :root .sdh-friends span {
     font-size: 17px;
+  }
+  :root .sdh-friends,
+  :root .sdh-row {
+    min-height: 72px;
   }
   :root .sdh-row-l {
     font-size: 20px;
@@ -608,8 +618,9 @@
   }
   :root .duel.touch .tdetail,
   :root .duel.touch .tdetail.right {
-    width: 184px;
-    padding: 10px;
+    left: 6px;
+    width: 168px;
+    padding: 8px;
   }
   :root .duel.touch .tbar .tskill {
     font-size: 11px;
@@ -629,7 +640,7 @@
 /* very large windows: the duel's bars, orb and card panel grow with them */
 @media (min-width: 1800px) and (min-height: 900px) {
   :root .duel.touch {
-    --fit-bar: clamp(440px, 24vw, 620px);
+    --fit-bar: clamp(480px, 29vw, 640px);
   }
   :root .duel.touch .tbar {
     padding-top: 12px;
@@ -647,7 +658,7 @@
     font-size: 17px;
   }
   :root .duel.touch .tbar .tlp {
-    font-size: 44px;
+    font-size: 40px;
   }
   :root .duel.touch .tgauge,
   :root .duel.touch .tbar.top .tgauge {
@@ -679,6 +690,14 @@
   :root .duel.touch .tbar .tskill {
     font-size: 16px;
     padding: 8px 16px;
+  }
+  /* your hand and the turn pill grow with the bigger slab (fit.ts handCardW: 260px cap) */
+  :root .duel.touch .thand {
+    --th-h: clamp(96px, 17vh, 260px);
+  }
+  :root .duel.touch .tmid .tturn {
+    font-size: 18px;
+    padding: 6px 18px;
   }
   :root .duel.touch .tlp small,
   :root .duel.touch .tdetail-more,
