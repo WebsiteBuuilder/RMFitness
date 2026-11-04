@@ -208,6 +208,18 @@ body.lf-on .wx-tod.on {
     radial-gradient(90% 55% at 90% 0%, #ffd070d0, transparent 72%),
     linear-gradient(200deg, #ffa030b0, #ff9030a0 50%, #ff8a3090);
 }
+.wx-wash.tod-golden::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* (no blending here: the low sun's warm rim on the mat's edges) */
+  mix-blend-mode: normal;
+  box-shadow:
+    inset 0 0 0 1.5px #ffd27a70,
+    inset -46px 0 50px -30px #ffc0605a,
+    inset 0 40px 50px -34px #ffcf7a40;
+}
 .wx-wash.tod-dusk {
   opacity: 1;
   background:
@@ -309,13 +321,25 @@ body.danger-opp .wx-sky.sky-storm .wx-cloud.a {
 .wx-bank {
   opacity: 0;
   transition: opacity 3s ease;
+  /* puffy masses along the very top (above the opponent's back row: the cards stay clear) */
   background:
-    radial-gradient(28% 13% at 18% 0%, #1a2036f0, transparent 75%),
-    radial-gradient(34% 15% at 50% 0%, #20263ef0, transparent 75%),
-    radial-gradient(30% 13% at 82% 0%, #181e34f0, transparent 75%),
-    radial-gradient(60% 9% at 35% 4%, #2a3250b0, transparent 80%),
-    radial-gradient(60% 9% at 70% 5%, #262e4ab0, transparent 80%),
-    linear-gradient(180deg, #0c1022c0, transparent 14%);
+    radial-gradient(14% 4.5% at 10% 5%, #3a4466d8, transparent 80%),
+    radial-gradient(16% 5% at 30% 4%, #343e60d8, transparent 80%),
+    radial-gradient(15% 4.5% at 52% 6%, #3a4468d8, transparent 80%),
+    radial-gradient(17% 5% at 74% 4%, #323c5ed8, transparent 80%),
+    radial-gradient(14% 4.5% at 93% 6%, #3a4466d8, transparent 80%),
+    radial-gradient(20% 5% at 20% 8%, #10142ac0, transparent 80%),
+    radial-gradient(22% 5.5% at 46% 9%, #0e1228c0, transparent 80%),
+    radial-gradient(22% 5% at 72% 8%, #10142ac0, transparent 80%),
+    radial-gradient(26% 7% at 6% 0%, #1a2038f0, transparent 80%),
+    radial-gradient(30% 7% at 40% 0%, #1c223af0, transparent 80%),
+    radial-gradient(30% 7% at 80% 0%, #181e36f0, transparent 80%),
+    linear-gradient(180deg, #0a0e20d0, #0c102480 6%, transparent 13%);
+}
+/* where the bolt leaves the bank, it lights up from inside */
+.wx-banklit {
+  opacity: 0;
+  background: radial-gradient(22% 9% at var(--bx, 40%) 4%, #dfe6ffcc, #a8b8ff55 45%, transparent 75%);
 }
 .wx-front.sky-rain .wx-bank {
   opacity: 0.5;

@@ -73,10 +73,14 @@ export class WeatherFx {
   private resize() {
     const r = this.canvas.getBoundingClientRect();
     this.dpr = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, 1.5);
-    this.w = Math.max(1, Math.round(r.width * this.dpr));
-    this.h = Math.max(1, Math.round(r.height * this.dpr));
-    this.canvas.width = this.w;
-    this.canvas.height = this.h;
+    const w = Math.max(1, Math.round(r.width * this.dpr));
+    const h = Math.max(1, Math.round(r.height * this.dpr));
+    // (an unchanged size keeps the canvas: setting it clears and reallocates)
+    if (w === this.w && h === this.h && this.canvas.width === w) return;
+    this.w = w;
+    this.h = h;
+    this.canvas.width = w;
+    this.canvas.height = h;
     const n = Math.round(STORM_DROPS * Math.min(2.2, Math.max(0.6, (r.width * r.height) / AREA_REF)));
     if (n !== this.drops.length / 5) {
       this.drops = new Float32Array(n * 5);
@@ -113,34 +117,35 @@ export class WeatherFx {
   }
 
   /** A lightning bolt from the sky over the opponent's side (the flash itself is a DOM layer). */
-  bolt() {
-    if (this.reduced) return;
+  bolt(): number {
+    if (this.reduced) return 0.5;
     // (left of centre: the opponent's panel sits over the top right on wide screens)
     const x0 = this.w * (0.14 + Math.random() * 0.46);
-    const y1 = this.h * (0.3 + Math.random() * 0.18);
-    const pts = [x0, this.h * 0.03];
-    let x = x0;
-    const steps = 11;
-    for (let i = 1; i <= steps; i++) {
-      x += (Math.random() - 0.5) * this.w * 0.08;
-      pts.push(x, (y1 * i) / steps);
-    }
-    const branches: number[][] = [];
-    for (const k0 of [3, 6]) {
-      const k = 2 * (k0 + Math.floor(Math.random() * 2));
-      const br = [pts[k], pts[k + 1]];
-      let bx = pts[k];
-      let by = pts[k + 1];
-      const dir = branches.length ? -1 : 1;
-      for (let i = 1; i <= 3; i++) {
-        bx += dir * this.w * (0.02 + Math.random() * 0.035);
-        by += y1 * (0.05 + Math.random() * 0.04);
-        br.push(bx, by);
+    const y0 = this.h * 0.04; // (inside the storm's cloud bank)
+    const y1 = this.h * (0.34 + Math.random() * 0.16);
+    /** a jagged run: big turns every step, small kinks between them */
+    const run = (x: number, y: number, dx: number, dy: number, steps: number, wob: number) => {
+      const p = [x, y];
+      for (let i = 1; i <= steps; i++) {
+        const tx = x + dx * (i / steps) + (Math.random() - 0.5) * wob;
+        const ty = y + dy * (i / steps);
+        const px = p[p.length - 2];
+        const py = p[p.length - 1];
+        p.push((px + tx) / 2 + (Math.random() - 0.5) * wob * 0.35, (py + ty) / 2, tx, ty);
       }
-      branches.push(br);
+      return p;
+    };
+    const pts = run(x0, y0, (Math.random() - 0.5) * this.w * 0.12, y1 - y0, 10, this.w * 0.07);
+    const branches: number[][] = [];
+    for (const at of [0.25, 0.45, 0.65]) {
+      if (branches.length === 2 && Math.random() < 0.5) break;
+      const k = 2 * Math.floor((pts.length / 2 - 1) * (at + Math.random() * 0.08));
+      const dir = (branches.length % 2 ? -1 : 1) * (Math.random() < 0.2 ? -1 : 1);
+      branches.push(run(pts[k], pts[k + 1], dir * this.w * (0.07 + Math.random() * 0.06), (y1 - y0) * (0.18 + Math.random() * 0.12), 4, this.w * 0.03));
     }
-    this.bolts.push({ pts, branches, born: performance.now(), life: 480 });
+    this.bolts.push({ pts, branches, born: performance.now(), life: 520 });
     this.wake();
+    return x0 / this.w;
   }
 
   /** Hold still (a cinematic covers the screen, or the tab is hidden). */
@@ -354,15 +359,16 @@ export class WeatherFx {
       c.globalCompositeOperation = 'lighter';
       // the cloud it falls from lights up
       const cx = b.pts[0];
-      const cg = c.createRadialGradient(cx, 0, 0, cx, 0, 120 * dpr);
-      cg.addColorStop(0, `rgba(190,205,255,${(0.35 * a).toFixed(3)})`);
+      const cy = b.pts[1];
+      const cg = c.createRadialGradient(cx, cy, 0, cx, cy, 140 * dpr);
+      cg.addColorStop(0, `rgba(200,215,255,${(0.45 * a).toFixed(3)})`);
       cg.addColorStop(1, 'rgba(150,170,255,0)');
       c.fillStyle = cg;
-      c.fillRect(cx - 120 * dpr, 0, 240 * dpr, 90 * dpr);
+      c.fillRect(cx - 140 * dpr, 0, 280 * dpr, cy + 140 * dpr);
+      // a soft glow along the whole bolt
       for (const [lw, col] of [
-        [26, `rgba(120,150,255,${(0.14 * a).toFixed(3)})`],
-        [14, `rgba(150,175,255,${(0.26 * a).toFixed(3)})`],
-        [7, `rgba(190,205,255,${(0.5 * a).toFixed(3)})`],
+        [28, `rgba(120,150,255,${(0.12 * a).toFixed(3)})`],
+        [14, `rgba(150,175,255,${(0.22 * a).toFixed(3)})`],
       ] as [number, string][]) {
         c.strokeStyle = col;
         c.beginPath();
@@ -371,27 +377,27 @@ export class WeatherFx {
         c.stroke();
         c.beginPath();
         for (const br of b.branches) path(br);
-        c.lineWidth = lw * dpr * 0.55;
+        c.lineWidth = lw * dpr * 0.5;
         c.stroke();
       }
-      // the hot core tapers from the cloud down to the strike
-      const n = b.pts.length / 2 - 1;
-      for (const [lw, col] of [
-        [4.4, `rgba(230,238,255,${(0.9 * a).toFixed(3)})`],
-        [2.2, `rgba(255,255,255,${a.toFixed(3)})`],
-      ] as [number, string][]) {
-        c.strokeStyle = col;
+      // the core tapers from the cloud down to the strike; branches thin and fade to their tips
+      const taper = (p: number[], w0: number, w1: number, a0: number, a1: number, rgb: string) => {
+        const n = p.length / 2 - 1;
         for (let i = 0; i < n; i++) {
+          const f = i / n;
           c.beginPath();
-          c.moveTo(b.pts[i * 2], b.pts[i * 2 + 1]);
-          c.lineTo(b.pts[i * 2 + 2], b.pts[i * 2 + 3]);
-          c.lineWidth = lw * dpr * (1 - (i / n) * 0.55);
+          c.moveTo(p[i * 2], p[i * 2 + 1]);
+          c.lineTo(p[i * 2 + 2], p[i * 2 + 3]);
+          c.lineWidth = (w0 + (w1 - w0) * f) * dpr;
+          c.strokeStyle = `rgba(${rgb},${((a0 + (a1 - a0) * f) * a).toFixed(3)})`;
           c.stroke();
         }
-        c.beginPath();
-        for (const br of b.branches) path(br);
-        c.lineWidth = lw * dpr * 0.4;
-        c.stroke();
+      };
+      taper(b.pts, 8, 4, 0.45, 0.55, '190,205,255');
+      taper(b.pts, 3.6, 1.6, 1, 1, '255,255,255');
+      for (const br of b.branches) {
+        taper(br, 4, 0.8, 0.35, 0, '190,205,255');
+        taper(br, 1.8, 0.4, 0.95, 0.1, '245,248,255');
       }
       // where it strikes the field: a hot bloom
       const ex = b.pts[b.pts.length - 2];

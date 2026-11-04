@@ -98,6 +98,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
   const w = weatherFor(state);
   const canvas = useRef<HTMLCanvasElement>(null);
   const flash = useRef<HTMLElement>(null);
+  const banklit = useRef<HTMLElement>(null);
   const fx = useRef<WeatherFx | null>(null);
   const sky = useRef<Sky>(w.sky);
   sky.current = w.sky;
@@ -116,7 +117,14 @@ export function WeatherFront({ state }: { state: DuelState }) {
     }
     lastStrike = now;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (near) fx.current?.bolt();
+    if (near) {
+      const x = fx.current?.bolt() ?? 0.5;
+      // the cloud bank lights up from inside where the bolt leaves it
+      if (!reduced) {
+        banklit.current?.style.setProperty('--bx', `${(x * 100).toFixed(1)}%`);
+        banklit.current?.animate([{ opacity: 0 }, { opacity: 1, offset: 0.08 }, { opacity: 0.3, offset: 0.25 }, { opacity: 0.85, offset: 0.4 }, { opacity: 0 }], { duration: 620, easing: 'ease-out' });
+      }
+    }
     if (!reduced) {
       const a = near ? 0.3 : 0.09;
       flash.current?.animate([{ opacity: 0 }, { opacity: a, offset: 0.08 }, { opacity: a * 0.2, offset: 0.25 }, { opacity: a * 0.75, offset: 0.4 }, { opacity: 0 }], {
@@ -137,10 +145,10 @@ export function WeatherFront({ state }: { state: DuelState }) {
     } catch {
       fx.current = null;
     }
-    fx.current?.pause(document.body.classList.contains('art-on'));
+    fx.current?.pause(cinematic());
     // hold still under a cinematic
     const mo = new MutationObserver(() => {
-      const art = document.body.classList.contains('art-on');
+      const art = cinematic();
       fx.current?.pause(art);
       // (the big hit's strike, held back under its cinematic)
       if (!art && queued.current !== null) {
@@ -206,9 +214,14 @@ export function WeatherFront({ state }: { state: DuelState }) {
     fx.current?.set(w.precip, AMOUNT[w.sky]);
   }, [on, w.precip, w.sky]);
 
-  // a big hit in the storm brings a strike right away
+  // a big hit in the storm brings a strike (a moment later, so the hit's own cinematic can
+  // claim the screen first: then the strike waits for it to end)
   useEffect(() => {
-    if (on && sky.current === 'storm' && minLp < lastLp.current) strikeRef.current(true);
+    if (on && sky.current === 'storm' && minLp < lastLp.current) {
+      const id = setTimeout(() => sky.current === 'storm' && strikeRef.current(true), 150);
+      lastLp.current = minLp;
+      return () => clearTimeout(id);
+    }
     lastLp.current = minLp;
   }, [minLp]);
 
@@ -229,6 +242,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
       <i class="wx-light" />
       <i class="wx-mist" />
       <i class="wx-bank" />
+      <i ref={banklit} class="wx-banklit" />
       <canvas ref={canvas} class="wx-fall" />
       <i ref={flash} class="wx-flash" />
     </div>
