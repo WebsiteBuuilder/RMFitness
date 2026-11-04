@@ -7,6 +7,7 @@
 // the rules, the room's log or the other phone). The card is hidden in your hand until it
 // arrives; a timer draws it for you if you don't, so a turn never stalls.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import type { DuelState, Pid } from '../eds/types';
 import { CardImg } from './CardImg';
 import { fly } from './flights';
@@ -45,6 +46,70 @@ export function useDrawStyle(): DrawStyle {
     return () => window.removeEventListener(EVT, f);
   }, []);
   return s;
+}
+
+/**
+ * The Auto draw switch that sits on your own deck (Touch and Classic): tap it to flip between
+ * swiping up to draw and drawing by itself. The same setting as the duel Menu's "Draw", kept on
+ * this phone. `at`: drawn over the waiting-to-draw screen at the deck's place; `onAuto` then
+ * draws the waiting card at once when it is switched on.
+ */
+/** what the switch just did, shown by every copy of it (the one over the draw screen goes away at once) */
+const SAY_EVENT = 'eds-drawstyle-say';
+export function AutoDrawPill({ at, onAuto, compact }: { at?: DOMRect | null; onAuto?: () => void; compact?: boolean }) {
+  const style = useDrawStyle();
+  const on = style === 'auto';
+  const [say, setSay] = useState<{ text: string; key: number; x: number; y: number } | null>(null);
+  const me = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // the note goes on the page itself, beside the switch (a Classic side column clips its own overflow)
+    const hear = (ev: Event) => {
+      const r = me.current?.getBoundingClientRect();
+      if (!r || !r.width) return;
+      setSay({ text: (ev as CustomEvent<string>).detail, key: Date.now(), x: innerWidth - r.left + 8, y: r.top + r.height / 2 });
+    };
+    if (at) return; // the copy over the draw screen leaves the note to the deck's own switch
+    addEventListener(SAY_EVENT, hear);
+    return () => removeEventListener(SAY_EVENT, hear);
+  }, [!at]);
+  useEffect(() => {
+    if (!say) return;
+    const t = setTimeout(() => setSay(null), 1500);
+    return () => clearTimeout(t);
+  }, [say]);
+  const flip = (ev: Event) => {
+    ev.stopPropagation();
+    const next: DrawStyle = on ? 'swipe' : 'auto';
+    setDrawStyle(next);
+    dispatchEvent(new CustomEvent(SAY_EVENT, { detail: next === 'auto' ? 'Auto draw on' : 'Swipe up to draw' }));
+    if (next === 'auto') onAuto?.();
+  };
+  const stop = (ev: Event) => ev.stopPropagation();
+  const pos = at ? ({ position: 'fixed', left: `${at.left}px`, top: `${at.top}px`, bottom: 'auto', translate: 'none' } as Record<string, string>) : undefined;
+  return (
+    <button
+      ref={me}
+      type="button"
+      class={`hd-auto ${on ? 'on' : ''} ${on && say ? 'pop' : ''} ${at ? 'floating' : ''}${compact ? ' compact' : ''}`}
+      style={pos}
+      role="switch"
+      aria-checked={on}
+      aria-label="Auto draw"
+      onClick={flip}
+      onPointerDown={stop}
+      onPointerUp={stop}
+    >
+      <i class="hd-auto-dot" />
+      AUTO
+      {say &&
+        createPortal(
+          <span key={say.key} class="hd-auto-say" style={{ right: `${say.x}px`, top: `${say.y}px` }}>
+            {say.text}
+          </span>,
+          document.body,
+        )}
+    </button>
+  );
 }
 
 // ----------------------------------------------------------------- rules of the moment (pure, tested)
@@ -125,6 +190,8 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
   const up = idle && !blocked;
   const [phase, setPhase] = useState<'wait' | 'reveal'>('wait');
   const [deck, setDeck] = useState<DOMRect | null>(null);
+  const [pill, setPill] = useState<DOMRect | null>(null);
+  const [compact, setCompact] = useState(false);
   const [nudge, setNudge] = useState(0);
   const finished = useRef(false);
   const start = useRef<{ x: number; y: number; id: number } | null>(null);
@@ -132,10 +199,30 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
 
   // where the deck is (it can move with a resize)
   useLayoutEffect(() => {
-    const measure = () => setDeck(deckEl(acting)?.getBoundingClientRect() ?? null);
+    const measure = () => {
+      const el = deckEl(acting);
+      setDeck(el?.getBoundingClientRect() ?? null);
+      const own = el?.querySelector('.hd-auto');
+      setPill(own?.getBoundingClientRect() ?? null);
+      setCompact(!!own?.classList.contains('compact'));
+    };
     measure();
+    // again next frame (the board may still be settling), and whenever the deck or the screen moves
+    const raf = requestAnimationFrame(measure);
+    const late = setTimeout(measure, 350);
+    const el = deckEl(acting);
+    const ro = typeof ResizeObserver !== 'undefined' && el ? new ResizeObserver(measure) : null;
+    if (ro && el) ro.observe(el);
+    const vv = typeof visualViewport !== 'undefined' ? visualViewport : null;
     addEventListener('resize', measure);
-    return () => removeEventListener('resize', measure);
+    vv?.addEventListener('resize', measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(late);
+      ro?.disconnect();
+      removeEventListener('resize', measure);
+      vv?.removeEventListener('resize', measure);
+    };
   }, [acting]);
 
   // the card draws itself by this time (counted from when the gate first opened, not again after a cinematic)
@@ -261,7 +348,7 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
       if (ev.key !== 'ArrowUp' && ev.key !== 'Enter' && ev.key !== ' ') return;
       // (typing in the chat, or a key held down from before, is not a draw)
       const t = ev.target as HTMLElement | null;
-      if (ev.repeat || t?.isContentEditable || t?.matches?.('input, textarea, select')) return;
+      if (ev.repeat || t?.isContentEditable || t?.matches?.('input, textarea, select') || t?.closest?.('.hd-auto')) return;
       ev.preventDefault();
       if (phase === 'wait') release();
       else skipTo.current();
@@ -322,6 +409,7 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
             <span class="hd-chev" />
           </div>
           <button class="hd-deck main" aria-label="Draw your card" onClick={(ev) => (ev.stopPropagation(), release())} />
+          {pill && <AutoDrawPill at={pill} compact={compact} onAuto={() => release()} />}
           {gate.destiny ? (
             <div class={`hd-words ${cy < innerHeight * 0.45 ? 'hd-low' : ''}`}>
               <b>Believe in the heart of the cards</b>

@@ -14,7 +14,16 @@
 //  - a new season starts you two tiers below last season's best, and pays the prizes of the
 //    tiers you start in, so a good month still pays the next one
 // Bonus stars: the first win of each day is worth an extra star, and so is every win from
-// the third in a row below Duel King (from there on, every star is earned one win at a time). Leaving a Ranked Duel (or closing the game mid-duel) counts as a loss.
+// the third in a row below Duel King (from there on, every star is earned one win at a time).
+// Pressing Leave counts as a loss; a duel cut off by the game closing resumes (rankedLive.ts).
+//
+// Past the top (Nov 2026, "everyone's done"): Pharaoh has endless numbered levels, one every
+// PHARAOH_LEVEL points, each dealing a tougher computer, and levels 4-10 pay a pack each.
+// From Pharaoh 1 you can Ascend: back down to Diamond with an Ascension star, against harder
+// opponents, for a prize and a title (ASCENSION_PRIZES a season; the tier prizes don't pay
+// twice). Ascensions rank first on the leaderboard. Along the way: a Streak Shield (3 wins in a
+// row: the next loss costs no star), a Comeback star (a win after 2 losses in a row) and a Fast
+// start (strong last season: the first FAST_START wins of a new one are worth an extra star).
 // Own decks only: an Anything goes deck can't enter.
 import { rng } from '../rng';
 import { randomSpeedDeck } from '../speedRandom';
@@ -88,6 +97,41 @@ export const TOP_MILESTONES = 6;
 export const TOP_POINTS_PAYING = TOP_MILESTONE * TOP_MILESTONES;
 /** The daily Ranked goal: this many Ranked wins in a day pays a pack. */
 export const DAILY_GOAL = 3;
+/** Pharaoh Points a Pharaoh Level takes. */
+export const PHARAOH_LEVEL = 10;
+/** Pharaoh Levels from this one up to LEVEL_PRIZE_TO pay a pack each (once a season). */
+export const LEVEL_PRIZE_FROM = 4;
+export const LEVEL_PRIZE_TO = 10;
+/** The Pharaoh Level an Ascension needs. */
+export const ASCEND_LEVEL = 1;
+/** Ascensions a season that pay their prize. */
+export const ASCENSION_PRIZES = 3;
+/** Where an Ascension puts you back: Diamond III. */
+export const ASCEND_TIER = RANKED_TIERS.findIndex((t) => t.id === 'diamond');
+/** Wins at the start of a season worth an extra star, after a season that reached FAST_TIER. */
+export const FAST_START = 5;
+export const FAST_TIER = RANKED_TIERS.findIndex((t) => t.id === 'gold');
+/** Wins in a row that earn a Streak Shield; losses in a row that make the next win a Comeback. */
+export const SHIELD_STREAK = 3;
+export const COMEBACK_LOSSES = 2;
+/** "Pharaoh 3": the level at this many Pharaoh Points (0: plain Pharaoh). */
+export const pharaohLevel = (kp: number) => Math.floor(Math.max(0, kp) / PHARAOH_LEVEL);
+/** Ascension stars as shown everywhere: ★, ★★, ★★★, then ★4, ★5... */
+export const ascStars = (n: number) => (n <= 0 ? '' : n <= 3 ? '★'.repeat(n) : `★${n}`);
+/** The rank's full name: Pharaoh shows its level ("Pharaoh 3"), every other step its stepName. */
+export const rankName = (p: Pick<RankedProgress, 'step' | 'kp'>) => (p.step === TOP && pharaohLevel(p.kp) > 0 ? `Pharaoh ${pharaohLevel(p.kp)}` : stepName(p.step));
+/** What an Ascension pays (once each, ASCENSION_PRIZES a season). */
+export const ASCENSION_PRIZE: Reward[] = [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }];
+/**
+ * The computer's start for the next duel: its tier's Life Points and hand, plus 500 LP an
+ * Ascension and 250 a Pharaoh Level (3000 extra at most), so the top keeps getting harder.
+ */
+export function rankedCpuSetup(p: Pick<RankedProgress, 'step' | 'kp' | 'asc'>): { lp?: number; openingHand?: number } {
+  const t = tierOf(p.step);
+  const extra = Math.min(3000, 500 * (p.asc ?? 0) + (p.step === TOP ? 250 * pharaohLevel(p.kp) : 0));
+  const lp = (t.cpuLp ?? 4000) + extra;
+  return { ...(lp !== 4000 ? { lp } : {}), ...(t.cpuHand ? { openingHand: t.cpuHand } : {}) };
+}
 export const tierIndexOf = (step: number) => STEPS[Math.max(0, Math.min(TOP, step))].tier;
 /** "Gold II", "Rookie", "Duel King I", "Pharaoh" */
 export function stepName(step: number): string {
@@ -104,6 +148,8 @@ export interface SeasonRecord {
   w: number;
   l: number;
   kp?: number;
+  /** Ascensions that season */
+  asc?: number;
 }
 
 export interface RankedProgress {
@@ -147,6 +193,28 @@ export interface RankedProgress {
   pending?: { season: string } | null;
   history: SeasonRecord[];
   deckId?: string | null;
+  /** Ascensions this season (from Pharaoh back to Diamond, against harder opponents) */
+  asc?: number;
+  /** Pharaoh Points past Pharaoh 1 banked by this season's Ascensions (the leaderboard keeps counting them) */
+  ascBank?: number;
+  /** Ascension prizes paid this season */
+  ascPaid?: number;
+  /** the highest Pharaoh Level whose pack was paid this season */
+  lvlPaid?: number;
+  /** the best Pharaoh Level reached this season */
+  lvlPeak?: number;
+  /** a Streak Shield is ready: the next loss that would take a star doesn't */
+  shield?: boolean;
+  /** real Ranked losses in a row (for the Comeback star) */
+  lossRun?: number;
+  /** Fast-start wins left this season (an extra star each) */
+  fast?: number;
+  /** the season's best win streak */
+  best?: number;
+  /** this season's record per deck: deck id -> [wins, losses] */
+  decks?: Record<string, [number, number]>;
+  /** this season's wins per opponent */
+  beat?: Record<string, number>;
   /** a new-season screen to show: last season's record and what the new one paid */
   news?: { last: SeasonRecord; start: number; lines: string[]; cards: string[] } | null;
 }
@@ -259,12 +327,14 @@ export function openRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), s
   }
   const season = seasonOf(now);
   if (season > p.season) {
-    const last: SeasonRecord = { season: p.season, peak: p.peak, w: p.w, l: p.l, ...(p.kp ? { kp: p.kp } : {}) };
+    const last: SeasonRecord = { season: p.season, peak: p.peak, w: p.w, l: p.l, ...(p.kp || p.lvlPeak ? { kp: Math.max(p.kp, (p.lvlPeak ?? 0) * PHARAOH_LEVEL) } : {}), ...(p.asc ? { asc: p.asc } : {}) };
     const played = p.w + p.l + (p.d ?? 0) > 0;
     // the soft reset (and its starting prizes) needs a real season behind it: SEASON_MIN_WINS wins
     // and must be the season just before this one (a skipped month, or a clock jumped ahead, starts fresh)
     const start = p.w >= SEASON_MIN_WINS && season === nextSeason(p.season) ? seasonStart(p.peak) : 0;
-    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending, played: 1 } : {}) };
+    // a strong season (Gold or better, with the wins for a soft reset) earns a Fast start in the next one
+    const fast = start > 0 && tierIndexOf(p.peak) >= FAST_TIER ? FAST_START : 0;
+    const fresh: RankedProgress = { ...newRanked(season), step: start, peak: start, history: played ? [last, ...p.history].slice(0, 24) : p.history, deckId: p.deckId, seen: p.seen, ...(p.week ? { week: p.week } : {}), ...(resume ? { pending: p.pending, played: 1 } : {}), ...(fast ? { fast } : {}) };
     const pay = payTiers(speed, solo, fresh, tierIndexOf(start), seed, season);
     p = { ...fresh, paid: pay.paid, news: played ? { last, start, lines: pay.lines, cards: pay.cards } : null };
     return { speed: pay.speed, solo: { ...pay.solo, ranked: p }, resume, dropped };
@@ -298,15 +368,27 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
   let gained = 0;
   let bonus = false;
   let streakBonus = false;
+  let comeback = false;
+  let fastStar = false;
+  let shieldUsed = false;
+  let shieldWon = false;
+  let shield = !!p.shield;
+  let lossRun = p.lossRun ?? 0;
+  let fast = p.fast ?? 0;
   const today = todayString(now);
   let bonusDay = p.bonusDay;
   if (result === 'w') {
     gained = 1;
-    // a link battle is one plain star: the daily bonus and the streak belong to Ranked Duels
+    // a link battle is one plain star: the daily bonus, the streak and the rest belong to Ranked Duels
     if (!link) {
       streak += 1;
       if (bonusDay !== today) (gained++, (bonus = true), (bonusDay = today));
       if (streak >= 3 && tierIndexOf(step) < KING) (gained++, (streakBonus = true));
+      // two real losses in a row, where losses cost stars: the win back is worth one more
+      if (lossRun >= COMEBACK_LOSSES && RANKED_TIERS[tierIndexOf(step)].loses) (gained++, (comeback = true));
+      if (fast > 0) (gained++, fast--, (fastStar = true));
+      if (streak >= SHIELD_STREAK && !shield) (shield = true), (shieldWon = true);
+      lossRun = 0;
     }
     for (let i = 0; i < gained; i++) {
       if (step === TOP) kp++;
@@ -315,8 +397,14 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
   } else if (result === 'l') {
     if (!link) streak = 0;
     const t = tierIndexOf(step);
+    const costs = RANKED_TIERS[t].loses || forfeit;
+    // a Streak Shield takes the hit for a lost duel (never for pressing Leave)
+    if (costs && shield && !forfeit && !link && (step === TOP ? kp > 0 : stars > 0 || step > tierFloor(t))) {
+      shield = false;
+      shieldUsed = true;
+    }
     // leaving costs a star even in the tiers where losing doesn't, so quitting can't redraw a bad start
-    if (RANKED_TIERS[t].loses || forfeit) {
+    if (costs && !shieldUsed) {
       // -1 only when a star (or King point) was really taken: at a tier's floor with none left, nothing goes
       if (step === TOP) kp > 0 && (kp--, (gained = -1));
       else if (stars > 0) (stars--, (gained = -1));
@@ -324,6 +412,8 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     }
     // leaving with nothing to take still costs something: today's first-win bonus star
     if (forfeit && gained === 0) bonusDay = today;
+    // (only a duel that really took a star builds a Comeback, so losing for free can't farm one)
+    if (!link) lossRun = !forfeit && gained < 0 ? lossRun + 1 : forfeit ? 0 : lossRun;
   } else if (!link) streak = 0;
   const next: RankedProgress = {
     ...p,
@@ -332,6 +422,12 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     kp,
     streak,
     bonusDay,
+    shield,
+    lossRun,
+    fast,
+    best: Math.max(p.best ?? 0, streak),
+    // (a level reached in a link battle still flashes on the next Ranked win, where its prize pays)
+    lvlPeak: link ? (p.lvlPeak ?? 0) : Math.max(p.lvlPeak ?? 0, step === TOP ? pharaohLevel(kp) : 0),
     peak: Math.max(p.peak, step),
     w: p.w + (result === 'w' ? 1 : 0),
     l: p.l + (result === 'l' ? 1 : 0),
@@ -339,7 +435,7 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     // (a link battle leaves a cut-off Ranked Duel against the computer waiting)
     pending: link ? (p.pending ?? null) : null,
   };
-  return { p: next, gained, bonus, streakBonus };
+  return { p: next, gained, bonus, streakBonus, comeback, fastStar, shieldUsed, shieldWon };
 }
 
 export interface RankedSettled {
@@ -366,12 +462,29 @@ export interface RankedSettled {
   missions: Mission[];
   /** the Weekly Crown (all four missions) was paid */
   crown: boolean;
+  /** the win was a Comeback (after losses in a row): one more star */
+  comeback: boolean;
+  /** a Fast-start win: one more star (and how many are left) */
+  fastStar: boolean;
+  fastLeft: number;
+  /** a Streak Shield took the hit for this loss / was earned by this win */
+  shieldUsed: boolean;
+  shieldWon: boolean;
+  /** a new Pharaoh Level reached by this duel (its number), or null */
+  levelUp: number | null;
+  /** a Pharaoh Level pack was paid */
+  levelPaid: boolean;
+  /** Ascensions this season */
+  asc: number;
 }
 
 /** What only the duel itself knows: whether the opponent was a Wandering Duelist, and who went first. */
 export interface RankedDuelInfo {
   wandering?: boolean;
   second?: boolean;
+  /** the deck played, and the opponent's name (for the season's stats) */
+  deckId?: string;
+  foe?: string;
 }
 
 /** Ranks climbed between two places on the ladder; at Pharaoh every TOP_MILESTONE points counts as one. */
@@ -408,6 +521,7 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
   const p = rankedProgress(solo, now);
   const before = { step: p.step, stars: p.stars, kp: p.kp };
   const r = applyResult(p, o.forfeit ? 'l' : o.result, now, !!o.forfeit);
+  r.p = withStats(r.p, o.forfeit ? 'l' : o.result, info);
   const tierNow = tierIndexOf(r.p.step);
   let newTier: RankedTier | null = null;
   let lines: string[] = [];
@@ -428,6 +542,11 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
   const extra: Reward[] = [];
   let goalPaid = false;
   let topPaid = false;
+  let levelPaid = false;
+  const lvlBefore = p.step === TOP ? pharaohLevel(p.kp) : 0;
+  const lvlNow = next.step === TOP ? pharaohLevel(next.kp) : 0;
+  // a Pharaoh Level reached for the first time this season (not one won back after a loss)
+  let levelUp = lvlNow > lvlBefore && lvlNow > (p.lvlPeak ?? 0) ? lvlNow : null;
   if (o.result === 'w' && !o.forfeit) {
     const day = todayString(now);
     const counts = RANKED_TIERS[tierIndexOf(p.step)].loses;
@@ -445,6 +564,15 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
       next = { ...next, topPaid: due };
       topPaid = true;
     }
+    // Pharaoh Levels LEVEL_PRIZE_FROM..LEVEL_PRIZE_TO pay a pack each, once a season (an Ascension's climb back doesn't repay them)
+    const lvlTo = Math.min(LEVEL_PRIZE_TO, lvlNow);
+    for (let l = Math.max(LEVEL_PRIZE_FROM, (next.lvlPaid ?? 0) + 1); l <= lvlTo; l++) {
+      extra.push({ kind: 'pack' });
+      next = { ...next, lvlPaid: l };
+      levelPaid = true;
+    }
+    // (a level prize always gets its flash, even one caught up from a level reached before)
+    if (levelPaid) levelUp = lvlNow;
   }
   const chipsBefore = speed.chips ?? 0;
   const chipsDue = extra.reduce((a, r) => a + (r.kind === 'chips' ? r.n : 0), 0);
@@ -489,7 +617,83 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
     topPaid,
     missions,
     crown,
+    comeback: r.comeback,
+    fastStar: r.fastStar,
+    fastLeft: next.fast ?? 0,
+    shieldUsed: r.shieldUsed,
+    shieldWon: r.shieldWon,
+    levelUp,
+    levelPaid,
+    asc: next.asc ?? 0,
   };
+}
+
+/** The season's stats after a duel: the deck's record and who was beaten. */
+function withStats(p: RankedProgress, result: 'w' | 'l' | 'd', info: RankedDuelInfo): RankedProgress {
+  let decks = p.decks;
+  if (info.deckId && result !== 'd') {
+    const [w, l] = decks?.[info.deckId] ?? [0, 0];
+    decks = { ...decks, [info.deckId]: result === 'w' ? [w + 1, l] : [w, l + 1] };
+  }
+  let beat = p.beat;
+  if (info.foe && result === 'w') {
+    // (a Wandering Duelist's name is shared by many decks: still one name to beat)
+    beat = { ...beat, [info.foe.slice(0, 40)]: (beat?.[info.foe.slice(0, 40)] ?? 0) + 1 };
+    const names = Object.keys(beat);
+    if (names.length > 40) beat = Object.fromEntries(Object.entries(beat).sort((a, b) => b[1] - a[1]).slice(0, 30));
+  }
+  return { ...p, ...(decks ? { decks } : {}), ...(beat ? { beat } : {}) };
+}
+
+export interface RankedStats {
+  rate: number | null;
+  best: number;
+  deck: { id: string; w: number; l: number } | null;
+  foe: { name: string; n: number } | null;
+}
+/** The season so far, in numbers: win rate, best streak, the best deck and the most-beaten opponent. */
+export function rankedStats(p: RankedProgress): RankedStats {
+  const games = p.w + p.l;
+  const deck = Object.entries(p.decks ?? {}).sort((a, b) => b[1][0] - a[1][0] || a[1][1] - b[1][1])[0];
+  const foe = Object.entries(p.beat ?? {}).sort((a, b) => b[1] - a[1])[0];
+  return {
+    rate: games ? Math.round((p.w / games) * 100) : null,
+    best: Math.max(p.best ?? 0, p.streak),
+    deck: deck ? { id: deck[0], w: deck[1][0], l: deck[1][1] } : null,
+    foe: foe ? { name: foe[0], n: foe[1] } : null,
+  };
+}
+
+/** Whether you can Ascend now: at Pharaoh ASCEND_LEVEL or higher, with no duel waiting to be resumed. */
+export const canAscend = (p: RankedProgress) => p.step === TOP && pharaohLevel(p.kp) >= ASCEND_LEVEL && !p.pending;
+
+export interface Ascended {
+  speed: SpeedSave;
+  solo: SoloSave;
+  /** the Ascension's number this season */
+  n: number;
+  lines: string[];
+  cards: string[];
+  /** its prize was paid (the first ASCENSION_PRIZES a season) */
+  paid: boolean;
+}
+
+/**
+ * Ascends: from Pharaoh back to Diamond III with an Ascension star, Pharaoh Points to 0, and
+ * every opponent from here 500 LP stronger. The first ASCENSION_PRIZES a season pay a prize
+ * and a title. Tier prizes and Pharaoh milestones already paid this season don't pay again on
+ * the climb back, so nothing here can be farmed.
+ */
+export function ascendRanked(speed: SpeedSave, solo: SoloSave, now = new Date(), seed = now.getTime()): Ascended | null {
+  const opened = openRanked(speed, solo, now, seed, true);
+  const p = rankedProgress(opened.solo, now);
+  if (!canAscend(p) || opened.resume) return null;
+  const n = (p.asc ?? 0) + 1;
+  const next: RankedProgress = { ...p, step: tierFloor(ASCEND_TIER), stars: 0, kp: 0, asc: n, ascBank: (p.ascBank ?? 0) + Math.max(0, p.kp - ASCEND_LEVEL * PHARAOH_LEVEL), streak: 0, lossRun: 0 };
+  const paidN = p.ascPaid ?? 0;
+  if (paidN >= ASCENSION_PRIZES) return { speed: opened.speed, solo: { ...opened.solo, ranked: next }, n, lines: [], cards: [], paid: false };
+  const g = grant(opened.speed, opened.solo, [...ASCENSION_PRIZE, { kind: 'title', name: `Ascended ${ascStars(n)} · ${seasonName(p.season)}` }], [], seed + 61);
+  return { speed: g.speed, solo: { ...g.solo, ranked: { ...next, ascPaid: paidN + 1 } }, n, lines: g.lines, cards: g.cards, paid: true };
 }
 
 // ---------- opponents ----------

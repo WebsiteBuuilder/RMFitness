@@ -31,6 +31,24 @@ import {
   tierFloor,
   tierIndexOf,
   tierOf,
+  ASCENSION_PRIZE,
+  ASCENSION_PRIZES,
+  ASCEND_LEVEL,
+  ASCEND_TIER,
+  COMEBACK_LOSSES,
+  FAST_START,
+  LEVEL_PRIZE_FROM,
+  LEVEL_PRIZE_TO,
+  PHARAOH_LEVEL,
+  SHIELD_STREAK,
+  ascStars,
+  ascendRanked,
+  canAscend,
+  pharaohLevel,
+  rankName,
+  rankedCpuSetup,
+  rankedStats,
+  type Ascended,
   type RankedProgress,
 } from '../eds/speedCampaign/ranked';
 import { ace, Btn, CardRow, Portrait, ResultBanner, Sheet, SoloDeckPick, Top, skillName, soloDecks, type Ctx } from './Solo';
@@ -76,7 +94,7 @@ export function Ranked(p: Ctx) {
   };
   const rp = rankedProgress(solo);
   // the shared leaderboard: post this rank whenever it changes
-  useEffect(() => postProfileRank(p.profile, p.name, solo.ranked), [rp.season, rp.step, rp.stars, rp.kp, rp.w, rp.l]);
+  useEffect(() => postProfileRank(p.profile, p.name, solo.ranked), [rp.season, rp.step, rp.stars, rp.kp, rp.w, rp.l, rp.asc, rp.ascBank]);
   const ladder = useLadder(p.profile, p.name, rp.season);
   const [boardOpen, setBoardOpen] = useState(false);
   const passed = usePassed(p.profile.id, ladder.rows, ladder.world);
@@ -86,6 +104,16 @@ export function Ranked(p: Ctx) {
   const problems = deck ? soloDeckProblems(speed, deck) : ['Build a deck from your cards first (Deck tab → Decks), or start the Millennium Road.'];
   const [deckPick, setDeckPick] = useState(false);
   const [help, setHelp] = useState(false);
+  const [askAscend, setAskAscend] = useState(false);
+  const [ascended, setAscended] = useState<Ascended | null>(null);
+  const ascend = () => {
+    setAskAscend(false);
+    const a = ascendRanked(speed, solo);
+    if (!a) return;
+    if (a.speed !== speed) p.onSpeed(a.speed);
+    setSolo(a.solo);
+    setAscended(a);
+  };
   const rep = p.report?.kind === 'ranked' ? p.report : null;
   const tier = tierOf(rp.step);
   // the next opponent (a Wandering Duelist's deck is built once, not on every render)
@@ -107,27 +135,31 @@ export function Ranked(p: Ctx) {
   const toNext = starsToNext(rp);
   const linkUsed = rp.linkDay?.[0] === todayString(today) ? rp.linkDay[1] : 0;
   const nextName = rp.step === TOP ? null : stepName(rp.step + 1);
+  const level = rp.step === TOP ? pharaohLevel(rp.kp) : 0;
+  const asc = rp.asc ?? 0;
+  const deckRec = deck ? rp.decks?.[deck.id] : undefined;
 
   const duel = () => {
     if (resuming) return resume();
     if (!deck || problems.length) return;
-    const lp = tier.cpuLp;
-    const hand = tier.cpuHand;
-    const setup = lp || hand ? { ...(lp ? { lp } : {}), ...(hand ? { openingHand: hand } : {}) } : null;
+    const cs = rankedCpuSetup(rp);
+    const lp = cs.lp;
+    const hand = cs.openingHand;
+    const setup = lp || hand ? cs : null;
     const notes = [
       rankedFirst(rp) === 'me' ? 'You go first.' : `${foe.duelist.name} goes first.`,
       ...(foe.wandering ? ['Wandering Duelist: a deck shuffled together for this one duel.'] : []),
-      ...(lp || hand ? [`${tier.name} rule: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
-      `${DIFFICULTY_LABEL[tier.level]} computer. ${tier.loses ? 'A loss takes a star.' : "Losses don't cost stars in this tier."} Pressing Leave costs a star (or today's bonus star if you have none); if the game closes, the duel resumes.`,
+      ...(lp || hand ? [`${rankName(rp)}${asc ? ` ${ascStars(asc)}` : ''}: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
+      `${DIFFICULTY_LABEL[tier.level]} computer. ${!tier.loses ? "Losses don't cost stars in this tier." : rp.shield ? '🛡 Your Shield is ready: a loss here costs no star.' : 'A loss takes a star.'} Pressing Leave costs a star (or today's bonus star if you have none); if the game closes, the duel resumes.`,
     ];
     p.onDuel({
       me: { name: p.name, main: deck.main, extra: deck.extra, skill: deck.skill },
       cpu: { name: foe.duelist.name, main: foe.main, extra: foe.extra, skill: foe.duelist.skill, ...(setup ? { setup } : {}) },
       first: rankedFirst(rp),
-      context: { kind: 'ranked', season: rp.season, wander: foe.wandering, first: rankedFirst(rp) },
+      context: { kind: 'ranked', season: rp.season, wander: foe.wandering, first: rankedFirst(rp), deckId: deck.id, foe: foe.duelist.name },
       level: tier.level,
       vs: {
-        label: `RANKED · ${stepName(rp.step).toUpperCase()}`,
+        label: `RANKED · ${rankName(rp).toUpperCase()}${asc ? ` ${ascStars(asc)}` : ''}`,
         mePortrait: ace(deck.main),
         cpuPortrait: foe.duelist.portrait,
         cpuTitle: foe.duelist.title,
@@ -153,10 +185,10 @@ export function Ranked(p: Ctx) {
       />
       <div class="so-body">
         <div class={`rk-hero t-${tier.id}`}>
-          <RankEmblem step={rp.step} size="l" />
+          <RankEmblem step={rp.step} size="l" asc={asc} level={level} />
           <div class="rk-hero-t">
-            <span class="so-label">YOUR RANK</span>
-            <b>{stepName(rp.step)}</b>
+            <span class="so-label">YOUR RANK{asc ? ` · ASCENDED ${ascStars(asc)}` : ''}</span>
+            <b>{rankName(rp)}</b>
             <RankStars p={rp} />
             {toNext !== null ? (
               <span class="rk-next">
@@ -164,7 +196,8 @@ export function Ranked(p: Ctx) {
               </span>
             ) : (
               <span class="rk-next">
-                {(rp.topPaid ?? 0) >= TOP_MILESTONES ? 'Every Pharaoh prize claimed: climb the leaderboard' : `Next prize at ${TOP_MILESTONE * ((rp.topPaid ?? 0) + 1)} Pharaoh Points`}
+                {PHARAOH_LEVEL - (rp.kp % PHARAOH_LEVEL)} to Pharaoh {level + 1}
+                {nextTopPrize(rp) ? ` · prize at ${nextTopPrize(rp)}` : ''}
               </span>
             )}
             <span class="rk-rec">
@@ -182,9 +215,12 @@ export function Ranked(p: Ctx) {
         </div>
         <div class="rk-bonus">
           <span class={bonusLeft ? 'on' : ''}>{bonusLeft ? '★ First win: +1 star' : '✓ Bonus star gone today'}</span>
-          {tierNow < KING ? <span class={rp.streak >= 2 ? 'on' : ''}>{rp.streak >= 2 ? '🔥 Streak: +1 star' : '🔥 3 in a row: +1'}</span> : <span>🔥 Streak stars end at Master</span>}
+          {tierNow < KING ? <span class={rp.streak >= 2 ? 'on' : ''}>{rp.streak >= 2 ? '🔥 Streak: +1 star' : '🔥 3 in a row: +1'}</span> : !rp.shield && tier.loses && <span>🛡 {SHIELD_STREAK} in a row: a Shield</span>}
           <span class={goalDone || !tier.loses ? '' : 'on'}>{goalDone ? '✓ Daily pack won' : tier.loses ? `🎁 ${Math.min(won, DAILY_GOAL)}/${DAILY_GOAL} wins: a pack` : '🎁 Daily pack from Silver'}</span>
           <span class={linkUsed < LINK_STARS_PER_DAY ? 'on' : ''}>⚔ Online wins: +1 ({linkUsed}/{LINK_STARS_PER_DAY})</span>
+          {rp.shield && tier.loses && <span class="on">🛡 Shield ready</span>}
+          {(rp.lossRun ?? 0) >= COMEBACK_LOSSES && tier.loses && <span class="on">↩ Comeback: next win +1</span>}
+          {(rp.fast ?? 0) > 0 && <span class="on">⚡ Fast start: +1 ({rp.fast} left)</span>}
         </div>
 
         <div class="rk-foe">
@@ -206,7 +242,7 @@ export function Ranked(p: Ctx) {
                 <b>{shownFoe.duelist.name}</b>
                 <span>{shownFoe.duelist.title}</span>
                 <em>
-                  {DIFFICULTY_LABEL[tier.level]} computer{tier.cpuLp ? ` · ${tier.cpuLp} LP` : ''}
+                  {DIFFICULTY_LABEL[tier.level]} computer{rankedCpuSetup(rp).lp ? ` · ${rankedCpuSetup(rp).lp} LP` : ''}
                   {tier.cpuHand ? ` · +${tier.cpuHand} card` : ''}
                 </em>
               </>
@@ -217,15 +253,30 @@ export function Ranked(p: Ctx) {
           {resuming ? 'Resume Ranked Duel' : 'Ranked Duel!'}
         </Btn>
 
+        {canAscend(rp) && !resuming && (
+          <div class="rk-ascend">
+            <RankEmblem step={tierFloor(ASCEND_TIER)} size="m" asc={asc + 1} />
+            <div>
+              <b>Ascend{asc ? ` again (${asc + 1})` : ''}</b>
+              <span>Back to {RANKED_TIERS[ASCEND_TIER].name} III with {asc ? 'another' : 'an'} Ascension star. Tougher opponents, more prizes, and your climb keeps counting on the leaderboard.</span>
+            </div>
+            <Btn kind="blue" onClick={() => setAskAscend(true)}>
+              Ascend
+            </Btn>
+          </div>
+        )}
+
         <div class="so-deckbar">
           <div>
             <b>Your deck{deck ? `: ${deck.name}` : ''}</b>
-            <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}`}</span>
+            <span class={problems.length ? 'so-bad' : 'so-good'}>{problems.length ? problems[0] : `${deck!.main.length} cards · ${skillName(deck!.skill)}${deckRec ? ` · Ranked ${deckRec[0]}W ${deckRec[1]}L` : ''}`}</span>
           </div>
           <Btn kind="blue" onClick={() => setDeckPick(true)}>
             Change
           </Btn>
         </div>
+
+        <SeasonStats rp={rp} decks={decks} />
 
         <WeeklyMissions rp={rp} />
 
@@ -258,18 +309,33 @@ export function Ranked(p: Ctx) {
             ),
           )}
         </div>
-        <p class="so-dim">Each prize pays once a season, the first time you reach the tier. At Pharaoh, every {TOP_MILESTONE} Pharaoh Points pay a pack (every {TOP_MILESTONE * 2} a chip too), up to {TOP_MILESTONES} a season. After a season of 10+ wins, the next starts you two tiers below your best (Master at most) and pays those tiers again.</p>
+        <div class="rk-prizes">
+          <div class={`rk-prize ${(rp.lvlPaid ?? 0) >= LEVEL_PRIZE_TO ? 'got' : ''}`}>
+            <RankEmblem step={TOP} size="s" level={LEVEL_PRIZE_FROM} />
+            <b>Pharaoh {LEVEL_PRIZE_FROM}-{LEVEL_PRIZE_TO}</b>
+            <span>a pack each level</span>
+            <i>{(rp.lvlPaid ?? 0) >= LEVEL_PRIZE_FROM ? `${(rp.lvlPaid ?? 0) - LEVEL_PRIZE_FROM + 1}/${LEVEL_PRIZE_TO - LEVEL_PRIZE_FROM + 1}` : ''}</i>
+          </div>
+          <div class={`rk-prize ${(rp.ascPaid ?? 0) >= ASCENSION_PRIZES ? 'got' : ''}`}>
+            <RankEmblem step={tierFloor(ASCEND_TIER)} size="s" asc={1} />
+            <b>Ascension</b>
+            <span>{prizeText(ASCENSION_PRIZE)} + a title</span>
+            <i>{rp.ascPaid ? `${rp.ascPaid}/${ASCENSION_PRIZES}` : ''}</i>
+          </div>
+        </div>
+        <p class="so-dim">Each tier prize pays once a season, the first time you reach the tier. At Pharaoh, every {TOP_MILESTONE} Pharaoh Points pay a pack (every {TOP_MILESTONE * 2} a chip too) up to {TOP_MILESTONE * TOP_MILESTONES} points, then Pharaoh {LEVEL_PRIZE_FROM} to {LEVEL_PRIZE_TO} pay a pack each. Ascending pays its prize {ASCENSION_PRIZES} times a season; the climb back doesn't pay tier or Pharaoh prizes twice. After a season of 10+ wins, the next starts you two tiers below your best (Master at most) and pays those tiers again.</p>
 
         {rp.history.length > 0 && (
           <>
             <div class="so-group">Past seasons</div>
             {rp.history.map((h) => (
               <div key={h.season} class="rk-past">
-                <RankEmblem step={h.peak} size="s" />
+                <RankEmblem step={h.peak} size="s" asc={h.asc ?? 0} level={h.peak === TOP ? pharaohLevel(h.kp ?? 0) : 0} />
                 <b>{seasonName(h.season)}</b>
                 <span>
-                  best {stepName(h.peak)}
-                  {h.kp ? ` (${h.kp} points)` : ''} · {h.w}W {h.l}L
+                  best {rankName({ step: h.peak, kp: h.kp ?? 0 })}
+                  {h.kp ? ` (${h.kp} points)` : ''}
+                  {h.asc ? ` · Ascended ${h.asc}` : ''} · {h.w}W {h.l}L
                 </span>
               </div>
             ))}
@@ -302,10 +368,51 @@ export function Ranked(p: Ctx) {
           <div class="so-reward">From Silver up, the day's {DAILY_GOAL}rd Ranked win pays a pack.</div>
           <div class="so-reward">Online link battles with a friend count too: +1 star a win (up to {LINK_STARS_PER_DAY} a day), and a loss costs a star where Ranked losses do. A duel that ends because a phone dropped off doesn't count either way.</div>
           <div class="so-reward">Above Master: Duel King III to I, then Legend III to I, then Pharaoh. Each pays packs, chips and a title for the month.</div>
-          <div class="so-reward">Pharaoh never ends: every win is a Pharaoh Point and a loss takes one. Every {TOP_MILESTONE} points pays a pack, every {TOP_MILESTONE * 2} a chip as well ({TOP_MILESTONES} prizes a season), and the points rank you on the leaderboard.</div>
+          <div class="so-reward">Pharaoh never ends: every star you earn is a Pharaoh Point and a loss takes one. Every {PHARAOH_LEVEL} points is a new Pharaoh Level (Pharaoh 1, 2, 3...), and each level makes the computer 250 LP tougher (Levels and Ascensions add up to +3000 LP at most).</div>
+          <div class="so-reward">Pharaoh prizes: a pack every {TOP_MILESTONE} points (every {TOP_MILESTONE * 2} a chip too) up to {TOP_MILESTONE * TOP_MILESTONES} points, then a pack for each of Pharaoh {LEVEL_PRIZE_FROM} to {LEVEL_PRIZE_TO}.</div>
+          <div class="so-reward">Ascend: from Pharaoh {ASCEND_LEVEL} up you can go back to {RANKED_TIERS[ASCEND_TIER].name} III with an Ascension star and climb again against opponents 500 LP tougher each time. Ascending pays {prizeText(ASCENSION_PRIZE)} and a title ({ASCENSION_PRIZES} a season), and the leaderboard counts every Ascension as a whole climb, so you never lose a place by Ascending. The Shield and Fast start end with the season.</div>
+          <div class="so-reward">🛡 Streak Shield: {SHIELD_STREAK} wins in a row earns one. Your next lost duel costs no star (pressing Leave still does).</div>
+          <div class="so-reward">↩ Comeback: after {COMEBACK_LOSSES} losses in a row that cost stars, your next win is worth one more.</div>
+          <div class="so-reward">⚡ Fast start: reach Gold or better in a season of 10+ wins, and your first {FAST_START} wins of the next month's season are worth one more star each.</div>
           <div class="so-reward">Weekly Missions: four new ones every Monday, the same for everyone. Each pays a pack; all four add the Weekly Crown (a pack + {WEEKLY_CROWN_CHIPS} chips).</div>
           <div class="so-reward">The leaderboard shows everyone's rank this season, even when they're offline. Bragging rights only.</div>
           <p class="so-dim">Seasons run a calendar month; with 10+ wins, the next one starts you two tiers below your best. Leaving a Ranked Duel with the Leave button is a loss and costs a star in any tier. A duel cut off by the game closing or the connection dropping is never a loss: it resumes where it stopped, or doesn't count. Own decks only.</p>
+        </Sheet>
+      )}
+      {askAscend && (
+        <Sheet title="Ascend?" onClose={() => setAskAscend(false)}>
+          <div class="so-clear">
+            <RankEmblem step={tierFloor(ASCEND_TIER)} size="l" asc={asc + 1} />
+          </div>
+          <p>
+            You go back to {RANKED_TIERS[ASCEND_TIER].name} III with Ascension star {asc + 1} and your Pharaoh Points start again at 0. Every opponent from here starts with {Math.min(3000, 500 * (asc + 1))} more LP. The leaderboard banks your {rp.kp} points, so you keep your place.
+          </p>
+          <p class="so-dim">{(rp.ascPaid ?? 0) < ASCENSION_PRIZES ? `Ascending now pays ${prizeText(ASCENSION_PRIZE)} and a title.` : `This season's ${ASCENSION_PRIZES} Ascension prizes are paid: this one is for the star and the leaderboard.`} Tier and Pharaoh prizes already paid this season don't pay again on the way back up.</p>
+          <Btn kind="gold" onClick={ascend}>
+            Ascend
+          </Btn>
+          <Btn onClick={() => setAskAscend(false)}>Not yet</Btn>
+        </Sheet>
+      )}
+      {ascended && (
+        <Sheet>
+          <div class="rk-change up tier level t-diamond">
+            <span class="rk-burst" aria-hidden="true" />
+            <span class="rk-flash level">ASCENDED</span>
+            <RankEmblem step={tierFloor(ASCEND_TIER)} size="l" asc={ascended.n} />
+            <b>{stepName(tierFloor(ASCEND_TIER))}</b>
+            <span class="rk-delta">Ascension {ascended.n} this season · opponents +{Math.min(3000, 500 * ascended.n)} LP</span>
+          </div>
+          <div class="so-group rk-ascprize">{ascended.cards.length ? 'Ascension prize' : 'Ascension'} · title “Ascended {ascStars(ascended.n)}”</div>
+          {ascended.cards.length > 0 && <CardRow names={ascended.cards} reveal own={(n) => ownedCopies(speed, n)} />}
+          {prizeLines(ascended.lines).map((l) => (
+            <div key={l} class="so-reward">
+              {l}
+            </div>
+          ))}
+          <Btn kind="gold" onClick={() => setAscended(null)}>
+            Climb again
+          </Btn>
         </Sheet>
       )}
       {askResume && live && !rep && (
@@ -364,7 +471,8 @@ function SeasonSheet({ p, onDone, own }: { p: RankedProgress; onDone: () => void
 function ResultSheet({ rep, foe, onNext, onDone, own, canGo }: { rep: Extract<NonNullable<Ctx['report']>, { kind: 'ranked' }>; foe: { name: string; portrait: string; onWin: string; onLose: string }; onNext: () => void; onDone: () => void; own: (n: string) => number; canGo: boolean }) {
   const s = rep.settled;
   const won = rep.outcome.result === 'w';
-  const up = s.after.step > s.before.step;
+  const lvl = s.levelUp ?? null;
+  const up = s.after.step > s.before.step || lvl !== null;
   const down = s.after.step < s.before.step;
   useEffect(() => {
     if (s.gained > 0) for (let i = 0; i < s.gained; i++) playStar(0.5 + i * 0.25);
@@ -374,22 +482,26 @@ function ResultSheet({ rep, foe, onNext, onDone, own, canGo }: { rep: Extract<No
     <Sheet>
       <ResultBanner result={rep.outcome.result} />
       {s.forfeit && <p class="so-center so-dim">You left the duel: it counts as a loss.</p>}
-      <div class={`rk-change ${up ? 'up' : down ? 'down' : ''} ${s.newTier ? `tier t-${s.newTier.id}` : ''}`}>
-        {s.newTier && <span class="rk-burst" aria-hidden="true" />}
-        {up && <span class="rk-flash">{s.newTier ? `${s.newTier.name.toUpperCase()} TIER!` : 'RANK UP!'}</span>}
+      <div class={`rk-change ${up ? 'up' : down ? 'down' : ''} ${s.newTier ? `tier t-${s.newTier.id}` : lvl !== null ? 'tier level t-pharaoh' : ''}`}>
+        {(s.newTier || lvl !== null) && <span class="rk-burst" aria-hidden="true" />}
+        {up && <span class={`rk-flash ${lvl !== null && !s.newTier ? 'level' : ''}`}>{s.newTier ? `${s.newTier.name.toUpperCase()} TIER!` : lvl !== null ? `PHARAOH ${lvl}!` : 'RANK UP!'}</span>}
         {down && <span class="rk-flash down">RANK DOWN</span>}
-        <RankEmblem step={s.after.step} size="l" />
-        <b>{stepName(s.after.step)}</b>
+        <RankEmblem step={s.after.step} size="l" asc={rep.settled.asc ?? 0} level={s.after.step === TOP ? pharaohLevel(s.after.kp) : 0} />
+        <b>{rankName(s.after)}</b>
         <RankStars p={s.after} fresh={fresh} />
         <span class="rk-delta">
           {s.gained > 0 ? `+${s.gained} star${s.gained === 1 ? '' : 's'}` : s.gained < 0 ? '−1 star' : won ? '' : s.forfeit ? "No star to lose, so today's bonus star is gone" : tierOf(s.before.step).loses ? 'No stars to lose at this rank' : 'No star lost in this tier'}
           {s.bonus ? ' · daily bonus' : ''}
           {s.streakBonus ? ` · 🔥 ${s.streak} in a row` : ''}
+          {s.comeback ? ' · ↩ comeback' : ''}
+          {s.fastStar ? ` · ⚡ fast start${s.fastLeft ? ` (${s.fastLeft} left)` : ''}` : ''}
         </span>
+        {s.shieldUsed && <span class="rk-delta">🛡 Your Streak Shield took the hit: no star lost.</span>}
+        {s.shieldWon && <span class="rk-delta">🛡 {SHIELD_STREAK} in a row: Streak Shield earned. Your next loss costs no star.</span>}
       </div>
       {s.lines.length > 0 && (
         <>
-          <div class="so-group">{[s.newTier ? `${s.newTier.name} reached: season prize` : null, s.goalPaid ? 'daily Ranked pack' : null, s.topPaid ? 'Pharaoh prize' : null, s.missions.length ? 'weekly mission' : null, s.crown ? 'Weekly Crown' : null].filter(Boolean).join(' + ').replace(/^./, (c) => c.toUpperCase())}</div>
+          <div class="so-group">{[s.newTier ? `${s.newTier.name} reached: season prize` : null, s.goalPaid ? 'daily Ranked pack' : null, s.topPaid ? 'Pharaoh prize' : null, s.levelPaid ? 'Pharaoh Level prize' : null, s.missions.length ? 'weekly mission' : null, s.crown ? 'Weekly Crown' : null].filter(Boolean).join(' + ').replace(/^./, (c) => c.toUpperCase())}</div>
           {s.cards.length > 0 && <CardRow names={s.cards} reveal own={own} />}
           {prizeLines(s.lines).map((l) => (
             <div key={l} class="so-reward">
@@ -416,6 +528,65 @@ function ResultSheet({ rep, foe, onNext, onDone, own, canGo }: { rep: Extract<No
       </Btn>
       <Btn onClick={onDone}>Back to the ladder</Btn>
     </Sheet>
+  );
+}
+
+/** Where the next Pharaoh prize is: "15 points", "Pharaoh 6", or null when the season's are all paid. */
+function nextTopPrize(rp: RankedProgress): string | null {
+  if ((rp.topPaid ?? 0) < TOP_MILESTONES) return `${TOP_MILESTONE * ((rp.topPaid ?? 0) + 1)} points`;
+  if ((rp.lvlPaid ?? 0) < LEVEL_PRIZE_TO) return `Pharaoh ${Math.max(LEVEL_PRIZE_FROM, (rp.lvlPaid ?? 0) + 1)}`;
+  return null;
+}
+
+/** The season in numbers: win rate, best streak, the best deck and the most-beaten opponent. */
+function SeasonStats({ rp, decks }: { rp: RankedProgress; decks: SpeedDeck[] }) {
+  if (rp.w + rp.l === 0) return null;
+  const s = rankedStats(rp);
+  const deckName = s.deck ? (decks.find((d) => d.id === s.deck!.id)?.name ?? 'a deck since changed') : null;
+  return (
+    <>
+      <div class="so-group">Your season</div>
+      <div class="rk-stats">
+        <div class="rk-stat">
+          <b>{s.rate ?? 0}%</b>
+          <span>
+            win rate · {rp.w}W {rp.l}L
+          </span>
+        </div>
+        <div class="rk-stat">
+          <b>🔥 {s.best}</b>
+          <span>best win streak</span>
+        </div>
+        {s.deck && deckName && (
+          <div class="rk-stat">
+            <b>{deckName}</b>
+            <span>
+              best deck · {s.deck.w}W {s.deck.l}L
+            </span>
+          </div>
+        )}
+        {s.foe && (
+          <div class="rk-stat">
+            <b>{s.foe.name}</b>
+            <span>
+              beaten most · {s.foe.n} time{s.foe.n === 1 ? '' : 's'}
+            </span>
+          </div>
+        )}
+        {((rp.lvlPeak ?? 0) > 0 || (rp.asc ?? 0) > 0) && (
+          <div class="rk-stat">
+            <b>{rp.lvlPeak ? `Pharaoh ${rp.lvlPeak}` : 'Pharaoh'}</b>
+            <span>best Pharaoh Level</span>
+          </div>
+        )}
+        {(rp.asc ?? 0) > 0 && (
+          <div class="rk-stat">
+            <b>★ {rp.asc}</b>
+            <span>Ascension{rp.asc === 1 ? '' : 's'} this season</span>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -454,10 +625,16 @@ function WeeklyMissions({ rp }: { rp: RankedProgress }) {
 function Rival({ rows }: { rows: LadderRow[] }) {
   const i = rows.findIndex((r) => r.kind === 'me');
   if (i < 0) return null;
-  if (i === 0) return rows.length > 1 ? <div class="rk-rival">👑 You're #1 this season. {rows[1].name} is {starsBetween(rows[0], rows[1])} star{starsBetween(rows[0], rows[1]) === 1 ? '' : 's'} behind.</div> : null;
+  if (i === 0)
+    return rows.length > 1 ? (
+      <div class="rk-rival">
+        👑 You're #1 this season.{' '}
+        {rows[1].name} is {starsBetween(rows[0], rows[1])} star{starsBetween(rows[0], rows[1]) === 1 ? '' : 's'} behind.
+      </div>
+    ) : null;
   const gap = starsBetween(rows[i - 1], rows[i]);
   // at the top the gap is counted in stars and Pharaoh Points alike
-  const unit = (n: number) => (rows[i - 1].step === TOP ? (n === 1 ? 'star or point' : 'stars or points') : n === 1 ? 'star' : 'stars');
+  const unit = (n: number) => (rows[i - 1].step === TOP || rows[i - 1].asc ? (n === 1 ? 'star or point' : 'stars or points') : n === 1 ? 'star' : 'stars');
   return (
     <div class="rk-rival">
       ⚔ You're #{i + 1}. {rows[i - 1].name} is {gap === 0 ? `level with you: one more ${unit(1)} passes them` : `${gap} ${unit(gap)} ahead: ${gap + 1} more passes them`}.

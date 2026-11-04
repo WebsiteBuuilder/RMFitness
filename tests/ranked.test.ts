@@ -10,10 +10,11 @@ import type { Pid } from '../src/eds/types';
 import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
-import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, TOP_MILESTONE, TOP_MILESTONES, KING, migrateRanked, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, TOP_MILESTONE, TOP_MILESTONES, KING, migrateRanked, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, pharaohLevel, rankName, rankedCpuSetup, ascendRanked, rankedStats, ASCEND_TIER, ASCEND_LEVEL, PHARAOH_LEVEL, ASCENSION_PRIZES, FAST_START, SHIELD_STREAK, COMEBACK_LOSSES, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { todayString } from '../src/eds/speedCampaign/labyrinth';
 import { cleanStats } from '../src/collection/rankings';
 import { weekMissions, weekOf } from '../src/eds/speedCampaign/rankedWeekly';
-import { boardFrom, ladderScore, postOf } from '../src/online/rankedBoard';
+import { boardFrom, climbScore, ladderScore, postOf } from '../src/online/rankedBoard';
 import { mergeLadder } from '../src/online/rankedBoard';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
@@ -366,6 +367,117 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   const ses = new DuelSession(new MemoryAdapter());
   const vet = (ses.adapter as unknown as { vet: (e: unknown) => boolean }).vet;
   ok(!vet({ type: 'SURRENDER', player: 1, timeout: true }) && vet({ type: 'SURRENDER', player: 1 }), 'a timeout surrender from the other phone is refused');
+}
+
+// ---------- past the top: Pharaoh Levels, Ascension, Shield, Comeback, Fast start, stats ----------
+{
+  const sp = newSpeedSave();
+  const pharaoh = (p: Partial<RankedProgress> = {}): SoloSave => at(newSoloSave(), { step: TOP, peak: TOP, kp: 0, w: 120, paid: RANKED_TIERS.map((_, i) => i), topPaid: TOP_MILESTONES, bonusDay: todayString(day(9)), ...p });
+  ok(pharaohLevel(9) === 0 && pharaohLevel(10) === 1 && pharaohLevel(37) === 3, 'a Pharaoh Level every 10 points');
+  ok(rankName({ step: TOP, kp: 5 }) === 'Pharaoh' && rankName({ step: TOP, kp: 23 }) === 'Pharaoh 2' && rankName({ step: 3, kp: 0 }) === 'Silver III', 'rank names show the Pharaoh Level');
+  // a level up, and its pack from Pharaoh 4 to 10 (once)
+  let s = settleRanked(sp, pharaoh({ kp: 39, lvlPeak: 3, lvlPaid: 0 }), WIN, day(9, 13));
+  ok(s.levelUp === 4 && s.levelPaid && rankedProgress(s.solo).lvlPaid === 4, `reaching Pharaoh 4 is a level up and pays a pack (${s.levelUp}, ${s.levelPaid})`);
+  const back = settleRanked(s.speed, settleRanked(s.speed, s.solo, LOSS, day(9, 14)).solo, WIN, day(9, 15));
+  ok(back.levelUp === null && !back.levelPaid, 'winning a level back after a loss pays and celebrates nothing again');
+  s = settleRanked(sp, pharaoh({ kp: 109, lvlPeak: 10, lvlPaid: 10 }), WIN, day(9, 13));
+  ok(s.levelUp === 11 && !s.levelPaid, 'past Pharaoh 10 levels still climb, without packs');
+  ok(settleRanked(sp, pharaoh({ kp: 9, lvlPeak: 0 }), WIN, day(9, 13)).levelUp === 1 && !settleRanked(sp, pharaoh({ kp: 9, lvlPeak: 0 }), WIN, day(9, 13)).levelPaid, 'Pharaoh 1-3 are level ups with no pack (the 5-point milestones pay there)');
+  // opponents get tougher
+  ok(rankedCpuSetup({ step: TOP, kp: 0 }).lp === 6000 && rankedCpuSetup({ step: TOP, kp: 30 }).lp === 6750 && rankedCpuSetup({ step: TOP, kp: 1000 }).lp === 9000, 'Pharaoh Levels add 250 LP each, 3000 at most');
+  ok(rankedCpuSetup({ step: tierFloor(ASCEND_TIER), kp: 0, asc: 2 }).lp === 5500 && rankedCpuSetup({ step: 0, kp: 0, asc: 0 }).lp === undefined, 'each Ascension adds 500 LP');
+  // Ascension
+  ok(ascendRanked(sp, pharaoh({ kp: 9 }), day(9, 13)) === null, "can't Ascend before Pharaoh 1");
+  ok(ascendRanked(sp, { ...pharaoh({ kp: 20 }), ranked: { ...pharaoh({ kp: 20 }).ranked!, pending: { season: '2026-10' } } }, day(9, 13)) === null, "can't Ascend with a duel waiting to be resumed");
+  let a = ascendRanked(sp, pharaoh({ kp: 23, lvlPeak: 2 }), day(9, 13))!;
+  let ap = rankedProgress(a.solo);
+  ok(a.paid && a.n === 1 && ap.step === tierFloor(ASCEND_TIER) && ap.kp === 0 && ap.asc === 1 && ap.peak === TOP && a.lines.filter((l) => l.startsWith("A booster pack")).length === 2, `Ascending: back to Diamond III, points to 0, a star, 2 packs (${stepName(ap.step)}, ${a.lines.join(" / ")})`);
+  ok(a.lines.some((l) => l.includes('Ascended')), 'and an Ascended title');
+  // the climb back pays no tier prize twice
+  let climb: SoloSave = at(a.solo, { step: TOP - 1, stars: starsAt(TOP - 1) - 1 });
+  const top = settleRanked(a.speed, climb, WIN, day(9, 14));
+  ok(top.after.step === TOP && top.newTier === null && !top.topPaid && !top.levelPaid, `reaching Pharaoh again after Ascending pays no tier prize twice (${top.after.step} ${top.newTier?.id} ${top.lines.join(" / ")} ${top.missions.length} ${top.goalPaid})`);
+  // prizes three times a season, the stars keep coming
+  let so = pharaoh({ kp: 10, ascPaid: 0 });
+  let paidN = 0;
+  for (let i = 0; i < 4; i++) {
+    a = ascendRanked(sp, so, day(9, 13))!;
+    if (a.paid) paidN++;
+    so = at(a.solo, { step: TOP, kp: 10 });
+  }
+  ap = rankedProgress(so);
+  ok(paidN === ASCENSION_PRIZES && ap.asc === 4, `Ascension prizes pay ${ASCENSION_PRIZES} times a season (${paidN}), stars keep counting (${ap.asc})`);
+  // a new season keeps the record and starts fresh
+  const nov = openRanked(sp, so, new Date(2026, 10, 2));
+  const np = rankedProgress(nov.solo);
+  ok(!np.asc && np.history[0].asc === 4, 'Ascensions reset with the season and stay in its record');
+  ok(np.fast === FAST_START, `a strong season earns a Fast start (${np.fast})`);
+  // Fast start: an extra star a win, FAST_START times
+  let fs: SoloSave = nov.solo;
+  let extra = 0;
+  for (let i = 0; i < FAST_START + 2; i++) {
+    const r = settleRanked(nov.speed, fs, WIN, new Date(2026, 10, 2, 9 + i));
+    if (r.fastStar) extra++;
+    fs = r.solo;
+  }
+  ok(extra === FAST_START && rankedProgress(fs).fast === 0, `Fast start pays ${FAST_START} extra stars, then stops (${extra})`);
+  ok(!rankedProgress(openRanked(sp, at(newSoloSave(), { season: '2026-10', step: 4, peak: 4, w: 30 }), new Date(2026, 10, 2)).solo).fast, 'no Fast start after a season below Gold');
+  // Streak Shield
+  let sh: SoloSave = at(newSoloSave(), { step: 7, stars: 2, peak: 7, paid: [0, 1, 2, 3], bonusDay: todayString(day(10)) });
+  for (let i = 0; i < SHIELD_STREAK; i++) sh = settleRanked(sp, sh, WIN, day(10, 9 + i)).solo;
+  ok(!!rankedProgress(sh).shield, `${SHIELD_STREAK} wins in a row earn a Streak Shield`);
+  const before = rankedProgress(sh);
+  const blocked = settleRanked(sp, sh, LOSS, day(10, 13));
+  ok(blocked.shieldUsed && blocked.gained === 0 && blocked.after.stars === before.stars && blocked.after.step === before.step && !rankedProgress(blocked.solo).shield, 'the Shield takes the next loss: no star lost, Shield gone');
+  ok(settleRanked(sp, blocked.solo, LOSS, day(10, 14)).gained === -1, 'the loss after that costs a star again');
+  const left = settleRanked(sp, sh, LEFT, day(10, 13));
+  ok(!left.shieldUsed && left.gained === -1, 'pressing Leave is never shielded');
+  const linkLoss = settleLinkRanked(sp, sh, 'l', 'Brother', day(10, 13));
+  ok(!!rankedProgress(linkLoss.solo).shield, 'a link battle loss leaves the Shield for Ranked Duels');
+  // Comeback
+  let cb: SoloSave = at(newSoloSave(), { step: 7, stars: 3, peak: 7, paid: [0, 1, 2, 3], bonusDay: todayString(day(11)) });
+  cb = settleRanked(sp, cb, LOSS, day(11, 9)).solo;
+  cb = settleRanked(sp, cb, LOSS, day(11, 10)).solo;
+  const cw = settleRanked(sp, cb, WIN, day(11, 11));
+  ok(cw.comeback && cw.gained === 2, `a win after ${COMEBACK_LOSSES} star-costing losses is a Comeback (+${cw.gained})`);
+  ok(!settleRanked(sp, cw.solo, WIN, day(11, 12)).comeback, 'once');
+  let floor: SoloSave = at(newSoloSave(), { step: tierFloor(3), stars: 0, peak: tierFloor(3), paid: [0, 1, 2, 3], bonusDay: todayString(day(12)) });
+  floor = settleRanked(sp, floor, LOSS, day(12, 9)).solo;
+  floor = settleRanked(sp, floor, LOSS, day(12, 10)).solo;
+  ok(!settleRanked(sp, floor, WIN, day(12, 11)).comeback, 'losses that cost nothing (at a tier floor) build no Comeback');
+  let bronze: SoloSave = at(newSoloSave(), { step: 1, stars: 1, peak: 1, paid: [0, 1], bonusDay: todayString(day(12)) });
+  bronze = settleRanked(sp, bronze, LOSS, day(12, 9)).solo;
+  bronze = settleRanked(sp, bronze, LOSS, day(12, 10)).solo;
+  ok(!settleRanked(sp, bronze, WIN, day(12, 11)).comeback, 'nor free losses in Bronze');
+  // season stats
+  let st: SoloSave = at(newSoloSave(), { step: 4, peak: 4, paid: [0, 1, 2] });
+  st = settleRanked(sp, st, WIN, day(13, 9), undefined, { deckId: 'A', foe: 'Bandit Keith' }).solo;
+  st = settleRanked(sp, st, WIN, day(13, 10), undefined, { deckId: 'A', foe: 'Bandit Keith' }).solo;
+  st = settleRanked(sp, st, LOSS, day(13, 11), undefined, { deckId: 'B', foe: 'Mako Tsunami' }).solo;
+  const stats = rankedStats(rankedProgress(st));
+  ok(stats.rate === 67 && stats.best === 2 && stats.deck?.id === 'A' && stats.deck.w === 2 && stats.foe?.name === 'Bandit Keith' && stats.foe.n === 2, `season stats (${JSON.stringify(stats)})`);
+  // the board counts the whole climb: Ascending never costs a place, Pharaoh Levels still count, and Ascensions need the wins (and a rank) behind them
+  const base = { name: 'X', color: '#123', step: TOP, stars: 0, kp: 50, w: 200, l: 3, at: 1 };
+  const d3 = tierFloor(ASCEND_TIER);
+  const board = boardFrom({
+    a: JSON.stringify({ ...base, name: 'Pharaoh50' }),
+    b: JSON.stringify({ ...base, name: 'Asc1', step: d3, kp: 0, asc: 1 }),
+    c: JSON.stringify({ ...base, name: 'Cheat', w: 20, kp: 20, asc: 5 }),
+    d: JSON.stringify({ ...base, name: 'Pharaoh5', kp: 5 }),
+    e: JSON.stringify({ ...base, name: 'RookieAsc', step: 0, kp: 0, asc: 3 }),
+    f: JSON.stringify({ ...base, name: 'Asc2', step: d3, kp: 0, asc: 2 }),
+  });
+  const order = board.map((r) => r.name);
+  ok(climbScore({ step: d3, stars: 0, kp: 0, asc: 1 }) === climbScore({ step: TOP, stars: 0, kp: ASCEND_LEVEL * PHARAOH_LEVEL }), 'Ascending keeps your place on the board exactly');
+  ok(order.indexOf('Asc2') < order.indexOf('Pharaoh50') && order.indexOf('Pharaoh50') < order.indexOf('Asc1') && order.indexOf('Asc1') < order.indexOf('Pharaoh5'), `the board sorts by the whole climb (${order.join(' ')})`);
+  ok(board.find((r) => r.name === 'Cheat')?.asc === undefined && board.find((r) => r.name === 'RookieAsc')?.asc === undefined, "Ascensions without the wins, or under Diamond, don't count");
+  // Ascending past Pharaoh 1 banks the extra points: the board place never drops
+  const hi = at(newSoloSave(), { step: TOP, kp: 23, peak: TOP, paid: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], w: 120, asc: 1, ascBank: 4 });
+  const hiP = rankedProgress(hi);
+  const up = ascendRanked(sp, hi, day(14, 9));
+  const upP = up ? rankedProgress(up.solo) : null;
+  ok(!!upP && upP.ascBank === 4 + 13 && climbScore(postOf('x', 'X', '#123', upP)) === climbScore(postOf('x', 'X', '#123', hiP)), `Ascending at 23 points keeps the board score (${upP && climbScore(postOf('x', 'X', '#123', upP))} vs ${climbScore(postOf('x', 'X', '#123', hiP))})`);
+  ok(boardFrom({ a: JSON.stringify({ ...base, name: 'Bank', w: 10, kp: 10, ab: 500 }) })[0]?.ab === undefined, 'banked points need an Ascension and the wins');
 }
 
 if (fails) {
