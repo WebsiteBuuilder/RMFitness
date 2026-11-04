@@ -69,6 +69,39 @@
     0 0 9cqh 3cqh #6f84d855;
   opacity: 0.9;
 }
+.sdr-dust {
+  left: 50% !important;
+  right: auto !important;
+  top: 8cqh !important;
+  bottom: auto !important;
+  width: 50cqh;
+  height: 56cqh;
+  margin-left: -25cqh;
+  background:
+    radial-gradient(circle at 18% 30%, #fff 0 0.35cqh, transparent 0.5cqh),
+    radial-gradient(circle at 70% 18%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 42% 62%, #fff 0 0.4cqh, transparent 0.55cqh),
+    radial-gradient(circle at 84% 54%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 30% 84%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 60% 40%, #fff 0 0.25cqh, transparent 0.4cqh);
+  opacity: 0;
+  animation: sdr-dust 9s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes sdr-dust {
+  0% {
+    opacity: 0;
+    transform: translateY(2cqh);
+  }
+  40%,
+  60% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4cqh);
+  }
+}
 .sdr-light {
   background: radial-gradient(48cqh 60cqh at 50% 46%, #9fb4ff40, transparent 70%);
   animation: sdr-breath 5s ease-in-out infinite;
@@ -158,7 +191,8 @@
   translate: calc(var(--sdr-px, 0) * -5px) 0;
   transition: translate 0.25s ease-out;
 }
-.sdr-ace {
+.sdr-ace,
+.sdr-acetag {
   translate: calc(var(--sdr-px, 0) * 3px) 0;
   transition: translate 0.25s ease-out;
 }
@@ -285,11 +319,13 @@
   inset: 0;
   background:
     /* base */
-    linear-gradient(90deg, var(--m3), var(--m2) 40%, var(--m1) 55%, var(--m3)) 50% 100% / 70% 14% no-repeat,
-    /* stem */
-    linear-gradient(90deg, var(--m3), var(--m1) 50%, var(--m3)) 50% 84% / 18% 22% no-repeat,
+    linear-gradient(90deg, var(--m3), var(--m2) 40%, var(--m1) 55%, var(--m3)) 50% 100% / 70% 16% no-repeat,
+    /* knot where the stem meets the base */
+    radial-gradient(closest-side, var(--m1), var(--m2) 60%, var(--m3) 95%, transparent) 50% 84% / 34% 14% no-repeat,
+    /* stem, running up into the bowl */
+    linear-gradient(90deg, var(--m3), var(--m1) 50%, var(--m3)) 50% 75% / 18% 40% no-repeat,
     /* bowl */
-    radial-gradient(120% 90% at 50% 0, var(--m1) 0, var(--m2) 45%, var(--m3) 75%, transparent 76%) 50% 6% / 86% 62% no-repeat;
+    radial-gradient(120% 92% at 50% 0, var(--m1) 0, var(--m2) 45%, var(--m3) 76%, transparent 77%) 50% 0 / 86% 66% no-repeat;
 }
 .sdr-tro.cup .sdr-cup {
   bottom: 4.4cqh;
@@ -406,14 +442,14 @@
 }
 .sdr-note {
   position: absolute;
-  width: 46%;
+  width: 47%;
   height: 34%;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   gap: 0.4cqh;
-  padding: 1cqh;
+  padding: 1cqh 0.3cqh;
   background: linear-gradient(180deg, #fffbe9, #efe2b8);
   color: #2a2010;
   box-shadow: 0 0.8cqh 1.2cqh #0007;
@@ -421,7 +457,8 @@
   line-height: 1.05;
 }
 .sdr-note b {
-  font-size: clamp(8px, 3.5cqh, 13px);
+  font-size: clamp(8px, 3.2cqh, 13px);
+  letter-spacing: -0.02em;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -525,9 +562,18 @@
   transform: translateX(-50%);
   z-index: 3;
 }
-.sdr-ace .sdr-tag {
-  bottom: 1cqh;
+.sdr-acetag {
+  left: 50%;
+  bottom: 19cqh;
+  width: 0;
+  height: 6cqh;
+  z-index: 6;
+}
+.sdr-acetag .sdr-tag {
+  max-width: 40cqh;
+  bottom: 0;
   transform: translate(-50%, 0);
+  pointer-events: auto;
 }
 .sdr-acefig {
   position: absolute;
@@ -579,7 +625,6 @@
   width: 66cqh;
   height: 66cqh;
   margin-left: -33cqh;
-  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1.6cqh #9fb4ffaa);
   transform-origin: 50% 100%;
   opacity: 0;
   transition: opacity 0.3s ease-out;
@@ -589,8 +634,19 @@
 .sdr-cutw.in {
   opacity: 1;
 }
-.b5 .sdr-cutw {
-  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1.8cqh #ffc93acc);
+/* the glow is a still halo behind the figure (a moving drop-shadow is heavy on weak phones) */
+.sdr-halo {
+  position: absolute;
+  left: 50%;
+  bottom: 8cqh;
+  width: 62cqh;
+  height: 58cqh;
+  margin-left: -31cqh;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(159, 180, 255, 0.42), rgba(159, 180, 255, 0.12) 60%, transparent);
+}
+.b5 .sdr-halo {
+  background: radial-gradient(closest-side, rgba(255, 215, 106, 0.5), rgba(255, 201, 58, 0.14) 60%, transparent);
 }
 .sdr-cut {
   position: absolute;
@@ -671,9 +727,6 @@
 .sdr-matezone:active .sdr-turn,
 .sdr-matezone:focus-visible .sdr-walk,
 .sdr-matezone:focus-visible .sdr-turn {
-  animation-play-state: paused;
-}
-.sdr-turn {
   animation-play-state: paused;
 }
 .sdr-turn {
@@ -783,11 +836,14 @@
   color: #ffe9a8;
   z-index: 1;
 }
-/* the deck's name sits above the box (the chest's tag is beside it, below) */
+/* the deck's name sits on the table under its box; the chest's tag sits above the chest, so
+   the two never meet on a narrow phone */
 .sdr-deckbox .sdr-tag {
   max-width: 40cqh;
+}
+.sdr-packs .sdr-tag {
   bottom: auto;
-  top: -2.6cqh;
+  top: -2.4cqh;
   transform: translate(-50%, -100%);
 }
 .sdr-packs {
@@ -917,10 +973,12 @@
   }
   .sdr-walls {
     background:
-      radial-gradient(9cqh 14cqh at 14% 28%, #ffd76a55, transparent 70%),
-      radial-gradient(9cqh 14cqh at 86% 28%, #ffd76a55, transparent 70%),
-      radial-gradient(1.4cqh 2.2cqh at 14% 28%, #fff3c8, transparent),
-      radial-gradient(1.4cqh 2.2cqh at 86% 28%, #fff3c8, transparent),
+      radial-gradient(14cqh 20cqh at 10% 26%, #ffd76a66, transparent 70%),
+      radial-gradient(14cqh 20cqh at 90% 26%, #ffd76a66, transparent 70%),
+      radial-gradient(2.2cqh 3.4cqh at 10% 26%, #fffbe6, #ffd76a 60%, transparent),
+      radial-gradient(2.2cqh 3.4cqh at 90% 26%, #fffbe6, #ffd76a 60%, transparent),
+      linear-gradient(#c9a24a, #7a5410) 10% 31% / 0.8cqh 6cqh no-repeat,
+      linear-gradient(#c9a24a, #7a5410) 90% 31% / 0.8cqh 6cqh no-repeat,
       repeating-linear-gradient(90deg, #ffffff06 0 1px, transparent 1px 64px),
       linear-gradient(180deg, transparent 0 63.4%, #c9a24a66 63.4% 64%, #00000055 64% 65%, transparent 65%),
       radial-gradient(120cqh 70cqh at 50% 30%, #2a3a7a 0, #17204c 45%, #0c1230 80%);

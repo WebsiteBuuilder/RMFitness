@@ -42,17 +42,27 @@ const PRESS_MS = 120;
 
 /** One thing in the room you can tap: a real button with a name tag under it. */
 function Spot({ cls, tag, hot, label, onPick, children }: { cls: string; tag?: ComponentChildren; hot?: boolean; label: string; onPick: () => void; children: ComponentChildren }) {
+  // one press at a time (a double tap opens its screen once), and no timer outlives the room
+  const busy = useRef(false);
+  const timers = useRef<number[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
   return (
     <button
       class={`sdr-spot ${cls} ${hot ? 'hot' : ''}`}
       aria-label={label}
       onClick={(e) => {
+        // keyboard and controller presses go straight there (the spring is for fingers)
+        if (e.detail === 0) return void (playBlip(), onPick());
+        if (busy.current) return;
+        busy.current = true;
         playBlip();
         // a quick press-and-spring on the thing itself, then the screen it opens
         const el = e.currentTarget as HTMLElement;
         el.classList.add('pop');
-        setTimeout(onPick, PRESS_MS);
-        setTimeout(() => el.classList.remove('pop'), 320);
+        timers.current.push(
+          window.setTimeout(onPick, PRESS_MS),
+          window.setTimeout(() => (el.classList.remove('pop'), (busy.current = false)), 320),
+        );
       }}
     >
       {children}
@@ -125,6 +135,7 @@ function AceFigure({ name, lv }: { name: string; lv: number }) {
   return (
     <span class={`sdr-acefig b${lv}`}>
       <i class="sdr-pillar" />
+      <i class="sdr-halo" />
       <i class="sdr-pedestal" />
       {fig && url && matte !== 'bad' ? (
         <i class={`sdr-cutw ${matte === 'ok' ? 'in' : ''}`}>
@@ -201,6 +212,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
       <div class="sdr-walls" aria-hidden="true">
         <i class="sdr-window" />
         <i class="sdr-light" />
+        <i class="sdr-dust" />
         <i class="sdr-floor" />
         <i class="sdr-rug" />
       </div>
@@ -245,9 +257,15 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
 
         {/* your Ace, standing behind you */}
         {ace && (
-          <Spot cls="sdr-ace" label={`Ace Monster: ${ace.name}${ace.ace ? `, ${bondTitle(ace.ace.lv)}` : ''}`} tag={ace.ace ? `Ace ★${ace.ace.lv}` : 'Pick an Ace'} onPick={() => go('ace')}>
+          <Spot cls="sdr-ace" label={`Ace Monster: ${ace.name}${ace.ace ? `, ${bondTitle(ace.ace.lv)}` : ''}`} onPick={() => go('ace')}>
             <AceFigure name={ace.name} lv={lv} />
           </Spot>
+        )}
+        {/* the Ace's tag is its own tap target above the floor, so the Mate's patch never takes it */}
+        {ace && (
+          <button class="sdr-spot sdr-acetag" tabIndex={-1} aria-hidden="true" onClick={() => (playBlip(), go('ace'))}>
+            <span class="sdr-tag">{ace.ace ? `Ace ★${ace.ace.lv}` : 'Pick an Ace'}</span>
+          </button>
         )}
 
         {/* your Mate, wandering */}
