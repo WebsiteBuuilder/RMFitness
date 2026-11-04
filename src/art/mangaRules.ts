@@ -6,6 +6,8 @@ export type MangaMode = 'big' | 'all' | 'off';
 
 /** How long the panel holds the frozen frame, real seconds at Animation speed 1×. */
 export const MANGA_HOLD_S = 0.95;
+/** ...and the brisker beat ("Every hit", or a panel soon after the last one). */
+export const MANGA_BRISK_S = 0.65;
 /** Under "Big hits", panels this close together skip the second one (unless it is huge). */
 export const MANGA_COOLDOWN_S = 7;
 /** Damage this big always gets a panel (cooldown or not), and the bigger "mega" look. */

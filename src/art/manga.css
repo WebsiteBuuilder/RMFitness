@@ -8,6 +8,8 @@
   --black: #0b0b0d;
   position: absolute;
   inset: 0;
+  /* over whatever else the blow put on the layer (numbers, flashes, captions) */
+  z-index: 5;
   display: none;
   pointer-events: none;
   contain: strict;
@@ -32,9 +34,13 @@
    panel's starburst say it (it shows again as it flies on into the Life Points) */
 body.art-manga-on .art-banner,
 body.art-manga-on .art-callout,
-body.art-manga-on .art-number {
-  opacity: 0;
-  transition: opacity 0.08s;
+body.art-manga-on .art-number,
+body.art-manga-on .art-caption,
+body.art-manga-on .lppop,
+body.art-manga-on .art-layer > :not(.art-manga) {
+  opacity: 0 !important;
+  /* (held with the frozen frame: the number flies on into the Life Points once the panel goes) */
+  animation-play-state: paused !important;
 }
 
 .mg-veil {
@@ -54,7 +60,7 @@ body.art-manga-on .art-number {
 .mg-frame {
   position: absolute;
   left: 50%;
-  top: 45%;
+  top: var(--mid, 45%);
   width: min(100vw, 980px);
   height: var(--ph);
   transform: translate(-50%, -50%);
@@ -89,13 +95,14 @@ body.art-manga-on .art-number {
   object-fit: cover;
   object-position: 50% 32%;
   /* black ink on paper */
-  filter: grayscale(1) contrast(1.9) brightness(1.14);
+  filter: grayscale(1) contrast(var(--ink-c, 1.9)) brightness(var(--ink-b, 1.14));
 }
 .mg-main .mg-art {
   will-change: transform;
   animation: mg-push var(--d) linear forwards;
 }
 .art-manga.no-art .mg-main .mg-art {
+  background: radial-gradient(circle at 50% 45%, var(--paper) 0 18%, #c9c2b0 60%);
   background: radial-gradient(circle at 50% 45%, var(--paper) 0 18%, color-mix(in srgb, var(--glow) 40%, var(--paper)) 60%);
 }
 /* screentone: dots thick in one corner, fading across */
@@ -110,7 +117,7 @@ body.art-manga-on .art-number {
 /* focus lines, two uneven sets so they read hand-ruled; clear in the middle */
 .mg-lines {
   position: absolute;
-  inset: -45%;
+  inset: -22%;
   background:
     repeating-conic-gradient(from 0deg at 50% 46%, rgba(10, 10, 12, 0.9) 0deg 0.55deg, transparent 0.55deg 3.3deg),
     repeating-conic-gradient(from 1.4deg at 50% 46%, rgba(10, 10, 12, 0.7) 0deg 0.3deg, transparent 0.3deg 5.1deg);
@@ -163,18 +170,18 @@ body.art-manga-on .art-number {
 }
 .mg-burst {
   position: absolute;
-  left: 50%;
-  bottom: -8%;
+  left: 38%;
+  bottom: -10%;
   z-index: 1;
   transform: translateX(-50%) rotate(calc(var(--dir) * -6deg));
   display: grid;
   place-items: center;
-  width: 138%;
+  width: 104%;
   aspect-ratio: 1.6;
-  font-family: Impact, 'Arial Black', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: Impact, 'Arial Black', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
   font-weight: 900;
   font-style: italic;
-  font-size: clamp(22px, 7.4vw, 46px);
+  font-size: clamp(18px, 5.8vw, 40px);
   color: #fff;
 }
 .mg-burst::before {
@@ -183,7 +190,6 @@ body.art-manga-on .art-number {
   inset: 0;
   background: #e5132c;
   clip-path: polygon(50% 0%, 58% 22%, 78% 6%, 74% 30%, 100% 24%, 82% 44%, 98% 62%, 74% 62%, 82% 92%, 60% 74%, 50% 100%, 42% 74%, 18% 92%, 26% 62%, 2% 62%, 18% 44%, 0% 24%, 26% 30%, 22% 6%, 42% 22%);
-  filter: drop-shadow(0 0 0 var(--black));
 }
 .mg-burst span {
   position: relative;
@@ -191,9 +197,13 @@ body.art-manga-on .art-number {
   paint-order: stroke fill;
   text-shadow: 0.05em 0.06em 0 var(--black);
 }
+.side-far .mg-burst {
+  left: 62%;
+}
 .mg-inset.text-only .mg-burst {
+  left: 40%;
   bottom: 18%;
-  width: 150%;
+  width: 135%;
   font-size: clamp(26px, 9vw, 56px);
 }
 
@@ -203,10 +213,10 @@ body.art-manga-on .art-number {
   left: 4%;
   top: 0;
   transform-origin: 30% 60%;
-  font-family: Impact, 'Arial Black', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: Impact, 'Arial Black', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
   font-weight: 900;
   font-style: italic;
-  font-size: calc(clamp(46px, 16vw, 128px) * var(--wl));
+  font-size: calc(clamp(42px, min(16vw, calc(var(--ph) * 0.36)), 128px) * var(--wl));
   line-height: 1;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -216,7 +226,6 @@ body.art-manga-on .art-number {
   text-shadow:
     0.06em 0.07em 0 var(--black),
     0 0 0.28em var(--glow);
-  will-change: transform, opacity;
   animation: mg-word var(--d) linear forwards;
 }
 .side-far .mg-word {
@@ -225,7 +234,7 @@ body.art-manga-on .art-number {
   transform-origin: 70% 60%;
 }
 .art-manga.mega .mg-word {
-  font-size: calc(clamp(54px, 19vw, 150px) * var(--wl));
+  font-size: calc(clamp(48px, min(19vw, calc(var(--ph) * 0.42)), 150px) * var(--wl));
 }
 .mg-kana {
   position: absolute;
@@ -412,5 +421,15 @@ body.art-manga-on .art-number {
   }
   .mg-kana {
     transform: rotate(calc(var(--dir) * 5deg));
+  }
+}
+
+/* (older Android WebViews draw the stroke over the letters: a thinner one there) */
+@supports not (paint-order: stroke) {
+  .mg-word {
+    -webkit-text-stroke-width: 0.025em;
+  }
+  .mg-burst span {
+    -webkit-text-stroke-width: 0.03em;
   }
 }

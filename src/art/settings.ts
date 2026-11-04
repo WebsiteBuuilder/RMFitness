@@ -118,6 +118,6 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
-    { label: `Manga panels: ${MANGA_NAMES[manga]}`, note: 'tap to change', onPick: () => setManga(nextManga(manga)) },
+    { label: `Manga: ${MANGA_NAMES[manga]}`, note: 'tap to change', onPick: () => setManga(nextManga(manga)) },
   ];
 }

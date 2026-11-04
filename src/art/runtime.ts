@@ -16,7 +16,7 @@ import { cueSting } from './cueSound';
 import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
 import { flickerAt, glitchAt, holoReveal, showAtFor, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
 import { calmMotion, getHolo, getManga } from './settings';
-import { insetText, inkFor, isMega, MANGA_HOLD_S, mangaWorthy, soundWordFor, type MangaHit } from './mangaRules';
+import { insetText, inkFor, isMega, MANGA_BRISK_S, MANGA_HOLD_S, mangaWorthy, soundWordFor, type MangaHit } from './mangaRules';
 import type { MangaHandle, MangaPanelOpts } from './mangaPanel';
 import { chainLift, chainNegate, chainResolve } from '../ui/duelSfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
@@ -83,6 +83,14 @@ export function lpBeat(side: 'top' | 'bottom', cls: string, ms = 400): DOMRect |
   el.classList.add(cls);
   setTimeout(() => el.classList.remove(cls), ms);
   return el.getBoundingClientRect();
+}
+
+/** Average brightness (0..1) of a small RGBA copy of an art, or undefined. */
+function brightness(px: Uint8ClampedArray | undefined): number | undefined {
+  if (!px?.length) return undefined;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+  return sum / (px.length / 4) / 255;
 }
 
 /** Summed screen flash (WebGL flash layer + post flash) never goes past this: the subject stays readable. */
@@ -363,7 +371,7 @@ export class Director {
   private unfreeze() {
     if (!this.mangaPaused) return;
     this.mangaPaused = false;
-    this.stage.pause = false;
+    this.stage.freeze = false;
   }
   /** Aces whose full entrance has played on this stage (owner:name) */
   private acesShown = new Set<string>();
@@ -679,6 +687,7 @@ export class Director {
 
   /** Leaving (or 3D turned off): drop everything. */
   clear() {
+    this.dropManga();
     this.stage.warp = 1;
     this.finaleUid = -1;
     this.slammed = -1;
@@ -711,6 +720,7 @@ export class Director {
   }
 
   dispose() {
+    this.dropManga();
     this.clear();
     this.veil.dispose();
     this.front.dispose();
@@ -3974,12 +3984,14 @@ export class Director {
       attackerLoses,
       sinceLast: (performance.now() - this.lastManga) / 1000,
     };
-    if (!mangaWorthy(h, getManga())) return;
+    const mode = getManga();
+    if (!mangaWorthy(h, mode)) return;
     const info = card(a.name);
     const sw = soundWordFor(info?.race, att.uid + (info?.id ?? 0));
     this.dropManga();
     const panel = this.ui.manga!({
       art: att.art?.art ?? null,
+      bright: brightness(att.art?.artPx),
       inset: h.destroys && tgt?.art ? tgt.art.art : null,
       insetText: insetText(h),
       word: sw.word,
@@ -3992,13 +4004,15 @@ export class Director {
     this.manga = panel;
     // (it counts from now: a second big hit in the same chain waits out the cooldown)
     this.lastManga = performance.now();
-    const hold = MANGA_HOLD_S / Math.max(1, this.timeScale);
+    // (every hit, or a second panel soon after the last: a brisker beat)
+    const brisk = !isMega(h) && (mode === 'all' || h.sinceLast < 25);
+    const hold = (brisk ? MANGA_BRISK_S : MANGA_HOLD_S) / Math.max(1, this.timeScale);
     tl.hold = hold;
     tl.at(hitAt + 0.05, () => {
       if (this.manga !== panel) return;
       // the stage stops drawing altogether while the panel holds (its last frame stays): free
       if (!panel.show(hold, () => this.unfreeze())) return;
-      this.stage.pause = true;
+      this.stage.freeze = true;
       this.mangaPaused = true;
       whoosh(0.16, 2400, 7000, 0.07);
       this.lastManga = performance.now();

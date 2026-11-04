@@ -7,6 +7,8 @@ import './manga.css';
 export interface MangaPanelOpts {
   /** the attacker's cropped art (square), or null when it has none */
   art: HTMLCanvasElement | null;
+  /** how bright that art is, 0..1 (dark art inks lighter, so it never turns to solid black) */
+  bright?: number;
   /** the defender's art, when the blow destroys a face-up monster */
   inset: HTMLCanvasElement | null;
   /** the damage ('-2400') or 'DESTROYED' */
@@ -48,6 +50,34 @@ function copy(src: HTMLCanvasElement | null, px: number): HTMLCanvasElement | nu
   return c;
 }
 
+/**
+ * Fits the panel into the gap between the two duelists' bars (Touch .tbar, Classic .pbar),
+ * so it never runs under a Life Points bar, the turn tab or the hand: sets --mid (the frame's
+ * centre, px from the layer's top) and --ph (its height). Off a duel screen the CSS defaults stay.
+ */
+function fitBand(el: HTMLElement, layer: HTMLElement, inset: boolean) {
+  const L = layer.getBoundingClientRect();
+  if (L.height <= 0) return;
+  let top = L.top;
+  let bottom = L.bottom;
+  for (const b of document.querySelectorAll<HTMLElement>('.tbar, .pbar')) {
+    const r = b.getBoundingClientRect();
+    if (r.height <= 0 || r.height > L.height * 0.4) continue;
+    if (r.top + r.height / 2 < L.top + L.height / 2) top = Math.max(top, r.bottom);
+    // (the bottom bar's turn tab stands just above it)
+    else bottom = Math.min(bottom, r.top - 30);
+  }
+  const gap = bottom - top;
+  if (gap < 160) return;
+  // room above for the sound word, below for the inset hanging off the panel
+  const word = Math.min(110, gap * 0.16);
+  const below = inset ? Math.min(70, gap * 0.11) : 14;
+  const ph = Math.max(140, Math.min(gap - word - below, L.width > L.height ? gap * 0.62 : 360));
+  const mid = top + word + (gap - word - below) / 2 - L.top;
+  el.style.setProperty('--ph', `${Math.round(ph)}px`);
+  el.style.setProperty('--mid', `${Math.round(mid)}px`);
+}
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
 export function prepManga(layer: HTMLElement, o: MangaPanelOpts): MangaHandle {
@@ -55,6 +85,9 @@ export function prepManga(layer: HTMLElement, o: MangaPanelOpts): MangaHandle {
   el.className = `art-manga side-${o.side}${o.mega ? ' mega' : ''}${o.direct ? ' direct' : ''}`;
   el.style.setProperty('--ink', o.ink[0]);
   el.style.setProperty('--glow', o.ink[1]);
+  const lum = o.bright ?? 0.45;
+  el.style.setProperty('--ink-b', (1.14 + Math.max(0, 0.42 - lum) * 1.6).toFixed(2));
+  el.style.setProperty('--ink-c', (1.9 - Math.max(0, 0.42 - lum) * 1.8).toFixed(2));
   // (a long word sets smaller so it never runs off a narrow phone)
   el.style.setProperty('--wl', String(Math.max(0.55, Math.min(1, 8.4 / Math.max(5, o.word.length)))));
   el.innerHTML =
@@ -95,7 +128,14 @@ export function prepManga(layer: HTMLElement, o: MangaPanelOpts): MangaHandle {
       state = 'on';
       gone = onGone;
       el.style.setProperty('--d', `${dur}s`);
+      // (a portrait cut-in still up from the declaration steps aside: the panel owns the hit)
+      layer.querySelectorAll(':scope > .cut-in').forEach((c) => c.remove());
+      fitBand(el, layer, !!(o.inset || o.insetText) && o.side === 'near');
       el.classList.add('on');
+      // (the word never runs off the screen: shrunk to fit, measured once untransformed)
+      const w = el.querySelector<HTMLElement>('.mg-word');
+      const room = Math.min(layer.clientWidth, 980) * 0.84;
+      if (w && w.offsetWidth > room) el.style.setProperty('--wl', (parseFloat(el.style.getPropertyValue('--wl')) * (room / w.offsetWidth)).toFixed(3));
       document.body.classList.add('art-manga-on');
       // (dev builds: a UI test can hold the panel to shoot it)
       if (!(import.meta.env.DEV && (window as { __mangaHold?: boolean }).__mangaHold)) timer = window.setTimeout(done, dur * 1000 + 40);
