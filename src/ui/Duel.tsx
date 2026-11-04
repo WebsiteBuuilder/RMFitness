@@ -17,6 +17,7 @@ import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { setScarsOn, useScarsOn } from './matScars';
 import { wearOf, ZoneWear } from './fieldWear';
 import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
@@ -118,6 +119,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   });
   // Heart of the Cards: your Draw Phase card waits on your deck for your swipe.
   const [drawGate, drawDone] = useHeartDraw(state, acting, !!e.speed && canAct && !vet && drawStyle === 'swipe' && state.turnPlayer === acting);
+  const scarsShown = useScarsOn();
   const [callouts, setCallouts] = useState(calloutMode);
   useEffect(() => {
     const on = () => setCallouts(calloutMode());
@@ -686,6 +688,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
                 ...(e.speed ? [{ label: `Attack callouts: ${CALLOUT_LABEL[callouts]}`, note: 'tap to change', onPick: () => setCalloutMode(NEXT_CALLOUT[callouts]) }] : []),
+                ...(e.speed && style === 'touch' ? [{ label: `Battle damage: ${scarsShown ? 'On' : 'Off'}`, note: 'marks where attacks land', onPick: () => setScarsOn(!scarsShown) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },
                 { label: 'Surrender', disabled: !canAct || state.winner !== null, onPick: () => (setShowMenu(false), setAskSurrender(true)) },
                 // Against the computer, walking out of a live Speed Duel is a surrender (asked first, and it counts),

@@ -1,0 +1,133 @@
+/* ---------- battle scars on the mat (matScars.tsx) ----------
+   One SVG over the mat's floor and the playmat halves, under the rows: a child of .tmat (its own
+   stacking context) with z-index -1, after the playmat halves and the danger cracks in DOM order.
+   Weather's front layer (.wx-front) paints over it from outside the mat. */
+.tscars {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  overflow: visible;
+  pointer-events: none;
+}
+/* every bright layer keeps a dark edge under it, so marks hold their shape on bright playmats */
+.tscars .sc-halo {
+  stroke: none;
+}
+.tscars path {
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.tscars .sc-soot { fill: var(--sc-soot); fill-opacity: 0.82; }
+.tscars .sc-pit { fill: var(--sc-pit, #000); fill-opacity: 0.85; }
+.tscars .sc-burn,
+.tscars .sc-edge,
+.tscars .sc-hot {
+  stroke: var(--sc-under);
+  stroke-width: 1.4px;
+  stroke-opacity: 0.75;
+}
+.tscars .sc-burn { fill: var(--sc-burn); fill-opacity: 0.85; }
+.tscars .sc-edge { fill: var(--sc-edge); fill-opacity: 0.85; }
+.tscars .sc-hot { fill: var(--sc-hot); fill-opacity: 0.95; }
+
+/* the Attributes */
+.sc-fire {
+  --sc-halo: #ff4a10;
+  --sc-halo-a: 0.2;
+  --sc-soot: #0c0402;
+  --sc-burn: #7a2a08;
+  --sc-edge: #ff9a40;
+  --sc-hot: #ffb347;
+  --sc-under: #1c0600;
+}
+.sc-water {
+  --sc-halo: #aef0ff;
+  --sc-halo-a: 0.2;
+  --sc-soot: #021822;
+  --sc-pit: #0b3242;
+  --sc-burn: #5fc8e8;
+  --sc-edge: #e6fbff;
+  --sc-hot: #ffffff;
+  --sc-under: #03202c;
+}
+.sc-wind {
+  --sc-halo: #8affc0;
+  --sc-halo-a: 0.12;
+  --sc-soot: #03120a;
+  --sc-burn: #5ee0a0;
+  --sc-edge: #d6ffe9;
+  --sc-hot: #ffffff;
+  --sc-under: #021008;
+}
+.sc-earth,
+.sc-none {
+  --sc-halo: #6a4418;
+  --sc-halo-a: 0.26;
+  --sc-soot: #0d0804;
+  --sc-pit: #000;
+  --sc-burn: #8a5a28;
+  --sc-edge: #d2b07a;
+  --sc-hot: #ffd9a0;
+  --sc-under: #120a02;
+}
+.sc-light {
+  --sc-halo: #fff0a8;
+  --sc-halo-a: 0.18;
+  --sc-soot: #1a1204;
+  --sc-burn: #ffd65a;
+  --sc-edge: #fff3c4;
+  --sc-hot: #fffbe8;
+  --sc-under: #2a1a00;
+}
+.sc-divine {
+  --sc-halo: #ffd040;
+  --sc-halo-a: 0.24;
+  --sc-soot: #1e1200;
+  --sc-burn: #ffc21a;
+  --sc-edge: #fff0b0;
+  --sc-hot: #ffffff;
+  --sc-under: #2e1a00;
+}
+.sc-dark {
+  --sc-halo: #3c0856;
+  --sc-halo-a: 0.4;
+  --sc-soot: #0a0210;
+  --sc-burn: #9a3ee0;
+  --sc-edge: #c27aff;
+  --sc-hot: #e9a8ff;
+  --sc-under: #000;
+}
+
+/* ---- the newest mark lands: the blow spreads out from the impact, the trail burns in behind it ---- */
+.tscars .sc.fresh .sc-halo,
+.tscars .sc.fresh .sc-hit {
+  transform-box: view-box;
+  transform-origin: var(--ix) var(--iy);
+  animation: sc-land 0.55s cubic-bezier(0.15, 0.8, 0.3, 1) 0.05s both;
+}
+.tscars .sc.fresh .sc-trail {
+  animation: sc-trail 0.45s ease-out both;
+}
+@keyframes sc-land {
+  0% { transform: scale(0.25); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sc-trail {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+/* a cinematic is up: the mark waits for it */
+body.art-on .tscars .sc.fresh,
+body.art-on .tscars .sc.fresh * {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tscars .sc.fresh,
+  .tscars .sc.fresh * {
+    animation: none !important;
+  }
+}

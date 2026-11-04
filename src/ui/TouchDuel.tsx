@@ -29,6 +29,7 @@ import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters
 import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
+import { MatScars } from './matScars';
 import { wearKey, ZoneWear } from './fieldWear';
 
 type Action = Parameters<DuelSession['send']>[0];
@@ -906,6 +907,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
+          {e.speed && <MatScars state={state} near={acting} />}
           <div class="trow opp">
             {deck(oppId)}
             {opp.sz

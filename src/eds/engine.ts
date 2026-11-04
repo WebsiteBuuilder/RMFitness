@@ -9,6 +9,7 @@ import { getSkill } from './skills';
 import { nameRule, setNameEngine } from './names';
 import { noteLevelEvent } from '../level/leveling';
 import { TAG_LP, swapIn, type TagTeam } from './tag';
+import { SCAR_CAP, attrCode } from './scars';
 
 export type Choice = { picks: number[] } | 'cancel' | 'pass' | true | false;
 export type Step = Generator<Prompt, void, Choice>;
@@ -3807,6 +3808,22 @@ export class Engine {
     }
   }
 
+  /** Speed Duel battle scars: where an attack landed, kept for the rest of the duel and drawn on the mat
+   *  in the attacker's Attribute (src/ui/matScars.tsx). In the state, so both phones, a rejoin and a
+   *  replay show the same marks. [attacker's side, attacker's zone, defender's zone or -1 for a direct
+   *  attack, Attribute code, running number (its seed)]; the oldest drop off past SCAR_CAP. */
+  private scar(attacker: FieldCard, defender: Pid, target: FieldCard | null) {
+    if (!this.speed) return;
+    const a = this.find(attacker.uid);
+    const t = target ? this.find(target.uid) : null;
+    if (!a || a.loc.zone !== 'mz') return;
+    const list = (this.state.fx.scars ??= []) as number[][];
+    const n = ((this.state.fx.scarN as number | undefined) ?? 0) + 1;
+    this.state.fx.scarN = n;
+    list.push([other(defender), a.loc.index, t && t.loc.zone === 'mz' ? t.loc.index : -1, attrCode(this.info(attacker.name).attribute), n]);
+    if (list.length > SCAR_CAP) list.splice(0, list.length - SCAR_CAP);
+  }
+
   private *damageStep(player: Pid, attacker: FieldCard, target: FieldCard | null): Step {
     const opp = other(player);
     const aEff = this.effectOn(attacker);
@@ -3822,6 +3839,7 @@ export class Engine {
       let dmg = this.atkOf(attacker) + this.attackBonus(attacker, null);
       dmg = yield* this.kuriboh(opp, dmg);
       this.event('hit', { uid: attacker.uid, player: opp });
+      this.scar(attacker, opp, null);
       this.battleDamage(opp, dmg, attacker, null);
       if (dmg > 0 && this.state.winner === null) {
         if (aEff?.onBattleDamage) yield* this.trig(attacker.uid, player, this.as(player, aEff.onBattleDamage(this, attacker, player)));
@@ -3866,6 +3884,7 @@ export class Engine {
     if (target.pos === 'atk') {
       const tAtk = this.atkOf(target);
       this.event('hit', { uid: target.uid, player: opp });
+      this.scar(attacker, opp, target);
       if (atk > tAtk) {
         destroyed.push(target.uid);
         const dmg = yield* this.kuriboh(opp, atk - tAtk);
@@ -3889,6 +3908,7 @@ export class Engine {
       const mult = tEff?.defenseMult?.(this, target, attacker) ?? 1;
       const tDef = Math.floor(this.defOf(target) * mult);
       this.event('hit', { uid: target.uid, player: opp });
+      this.scar(attacker, opp, target);
       if (atk > tDef) {
         destroyed.push(target.uid);
         this.log(player, `${attacker.name} destroys ${target.name}`);
