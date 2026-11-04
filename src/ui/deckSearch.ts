@@ -41,7 +41,9 @@ export function parseQuery(q: string): { words: string[]; stats: { stat: 'atk' |
     if (s) stats.push({ stat: s[1] as 'atk' | 'def', op: s[2] ?? '=', n: Number(s[3]) });
     return ' ';
   });
-  return { words: normSearch(rest).split(' ').filter(Boolean), stats };
+  // "atk" or "def>" still being typed: wait for the number instead of finding nothing
+  const half = rest.replace(/\b(atk|def)\s*(>=|<=|>|<|=)?\s*$/, ' ');
+  return { words: normSearch(half).split(' ').filter(Boolean), stats };
 }
 
 /**

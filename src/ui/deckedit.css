@@ -861,7 +861,32 @@
   margin: 0;
 }
 .dk-skillsearch {
+  display: block;
   width: 100%;
+  max-width: none;
+  flex: none;
   margin: 0 0 8px;
   box-sizing: border-box;
+}
+/* in All cards, the cards you'd have to craft read as clearly not yours */
+.dk-poolgrid .dk-tile.unowned .cimg {
+  filter: grayscale(0.9) brightness(0.68);
+}
+.dk-poolgrid .dk-tile.unowned:active .cimg {
+  filter: grayscale(0.4) brightness(0.9);
+}
+/* Limited cards say so in words, not a lone number that reads like a price */
+.dk-lim.dk-lim-n {
+  width: auto;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+/* a button the card sheet can't use right now looks plainly off */
+.dk-view-acts .gbtn:disabled {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+.dk-skills + .hint {
+  text-align: center;
 }

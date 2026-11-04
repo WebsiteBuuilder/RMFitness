@@ -623,6 +623,10 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   };
   const [minAtk, setMinAtk] = useState(0);
   const [skillQ, setSkillQ] = useState('');
+  const skillQuery = useMemo(() => parseQuery(skillQ), [skillQ]);
+  useEffect(() => {
+    if (!skillPick) setSkillQ('');
+  }, [skillPick]);
   /** a card just crafted with "Craft & add": it goes in once the new copy reaches the collection */
   const [addAfterCraft, setAddAfterCraft] = useState<{ n: string; had: number } | null>(null);
   const [size, setSizeState] = useState<TileSize>(savedSize);
@@ -728,7 +732,14 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
     };
   });
 
-  const query = useMemo(() => parseQuery(q), [q]);
+  // the list follows the box a beat behind the typing, so fast thumbs never wait on it
+  const [dq, setDq] = useState(q);
+  useEffect(() => {
+    if (q === dq) return;
+    const t = setTimeout(() => setDq(q), q ? 110 : 0);
+    return () => clearTimeout(t);
+  }, [q]);
+  const query = useMemo(() => parseQuery(dq), [dq]);
   const matches = (name: string) => {
     const c = card(name);
     if (!c) return false;
@@ -783,13 +794,16 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
     setAddAfterCraft(null);
   }, [collection, addAfterCraft]);
 
-  const cmp = sorter(sort);
+  // every card's place in the chosen sort, worked out once per sort instead of on each keystroke
+  const order = useMemo(() => new Map(speedCards().map((c) => c.name).sort(sorter(sort)).map((n, i) => [n, i])), [sort]);
+  const cmp = (a: string, b: string) => (order.get(a) ?? 0) - (order.get(b) ?? 0);
   const rows = useMemo(
     () => {
       const hits = pool.filter((c) => matches(c.name) && (showAll || !unplayableReason(c.name)));
-      // a search puts the best name matches first
-      // (shorter names first among equals: "blue eyes" finds Blue-Eyes White Dragon before the Fusions)
-      const rank = new Map(query.words.length ? hits.map((c) => [c.name, matchRank(c, query) * 100 + Math.min(99, c.name.length)]) : []);
+      // a search puts the best name matches first; among equals your Sort decides, or with the
+      // default sort the shorter name ("blue eyes" finds Blue-Eyes White Dragon before the Fusions)
+      const short = sort === 'type' || sort === 'name';
+      const rank = new Map(query.words.length ? hits.map((c) => [c.name, matchRank(c, query) * 100 + (short ? Math.min(99, c.name.length) : 0)]) : []);
       const list = hits.map((c) => c.name).sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0) || cmp(a, b));
       // All: your cards before the ones you'd have to craft
       if (allOn && collection && !deck.open) {
@@ -800,9 +814,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
       if (!craftOn || !crafter) return list;
       const afford = (n: string) => Number(crafter.cost(n) <= crafter.chips);
       const none = (n: string) => Number(!ownsCard(n));
-      return list.sort((a, b) => afford(b) - afford(a) || none(b) - none(a));
+      return list.sort((a, b) => Math.floor((rank.get(a) ?? 0) / 100) - Math.floor((rank.get(b) ?? 0) / 100) || afford(b) - afford(a) || none(b) - none(a));
     },
-    [pool, kind, setF, attr, lvl, query, inText, showAll, sort, craftOn, allOn, minAtk, collection, crafter?.chips],
+    [pool, kind, setF, attr, lvl, query, inText, showAll, order, craftOn, allOn, minAtk, collection, crafter?.chips],
   );
   const shown = rows.slice(0, limit);
   /** when Mine or Craft finds nothing, how many cards the same search finds in the whole game */
@@ -822,6 +836,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   const main = [...deck.main].sort(byType);
   const extra = [...deck.extra].sort(byType);
   const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
+  const clearSearch = () => (setKind('all'), setAttr('all'), setLvl('all'), setSetF('all'), setQ(''), setMinAtk(0), setLimit(PAGE));
   const filtered = kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!q || !!minAtk;
 
   const openPool = (n: string) => (playBlip(), setViewFromDeck(false), setView({ n, list: rows }));
@@ -941,17 +956,17 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
               {f === 'all' ? 'All' : f === 'monster' ? 'Monster' : f === 'spell' ? 'Spell' : f === 'trap' ? 'Trap' : 'Extra'}
             </button>
           ))}
-          <button class={`chip ${moreFilters || attr !== 'all' || lvl !== 'all' || setF !== 'all' || minAtk ? 'on' : ''}`} onClick={() => setMoreFilters(!moreFilters)} aria-label="More filters and sort">
-            Sort ▾
-          </button>
         </div>
         <div class="filters dk-filters">
           <input class="search" type="search" enterKeyHint="search" placeholder={inText ? 'Name, type or card text' : 'Name or type: dragon, dark, atk>2000'} value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
           <button class={`chip ${inText ? 'on' : ''}`} onClick={() => setInText(!inText)} title="Search card text too">
             In text
           </button>
-          {filtered && (
-            <button class="chip" onClick={() => (setKind('all'), setAttr('all'), setLvl('all'), setSetF('all'), setQ(''), setMinAtk(0), setLimit(PAGE))}>
+          <button class={`chip ${moreFilters || attr !== 'all' || lvl !== 'all' || setF !== 'all' || minAtk ? 'on' : ''}`} onClick={() => setMoreFilters(!moreFilters)} aria-label="More filters, sort, card size and Quick add">
+            More ▾
+          </button>
+          {(kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!minAtk) && (
+            <button class="chip" onClick={clearSearch}>
               Clear
             </button>
           )}
@@ -1012,6 +1027,14 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 ))}
               </select>
             </label>
+            <div class="dk-tools">
+              <button class="chip dk-size" onClick={() => (playBlip(), nextSize())} aria-label={`Card size ${size.toUpperCase()}: tap to change`}>
+                Size {size.toUpperCase()}
+              </button>
+              <button class={`chip dk-quick ${quick ? 'on' : ''}`} role="switch" aria-checked={quick} onClick={() => (playBlip(), setQuick(!quick))}>
+                Quick add {quick ? 'on' : 'off'}
+              </button>
+            </div>
             <button class="chip" onClick={() => (setShowAll(!showAll), setLimit(PAGE))}>
               {showAll ? 'Hide cards not in the game' : 'Show cards not in the game'}
             </button>
@@ -1035,6 +1058,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             )}
           </div>
         )}
+        {rows.length > 0 && (
         <p class="hint dk-hint">
           <span>
             {craftOn && crafter
@@ -1044,14 +1068,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 : `${rows.length} card${rows.length === 1 ? '' : 's'} · ${quick ? 'tap to add · hold to read' : 'tap to read, then Add'}`}
           </span>
         </p>
-        <div class="dk-tools">
-          <button class="chip dk-size" onClick={() => (playBlip(), nextSize())} aria-label={`Card size ${size.toUpperCase()}: tap to change`}>
-            Size {size.toUpperCase()}
-          </button>
-          <button class={`chip dk-quick ${quick ? 'on' : ''}`} role="switch" aria-checked={quick} onClick={() => (playBlip(), setQuick(!quick))}>
-            Quick add {quick ? 'on' : 'off'}
-          </button>
-        </div>
+        )}
         {shown.length === 0 && (
           <div class="dk-empty">
             <p>{q ? `No ${show === 'mine' ? 'cards of yours' : show === 'craft' ? 'cards to craft' : 'cards'} match "${q}".` : 'No cards match these filters.'}</p>
@@ -1060,9 +1077,9 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 See {elsewhere} in All cards
               </button>
             )}
-            {filtered && (
-              <button class="chip" onClick={() => (setKind('all'), setAttr('all'), setLvl('all'), setSetF('all'), setQ(''), setMinAtk(0), setLimit(PAGE))}>
-                Clear the search
+            {(filtered || show !== 'all') && (
+              <button class="chip" onClick={() => (clearSearch(), collection && setShow('all'))}>
+                {filtered ? 'Clear the search' : 'Show all cards'}
               </button>
             )}
           </div>
@@ -1085,9 +1102,13 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 {...tile(() => (quick && mine ? addCard(n) : openPool(n)), () => openPool(n))}
               >
                 <CardImg name={n} />
-                {limitStatus(n) && <i class="dk-lim">{limitStatus(n) === 'Forbidden' ? '⊘' : limitStatus(n)!.slice(-1)}</i>}
+                {limitStatus(n) && (
+                  <i class={`dk-lim ${limitStatus(n) === 'Forbidden' ? '' : 'dk-lim-n'}`} title={limitStatus(n)!}>
+                    {limitStatus(n) === 'Forbidden' ? '⊘' : `Lim ${limitStatus(n)!.slice(-1)}`}
+                  </i>
+                )}
                 {mine && (
-                  <i class={`dk-own ${craftOn || (allOn && crafter && craftable(n)) ? 'dk-own-left' : ''}`}>
+                  <i class={`dk-own ${craftOn ? 'dk-own-left' : ''}`}>
                     {inDeck > 0 ? `${inDeck}/` : ''}
                     {collection ? Math.min(collection[n] ?? 0, 9) : COPIES}
                   </i>
@@ -1125,7 +1146,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             <input class="search dk-skillsearch" type="search" enterKeyHint="search" placeholder="Search Skills or a duelist: Kaiba, draw" value={skillQ} onInput={(ev) => setSkillQ((ev.target as HTMLInputElement).value)} />
             <div class="cardlist dk-skills">
               {skills
-                .filter((sk) => getSkill(sk.name) && (!skillQ || cardMatches(sk, parseQuery(skillQ), true)))
+                .filter((sk) => getSkill(sk.name) && (!skillQ || cardMatches(sk, skillQuery, true)))
                 // yours first, then the ones you could craft
                 .sort((a, b) => Number(ownsCard(b.name)) - Number(ownsCard(a.name)))
                 .map((sk) => (
@@ -1155,6 +1176,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                   </button>
                 ))}
             </div>
+            {skillQ && !skills.some((sk) => getSkill(sk.name) && cardMatches(sk, skillQuery, true)) && <p class="hint">No Skills match "{skillQ}".</p>}
           </Win>
         </Overlay>
       )}
@@ -1178,7 +1200,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
           owned={ownedCopies(view.n)}
           why={whyNot(view.n)}
           craft={crafter && collection ? crafter : undefined}
-          craftList={(craftOn || (allOn && !ownsCard(view.n))) && !viewFromDeck}
+          craftList={craftOn && !viewFromDeck}
           fits={!roomFor(view.n) && copies(view.n) === ownedCopies(view.n)}
           onCrafted={(added) => added && setAddAfterCraft({ n: view.n, had: collection?.[view.n] ?? 0 })}
           zoom={zoom === view.n}
