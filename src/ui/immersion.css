@@ -162,6 +162,7 @@
   border: 1px solid #7fb4ff90;
   box-shadow: 0 4px 14px #0008;
   pointer-events: none;
+  transition: left 0.18s ease-out, top 0.18s ease-out;
   animation: hd-fade 0.3s 0.15s ease-out both;
 }
 .hd-words {
