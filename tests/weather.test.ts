@@ -1,6 +1,6 @@
 // Weather and time of day: the hour follows the turns, the sky follows the soundtrack's
 // Life Point levels, a Field Spell changes what falls, and the storm breaks when the duel ends.
-import { precipFor, skyFor, timeOfDay, weatherFor } from '../src/ui/weatherRules';
+import { precipFor, skyFor, STRIKE_GAP, timeOfDay, weatherFor } from '../src/ui/weatherRules';
 import { DB } from '../src/eds/db';
 import { DB as KIT } from './speedkit';
 import type { DuelState } from '../src/eds/types';
@@ -38,6 +38,9 @@ ok(w1.tod === 'day' && w1.sky === 'clear' && w1.precip === 'rain', 'a fresh duel
 ok(weatherFor(st([900, 4000], 5)).sky === 'storm', 'a duelist at 900 LP brings the storm');
 ok(weatherFor(st([900, 0], 6, 1)).sky === 'clear', 'the storm breaks when the duel is won');
 ok(weatherFor(st([4000, 4000], 1, null, 'Molten Destruction')).precip === 'ash', 'Molten Destruction rains ash');
+
+// --- photosensitivity: a strike flickers twice, so strikes stay at least 1.5 s apart (< 3 flashes a second)
+ok(STRIKE_GAP >= 1500, `lightning strikes at least 1.5 s apart (${STRIKE_GAP} ms)`);
 
 if (fails) {
   console.log(`${fails} weather check(s) failed`);

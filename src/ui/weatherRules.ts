@@ -16,6 +16,12 @@ export type TimeOfDay = 'day' | 'golden' | 'dusk' | 'night';
 export type Sky = 'clear' | 'rain' | 'storm';
 export type Precip = 'rain' | 'ash' | 'sand';
 
+/**
+ * The shortest gap between two lightning strikes (ms). Each strike flickers twice, so this
+ * keeps the screen under three flashes a second (photosensitivity); never lower than 1500.
+ */
+export const STRIKE_GAP = 1800;
+
 export interface Weather {
   tod: TimeOfDay;
   sky: Sky;

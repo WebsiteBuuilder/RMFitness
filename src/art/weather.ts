@@ -117,7 +117,7 @@ export class WeatherFx {
     // (left of centre: the opponent's panel sits over the top right on wide screens)
     const x0 = this.w * (0.14 + Math.random() * 0.46);
     const y1 = this.h * (0.3 + Math.random() * 0.18);
-    const pts = [x0, -6];
+    const pts = [x0, -this.h * 0.04];
     let x = x0;
     const steps = 11;
     for (let i = 1; i <= steps; i++) {
@@ -161,10 +161,8 @@ export class WeatherFx {
   private frame = (now: number) => {
     this.raf = 0;
     if (this.paused) return;
-    if (typeof document !== 'undefined' && document.hidden) {
-      this.raf = requestAnimationFrame(this.frame);
-      return;
-    }
+    // (a hidden tab: stop here; coming back wakes it)
+    if (typeof document !== 'undefined' && document.hidden) return;
     const since = this.last ? now - this.last : this.frameMs;
     // (reduced motion: a slow 10 frames a second)
     if (since < (this.reduced ? 100 : this.frameMs) - 2) {
@@ -205,28 +203,37 @@ export class WeatherFx {
     }
     // splashes on the mat (rain only): small rings that open and fade
     if (this.kind === 'rain' && this.count > 0 && !this.reduced) {
-      const want = this.amount * 12 * dt * 30;
+      const want = this.amount * 7 * dt * 30;
       for (let i = 0; i < want; i++) if (Math.random() < want - i) this.splashes.push(w * (0.08 + Math.random() * 0.84), h * (0.12 + Math.random() * 0.8), 0);
     }
     if (this.splashes.length) {
-      c.beginPath();
+      // a splash: a soft flat drop that spreads and fades in a moment, with two droplets kicked up
       const s = this.splashes;
       let j = 0;
       for (let i = 0; i < s.length; i += 3) {
         const age = s[i + 2] + dt;
-        if (age > 0.24) continue;
+        if (age > 0.16) continue;
         s[j] = s[i];
         s[j + 1] = s[i + 1];
         s[j + 2] = age;
         j += 3;
-        const r = (1 + age * 18) * dpr;
-        c.moveTo(s[i] + r, s[i + 1]);
-        c.ellipse(s[i], s[i + 1], r, r * 0.38, 0, 0, Math.PI * 2);
       }
       s.length = j;
-      c.lineWidth = 1 * dpr;
-      c.strokeStyle = 'rgba(210,228,255,0.34)';
-      c.stroke();
+      for (const young of [true, false]) {
+        c.beginPath();
+        for (let i = 0; i < s.length; i += 3) {
+          const age = s[i + 2];
+          if (age < 0.07 !== young) continue;
+          const r = (1.2 + age * 16) * dpr;
+          c.moveTo(s[i] + r, s[i + 1]);
+          c.ellipse(s[i], s[i + 1], r, r * 0.3, 0, 0, Math.PI * 2);
+          const up = age * 60 * dpr;
+          c.rect(s[i] - r * 0.6, s[i + 1] - up, dpr, dpr);
+          c.rect(s[i] + r * 0.6, s[i + 1] - up * 0.8, dpr, dpr);
+        }
+        c.fillStyle = young ? 'rgba(215,230,255,0.22)' : 'rgba(215,230,255,0.09)';
+        c.fill();
+      }
     }
     if (this.bolts.length) this.drawBolts(now);
   }
@@ -238,22 +245,33 @@ export class WeatherFx {
     const fall = h * (this.reduced ? 0.4 : 1.6) * dt;
     // (a storm's wind gusts: the slant leans and eases back)
     const wind = this.wind + (this.target > 0.8 && !this.reduced ? Math.sin(performance.now() / 1700) * 0.12 + Math.sin(performance.now() / 610) * 0.04 : 0);
+    for (let i = 0; i < this.count; i++) {
+      const o = i * 5;
+      const sp = d[o + 3] * fall;
+      d[o] += sp * wind;
+      d[o + 1] += sp;
+      if (d[o + 1] > h + 20 || d[o] > w + 40) this.seed(i, false);
+    }
+    // each streak in two parts, a faint tail and a brighter head, so it fades toward its tail
+    const WIDTH = [0.7, 1.05, 1.6];
+    const TAIL = ['rgba(170,190,235,0.07)', 'rgba(200,216,250,0.12)', 'rgba(225,235,255,0.18)'];
+    const HEAD = ['rgba(175,195,238,0.2)', 'rgba(208,222,252,0.32)', 'rgba(235,242,255,0.5)'];
     for (let layer = 0; layer < 3; layer++) {
-      c.beginPath();
-      for (let i = 0; i < this.count; i++) {
-        const o = i * 5;
-        if (d[o + 4] !== layer) continue;
-        const sp = d[o + 3] * fall;
-        d[o] += sp * wind;
-        d[o + 1] += sp;
-        if (d[o + 1] > h + 20 || d[o] > w + 40) this.seed(i, false);
-        const len = d[o + 2];
-        c.moveTo(d[o], d[o + 1]);
-        c.lineTo(d[o] - len * wind, d[o + 1] - len);
+      for (let part = 0; part < 2; part++) {
+        c.beginPath();
+        for (let i = 0; i < this.count; i++) {
+          const o = i * 5;
+          if (d[o + 4] !== layer) continue;
+          const len = d[o + 2];
+          const a = part ? 0 : 0.45;
+          const b = part ? 0.45 : 1;
+          c.moveTo(d[o] - len * wind * a, d[o + 1] - len * a);
+          c.lineTo(d[o] - len * wind * b, d[o + 1] - len * b);
+        }
+        c.lineWidth = WIDTH[layer] * dpr * (part ? 1 : 0.8);
+        c.strokeStyle = part ? HEAD[layer] : TAIL[layer];
+        c.stroke();
       }
-      c.lineWidth = [0.8, 1.3, 2.1][layer] * dpr;
-      c.strokeStyle = ['rgba(170,190,235,0.22)', 'rgba(205,220,252,0.4)', 'rgba(232,240,255,0.66)'][layer];
-      c.stroke();
     }
   }
 
@@ -323,6 +341,14 @@ export class WeatherFx {
       };
       c.lineCap = 'round';
       c.lineJoin = 'round';
+      c.globalCompositeOperation = 'lighter';
+      // the cloud it falls from lights up
+      const cx = b.pts[0];
+      const cg = c.createRadialGradient(cx, 0, 0, cx, 0, 120 * dpr);
+      cg.addColorStop(0, `rgba(190,205,255,${(0.35 * a).toFixed(3)})`);
+      cg.addColorStop(1, 'rgba(150,170,255,0)');
+      c.fillStyle = cg;
+      c.fillRect(cx - 120 * dpr, 0, 240 * dpr, 90 * dpr);
       for (const [lw, col] of [
         [26, `rgba(120,150,255,${(0.14 * a).toFixed(3)})`],
         [14, `rgba(150,175,255,${(0.26 * a).toFixed(3)})`],
@@ -345,13 +371,15 @@ export class WeatherFx {
       const ey = b.pts[b.pts.length - 1];
       const R = 70 * dpr;
       const g = c.createRadialGradient(ex, ey, 0, ex, ey, R);
-      g.addColorStop(0, `rgba(255,255,255,${(0.9 * a).toFixed(3)})`);
-      g.addColorStop(0.25, `rgba(200,215,255,${(0.45 * a).toFixed(3)})`);
-      g.addColorStop(1, 'rgba(140,160,255,0)');
+      g.addColorStop(0, `rgba(255,255,255,${a.toFixed(3)})`);
+      g.addColorStop(0.12, `rgba(220,235,255,${(0.8 * a).toFixed(3)})`);
+      g.addColorStop(0.4, `rgba(120,160,255,${(0.3 * a).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(90,120,255,0)');
       c.fillStyle = g;
       c.beginPath();
-      c.ellipse(ex, ey, R, R * 0.5, 0, 0, Math.PI * 2);
+      c.ellipse(ex, ey, R, R * 0.45, 0, 0, Math.PI * 2);
       c.fill();
+      c.globalCompositeOperation = 'source-over';
     }
   }
 

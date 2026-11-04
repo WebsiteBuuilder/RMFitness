@@ -9,7 +9,7 @@
 // same tempo by itself. Thunder is a sound effect, so the Sound setting silences it.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { DuelState } from '../eds/types';
-import { weatherFor, type Sky } from './weatherRules';
+import { STRIKE_GAP, weatherFor, type Sky } from './weatherRules';
 import { WeatherFx } from '../art/weather';
 import { BPM, onMusicBar } from './music';
 import { thunder } from './duelSfx';
@@ -85,8 +85,6 @@ export function WeatherWash({ state }: { state: DuelState }) {
 
 /** how hard it falls for each sky */
 const AMOUNT: Record<Sky, number> = { clear: 0, rain: 0.5, storm: 1 };
-/** the shortest gap between two strikes (ms) */
-const STRIKE_GAP = 1800;
 /** the last strike (kept across a hotseat hand-over's remount, so the gap holds) */
 let lastStrike = 0;
 
@@ -156,13 +154,15 @@ export function WeatherFront({ state }: { state: DuelState }) {
       timers.add(id);
     };
     const onBar = (inSec: number, bar: number) => {
-      heard.current = performance.now();
       const s = sky.current;
       // (the sky is asked again when the strike lands: it may have cleared in between)
       if (s === 'storm' && bar % 2 === 0 && Math.random() < 0.7) later(inSec * 1000, () => sky.current === 'storm' && strikeRef.current(true));
       else if (s === 'rain' && bar % 4 === 0 && Math.random() < 0.5) later(inSec * 1000, () => sky.current !== 'clear' && strikeRef.current(false));
     };
-    const stop = onMusicBar((inSec, bar) => onBar(inSec, bar));
+    const stop = onMusicBar((inSec, bar) => {
+      heard.current = performance.now(); // (only the music's own bar lines: the fallback clock steps aside)
+      onBar(inSec, bar);
+    });
     onBarRef.current = onBar;
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__wx = { fx: fx.current, strike: (near: boolean) => ((lastStrike = 0), strikeRef.current(near)) };
     return () => {

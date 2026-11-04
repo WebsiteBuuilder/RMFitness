@@ -472,7 +472,7 @@ export function chainNegate() {
 /** Thunder: `near`, a crack right on the flash and a long roll; far off, a low roll only. */
 export function thunder(near: boolean) {
   if (near) {
-    rumble(0.35, 0.15, 160);
+    if (soundEnabled()) rumble(0.35, 0.15, 160);
     hiss(0.18, 3800, 900, 0.16, 0, 'highpass', 0.002);
     hiss(0.35, 1200, 200, 0.14, 0.02, 'bandpass', 0.004);
     hiss(2.6, 260, 50, 0.2, 0.08, 'lowpass', 0.05);
