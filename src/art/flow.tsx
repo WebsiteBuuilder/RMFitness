@@ -18,8 +18,9 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
 import { lpCount as lpCountSound } from '../ui/duelSfx';
+import { emitLpHit, resetLpHits } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
-import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
+import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
 import { FIN, finishOf } from './finish';
@@ -219,9 +220,10 @@ export function pickCues(cues: Cue[], mode: Cinematics, viewer: Pid): Cue[] {
   if (mode === 'off') return [];
   if (mode === 'all') return cues;
   if (mode === 'big') return cues.filter(isBig);
+  // the chain spotlight shows every chain, whoever built it
   // My actions only: what I do, and what follows from it (its damage, its destruction, the finish).
   const mine = cues.some((c) => owner(c) === viewer);
-  return cues.filter((c) => c.kind === 'win' || owner(c) === viewer || (owner(c) === null && mine));
+  return cues.filter((c) => c.kind === 'win' || CHAIN_CUES.has(c.kind) || owner(c) === viewer || (owner(c) === null && mine));
 }
 
 /** The board-sync logic behind useShownState (exported for the tests). */
@@ -270,6 +272,26 @@ export class Flow {
   }
 
   /** The watchdog sleeps while the tab is hidden (nothing draws, so no cinematic can finish). */
+  /** a chain card is being read (chain spotlight): the watchdog waits */
+  private paused = false;
+
+  /** The chain spotlight pauses the stage while a card is read: the board waits for it too. */
+  setPaused(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    if (on) {
+      if (this.dogAt) {
+        this.dogLeft = Math.max(0, this.dogAt - performance.now());
+        clearTimeout(this.watchdog);
+        this.dogAt = 0;
+      }
+    } else if (this.dogLeft >= 0 && !(typeof document !== 'undefined' && document.hidden)) {
+      const left = this.dogLeft;
+      this.dogLeft = -1;
+      this.setDog(left);
+    }
+  }
+
   private onVisibility = () => {
     if (document.hidden) {
       if (this.dogAt) {
@@ -277,7 +299,7 @@ export class Flow {
         clearTimeout(this.watchdog);
         this.dogAt = 0;
       }
-    } else if (this.dogLeft >= 0) {
+    } else if (this.dogLeft >= 0 && !this.paused) {
       const left = this.dogLeft;
       this.dogLeft = -1;
       this.setDog(left);
@@ -507,7 +529,7 @@ export class Flow {
     this.dogAt = 0;
     this.dogLeft = -1;
     if (ms < 0 || !this.pending.length) return;
-    if (typeof document !== 'undefined' && document.hidden) {
+    if ((typeof document !== 'undefined' && document.hidden) || this.paused) {
       this.dogLeft = ms;
       return;
     }
@@ -584,6 +606,11 @@ export function releaseBoard() {
   flow?.flushAll();
 }
 
+/** A chain card is being read (on) or not: the board's watchdog waits meanwhile. */
+export function pauseBoard(on: boolean) {
+  flow?.setPaused(on);
+}
+
 /** Long press / double tap on the art stage. */
 export function skipAllChains() {
   flow?.skipAll();
@@ -616,6 +643,7 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
     ref.current = new Flow();
     // a new duel screen: Life Points start where they are
     lpShown.clear();
+    resetLpHits();
   }
   const f = ref.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
@@ -653,8 +681,22 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
   const [v, setV] = useState(start);
   const [hits, setHits] = useState(0);
   const cur = useRef(start);
+  // where the count is heading (a new change mid-count is measured from here, not the half-counted number)
+  const target = useRef(start);
+  // whose Life Points this counter shows (a hotseat board swaps them between the bars)
+  const shows = useRef(who);
   useEffect(() => {
+    if (shows.current !== who) {
+      // the bar now shows the other duelist: start from their own count, not as a change
+      shows.current = who;
+      const theirs = (who !== undefined ? lpShown.get(who) : undefined) ?? value;
+      cur.current = theirs;
+      target.current = theirs;
+      setV(theirs);
+    }
     const from = cur.current;
+    const aimed = target.current;
+    target.current = value;
     const show = (n: number) => {
       cur.current = n;
       if (who !== undefined) lpShown.set(who, n);
@@ -663,6 +705,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
     lpCountSound(value - from, value, LP_TICK_MS);
+    if (who !== undefined && aimed !== value) emitLpHit(who, aimed, value);
     const t0 = performance.now();
     let raf = 0;
     let k = 0;
@@ -684,7 +727,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     raf = requestAnimationFrame(step);
     const backup = setInterval(() => tick(false) && clearInterval(backup), 100);
     return () => (cancelAnimationFrame(raf), clearInterval(backup));
-  }, [value]);
+  }, [value, who]);
   return (
     <span key={hits} class={`lp-count ${hits ? 'lp-hit' : ''}`}>
       {v}

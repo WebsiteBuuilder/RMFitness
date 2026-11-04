@@ -8,11 +8,13 @@
 import { DataTexture, PerspectiveCamera, RGBAFormat, Vector2, Vector3, type Mesh, type PlaneGeometry } from 'three';
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
-import { cueUids, type CardRef, type Cue, type SummonHow, type Target } from './cues';
+import { CHAIN_CUES, cueUids, type CardRef, type ChainCard, type Cue, type SummonHow, type Target } from './cues';
+import { END_DURATION, liftStep, resolveDuration, stackDuration } from './chainRules';
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
 import { boom, chime, drone, slowdown, swell, whoosh, zap } from './sfx';
+import { chainLift, chainNegate, chainResolve } from '../ui/duelSfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
@@ -38,6 +40,18 @@ export interface Ui {
   callout?(o: { text: string; card: string; seat: Pid; side: 'near' | 'far'; color: number; light: number; dur: number; ace?: { lv: number; title: string } | null }): void;
   /** a slow-motion replay starts (true) or ends (false): its letterbox and tag */
   replay?(on: boolean): void;
+  /** the chain spotlight's cards (chainSpot.ts), over the stage */
+  chain?: ChainSpotUi;
+}
+
+/** What the director asks of the chain spotlight (chainSpot.ts ChainSpot). */
+export interface ChainSpotUi {
+  stack(stack: ChainCard[], added: number): void;
+  stackAt(t: number): void;
+  resolve(stack: ChainCard[], n: number, negated: boolean, D: number): void;
+  resolveAt(t: number): void;
+  end(): void;
+  hide(): void;
 }
 
 /** The Life Points plate on one side of the screen (Classic and Touch both show one per duelist). */
@@ -445,13 +459,15 @@ export class Director {
     this.queue.push(...cues.map((cue, i) => ({ cue, batch, scale: scales?.[i] ?? 1 })));
     if (this.queue.length > 10) {
       this.queue = this.queue.filter((q) => SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'damage' || q.cue.kind === 'destroy').slice(-10);
+      // (a chain spotlight cut short: its cards fold away with it)
+      if (!this.queue.some((q) => CHAIN_CUES.has(q.cue.kind))) this.ui.chain?.hide();
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     } else if (this.cinematics === 'all' && this.queue.length > QUEUE_KEEP) {
       // Everything plays under All, but an opponent's long chain (a spell, a set, a skill, a
       // flip... one after the other) keeps only its big beats past the first few.
       const v = this.viewer;
-      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || cueOwner(q.cue) === v);
+      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || CHAIN_CUES.has(q.cue.kind) || cueOwner(q.cue) === v);
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
@@ -1566,7 +1582,67 @@ export class Director {
         return cue.count > 0 ? this.draw(cue.player, cue.count) : null;
       case 'slam':
         return this.slam(cue.trap, cue.onto);
+      case 'chain':
+        return this.chainLift(cue.stack, cue.added);
+      case 'resolve':
+        return this.chainLink(cue.stack, cue.n, cue.negated);
+      case 'chainEnd':
+        return this.chainFold();
     }
+  }
+
+  // ------------------------------------------------------------ chain spotlight
+  /** The chain lifts off the field in order, each card numbered (the cards are the DOM's: chainSpot.ts). */
+  private chainLift(stack: ChainCard[], added: number): Timeline | null {
+    const ui = this.ui.chain;
+    if (!ui || !stack.length) return null;
+    const n = Math.max(...stack.map((l) => l.n));
+    const D = stackDuration(n);
+    const tl = new Timeline(D, this.stage);
+    this.bgTarget = 0.3;
+    this.dimTarget = 0.72;
+    this.focus.set(0.5, 0.42);
+    this.stage.backdrop.u.uColor.value.set(0.03, 0.03, 0.08);
+    tl.at(0, () => ui.stack(stack, added), false);
+    tl.span(0, D, (k) => ui.stackAt(k * D));
+    // each card's number lands with a note, a step higher per link
+    const step = liftStep(n);
+    for (const l of stack) tl.at((l.n - 1) * step + 0.24, () => chainLift(l.n, l.n === added));
+    return tl;
+  }
+
+  /** Link `n` resolves: it comes forward with its effect text and its own flash (negated: stamped). */
+  private chainLink(stack: ChainCard[], n: number, negated: boolean): Timeline | null {
+    const ui = this.ui.chain;
+    const l = stack.find((x) => x.n === n);
+    if (!ui || !l) return null;
+    const D = resolveDuration(l);
+    const tl = new Timeline(D, this.stage);
+    this.bgTarget = 0.35;
+    this.dimTarget = 0.8;
+    this.focus.set(0.5, 0.3);
+    const color = l.what === 'trap' ? TRAP : l.what === 'monster' ? 0xff9a2e : SPELL;
+    setRgb(this.stage.backdrop.u.uColor.value as unknown as Vector3, color);
+    this.stage.backdrop.u.uColor.value.multiplyScalar(0.12);
+    tl.at(0, () => ui.resolve(stack, n, negated, D), false);
+    tl.span(0, D, (k) => ui.resolveAt(k * D));
+    tl.at(0.22, () => {
+      this.flash(color, negated ? 0.12 : 0.22);
+      this.stage.pulse('flash', negated ? 0.08 : 0.16);
+      chainResolve(l.what, n);
+    });
+    if (negated) tl.at(0.4, () => chainNegate());
+    return tl;
+  }
+
+  /** The chain has resolved: it folds away. */
+  private chainFold(): Timeline | null {
+    const ui = this.ui.chain;
+    if (!ui) return null;
+    const tl = new Timeline(END_DURATION, this.stage);
+    this.dimTarget = 0.3;
+    tl.at(0, () => ui.end(), false);
+    return tl;
   }
 
   /** Where a summoned figure flies to at the end: onto its card on the field (as the board will draw it). */
@@ -7127,5 +7203,5 @@ export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
 /** The summon methods with their own shot ('normal' keeps the plain summon). */
 export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
 /** The cue kinds the director draws. */
-export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam'];
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd'];
 export { css };

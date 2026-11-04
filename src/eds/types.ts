@@ -177,6 +177,10 @@ export interface EngineEvent {
   effect?: boolean;
   /** activate (a response): the card it answers (the attacker, the summoned monster, the card it chains to) */
   answers?: number;
+  /** chain / resolve: the chain link's number (1 = the first card activated) */
+  link?: number;
+  /** resolve: the link was negated (it resolves with no effect) */
+  negated?: boolean;
   seq: number;
 }
 

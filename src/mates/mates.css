@@ -122,6 +122,37 @@
 .mate-spot.top .r-idle .mt-eyes {
   animation-delay: -2.1s;
 }
+/* On the duel screen a resting Mate moves only as a whole (the div's transform runs on the
+   GPU). Its parts' own loops (wings, eyes, glows, tears) would repaint the drawing and its
+   shadows on the main thread every frame, so they play during short reactions only, and the
+   eyes blink once when the layer asks (a class for a moment every few seconds). */
+.mate-spot :is(.r-idle, .r-lose, .r-sleep) :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear),
+.sdh-mates-pic :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear) {
+  animation: none;
+}
+/* (the win keeps its flourish, a few times over, then rests) */
+.mate-spot .r-win :is(.mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid) {
+  animation-iteration-count: 4;
+}
+.mate-spot .r-win .mt-eyes {
+  animation: none;
+}
+/* (and a loss sheds a few tears before it just slumps) */
+.mate-spot .r-lose .mt-tear {
+  animation: mate-tear 0.9s ease-in 3;
+}
+.mate-spot.blink .r-idle .mt-eyes {
+  animation: mate-blink-once 0.26s ease-in-out;
+}
+@keyframes mate-blink-once {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.12);
+  }
+}
 @keyframes mate-blink {
   0%,
   93%,
@@ -435,6 +466,76 @@
     transform: scale(1.12) translateY(-4%);
   }
 }
+.mate-act.r-flinch {
+  animation: mate-flinch 0.6s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes mate-flinch {
+  0% {
+    transform: none;
+  }
+  18% {
+    transform: translateY(4%) scale(1.08, 0.86) rotate(-5deg);
+  }
+  45% {
+    transform: translate(-6%, -6%) scale(0.96, 1.06) rotate(-8deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+.mate-act.r-sweat {
+  animation: mate-tremble 0.09s linear 14;
+}
+@keyframes mate-tremble {
+  0%,
+  100% {
+    transform: translateX(0) scale(0.97, 1);
+  }
+  50% {
+    transform: translateX(2.5%) scale(0.97, 1);
+  }
+}
+.mt-sweatbead {
+  animation: mate-bead 1.9s ease-in forwards;
+}
+@keyframes mate-bead {
+  0% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.9;
+    transform: translateY(6px);
+  }
+}
+.mate-act.r-grin {
+  animation: mate-grin 1.2s ease-in-out;
+}
+@keyframes mate-grin {
+  30%,
+  70% {
+    transform: rotate(-4deg) scale(1.04);
+  }
+}
+.mate-act.r-taunt {
+  animation: mate-taunt 0.5s ease-in-out 4;
+}
+@keyframes mate-taunt {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-7%) rotate(5deg) scale(1.05);
+  }
+}
+.mate-spot.top .mate-act.r-taunt,
+.mate-spot.top .mate-act.r-grin {
+  animation-direction: reverse;
+}
 .mate-act.r-sleep {
   animation: mate-doze 3s ease-in-out;
 }
@@ -547,6 +648,24 @@
 }
 .mate-emote.em-gg::after {
   background: #ffd23f;
+}
+.mate-emote.em-taunt {
+  background: #fff3f0;
+  border-color: #b3121f;
+  color: #b3121f;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  animation-duration: 2.4s;
+}
+.mate-spot.top .mate-emote.em-taunt {
+  /* (theirs stands under its own bubble: lift it clear of the eyes) */
+  top: -34%;
+  right: 66%;
+}
+.mate-emote.em-taunt::after {
+  background: #fff3f0;
+  border-color: #b3121f;
 }
 .mate-emote.em-dots {
   color: #59607a;
@@ -715,6 +834,10 @@
   .mate-act * {
     animation-duration: 0.01s !important;
     animation-iteration-count: 1 !important;
+  }
+  /* (a bubble just shows, and goes when its reaction ends) */
+  .mate-emote {
+    animation: none !important;
   }
 }
 
@@ -978,6 +1101,7 @@
 .sdh-mates-pic .mate-svg {
   animation: mate-breathe 2.8s ease-in-out infinite;
   transform-origin: 50% 94%;
+  will-change: transform;
 }
 .sdh-mates-txt {
   display: flex;
