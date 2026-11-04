@@ -79,11 +79,18 @@ function useTimers() {
  */
 function useHeld() {
   const held = useRef(false);
+  /** the hold's finger lifted at this time (its click, if any, comes right after) */
+  const liftedAt = useRef(Infinity);
   return {
-    hold: () => void (held.current = true),
+    hold: () => void ((held.current = true), (liftedAt.current = Infinity)),
+    lift: () => void (held.current && liftedAt.current === Infinity && (liftedAt.current = performance.now())),
     reset: () => void (held.current = false),
-    /** true (and forgotten) when this click is the end of a hold */
-    swallow: () => (held.current ? ((held.current = false), true) : false),
+    /** true (and forgotten) when this click is the end of a hold; a mouse or long-press that sent no click doesn't eat a later one */
+    swallow: () => {
+      if (!held.current) return false;
+      held.current = false;
+      return performance.now() - liftedAt.current < 500;
+    },
   };
 }
 
@@ -119,7 +126,7 @@ function useTear(onTear: () => void) {
   };
   const torn = useRef(false);
   const from = useRef<{ x: number; w: number } | null>(null);
-  const tappedAt = useRef(-1e9);
+  const pointered = useRef(false);
   const go = () => {
     if (torn.current) return;
     torn.current = true;
@@ -132,7 +139,7 @@ function useTear(onTear: () => void) {
     tear: go,
     props: {
       onPointerDown: (e: PointerEvent) => {
-        tappedAt.current = performance.now();
+        pointered.current = true;
         from.current = { x: e.clientX, w: (e.currentTarget as HTMLElement).getBoundingClientRect().width || 160 };
         try {
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -161,7 +168,7 @@ function useTear(onTear: () => void) {
       },
       // a controller's A (or a keyboard) clicks without a pointer
       onClick: () => {
-        if (performance.now() - tappedAt.current > 600) go();
+        if (!pointered.current) go();
       },
     },
   };
@@ -250,9 +257,9 @@ function Mark({ fin, printed }: { fin: number; printed: string }) {
 }
 
 /** The stage every opening plays on: full screen, its light tinted by the best pull. */
-function Stage({ tint, flash, flashN, children, onSkip, onDown, cls = '' }: { tint: number; flash: number; flashN: number; children: ComponentChildren; onSkip?: () => void; /** every new press, before anything under it */ onDown?: () => void; cls?: string }) {
+function Stage({ tint, flash, flashN, children, onSkip, onDown, onUp, cls = '' }: { tint: number; flash: number; flashN: number; children: ComponentChildren; onSkip?: () => void; /** every new press, before anything under it */ onDown?: () => void; /** every lift, wherever it lands */ onUp?: () => void; cls?: string }) {
   return (
-    <div class={`overlay po po-t-${gradeId(tint)} ${flash >= STAR_FROM ? 'slam' : ''} ${cls}`} role="dialog" aria-label="Opening a pack" onContextMenu={(e: Event) => e.preventDefault()} onPointerDownCapture={onDown}>
+    <div class={`overlay po po-t-${gradeId(tint)} ${flash >= STAR_FROM ? 'slam' : ''} ${cls}`} role="dialog" aria-label="Opening a pack" onContextMenu={(e: Event) => e.preventDefault()} onPointerDownCapture={onDown} onPointerUpCapture={onUp} onPointerCancelCapture={onUp}>
       <i class="po-rays" aria-hidden="true" />
       {flash >= 0 && <i key={flashN} class={`po-flash po-f-${gradeId(flash)}`} aria-hidden="true" />}
       {onSkip && (
@@ -415,7 +422,7 @@ export function PackCeremony({ opened, cover, left, onAgain, onDone }: { opened:
   const sorted = cards.map((n, i) => ({ n, i })).sort((a, b) => grades[b.i] - grades[a.i] || a.i - b.i);
 
   return (
-    <Stage tint={stage === 'pack' ? 0 : top} flash={flash} flashN={flashN} onSkip={done ? undefined : skip} cls={`st-${stage} ${done ? 'done' : ''} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset}>
+    <Stage tint={stage === 'pack' ? 0 : top} flash={flash} flashN={flashN} onSkip={done ? undefined : skip} cls={`st-${stage} ${done ? 'done' : ''} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset} onUp={held.lift}>
       {stage !== 'open' ? (
         <Foil cover={cover} title={shortSetName(opened.set ?? '')} tear={tear} torn={stage === 'tear'} />
       ) : (
@@ -516,7 +523,10 @@ export function PackCeremony({ opened, cover, left, onAgain, onDone }: { opened:
           )}
         </>
       )}
-      {spot >= 0 && <Spotlight name={cards[spot]} grade={grades[spot]} fin={fin[spot]} printed={rar[spot]} fresh={opened.fresh.includes(cards[spot])} swallow={held.swallow} onClose={() => setSpot(-1)} />}
+      {/* laid out (hidden) as soon as the charge starts, so the burst only has to fade it in */}
+      {(spot >= 0 || (star >= 0 && charge.at === star)) && (
+        <Spotlight pre={spot < 0} name={cards[spot >= 0 ? spot : star]} grade={grades[spot >= 0 ? spot : star]} fin={fin[spot >= 0 ? spot : star]} printed={rar[spot >= 0 ? spot : star]} fresh={opened.fresh.includes(cards[spot >= 0 ? spot : star])} swallow={held.swallow} onClose={() => setSpot(-1)} />
+      )}
       {info && (
         <Overlay onClose={() => setInfo(null)}>
           <Win title="Card Info" onClose={() => setInfo(null)}>
@@ -529,18 +539,29 @@ export function PackCeremony({ opened, cover, left, onAgain, onDone }: { opened:
 }
 
 /** The rarest pull, full size in the light: tap to set it back down. */
-function Spotlight({ name, grade, fin, printed, fresh, onClose, swallow, note = 'Tap to continue' }: { name: string; grade: number; fin: number; printed: string; fresh: boolean; onClose: () => void; swallow: () => boolean; note?: string }) {
+function Spotlight({ name, grade, fin, printed, fresh, onClose, swallow, pre = false, note = 'Tap to continue' }: { name: string; grade: number; fin: number; printed: string; fresh: boolean; onClose: () => void; swallow: () => boolean; /** mounted early and hidden, while the charge runs */ pre?: boolean; note?: string }) {
   const g = gradeId(grade);
+  // drag a finger (or tilt the phone, via the game's tilt light) to turn the card in the light
+  const el = useRef<HTMLButtonElement | null>(null);
+  const tilt = (e: PointerEvent) => {
+    const b = el.current;
+    if (!b) return;
+    b.style.setProperty('--sx', ((e.clientX / innerWidth) * 2 - 1).toFixed(2));
+    b.style.setProperty('--sy', ((e.clientY / innerHeight) * 2 - 1).toFixed(2));
+  };
   return (
-    <button class={`po-spot g-${g}`} onClick={() => swallow() || onClose()} aria-label={`${name}, ${GRADE_NAME[g]}. Tap to continue`}>
+    <button ref={el} class={`po-spot g-${g} ${pre ? 'pre' : ''}`} onPointerMove={tilt} onClick={() => swallow() || onClose()} aria-hidden={pre ? 'true' : undefined} tabIndex={pre ? -1 : undefined} aria-label={`${name}, ${GRADE_NAME[g]}. Tap to continue`}>
       <i class="po-spot-rays" aria-hidden="true" />
       {grade >= 5 && <Eye />}
       <span class="po-spot-title">{GRADE_NAME[g]}</span>
-      <span class="po-spot-card">
-        <CardImg name={name} tier={fin} />
-        <Mark fin={fin} printed={printed} />
-        {fresh && <span class="po-new">NEW</span>}
-        <Sparks n={12} />
+      <span class="po-spot-tilt">
+        <span class="po-spot-card">
+          <CardImg name={name} tier={fin} />
+          <Mark fin={fin} printed={printed} />
+          {fresh && <span class="po-new">NEW</span>}
+          <i class="po-spot-sheen" aria-hidden="true" />
+          {!pre && <Sparks n={12} />}
+        </span>
       </span>
       <span class="po-spot-note">{note}</span>
     </button>
@@ -609,8 +630,11 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
   const held = useHeld();
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const swipedAt = useRef(-1e9);
-  const step = (fromPad = false) => {
+  const advancedAt = useRef(-1e9);
+  const step = (fromPad = false, tapped = false) => {
     if (!cur || charge.at >= 0) return;
+    // a tap a moment after the next pull slid in was meant for the last one: don't flip this one unseen
+    if (tapped && performance.now() - advancedAt.current < 300) return;
     if (!up) {
       if (needsHold) {
         if (fromPad) charge.start(0, true);
@@ -623,6 +647,7 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
       return;
     }
     if (last) return finish();
+    advancedAt.current = performance.now();
     setUp(false);
     setK(k + 1);
     sfxDeal(k + 1);
@@ -636,7 +661,7 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
   }, [up, k, stage]);
   const g = cur ? gradeId(cur.g) : 'n';
   return (
-    <Stage tint={stage === 'pack' ? 0 : top} flash={flash} flashN={flashN} onSkip={finish} cls={`batch st-${stage} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset}>
+    <Stage tint={stage === 'pack' ? 0 : top} flash={flash} flashN={flashN} onSkip={finish} cls={`batch st-${stage} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset} onUp={held.lift}>
       {stage !== 'show' ? (
         <Foil cover={cover} title={`${opened.length} packs`} tear={tear} torn={stage === 'tear'} count={opened.length} sub="Swipe across the top to tear them all open" />
       ) : (
@@ -645,14 +670,14 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
             class="po-solo"
             onClick={() => {
               if (held.swallow() || performance.now() - swipedAt.current < 350) return;
-              if (!(needsHold && !up)) step();
+              if (!(needsHold && !up)) step(false, true);
             }}
             onPointerDown={(e: PointerEvent) => (swipe.current = { x: e.clientX, y: e.clientY })}
             onPointerUp={(e: PointerEvent) => {
               const s = swipe.current;
               swipe.current = null;
-              if (!s || needsHold) return;
-              if (Math.abs(e.clientX - s.x) > SWIPE_PX || e.clientY - s.y < -SWIPE_PX) (swipedAt.current = performance.now()), step();
+              if (!s || (needsHold && !up)) return;
+              if (Math.abs(e.clientX - s.x) > SWIPE_PX || e.clientY - s.y < -SWIPE_PX) (swipedAt.current = performance.now()), step(false, true);
             }}
           >
             <p class="po-count-line">
@@ -668,7 +693,7 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
                   charge.start(0, true);
                   return;
                 }
-                step();
+                step(false, true);
               }}
               onPointerDown={needsHold && !up ? (e: PointerEvent) => (held.hold(), e.stopPropagation(), charge.start(0, false)) : undefined}
               onPointerUp={needsHold && !up ? () => charge.release() : undefined}
