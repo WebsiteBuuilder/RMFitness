@@ -150,6 +150,17 @@
     radial-gradient(closest-side, transparent 0 62%, #c9a24a77 63% 65%, transparent 66% 78%, #c9a24a44 79% 80%, transparent 81%),
     radial-gradient(closest-side, #3b2a7a99, #1d1850aa 70%, transparent);
 }
+/* your playmat, laid on the floor as the rug */
+.sdr-rug::before {
+  content: '';
+  position: absolute;
+  inset: 8% 10%;
+  border-radius: 50%;
+  background: var(--sdr-mat, none) 50% 50% / cover no-repeat;
+  opacity: 0.75;
+  -webkit-mask: radial-gradient(closest-side, #000 55%, transparent);
+  mask: radial-gradient(closest-side, #000 55%, transparent);
+}
 
 /* ---------- the stage: everything you can tap ---------- */
 .sdr-stage {

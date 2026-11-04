@@ -20,6 +20,8 @@ import { figUrl, useFigs } from '../../level/figs';
 import { MateArt, type Face } from '../../mates/MateArt';
 import { chosenMate, mateDef, type MateId } from '../../mates/roster';
 import { chosenSleeve } from '../../sleeves/sleeves';
+import { chosenPlaymat } from '../../playmats/playmats';
+import { matUrl } from '../../playmats/art';
 import { bondTitle } from '../../ace/ace';
 import { packsOf } from '../../collection/economy';
 import { RankEmblem } from '../RankBadge';
@@ -200,6 +202,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
   const mate = chosenMate(save);
   const sleeve = chosenSleeve(save, solo);
   const packs = packsOf(save);
+  const mat = matUrl(chosenPlaymat(save, solo));
   const lv = ace?.ace?.lv ?? 0;
 
   // Pause the room's animations while it's scrolled away (browsers already stop them in the background).
@@ -230,7 +233,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
   }, [seen]);
 
   return (
-    <div ref={ref} class={`sdr ${seen ? '' : 'off'} ${pass ? 'has-pass' : ''} ${lite ? 'lite' : ''}`} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
+    <div ref={ref} class={`sdr ${seen ? '' : 'off'} ${pass ? 'has-pass' : ''} ${lite ? 'lite' : ''}`} style={{ '--sdr-mat': mat } as Record<string, string>} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
       <div class="sdr-walls" aria-hidden="true">
         <i class="sdr-window" />
         <i class="sdr-light" />
