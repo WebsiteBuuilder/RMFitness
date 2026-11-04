@@ -150,7 +150,7 @@
   /* zoomed so the card's frame never shows, the head near the top of the art box */
   /* (the halftone rides as the first background layer, so the face's fade covers it too) */
   background-size: 5px 5px, 170% auto;
-  background-position: 0 0, 50% 32%;
+  background-position: 0 0, var(--fx, 50%) var(--fy, 32%);
   background-repeat: repeat, no-repeat;
   filter: contrast(1.1) saturate(1.15);
 }
@@ -165,8 +165,9 @@
 .ci-bot .ci-face {
   right: 0;
   bottom: 0;
-  /* (its half starts under the slant: a shorter box puts the head below the seam) */
-  height: 46%;
+  /* (its half starts under the slant: the head sits high in its box, just below the seam) */
+  height: 54%;
+  --fy: var(--fyb, 22%);
   -webkit-mask-image: linear-gradient(280deg, #000 30%, transparent 80%), linear-gradient(0deg, #000 78%, transparent);
   -webkit-mask-composite: source-in;
   mask-image: linear-gradient(280deg, #000 30%, transparent 80%), linear-gradient(0deg, #000 78%, transparent);
@@ -178,10 +179,21 @@
 }
 @keyframes ci-push {
   from {
-    transform: scale(1.22);
+    transform: translate3d(-9%, 0, 0);
   }
   to {
-    transform: scale(1.02);
+    transform: translate3d(0, 0, 0);
+  }
+}
+.ci-bot.ci-lead .ci-face {
+  animation-name: ci-push-back;
+}
+@keyframes ci-push-back {
+  from {
+    transform: translate3d(9%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
   }
 }
 /* the one who takes it: in shadow, a shudder */
@@ -329,7 +341,6 @@
 }
 .ci-line span {
   display: block;
-  padding: 0.1em 0.7em 0.14em;
   font: italic 900 calc(min(8.6vw, 62px) * var(--fs)) / 1.05 system-ui, sans-serif;
   letter-spacing: 0.01em;
   color: #fff;
@@ -339,8 +350,17 @@
   text-shadow:
     0 3px 0 #000,
     0 0 14px var(--l1);
-  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.86) 8%, rgba(0, 0, 0, 0.86) 92%, transparent);
   animation: ci-shout var(--d) cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+/* each row on its own bar, both as wide as the longest, so a two-row shout reads even */
+.ci-line b {
+  display: block;
+  font: inherit;
+  padding: 0.1em 0.7em 0.14em;
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.86) 8%, rgba(0, 0, 0, 0.86) 92%, transparent);
+}
+.ci-line b + b {
+  margin-top: 0.08em;
 }
 @keyframes ci-shout {
   0%,

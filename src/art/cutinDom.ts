@@ -33,11 +33,21 @@ export function shoutRows(line: string): string[] {
   return line.length > 20 && i > 0 && i < line.length - 3 ? [line.slice(0, i + 1), line.slice(i + 2)] : [line];
 }
 
+const focus = (f: Face) => {
+  const at = FOCUS[f.art];
+  return at ? `;--fx:${at[0]};--fy:${at[1]};--fyb:${at[1]}` : '';
+};
+
+/** Where a few iconic faces sit in their art (x, y as background-position), so the eyes are framed. */
+const FOCUS: Record<string, [string, string]> = {
+  'Dark Magician': ['30%', '22%'],
+};
+
 function half(f: Face, top: boolean, lead: boolean, why: CutInShow['why']): string {
   const url = imageUrl(f.art);
   const [c1, c2] = faceColors(f);
   return (
-    `<div class="ci-half ${top ? 'ci-top' : 'ci-bot'} ${lead ? 'ci-lead' : 'ci-foe'}" style="--c1:${c1};--c2:${c2}">` +
+    `<div class="ci-half ${top ? 'ci-top' : 'ci-bot'} ${lead ? 'ci-lead' : 'ci-foe'}" style="--c1:${c1};--c2:${c2}${focus(f)}">` +
     `<i class="ci-bg"></i>${lead ? '<i class="ci-lines"></i>' : ''}` +
     `<i class="ci-face" style="background-image:${HALFTONE}${url ? `, url('${url}')` : ''}"></i>` +
     `<div class="ci-plate"><b>${esc(f.name)}</b>${f.title ? `<span>${esc(f.title)}</span>` : ''}</div>` +
@@ -71,7 +81,7 @@ export function showCutIn(_layer: HTMLElement, o: CutInShow): HTMLElement {
   const bot = leadTop ? o.foe : o.me;
   el.innerHTML =
     `<div class="ci-band">${half(top, true, leadTop, o.why)}${half(bot, false, !leadTop, o.why)}` +
-    `<i class="ci-seam"></i><div class="ci-line"><span>${shoutRows(o.line.toUpperCase()).map(esc).join('<br>')}</span></div></div>` +
+    `<i class="ci-seam"></i><div class="ci-line"><span>${shoutRows(o.line.toUpperCase()).map((r) => `<b>${esc(r)}</b>`).join('')}</span></div></div>` +
     `<i class="ci-flash"></i>`;
   layer.appendChild(el);
   const t = window.setTimeout(() => el.remove(), o.dur * 1000 + 40);
