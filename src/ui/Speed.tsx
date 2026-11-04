@@ -957,7 +957,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             </button>
           ))}
         </div>
-        <div class="filters dk-filters">
+        {/* the search row stays on screen while the list scrolls under it */}
+        <div class="filters dk-filters dk-searchrow">
           <input class="search" type="search" enterKeyHint="search" placeholder={inText ? 'Name, type or card text' : 'Name or type: dragon, dark, atk>2000'} value={q} onInput={(ev) => (setQ((ev.target as HTMLInputElement).value), setLimit(PAGE))} />
           <button class={`chip ${inText ? 'on' : ''}`} onClick={() => setInText(!inText)} title="Search card text too">
             In text

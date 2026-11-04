@@ -871,7 +871,7 @@
 /* in All cards, the cards you'd have to craft read as clearly not yours */
 /* every layer of the picture (some cards draw theirs in extra layers), never the badges */
 .dk-poolgrid .dk-tile.unowned > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
-  filter: grayscale(0.7) brightness(0.72);
+  filter: grayscale(0.85) brightness(0.7);
 }
 .dk-poolgrid .dk-tile.unowned:active > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
   filter: grayscale(0.4) brightness(0.9);
@@ -907,7 +907,7 @@
 
 /* a fresh result set deals its first cards in; later pages just appear */
 .dk-poolgrid .dk-tile:nth-child(-n + 16) {
-  animation: dk-deal 0.22s ease-out both;
+  animation: dk-deal 0.22s ease-out backwards;
 }
 .dk-poolgrid .dk-tile:nth-child(2) { animation-delay: 15ms; }
 .dk-poolgrid .dk-tile:nth-child(3) { animation-delay: 30ms; }
@@ -955,4 +955,15 @@
     animation: none;
     transition: none;
   }
+}
+
+.ui-speed .dk .dk-filters.dk-searchrow,
+.dk .dk-filters.dk-searchrow {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  background: var(--bg, #0d1430);
+  box-shadow: 0 6px 10px -6px rgba(0, 0, 0, 0.6);
 }
