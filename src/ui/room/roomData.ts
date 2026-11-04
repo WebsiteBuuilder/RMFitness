@@ -69,6 +69,16 @@ export function roomAce(save: SpeedSave, deckAce: string | null): { name: string
 
 // ---------- the setting: the room, or the plain menu ----------
 
+/** The room is sized in container units: an older phone browser without them (before iOS 16 or
+ *  Chrome 105) keeps the plain menu instead of a collapsed room. */
+export function roomSupported(): boolean {
+  try {
+    return typeof CSS !== 'undefined' && CSS.supports('container-type: size') && CSS.supports('height: 1cqh');
+  } catch {
+    return false;
+  }
+}
+
 export type HomeLook = 'room' | 'plain';
 const KEY = 'eds.homeLook';
 const subs = new Set<() => void>();

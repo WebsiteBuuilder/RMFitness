@@ -30,7 +30,7 @@ import { TOP, ladderClock, pharaohLevel, rankName, rankedProgress, seasonOf, ste
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
 import { DuelistRoom, type RoomPass } from './room/DuelistRoom';
-import { homeLook, onHomeLook, setHomeLook } from './room/roomData';
+import { homeLook, onHomeLook, roomSupported, setHomeLook } from './room/roomData';
 import './speedhome.css';
 
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
@@ -360,7 +360,8 @@ export function SpeedHome({
   const [rules, setRules] = useState(false);
   const [look, setLook] = useState(homeLook);
   useEffect(() => onHomeLook(() => setLook(homeLook())), []);
-  const room = look === 'room';
+  const canRoom = useMemo(roomSupported, []);
+  const room = canRoom && look === 'room';
   lastTab = tab;
   // Lift the floating Friends button above the tab bar while the home screen is up.
   useEffect(() => {
@@ -554,7 +555,7 @@ export function SpeedHome({
                 { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'duel sound effects', onPick: () => setSoundEnabled(!soundOn) },
                 { label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'the duel soundtrack', onPick: () => setMusicEnabled(!musicOn) },
-                { label: `Home: ${room ? 'Duelist Room' : 'Plain menu'}`, note: room ? 'your Ace, Mate, trophies and deck in a room' : 'just the tiles, no room', onPick: () => setHomeLook(room ? 'plain' : 'room') },
+                ...(canRoom ? [{ label: `Home: ${room ? 'Duelist Room' : 'Plain menu'}`, note: room ? 'your Ace, Mate, trophies and deck in a room' : 'just the tiles, no room', onPick: () => setHomeLook(room ? 'plain' : 'room') }] : []),
                 { label: 'Speed Duel rules', onPick: () => (setSettings(false), setRules(true)) },
                 { label: 'Back to Eternal Duelist Soul', onPick: onExit },
               ]}

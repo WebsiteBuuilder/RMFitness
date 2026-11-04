@@ -18,7 +18,7 @@ import { CardImg } from '../CardImg';
 import { playBlip } from '../sound';
 import { figUrl, useFigs } from '../../level/figs';
 import { MateArt, type Face } from '../../mates/MateArt';
-import { chosenMate, mateDef } from '../../mates/roster';
+import { chosenMate, mateDef, type MateId } from '../../mates/roster';
 import { chosenSleeve } from '../../sleeves/sleeves';
 import { bondTitle } from '../../ace/ace';
 import { packsOf } from '../../collection/economy';
@@ -37,10 +37,24 @@ export interface RoomPass {
   onOpen: () => void;
 }
 
+/** How long a tapped thing springs before its screen opens (short: it must never feel slow). */
+const PRESS_MS = 120;
+
 /** One thing in the room you can tap: a real button with a name tag under it. */
 function Spot({ cls, tag, hot, label, onPick, children }: { cls: string; tag?: ComponentChildren; hot?: boolean; label: string; onPick: () => void; children: ComponentChildren }) {
   return (
-    <button class={`sdr-spot ${cls} ${hot ? 'hot' : ''}`} aria-label={label} onClick={() => (playBlip(), onPick())}>
+    <button
+      class={`sdr-spot ${cls} ${hot ? 'hot' : ''}`}
+      aria-label={label}
+      onClick={(e) => {
+        playBlip();
+        // a quick press-and-spring on the thing itself, then the screen it opens
+        const el = e.currentTarget as HTMLElement;
+        el.classList.add('pop');
+        setTimeout(onPick, PRESS_MS);
+        setTimeout(() => el.classList.remove('pop'), 320);
+      }}
+    >
       {children}
       {tag && <span class="sdr-tag">{tag}</span>}
     </button>
@@ -59,13 +73,13 @@ function TrophyArt({ t }: { t: Trophy }) {
       return (
         <span class={`sdr-tro cup ${t.metal}`} title={t.label}>
           <i class="sdr-cup" />
-          <b>{t.wins > 999 ? '999+' : t.wins}</b>
+          <b class="sdr-plaque">{t.wins > 999 ? '999+' : t.wins}</b>
         </span>
       );
     case 'crown':
       return (
         <span class="sdr-tro crown" title={t.label}>
-          👑
+          <i class="sdr-crown" />
         </span>
       );
     case 'bond':
@@ -75,21 +89,47 @@ function TrophyArt({ t }: { t: Trophy }) {
         </span>
       );
     case 'school':
-      return <span class="sdr-tro school" title={t.label} />;
+      return (
+        <span class="sdr-tro school" title={t.label}>
+          <i class="sdr-scroll" />
+        </span>
+      );
   }
 }
+
+/** A duelist's name short enough for a note ("Yami Yugi" → "Yami", "Mai Valentine" → "Mai"). */
+const shortName = (who: string) => {
+  const w = who.replace(/^The /, '').split(' ');
+  return w[0].length <= 3 && w[1] ? `${w[0]} ${w[1]}` : w[0];
+};
+/** 2000 → "2k", 1500 → "1.5k" */
+const short = (n: number) => (n >= 1000 ? `${+(n / 1000).toFixed(1)}k` : String(n));
 
 /** The Ace: the card art cut out by its figure matte, standing in its light. */
 function AceFigure({ name, lv }: { name: string; lv: number }) {
   useFigs(true);
   const fig = figUrl(name);
   const url = imageUrl(name);
+  // the cut-out shows once its matte has really loaded (a missing matte would hide the monster)
+  const [matte, setMatte] = useState<'wait' | 'ok' | 'bad'>('wait');
+  useEffect(() => {
+    if (!fig) return;
+    setMatte('wait');
+    let live = true;
+    const im = new Image();
+    im.onload = () => live && setMatte('ok');
+    im.onerror = () => live && setMatte('bad');
+    im.src = fig;
+    return () => void (live = false);
+  }, [fig]);
   return (
     <span class={`sdr-acefig b${lv}`}>
       <i class="sdr-pillar" />
       <i class="sdr-pedestal" />
-      {fig && url ? (
-        <i class="sdr-cut" style={{ '--sdr-img': `url("${url}")`, '--sdr-fig': `url("${fig}")` } as Record<string, string>} />
+      {fig && url && matte !== 'bad' ? (
+        <i class={`sdr-cutw ${matte === 'ok' ? 'in' : ''}`}>
+          <i class="sdr-cut" style={{ '--sdr-img': `url("${url}")`, '--sdr-fig': `url("${fig}")` } as Record<string, string>} />
+        </i>
       ) : (
         <span class="sdr-holo">
           <CardImg name={name} />
@@ -97,6 +137,26 @@ function AceFigure({ name, lv }: { name: string; lv: number }) {
       )}
     </span>
   );
+}
+
+/** The Mate pulls a face now and then (a smile, a wow, a yawn): one timer, only while the room
+ *  is on screen and the app is in front, and only the Mate re-renders. */
+function RoomMate({ id, live }: { id: MateId; live: boolean }) {
+  const [face, setFace] = useState<Face>('idle');
+  const [front, setFront] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const f = () => setFront(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', f);
+    return () => document.removeEventListener('visibilitychange', f);
+  }, []);
+  useEffect(() => {
+    if (!live || !front) return;
+    const faces: Face[] = ['happy', 'idle', 'wow', 'idle', 'love', 'idle', 'smirk', 'sleep'];
+    let i = 0;
+    const t = setInterval(() => setFace(faces[i++ % faces.length]), 3800);
+    return () => clearInterval(t);
+  }, [live, front]);
+  return <MateArt id={id} face={face} />;
 }
 
 export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: { profile: Profile; save: SpeedSave; deck: SpeedDeck | null | undefined; deckAce: string | null; pass?: RoomPass; go: (to: RoomGo) => void; onDeck: () => void }) {
@@ -109,7 +169,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
   const packs = packsOf(save);
   const lv = ace?.ace?.lv ?? 0;
 
-  // Pause the room's animations while it's scrolled away (or the tab is behind another app).
+  // Pause the room's animations while it's scrolled away (browsers already stop them in the background).
   const ref = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState(true);
   useEffect(() => {
@@ -120,18 +180,24 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
     return () => io.disconnect();
   }, []);
 
-  // The Mate reacts now and then: a smile, a wave, a yawn. One timer, nothing per frame.
-  const [face, setFace] = useState<Face>('idle');
+  // Furniture shifts a few pixels against the wall as a mouse moves (computers only: phones
+  // keep still). One CSS variable per frame at most, transform only.
   useEffect(() => {
-    if (!seen) return;
-    const faces: Face[] = ['happy', 'idle', 'wow', 'idle', 'love', 'idle', 'smirk', 'sleep'];
-    let i = 0;
-    const t = setInterval(() => setFace(faces[i++ % faces.length]), 3800);
-    return () => clearInterval(t);
+    const el = ref.current;
+    if (!el || !seen || typeof matchMedia === 'undefined' || !matchMedia('(hover: hover) and (pointer: fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    let x = 0;
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+      if (!raf) raf = requestAnimationFrame(() => ((raf = 0), el.style.setProperty('--sdr-px', x.toFixed(3))));
+    };
+    el.addEventListener('pointermove', move);
+    return () => (el.removeEventListener('pointermove', move), cancelAnimationFrame(raf));
   }, [seen]);
 
   return (
-    <div ref={ref} class={`sdr ${seen ? '' : 'off'}`} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
+    <div ref={ref} class={`sdr ${seen ? '' : 'off'} ${pass ? 'has-pass' : ''}`} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
       <div class="sdr-walls" aria-hidden="true">
         <i class="sdr-window" />
         <i class="sdr-light" />
@@ -154,8 +220,8 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
               board.notes.map((n, i) => (
                 <span key={i} class={`sdr-note n${i} ${n.done ? 'done' : ''}`}>
                   <i class="sdr-pin" />
-                  <b>{n.who.replace(/^The /, '').split(' ')[0]}</b>
-                  <small>{n.done ? '✓ done' : `${n.have}/${n.need}`}</small>
+                  <b>{shortName(n.who)}</b>
+                  <small>{n.done ? '✓ done' : `${short(n.have)}/${short(n.need)}`}</small>
                 </span>
               ))
             ) : (
@@ -185,20 +251,24 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
         )}
 
         {/* your Mate, wandering */}
-        <span class="sdr-walk">
-          <Spot cls="sdr-mate" label={`Your Mate, ${mateDef(mate)?.name ?? 'Mate'}. Opens Mates`} tag={mateDef(mate)?.name} onPick={() => go('mates')}>
-            <i class="sdr-shadow" />
-            <span class="sdr-turn">
-              <span class="sdr-mate-bob">
-                <MateArt id={mate} face={face} />
+        {/* (the button is the still patch of floor it walks on: a steady tap target and focus ring) */}
+        <Spot cls="sdr-matezone" label={`Your Mate, ${mateDef(mate)?.name ?? 'Mate'}. Opens Mates`} onPick={() => go('mates')}>
+          <span class="sdr-walk">
+            <span class="sdr-mate">
+              <i class="sdr-shadow" />
+              <span class="sdr-turn">
+                <span class="sdr-mate-bob">
+                  <RoomMate id={mate} live={seen} />
+                </span>
               </span>
+              <span class="sdr-tag">{mateDef(mate)?.name}</span>
             </span>
-          </Spot>
-        </span>
+          </span>
+        </Spot>
 
         {/* the table: deck box in your sleeve, and the packs waiting */}
         <span class="sdr-table" aria-hidden="true" />
-        <Spot cls="sdr-deckbox" label={`Active deck: ${deck?.name ?? 'none'}${save.decks.length > 1 ? '. Tap to switch' : ''}`} tag={deck ? deck.name : 'Decks'} onPick={onDeck}>
+        <Spot cls="sdr-deckbox" label={`Active deck: ${deck?.name ?? 'none'}${save.decks.length > 1 ? '. Tap to switch' : ''}`} tag={deck ? `${deck.name}${save.decks.length > 1 ? ' ⇄' : ''}` : 'Decks'} onPick={onDeck}>
           <span class="sdr-box">
             <CardImg name="" back sleeve={sleeve} />
             <CardImg name="" back sleeve={sleeve} />
