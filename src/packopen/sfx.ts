@@ -103,8 +103,13 @@ export function sfxCharge(ms: number): () => void {
   return () => {
     try {
       const now = ctx.currentTime;
-      g.gain.cancelScheduledValues(now);
-      g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
+      // hold the level where it is (Safari misreports .value mid-ramp, which pops)
+      const p = g.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now);
+      else {
+        p.cancelScheduledValues(now);
+        p.setValueAtTime(Math.max(0.0001, p.value), now);
+      }
       g.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
       o.stop(now + 0.08);
     } catch {

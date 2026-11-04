@@ -363,11 +363,11 @@ function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void 
   }, []);
   return (
     <Overlay>
-      <div class="reveal summary">
+      <div class="reveal summary haul">
         <p>
           <b>{opened.length} packs</b> {sets.length === 1 ? `of ${shortSetName(sets[0] ?? '')}` : `from ${sets.length} sets`}: {fresh.size} new card{fresh.size === 1 ? '' : 's'}
           {shards ? `, ${shards} shards from extra copies` : ''}.
-          {top >= 3 && ` Best pull: ${TIERS[top].name}!`}
+          {top >= 3 && ` Best pull: ${TIERS[top].name} ${cards.find((c) => c.f === top)?.n ?? ''}!`}
         </p>
         <div class="binder">
           {cards.slice(0, limit).map(({ n, set, f, x }) => (
