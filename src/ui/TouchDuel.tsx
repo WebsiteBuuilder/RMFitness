@@ -13,6 +13,7 @@ import { card as cardInfo } from '../eds/db';
 import { getEffect } from '../eds/effects';
 import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
+import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
 import type { Command, Mode } from './Duel';
 import { mixedSides, sideLabel } from './sideLabel';
 import { attackForecast } from './forecast';
@@ -438,7 +439,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}|${wear}` : `${cls}|${wear}`;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}|${wear}|${duelSleeveOf(c.owner) ?? ''}` : `${cls}|${wear}`;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -454,7 +455,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {/* (always there in a Speed Duel's Monster Zone, so it sees the first mark land) */}
         {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c && (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? `myset${sleeveClass(duelSleeveOf(c.owner))}` : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {c.faceUp && <i class="tshine" aria-hidden="true" />}
             {!c.faceUp && visible && <span class="setmark">SET</span>}
@@ -513,7 +514,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const extra = ps.fusion.length > 0 || ps.removed.length > 0;
     return (
       <div class={`tpile deck${p === acting && ctl.autoPill ? ' has-auto' : ''}`} data-pile={`deck${p}`}>
-        {ps.deck.length > 0 ? <CardImg name="" back /> : <span class="tz-label">DECK</span>}
+        {ps.deck.length > 0 ? <CardImg name="" back owner={p} shine /> : <span class="tz-label">DECK</span>}
         <span class="tcount">{ps.deck.length}</span>
         {p === acting && ctl.autoPill && <AutoDrawPill />}
         {extra && (
@@ -730,7 +731,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               const side = mixed && o.uid !== undefined && e.fieldCard(o.uid) ? (e.controller(o.uid) === acting ? 'Yours: ' : 'Theirs: ') : '';
               return (
                 <button key={i} class={`topt ${ctl.picks.includes(i) ? 'on' : ''} ${name ? '' : 'text'}`} onClick={() => ctl.togglePick(prompt, i)}>
-                  {name !== null ? <CardImg name={name} back={name === ''} /> : null}
+                  {name !== null ? <CardImg name={name} back={name === ''} owner={name === '' && o.uid !== undefined ? e.fieldCard(o.uid)?.owner : undefined} /> : null}
                   {prompt.max > 1 && ctl.picks.includes(i) && <i class="topt-ord">{ctl.picks.indexOf(i) + 1}</i>}
                   <span class={name !== null ? 'topt-label' : 'topt-text'}>{side}{sideLabel(o, ctl.acting)}</span>
                 </button>
