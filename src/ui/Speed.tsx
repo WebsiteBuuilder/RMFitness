@@ -37,7 +37,7 @@ import { CardImg, CardInfoPanel } from './CardImg';
 import { TiltCard } from './TiltCard';
 import './deckedit.css';
 import { RandomDeckSheet } from './RandomDeck';
-import { DeckChat, forgetDeckChat, stopDeckChat } from './DeckChat';
+import { DeckChat, forgetDeckChat, preloadDeckChat, stopDeckChat } from './deckChatLazy';
 import { DeckSwitch } from './DeckPick';
 import { randomSpeedDeck, speedThemes } from '../eds/speedRandom';
 import { Menu, Overlay, Win } from './Window';
@@ -446,6 +446,8 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
 const SHORT_NAME: Record<string, string> = { 'Yami Yugi': 'Yugi', 'Seto Kaiba': 'Kaiba', 'Maximillion Pegasus': 'Pegasus' };
 
 const PAGE = 60;
+/** card list rows drawn in the editor's first frame (the rest follow right after) */
+const FIRST_ROWS = 12;
 type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
 type Sort = 'type' | 'name' | 'atk' | 'def' | 'level';
 const SORTS: [Sort, string][] = [
@@ -580,6 +582,19 @@ function savedSize(): TileSize {
 }
 
 export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false, openChat = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean; openChat?: boolean }) {
+  // Deck chat's code downloads while the editor is open, so tapping Chat opens it at once.
+  // after the editor's first paint: the rest of the card list, then (a moment later) the chat's code,
+  // so neither lands in the tap that opens the editor
+  const [opened, setOpened] = useState(false);
+  useEffect(() => {
+    let t1 = 0;
+    let t2 = 0;
+    const raf = requestAnimationFrame(() => {
+      t1 = window.setTimeout(() => setOpened(true), 0);
+      t2 = window.setTimeout(() => void preloadDeckChat().catch(() => {}), 250);
+    });
+    return () => (cancelAnimationFrame(raf), clearTimeout(t1), clearTimeout(t2));
+  }, []);
   const [random, setRandom] = useState(openRandom);
   /** the deck chat sheet (Claude builds and edits the deck) */
   const [chat, setChat] = useState(openChat);
@@ -823,7 +838,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
     },
     [pool, kind, setF, attr, lvl, query, inText, showAll, order, craftOn, allOn, minAtk, collection, crafter?.chips],
   );
-  const shown = rows.slice(0, limit);
+  // opening: the first rows paint with the editor, the rest of the page a moment later (one long task becomes two short ones)
+  const shown = rows.slice(0, opened ? limit : FIRST_ROWS);
   /** when Mine or Craft finds nothing, how many cards the same search finds in the whole game */
   const elsewhere = useMemo(
     () => (rows.length || allOn ? 0 : speedCards().filter((c) => matches(c.name) && (showAll || !unplayableReason(c.name))).length),
@@ -833,11 +849,12 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
   const moreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = moreRef.current;
-    if (!el || rows.length <= limit || typeof IntersectionObserver === 'undefined') return;
+    // (not before the first page is all drawn: its end would look near while only its first rows are up)
+    if (!el || !opened || rows.length <= limit || typeof IntersectionObserver === 'undefined') return;
     const io = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && setLimit((l) => l + PAGE), { rootMargin: '600px 0px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [rows.length, limit]);
+  }, [rows.length, limit, opened]);
   const main = [...deck.main].sort(byType);
   const extra = [...deck.extra].sort(byType);
   const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
