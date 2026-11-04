@@ -2107,7 +2107,8 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   const fontOf = (s: number) => `italic 900 ${s}px ${DISPLAY_FONT}`;
   g.font = fontOf(fs);
   const name = title.toUpperCase();
-  while (fs > 34 && g.measureText(name).width > W - 70) g.font = fontOf((fs -= 4));
+  // (kept clear of the band's ends: on a narrow phone they run past the screen's edges)
+  while (fs > 34 && g.measureText(name).width > W - 220) g.font = fontOf((fs -= 4));
   g.textAlign = 'center';
   g.textBaseline = 'alphabetic';
   const y = 40 + fs;

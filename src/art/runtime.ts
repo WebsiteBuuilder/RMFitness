@@ -3699,7 +3699,7 @@ export class Director {
     const co = mode !== 'off' ? (calloutFor(a.name, att.prof.attackName, true) ?? { text: shout }) : null;
     if (co && this.ui.callout) {
       tl.at(cueAt, () => {
-        this.ui.callout!({ text: co.text, card: a.name, seat: a.controller, side: this.side(a.controller), color: mill ? 0xffd56a : col.main, light: mill ? 0xfff6d8 : col.light, dur: 0.9, ace: ace ? { lv, title: bondTitle(lv) } : null, finale: true });
+        this.ui.callout!({ text: co.text, card: a.name, seat: a.controller, side: this.side(a.controller), color: mill ? 0xffd56a : col.main, light: mill ? 0xfff6d8 : col.light, dur: 1.2, ace: ace ? { lv, title: bondTitle(lv) } : null, finale: true });
         if (mode === 'voice' && soundEnabled()) speakShout(co.text, voicePitch(card(a.name)?.level ?? 4, a.name), Math.min(1.7, 1.08 * Math.max(1, this.timeScale)), this.timeScale);
         boom(0.35);
         // (no second CALLOUT_SHOUT: the Mates already reacted to the declaration's shout)
