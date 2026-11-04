@@ -1,6 +1,6 @@
 // What the Duel Pass has handed this duelist for good: plain data, read by the sleeve, playmat,
 // frame, name plate and title code without pulling in the whole pass (no import cycles).
-import type { SpeedSave } from '../eds/speedSave';
+import type { SpeedSave } from "../eds/speedSave";
 
 /** The save fields the Duel Pass keeps (on the Speed Duel save, so they sync with the profile). */
 export interface PassFields {
@@ -28,7 +28,17 @@ export interface PassTrack {
   firstWin: boolean;
 }
 
-export const passOf = (s: SpeedSave | null | undefined) => s as (SpeedSave & PassFields) | null | undefined;
+export const passOf = (s: SpeedSave | null | undefined) =>
+  s as (SpeedSave & PassFields) | null | undefined;
 
 /** Did the Duel Pass give this duelist that cosmetic ("sleeve:id", "mat:id", ...)? */
-export const passOwns = (s: SpeedSave | null | undefined, key: string): boolean => !!passOf(s)?.passOwn?.includes(key);
+export const passOwnList = (s: SpeedSave | null | undefined): string[] => {
+  const o = passOf(s)?.passOwn as unknown;
+  return Array.isArray(o)
+    ? o.filter((k): k is string => typeof k === "string")
+    : [];
+};
+export const passOwns = (
+  s: SpeedSave | null | undefined,
+  key: string,
+): boolean => passOwnList(s).includes(key);

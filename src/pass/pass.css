@@ -2,12 +2,15 @@
    Every animation moves transform or opacity only (cheap on a mid-range Android); the rays turn
    one layer, and nothing loops on the page except the "ready" glow on rewards to claim. */
 
-.dpass {
+:root {
+  /* (on :root: the tile, result strip, banner and badges live outside the pass page) */
   --dp-gold: #f2c14e;
   --dp-gold2: #fff0b0;
   --dp-prem: #c08aff;
   --dp-ink: #0a1028;
   --dp-line: #ffffff22;
+}
+.dpass {
   min-height: 100dvh;
   padding: 0 0 calc(24px + env(safe-area-inset-bottom));
   color: #fff;
@@ -215,9 +218,24 @@
 .dp-btn.gold.pulse {
   animation: dp-pulse 1.6s ease-in-out infinite;
 }
+/* the glow breathes, not the size (the button never grows past its neighbours) */
+.dp-btn.gold.pulse::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  box-shadow: 0 0 18px 4px #ffd56a;
+  opacity: 0;
+  animation: dp-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.dp-btn.gold.pulse {
+  position: relative;
+  animation: none;
+}
 @keyframes dp-pulse {
   50% {
-    transform: scale(1.03);
+    opacity: 0.85;
   }
 }
 .dp-btn.prem {
@@ -1476,7 +1494,7 @@
   .dp-frame.spin .dp-ring,
   .dp-plate.shine::after,
   .dp-cell.ready::after,
-  .dp-btn.gold.pulse {
+  .dp-btn.gold.pulse::after {
     animation: none;
   }
 }
@@ -1486,4 +1504,69 @@
   width: 64px;
   height: 64px;
   font-size: 24px;
+}
+
+/* small phones: the two pass buttons sit side by side, so more of the road shows */
+@media (max-width: 420px) {
+  .dp-acts .dp-btn {
+    flex: 1 1 140px;
+    padding: 0 10px;
+    font-size: 14px;
+  }
+}
+@media (max-height: 700px) {
+  .dp-hero {
+    padding: 10px 14px;
+    gap: 12px;
+  }
+  .dp-hero .dp-medal {
+    width: 64px;
+    height: 64px;
+  }
+  .dp-hero .dp-medal b {
+    font-size: 26px;
+  }
+}
+/* the tier-up's plate preview fits its tile */
+.dp-up-it .dp-pic-plate {
+  transform: scale(0.8);
+}
+/* every reward's name takes the same two lines, so the rows line up */
+.dp-claim-it b {
+  min-height: 2.3em;
+}
+/* the claim's spotlight: the best rewards one at a time, full size, before the rest are dealt */
+.dp-claim-hero {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.dp-claim-hero .dp-claim-card {
+  width: min(56vw, 230px);
+  animation: dp-slam 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.dp-claim-hero small {
+  font: 800 12px/1 system-ui;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dp-gold2);
+  animation: dp-fade-in 0.4s 0.3s both;
+}
+.dp-claim-hero b {
+  font: italic 900 min(7vw, 28px)/1.1 system-ui;
+  animation: dp-fade-in 0.4s 0.35s both;
+}
+.dp-claim-hero.prem .dp-claim-card {
+  border-color: #c08aff;
+  background: radial-gradient(circle at 50% 40%, #5a2a9a, #140a2e 70%);
+  box-shadow: 0 0 30px #a06aff88;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dp-claim-hero .dp-claim-card {
+    animation: none;
+  }
 }

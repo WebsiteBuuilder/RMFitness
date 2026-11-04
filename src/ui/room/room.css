@@ -564,7 +564,7 @@
 
 /* ---------- Duel Pass poster (front left, when the pass exists) ---------- */
 .sdr-pass {
-  left: 2%;
+  left: 4%;
   bottom: 13cqh;
   width: 15cqh;
   height: 21cqh;
@@ -744,8 +744,8 @@
   z-index: 5;
 }
 .sdr.has-pass .sdr-matezone {
-  left: calc(4% + 15cqh);
-  width: calc(46% - 15cqh);
+  left: calc(9% + 15cqh);
+  width: calc(41% - 15cqh);
 }
 .sdr-walk {
   position: absolute;

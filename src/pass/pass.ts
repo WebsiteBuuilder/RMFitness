@@ -8,16 +8,28 @@
 // "Anything goes" decks, duels given up before they got going and duels that left early earn
 // nothing. Setting the phone's clock back freezes the pass until the real date catches up, and
 // rewards a season reached but never claimed are handed over when the next season starts.
-import { chipsOf } from '../collection/economy';
-import type { SpeedSave } from '../eds/speedSave';
-import { hasSleeve, sleeveDef } from '../sleeves/sleeves';
-import { hasPlaymat, playmatDef } from '../playmats/playmats';
-import { hasMate, mateDef } from '../mates/roster';
-import { FRAMES, PLATES, ROAD, TIERS, TITLES, frameDef, plateDef, seasonName, titleName, type PassReward, type Tier } from './road';
-import { passOf, type PassFields, type PassTrack } from './owned';
+import { chipsOf } from "../collection/economy";
+import type { SpeedSave } from "../eds/speedSave";
+import { hasSleeve, sleeveDef } from "../sleeves/sleeves";
+import { hasPlaymat, playmatDef } from "../playmats/playmats";
+import { hasMate, mateDef } from "../mates/roster";
+import {
+  FRAMES,
+  PLATES,
+  ROAD,
+  TIERS,
+  TITLES,
+  frameDef,
+  plateDef,
+  seasonName,
+  titleName,
+  type PassReward,
+  type Tier,
+} from "./road";
+import { passOf, passOwnList, type PassFields, type PassTrack } from "./owned";
 
-export * from './road';
-export { passOwns, passOf, type PassTrack } from './owned';
+export * from "./road";
+export { passOwns, passOf, type PassTrack } from "./owned";
 
 export const TIER_XP = 400;
 /** The most Pass XP one day can earn (two and a half tiers): about 20 days of play reach tier 50. */
@@ -32,7 +44,7 @@ export const MAX_XP = TIERS * TIER_XP;
 
 type PS = SpeedSave & PassFields;
 
-const pad = (n: number) => String(n).padStart(2, '0');
+const pad = (n: number) => String(n).padStart(2, "0");
 /** The season a moment falls in: its local calendar month ("2026-11"). */
 export const passSeason = (now = Date.now()) => {
   const d = new Date(now);
@@ -50,15 +62,30 @@ export function passDaysLeft(now = Date.now()): number {
 }
 export const passSeasonName = (now = Date.now()) => seasonName(passSeason(now));
 
-const freshTrack = (season: string, day: string): PassTrack => ({ season, xp: 0, prem: false, gotF: [], gotP: [], day, dayXp: 0, firstWin: false });
-const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : []);
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0);
+const freshTrack = (season: string, day: string): PassTrack => ({
+  season,
+  xp: 0,
+  prem: false,
+  gotF: [],
+  gotP: [],
+  day,
+  dayXp: 0,
+  firstWin: false,
+});
+const nums = (v: unknown): number[] =>
+  Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : [];
+const num = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0;
 /** A saved track with every field there (a synced or hand-edited one may be missing some). */
-function saneTrack(t: Partial<PassTrack> | null | undefined, season: string, day: string): PassTrack | null {
-  if (!t || typeof t !== 'object') return null;
+function saneTrack(
+  t: Partial<PassTrack> | null | undefined,
+  season: string,
+  day: string,
+): PassTrack | null {
+  if (!t || typeof t !== "object") return null;
   return {
-    season: typeof t.season === 'string' ? t.season : season,
-    day: typeof t.day === 'string' ? t.day : day,
+    season: typeof t.season === "string" ? t.season : season,
+    day: typeof t.day === "string" ? t.day : day,
     xp: Math.min(num(t.xp), MAX_XP),
     dayXp: num(t.dayXp),
     prem: t.prem === true,
@@ -81,9 +108,11 @@ export function trackOf(s: SpeedSave, now = Date.now()): PassTrack | null {
   return t.day === day ? t : { ...t, day, dayXp: 0, firstWin: false };
 }
 /** The track to show even while the clock is behind (frozen: nothing earned, nothing claimed). */
-export const shownTrack = (s: SpeedSave, now = Date.now()): PassTrack => trackOf(s, now) ?? saneTrack(passOf(s)?.pass, passSeason(now), dayOf(now))!;
+export const shownTrack = (s: SpeedSave, now = Date.now()): PassTrack =>
+  trackOf(s, now) ?? saneTrack(passOf(s)?.pass, passSeason(now), dayOf(now))!;
 
-export const tierAt = (xp: number) => Math.min(TIERS, Math.floor(Math.max(0, xp) / TIER_XP));
+export const tierAt = (xp: number) =>
+  Math.min(TIERS, Math.floor(Math.max(0, xp) / TIER_XP));
 /** XP into the tier being climbed, and what that tier needs ([have, need]; the top tier: full). */
 export function tierProgress(xp: number): [number, number] {
   if (tierAt(xp) >= TIERS) return [TIER_XP, TIER_XP];
@@ -92,19 +121,35 @@ export function tierProgress(xp: number): [number, number] {
 
 // ---------- owning and wearing ----------
 
-const ownList = (s: SpeedSave) => passOf(s)?.passOwn ?? [];
-const withOwn = (s: SpeedSave, key: string): SpeedSave => (ownList(s).includes(key) ? s : ({ ...(s as PS), passOwn: [...ownList(s), key] } as SpeedSave));
+const ownList = (s: SpeedSave) => passOwnList(s);
+/** What a duelist wears, as saved (a plain object, or nothing). */
+const wearOf = (
+  s: SpeedSave | null | undefined,
+): Partial<Record<WearKind, string>> => {
+  const w = passOf(s)?.wear as unknown;
+  return w && typeof w === "object" && !Array.isArray(w)
+    ? (w as Partial<Record<WearKind, string>>)
+    : {};
+};
+const withOwn = (s: SpeedSave, key: string): SpeedSave =>
+  ownList(s).includes(key)
+    ? s
+    : ({ ...(s as PS), passOwn: [...ownList(s), key] } as SpeedSave);
 
 /** Is this reward already the duelist's (from the pass or any other way)? */
-export function ownsReward(s: SpeedSave, r: PassReward, season: string): boolean {
+export function ownsReward(
+  s: SpeedSave,
+  r: PassReward,
+  season: string,
+): boolean {
   switch (r.k) {
-    case 'sleeve':
+    case "sleeve":
       return hasSleeve(s, r.id);
-    case 'mat':
+    case "mat":
       return hasPlaymat(s, r.id);
-    case 'mate':
+    case "mate":
       return hasMate(s, r.id);
-    case 'stitle':
+    case "stitle":
       return ownList(s).includes(`title:${r.id}@${season}`);
     default:
       return ownList(s).includes(`${r.k}:${r.id}`);
@@ -112,18 +157,26 @@ export function ownsReward(s: SpeedSave, r: PassReward, season: string): boolean
 }
 
 /** Hands a reward over for good (one already owned: nothing changes). */
-export function giveReward(s: SpeedSave, r: PassReward, season: string): SpeedSave {
+export function giveReward(
+  s: SpeedSave,
+  r: PassReward,
+  season: string,
+): SpeedSave {
   if (ownsReward(s, r, season)) return s;
   const x = s as PS & { sleeves?: string[]; playmats?: string[] };
   switch (r.k) {
-    case 'sleeve':
+    case "sleeve":
       // (a Duel Chip sleeve lands on the bought list; a pass-only one on the pass's own)
-      return sleeveDef(r.id) && 'chips' in sleeveDef(r.id)!.cost ? ({ ...x, sleeves: [...(x.sleeves ?? []), r.id] } as SpeedSave) : withOwn(s, `sleeve:${r.id}`);
-    case 'mat':
-      return playmatDef(r.id) && 'chips' in playmatDef(r.id)!.cost ? ({ ...x, playmats: [...(x.playmats ?? []), r.id] } as SpeedSave) : withOwn(s, `mat:${r.id}`);
-    case 'mate':
+      return sleeveDef(r.id) && "chips" in sleeveDef(r.id)!.cost
+        ? ({ ...x, sleeves: [...(x.sleeves ?? []), r.id] } as SpeedSave)
+        : withOwn(s, `sleeve:${r.id}`);
+    case "mat":
+      return playmatDef(r.id) && "chips" in playmatDef(r.id)!.cost
+        ? ({ ...x, playmats: [...(x.playmats ?? []), r.id] } as SpeedSave)
+        : withOwn(s, `mat:${r.id}`);
+    case "mate":
       return { ...s, mates: [...(s.mates ?? []), r.id] };
-    case 'stitle':
+    case "stitle":
       return withOwn(s, `title:${r.id}@${season}`);
     default:
       return withOwn(s, `${r.k}:${r.id}`);
@@ -131,48 +184,74 @@ export function giveReward(s: SpeedSave, r: PassReward, season: string): SpeedSa
 }
 
 /** What a reward is called, and what kind of thing it is. */
-export function rewardName(r: PassReward, season: string): { name: string; kind: string } {
+export function rewardName(
+  r: PassReward,
+  season: string,
+): { name: string; kind: string } {
   switch (r.k) {
-    case 'sleeve':
-      return { name: sleeveDef(r.id)?.name ?? r.id, kind: 'Sleeve' };
-    case 'mat':
-      return { name: playmatDef(r.id)?.name ?? r.id, kind: 'Playmat' };
-    case 'mate':
-      return { name: mateDef(r.id)?.name ?? r.id, kind: 'Mate' };
-    case 'frame':
-      return { name: frameDef(r.id)?.name ?? r.id, kind: 'Avatar frame' };
-    case 'plate':
-      return { name: `${plateDef(r.id)?.name ?? r.id}`, kind: 'Name plate' };
-    case 'title':
-      return { name: titleName(r.id) ?? r.id, kind: 'Title' };
-    case 'stitle':
-      return { name: titleName(`${r.id}@${season}`) ?? r.id, kind: 'Season title' };
+    case "sleeve":
+      return { name: sleeveDef(r.id)?.name ?? r.id, kind: "Sleeve" };
+    case "mat":
+      return { name: playmatDef(r.id)?.name ?? r.id, kind: "Playmat" };
+    case "mate":
+      return { name: mateDef(r.id)?.name ?? r.id, kind: "Mate" };
+    case "frame":
+      return { name: frameDef(r.id)?.name ?? r.id, kind: "Avatar frame" };
+    case "plate":
+      return { name: `${plateDef(r.id)?.name ?? r.id}`, kind: "Name plate" };
+    case "title":
+      return { name: titleName(r.id) ?? r.id, kind: "Title" };
+    case "stitle":
+      return {
+        name: titleName(`${r.id}@${season}`) ?? r.id,
+        kind: "Season title",
+      };
   }
 }
 /** Only on the Duel Pass (never sold anywhere else). */
 export function passOnly(r: PassReward): boolean {
-  if (r.k === 'sleeve') return !!sleeveDef(r.id) && 'pass' in sleeveDef(r.id)!.cost;
-  if (r.k === 'mat') return !!playmatDef(r.id) && 'pass' in playmatDef(r.id)!.cost;
-  return r.k !== 'mate';
+  if (r.k === "sleeve")
+    return !!sleeveDef(r.id) && "pass" in sleeveDef(r.id)!.cost;
+  if (r.k === "mat")
+    return !!playmatDef(r.id) && "pass" in playmatDef(r.id)!.cost;
+  return r.k !== "mate";
 }
 
 /** Titles, plates and frames this duelist has (ids). */
-export const ownedTitles = (s: SpeedSave) => ownList(s).filter((k) => k.startsWith('title:') && titleName(k.slice(6))).map((k) => k.slice(6));
-export const ownedPlates = (s: SpeedSave) => PLATES.filter((p) => ownList(s).includes(`plate:${p.id}`)).map((p) => p.id);
-export const ownedFrames = (s: SpeedSave) => FRAMES.filter((f) => ownList(s).includes(`frame:${f.id}`)).map((f) => f.id);
+export const ownedTitles = (s: SpeedSave) =>
+  ownList(s)
+    .filter((k) => k.startsWith("title:") && titleName(k.slice(6)))
+    .map((k) => k.slice(6));
+export const ownedPlates = (s: SpeedSave) =>
+  PLATES.filter((p) => ownList(s).includes(`plate:${p.id}`)).map((p) => p.id);
+export const ownedFrames = (s: SpeedSave) =>
+  FRAMES.filter((f) => ownList(s).includes(`frame:${f.id}`)).map((f) => f.id);
 
-export type WearKind = 'title' | 'plate' | 'frame';
+export type WearKind = "title" | "plate" | "frame";
 /** What this duelist wears (only things they still have). */
-export function worn(s: SpeedSave | null | undefined): { title: string | null; plate: string | null; frame: string | null } {
-  const w = passOf(s)?.wear ?? {};
+export function worn(s: SpeedSave | null | undefined): {
+  title: string | null;
+  plate: string | null;
+  frame: string | null;
+} {
+  const w = wearOf(s);
   const own = s ? ownList(s) : [];
-  const ok = (k: WearKind) => (w[k] && own.includes(`${k}:${w[k]}`) ? w[k]! : null);
-  return { title: ok('title') && titleName(w.title) ? w.title! : null, plate: ok('plate'), frame: ok('frame') };
+  const ok = (k: WearKind) =>
+    w[k] && own.includes(`${k}:${w[k]}`) ? w[k]! : null;
+  return {
+    title: ok("title") && titleName(w.title) ? w.title! : null,
+    plate: ok("plate"),
+    frame: ok("frame"),
+  };
 }
 /** Puts on (or, with null, takes off) a title, plate or frame the duelist has. */
-export function wear(s: SpeedSave, kind: WearKind, id: string | null): SpeedSave | null {
+export function wear(
+  s: SpeedSave,
+  kind: WearKind,
+  id: string | null,
+): SpeedSave | null {
   if (id !== null && !ownList(s).includes(`${kind}:${id}`)) return null;
-  const w = { ...(passOf(s)?.wear ?? {}) };
+  const w = { ...wearOf(s) };
   if (id === null) delete w[kind];
   else w[kind] = id;
   return { ...(s as PS), wear: w } as SpeedSave;
@@ -182,7 +261,7 @@ export function wear(s: SpeedSave, kind: WearKind, id: string | null): SpeedSave
 
 export interface Claimed {
   tier: number;
-  lane: 'free' | 'prem';
+  lane: "free" | "prem";
   reward: PassReward;
   /** it was already theirs: nothing new */
   dup: boolean;
@@ -192,27 +271,44 @@ export interface Claimed {
 
 const tierDef = (n: number): Tier => ROAD[n - 1];
 
-/** Rewards reached on a track and not claimed yet. */
-export function unclaimed(t: PassTrack): { tier: number; lane: 'free' | 'prem'; reward: PassReward }[] {
-  const out: { tier: number; lane: 'free' | 'prem'; reward: PassReward }[] = [];
-  const top = tierAt(t.xp);
+/** Rewards reached on a track and not claimed yet (up to tier `upTo`). */
+export function unclaimed(
+  t: PassTrack,
+  upTo = TIERS,
+): { tier: number; lane: "free" | "prem"; reward: PassReward }[] {
+  const out: { tier: number; lane: "free" | "prem"; reward: PassReward }[] = [];
+  const top = Math.min(upTo, tierAt(t.xp));
   for (let n = 1; n <= top; n++) {
     const d = tierDef(n);
-    if (d.free && !t.gotF.includes(n)) out.push({ tier: n, lane: 'free', reward: d.free });
-    if (t.prem && !t.gotP.includes(n)) out.push({ tier: n, lane: 'prem', reward: d.prem });
+    if (d.free && !t.gotF.includes(n))
+      out.push({ tier: n, lane: "free", reward: d.free });
+    if (t.prem && !t.gotP.includes(n))
+      out.push({ tier: n, lane: "prem", reward: d.prem });
   }
   return out;
 }
-export const toClaim = (s: SpeedSave, now = Date.now()) => {
-  const t = trackOf(s, now) ?? shownTrack(s, now);
-  return unclaimed(t).length;
-};
+/**
+ * The highest tier that can be claimed now. While the clock is behind, only what this month's
+ * real days could have earned (so stepping the clock through a month in one sitting, then back,
+ * doesn't hand the whole road over), and nothing from a season that hasn't started.
+ */
+export function claimTop(s: SpeedSave, now = Date.now()): number {
+  if (trackOf(s, now)) return TIERS;
+  const t = shownTrack(s, now);
+  if (t.season > passSeason(now)) return 0;
+  return tierAt(new Date(now).getDate() * DAY_CAP);
+}
+export const toClaim = (s: SpeedSave, now = Date.now()) =>
+  unclaimed(shownTrack(s, now), claimTop(s, now)).length;
 
 /**
  * A new season: the last one's rewards reached but never claimed are handed over, and the
  * track starts again from tier 0 (the Chips lane closed). Nothing to do: the same save back.
  */
-export function rollSeason(s: SpeedSave, now = Date.now()): { save: SpeedSave; carried: Claimed[] } {
+export function rollSeason(
+  s: SpeedSave,
+  now = Date.now(),
+): { save: SpeedSave; carried: Claimed[] } {
   const old = saneTrack(passOf(s)?.pass, passSeason(now), dayOf(now));
   if (!old || old.season >= passSeason(now)) return { save: s, carried: [] };
   let save = s;
@@ -222,15 +318,24 @@ export function rollSeason(s: SpeedSave, now = Date.now()): { save: SpeedSave; c
     save = giveReward(save, u.reward, old.season);
     carried.push({ ...u, dup, season: old.season });
   }
-  return { save: { ...(save as PS), pass: freshTrack(passSeason(now), dayOf(now)) } as SpeedSave, carried };
+  return {
+    save: {
+      ...(save as PS),
+      pass: freshTrack(passSeason(now), dayOf(now)),
+    } as SpeedSave,
+    carried,
+  };
 }
 
 /** Claims everything reached (null: nothing to claim, or the clock is behind). */
-export function claimAll(s: SpeedSave, now = Date.now()): { save: SpeedSave; got: Claimed[] } | null {
+export function claimAll(
+  s: SpeedSave,
+  now = Date.now(),
+): { save: SpeedSave; got: Claimed[] } | null {
   const rolled = rollSeason(s, now).save;
   // while the clock is behind, what was already reached can still be claimed (nothing new is earned)
   const t = trackOf(rolled, now) ?? shownTrack(rolled, now);
-  const list = unclaimed(t);
+  const list = unclaimed(t, claimTop(rolled, now));
   if (!list.length) return null;
   let save = rolled;
   const got: Claimed[] = [];
@@ -240,17 +345,22 @@ export function claimAll(s: SpeedSave, now = Date.now()): { save: SpeedSave; got
     const dup = ownsReward(save, u.reward, t.season);
     save = giveReward(save, u.reward, t.season);
     got.push({ ...u, dup, season: t.season });
-    (u.lane === 'free' ? gotF : gotP).push(u.tier);
+    (u.lane === "free" ? gotF : gotP).push(u.tier);
   }
-  return { save: { ...(save as PS), pass: { ...t, gotF, gotP } } as SpeedSave, got };
+  return {
+    save: { ...(save as PS), pass: { ...t, gotF, gotP } } as SpeedSave,
+    got,
+  };
 }
 
 /** Why the Chips lane can't be opened now (null: it can). */
 export function cantOpenPrem(s: SpeedSave, now = Date.now()): string | null {
   const t = trackOf(rollSeason(s, now).save, now);
-  if (!t) return "Your phone's clock is behind: the pass waits for the real date";
-  if (t.prem) return 'Already open this season';
-  if (chipsOf(s) < PREM_PRICE) return `Needs ${PREM_PRICE} Duel Chips (you have ${chipsOf(s)})`;
+  if (!t)
+    return "Your phone's clock is behind: the pass waits for the real date";
+  if (t.prem) return "Already open this season";
+  if (chipsOf(s) < PREM_PRICE)
+    return `Needs ${PREM_PRICE} Duel Chips (you have ${chipsOf(s)})`;
   return null;
 }
 /** Opens this season's Duel Chips lane (every tier already reached is ready to claim). */
@@ -258,7 +368,11 @@ export function openPrem(s: SpeedSave, now = Date.now()): SpeedSave | null {
   if (cantOpenPrem(s, now)) return null;
   const rolled = rollSeason(s, now).save;
   const t = trackOf(rolled, now)!;
-  return { ...(rolled as PS), chips: chipsOf(rolled) - PREM_PRICE, pass: { ...t, prem: true } } as SpeedSave;
+  return {
+    ...(rolled as PS),
+    chips: chipsOf(rolled) - PREM_PRICE,
+    pass: { ...t, prem: true },
+  } as SpeedSave;
 }
 
 // ---------- earning ----------
@@ -267,7 +381,7 @@ export function openPrem(s: SpeedSave, now = Date.now()): SpeedSave | null {
 export interface PassDuel {
   /** the duel counts (see the top of this file) */
   counts: boolean;
-  result: 'w' | 'l' | 'd';
+  result: "w" | "l" | "d";
   /** given up or over before it got going: no XP */
   quick: boolean;
   /** turns the duel ran */
@@ -290,7 +404,11 @@ export interface PassGain {
 }
 
 /** Moves the pass on after a duel (gain null: it earned nothing). */
-export function earnPass(s: SpeedSave, d: PassDuel, now = Date.now()): { save: SpeedSave; gain: PassGain | null; carried: Claimed[] } {
+export function earnPass(
+  s: SpeedSave,
+  d: PassDuel,
+  now = Date.now(),
+): { save: SpeedSave; gain: PassGain | null; carried: Claimed[] } {
   if (!d.counts) return { save: s, gain: null, carried: [] };
   const { save: rolled, carried } = rollSeason(s, now);
   const t = trackOf(rolled, now);
@@ -298,19 +416,57 @@ export function earnPass(s: SpeedSave, d: PassDuel, now = Date.now()): { save: S
   const parts: { label: string; xp: number }[] = [];
   let firstWin = t.firstWin;
   // nothing for a duel over before turn 3, nor for giving up before turn 6 (start, pass, give up, repeat)
-  const quick = d.quick || d.turns < 3 || (d.surrendered && d.result !== 'w' && d.turns < 6);
-  if (!quick) parts.push(d.result === 'w' ? { label: 'Win', xp: XP_WIN } : { label: d.result === 'd' ? 'Draw' : 'Duel played', xp: XP_LOSS });
-  if (!quick && d.result === 'w' && !firstWin) {
-    parts.push({ label: 'First win today', xp: XP_FIRST_WIN });
+  const quick = d.quick || d.turns < 3 || (d.surrendered && d.turns < 6);
+  if (!quick)
+    parts.push(
+      d.result === "w"
+        ? { label: "Win", xp: XP_WIN }
+        : { label: d.result === "d" ? "Draw" : "Duel played", xp: XP_LOSS },
+    );
+  if (!quick && d.result === "w" && !firstWin) {
+    parts.push({ label: "First win today", xp: XP_FIRST_WIN });
     firstWin = true;
   }
-  if (d.requests > 0) parts.push({ label: d.requests === 1 ? 'Duelist Request done' : `${d.requests} Duelist Requests done`, xp: d.requests * XP_REQUEST });
+  if (d.requests > 0)
+    parts.push({
+      label:
+        d.requests === 1
+          ? "Duelist Request done"
+          : `${d.requests} Duelist Requests done`,
+      xp: d.requests * XP_REQUEST,
+    });
   const want = parts.reduce((a, p) => a + p.xp, 0);
   const room = Math.max(0, Math.min(DAY_CAP - t.dayXp, MAX_XP - t.xp));
   const xp = Math.min(room, want);
-  if (xp <= 0) return { save: passOf(rolled)?.pass === t ? rolled : ({ ...(rolled as PS), pass: t } as SpeedSave), gain: want > 0 ? { season: t.season, from: t.xp, to: t.xp, parts, capped: true } : null, carried };
-  const next: PassTrack = { ...t, xp: t.xp + xp, dayXp: t.dayXp + xp, firstWin };
-  return { save: { ...(rolled as PS), pass: next } as SpeedSave, gain: { season: t.season, from: t.xp, to: next.xp, parts, capped: xp < want }, carried };
+  if (xp <= 0)
+    return {
+      save:
+        passOf(rolled)?.pass === t
+          ? rolled
+          : ({ ...(rolled as PS), pass: t } as SpeedSave),
+      gain:
+        want > 0
+          ? { season: t.season, from: t.xp, to: t.xp, parts, capped: true }
+          : null,
+      carried,
+    };
+  const next: PassTrack = {
+    ...t,
+    xp: t.xp + xp,
+    dayXp: t.dayXp + xp,
+    firstWin,
+  };
+  return {
+    save: { ...(rolled as PS), pass: next } as SpeedSave,
+    gain: {
+      season: t.season,
+      from: t.xp,
+      to: next.xp,
+      parts,
+      capped: xp < want,
+    },
+    carried,
+  };
 }
 
 /** XP still to earn today. */
@@ -321,10 +477,11 @@ export const xpLeftToday = (s: SpeedSave, now = Date.now()) => {
 
 /** Every title a duelist could wear, for checking one that came from the other phone. */
 export const knownTitle = (id: unknown, now = Date.now()): id is string => {
-  if (typeof id !== 'string' || id.length > 32 || !titleName(id)) return false;
+  if (typeof id !== "string" || id.length > 32 || !titleName(id)) return false;
   // a season title from a season that hasn't happened yet: not real
-  const at = id.indexOf('@');
+  const at = id.indexOf("@");
   return at < 0 || id.slice(at + 1) <= passSeason(now);
 };
-export const knownPlate = (id: unknown): id is string => typeof id === 'string' && !!plateDef(id);
+export const knownPlate = (id: unknown): id is string =>
+  typeof id === "string" && !!plateDef(id);
 export { TITLES };
