@@ -29,6 +29,7 @@ import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters
 import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
+import { MatScars } from './matScars';
 import { wearKey, ZoneWear } from './fieldWear';
 import { fieldTerrain } from './atmosphereRules';
 import { PlaymatHalves, rowMatClass } from '../playmats/Halves';
@@ -912,6 +913,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} turn={state.turn} />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
+          {e.speed && <MatScars state={state} near={acting} />}
           <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>
             {deck(oppId)}
             {opp.sz
