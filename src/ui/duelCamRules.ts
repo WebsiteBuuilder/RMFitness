@@ -113,13 +113,13 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
       return { kind: m.kind, ms: 640, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.35, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'summon': {
-      const p = pose(at, 1.05, 0.7 * side(at), 5, 0.35);
+      const p = pose(at, 1.06, 0.7 * side(at), 5, 0.35);
       return { kind: m.kind, ms: 1250, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.34, pose: p, ease: 'linear' }, { at: 0.5, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'bigSummon': {
       // a bigger push and a lower camera, with a small extra push as it lands
-      const p1 = pose(at, 1.075, 1.0 * side(at), 8, 0.45);
-      const p2 = pose(at, 1.085, 1.1 * side(at), 9, 0.45);
+      const p1 = pose(at, 1.08, 1.0 * side(at), 8, 0.45);
+      const p2 = pose(at, 1.09, 1.1 * side(at), 9, 0.45);
       return { kind: m.kind, ms: 1600, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p1, ease: KICK }, { at: 0.42, pose: p2, ease: 'linear' }, { at: 0.58, pose: p2, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'attack':
@@ -128,8 +128,8 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
       const tgt = to ?? { x: field.cx, y: field.cy - field.h / 2 };
       const mid = { x: at.x * 0.45 + tgt.x * 0.55, y: at.y * 0.45 + tgt.y * 0.55 };
       const lean = Math.max(-1, Math.min(1, (tgt.x - at.x) / (field.w / 2 || 1)));
-      const p1 = pose(mid, 1.06, 1.2 * lean + 0.3 * side(mid), 7, 0.4);
-      const p2 = pose(mid, 1.075, 1.4 * lean + 0.3 * side(mid), 8, 0.45);
+      const p1 = pose(mid, 1.065, 1.2 * lean + 0.3 * side(mid), 7, 0.4);
+      const p2 = pose(mid, 1.08, 1.4 * lean + 0.3 * side(mid), 8, 0.45);
       return { kind: m.kind, ms: 1500, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p1, ease: 'linear' }, { at: 0.55, pose: p2, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'impact': {
