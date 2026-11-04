@@ -566,6 +566,8 @@ export class BoardLayer {
           const hc = p.finish >= FIN.MI ? HOLO_GOLD_RGB : HOLO_RGB;
           (u.uHoloCol.value as Vector3).set(hc[0], hc[1], hc[2]);
           u.uHoloScroll.value = p.calm ? 0 : 1;
+          // (a softer lock band at card size: full strength it reads as a white bar)
+          u.uHoloEdge.value = 0.4;
           // one hum for monsters arriving together, none for one hidden under a cinematic
           if (p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
             this.lastHum = now;

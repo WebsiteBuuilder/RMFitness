@@ -274,6 +274,7 @@ uniform float uHolo;
 uniform float uHoloLine;
 uniform float uFlick;
 uniform float uHoloScroll;
+uniform float uHoloEdge;
 uniform vec3 uHoloCol;
 varying vec2 vUv;
 varying vec2 vMesh;
@@ -398,7 +399,7 @@ void main(){
   if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2 * (1.0 - 0.75 * holo);
   // the solidify front: a bright line of light climbing the body
-  if (uHolo > 0.001 && uWall < 0.5) { float band = 1.0 - smoothstep(0.0, 0.07, abs(vMesh.y - uHoloLine)); c += (uHoloCol * band + vec3(1.0) * band * band * band * 0.6) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.5; }
+  if (uHolo > 0.001 && uWall < 0.5) { float band = 1.0 - smoothstep(0.0, 0.07, abs(vMesh.y - uHoloLine)); c += (uHoloCol * band + vec3(1.0) * band * band * band * 0.6) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.5 * uHoloEdge; }
   float alpha = (a * vis + rim * a) * uOpacity * clamp(holoA, 0.0, 1.0);
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
@@ -2256,6 +2257,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uHoloLine: -1,
         uFlick: 0,
         uHoloScroll: 1,
+        uHoloEdge: 1,
         uGlitch: 0,
         uHoloCol: new Vector3(0.55, 0.9, 1.2),
       }),
