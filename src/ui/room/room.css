@@ -220,9 +220,10 @@
 /* narrow rooms (phones): a slightly smaller Ace, so it stands inside the room */
 @container (max-width: 450px) {
   .sdr-cutw {
-    width: 60cqh;
-    height: 60cqh;
-    margin-left: -30cqh;
+    width: 54cqh;
+    height: 54cqh;
+    margin-left: -27cqh;
+    bottom: 6cqh;
   }
 }
 .sdr-acetag {
@@ -792,6 +793,19 @@
   inset: 0;
   animation: sdr-bob 0.9s ease-in-out infinite;
 }
+.sdr-mate-hop {
+  position: absolute;
+  inset: 0;
+}
+.sdr-mate-hop.go {
+  animation: sdr-hop 0.45s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+@keyframes sdr-hop {
+  40% {
+    transform: translateY(-5cqh) scale(1.06, 0.96);
+  }
+}
+.sdr-mate-hop .mate-svg,
 .sdr-mate-bob .mate-svg {
   width: 100%;
   height: 100%;

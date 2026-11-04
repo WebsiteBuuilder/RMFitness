@@ -43,6 +43,8 @@ const PRESS_MS = 120;
 /** One press at a time across the whole room: a double tap, or two things tapped at once,
  *  opens one screen. */
 let pressing = false;
+/** The Mate cheers whenever something in the room is tapped. */
+const cheers = new Set<() => void>();
 /** Fewer cores than this: a lighter room (no drifting dust). */
 const LITE_CORES = 4;
 const lite = typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= LITE_CORES;
@@ -64,6 +66,7 @@ function Spot({ cls, tag, hot, label, onPick, children, twin }: { cls: string; t
         if (pressing) return;
         pressing = true;
         playBlip();
+        for (const f of cheers) f();
         // a quick press-and-spring on the thing itself, then the screen it opens
         const el = e.currentTarget as HTMLElement;
         el.classList.add('pop');
@@ -162,6 +165,13 @@ function AceFigure({ name, lv }: { name: string; lv: number }) {
  *  is on screen and the app is in front, and only the Mate re-renders. */
 function RoomMate({ id, live }: { id: MateId; live: boolean }) {
   const [face, setFace] = useState<Face>('idle');
+  const [hop, setHop] = useState(0);
+  // something in the room was tapped: a happy hop
+  useEffect(() => {
+    const f = () => (setFace('happy'), setHop((n) => n + 1));
+    cheers.add(f);
+    return () => void cheers.delete(f);
+  }, []);
   const [front, setFront] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
   useEffect(() => {
     const f = () => setFront(document.visibilityState !== 'hidden');
@@ -175,7 +185,11 @@ function RoomMate({ id, live }: { id: MateId; live: boolean }) {
     const t = setInterval(() => setFace(faces[i++ % faces.length]), 3800);
     return () => clearInterval(t);
   }, [live, front]);
-  return <MateArt id={id} face={face} />;
+  return (
+    <span key={hop} class={`sdr-mate-hop ${hop ? 'go' : ''}`}>
+      <MateArt id={id} face={face} />
+    </span>
+  );
 }
 
 export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: { profile: Profile; save: SpeedSave; deck: SpeedDeck | null | undefined; deckAce: string | null; pass?: RoomPass; go: (to: RoomGo) => void; onDeck: () => void }) {
