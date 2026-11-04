@@ -399,7 +399,15 @@ void main(){
   if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2 * (1.0 - 0.75 * holo);
   // the solidify front: a bright line of light climbing the body
-  if (uHolo > 0.001 && uWall < 0.5) { float band = 1.0 - smoothstep(0.0, 0.07, abs(vMesh.y - uHoloLine)); c += (uHoloCol * band + vec3(1.0) * band * band * band * 0.6) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.5 * uHoloEdge; }
+  if (uHolo > 0.001 && uWall < 0.5) {
+    // a crisp stripe of white-cyan light (about a tenth of the body) with a soft glow around it
+    float d = abs(vMesh.y - uHoloLine);
+    float band = 1.0 - smoothstep(0.045, 0.055, d);
+    float glow = 1.0 - smoothstep(0.0, 0.11, d);
+    c += (mix(uHoloCol, vec3(1.0), 0.45) * band * 0.9 + uHoloCol * glow * 0.5) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * uHoloEdge;
+  }
+  // while it builds up, the row it has reached is a clean bright line of projected light
+  c += uHoloCol * (1.0 - smoothstep(0.0, 0.012, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999) * holo * 1.4;
   float alpha = (a * vis + rim * a) * uOpacity * clamp(holoA, 0.0, 1.0);
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
@@ -1706,18 +1714,22 @@ void main(){
     float fill = 1.0 - smoothstep(0.0, 0.03, d);
     c = mix(uColor, vec3(1.0), 0.5) * fill + uColor * exp(-max(d, 0.0) * 9.0) * 0.6;
   } else {
-    // Duel Disk projector beam (holographic summon): a cone of light opening upward from the card,
-    // bright walls, a faint scanlined inside, rings of light climbing it, a hot spot at the source
+    // Duel Disk projector beam (holographic summon): a volume of light opening upward from the
+    // card: brightest at the source and fading with height, soft rays drifting up inside it,
+    // softer brighter edges, a hot spot and a wide soft glow on the card
     float y01 = p.y * 0.5 + 0.5;
-    float w = mix(0.14, 0.96, pow(y01, 0.8));
+    float w = mix(0.16, 0.98, pow(y01, 0.8));
     float ax = abs(p.x);
-    float inside = 1.0 - smoothstep(w * 0.82, w, ax);
-    float walls = exp(-pow((ax - w * 0.9) / (0.04 + 0.06 * y01), 2.0));
-    float fy = smoothstep(-1.0, -0.9, p.y) * (1.0 - smoothstep(0.1, 1.0, p.y));
-    float lines = 0.8 + 0.2 * sin(p.y * 70.0 - uTime * 22.0);
-    float n = 0.75 + 0.5 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
-    float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0)) + 0.35 * exp(-(p.x * p.x * 5.0 + (p.y + 0.95) * (p.y + 0.95) * 90.0));
-    c = (uColor * (inside * 1.3 * (1.0 - 0.4 * ax / max(w, 0.01)) * (1.0 - 0.6 * y01) + walls * 0.6) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
+    float xr = ax / max(w, 0.01);
+    float inside = 1.0 - smoothstep(0.78, 1.0, xr);
+    float walls = exp(-pow((xr - 0.9) / (0.09 + 0.05 * y01), 2.0)) * inside;
+    float fy = smoothstep(-1.0, -0.9, p.y) * (1.0 - smoothstep(0.15, 1.0, p.y));
+    float rays = 0.55 + 0.45 * vnoise(vec2(p.x / max(w, 0.05) * 5.0 + uSeed, y01 * 1.2 - uTime * 0.9));
+    float lines = 0.85 + 0.15 * sin(p.y * 90.0 - uTime * 18.0);
+    float vol = inside * (1.0 - 0.45 * xr * xr) * (1.0 - 0.75 * y01) * rays * lines;
+    float n = 0.8 + 0.4 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
+    float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0)) + 0.4 * exp(-(p.x * p.x * 4.0 + (p.y + 0.95) * (p.y + 0.95) * 80.0));
+    c = (uColor * (vol * 0.75 + walls * 0.45) * n + mix(uColor, uColor2, 0.6) * walls * 0.18) * fy + uColor2 * src * 1.3;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;
