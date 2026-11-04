@@ -66,6 +66,11 @@ const IDLE_KEY = 'eds.idle';
 export const getIdle = (): boolean => read(IDLE_KEY) !== 'off';
 export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
 
+const CUTIN_KEY = 'eds.cutins';
+/** Anime portrait cut-ins (the duelists' faces on attacks, chains and the final blow): on unless turned off. */
+export const getCutins = (): boolean => read(CUTIN_KEY) !== 'off';
+export const setCutins = (on: boolean) => write(CUTIN_KEY, on ? 'on' : 'off');
+
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
 export const nextCinematics = (v: Cinematics): Cinematics => CINE_ORDER[(CINE_ORDER.indexOf(v) + 1) % CINE_ORDER.length];
@@ -86,6 +91,7 @@ export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
 export const useIdle = () => useStored(getIdle);
+export const useCutins = () => useStored(getCutins);
 /** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
 export function onArtSettings(cb: () => void): () => void {
   window.addEventListener(EVT, cb);
@@ -99,10 +105,12 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const speed = useAnimSpeed();
   const holo = useHolo();
   const idle = useIdle();
+  const cut = useCutins();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
+    { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setCutins(!cut) },
   ];
 }

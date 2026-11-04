@@ -16,12 +16,14 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
+import { hideCutIn, showCutIn } from "./cutinDom";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
 import { aceFor } from "../ace/ace";
 import { dangerLevel } from "../ui/atmosphereRules";
 import "./art.css";
 import "./chainspot.css";
+import "./cutin.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
 
@@ -87,6 +89,8 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
+    cutin: (o) => void showCutIn(layer, o),
+    cutinOff: () => hideCutIn(layer),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
     clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
     chain,

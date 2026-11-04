@@ -22,7 +22,8 @@ import { emitLpHit, lpCountMs, resetLpHits } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
 import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
-import { getCinematics, type Cinematics } from './settings';
+import { getCinematics, getCutins, type Cinematics } from './settings';
+import { CutInPlan } from './cutins';
 import { FIN, finishOf } from './finish';
 import { finaleFor } from './finishers';
 import { aceFor } from '../ace/ace';
@@ -260,6 +261,8 @@ export class Flow {
   /** the replay waiting to go into this update's chain, and where */
   private replay: Cue[] = [];
   private replayAt = 0;
+  /** which moments of this duel get a portrait cut-in */
+  private cutins = new CutInPlan();
   /** hold to skip all: no cinematics until this opponent turn is over */
   private skipTurn: number | null = null;
   private watchdog = 0;
@@ -338,6 +341,8 @@ export class Flow {
       // First look, or the duel was rebuilt from its log: start from here, replay nothing.
       this.lastSeq = top;
       this.flushAll();
+      // (a rebuilt duel keeps who already had their cut-in this turn; a new one starts over)
+      if (real.turn <= 1) this.cutins = new CutInPlan();
       this.show(real);
       this.memo = memoField(real, viewer, host);
       return real;
@@ -402,6 +407,14 @@ export class Flow {
         cues.splice(this.replayAt, 0, ...this.replay);
         scales.splice(this.replayAt, 0, ...this.replay.map(() => 1));
         this.replay = [];
+      }
+      // the duelists' faces cut in on the moments that matter (cutins.ts)
+      if (getCutins()) {
+        const cut = this.cutins.plan(cues, real.turn);
+        if (cut.added.length) {
+          cues = cut.cues;
+          for (const at of cut.added) scales.splice(at, 0, 1);
+        }
       }
       // the board keeps showing the duel as it was before this chain
       if (!this.pending.length) this.show(before);

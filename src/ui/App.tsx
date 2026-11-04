@@ -11,7 +11,8 @@ import type { DuelState, Pid } from '../eds/types';
 import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
 import type { MatePlan } from '../mates/MateLayer';
-import { aceFromWire, aceOf, aceToWire, showDuelAces, withAceWin } from '../ace/ace';
+import { aceFromWire, aceOf, aceToWire, bondTitle, showDuelAces, withAceWin } from '../ace/ace';
+import { bestMonster, showDuelFaces, showFaceHints } from '../art/cutins';
 import { chosenSleeve, DEFAULT_SLEEVE, showDuelSleeves, sleeveForName, sleeveFromWire, type SleeveId } from '../sleeves/sleeves';
 import { chosenMate, mateForName, retireOldMates, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
@@ -47,7 +48,7 @@ import { clearRankedLive, loadRankedLive, saveRankedLive, type RankedLive } from
 import type { LoggedEvent } from '../sync/events';
 import { settleSolo, type SoloReport } from '../eds/speedCampaign/settle';
 import { cancelRanked, settleLinkRanked } from '../eds/speedCampaign/ranked';
-import type { CpuDuelSpec, DuelContext } from '../eds/speedCampaign/types';
+import type { CpuDuelSpec, DuelContext, VsInfo } from '../eds/speedCampaign/types';
 import { CardImg } from './CardImg';
 import { whenArtIdle } from '../art/cues';
 import { getAnimSpeed } from '../art/settings';
@@ -1483,6 +1484,7 @@ export function App() {
         <>
           <Running myMate={chosenMate(speedSave)} deckSwitch={speedSave && speedSave.decks.length > 1 ? <DeckSwitch decks={speedSave.decks} current={activeDeck(speedSave)} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(speedSave, d)]} onPick={(d) => setSpeedSave({ ...speedSave, active: d.id })} /> : undefined} session={session} hotseat={hotseat} cpu={cpu} cpuLevel={cpuLevel} mySeat={mySeat} mode={duelMode} entries={tagHost.current || raidHost.current ? noStakes(entries) : entries} onRaidEnd={endRaid} tag={raidHost.current ? raidRoom(raidHost.current.def, raidHost.current.level) : tagHost.current ? { note: tagNote(tagHost.current), start: (seats) => tagStart(tagTeams(tagHost.current!, seats), Math.random() < 0.5 ? 0 : 1, randomSeed(), tagHost.current!.ctx) } : undefined} betSave={(seat) => (seat === mySeat ? speedSave : hotseat && p2Profile && p2Profile !== profile.id ? speedSaveOf(p2Profile) : null)} others={hotseat ? others() : []} onSeatProfile={setP2Profile} controlsFor={controlsFor} onControls={setControls} onLeave={() => leaveDuel()} onFinished={finishDuel} onStarted={(seats, key) => ticketsFor([seats[0], seats[1]], key)} rematchP2={rematchP2.current} watch={watching ? { tactics: watching.tactics, speed: watchSpeed, paused: watchPaused } : undefined} />
           {soloDuel.current && <SoloHud vs={soloDuel.current.spec.vs} />}
+          {soloDuel.current && <FaceHints vs={soloDuel.current.spec.vs} cpuSeat={mySeat === 0 ? 1 : 0} both={!!watching} />}
           {watching && <WatchBar speed={watchSpeed} paused={watchPaused} onSpeed={setWatchSpeed} onPause={setWatchPaused} onLeave={() => leaveDuel()} />}
           {askLeave && session.engine.state.started && session.engine.state.winner === null && (
             <ConfirmSheet look={gameOf() === 'speed' ? 'md' : 'gba'} title="Leave this duel?" confirmLabel="Leave" cancelLabel="Keep dueling" danger onCancel={() => setAskLeave(false)} onConfirm={confirmLeave}>
@@ -1495,6 +1497,18 @@ export function App() {
     default:
       return menu;
   }
+}
+
+/** A solo duel: the computer duelist's portrait and title for the cut-ins (both, computer vs computer). */
+function FaceHints({ vs, cpuSeat, both }: { vs?: VsInfo; cpuSeat: Pid; both: boolean }) {
+  const h: [{ art: string; title: string } | null, { art: string; title: string } | null] = [null, null];
+  if (vs) {
+    h[cpuSeat] = { art: vs.cpuPortrait, title: vs.cpuTitle };
+    if (both) h[cpuSeat === 0 ? 1 : 0] = { art: vs.mePortrait, title: '' };
+  }
+  showFaceHints(vs ? h : null);
+  useEffect(() => () => showFaceHints(null), []);
+  return null;
 }
 
 /** The room a Boss Raid host opens: Start sends the raid with both seats' decks. */
@@ -1726,13 +1740,21 @@ function Running({
     return Object.assign({}, ...c.filter((x): x is Pid => x !== 'cpu').map((x) => view.seats[x].rarity ?? {}));
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
-  useEffect(() => () => (showDuelRarity(null), showDuelAces(null), showDuelSleeves(null)), []);
+  useEffect(() => () => (showDuelRarity(null), showDuelAces(null), showDuelSleeves(null), showDuelFaces(null)), []);
   // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none), only a card in that seat's deck.
   const seatAce = (p: Pid) => {
     const a = aceFromWire(view.seats[p].ace);
     return a && (view.seats[p].deck.includes(a.name) || view.seats[p].fusion.includes(a.name)) ? a : null;
   };
   showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatAce(0), seatAce(1)] : null);
+  // Portrait cut-ins: each seat's face is its Ace (else its deck's strongest monster); a computer
+  // duelist's own portrait and title come from its VS splash (showFaceHints). Both phones see both.
+  const seatFace = (p: Pid) => {
+    const a = seatAce(p);
+    const art = a?.name ?? bestMonster(view.seats[p].deck);
+    return art ? { name: view.state.players[p].name, art, title: a ? `★ ${bondTitle(a.lv)}` : '' } : null;
+  };
+  showDuelFaces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatFace(0), seatFace(1)] : null);
   // Sleeves: each side's card backs wear its first seat's sleeve (a seat that sent none: one picked by its name).
   // (a tag duel: the side's first phone; a computer side wears the team's own; a phone that sent none: the classic)
   const seatSleeve = (side: Pid): SleeveId => {

@@ -1,0 +1,431 @@
+/* Anime portrait cut-ins (cutinDom.ts): two slanted halves across the middle of the screen, the
+   opponent on top and you below, the shout along the seam. Only transforms and opacity move;
+   clip paths, masks and gradients are drawn once. --d: how long it lasts, --band: its height,
+   --ang: the seam's slant, --fs: the shout's size (long ones shrink), --l1/--l2: the lead's colours. */
+.cut-in {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  contain: layout paint;
+}
+.ci-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--band);
+  margin-top: calc(var(--band) / -2);
+}
+.ci-half {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  will-change: transform, opacity;
+  animation: var(--d) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+.ci-top {
+  clip-path: polygon(0 0, 100% 0, 100% 42%, 0 58%);
+  animation-name: ci-in-top;
+}
+.ci-bot {
+  clip-path: polygon(0 58%, 100% 42%, 100% 100%, 0 100%);
+  animation-name: ci-in-bot;
+}
+/* the one who takes it arrives a beat later and ends with the other */
+.ci-foe {
+  animation-delay: calc(var(--d) * 0.07);
+  animation-duration: calc(var(--d) * 0.93);
+}
+@keyframes ci-in-top {
+  0% {
+    transform: translate3d(-62%, 0, 0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  22% {
+    transform: translate3d(0, 0, 0);
+  }
+  76% {
+    transform: translate3d(2%, 0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(112%, 0, 0);
+    opacity: 0.6;
+  }
+}
+@keyframes ci-in-bot {
+  0% {
+    transform: translate3d(62%, 0, 0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  22% {
+    transform: translate3d(0, 0, 0);
+  }
+  76% {
+    transform: translate3d(-2%, 0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-112%, 0, 0);
+    opacity: 0.6;
+  }
+}
+/* the backdrop: the lead in its colours, the other in the dark with a trace of theirs */
+.ci-bg {
+  position: absolute;
+  inset: 0;
+  background: #0b0a16;
+}
+.ci-lead .ci-bg {
+  background: radial-gradient(ellipse at 30% 40%, var(--c2) 0, var(--c1) 34%, #160a2a 88%);
+}
+.ci-foe .ci-bg {
+  background:
+    repeating-linear-gradient(-62deg, transparent 0 22px, rgba(255, 255, 255, 0.05) 22px 24px),
+    radial-gradient(ellipse at 70% 50%, #252a44 0, #10121e 55%, #05060c 100%);
+}
+.ci-foe .ci-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, var(--c1), transparent 70%);
+  opacity: 0.3;
+}
+/* speed lines racing behind the lead (one wide strip sliding: no repaint) */
+.ci-lines {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 220%;
+  opacity: 0.55;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 13px, rgba(255, 255, 255, 0.85) 13px 15px, transparent 15px 37px),
+    repeating-linear-gradient(0deg, transparent 0 29px, rgba(0, 0, 0, 0.5) 29px 33px, transparent 33px 61px);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0, #000 22%, transparent 34%, #000 46%, #000 60%, transparent 70%, #000 80%);
+  mask-image: repeating-linear-gradient(90deg, #000 0, #000 22%, transparent 34%, #000 46%, #000 60%, transparent 70%, #000 80%);
+  will-change: transform;
+  animation: ci-race var(--d) linear both;
+}
+.ci-bot .ci-lines {
+  animation-name: ci-race-back;
+}
+@keyframes ci-race {
+  from {
+    transform: translate3d(-18%, 0, 0);
+  }
+  to {
+    transform: translate3d(10%, 0, 0);
+  }
+}
+@keyframes ci-race-back {
+  from {
+    transform: translate3d(10%, 0, 0);
+  }
+  to {
+    transform: translate3d(-18%, 0, 0);
+  }
+}
+/* the face: the card art cropped close (the art box is ~76% of the card's width) */
+.ci-face {
+  position: absolute;
+  width: min(calc(var(--band) * 0.58), 60vw);
+  aspect-ratio: 1;
+  background-color: #1b2448;
+  background-size: 152% auto;
+  background-position: 50% 33%;
+  background-repeat: no-repeat;
+  will-change: transform;
+}
+.ci-top .ci-face {
+  left: 0;
+  top: 0;
+  -webkit-mask-image: linear-gradient(100deg, #000 45%, transparent 94%);
+  mask-image: linear-gradient(100deg, #000 45%, transparent 94%);
+}
+.ci-bot .ci-face {
+  right: 0;
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(280deg, #000 45%, transparent 94%);
+  mask-image: linear-gradient(280deg, #000 45%, transparent 94%);
+}
+.ci-lead .ci-face {
+  animation: ci-push var(--d) ease-out both;
+}
+@keyframes ci-push {
+  from {
+    transform: scale(1.22);
+  }
+  to {
+    transform: scale(1.02);
+  }
+}
+/* the one who takes it: in shadow, a shudder */
+.ci-foe .ci-face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 6, 14, 0.25), rgba(4, 6, 14, 0.62));
+}
+.ci-foe .ci-face {
+  animation: ci-shudder var(--d) linear both;
+}
+@keyframes ci-shudder {
+  0%,
+  24% {
+    transform: translate3d(0, 0, 0);
+  }
+  28% {
+    transform: translate3d(-5px, 2px, 0);
+  }
+  32% {
+    transform: translate3d(5px, -2px, 0);
+  }
+  36% {
+    transform: translate3d(-3px, 1px, 0);
+  }
+  40%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+/* name plates: a slanted bar on the open side of each half */
+.ci-plate {
+  position: absolute;
+  max-width: 44%;
+  padding: 0.25em 0.9em 0.3em;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.6));
+  border-left: 4px solid var(--c1);
+  transform: skewX(-12deg);
+  color: #fff;
+  font-size: clamp(13px, 3.9vw, 26px);
+  line-height: 1.1;
+}
+.ci-plate b,
+.ci-plate span {
+  display: block;
+  transform: skewX(12deg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ci-plate b {
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.ci-plate span {
+  font-size: 0.62em;
+  font-weight: 700;
+  color: var(--c2);
+  opacity: 0.95;
+}
+.ci-top .ci-plate {
+  right: 4%;
+  top: 9%;
+  text-align: right;
+}
+.ci-bot .ci-plate {
+  left: 4%;
+  bottom: 9%;
+}
+.ci-foe .ci-plate {
+  border-left-color: #6b7080;
+  opacity: 0.85;
+}
+/* the mark by the face of the one who takes it */
+.ci-mark {
+  position: absolute;
+  font: italic 900 clamp(26px, 9vw, 64px) / 1 system-ui, sans-serif;
+  color: #ff4040;
+  -webkit-text-stroke: 2px #fff;
+  text-shadow: 0 3px 0 #000;
+  animation: ci-mark var(--d) cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+.ci-top .ci-mark {
+  left: min(calc(var(--band) * 0.5), 52vw);
+  top: 12%;
+}
+.ci-bot .ci-mark {
+  right: min(calc(var(--band) * 0.5), 52vw);
+  bottom: 14%;
+}
+@keyframes ci-mark {
+  0%,
+  22% {
+    transform: scale(0) rotate(-14deg);
+    opacity: 0;
+  }
+  34% {
+    transform: scale(1.15) rotate(-10deg);
+    opacity: 1;
+  }
+  44%,
+  100% {
+    transform: scale(1) rotate(-10deg);
+    opacity: 1;
+  }
+}
+/* the seam: a white slash between the halves */
+.ci-seam {
+  position: absolute;
+  left: -5%;
+  width: 110%;
+  top: calc(50% - 3px);
+  height: 6px;
+  background: linear-gradient(90deg, transparent, #fff 12%, #fff 88%, transparent);
+  box-shadow: 0 0 14px var(--l1);
+  transform: rotate(var(--ang)) scaleX(0);
+  animation: ci-seam var(--d) ease-out both;
+}
+@keyframes ci-seam {
+  4% {
+    transform: rotate(var(--ang)) scaleX(0);
+    opacity: 1;
+  }
+  18% {
+    transform: rotate(var(--ang)) scaleX(1);
+  }
+  80% {
+    transform: rotate(var(--ang)) scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--ang)) scaleX(1);
+    opacity: 0;
+  }
+}
+/* the shout, along the seam */
+.ci-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(var(--ang));
+  white-space: nowrap;
+}
+.ci-line span {
+  display: block;
+  padding: 0.1em 0.7em 0.14em;
+  font: italic 900 calc(min(8.6vw, 62px) * var(--fs)) / 1.05 system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  color: #fff;
+  -webkit-text-stroke: 1.5px var(--l1);
+  text-shadow:
+    0 3px 0 #000,
+    0 0 16px var(--l1);
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.78) 10%, rgba(0, 0, 0, 0.78) 90%, transparent);
+  animation: ci-shout var(--d) cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes ci-shout {
+  0%,
+  12% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  24% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+.ci-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: ci-flash var(--d) ease-out both;
+}
+@keyframes ci-flash {
+  0% {
+    opacity: 0.42;
+  }
+  14%,
+  100% {
+    opacity: 0;
+  }
+}
+/* the final blow: the winner in gold, the loser drained of colour */
+.why-final .ci-lead .ci-bg {
+  background: radial-gradient(ellipse at 30% 40%, #fff6c8 0, #ffc23a 30%, #6a2a00 90%);
+}
+.why-final .ci-line span {
+  color: #ffe9a8;
+  -webkit-text-stroke-color: #a85a00;
+  text-shadow:
+    0 3px 0 #000,
+    0 0 20px #ffb21a;
+}
+.why-final .ci-seam {
+  box-shadow: 0 0 18px #ffc23a;
+}
+.why-final .ci-foe .ci-face {
+  filter: grayscale(0.75) brightness(0.8);
+}
+.why-final .ci-mark {
+  color: #ff2a2a;
+}
+/* a chain answered: the lead's backdrop in its card's colours is enough; the shout leans the other way */
+.why-chain .ci-line span {
+  -webkit-text-stroke-color: #e0379a;
+}
+/* reduce motion: a plain fade, no slides, no flash */
+@media (prefers-reduced-motion: reduce) {
+  .ci-half,
+  .ci-lines,
+  .ci-face,
+  .ci-mark,
+  .ci-line span {
+    animation-name: ci-fade !important;
+  }
+  .ci-flash {
+    display: none;
+  }
+  .ci-seam {
+    animation: none;
+    transform: rotate(var(--ang));
+  }
+}
+@keyframes ci-fade {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* big screens: the band stays a band, the faces stay faces */
+@media (min-width: 900px) {
+  /* a wider crop: more of the art, the same face size */
+  .ci-face {
+    width: min(calc(var(--band) * 0.95), 46vw);
+    aspect-ratio: 1.5;
+    background-position: 50% 36%;
+  }
+  .ci-plate {
+    font-size: clamp(16px, 2vw, 30px);
+  }
+  .ci-top .ci-mark {
+    left: min(calc(var(--band) * 0.88), 43vw);
+  }
+  .ci-bot .ci-mark {
+    right: min(calc(var(--band) * 0.88), 43vw);
+  }
+}
