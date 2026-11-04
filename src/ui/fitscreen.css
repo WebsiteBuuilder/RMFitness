@@ -59,14 +59,14 @@
 
   /* both hands grow with the window (fit.ts handCardW() mirrors --th-w) */
   :root .duel.touch .thand {
-    --th-h: clamp(114px, 18vh, 210px);
+    --th-h: clamp(96px, 17vh, 200px);
     --th-w: calc(var(--th-h) * 0.685);
   }
   :root .hname {
     font-size: clamp(10.5px, 1.25vh, 14px);
   }
   :root .duel.touch .topp-hand {
-    height: clamp(62px, 8vh, 104px);
+    height: clamp(44px, 8vh, 104px);
   }
   :root .duel.touch .thc {
     width: clamp(48px, 6vh, 76px);
@@ -139,7 +139,7 @@
     right: auto;
     top: 50%;
     transform: translateY(-50%);
-    width: clamp(240px, calc((100vw - 100vh * 0.78) / 2 - 32px), 400px);
+    width: clamp(280px, 24vw, 400px);
     max-height: 78vh;
     flex-direction: column;
     align-items: center;
@@ -174,6 +174,16 @@
   :root .duel.touch {
     --fit-bar: clamp(320px, 27vw, 430px);
   }
+  /* a steeper slab, Master Duel's PC angle: it reads shorter than it is, so it can be wider */
+  :root .duel.touch {
+    --tilt: 22deg;
+  }
+  @supports (width: 1cqh) {
+    :root .duel.touch .tmat,
+    :root .duel.touch.speed .tmat {
+      width: min(100%, calc(100cqw / 1.08), calc((100cqh * 0.99 - 76px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 8px));
+    }
+  }
   :root .duel.touch .tbar .tname span,
   :root .duel.touch .tbar .tlp {
     white-space: nowrap;
@@ -194,6 +204,10 @@
   }
   :root .duel.touch .tbar .tname {
     min-width: 64px;
+  }
+  :root .duel.touch .tbar .tgear,
+  :root .duel.touch .tbar .tskill {
+    flex: none;
   }
   :root .duel.touch .tgauge,
   :root .duel.touch .tbar.top .tgauge {
@@ -217,11 +231,12 @@
     left: max(12px, env(safe-area-inset-left));
   }
   :root .duel.touch .topp-hand {
-    height: clamp(56px, 7vh, 84px);
+    height: clamp(44px, 6vh, 70px);
     padding: 0 var(--fit-bar);
   }
   :root .duel.touch .thand {
-    --th-h: clamp(114px, 19vh, 220px);
+    --th-h: clamp(96px, 17vh, 200px);
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
     padding-left: calc(var(--fit-bar) + 24px);
     padding-right: calc(var(--fit-bar) + 24px);
   }
@@ -247,18 +262,24 @@
     padding-left: 4px;
     padding-right: 4px;
   }
+  /* (a wrapping row whose tiles grow to fill it: no holes whatever a tab holds) */
   :root .sdh-page {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
     gap: 16px;
     padding: 8px 4px 0;
   }
   :root .sdh-page > * {
-    grid-column: 1 / -1;
+    flex: 1 1 100%;
+    min-width: 0;
   }
   :root .sdh-page > .sdh-tile,
   :root .sdh-page > .sdh-pair {
-    grid-column: auto;
+    flex: 1 1 340px;
+  }
+  :root .sdh-page > .sdh-tile.hero {
+    flex: 2 1 560px;
   }
   :root .sdh-pair {
     gap: 16px;
@@ -266,17 +287,31 @@
   :root .sdh-tile,
   :root .sdh-tile.half,
   :root .sdh-tile.hero {
-    height: clamp(150px, 22vh, 250px);
+    height: clamp(160px, 25vh, 300px);
     border-radius: 18px;
   }
   :root .sdh-tile-txt {
     padding: 14px 44px 16px 20px;
+  }
+  /* a wide tile is a banner: the art keeps its own size on the right and fades into the panel
+     (stretched across a whole row, a card picture would blur) */
+  :root .sdh-tile {
+    background: linear-gradient(100deg, #0b1430, #142250 60%, #101a38);
+  }
+  :root .sdh-tile-art {
+    left: auto;
+    width: min(100%, 620px);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 28%);
   }
   :root .sdh-tile-txt b {
     font-size: 24px;
   }
   :root .sdh-tile.hero .sdh-tile-txt b {
     font-size: 34px;
+  }
+  :root .sdh-tile.half .sdh-tile-art {
+    background-size: 165% auto;
   }
   :root .sdh-tile.half .sdh-tile-txt {
     padding: 12px 14px 14px;
@@ -309,10 +344,20 @@
 /* wide windows: three tiles a row */
 @media (min-width: 1280px) and (min-height: 600px) {
   :root .sdh {
-    max-width: min(1500px, 100%);
+    max-width: min(1600px, 100%);
   }
-  :root .sdh-page {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  :root .sdh-page > .sdh-tile,
+  :root .sdh-page > .sdh-pair {
+    flex-basis: 400px;
+  }
+  :root .sdh-tile-txt b {
+    font-size: clamp(24px, 1.6vw, 34px);
+  }
+  :root .sdh-tile.hero .sdh-tile-txt b {
+    font-size: clamp(34px, 2.4vw, 48px);
+  }
+  :root .sdh-tile-txt small {
+    font-size: clamp(15px, 0.95vw, 19px);
   }
 }
 
@@ -343,6 +388,14 @@
   :root .win-body {
     font-size: inherit;
   }
+  :root .so-foes {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 12px;
+  }
+  :root .pack-grid {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(104px, 11vw, 170px), 1fr));
+    gap: 14px;
+  }
   /* sheets and dialogs that were phone-wide: a little roomier */
   :root .csheet-md,
   :root .so-sheet,
@@ -370,7 +423,7 @@
     max-width: min(1400px, calc(100% - 32px));
   }
   :root .dk-poolgrid {
-    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(84px, 7.5vw, 140px), 1fr));
     gap: 8px;
   }
   :root .dk-grid {
@@ -394,7 +447,8 @@
   :root .dk > .dk-deck {
     grid-column: 1;
     grid-row: 4;
-    max-height: none;
+    max-height: 100%;
+    align-self: start;
     border: 2px solid var(--border);
     border-radius: 10px;
     margin-bottom: 12px;
@@ -442,5 +496,22 @@
   :root .tsheet,
   :root .tresult {
     width: min(100%, 680px);
+  }
+}
+
+/* A phone turned sideways (the installed iPhone app can turn; iOS has no orientation lock):
+   the game is built upright, so ask for that rather than squash it. */
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  html::after {
+    content: '\21BB  Turn your phone upright to play';
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: grid;
+    place-items: center;
+    background: #05081a;
+    color: #f7c948;
+    font: 700 18px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: 0.02em;
   }
 }

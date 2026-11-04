@@ -15,9 +15,18 @@ export function landscapeBig(): boolean {
 export function handCardW(): number {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  if (landscapeBig()) return Math.round(Math.min(220, Math.max(114, h * 0.19)) * 0.685);
-  if (bigScreen()) return Math.round(Math.min(210, Math.max(114, h * 0.18)) * 0.685);
+  if (bigScreen()) return Math.round(Math.min(200, Math.max(96, h * 0.17)) * 0.685);
   return w <= 380 ? 64 : h >= 880 ? 100 : h >= 820 ? 88 : h >= 760 ? 78 : 70;
+}
+
+/** Big screens: the hand's real card width and room, measured (CSS vh can differ from innerHeight
+    on iPad Safari); phones keep the arithmetic above, which costs no layout read per render. */
+export function measuredHand(hand: Element | null | undefined): { cardW: number; room: number } {
+  if (!bigScreen() || !hand) return { cardW: handCardW(), room: handRoom() };
+  const card = hand.querySelector('.thcard') as HTMLElement | null;
+  const cs = getComputedStyle(hand);
+  const room = hand.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return { cardW: card?.offsetWidth || handCardW(), room: room > 0 ? room : handRoom() };
 }
 
 /** The room your hand has to fan out in (a phone column on phones, the whole width on big screens). */
