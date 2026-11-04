@@ -266,7 +266,9 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (board.current || boardLoading.current || broken.current) return;
     boardLoading.current = true;
     import("./board")
-      .then(({ BoardLayer }) => {
+      .then(async ({ BoardLayer, whenQuiet }) => {
+        // making a WebGL context holds the main thread: not in the frames right after a tap
+        await whenQuiet();
         if (!boardCanvas.current || board.current) return;
         board.current = new BoardLayer(boardCanvas.current);
         // under a cinematic's full dim only the stage draws

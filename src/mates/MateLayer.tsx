@@ -14,6 +14,7 @@ import { useMatesShown } from './settings';
 import { playMate, unlockAudio } from '../ui/sound';
 import { setStageMates } from './onStage';
 import { CALLOUT_SHOUT, type CalloutShout } from '../art/callouts';
+import { landscapeBig } from '../ui/fit';
 import './mates.css';
 
 export interface MatePlan {
@@ -226,6 +227,18 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       }
       const bar = root.querySelector(bottom ? '.pbar.bottom' : '.pbar.top')?.getBoundingClientRect();
       if (!bar || bar.width < 8) return null;
+      // (landscape tablets and computers: the bars sit in the side panel, so each Mate stands just left
+      // of its own bar, on the board's edge: theirs under their bar, yours on top of the hand row)
+      if (landscapeBig()) {
+        const field = root.querySelector('.field')?.getBoundingClientRect();
+        const big = Math.round(Math.max(46, Math.min(84, (field?.height ?? 500) * 0.11)));
+        // (yours goes to the left corner when your piles leave no room by the panel)
+        const piles = root.querySelector('.sidebox.bottom')?.getBoundingClientRect();
+        const x = Math.round(bar.left - big * 0.6 - 10);
+        if (!bottom) return { x, y: Math.round(bar.bottom + big + 8), size: big };
+        const room = !piles || bar.left - piles.right > big * 1.5;
+        return { x: room ? x : Math.round(big * 0.9 + 12), y: Math.round(bar.top - 4), size: big };
+      }
       const size = 46;
       return bottom ? { x: Math.round(bar.left + size * 0.75), y: Math.round(bar.top - 1), size } : { x: Math.round(bar.right - size * 1.9), y: Math.round(bar.bottom + size - 4), size };
     };

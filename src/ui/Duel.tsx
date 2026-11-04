@@ -9,6 +9,8 @@ import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
+import { PlaymatHalves } from '../playmats/Halves';
+import { fieldTerrain } from './atmosphereRules';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -528,6 +530,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           )}
           {canSeeSel && <CounterLines list={shownCounters(e.fieldCard(selCard.uid))} />}
           <Menu items={commands} />
+          {/* landscape tablets and computers: the window is a tall side panel, so it shows the card and its text (fitscreen.css) */}
+          {canSeeSel && info && (
+            <div class="msg-card">
+              <CardImg name={selCard.name} owner={selCard.owner} />
+              <p>{info.desc}</p>
+            </div>
+          )}
         </Win>
       );
     }
@@ -775,7 +784,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       </div>
       <div class="field">
         {sideBox(other(acting), true)}
-        <div class="rows">
+        <div class={`rows${e.speed ? ' pm-rows' : ''}`}>
+          {e.speed && <PlaymatHalves me={acting} opp={other(acting)} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, other(acting)) }} turn={state.turn} />}
           <div class="row">{opp.sz.map((c, i) => zone(c, other(acting), 's', i))}</div>
           <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
           <div class="center">
