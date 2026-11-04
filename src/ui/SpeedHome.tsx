@@ -6,7 +6,9 @@ import { chosenMate, hasMate, mateDef, MATES } from '../mates/roster';
 import '../mates/mates.css';
 import { aceOf, bondTitle, nextBond } from '../ace/ace';
 import '../ace/ace.css';
-import { useEffect, useState } from 'preact/hooks';
+import { chosenSleeve, hasSleeve, sleeveDef, SLEEVES } from '../sleeves/sleeves';
+import '../sleeves/sleeves.css';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
 import { LESSONS, lessonsDone, nextLesson } from '../eds/tutorial';
@@ -24,7 +26,7 @@ import { stampsToClaim } from '../collection/stamps';
 import { online } from '../online/controller';
 import { chatBadge } from '../online/GlobalChatUi';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { ladderClock, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
+import { TOP, ladderClock, pharaohLevel, rankName, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
 import './speedhome.css';
@@ -32,7 +34,7 @@ import './speedhome.css';
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -199,14 +201,14 @@ function RankedTile({ profileId, onPick }: { profileId: string; onPick: () => vo
   const now = ladderClock(rp);
   const fresh = rp.season < seasonOf(now);
   const bonus = rp.bonusDay !== todayString(now);
-  return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
+  return <Tile art="Gaia The Fierce Knight" fy={30} title="Ranked Duel" sub={fresh ? 'A new season has started!' : rankedNote(rp)} icon={<RankEmblem step={fresh ? 0 : rp.step} size="m" asc={fresh ? 0 : (rp.asc ?? 0)} level={!fresh && rp.step === TOP ? pharaohLevel(rp.kp) : 0} />} badge={fresh ? 'NEW' : bonus ? '★' : null} hot={fresh || bonus} onPick={onPick} />;
 }
 
 /** The Duelist page's Ranked line: this season's rank and the best past season. */
 function RankedRow({ profileId, onPick }: { profileId: string; onPick: () => void }) {
   const rp = rankedProgress(loadSolo(profileId));
   const best = rp.history.reduce((a, h) => Math.max(a, h.peak), -1);
-  return <Row label="Ranked" note={`${stepName(rp.step)} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
+  return <Row label="Ranked" note={`${rankName(rp)}${rp.asc ? ` ${"★".repeat(Math.min(3, rp.asc))}` : ""} this season${best >= 0 ? ` · best ever ${stepName(Math.max(best, rp.peak))}` : ''}`} onPick={onPick} />;
 }
 
 /** Your Ranked tier's shield beside your name, once you've played Ranked this season: something to show off. */
@@ -215,7 +217,7 @@ function TopRank({ profileId }: { profileId: string }) {
   if (rp.season !== seasonOf(ladderClock(rp)) || rp.w + rp.l === 0) return null;
   return (
     <span class="sdh-toprank">
-      <RankEmblem step={rp.step} size="s" />
+      <RankEmblem step={rp.step} size="s" asc={rp.asc ?? 0} level={rp.step === TOP ? pharaohLevel(rp.kp) : 0} />
     </span>
   );
 }
@@ -258,6 +260,29 @@ function AceTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
       <span class="sdh-ace-txt">
         <b>Ace Monster</b>
         <span>{a ? `${a.name} · ★ ${bondTitle(a.lv)}${nx ? ` · ${nx.need} win${nx.need === 1 ? '' : 's'} → Bond ${nx.lv}` : ''}` : 'Pick a monster: its own entrance, grander with every win'}</span>
+      </span>
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
+/** Your card sleeve on its own tile: the back your deck, Set cards and hand wear in duels. */
+function SleevesTile({ save, profileId, onPick }: { save: SpeedSave; profileId: string; onPick: () => void }) {
+  const solo = useMemo(() => loadSolo(profileId), [profileId, save]);
+  const id = chosenSleeve(save, solo);
+  const d = sleeveDef(id)!;
+  const got = SLEEVES.filter((s) => hasSleeve(save, s.id, solo)).length;
+  return (
+    <button class="sdh-sleeves" style={{ '--sleeve-glow': d.glow } as Record<string, string>} onClick={() => (playBlip(), onPick())}>
+      <span class="sdh-sleeves-pic">
+        <CardImg name="" back sleeve={id} />
+        <CardImg name="" back sleeve={id} />
+      </span>
+      <span class="sdh-sleeves-txt">
+        <b>Sleeves</b>
+        <span>
+          {d.name} on your cards · {got}/{SLEEVES.length} yours
+        </span>
       </span>
       <span class="sdh-tile-go">›</span>
     </button>
@@ -470,6 +495,7 @@ export function SpeedHome({
             </div>
             <div class="sdh-list">
               <Row label="Mates" note="companions for your field" onPick={() => go('mates')} />
+              <Row label="Sleeves" note="the backs of your cards" onPick={() => go('sleeves')} />
             </div>
           </>
         )}
@@ -488,6 +514,7 @@ export function SpeedHome({
             </div>
             <MatesTile save={save} onPick={() => go('mates')} />
             <AceTile save={save} onPick={() => go('ace')} />
+            <SleevesTile save={save} profileId={profile.id} onPick={() => go('sleeves')} />
             <Tile art="Slifer the Sky Dragon" fy={28} title="Duelist Rankings" sub="Leaderboard, rivals and titles" onPick={() => go('rankings')} />
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">

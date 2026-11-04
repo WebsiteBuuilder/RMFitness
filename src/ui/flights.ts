@@ -11,6 +11,7 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
 import { drawHeld, whenIntroAt } from './immersionState';
+import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -34,6 +35,15 @@ export function placesOf(s: DuelState): Map<number, Where> {
     ps.removed.forEach((c) => out.set(c.uid, `rm${p}`));
     ps.fusion.forEach((c) => out.set(c.uid, `ex${p}`));
   });
+  return out;
+}
+
+/** Who owns each card (a card taken over still wears its owner's sleeve): one pass per board change. */
+function ownersOf(s: DuelState): Map<number, Pid> {
+  const out = new Map<number, Pid>();
+  for (const ps of s.players)
+    for (const zone of [ps.hand, ps.mz, ps.sz, [ps.field], ps.gy, ps.deck, ps.removed, ps.fusion])
+      for (const c of zone) if (c) out.set(c.uid, (c as { owner: Pid }).owner);
   return out;
 }
 
@@ -81,13 +91,15 @@ export interface Flight {
   fromOpp: boolean;
   /** a monster landing in a Monster Zone: its 3D figure waits for the landing */
   uid?: number;
+  /** whose card it is: a face-down copy wears that duelist's sleeve */
+  side?: Pid;
 }
 
 /** Flies one card copy (see the file comment). */
 export function fly(f: Flight): void {
   const host = flightLayer();
   const el = document.createElement('div');
-  el.className = `tflight ${f.face ? '' : 'back'}`;
+  el.className = `tflight ${f.face ? '' : `back${sleeveClass(duelSleeveOf(f.side))}`}`;
   if (f.face) {
     const img = document.createElement('img');
     img.src = f.face;
@@ -213,6 +225,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
       });
     if (moved.length === 0 || moved.length > 12) return;
     let draws = 0;
+    let owners: Map<number, Pid> | undefined;
     for (const [uid, was, w] of moved) {
       const fromSnap = (before?.snaps.get(`u${uid}`) && was && !pileOf(was) ? before.snaps.get(`u${uid}`) : null) ?? (was && pileOf(was) ? (before ?? prev.current).snaps.get(pileOf(was)!) : null);
       const targetEl = el.querySelector(`[data-uid="${uid}"]`) as HTMLElement | null;
@@ -235,6 +248,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         delay: isDraw ? draws++ * (fresh ? 110 : 90) : 0,
         fromOpp: w.endsWith(String(1 - acting)),
         uid: w.startsWith('mz') ? uid : undefined,
+        side: (owners ??= ownersOf(state)).get(uid) ?? (Number(w.slice(-1)) as Pid),
       });
     }
     if (!fresh) return flights.forEach(fly);

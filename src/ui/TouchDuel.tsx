@@ -1,6 +1,7 @@
 // Touch controls: a Master Duel-style duel screen. Tap a card to see it and what it can do,
 // drag a card from your hand onto the field to play it, drag a monster onto a target to attack.
 // The rules and every move go through the same engine actions as the Classic screen.
+import { bigScreen, handCardW, handRoom, measuredHand } from './fit';
 import type { ComponentChildren, VNode } from 'preact';
 import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -12,18 +13,23 @@ import { card as cardInfo } from '../eds/db';
 import { getEffect } from '../eds/effects';
 import { getSkill } from '../eds/skills';
 import { CardImg } from './CardImg';
+import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
 import type { Command, Mode } from './Duel';
 import { mixedSides, sideLabel } from './sideLabel';
 import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
+import { LpCracks, LpPops, useLpShake } from './lpHits';
+import { lpCountMs } from './lpHitRules';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { AutoDrawPill } from './heartDraw';
 import { introLeft, whenIntroAt } from './immersionState';
 import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
 import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
+import { wearKey, ZoneWear } from './fieldWear';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -39,6 +45,8 @@ export interface TouchCtl {
   me: PlayerState;
   opp: PlayerState;
   canAct: boolean;
+  /** your deck carries the Auto draw switch (a Speed Duel you play, not the tutorial) */
+  autoPill?: boolean;
   /** watching the computer duel itself: every card is shown */
   spectator?: boolean;
   /** a Tag Duel where your teammate is in (their hand shows, nothing takes input) */
@@ -120,6 +128,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   }, [resized, figuresOn, state.winner]);
 
   useFlights(root, state, acting);
+  // Life Points dropping shake the board, scaled to the hit (lpHits.tsx)
+  useLpShake(root, ctl.hotseat ? null : acting, !!e.speed, '.tmat, .tbar, .thand', !!ctl.spectator);
 
   // The opening swing starts two frames after the screen opens, once its first heavy frame is painted.
   const [armed, setArmed] = useState(false);
@@ -419,7 +429,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const mine = owner === acting;
     const dropId = mine ? `${kind}z${i}` : c && kind === 'm' ? `t${c.uid}` : undefined;
     const draggable = mine && kind === 'm' && c && state.phase === 'BP';
-    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
+    const wear = e.speed && kind === 'm' ? wearKey(state, owner, i) : '';
+    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}${wear ? ' worn' : ''}`;
     const named = c && c.faceUp ? e.nameOf(c) : '';
     const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
     // raised or lowered from the printed value: the plate turns green or red
@@ -428,7 +439,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}` : cls;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}|${wear}|${duelSleeveOf(c.owner) ?? ''}` : `${cls}|${wear}`;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -441,8 +452,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         }}
         {...(draggable ? liveDrag(c, 'mz') : {})}
       >
+        {/* (always there in a Speed Duel's Monster Zone, so it sees the first mark land) */}
+        {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c && (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? `myset${sleeveClass(duelSleeveOf(c.owner))}` : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {c.faceUp && <i class="tshine" aria-hidden="true" />}
             {!c.faceUp && visible && <span class="setmark">SET</span>}
@@ -500,9 +513,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const ps = state.players[p];
     const extra = ps.fusion.length > 0 || ps.removed.length > 0;
     return (
-      <div class="tpile deck" data-pile={`deck${p}`}>
-        {ps.deck.length > 0 ? <CardImg name="" back /> : <span class="tz-label">DECK</span>}
+      <div class={`tpile deck${p === acting && ctl.autoPill ? ' has-auto' : ''}`} data-pile={`deck${p}`}>
+        {ps.deck.length > 0 ? <CardImg name="" back owner={p} shine /> : <span class="tz-label">DECK</span>}
         <span class="tcount">{ps.deck.length}</span>
+        {p === acting && ctl.autoPill && <AutoDrawPill />}
         {extra && (
           <div class="textra">
             {ps.fusion.length > 0 && (
@@ -561,18 +575,25 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     );
   };
 
+  // the gauge drains as long as the counter rolls (lpCountMs: longer for bigger changes)
+  const lpWas = useRef<Record<number, { lp: number; ms: number }>>({});
   const lpBar = (p: Pid, top: boolean) => {
     const ps = state.players[p];
     const hurt = anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '';
+    const was = lpWas.current[p];
+    if (!was || was.lp !== state.players[p].lp) lpWas.current[p] = { lp: state.players[p].lp, ms: was ? lpCountMs(state.players[p].lp - was.lp) : 600 };
+    const drainMs = lpWas.current[p].ms;
     const isTurn = state.turnPlayer === p;
     const directOk = top && spots?.has('direct');
-    const frac = Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp)));
+    // the Duel Disk gauge lights whole cells (20 of them: lphit.css), so any Life Points left keep one lit
+    const frac = Math.ceil(Math.max(0, Math.min(1, ps.lp / Math.max(e.speed ? 4000 : 8000, ps.lp))) * 20) / 20;
     return (
       <div
         class={`tbar ${top ? 'top' : 'bottom'} ${isTurn ? 'turn' : 'idle-bar'}${decider === p ? ' acts' : ''}${directOk ? (drag?.over === 'direct' ? ' drop-on' : ' drop-ok') : ''} ${mode && top && canDirect() ? 'drop-ok' : ''}`}
         data-drop={top ? 'direct' : undefined}
         onClick={() => top && mode && canDirect() && (send({ type: 'ATTACK', player: acting, uid: mode.uid, target: null }), setMode(null))}
       >
+        <LpCracks key={`cr${p}`} who={p} speed={!!e.speed} />
         <div class="tavatar">{ps.name.slice(0, 1).toUpperCase()}</div>
         <div class="tname">
           <b>{ps.name}</b>
@@ -595,11 +616,11 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class={`tlp ${hurt}`}>
           <small>LP</small>
           <LpCount value={ps.lp} who={p} />
-          {anim && anim.kind === 'damage' && anim.player === p && <span class="dmg">-{anim.amount}</span>}
+          <LpPops key={`pop${p}`} who={p} speed={!!e.speed} below={top} />
         </div>
-        <i class={`tgauge ${frac <= 0.25 ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
+        <i class={`tgauge ${dangerLevel(ps.lp, !!e.speed) ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
-          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})`, transitionDuration: `${drainMs}ms, 400ms` }} />
         </i>
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
@@ -710,7 +731,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               const side = mixed && o.uid !== undefined && e.fieldCard(o.uid) ? (e.controller(o.uid) === acting ? 'Yours: ' : 'Theirs: ') : '';
               return (
                 <button key={i} class={`topt ${ctl.picks.includes(i) ? 'on' : ''} ${name ? '' : 'text'}`} onClick={() => ctl.togglePick(prompt, i)}>
-                  {name !== null ? <CardImg name={name} back={name === ''} /> : null}
+                  {name !== null ? <CardImg name={name} back={name === ''} owner={name === '' && o.uid !== undefined ? e.fieldCard(o.uid)?.owner : undefined} /> : null}
                   {prompt.max > 1 && ctl.picks.includes(i) && <i class="topt-ord">{ctl.picks.indexOf(i) + 1}</i>}
                   <span class={name !== null ? 'topt-label' : 'topt-text'}>{side}{sideLabel(o, ctl.acting)}</span>
                 </button>
@@ -768,11 +789,29 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   };
 
   const handCount = me.hand.length;
+  // Big screens: the hand's real card width and room, measured when it resizes (never during a render)
+  const [handBox, setHandBox] = useState<{ cardW: number; room: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = root.current?.querySelector('.thand');
+    if (!el || !bigScreen() || typeof ResizeObserver === 'undefined') return void setHandBox(null);
+    const measure = () => {
+      const v = measuredHand(el);
+      setHandBox((b) => (b && b.cardW === v.cardW && b.room === v.room ? b : v));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    // (a card can change size while the row doesn't: --th-w follows the window's height)
+    const card = el.querySelector('.thcard');
+    if (card) ro.observe(card);
+    return () => ro.disconnect();
+  }, [handCount === 0, resized]);
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 880 ? 100 : window.innerHeight >= 820 ? 88 : window.innerHeight >= 760 ? 78 : 70;
+  const box = handBox ?? { cardW: handCardW(), room: handRoom() };
+  const cardW = box.cardW;
   // (the outer cards of the 3D fan swing out by about 20px each: leave them that room)
-  const room = Math.min(window.innerWidth, 560) - 60;
+  const room = box.room - 40;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
   // the other player has a choice open: the middle row says so (never what: a prompt's title can name

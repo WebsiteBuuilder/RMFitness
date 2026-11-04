@@ -20,7 +20,7 @@ export function showCallout(layer: HTMLElement, o: CalloutOpts, speed = 1): HTML
   let n = 0;
   const lines = shoutLines(o.text.toUpperCase()).map((l) => `<span class="co-line">${l.map((w) => `<b style="--i:${n++}">${esc(w)}</b>`).join(' ')}</span>`);
   const el = document.createElement('div');
-  el.className = `art-callout side-${o.side}${o.ace ? ' ace' : ''}${lines.length > 1 ? ' two' : ''}`;
+  el.className = `art-callout side-${o.side}${o.ace ? ' ace' : ''}${lines.length > 1 ? ' two' : ''}${o.finale ? ' finale' : ''}`;
   const d = o.dur / Math.max(0.25, speed);
   el.style.setProperty('--d', `${d}s`);
   el.style.setProperty('--c', hex(o.color));
@@ -30,7 +30,8 @@ export function showCallout(layer: HTMLElement, o: CalloutOpts, speed = 1): HTML
     `<i class="co-band"></i><i class="co-lines"></i>` +
     `<div class="co-text${lines.length > 1 ? ' two' : ''}">${lines.join('')}</div>` +
     `<div class="co-who">${o.ace ? `<i class="co-ace">★ ACE · ${esc(o.ace.title)}</i>` : ''}<span>${esc(o.card)}</span></div>`;
-  const mate = stageMate(o.seat);
+  // (an ending cutscene is the monster's moment alone)
+  const mate = o.finale ? null : stageMate(o.seat);
   let fig: HTMLElement | null = null;
   if (mate) {
     const m = document.createElement('div');

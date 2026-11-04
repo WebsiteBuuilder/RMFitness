@@ -50,6 +50,17 @@ export function getAnimSpeed(): AnimSpeed {
   return read(LEGACY_KEY) === 'fast' ? 1.5 : 1;
 }
 
+const HOLO_KEY = 'eds.holo';
+/** Holographic summons (monsters rise out of their card as a Duel Disk hologram, then solidify): on unless turned off. */
+export const getHolo = (): boolean => read(HOLO_KEY) !== 'off';
+export const setHolo = (on: boolean) => write(HOLO_KEY, on ? 'on' : 'off');
+/** Motion kept calm (the phone's Reduce motion): no signal tearing or flicker on the holograms. */
+let calmQuery: MediaQueryList | null | undefined;
+export const calmMotion = (): boolean => {
+  if (calmQuery === undefined) calmQuery = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  return !!calmQuery?.matches;
+};
+
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
 export const nextCinematics = (v: Cinematics): Cinematics => CINE_ORDER[(CINE_ORDER.indexOf(v) + 1) % CINE_ORDER.length];
@@ -68,13 +79,16 @@ function useStored<T>(get: () => T): T {
 
 export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
+export const useHolo = () => useStored(getHolo);
 
-/** The two duel-menu items (Speed Duel): tap to cycle each. */
+/** The duel-menu items (Speed Duel): tap to cycle each. */
 export function useCinematicsMenu(): { label: string; note: string; onPick: () => void }[] {
   const cine = useCinematics();
   const speed = useAnimSpeed();
+  const holo = useHolo();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
+    { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
   ];
 }

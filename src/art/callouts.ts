@@ -160,44 +160,8 @@ export function voicePitch(level: number, name: string): number {
   return Math.max(0.5, Math.min(1.1, 1.15 - level * 0.07));
 }
 
-let pick: SpeechSynthesisVoice | null | undefined;
-function englishVoice(): SpeechSynthesisVoice | null {
-  if (pick !== undefined) return pick;
-  const vs = window.speechSynthesis?.getVoices?.() ?? [];
-  if (!vs.length) return null;
-  // a phone's own English voice (Google's on Android, Siri's on iPhone): offline ones first
-  const en = vs.filter((v) => /^en[-_]/i.test(v.lang));
-  pick = en.find((v) => v.localService && /US|GB/i.test(v.lang)) ?? en.find((v) => v.localService) ?? en[0] ?? null;
-  return pick;
-}
-
-/** Says the shout with the phone's own speech engine (nothing when there is none). */
-export function speakShout(text: string, pitch: number, rate = 1.12): void {
-  try {
-    const ss = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
-    if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return;
-    ss.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const v = englishVoice();
-    if (v) u.voice = v;
-    u.lang = v?.lang ?? 'en-US';
-    u.pitch = pitch;
-    u.rate = rate;
-    u.volume = 1;
-    ss.speak(u);
-  } catch {
-    /* no speech on this phone */
-  }
-}
-
-/** Stops a shout still being said (the duel left, a skip, the result screen). */
-export function stopShout(): void {
-  try {
-    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-  } catch {
-    /* no speech on this phone */
-  }
-}
+// the voice itself (now or never, never late) lives in voice.ts
+export { speakShout, stopShout, voiceWarm, warmVoice } from './voice';
 
 /** Fired on the window when a callout plays: the field Mate cheers it after the cinematic. */
 export const CALLOUT_SHOUT = 'eds-callout-shout';

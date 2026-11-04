@@ -51,7 +51,7 @@ export interface SpeedSave {
   aceWins?: Record<string, number>;
 }
 
-export const CHIP_CAP = 30;
+export const CHIP_CAP = 200;
 
 export const MAIN_MIN = 20;
 export const MAIN_MAX = 30;

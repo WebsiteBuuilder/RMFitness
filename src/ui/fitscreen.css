@@ -1,0 +1,712 @@
+/* Fit to any screen: tablets, laptops and desktops get the whole window instead of a phone-wide
+   column down the middle. Phones (under 700px wide, or under 600px tall) are untouched.
+   Loaded last (main.tsx); `:root` lifts these over the phone rules without !important.
+   Big-screen test = fit.ts bigScreen(): keep the two in step. */
+
+@media (min-width: 700px) and (min-height: 600px) {
+  /* ================= the duel (Touch screen) ================= */
+  :root .duel {
+    max-width: none;
+  }
+  :root .duel.touch {
+    --tilt: 12deg;
+  }
+  :root .duel.touch .tboard {
+    perspective: 1600px;
+    padding: 6px 12px;
+  }
+  @supports (width: 1cqh) {
+    /* the field fills the height between the bars (the same sum as layout.css, without the phone cap) */
+    :root .duel.touch .tmat,
+    :root .duel.touch.speed .tmat {
+      max-width: none;
+      width: min(100%, calc(100cqw / 1.08), calc((100cqh * 0.94 - 76px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 8px));
+      gap: 8px;
+    }
+    :root .duel.touch .trow {
+      gap: 8px;
+    }
+  }
+
+  /* player bars */
+  :root .duel.touch .tbar {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    gap: 12px;
+  }
+  :root .duel.touch .tavatar {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+  :root .duel.touch .tname b {
+    font-size: 16px;
+  }
+  :root .duel.touch .tname span {
+    font-size: 13px;
+  }
+  :root .duel.touch .tlp {
+    font-size: 32px;
+  }
+  :root .duel.touch .tlp small {
+    font-size: 13px;
+  }
+  :root .duel.touch .tgauge,
+  :root .duel.touch .tbar.top .tgauge {
+    left: 72px;
+    right: 18px;
+  }
+
+  /* both hands grow with the window (fit.ts handCardW() mirrors --th-w) */
+  :root .duel.touch .thand {
+    --th-h: clamp(96px, 17vh, 200px);
+    --th-w: calc(var(--th-h) * 0.685);
+  }
+  :root .hname {
+    font-size: clamp(10.5px, 1.25vh, 14px);
+  }
+  :root .duel.touch .topp-hand {
+    height: clamp(44px, 8vh, 104px);
+  }
+  :root .duel.touch .thc {
+    width: clamp(48px, 6vh, 76px);
+    height: clamp(70px, 8.75vh, 111px);
+    margin: -10px -6px 0;
+  }
+
+  /* the phase orb and its menu */
+  /* (beside the field, not out at the window's edge) */
+  @supports (width: 1cqh) {
+    :root .duel.touch .tphase {
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 0.94 - 76px) * 0.1715 * 7 + 48px) / 2 - 104px));
+    }
+    :root .duel.touch.speed .tphase {
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 0.94 - 76px) * 0.1715 * 5 + 32px) / 2 - 104px));
+    }
+  }
+  :root .duel.touch .tphase-btn {
+    width: 74px;
+    height: 74px;
+    font-size: 19px;
+  }
+  :root .duel.touch .tphase-btn small {
+    font-size: 11px;
+  }
+  :root .duel.touch .tphase-item {
+    padding: 12px 22px;
+    font-size: 15px;
+  }
+
+  /* the card preview: roomier, with the art big enough to read */
+  :root .duel.touch .tdetail {
+    width: min(44%, 380px);
+    max-height: 46vh;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+  }
+  :root .duel.touch .tdetail-img {
+    width: 104px;
+    height: 152px;
+  }
+  :root .duel.touch .tdetail-text b {
+    font-size: 16px;
+  }
+  :root .duel.touch .tdetail-type {
+    font-size: 12px;
+  }
+  :root .duel.touch .tdetail-text p {
+    font-size: 13px;
+    -webkit-line-clamp: 9;
+  }
+  :root .duel.touch .tdetail-more {
+    font-size: 11px;
+  }
+
+  :root .duel.touch .tmid .tturn {
+    font-size: 14px;
+  }
+  /* the action buttons over a picked card */
+  :root .duel.touch .taction {
+    font-size: 15px;
+  }
+}
+
+/* Landscape tablets and computers: the card preview is a panel down the left side, the way
+   Master Duel shows it, so it never covers the field. */
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  :root .duel.touch .tdetail,
+  :root .duel.touch .tdetail.right {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    right: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    width: clamp(210px, 24vw, 400px);
+    max-height: 78vh;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  :root .duel.touch .tdetail-pic {
+    display: block;
+    width: 100%;
+  }
+  :root .duel.touch .tdetail-img {
+    width: min(100%, 260px);
+    height: auto;
+    aspect-ratio: 59 / 86;
+    margin: 0 auto;
+    display: block;
+  }
+  :root .duel.touch .tdetail-text {
+    width: 100%;
+    overflow: auto;
+  }
+  :root .duel.touch .tdetail-text p {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+}
+
+/* Landscape tablets and computers: height is what's short, so the two player bars leave the
+   column and sit in the corners (yours bottom-left, theirs top-right, as in Master Duel) and the
+   field takes the height they gave up. fit.ts landscapeBig() is the same test. */
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  :root .duel.touch {
+    --fit-bar: clamp(250px, 30vw, 440px);
+  }
+  /* a steeper slab, Master Duel's PC angle: it reads shorter than it is, so it can be wider */
+  :root .duel.touch {
+    --tilt: 32deg;
+  }
+  @supports (width: 1cqh) {
+    :root .duel.touch.speed .tphase {
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.05 - 76px) * 0.1715 * 5 + 32px) / 2 - 110px));
+    }
+    :root .duel.touch .tphase {
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.05 - 76px) * 0.1715 * 7 + 48px) / 2 - 110px));
+    }
+  }
+  @supports (width: 1cqh) {
+    :root .duel.touch .tmat,
+    :root .duel.touch.speed .tmat {
+      width: min(100%, calc(100cqw / 1.08), calc((100cqh * 1.05 - 76px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 8px));
+    }
+  }
+  :root .duel.touch .tbar .tname span,
+  :root .duel.touch .tbar .tlp {
+    white-space: nowrap;
+  }
+  :root .duel.touch .tbar .tlp {
+    flex: none;
+    font-size: clamp(24px, 2.1vw, 32px);
+  }
+  :root .duel.touch .tbar {
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  :root .duel.touch .tbar .tavatar {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+  }
+  :root .duel.touch .tbar .tname {
+    min-width: 64px;
+  }
+  :root .duel.touch .tbar .tgear,
+  :root .duel.touch .tbar .tskill {
+    flex: none;
+  }
+  :root .duel.touch .tgauge,
+  :root .duel.touch .tbar.top .tgauge {
+    left: 58px;
+    right: 12px;
+  }
+  :root .duel.touch .tbar {
+    position: absolute;
+    width: var(--fit-bar);
+    z-index: 6;
+    border: 1px solid #ffffff2a;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px #000a;
+  }
+  :root .duel.touch .tbar.top {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+  }
+  :root .duel.touch .tbar.bottom {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+  }
+  :root .duel.touch .topp-hand {
+    height: clamp(44px, 6vh, 70px);
+    padding: 0 var(--fit-bar);
+  }
+  :root .duel.touch .thand {
+    --th-h: clamp(96px, 17vh, 200px);
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+    padding-left: calc(var(--fit-bar) + 24px);
+    padding-right: calc(var(--fit-bar) + 24px);
+  }
+  /* the card panel stops above your bar */
+  :root .duel.touch .tdetail,
+  :root .duel.touch .tdetail.right {
+    top: max(16px, env(safe-area-inset-top));
+    transform: none;
+    max-height: calc(100vh - 150px);
+  }
+}
+
+/* ================= Speed Duel home (SpeedHome.tsx) =================
+   The tiles become a grid of big art panels; headings, notes and lists span the full width. */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .sdh {
+    --sdh-nav: 72px;
+    max-width: min(1240px, 100%);
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+  :root .sdh-top {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  /* (a wrapping row whose tiles grow to fill it: no holes whatever a tab holds) */
+  :root .sdh-page {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 16px;
+    padding: 8px 4px 0;
+  }
+  :root .sdh-page > * {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  :root .sdh-page > .sdh-tile,
+  :root .sdh-page > .sdh-pair {
+    flex: 1 1 340px;
+  }
+  :root .sdh-page > .sdh-tile.hero {
+    flex: 2 1 560px;
+  }
+  :root .sdh-pair {
+    gap: 16px;
+  }
+  :root .sdh-tile,
+  :root .sdh-tile.half,
+  :root .sdh-tile.hero {
+    height: clamp(160px, 28vh, 330px);
+    border-radius: 18px;
+  }
+  :root .sdh-tile-txt {
+    padding: 14px 44px 16px 20px;
+  }
+  /* a wide tile is a banner: the art keeps its own size on the right and fades into the panel
+     (stretched across a whole row, a card picture would blur) */
+  :root .sdh-tile {
+    background: linear-gradient(100deg, #0b1430, #142250 60%, #101a38);
+  }
+  :root .sdh-tile-art {
+    left: auto;
+    width: min(100%, 760px);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 35%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 35%);
+  }
+  :root .sdh-tile-txt b {
+    font-size: 24px;
+  }
+  :root .sdh-tile.hero .sdh-tile-txt b {
+    font-size: 34px;
+  }
+  :root .sdh-tile.half .sdh-tile-art {
+    background-size: 165% auto;
+  }
+  :root .sdh-tile.half .sdh-tile-txt {
+    padding: 12px 14px 14px;
+  }
+  :root .sdh-tile.half .sdh-tile-txt b {
+    font-size: 20px;
+  }
+  :root .sdh-tile-txt small {
+    font-size: 15px;
+  }
+  :root .sdh-h {
+    font-size: 26px;
+    margin-top: 8px;
+  }
+  :root .sdh-row {
+    min-height: 58px;
+  }
+  :root .sdh-row-l {
+    font-size: 17px;
+  }
+  :root .sdh-tab {
+    max-width: 160px;
+    font-size: 13px;
+  }
+  :root .sdh-tab svg {
+    width: 26px;
+    height: 26px;
+  }
+}
+/* wide windows: three tiles a row */
+@media (min-width: 1280px) and (min-height: 600px) {
+  :root .sdh {
+    max-width: min(1600px, 100%);
+  }
+  :root .sdh-page > .sdh-tile,
+  :root .sdh-page > .sdh-pair {
+    flex-basis: 400px;
+  }
+  :root .sdh-tile-txt b {
+    font-size: clamp(24px, 1.6vw, 34px);
+  }
+  :root .sdh-tile.hero .sdh-tile-txt b {
+    font-size: clamp(34px, 2.4vw, 48px);
+  }
+  :root .sdh-tile-txt small {
+    font-size: clamp(15px, 0.95vw, 19px);
+  }
+}
+
+/* ================= every other page =================
+   Pages built as a column (.screen, Duel School, the solo modes) open up to a comfortable
+   reading width with bigger type; their card grids (auto-fill) gain columns on their own. */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .screen,
+  :root .ds {
+    max-width: min(960px, calc(100% - 40px));
+    font-size: 16px;
+  }
+  :root .so.raid,
+  :root .so.tag {
+    max-width: 1100px;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 16px;
+  }
+  :root .so-body {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+  :root .lg-covers {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  :root .win-body {
+    font-size: inherit;
+  }
+  :root .so-foes {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  :root .pack-grid {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(104px, 11vw, 170px), 1fr));
+    gap: 14px;
+  }
+  /* sheets and dialogs that were phone-wide: a little roomier */
+  :root .csheet-md,
+  :root .so-sheet,
+  :root .dc {
+    width: min(100%, 680px);
+    max-width: 680px;
+  }
+  :root .artlab-panel {
+    max-width: 640px;
+  }
+}
+@media (min-width: 1280px) and (min-height: 700px) {
+  :root .screen,
+  :root .ds {
+    max-width: min(1180px, calc(100% - 64px));
+    font-size: 17px;
+  }
+}
+
+/* ================= deck editor (Speed.tsx, .dk) =================
+   Landscape tablets and computers: your deck on the left, your cards on the right, as in
+   Master Duel's deck editor. Portrait tablets keep deck-on-top with bigger cards. */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .dk {
+    max-width: min(1400px, calc(100% - 32px));
+  }
+  :root .dk-poolgrid {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(84px, 7.5vw, 140px), 1fr));
+    gap: 8px;
+  }
+  :root .dk-grid {
+    gap: 5px;
+  }
+  :root .dk-status,
+  :root .dk-counts {
+    font-size: 14px;
+  }
+}
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  :root .dk {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    column-gap: 16px;
+  }
+  :root .dk > * {
+    grid-column: 1 / -1;
+  }
+  :root .dk > .dk-deck {
+    grid-column: 1;
+    grid-row: 4;
+    max-height: 100%;
+    align-self: start;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 12px;
+  }
+  :root .dk > .dk-pool {
+    grid-column: 2;
+    grid-row: 4;
+  }
+  /* (a 20-card deck in three rows of big cards) */
+  :root .dk > .dk-deck .dk-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+  }
+}
+
+/* ================= duel result (result.css) and duel sheets ================= */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .mdres-title {
+    font-size: clamp(92px, 11vh, 150px);
+  }
+  :root .mdres-reason {
+    font-size: 17px;
+  }
+  :root .mdres-lp,
+  :root .mdres-rewards,
+  :root .mdres-foot,
+  :root .mdres-stats {
+    width: min(100%, 760px);
+  }
+  :root .mdres-name {
+    font-size: 16px;
+  }
+  :root .mdres-lpn {
+    font-size: 38px;
+  }
+  :root .mdres-lpn small,
+  :root .mdres-turns {
+    font-size: 14px;
+  }
+  :root .mdres-lpbox {
+    padding: 14px 16px;
+    border-radius: 14px;
+  }
+  /* the prompt sheet and the in-duel result card */
+  :root .tsheet,
+  :root .tresult {
+    width: min(100%, 680px);
+  }
+}
+
+/* A phone turned sideways (the installed iPhone app can turn; iOS has no orientation lock):
+   the game is built upright, so ask for that rather than squash it. */
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  html::after {
+    content: '\21BB  Turn your phone upright to play';
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: grid;
+    place-items: center;
+    background: #05081a;
+    color: #f7c948;
+    font: 700 18px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* very large windows (1800px+ wide: 1440p, 4K): pages and tiles keep growing */
+@media (min-width: 1800px) and (min-height: 900px) {
+  :root .screen,
+  :root .ds {
+    max-width: min(1440px, calc(100% - 96px));
+    font-size: 18px;
+  }
+  :root .sdh {
+    max-width: min(2000px, 100%);
+  }
+  :root .sdh-tile,
+  :root .sdh-tile.half,
+  :root .sdh-tile.hero {
+    height: clamp(160px, 33vh, 520px);
+  }
+  /* the top bar, the deck card and the rows scale with the window too */
+  :root .sdh-who-txt b {
+    font-size: 22px;
+  }
+  :root .sdh-who-txt small,
+  :root .sdh-row-n {
+    font-size: 16px;
+  }
+  :root .sdh-cash .shop-pill {
+    height: 40px;
+    font-size: 18px;
+    padding: 0 14px;
+  }
+  :root .sdh-gear {
+    width: 48px;
+    height: 48px;
+  }
+  :root .sdh-deck-txt b {
+    font-size: 24px;
+  }
+  :root .sdh-deck-txt small,
+  :root .sdh-deck-txt > span,
+  :root .sdh-note,
+  :root .sdh-friends {
+    font-size: 19px;
+  }
+  :root .sdh-friends span {
+    font-size: 17px;
+  }
+  :root .sdh-friends,
+  :root .sdh-row {
+    min-height: 72px;
+  }
+  :root .sdh-row-l {
+    font-size: 20px;
+  }
+  :root .sdh-tile-txt b {
+    font-size: clamp(30px, 1.6vw, 44px);
+  }
+  :root .sdh-tile.hero .sdh-tile-txt b {
+    font-size: clamp(44px, 2.4vw, 64px);
+  }
+  :root .sdh-tile-txt small {
+    font-size: clamp(18px, 0.95vw, 24px);
+  }
+  :root .sdh-tab {
+    max-width: 200px;
+    font-size: 16px;
+  }
+  :root .sdh {
+    --sdh-nav: 86px;
+  }
+}
+
+/* small landscape windows (800x600 and the like): the corner bars and the card panel slim down */
+@media (min-width: 760px) and (max-width: 1023px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  :root .duel.touch .tbar .tlp {
+    font-size: 20px;
+  }
+  :root .duel.touch .tbar .tlp small {
+    display: none;
+  }
+  :root .duel.touch .tbar .tavatar {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+  :root .duel.touch .tgauge,
+  :root .duel.touch .tbar.top .tgauge {
+    left: 50px;
+  }
+  :root .duel.touch .tdetail-img {
+    width: min(100%, 150px);
+  }
+  :root .duel.touch .tdetail,
+  :root .duel.touch .tdetail.right {
+    left: 6px;
+    width: 168px;
+    padding: 8px;
+  }
+  :root .duel.touch .tbar .tskill {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+  :root .duel.touch .tbar .tgear {
+    width: 30px;
+    height: 30px;
+  }
+  :root .duel.touch .tbar .tname {
+    min-width: 40px;
+  }
+  :root .duel.touch .tdetail-text p {
+    font-size: 12px;
+  }
+}
+/* very large windows: the duel's bars, orb and card panel grow with them */
+@media (min-width: 1800px) and (min-height: 900px) {
+  :root .duel.touch {
+    --fit-bar: clamp(480px, 29vw, 640px);
+  }
+  :root .duel.touch .tbar {
+    padding-top: 12px;
+    padding-bottom: 20px;
+  }
+  :root .duel.touch .tbar .tavatar {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+  }
+  :root .duel.touch .tname b {
+    font-size: 22px;
+  }
+  :root .duel.touch .tname span {
+    font-size: 17px;
+  }
+  :root .duel.touch .tbar .tlp {
+    font-size: 40px;
+  }
+  :root .duel.touch .tgauge,
+  :root .duel.touch .tbar.top .tgauge {
+    left: 84px;
+    height: 10px;
+  }
+  :root .duel.touch .tdetail,
+  :root .duel.touch .tdetail.right {
+    width: clamp(400px, 22vw, 560px);
+  }
+  :root .duel.touch .tdetail-img {
+    width: min(100%, 380px);
+  }
+  :root .duel.touch .tdetail-text b {
+    font-size: 22px;
+  }
+  :root .duel.touch .tdetail-text p {
+    font-size: 17px;
+  }
+  :root .duel.touch .tphase-btn {
+    width: 96px;
+    height: 96px;
+    font-size: 24px;
+  }
+  :root .duel.touch .taction,
+  :root .duel.touch .tphase-item {
+    font-size: 19px;
+  }
+  :root .duel.touch .tbar .tskill {
+    font-size: 16px;
+    padding: 8px 16px;
+  }
+  /* your hand and the turn pill grow with the bigger slab (fit.ts handCardW: 260px cap) */
+  :root .duel.touch .thand {
+    --th-h: clamp(96px, 17vh, 260px);
+  }
+  :root .duel.touch .tmid .tturn {
+    font-size: 18px;
+    padding: 6px 18px;
+  }
+  :root .duel.touch .tlp small,
+  :root .duel.touch .tdetail-more,
+  :root .duel.touch .tdetail-type {
+    font-size: 15px;
+  }
+  :root .duel.touch .tbar .tgear {
+    width: 46px;
+    height: 46px;
+    font-size: 22px;
+  }
+}

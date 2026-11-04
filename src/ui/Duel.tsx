@@ -8,6 +8,7 @@ import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -16,9 +17,11 @@ import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { wearOf, ZoneWear } from './fieldWear';
 import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
+import { LpCracks, LpPops, useLpShake } from './lpHits';
 import { artBusy, onArtChange } from '../art/cues';
 import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
@@ -27,7 +30,7 @@ import { MateLayer, type MatePlan } from '../mates/MateLayer';
 import { DuelAtmosphere } from './Atmosphere';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 import { isMate } from '../mates/roster';
-import { DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
+import { AutoDrawPill, DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
 import { FaceOff, introDue, startIntro } from './faceoff';
 import { getCinematics } from '../art/settings';
 import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
@@ -86,6 +89,9 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const setInfo = (name: string | null, owner?: Pid) => (setInfoName(name), setInfoOwner(owner));
   const [showLog, setShowLog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // Classic controls: Life Points dropping shake the board (Touch does its own, TouchDuel.tsx)
+  const classicRoot = useRef<HTMLDivElement>(null);
+  useLpShake(classicRoot, hotseat ? null : acting, !!e.speed, '.pbar, .field, .hand', !!spectator);
   const [askSurrender, setAskSurrender] = useState(false);
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
@@ -367,10 +373,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
 
   const zone = (c: FieldCard | null, owner: Pid, kind: 'm' | 's', i: number) => {
     const visible = c ? c.faceUp || owner === acting || !!spectator : false;
+    const worn = e.speed && kind === 'm' && wearOf(state, owner, i) > 0;
     return (
-      <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
+      <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${worn ? ' worn' : ''}`} onClick={() => c && tap(c.uid)}>
+        {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c ? (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? `myset${sleeveClass(duelSleeveOf(c.owner))}` : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
@@ -400,7 +408,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <span>GY {ps.gy.length}</span>
         </button>
         <div class="pile" data-pile={`deck${p}`}>
-          <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
+          <div class="pile-stack">
+            {ps.deck.length > 0 && <CardImg name="" back owner={p} shine />}
+            {p === acting && e.speed && canAct && !vet && <AutoDrawPill compact />}
+          </div>
           <span>Deck {ps.deck.length}</span>
         </div>
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
@@ -599,7 +610,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                       </div>
                     ) : c.owner !== acting && ((state.fx.banishedDown ?? []) as number[]).includes(c.uid) && ps0Removed(c.uid) ? (
                       <div key={c.uid} class="gcard">
-                        <CardImg name="" back />
+                        <CardImg name="" back owner={c.owner} />
                         <span>Face-down</span>
                       </div>
                     ) : (
@@ -723,7 +734,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish, clockFor }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, autoPill: !!e.speed && canAct && !vet, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish, clockFor }}
         overlays={overlays}
       />
     );
@@ -731,12 +742,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const lpAnim = (p: Pid) => (anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '');
 
   return (
-    <div class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
+    <div ref={classicRoot} class={`duel ${canAct ? '' : 'spectate'} ${e.speed ? 'speed' : ''}`}>
       <div class="pbar top">
+        <LpCracks key={`cr${other(acting)}`} who={other(acting)} speed={!!e.speed} />
         <span class="pname">{opp.name}</span>
         <span class={`lp ${lpAnim(other(acting))}`}>
           LP <LpCount value={opp.lp} who={other(acting)} />
-          {anim && anim.kind === 'damage' && anim.player === other(acting) && <span class="dmg">-{anim.amount}</span>}
+          <LpPops who={other(acting)} speed={!!e.speed} below={true} />
         </span>
         <span class="hcount">Hand {opp.hand.length}</span>
         {clockFor(other(acting))}
@@ -792,10 +804,11 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         {sideBox(acting, false)}
       </div>
       <div class="pbar bottom">
+        <LpCracks key={`cr${acting}`} who={acting} speed={!!e.speed} />
         <span class="pname">{me.name}</span>
         <span class={`lp ${lpAnim(acting)}`}>
           LP <LpCount value={me.lp} who={acting} />
-          {anim && anim.kind === 'damage' && anim.player === acting && <span class="dmg">-{anim.amount}</span>}
+          <LpPops who={acting} speed={!!e.speed} below={false} />
         </span>
         <span class="hcount">{me.normalSummoned ? 'Summoned' : ''}</span>
         {clockFor(acting)}

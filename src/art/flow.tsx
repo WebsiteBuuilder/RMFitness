@@ -18,11 +18,14 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'preact
 import { card } from '../eds/db';
 import type { DuelState, Pid } from '../eds/types';
 import { lpCount as lpCountSound } from '../ui/duelSfx';
+import { emitLpHit, lpCountMs, resetLpHits } from '../ui/lpHitRules';
 import { cueSound } from './cueSound';
-import { coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
+import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues, type Cue, type CueTrack, type FieldMemo } from './cues';
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
 import { FIN, finishOf } from './finish';
+import { finaleFor } from './finishers';
+import { aceFor } from '../ace/ace';
 
 /** How the art stage plays what the flow hands it. */
 export interface ArtSink {
@@ -48,7 +51,7 @@ export const ATTACK_SCALE = 2;
 export const BIG_ATTACK_SCALE = 1.3;
 /** Your own Spell/Trap that strikes nothing plays this much faster (repeats: 2x). */
 export const OWN_ST_SCALE = 1.35;
-/** Life Points count to their new value over this long (LpCount). */
+/** Life Points count to a new value over at least this long (LpCount: lpCountMs, longer for bigger changes). */
 export const LP_TICK_MS = 600;
 /** The result shows this long after the Life Points have finished counting down. */
 export const WIN_AFTER_LP_MS = 250;
@@ -169,6 +172,8 @@ function owner(c: Cue): Pid | null {
       return c.attacker?.controller ?? (c.defender === 0 ? 1 : 0);
     case 'slam':
       return c.trap.controller;
+    case 'finale':
+      return c.card.controller;
     default:
       return null;
   }
@@ -196,6 +201,12 @@ export function finishingReplay(cues: Cue[]): Cue[] {
     const c = cues[i];
     if (c.kind === 'hit' && c.dmg && c.dmg.player === loser) {
       const out: Cue[] = [];
+      // an iconic monster or its duelist's Ace takes the stage first: the ending cutscene
+      const a = c.attacker;
+      // (a borrowed monster is not its taker's Ace: Change of Heart on my Ace gives them no gold cutscene)
+      const own = a && (a.owner ?? a.controller) === a.controller;
+      const fin = a && a.controller !== loser && a.faceUp !== false && a.name ? finaleFor(a.name, own ? aceFor(a.controller, a.name) : null) : null;
+      if (a && fin) out.push(again({ kind: 'finale', card: a, line: fin.line, lv: fin.lv, ace: fin.ace }));
       // (from the swing: the declaration and its wind-up were just seen)
       out.push(again(c));
       for (let j = i + 1; j < w && cues[j].kind === 'destroy'; j++) out.push(again(cues[j]));
@@ -219,9 +230,10 @@ export function pickCues(cues: Cue[], mode: Cinematics, viewer: Pid): Cue[] {
   if (mode === 'off') return [];
   if (mode === 'all') return cues;
   if (mode === 'big') return cues.filter(isBig);
+  // the chain spotlight shows every chain, whoever built it
   // My actions only: what I do, and what follows from it (its damage, its destruction, the finish).
   const mine = cues.some((c) => owner(c) === viewer);
-  return cues.filter((c) => c.kind === 'win' || owner(c) === viewer || (owner(c) === null && mine));
+  return cues.filter((c) => c.kind === 'win' || CHAIN_CUES.has(c.kind) || owner(c) === viewer || (owner(c) === null && mine));
 }
 
 /** The board-sync logic behind useShownState (exported for the tests). */
@@ -257,6 +269,8 @@ export class Flow {
   private promptSkipped: unknown = null;
   /** when the Life Points on screen last changed (performance.now() ms) */
   private lpAt = -1e9;
+  /** how long the last Life Points change takes to count (lpCountMs of the bigger change) */
+  private lpMs = LP_TICK_MS;
   /** the won duel waiting for its Life Points to finish counting before the result shows */
   private winHeld: DuelState | null = null;
   private winTimer = 0;
@@ -270,6 +284,26 @@ export class Flow {
   }
 
   /** The watchdog sleeps while the tab is hidden (nothing draws, so no cinematic can finish). */
+  /** a chain card is being read (chain spotlight): the watchdog waits */
+  private paused = false;
+
+  /** The chain spotlight pauses the stage while a card is read: the board waits for it too. */
+  setPaused(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    if (on) {
+      if (this.dogAt) {
+        this.dogLeft = Math.max(0, this.dogAt - performance.now());
+        clearTimeout(this.watchdog);
+        this.dogAt = 0;
+      }
+    } else if (this.dogLeft >= 0 && !(typeof document !== 'undefined' && document.hidden)) {
+      const left = this.dogLeft;
+      this.dogLeft = -1;
+      this.setDog(left);
+    }
+  }
+
   private onVisibility = () => {
     if (document.hidden) {
       if (this.dogAt) {
@@ -277,7 +311,7 @@ export class Flow {
         clearTimeout(this.watchdog);
         this.dogAt = 0;
       }
-    } else if (this.dogLeft >= 0) {
+    } else if (this.dogLeft >= 0 && !this.paused) {
       const left = this.dogLeft;
       this.dogLeft = -1;
       this.setDog(left);
@@ -445,11 +479,14 @@ export class Flow {
     // (the live state changes in place: what it showed before is the copy taken at the last update)
     const prev = this.shown === this.real && this.prevSnap ? this.prevSnap : this.shown;
     const now = clock();
-    if (prev && lpOf(prev) !== lpOf(next)) this.lpAt = now;
+    if (prev && lpOf(prev) !== lpOf(next)) {
+      this.lpAt = now;
+      this.lpMs = Math.max(...next.players.map((p, i) => lpCountMs(p.lp - prev.players[i].lp)));
+    }
     clearTimeout(this.winTimer);
     this.winHeld = null;
     if (prev && next.winner !== null && prev.winner === null) {
-      const wait = this.lpAt + LP_TICK_MS + WIN_AFTER_LP_MS - now;
+      const wait = this.lpAt + this.lpMs + WIN_AFTER_LP_MS - now;
       if (wait > 0) {
         this.winHeld = next;
         this.shown = { ...next, winner: null };
@@ -507,7 +544,7 @@ export class Flow {
     this.dogAt = 0;
     this.dogLeft = -1;
     if (ms < 0 || !this.pending.length) return;
-    if (typeof document !== 'undefined' && document.hidden) {
+    if ((typeof document !== 'undefined' && document.hidden) || this.paused) {
       this.dogLeft = ms;
       return;
     }
@@ -529,7 +566,7 @@ export class Flow {
     this.outbox = [];
     if (this.pending.length) this.advance(this.pending.length - 1);
     // a tap once the Life Points read their last value goes straight to the result
-    else if (this.winHeld && clock() >= this.lpAt + LP_TICK_MS && lpCounted(this.winHeld)) this.revealWin(true);
+    else if (this.winHeld && clock() >= this.lpAt + this.lpMs && lpCounted(this.winHeld)) this.revealWin(true);
   }
 
   /** Hold to skip all: during the opponent's turn, no more cinematics until it ends. */
@@ -584,6 +621,11 @@ export function releaseBoard() {
   flow?.flushAll();
 }
 
+/** A chain card is being read (on) or not: the board's watchdog waits meanwhile. */
+export function pauseBoard(on: boolean) {
+  flow?.setPaused(on);
+}
+
 /** Long press / double tap on the art stage. */
 export function skipAllChains() {
   flow?.skipAll();
@@ -616,6 +658,7 @@ export function useShownState(real: DuelState, seat: Pid | null): DuelState {
     ref.current = new Flow();
     // a new duel screen: Life Points start where they are
     lpShown.clear();
+    resetLpHits();
   }
   const f = ref.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
@@ -653,8 +696,22 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
   const [v, setV] = useState(start);
   const [hits, setHits] = useState(0);
   const cur = useRef(start);
+  // where the count is heading (a new change mid-count is measured from here, not the half-counted number)
+  const target = useRef(start);
+  // whose Life Points this counter shows (a hotseat board swaps them between the bars)
+  const shows = useRef(who);
   useEffect(() => {
+    if (shows.current !== who) {
+      // the bar now shows the other duelist: start from their own count, not as a change
+      shows.current = who;
+      const theirs = (who !== undefined ? lpShown.get(who) : undefined) ?? value;
+      cur.current = theirs;
+      target.current = theirs;
+      setV(theirs);
+    }
     const from = cur.current;
+    const aimed = target.current;
+    target.current = value;
     const show = (n: number) => {
       cur.current = n;
       if (who !== undefined) lpShown.set(who, n);
@@ -662,7 +719,11 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     };
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
-    lpCountSound(value - from, value, LP_TICK_MS);
+    // (the roll takes longer the bigger the change, and its ticking sound runs exactly as long)
+    // (one that cuts into a count still rolling, as in a fast replay, rolls quickly so it lands)
+    const ms = from !== aimed ? Math.min(450, lpCountMs(value - from)) : lpCountMs(value - from);
+    lpCountSound(value - from, value, ms);
+    if (who !== undefined && aimed !== value) emitLpHit(who, aimed, value);
     const t0 = performance.now();
     let raf = 0;
     let k = 0;
@@ -673,9 +734,10 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
       // wall time, but a drawn frame moves it at most 1/LP_MIN_STEPS: after a long frame
       // the count still visibly ticks instead of landing at once (never past 2.5× its time,
       // though). Frames that stopped coming (a hidden tab): the backup timer lands it on time.
-      const t = Math.min(1, (now - t0) / LP_TICK_MS);
-      k = frame ? (now - t0 > LP_TICK_MS * 2.5 ? t : Math.min(t, k + 1 / LP_MIN_STEPS)) : now - frameAt > 1000 ? t : k;
-      show(Math.round(from + (value - from) * (1 - (1 - k) ** 3)));
+      const t = Math.min(1, (now - t0) / ms);
+      k = frame ? (now - t0 > ms * 2.5 ? t : Math.min(t, k + 1 / LP_MIN_STEPS)) : now - frameAt > 1000 ? t : k;
+      // the digits roll at a near-steady rate (in step with the ticks), easing only into the stop
+      show(Math.round(from + (value - from) * (1 - (1 - k) ** 1.4)));
       return k >= 1;
     };
     const step = () => {
@@ -684,7 +746,7 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     raf = requestAnimationFrame(step);
     const backup = setInterval(() => tick(false) && clearInterval(backup), 100);
     return () => (cancelAnimationFrame(raf), clearInterval(backup));
-  }, [value]);
+  }, [value, who]);
   return (
     <span key={hits} class={`lp-count ${hits ? 'lp-hit' : ''}`}>
       {v}

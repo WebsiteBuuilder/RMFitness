@@ -57,11 +57,14 @@ import { DEFAULT_FADE, tuneFor } from './overrides';
 
 export type Quality = 'full' | 'fast';
 
-/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. */
-export function dprCap(): number {
+/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. A big canvas
+    (tablet, desktop) also keeps to a pixel budget, so a full-screen layer on a 4K monitor or a
+    big iPad costs about what a phone's does (never under 1:1). */
+export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5);
+  const budget = Math.max(1, Math.sqrt((small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
+  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5, budget);
 }
 
 /** A WebGL renderer set up the same way everywhere (so compiled programs match). */
@@ -173,6 +176,7 @@ float figHeight(vec2 a){
 `;
 
 const FIG_VERT = /* glsl */ `
+uniform float uGlitch;
 attribute vec3 aCenter;
 attribute vec3 rnd;
 uniform sampler2D uDepth;
@@ -212,6 +216,13 @@ void main(){
   // living art: the subject breathes and sways a little
   p.z += sin(uTime * 2.0 + p.y * 3.0) * 0.015 * d;
   p.x += sin(uTime * 1.3 + p.y * 2.0) * 0.01 * d * uWave;
+  // a hologram's signal tearing (holographic summon): a few horizontal bands slip sideways for a frame
+  if (uGlitch > 0.0) {
+    float band = floor(uv.y * 11.0);
+    float slot = floor(uTime * 17.0);
+    float hit = step(0.86, fract(sin(band * 12.9898 + slot * 78.233) * 43758.5453));
+    p.x += hit * (fract(sin(band * 3.7 + slot * 11.1) * 9341.17) - 0.5) * 0.06 * uGlitch;
+  }
   if (uShatter > 0.0) {
     vec3 c = aCenter;
     c.z += figHeight(artUv(c.xy + 0.5)) * uDepthAmt;
@@ -262,6 +273,12 @@ uniform vec3 uFlash;
 uniform vec2 uTexel;
 uniform vec3 uGlow;
 uniform vec3 uRim;
+uniform float uHolo;
+uniform float uHoloLine;
+uniform float uFlick;
+uniform float uHoloScroll;
+uniform float uHoloEdge;
+uniform vec3 uHoloCol;
 varying vec2 vUv;
 varying vec2 vMesh;
 varying float vD;
@@ -297,6 +314,8 @@ void main(){
   float subj = mix(smoothstep(0.22, 0.5, guess), smoothstep(0.35, 0.65, ma), uMatte);
   float a = edge * mix(1.0, subj, uCut);
   float n = vnoise(vMesh * 9.0 + uTime * 0.3) * 0.28;
+  // a hologram builds up in scanline rows, not a ragged burn
+  if (uHolo > 0.001) n = mix(n, fract(sin(floor(vMesh.y * 70.0) * 91.7) * 4375.85) * 0.16, uHolo);
   float r = uReveal * 1.35 - (vMesh.y * 0.95 + n);
   float vis = smoothstep(0.0, 0.03, r);
   float rim = (1.0 - smoothstep(0.0, 0.1, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999);
@@ -356,10 +375,43 @@ void main(){
   // (even the white tint keeps some of the painting: a flash never turns a figure into a solid white cut-out)
   c = mix(c, mix(uTintCol, c * 0.55 + uTintCol * 0.55, max(uTintKeep, 0.45)), uTint);
   c = mix(c, c * vec3(0.35, 0.15, 0.55), uDark);
+  // holographic summon: above the solidify front (uHoloLine, rising from the feet) the monster is
+  // still projected light (blue-white, scanlined, see-through); below it, solid
+  float holo = 0.0;
+  float holoA = 1.0;
+  if (uHolo > 0.001) {
+    holo = uHolo * smoothstep(-0.025, 0.025, vMesh.y - uHoloLine);
+    if (uWall > 0.5) holoA = 1.0 - holo;
+    else {
+      float lum = dot(c, vec3(0.299, 0.587, 0.114));
+      float ht = uTime * uHoloScroll;
+      float lines = 0.5 + 0.5 * sin(vMesh.y * 300.0 - ht * 14.0);
+      float roll = smoothstep(0.82, 1.0, fract(vMesh.y * 1.4 - ht * 1.15)) * uHoloScroll;
+      // bright projected light, the painting's light and dark kept as its detail, a glowing outline
+      float sEdge = 1.0 - abs(subj * 2.0 - 1.0);
+      // the painting's light and dark carry its detail (face, weapon, pose): contrast stretched, then tinted
+      float det = clamp((lum - 0.12) * 1.6, 0.0, 1.0);
+      vec3 h = uHoloCol * (0.18 + det * 1.45) * (0.72 + 0.28 * lines) + uHoloCol * (roll * 0.3 + sEdge * 1.1);
+      // more than half of the painting's own color stays (under the tint): it reads as this monster
+      h = mix(h, c * 0.9 + uHoloCol * 0.25, 0.72);
+      c = mix(c, h, holo);
+      holoA = 1.0 - holo * (0.3 - 0.12 * lines - roll * 0.1 + uFlick);
+    }
+  }
   // capped below white before the bloom (hue kept): a bright figure under a flash stays a painting
   if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
-  c += uGlow * rim * 2.2;
-  float alpha = (a * vis + rim * a) * uOpacity;
+  c += uGlow * rim * 2.2 * (1.0 - 0.75 * holo);
+  // the solidify front: a bright line of light climbing the body
+  if (uHolo > 0.001 && uWall < 0.5) {
+    // a crisp stripe of white-cyan light (about a tenth of the body) with a soft glow around it
+    float d = abs(vMesh.y - uHoloLine);
+    float band = 1.0 - smoothstep(0.045, 0.055, d);
+    float glow = 1.0 - smoothstep(0.0, 0.11, d);
+    c += (mix(uHoloCol, vec3(1.0), 0.45) * band * 0.9 + uHoloCol * glow * 0.5) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * uHoloEdge;
+  }
+  // while it builds up, the row it has reached is a clean bright line of projected light
+  c += uHoloCol * (1.0 - smoothstep(0.0, 0.012, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999) * holo * 1.4;
+  float alpha = (a * vis + rim * a) * uOpacity * clamp(holoA, 0.0, 1.0);
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
   vec3 fn = cross(dFdx(vViewPos), dFdy(vViewPos));
@@ -780,7 +832,7 @@ export class Figure implements Fx {
     u.uTime.value = this.time;
     this.applyDetail();
     const s = this.shadow.u;
-    s.uOpacity.value = this.shadowAmt * u.uOpacity.value * clamp01(1 - u.uShatter.value * 4) * clamp01(u.uReveal.value * 3) * (1 - u.uTint.value * 0.6);
+    s.uOpacity.value = this.shadowAmt * u.uOpacity.value * clamp01(1 - u.uShatter.value * 4) * clamp01(u.uReveal.value * 3) * (1 - u.uTint.value * 0.6) * (1 - u.uHolo.value * 0.7);
     s.uTime.value = this.time;
     return this.alive;
   }
@@ -1655,7 +1707,7 @@ void main(){
     float d = min(ringd, max(slash, r - 0.78));
     float fill = 1.0 - smoothstep(0.0, 0.03, d);
     c = mix(uColor, vec3(1.0), 0.45) * fill + uColor * exp(-max(d, 0.0) * 8.0) * 0.6;
-  } else {
+  } else if (uMode < 17.5) {
     // padlock
     float bodyd = box(p - vec2(0.0, -0.28), vec2(0.5, 0.38)) - 0.06;
     float shack = max(abs(length(p - vec2(0.0, 0.18)) - 0.32) - 0.08, -(p.y - 0.18));
@@ -1664,12 +1716,29 @@ void main(){
     float d = min(max(bodyd, -hole), shack);
     float fill = 1.0 - smoothstep(0.0, 0.03, d);
     c = mix(uColor, vec3(1.0), 0.5) * fill + uColor * exp(-max(d, 0.0) * 9.0) * 0.6;
+  } else {
+    // Duel Disk projector beam (holographic summon): a volume of light opening upward from the
+    // card: brightest at the source and fading with height, soft rays drifting up inside it,
+    // softer brighter edges, a hot spot and a wide soft glow on the card
+    float y01 = p.y * 0.5 + 0.5;
+    float w = mix(0.16, 0.98, pow(y01, 0.8));
+    float ax = abs(p.x);
+    float xr = ax / max(w, 0.01);
+    float inside = 1.0 - smoothstep(0.78, 1.0, xr);
+    float walls = exp(-pow((xr - 0.9) / (0.09 + 0.05 * y01), 2.0)) * inside;
+    float fy = smoothstep(-1.0, -0.9, p.y) * (1.0 - smoothstep(0.15, 1.0, p.y));
+    float rays = 0.55 + 0.45 * vnoise(vec2(p.x / max(w, 0.05) * 5.0 + uSeed, y01 * 1.2 - uTime * 0.9));
+    float lines = 0.85 + 0.15 * sin(p.y * 90.0 - uTime * 18.0);
+    float vol = inside * (1.0 - 0.45 * xr * xr) * (1.0 - 0.75 * y01) * rays * lines;
+    float n = 0.8 + 0.4 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
+    float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0)) + 0.4 * exp(-(p.x * p.x * 4.0 + (p.y + 0.95) * (p.y + 0.95) * 80.0));
+    c = (uColor * (vol * 0.75 + walls * 0.45) * n + mix(uColor, uColor2, 0.6) * walls * 0.18) * fy + uColor2 * src * 1.3;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;
 
-export type GlowMode = 'shaft' | 'flare' | 'dome' | 'shock' | 'vortex' | 'ankh' | 'sword' | 'star' | 'hex' | 'arrow' | 'galaxy' | 'plus' | 'rift' | 'coin' | 'die' | 'flame' | 'ban' | 'lock';
-const GLOW_MODES: Record<GlowMode, number> = { shaft: 0, flare: 1, dome: 2, shock: 3, vortex: 4, ankh: 5, sword: 6, star: 7, hex: 8, arrow: 9, galaxy: 10, plus: 11, rift: 12, coin: 13, die: 14, flame: 15, ban: 16, lock: 17 };
+export type GlowMode = 'shaft' | 'flare' | 'dome' | 'shock' | 'vortex' | 'ankh' | 'sword' | 'star' | 'hex' | 'arrow' | 'galaxy' | 'plus' | 'rift' | 'coin' | 'die' | 'flame' | 'ban' | 'lock' | 'beam';
+const GLOW_MODES: Record<GlowMode, number> = { shaft: 0, flare: 1, dome: 2, shock: 3, vortex: 4, ankh: 5, sword: 6, star: 7, hex: 8, arrow: 9, galaxy: 10, plus: 11, rift: 12, coin: 13, die: 14, flame: 15, ban: 16, lock: 17, beam: 18 };
 
 /** An additive quad drawn by a procedural shape (see GlowMode). */
 export class Glow implements Fx {
@@ -2041,7 +2110,8 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   const fontOf = (s: number) => `italic 900 ${s}px ${DISPLAY_FONT}`;
   g.font = fontOf(fs);
   const name = title.toUpperCase();
-  while (fs > 34 && g.measureText(name).width > W - 70) g.font = fontOf((fs -= 4));
+  // (kept clear of the band's ends: on a narrow phone they run past the screen's edges)
+  while (fs > 34 && g.measureText(name).width > W - 220) g.font = fontOf((fs -= 4));
   g.textAlign = 'center';
   g.textBaseline = 'alphabetic';
   const y = 40 + fs;
@@ -2062,12 +2132,17 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   g.fillStyle = grad;
   g.fillText(name, W / 2, y);
   if (sub) {
-    g.font = `italic 800 40px ${DISPLAY_FONT}`;
+    // (a short line is drawn bigger, so it reads on a small phone)
+    let ss = 58;
+    const subOf = (n: number) => `italic 800 ${n}px ${DISPLAY_FONT}`;
+    g.font = subOf(ss);
+    while (ss > 40 && g.measureText(sub).width > W - 110) g.font = subOf((ss -= 3));
+    const sy = Math.min(H - 14, y + 18 + ss);
     g.lineWidth = 8;
     g.strokeStyle = '#000';
-    g.strokeText(sub, W / 2, y + 58);
+    g.strokeText(sub, W / 2, sy);
     g.fillStyle = hexCss(edge);
-    g.fillText(sub, W / 2, y + 58);
+    g.fillText(sub, W / 2, sy);
   }
   return cv;
 }
@@ -2199,6 +2274,13 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
         uRimAmt: 1,
         uPulse: 0,
         uFlash: new Vector3(0, 0, 0),
+        uHolo: 0,
+        uHoloLine: -1,
+        uFlick: 0,
+        uHoloScroll: 1,
+        uHoloEdge: 1,
+        uGlitch: 0,
+        uHoloCol: new Vector3(0.55, 0.9, 1.2),
       }),
     }),
   shadow: () =>
@@ -2484,6 +2566,9 @@ export class Stage {
   speed = 1;
   /** slow motion: everything on stage (cinematic, particles, figures) runs at this speed; 1 = real time */
   warp = 1;
+  /** a chain card is being read (chain spotlight): everything on stage holds still */
+  pause = false;
+  private pauseDrawn = false;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
   running = false;
@@ -2683,11 +2768,14 @@ export class Stage {
   }
 
   resize() {
+    // (a resize clears the canvas: a paused stage draws its frame again)
+    this.pauseDrawn = false;
     if (!this.levels.length) return;
     this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const dpr = this.levels[this.level].dpr;
+    // (the quality level's ratio, held to the big-screen pixel budget)
+    const dpr = Math.min(this.levels[this.level].dpr, Math.max(1, dprCap(w, h)));
     if (this.levels[this.level].post && !this.post) this.post = new Post();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
@@ -2792,10 +2880,17 @@ export class Stage {
   private loop = (now: number) => {
     this.raf = 0;
     if (!this.running) return;
+    // paused (a chain card being read): the frame already drawn stays; nothing is drawn or measured
+    if (this.pause && this.pauseDrawn) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
+    this.pauseDrawn = this.pause;
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
-    let dt = Math.min(0.2, ms / 1000) * this.speed * this.warp;
+    let dt = this.pause ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;

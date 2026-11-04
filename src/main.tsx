@@ -11,6 +11,10 @@ import './ui/polish.css';
 import './ui/speedui.css';
 import './ui/layout.css';
 import './ui/graphics.css';
+import './sleeves/sleeves.css';
+// (last: tablets, laptops and desktops get the whole screen)
+import './ui/fitscreen.css';
+import { lockPhonePortrait } from './ui/fit';
 
 render(
   <>
@@ -22,3 +26,4 @@ render(
 );
 registerServiceWorker();
 installPad();
+lockPhonePortrait();

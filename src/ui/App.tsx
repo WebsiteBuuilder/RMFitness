@@ -12,6 +12,7 @@ import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
 import type { MatePlan } from '../mates/MateLayer';
 import { aceFromWire, aceOf, aceToWire, showDuelAces, withAceWin } from '../ace/ace';
+import { chosenSleeve, DEFAULT_SLEEVE, showDuelSleeves, sleeveForName, sleeveFromWire, type SleeveId } from '../sleeves/sleeves';
 import { chosenMate, mateForName, retireOldMates, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
@@ -128,6 +129,16 @@ function withResult(s: SaveFile, result: 'w' | 'l' | 'd', oppName: string): Save
 registerPackOpener(openPack);
 
 type NewsCards = { who: string; won: string[]; lost: string[] }[];
+
+/** A profile's sleeve (its Ranked sleeves need the solo save: read at most every few seconds, not every render). */
+const sleeveMemo = new WeakMap<object, { id: SleeveId; at: number }>();
+function mySleeveOf(s: SpeedSave | null | undefined, profileId: string): SleeveId | undefined {
+  if (!s) return undefined;
+  const now = Date.now();
+  let m = sleeveMemo.get(s);
+  if (!m || now - m.at > 3000) sleeveMemo.set(s, (m = { id: chosenSleeve(s, loadSolo(profileId)), at: now }));
+  return m.id;
+}
 
 export function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -538,8 +549,8 @@ export function App() {
     o = { ...o, main: unsealedCpuMain(speedSave, o.name, o.main) };
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]), ace: aceToWire(aceOf(speedSave)) });
-    ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? '') });
+    ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill, sleeve: sleeveForName(o.name) });
     tossThenStart(ses, (first) => ({ type: 'START', first, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] }), o.name, () => fresh.current.startSpeedCpu?.(o));
     setHotseat(false);
     setCpu(true);
@@ -600,8 +611,8 @@ export function App() {
     // Rock-paper-scissors decides who goes first, unless the duel says (or watching the computer duel itself).
     const fixed = spec.first === 'me' || spec.first === 'cpu' || spec.seed !== undefined || !!spec.watch;
     const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
-    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)) });
-    ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill });
+    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)), sleeve: spec.watch ? sleeveForName(spec.me.name) : mySleeveOf(speedSave, profile?.id ?? '') });
+    ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill, sleeve: sleeveForName(spec.cpu.name) });
     const startAs = (f: Pid): Action => ({ type: 'START', first: f, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     if (fixed) ses.send(startAs(first));
     else tossThenStart(ses, startAs);
@@ -713,7 +724,7 @@ export function App() {
     session?.close();
     tagHost.current = null;
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, ace: aceToWire(aceOf(speedSave)) });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? '') });
     ses.send({ type: 'JOIN', player: 1, name: plan.foes[0].name, deck: deckOf(plan.foes[0]).main, fusion: deckOf(plan.foes[0]).extra, mode: 'speed', skill: plan.foes[0].skill });
     ses.send(tagStart(tagTeams(plan, [{ name: save.name, deck: d.main, fusion: d.extra, skill: d.skill }]), Math.random() < 0.5 ? 0 : 1, randomSeed(), plan.ctx));
     setHotseat(false);
@@ -1254,14 +1265,14 @@ export function App() {
       .map((p) => {
         const ss = speedSaveOf(p.id);
         const d = activeDeck(ss);
-        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, ace: aceToWire(aceOf(ss)), stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
+        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, ace: aceToWire(aceOf(ss)), sleeve: mySleeveOf(ss, p.id), stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
       });
 
   const myFullDeck = speedSave ? activeDeck(speedSave) : null;
   const myDeck = speedSave && myFullDeck ? unsealedDeck(speedSave, myFullDeck) : null;
   const entries: Partial<Record<GameMode, SeatEntry>> = {
     eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
-    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), ace: aceToWire(aceOf(speedSave)), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile.id), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
   };
 
   switch (screen) {
@@ -1715,13 +1726,22 @@ function Running({
     return Object.assign({}, ...c.filter((x): x is Pid => x !== 'cpu').map((x) => view.seats[x].rarity ?? {}));
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
-  useEffect(() => () => (showDuelRarity(null), showDuelAces(null)), []);
+  useEffect(() => () => (showDuelRarity(null), showDuelAces(null), showDuelSleeves(null)), []);
   // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none), only a card in that seat's deck.
   const seatAce = (p: Pid) => {
     const a = aceFromWire(view.seats[p].ace);
     return a && (view.seats[p].deck.includes(a.name) || view.seats[p].fusion.includes(a.name)) ? a : null;
   };
   showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatAce(0), seatAce(1)] : null);
+  // Sleeves: each side's card backs wear its first seat's sleeve (a seat that sent none: one picked by its name).
+  // (a tag duel: the side's first phone; a computer side wears the team's own; a phone that sent none: the classic)
+  const seatSleeve = (side: Pid): SleeveId => {
+    const c = view.state.tag?.ctl?.[side];
+    const seat = c ? c[0] : side;
+    if (seat === 'cpu') return sleeveForName(view.state.players[side]?.name ?? '');
+    return sleeveFromWire(view.seats[seat as Pid]?.sleeve) ?? DEFAULT_SLEEVE;
+  };
+  showDuelSleeves(view.state.started ? [seatSleeve(0), seatSleeve(1)] : null);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
   // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.
