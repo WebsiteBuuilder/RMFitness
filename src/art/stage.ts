@@ -2128,12 +2128,17 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   g.fillStyle = grad;
   g.fillText(name, W / 2, y);
   if (sub) {
-    g.font = `italic 800 40px ${DISPLAY_FONT}`;
+    // (a short line is drawn bigger, so it reads on a small phone)
+    let ss = 58;
+    const subOf = (n: number) => `italic 800 ${n}px ${DISPLAY_FONT}`;
+    g.font = subOf(ss);
+    while (ss > 40 && g.measureText(sub).width > W - 110) g.font = subOf((ss -= 3));
+    const sy = Math.min(H - 14, y + 18 + ss);
     g.lineWidth = 8;
     g.strokeStyle = '#000';
-    g.strokeText(sub, W / 2, y + 58);
+    g.strokeText(sub, W / 2, sy);
     g.fillStyle = hexCss(edge);
-    g.fillText(sub, W / 2, y + 58);
+    g.fillText(sub, W / 2, sy);
   }
   return cv;
 }

@@ -103,10 +103,15 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
             if (!el && on) {
               el = document.createElement('div');
               el.className = 'art-replay';
-              el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+              el.innerHTML = '<i class="bar top"></i><i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
               host.appendChild(el);
             }
             el?.classList.toggle('on', on);
+            if (!on) el?.classList.remove('finale');
+          },
+          finale: (on) => {
+            ui.parentElement?.querySelector(':scope > .art-replay')?.classList.toggle('finale', on);
+            document.body.classList.toggle('art-finale', on);
           },
         });
         dir.current = d;

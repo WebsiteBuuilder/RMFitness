@@ -96,11 +96,17 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
       if (!el && on) {
         el = document.createElement("div");
         el.className = "art-replay";
-        el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+        el.innerHTML = '<i class="bar top"></i><i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
         host.appendChild(el);
       }
       el?.classList.toggle("on", on);
       document.body.classList.toggle("art-replaying", on);
+      if (!on) el?.classList.remove("finale"), document.body.classList.remove("art-finale");
+    },
+    // an ending cutscene: a letterbox over the board, its bars and numbers step aside
+    finale: (on) => {
+      layer.parentElement?.querySelector(":scope > .art-replay")?.classList.toggle("finale", on);
+      document.body.classList.toggle("art-finale", on);
     },
   };
 }

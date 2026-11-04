@@ -1452,3 +1452,38 @@ body.art-replaying .art-skip {
   border-radius: 3px;
   background: rgba(5, 6, 16, 0.78);
 }
+
+/* ---------- ending cutscene: a letterbox over the board, its bars step aside ---------- */
+.art-replay .bar.top {
+  top: 0;
+  height: max(52px, 10vh);
+  border-bottom: 2px solid rgba(255, 201, 74, 0.55);
+  transform: translateY(-100%);
+  transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.art-replay.on.finale .bar.top {
+  transform: none;
+}
+.art-replay.finale {
+  background: radial-gradient(ellipse at 50% 46%, transparent 40%, rgba(0, 0, 0, 0.72) 100%);
+}
+.art-replay.finale .bar.bottom {
+  height: max(52px, 10vh);
+}
+.art-replay.finale .tag,
+.art-replay.finale .skiphint {
+  opacity: 0.6;
+}
+body.art-finale .duel .pbar,
+body.art-finale .duel .tbar,
+body.art-finale .art-skip,
+body.art-finale .art-number,
+body.art-finale .art-lp-shatter {
+  opacity: 0 !important;
+  transition: opacity 0.15s linear;
+}
+/* its shout sits under the hero, over the bottom letterbox */
+.art-callout.finale {
+  top: auto;
+  bottom: calc(max(52px, 10vh) + 3% + env(safe-area-inset-bottom));
+}

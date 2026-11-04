@@ -203,7 +203,9 @@ export function finishingReplay(cues: Cue[]): Cue[] {
       const out: Cue[] = [];
       // an iconic monster or its duelist's Ace takes the stage first: the ending cutscene
       const a = c.attacker;
-      const fin = a && a.controller !== loser && a.faceUp !== false && a.name ? finaleFor(a.name, aceFor(a.owner ?? a.controller, a.name)) : null;
+      // (a borrowed monster is not its taker's Ace: Change of Heart on my Ace gives them no gold cutscene)
+      const own = a && (a.owner ?? a.controller) === a.controller;
+      const fin = a && a.controller !== loser && a.faceUp !== false && a.name ? finaleFor(a.name, own ? aceFor(a.controller, a.name) : null) : null;
       if (a && fin) out.push(again({ kind: 'finale', card: a, line: fin.line, lv: fin.lv, ace: fin.ace }));
       // (from the swing: the declaration and its wind-up were just seen)
       out.push(again(c));
