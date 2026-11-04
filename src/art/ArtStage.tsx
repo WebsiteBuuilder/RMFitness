@@ -16,6 +16,7 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
+import { prepManga } from "./mangaPanel";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
 import { aceFor } from "../ace/ace";
@@ -87,6 +88,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
+    manga: (o) => prepManga(layer, o),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
     clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
     chain,
@@ -296,6 +298,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
     if (stateRef.current.winner !== null) return skipAll(false);
+    // a manga panel holding the frame: the tap only sends the panel away (the blow plays on)
+    if (dir.current?.dismissManga()) return;
     tapToResult();
     clearLayer();
     chainSpot.current?.hide();
