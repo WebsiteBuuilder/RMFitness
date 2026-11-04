@@ -56,8 +56,8 @@ const t = (name: string, fn: () => void) => {
 };
 const NOV = new Date(2026, 10, 10, 12).getTime();
 const day = (d: number, base = NOV) => base + d * 86400000;
-const win = { counts: true, result: 'w' as const, quick: false, requests: 0 };
-const loss = { counts: true, result: 'l' as const, quick: false, requests: 0 };
+const win = { counts: true, result: 'w' as const, quick: false, turns: 9, surrendered: false, requests: 0 };
+const loss = { counts: true, result: 'l' as const, quick: false, turns: 9, surrendered: false, requests: 0 };
 const chips = (s: SpeedSave, n: number) => ({ ...s, chips: n }) as SpeedSave;
 /** a save with this much Pass XP this season */
 const at = (xp: number, s = newSpeedSave(), now = NOV) => {
@@ -141,6 +141,11 @@ t('nothing for duels that do not count, or that were given up straight away', ()
   assert.equal(earnPass(s, { ...win, counts: false, requests: 3 }, NOV).save, s);
   const q = earnPass(s, { ...win, quick: true }, NOV);
   assert.equal(q.gain, null, 'a quick surrender pays nothing (no first-win bonus either)');
+  assert.equal(earnPass(s, { ...win, turns: 2 }, NOV).gain, null, 'over before turn 3: nothing');
+  // start, pass, give up, repeat: giving up before turn 6 pays nothing; a duel played out does
+  assert.equal(earnPass(s, { ...loss, turns: 4, surrendered: true }, NOV).gain, null);
+  assert.equal(earnPass(s, { ...loss, turns: 7, surrendered: true }, NOV).gain?.to, XP_LOSS);
+  assert.equal(earnPass(s, { ...win, turns: 4, surrendered: true }, NOV).gain?.to, XP_WIN + XP_FIRST_WIN, 'the other side giving up is still a win');
 });
 
 t('the daily cap: never more than 1000 XP a day, about 20 days to the top', () => {
@@ -218,7 +223,9 @@ t('wearing: only what you have; the badge rides JOIN and the face-off shows only
   assert.equal(duelBadge(1), null, 'a made-up title or plate from the other phone shows nothing');
   showDuelBadges(null);
   assert.equal(duelBadge(0), null);
-  assert.ok(knownTitle('legend@2027-01') && !knownTitle('legend@x') && !knownTitle('nope'));
+  assert.ok(knownTitle('legend@2026-10', NOV) && !knownTitle('legend@x') && !knownTitle('nope'));
+  assert.ok(!knownTitle('legend@2026-00', NOV) && !knownTitle('legend@2026-13', NOV) && !knownTitle('champion@9999-12', NOV), 'no made-up or future seasons');
+  assert.equal(rewardName({ k: 'stitle', id: 'champion' }, '2026-10').name, titleName('champion@2026-10'));
 });
 
 t('a new season: unclaimed rewards are handed over, the track and the Chips lane start again', () => {
@@ -239,7 +246,7 @@ t('a new season: unclaimed rewards are handed over, the track and the Chips lane
 
 t('the clock: set back, the pass freezes (no XP, no claims) until the real date catches up', () => {
   const { save, now } = at(TIER_XP * 2 + 5);
-  const back = now - 3 * 86400000;
+  const back = now - 2 * 86400000;
   assert.equal(trackOf(save, back), null);
   assert.equal(earnPass(save, win, back).gain, null);
   assert.equal(claimAll(save, back), null);
@@ -247,7 +254,16 @@ t('the clock: set back, the pass freezes (no XP, no claims) until the real date 
   // a season set back is frozen too
   const nextMonth = new Date(2026, 11, 3).getTime();
   const rolled = earnPass(save, win, nextMonth).save;
-  assert.equal(earnPass(rolled, win, NOV).gain, null);
+  const g = earnPass(rolled, win, nextMonth - 86400000).gain;
+  assert.ok(!g || g.to === g.from, 'a season a day behind earns nothing');
+  // a clock that once read years ahead doesn't freeze the pass for good: the track comes back to
+  // today with its XP and claims kept, and today already spent (back and forth earns nothing)
+  const glitch = earnPass(save, win, new Date(2036, 0, 5).getTime()).save;
+  const fixed = trackOf(glitch, now)!;
+  assert.ok(fixed && fixed.season === trackOf(save, now)!.season && fixed.xp === trackOf(glitch, new Date(2036, 0, 5).getTime())!.xp);
+  const after = earnPass(glitch, win, now).gain;
+  assert.ok(!after || after.to === after.from, 'nothing more today');
+  assert.ok((earnPass(earnPass(glitch, win, now).save, win, now + 86400000).gain?.to ?? 0) > fixed.xp, 'the next real day earns again');
 });
 
 t('the top: XP stops at tier 50, and unclaimed counts every lane', () => {

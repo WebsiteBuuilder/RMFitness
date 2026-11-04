@@ -130,7 +130,7 @@ export function ClaimCeremony({ got, season, onDone }: { got: Claimed[]; season:
       </div>
       <div class={`dp-claim-row ${big ? 'big' : ''}`}>
         {list.slice(0, shown).map((g, i) => {
-          const n = rewardName(g.reward, season);
+          const n = rewardName(g.reward, g.season || season);
           return (
             <div key={`${g.lane}${g.tier}`} class={`dp-claim-it ${g.dup ? 'dup' : ''} ${g.lane}`} style={{ '--i': i } as Record<string, number>}>
               <span class="dp-claim-card">

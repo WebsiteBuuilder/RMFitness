@@ -38,6 +38,11 @@ export const passSeason = (now = Date.now()) => {
   const d = new Date(now);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 };
+/** A saved day ("2026-11-04") as a whole day count. */
+const dayNum = (day: string) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return Math.round(new Date(y, (m || 1) - 1, d || 1).getTime() / 86400000);
+};
 const dayOf = (now: number) => {
   const d = new Date(now);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -58,7 +63,13 @@ export function trackOf(s: SpeedSave, now = Date.now()): PassTrack | null {
   const season = passSeason(now);
   const day = dayOf(now);
   if (!t) return freshTrack(season, day);
-  if (t.season > season || t.day > day) return null;
+  if (t.season > season || t.day > day) {
+    // a small skew (time zones, a clock a day out) waits for the real date. A clock that once read
+    // far ahead (a glitch, a year typed wrong) would freeze the pass for good: that track is brought
+    // back to today as it stands (its XP and claims kept, today already spent), so nothing is lost
+    // and going back and forth earns nothing new.
+    return dayNum(t.day) - dayNum(day) > 2 ? { ...t, season, day, dayXp: DAY_CAP, firstWin: true } : null;
+  }
   if (t.season < season) return freshTrack(season, day);
   return t.day === day ? t : { ...t, day, dayXp: 0, firstWin: false };
 }
@@ -168,6 +179,8 @@ export interface Claimed {
   reward: PassReward;
   /** it was already theirs: nothing new */
   dup: boolean;
+  /** the season it was reached in (names a season title) */
+  season: string;
 }
 
 const tierDef = (n: number): Tier => ROAD[n - 1];
@@ -200,7 +213,7 @@ export function rollSeason(s: SpeedSave, now = Date.now()): { save: SpeedSave; c
   for (const u of unclaimed(old)) {
     const dup = ownsReward(save, u.reward, old.season);
     save = giveReward(save, u.reward, old.season);
-    carried.push({ ...u, dup });
+    carried.push({ ...u, dup, season: old.season });
   }
   return { save: { ...(save as PS), pass: freshTrack(passSeason(now), dayOf(now)) } as SpeedSave, carried };
 }
@@ -219,7 +232,7 @@ export function claimAll(s: SpeedSave, now = Date.now()): { save: SpeedSave; got
   for (const u of list) {
     const dup = ownsReward(save, u.reward, t.season);
     save = giveReward(save, u.reward, t.season);
-    got.push({ ...u, dup });
+    got.push({ ...u, dup, season: t.season });
     (u.lane === 'free' ? gotF : gotP).push(u.tier);
   }
   return { save: { ...(save as PS), pass: { ...t, gotF, gotP } } as SpeedSave, got };
@@ -250,6 +263,10 @@ export interface PassDuel {
   result: 'w' | 'l' | 'd';
   /** given up or over before it got going: no XP */
   quick: boolean;
+  /** turns the duel ran */
+  turns: number;
+  /** it ended with someone giving up */
+  surrendered: boolean;
   /** Duelist Requests this duel finished */
   requests: number;
 }
@@ -273,8 +290,10 @@ export function earnPass(s: SpeedSave, d: PassDuel, now = Date.now()): { save: S
   if (!t || t.xp >= MAX_XP) return { save: rolled, gain: null, carried };
   const parts: { label: string; xp: number }[] = [];
   let firstWin = t.firstWin;
-  if (!d.quick) parts.push(d.result === 'w' ? { label: 'Win', xp: XP_WIN } : { label: d.result === 'd' ? 'Draw' : 'Duel played', xp: XP_LOSS });
-  if (!d.quick && d.result === 'w' && !firstWin) {
+  // nothing for a duel over before turn 3, nor for giving up before turn 6 (start, pass, give up, repeat)
+  const quick = d.quick || d.turns < 3 || (d.surrendered && d.result !== 'w' && d.turns < 6);
+  if (!quick) parts.push(d.result === 'w' ? { label: 'Win', xp: XP_WIN } : { label: d.result === 'd' ? 'Draw' : 'Duel played', xp: XP_LOSS });
+  if (!quick && d.result === 'w' && !firstWin) {
     parts.push({ label: 'First win today', xp: XP_FIRST_WIN });
     firstWin = true;
   }
@@ -282,7 +301,8 @@ export function earnPass(s: SpeedSave, d: PassDuel, now = Date.now()): { save: S
   const want = parts.reduce((a, p) => a + p.xp, 0);
   const room = Math.max(0, Math.min(DAY_CAP - t.dayXp, MAX_XP - t.xp));
   const xp = Math.min(room, want);
-  if (xp <= 0) return { save: rolled, gain: want > 0 ? { season: t.season, from: t.xp, to: t.xp, parts, capped: true } : null, carried };
+  // (a track brought back from a clock far ahead is kept even when nothing more is earned today)
+  if (xp <= 0) return { save: passOf(rolled)?.pass === t ? rolled : ({ ...(rolled as PS), pass: t } as SpeedSave), gain: want > 0 ? { season: t.season, from: t.xp, to: t.xp, parts, capped: true } : null, carried };
   const next: PassTrack = { ...t, xp: t.xp + xp, dayXp: t.dayXp + xp, firstWin };
   return { save: { ...(rolled as PS), pass: next } as SpeedSave, gain: { season: t.season, from: t.xp, to: next.xp, parts, capped: xp < want }, carried };
 }
@@ -294,6 +314,11 @@ export const xpLeftToday = (s: SpeedSave, now = Date.now()) => {
 };
 
 /** Every title a duelist could wear, for checking one that came from the other phone. */
-export const knownTitle = (id: unknown): id is string => typeof id === 'string' && id.length <= 32 && !!titleName(id);
+export const knownTitle = (id: unknown, now = Date.now()): id is string => {
+  if (typeof id !== 'string' || id.length > 32 || !titleName(id)) return false;
+  // a season title from a season that hasn't happened yet: not real
+  const at = id.indexOf('@');
+  return at < 0 || id.slice(at + 1) <= passSeason(now);
+};
 export const knownPlate = (id: unknown): id is string => typeof id === 'string' && !!plateDef(id);
 export { TITLES };

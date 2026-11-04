@@ -102,7 +102,7 @@ export function titleName(id: string | null | undefined): string | null {
   if (!id) return null;
   const plain = TITLE_BY_ID.get(id);
   if (plain) return plain.name;
-  const m = /^(champion|legend)@(\d{4}-\d{2})$/.exec(id);
+  const m = /^(champion|legend)@(\d{4}-(?:0[1-9]|1[0-2]))$/.exec(id);
   return m ? `${SEASON_TITLES[m[1] as SeasonTitle]} · ${seasonName(m[2])}` : null;
 }
 export const frameDef = (id: string | null | undefined) => FRAMES.find((f) => f.id === id);

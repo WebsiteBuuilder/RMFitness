@@ -49,7 +49,7 @@ export function PassStrip({ gain, delay }: { gain: PassGain; delay: number }) {
           <i class={snap ? 'snap' : ''} style={{ transform: `scaleX(${pct / 100})` }} />
         </i>
         <span class="dp-strip-parts">
-          {gain.parts.map((p) => `${p.label} +${p.xp}`).join(' · ')}
+          {gain.parts.map((p) => `+${p.xp} ${p.label.replace('First win today', 'First win').replace('Duelist Request done', 'Request').replace(/Duelist Requests done/, 'Requests')}`).join(' · ')}
           {gain.capped && xp > 0 ? ' · daily cap reached' : ''}
         </span>
       </span>

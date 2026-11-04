@@ -178,7 +178,7 @@ export function PassScreen({ save, profile, onSave, onBack }: { save: SpeedSave;
           {ROAD.map((d) => {
             const reached = tier >= d.n;
             const cell = (lane: 'free' | 'prem', r: PassReward | null) => {
-              if (!r) return <span class="dp-cell empty" />;
+              if (!r) return <span class="dp-cell empty" aria-hidden="true">·</span>;
               const claimed = (lane === 'free' ? t.gotF : t.gotP).includes(d.n);
               const locked = lane === 'prem' && !t.prem;
               const canClaim = reached && !claimed && !locked && !frozen;

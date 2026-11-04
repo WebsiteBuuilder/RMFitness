@@ -135,9 +135,9 @@ registerPackOpener(openPack);
 type NewsCards = { who: string; won: string[]; lost: string[] }[];
 
 /** The line for last season's Duel Pass rewards, handed over when a new season starts. */
-const carriedLine = (c: { reward: Parameters<typeof rewardName>[0]; dup: boolean }[]) => {
+const carriedLine = (c: { reward: Parameters<typeof rewardName>[0]; dup: boolean; season: string }[]) => {
   const fresh = c.filter((x) => !x.dup);
-  return `Duel Pass: a new season! ${fresh.length ? `Last season's ${fresh.length} unclaimed reward${fresh.length === 1 ? ' is' : 's are'} yours: ${fresh.map((x) => rewardName(x.reward, '').name).slice(0, 4).join(', ')}${fresh.length > 4 ? '…' : ''}` : 'Your track starts again from tier 0.'}`;
+  return `Duel Pass: a new season! ${fresh.length ? `Last season's ${fresh.length} unclaimed reward${fresh.length === 1 ? ' is' : 's are'} yours: ${fresh.map((x) => rewardName(x.reward, x.season).name).slice(0, 4).join(', ')}${fresh.length > 4 ? '…' : ''}` : 'Your track starts again from tier 0.'}`;
 };
 
 /** A profile's sleeve (its Ranked sleeves need the solo save: read at most every few seconds, not every render). */
@@ -697,8 +697,8 @@ export function App() {
     }
     // Duel Pass: the same duels as Requests earn Pass XP (a duel left or given up straight away earns none).
     const reqDone = req ? req.lines.filter((l) => l.startsWith('Request done')).length : 0;
-    const pg = earnPass(aw.save, { counts: !left && !!st && sd.ctx.kind !== 'practice' && !sd.spec.watch && !anyGoes, result: o.result, quick: (st?.turn ?? 0) < 3, requests: reqDone });
-    if (pg.gain) setPassGain(pg.gain);
+    const pg = earnPass(aw.save, { counts: !left && !!st && sd.ctx.kind !== 'practice' && !sd.spec.watch && !anyGoes, result: o.result, quick: false, turns: st?.turn ?? 0, surrendered: !!st && /surrendered$/.test(st.winReason), requests: reqDone });
+    if (pg.gain && pg.gain.to > pg.gain.from) setPassGain(pg.gain);
     if (pg.carried.length) setSpeedNews([...(req?.lines ?? []), ...(aw.line ? [aw.line] : []), carriedLine(pg.carried)]);
     const speedOut = pg.save;
     if (speedOut !== speedNow) setSpeedSave(speedOut);
@@ -1065,8 +1065,9 @@ export function App() {
         if (r.cards.length) cards.push({ who, won: r.cards, lost: [] });
         // Duel Pass: the duels that move Requests earn Pass XP too (a duel given up before it got going: none).
         const res = winner === 'draw' ? 'd' : winner === seat ? 'w' : 'l';
-        const quick = tooQuick({ surrender: /surrendered$/.test(st.winReason), turns: st.turn, damage: lpLostIn(st) }) || st.turn < 3;
-        const pg = earnPass(r.save, { counts, result: res, quick, requests: r.lines.filter((l) => l.startsWith('Request done')).length });
+        const surrendered = /surrendered$/.test(st.winReason);
+        const quick = tooQuick({ surrender: surrendered, turns: st.turn, damage: lpLostIn(st) });
+        const pg = earnPass(r.save, { counts, result: res, quick, turns: st.turn, surrendered, requests: r.lines.filter((l) => l.startsWith('Request done')).length });
         if (seat === mySeat && pg.gain) myPass = pg.gain;
         if (pg.carried.length) news.push(hotseat && !cpu ? `${who}: ${carriedLine(pg.carried)}` : carriedLine(pg.carried));
         return pg.save;

@@ -76,6 +76,9 @@ function TierUp({ gain, save, onSave, onClose, onOpen }: { gain: PassGain; save:
     <div class={`dp-up s${stage}`} role="dialog" aria-modal="true" aria-label={`Duel Pass tier ${to} reached`} onClick={() => stage < 2 && setStage(2)}>
       <div class="dp-up-rays" aria-hidden="true" />
       <div class="dp-up-flash" aria-hidden="true" />
+      <div class="dp-up-glow" aria-hidden="true" />
+      <div class="dp-up-ring" aria-hidden="true" />
+      <div class="dp-up-ring r2" aria-hidden="true" />
       <div class="dp-up-medal">
         <small>Tier</small>
         <b>{to}</b>
