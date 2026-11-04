@@ -16,7 +16,8 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
-import { stopShout } from "./callouts";
+import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
+import { soundEnabled } from "../ui/sound";
 import "./art.css";
 import "./chainspot.css";
 
@@ -129,6 +130,24 @@ const idle = (f: () => void) => {
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   // (a shout still being said stops when the duel screen goes)
   useEffect(() => () => stopShout(), []);
+  // (the phone's speech engine wakes, silently, on the first tap of the duel: waking it on the
+  // first attack is what made that shout late)
+  // (pointerup/click: a touch only counts as a gesture that may start speech once the finger lifts;
+  // tried on every tap until the engine has run it, so a duel started with the voice off warms later)
+  useEffect(() => {
+    const warm = () => {
+      if (voiceWarm()) return off();
+      if (calloutMode() === "voice" && soundEnabled()) warmVoice();
+    };
+    const opts = { capture: true, passive: true } as const;
+    const off = () => {
+      window.removeEventListener("pointerup", warm, opts);
+      window.removeEventListener("click", warm, opts);
+    };
+    window.addEventListener("pointerup", warm, opts);
+    window.addEventListener("click", warm, opts);
+    return off;
+  }, []);
   // (a new duel or a rematch on the same screen: each Ace's full entrance plays again)
   const fresh = state.turn <= 1;
   useEffect(() => {
