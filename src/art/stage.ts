@@ -399,7 +399,15 @@ void main(){
   if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2 * (1.0 - 0.75 * holo);
   // the solidify front: a bright line of light climbing the body
-  if (uHolo > 0.001 && uWall < 0.5) { float band = 1.0 - smoothstep(0.0, 0.07, abs(vMesh.y - uHoloLine)); c += (uHoloCol * band + vec3(1.0) * band * band * band * 0.6) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.5 * uHoloEdge; }
+  if (uHolo > 0.001 && uWall < 0.5) {
+    // a crisp stripe of white-cyan light (about a tenth of the body) with a soft glow around it
+    float d = abs(vMesh.y - uHoloLine);
+    float band = 1.0 - smoothstep(0.045, 0.055, d);
+    float glow = 1.0 - smoothstep(0.0, 0.11, d);
+    c += (mix(uHoloCol, vec3(1.0), 0.45) * band * 0.9 + uHoloCol * glow * 0.5) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * uHoloEdge;
+  }
+  // while it builds up, the row it has reached is a clean bright line of projected light
+  c += uHoloCol * (1.0 - smoothstep(0.0, 0.012, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999) * holo * 1.4;
   float alpha = (a * vis + rim * a) * uOpacity * clamp(holoA, 0.0, 1.0);
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead

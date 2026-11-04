@@ -68,7 +68,7 @@ export function holoPlan(power: HoloPower, reveal: number, end: number): HoloPla
   if (power >= 2) glitches.push([reveal + hold * 0.5, 0.07]);
   // (in a short summon the tears squeeze into the hologram's own time, or drop out)
   const fit = glitches.map(([a, d]): [number, number] => [Math.max(reveal, a), Math.min(a + d, solidEnd) - Math.max(reveal, a)]).filter(([, d]) => d >= 0.04);
-  return { power, reveal, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.18), glitches: fit };
+  return { power, reveal, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.12), glitches: fit };
 }
 
 /** 0..1 signal tearing at time t (s) of a plan. */

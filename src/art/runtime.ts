@@ -1995,8 +1995,10 @@ export class Director {
     // light shafts behind the monster
     const showAt = showAtFor(over);
     // (under a hologram the projector is the only light until it locks solid; the shafts come up with the lock)
-    if (holo) this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + holo.solidEnd - 0.05, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
-    else this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    // (only when there is time for them to rise and fall before the monster flies to its card)
+    if (holo) {
+      if (holo.solidEnd + 0.12 + 0.6 <= E) this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + holo.solidEnd + 0.12, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    } else this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
 
     // the monster
     const fig = art ? tl.own(this.figure(art, size, prof, col.main)) : null;
