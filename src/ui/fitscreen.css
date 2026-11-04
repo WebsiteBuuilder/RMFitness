@@ -1085,7 +1085,7 @@
     :root .duel.speed:not(.touch) .rows {
       flex: none;
       max-width: none;
-      width: calc((100cqh * var(--fit-tall) - var(--mid) - 38px) / 4 * 59 / 86 * 3 + 12px);
+      width: calc((100cqh * var(--fit-tall) - var(--mid) - 38px) / 4 * 59 / 86 * 3 + 2 * var(--zgap, 6px));
     }
     :root .duel.speed:not(.touch) .row {
       width: 100%;
@@ -1221,5 +1221,63 @@
 @media (min-width: 700px) and (min-height: 600px) {
   :root .duel:not(.touch) .sidebox .pile > span {
     font-size: inherit;
+  }
+}
+
+/* ---- Classic, round 4 ---- */
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  /* the zones spread a little, the way Master Duel spaces its table, and each half of the table is
+     tinted for its player under a soft mat glow */
+  :root .duel.speed:not(.touch) .field {
+    --zgap: clamp(8px, 1vw, 22px);
+  }
+  :root .duel.speed:not(.touch) .row {
+    column-gap: var(--zgap);
+  }
+  :root .duel.speed:not(.touch) .rows {
+    row-gap: 6px;
+    padding: 10px;
+    margin: -10px;
+    border-radius: 14px;
+    background:
+      linear-gradient(#ff40581c, #ff405808 42%, #0000 50%, #3f8cff0a 58%, #3f8cff22),
+      radial-gradient(ellipse at 50% 50%, #8fa8ff14, #0000 70%);
+    box-shadow: 0 0 0 1px #9fb2ff1f, 0 30px 80px #0007;
+  }
+  /* their pile column starts level with their back row */
+  :root .duel.speed:not(.touch) .sidebox.top {
+    margin-top: calc(100cqh * (1 - var(--fit-tall)) + 12px);
+  }
+  /* their hand reads as cards */
+  :root .duel:not(.touch) .opp-hand .hcard {
+    width: 30px;
+    height: 44px;
+  }
+  :root .duel:not(.touch) .hand,
+  :root .duel.speed:not(.touch) .hand {
+    --card-w: clamp(64px, 11.5vh, 160px);
+  }
+}
+/* 16:9 and wider: the side panel takes the slack beside the table */
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 16/9) {
+  :root .duel:not(.touch) {
+    --fit-side: clamp(290px, 29vw, 720px);
+  }
+}
+@media (min-width: 1800px) and (min-height: 900px) and (min-aspect-ratio: 5/4) {
+  :root .duel:not(.touch) .opp-hand .hcard {
+    width: 40px;
+    height: 58px;
+  }
+}
+/* a short side panel (800x600 and the like): a smaller picture, so the card text still shows */
+@container (max-height: 520px) {
+  .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 34cqh * 59 / 86) !important;
+  }
+}
+@container (min-height: 1000px) {
+  .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 520px, 60cqh * 59 / 86) !important;
   }
 }
