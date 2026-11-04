@@ -47,7 +47,7 @@ for (const k of kinds) {
   ok(s.ms >= 400 && s.ms <= 1700, `${k}: short (${s.ms} ms)`);
   for (const f of s.frames) {
     ok(f.pose.zoom <= 1.09 && f.pose.zoom >= 1, `${k}: slight push (${f.pose.zoom})`);
-    ok(Math.abs(f.pose.roll) <= 1.6, `${k}: slight roll (${f.pose.roll})`);
+    ok(Math.abs(f.pose.roll) <= 3, `${k}: slight roll (${f.pose.roll})`);
     ok(f.pose.pitch >= 0 && f.pose.pitch <= 16, `${k}: a few degrees of tilt (${f.pose.pitch})`);
   }
   ok(shotFor({ kind: k }, box, { x: 320, y: 400 }, 0) === null, `${k}: Off moves nothing`);
@@ -60,7 +60,11 @@ ok(rollOf(350) > 0, 'a summon right of the middle rolls clockwise');
 ok(Math.min(...shotFor({ kind: 'summon' }, box, { x: 50, y: 400 }, 1)!.frames.map((f) => f.pose.roll)) < 0, '...left of it, the other way');
 const lean = shotFor({ kind: 'attack' }, box, { x: 300, y: 420 }, 1, { x: 100, y: 180 })!;
 ok(Math.min(...lean.frames.map((f) => f.pose.roll)) < 0, 'an attack toward the left leans left');
-ok(lean.frames[1].pose.focus.x === 300 && lean.frames[2].pose.focus.x === 100, 'an attack leans on the attacker, then swings to the target');
+ok(Math.abs(lean.frames[1].pose.focus.x - 300) < 40 && lean.frames[2].pose.focus.x === 100, 'an attack leans on the attacker, then swings to the target');
+ok(Math.sign(lean.frames[1].pose.roll) !== Math.sign(lean.frames[2].pose.roll), '...rolling across as it swings');
+const blowEv = pickMoment([ev('attack', { uid: 5, target: 9 }), ev('hit', { uid: 9 })], field)!;
+ok(blowEv.blow === true, 'a blow in the same batch rides on the attack');
+ok(shotFor(blowEv, box, { x: 300, y: 420 }, 1, { x: 100, y: 180 })!.frames.length > lean.frames.length, '...as an extra punch in');
 
 // ----- the map -----
 const s1 = shotFor({ kind: 'bigSummon' }, box, { x: 330, y: 420 }, 1)!;

@@ -19,6 +19,8 @@ export interface Moment {
   uid: number;
   /** attack: its target (null: a direct attack) */
   target?: number | null;
+  /** attack: the blow lands in the same batch (the move ends on a kick) */
+  blow?: boolean;
   /** whose action: the camera rolls toward their opponent on an attack */
   player?: Pid;
 }
@@ -61,6 +63,9 @@ export function pickMoment(events: EngineEvent[], onField: (uid: number) => bool
         break;
     }
   }
+  // the blow in the same batch as its attack: the attack's move ends on it
+  const b = best as Moment | null;
+  if (b && (b.kind === 'attack' || b.kind === 'direct') && events.some((e) => e.kind === 'hit')) return { ...b, blow: true };
   return best;
 }
 
@@ -95,8 +100,6 @@ const OUT = 'cubic-bezier(.22,.8,.3,1)';
 const KICK = 'cubic-bezier(.2,1.4,.4,1)';
 /** the glide home: quick to leave, long and soft to arrive */
 const BACK = 'cubic-bezier(.3,0,.12,1)';
-/** the swing along an attack */
-const SWING = 'cubic-bezier(.5,0,.2,1)';
 
 /**
  * The move for a moment. `field` is the field's resting rectangle; `at` the card it is
@@ -111,7 +114,7 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
   const side = (p: Pt) => Math.max(-1, Math.min(1, (p.x - field.cx) / (field.w / 2 || 1)));
   const pose = (focus: Pt, zoom: number, roll: number, pitch: number, pull: number): Pose => ({ zoom: 1 + (zoom - 1) * s, roll: roll * s, pitch: pitch * s, focus, pull });
   // after the peak the camera keeps creeping in a touch (never a dead stop), then glides back out
-  const creep = (p: Pose, more: number): Pose => ({ ...p, zoom: p.zoom + more * s, pitch: p.pitch + more * 60 * s });
+  const creep = (p: Pose, more: number): Pose => ({ ...p, zoom: p.zoom + more * s, pitch: p.pitch + more * 70 * s });
   switch (m.kind) {
     case 'set': {
       const p = pose(at, 1.012, 0.3 * side(at), 4, 0.2);
@@ -119,22 +122,29 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
     }
     case 'summon': {
       const p = pose(at, 1.035, 0.8 * side(at), 11, 0.25);
-      return { kind: m.kind, ms: 1300, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p, ease: 'linear' }, { at: 0.48, pose: creep(p, 0.005), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
+      return { kind: m.kind, ms: 1200, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p, ease: 'linear' }, { at: 0.44, pose: creep(p, 0.015), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'bigSummon': {
       // a deeper dip, with a small extra push as it lands
       const p1 = pose(at, 1.05, 1.1 * side(at), 14, 0.3);
       const p2 = pose(at, 1.06, 1.2 * side(at), 15, 0.3);
-      return { kind: m.kind, ms: 1650, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.28, pose: p1, ease: KICK }, { at: 0.4, pose: p2, ease: 'linear' }, { at: 0.55, pose: creep(p2, 0.004), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
+      return { kind: m.kind, ms: 1650, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.28, pose: p1, ease: KICK }, { at: 0.4, pose: p2, ease: 'linear' }, { at: 0.52, pose: creep(p2, 0.012), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'attack':
     case 'direct': {
       // two beats: the camera leans on the attacker, then swings along the attack to the target
       const tgt = to ?? { x: field.cx, y: field.cy - field.h / 2 };
       const lean = Math.max(-1, Math.min(1, (tgt.x - at.x) / (field.w / 2 || 1)));
-      const p1 = pose(at, 1.03, 0.5 * lean + 0.4 * side(at), 9, 0);
-      const p2 = pose(tgt, 1.055, 1.4 * lean + 0.3 * side(tgt), 13, 0);
-      return { kind: m.kind, ms: 1550, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.24, pose: p1, ease: SWING }, { at: 0.46, pose: p2, ease: 'linear' }, { at: 0.6, pose: creep(p2, 0.005), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
+      // (the aim leads ahead of the attacker on beat one, and swings hard to the target on beat two)
+      const lead = { x: at.x + (tgt.x - at.x) * 0.15, y: at.y + (tgt.y - at.y) * 0.15 };
+      const p1 = pose(lead, 1.03, -0.8 * lean + 0.3 * side(at), 9, 0);
+      const p2 = pose(tgt, 1.055, 2.6 * lean + 0.3 * side(tgt), 13, 0);
+      const frames: Shot['frames'] = [{ at: 0, pose: rest, ease: OUT }, { at: 0.26, pose: p1, ease: KICK }, { at: 0.38, pose: p2, ease: 'linear' }];
+      // the blow: a short punch in at the target, then home
+      if ('blow' in m && m.blow) frames.push({ at: 0.46, pose: p2, ease: KICK }, { at: 0.52, pose: creep(p2, 0.025), ease: BACK });
+      else frames.push({ at: 0.52, pose: creep(p2, 0.01), ease: BACK });
+      frames.push({ at: 1, pose: rest, ease: 'linear' });
+      return { kind: m.kind, ms: 1600, frames };
     }
     case 'impact': {
       const p = pose(at, 1.02, 0.6 * side(at), 5, 0);

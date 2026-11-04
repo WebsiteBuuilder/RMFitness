@@ -103,8 +103,15 @@ export function unmapWith(r: RectLike, m: Mat): RectLike {
   const [cx, cy] = apply(inv, x, y);
   const [ax, ay] = apply(inv, x + 1, y);
   const [bx, by] = apply(inv, x, y + 1);
-  const w = r.width * Math.hypot(ax - cx, ay - cy);
-  const h = r.height * Math.hypot(bx - cx, by - cy);
+  // the box of a rolled card is wider than the card (w·cosθ + h·sinθ): take the roll back out
+  const th = Math.abs(Math.atan2(ay - cy, ax - cx));
+  const c = Math.cos(th);
+  const sn = Math.sin(th);
+  const d = c * c - sn * sn || 1;
+  const bw = th > 1e-4 ? (r.width * c - r.height * sn) / d : r.width;
+  const bh = th > 1e-4 ? (r.height * c - r.width * sn) / d : r.height;
+  const w = Math.max(0, bw) * Math.hypot(ax - cx, ay - cy);
+  const h = Math.max(0, bh) * Math.hypot(bx - cx, by - cy);
   return { left: cx - w / 2, top: cy - h / 2, width: w, height: h, right: cx + w / 2, bottom: cy + h / 2 };
 }
 

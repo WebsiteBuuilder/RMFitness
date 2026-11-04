@@ -54,6 +54,13 @@ function safeArea(): Bounds {
   const bot = document.querySelector('.duel .tbar.bottom, .duel .pbar:not(.top)')?.getBoundingClientRect();
   if (top && top.width > w * 0.6) out.top = top.bottom;
   if (bot && bot.width > w * 0.6) out.bottom = bot.top;
+  // the turn tab over the bottom bar and the hand fan (big screens) are HUD too
+  for (const sel of ['.duel .ttab.bottom', '.duel .thand']) {
+    const r = document.querySelector(sel)?.getBoundingClientRect();
+    if (r && r.height > 0 && r.top > h / 2) out.bottom = Math.min(out.bottom, r.top);
+  }
+  const tt = document.querySelector('.duel .ttab.top')?.getBoundingClientRect();
+  if (tt && tt.height > 0 && tt.bottom < h / 2) out.top = Math.max(out.top, tt.bottom);
   return out;
 }
 
@@ -149,7 +156,7 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if ((tilted.current ??= tiltedAbove(field))) return;
     // (one settle per hand-back: the batch arriving right after it does not start another;
     // an attack's move already lands its blow: the hit that follows does not cut it short)
-    if (live.current && ((settle && live.current.kind !== 'rest') || (m.kind === 'impact' && (live.current.kind === 'attack' || live.current.kind === 'direct')))) return;
+    if (live.current && settle && live.current.kind !== 'rest') return;
     const rest = restOf(field);
     const box = { cx: rest.left + rest.width / 2, cy: rest.top + rest.height / 2, w: rest.width, h: rest.height };
     // (a monster the blow destroyed has left its zone: the camera looks at what is still there)
@@ -223,10 +230,17 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
 
   // the screen turned or resized: a shot's pivot and resting places are stale, so it stops where it is
   useEffect(() => {
+    let vw = window.innerWidth;
+    let vh = window.innerHeight;
     const on = () => {
+      const small = window.innerWidth === vw && Math.abs(window.innerHeight - vh) < vh * 0.15;
+      vw = window.innerWidth;
+      vh = window.innerHeight;
       tilted.current = null;
-      restBox.current = null;
       const l = live.current;
+      // (the browser's bar sliding in or out on a phone: ease home; a real resize or a turn: stop now)
+      if (l && small) return toRest();
+      restBox.current = null;
       if (l) {
         for (const a of l.anims) a.cancel();
         done(l);
