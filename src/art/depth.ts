@@ -208,7 +208,12 @@ async function relief(name: string): Promise<{ img: HTMLImageElement; palette: n
   }
 }
 
-async function build(name: string): Promise<ArtData> {
+/** Background loading only: let a tap's frames go first (waits at most 1 s). */
+async function settle(gentle: boolean) {
+  for (let k = 0; gentle && k < 8 && pressQuiet(); k++) await new Promise((ok) => setTimeout(ok, 125));
+}
+
+async function build(name: string, gentle = false): Promise<ArtData> {
   const url = imageUrl(name);
   const fig = relief(name);
   let full: HTMLCanvasElement;
@@ -216,6 +221,7 @@ async function build(name: string): Promise<ArtData> {
     if (!url) throw new Error('no image');
     // decoded off the page where the browser can (createImageBitmap from the file), so drawing it is a copy
     const img = await decoded(url);
+    await settle(gentle);
     full = canvas(img.width || 300, img.height || 437);
     // CPU-backed (willReadFrequently): the reads of this art below and in artTame never stall on the GPU
     full.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, full.width, full.height);
@@ -230,6 +236,7 @@ async function build(name: string): Promise<ArtData> {
   const art = canvas(256, 256);
   art.getContext('2d', { willReadFrequently: true })!.drawImage(full, sx, sy, sw, sh, 0, 0, 256, 256);
   const pre = await fig;
+  await settle(gentle);
   const id = card(name)?.id;
   const artPx = readPx(art, 32);
   if (pre) return { art, full, depth: new Uint8Array(DEPTH_SIZE * DEPTH_SIZE), relief: pre.img, palette: pre.palette, id, reliefPx: pre.px ?? readPx(pre.img, 64), artPx };
@@ -292,11 +299,11 @@ function readPx(src: CanvasImageSource, n: number): Uint8ClampedArray | undefine
   }
 }
 
-/** Art data for a card, built once and cached (the last 40 cards). */
-export function artFor(name: string): Promise<ArtData> {
+/** Art data for a card, built once and cached (the last 40 cards). `gentle`: background preload, steps aside for taps. */
+export function artFor(name: string, gentle = false): Promise<ArtData> {
   let p = cache.get(name);
   if (!p) {
-    p = build(name);
+    p = build(name, gentle);
     cache.set(name, p);
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   } else {
@@ -331,7 +338,7 @@ export async function preloadArt(names: string[], stop: () => boolean = () => fa
       await pause();
       if (i >= list.length || stop()) break;
       const n = list[i++];
-      const art = await artFor(n).catch(() => null);
+      const art = await artFor(n, true).catch(() => null);
       if (art && each && !stop()) each(art);
     }
   };
