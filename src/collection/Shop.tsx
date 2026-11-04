@@ -171,7 +171,7 @@ export function CardShop({ save, onSave, onBack, start }: { save: SpeedSave; onS
             onDone={() => setOpened(null)}
           />
         ) : batchSeen !== n ? (
-          <PackBatch key={n} opened={opened} cover={opened.every((o) => o.set === opened[0].set) ? coverOf(setCards(opened[0].set ?? '')) : undefined} onFinish={() => setBatchSeen(n)} />
+          <PackBatch key={n} opened={opened} cover={coverOf(setCards(opened[0].set ?? ''))} onFinish={() => setBatchSeen(n)} />
         ) : (
           <PackSummary key={n} opened={opened} onDone={() => setOpened(null)} />
         ))}

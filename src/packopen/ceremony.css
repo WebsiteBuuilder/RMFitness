@@ -17,6 +17,8 @@
   background: radial-gradient(ellipse at 50% 42%, #1d2c7c 0%, #0a1033 52%, #03050f 100%);
   color: #fff;
   -webkit-tap-highlight-color: transparent;
+  /* an 850ms hold must not turn into iOS's image callout or Android's long-press menu */
+  -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -93,6 +95,10 @@
   font-weight: 800;
   font-size: 14px;
   letter-spacing: 0.5px;
+}
+.po img {
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 .po-skip::after {
   content: ' \00bb';
@@ -246,8 +252,8 @@
   background: linear-gradient(160deg, #2c56d6, #0a1446);
   box-shadow: 0 10px 20px #0008, inset 0 0 0 2px #ffffff30;
 }
-.po-under.u1 { transform: translateX(-46%) rotate(-7deg); }
-.po-under.u2 { transform: translateX(-54%) rotate(6deg); }
+.po-under.u1 { transform: translateX(-40%) rotate(-9deg); }
+.po-under.u2 { transform: translateX(-60%) rotate(8deg); }
 .po-packwrap.torn .po-under { animation: po-drop 0.42s ease-in forwards; }
 .po-packwrap.torn .po-help { opacity: 0; }
 /* torn: the strip flies off, light pours out of the top and the pack drops away */
@@ -311,6 +317,7 @@
   animation: po-deal 0.42s cubic-bezier(0.2, 1.2, 0.4, 1) calc(var(--i, 0) * 70ms) both;
   transition: width 0.35s ease;
 }
+.po.done .po-row .po-new { display: none; }
 .po.done .po-card {
   width: min(96px, calc((100vw - 48px) / 5));
 }
@@ -342,15 +349,26 @@
   object-fit: cover;
   border-radius: 5px;
 }
-.po-back { box-shadow: 0 6px 14px #000a; }
-/* Super Rare and up glow through their backs, so you know one is coming */
-.po-card.tease .po-back { animation: po-tease 1.2s ease-in-out infinite; }
+.po-back { box-shadow: 0 6px 14px #000a; isolation: isolate; }
+/* Super Rare and up glow through their backs, so you know one is coming.
+   (a fixed glow on a layer behind the back, only its opacity and scale animate: no repaint per frame) */
+.po-back::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 7px;
+  box-shadow: 0 0 22px var(--gc), 0 0 5px #fff;
+  opacity: 0;
+  will-change: opacity;
+}
+.po-card.tease .po-back::before { animation: po-tease 1.2s ease-in-out infinite; }
 @keyframes po-tease {
-  0%, 100% { box-shadow: 0 0 6px var(--gc), 0 6px 14px #000a; }
-  50% { box-shadow: 0 0 22px var(--gc), 0 0 4px #fff, 0 6px 14px #000a; }
+  0%, 100% { opacity: 0.3; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.02); }
 }
 .po-card.star { touch-action: none; z-index: 3; }
-.po-card.star .po-back { animation: po-tease 0.8s ease-in-out infinite; }
+.po-card.star .po-back::before { animation: po-tease 0.8s ease-in-out infinite; }
 .po-card.star:not(.charging) .po-in { animation: po-beckon 1.6s ease-in-out infinite; }
 @keyframes po-beckon {
   0%, 100% { transform: translateY(0); }
@@ -365,7 +383,7 @@
   80% { transform: scale(1.09) translate(-3px, 2px); }
   100% { transform: scale(1.12) translate(0, -3px); }
 }
-.po-card.charging .po-back { box-shadow: 0 0 34px var(--gc), 0 0 8px #fff; }
+.po-card.charging .po-back::before { animation: none; opacity: 1; transform: scale(1.08); transition: transform 0.85s ease-in; }
 .po-ring {
   position: absolute;
   left: 50%;
@@ -403,24 +421,28 @@
 @keyframes po-pop {
   40% { transform: scale(1.16); }
 }
+.po-card.up:is(.g-ur, .g-scr, .g-gl, .g-ro, .g-of) .po-face { overflow: hidden; }
+/* a foil glint sweeping the face: a pre-drawn band that only slides (transform), no blend modes */
 .po-card.up:is(.g-ur, .g-scr, .g-gl, .g-ro, .g-of) .po-face::after {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: 5px;
-  overflow: hidden;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 60%;
   pointer-events: none;
-  background: linear-gradient(115deg, transparent 35%, #ffffff8c 48%, transparent 60%);
-  background-size: 260% 100%;
-  animation: po-foil 2s ease-in-out infinite;
-  mix-blend-mode: overlay;
+  background: linear-gradient(105deg, transparent 0%, #ffffff66 50%, transparent 100%);
+  transform: translateX(0);
+  animation: po-foil 2.2s ease-in-out 0.3s infinite;
 }
 .po-card.up:is(.g-scr, .g-of) .po-face::after {
-  background-image: linear-gradient(115deg, transparent 30%, #ff8cf099 40%, #6ce3ff99 50%, #ffe08a99 60%, transparent 70%);
+  background: linear-gradient(105deg, transparent 0%, #ff8cf066 30%, #6ce3ff66 50%, #ffe08a66 70%, transparent 100%);
 }
+/* once the results are up the glints stop: nothing runs behind the sheet */
+.po.done .po-card .po-face::after { animation: none; display: none; }
 @keyframes po-foil {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
+  0% { transform: translateX(0); }
+  60%, 100% { transform: translateX(280%); }
 }
 .po-mark {
   position: absolute;
@@ -493,7 +515,7 @@
   gap: 10px;
   padding: 16px;
   border: none;
-  background: radial-gradient(circle at 50% 45%, #000a 0%, #000e 70%);
+  background: radial-gradient(circle at 50% 45%, #050a24f2 0%, #000 75%);
   color: #fff;
   animation: po-fade 0.25s ease-out both;
 }
@@ -705,7 +727,7 @@
   .po-sheen,
   .po-card.star .po-in,
   .po-card.charging .po-in,
-  .po-card.tease .po-back,
+  .po-card.tease .po-back::before,
   .po-card.up,
   .po-sparks,
   .po-card.up .po-face::after {
@@ -713,4 +735,16 @@
   }
   .po-card { animation-duration: 0.01s; }
   .po-in { transition-duration: 0.15s; }
+}
+
+/* a big pull lands with a jolt (the stage's content, not the light) */
+.po.slam .po-row,
+.po.slam .po-solo { animation: po-jolt 0.32s ease-out; }
+@keyframes po-jolt {
+  20% { transform: translate(-5px, 3px); }
+  45% { transform: translate(4px, -3px); }
+  70% { transform: translate(-2px, 1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .po.slam .po-row, .po.slam .po-solo { animation: none; }
 }
