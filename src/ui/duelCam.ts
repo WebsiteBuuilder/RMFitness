@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DuelState } from '../eds/types';
 import { getAnimSpeed, useDuelCam as useCamMode } from '../art/settings';
 import { IDENTITY, camLive, setCamLive, unmapRect, type Mat } from '../art/cam';
-import { STRENGTH, cssMatrix, fitPose, pickMoment, type Bounds, stronger, poseMatrix, shotFor, type Moment, type Pt, type Shot } from './duelCamRules';
+import { STRENGTH, blowFrom, cssMatrix, fitPose, type Pose, pickMoment, type Bounds, stronger, poseMatrix, shotFor, type Moment, type Pt, type Shot } from './duelCamRules';
 
 /** The flat layers over the figures that ride along (fixed-position: their resting top-left is offsetLeft/Top). */
 const RIDERS = '.art-board, .ctrfloat, .tmid-float';
@@ -33,6 +33,8 @@ interface Live {
   anims: Animation[];
   els: HTMLElement[];
   kind: string;
+  /** the move's strongest pose (a blow during an attack punches in past it) */
+  peak?: Pose;
 }
 
 /** Some ancestor of el (up to the duel screen) has a transform of its own. */
@@ -55,9 +57,10 @@ function safeArea(): Bounds {
   if (top && top.width > w * 0.6) out.top = top.bottom;
   if (bot && bot.width > w * 0.6) out.bottom = bot.top;
   // the turn tab over the bottom bar and the hand fan (big screens) are HUD too
-  for (const sel of ['.duel .ttab.bottom', '.duel .thand']) {
+  // (and a choice sheet open over the lower field: the camera keeps what is above it in view)
+  for (const sel of ['.duel .ttab.bottom', '.duel .thand', '.duel .tsheet']) {
     const r = document.querySelector(sel)?.getBoundingClientRect();
-    if (r && r.height > 0 && r.top > h / 2) out.bottom = Math.min(out.bottom, r.top);
+    if (r && r.height > 0 && r.top > h * 0.3) out.bottom = Math.min(out.bottom, r.top);
   }
   const tt = document.querySelector('.duel .ttab.top')?.getBoundingClientRect();
   if (tt && tt.height > 0 && tt.bottom < h / 2) out.top = Math.max(out.top, tt.bottom);
@@ -105,7 +108,7 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
   };
 
   /** Plays keyframes (viewport-space poses) on the field and its riders. */
-  const run = (kind: string, field: HTMLElement, rest: DOMRect, poses: { at: number; m: Mat; ease: string }[], ms: number, from: Map<HTMLElement, string>) => {
+  const run = (kind: string, peak: Pose | undefined, field: HTMLElement, rest: DOMRect, poses: { at: number; m: Mat; ease: string }[], ms: number, from: Map<HTMLElement, string>) => {
     const els: HTMLElement[] = [field];
     document.querySelectorAll<HTMLElement>(RIDERS).forEach((el) => el.isConnected && els.push(el));
     const anims: Animation[] = [];
@@ -123,7 +126,7 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
       }));
       anims.push(el.animate(frames, { duration: ms }));
     }
-    const l: Live = { anims, els, kind };
+    const l: Live = { anims, els, kind, peak };
     live.current = l;
     setCamLive({ el: field });
     anims[0].onfinish = () => done(l);
@@ -167,16 +170,24 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if (m.kind === 'attack') to = centre(m.target) ?? undefined;
     // a direct attack: toward the defending duelist's edge of the field
     if (m.kind === 'direct') to = { x: box.cx, y: at.y > box.cy ? rest.top + rest.height * 0.06 : rest.bottom - rest.height * 0.06 };
-    // after a cinematic the camera settles out from where the action ended
-    const shot: Shot | null = settle ? shotFor({ kind: 'settle' }, box, m.kind === 'attack' || m.kind === 'direct' ? (to ?? at) : at, strength) : shotFor(m, box, at, strength, to);
+    // after a cinematic the camera settles out from where the action ended; a blow landing during
+    // its attack's move punches in past that move's peak (never an ease back out)
+    const cur = live.current;
+    const shot: Shot | null = settle
+      ? shotFor({ kind: 'settle' }, box, m.kind === 'attack' || m.kind === 'direct' ? (to ?? at) : at, strength)
+      : m.kind === 'impact' && cur?.peak && (cur.kind === 'attack' || cur.kind === 'direct')
+        ? blowFrom(cur.peak, strength)
+        : shotFor(m, box, at, strength, to);
     if (!shot) return;
     const from = freeze();
     const speed = Math.sqrt(getAnimSpeed());
     // the field never slides under the Life Points bars or off the screen's sides
     const content = unmapRect((field.querySelector('.tmat') ?? field).getBoundingClientRect());
     const safe = safeArea();
-    const poses = shot.frames.map((f) => ({ at: f.at, m: poseMatrix(fitPose(f.pose, box, content, safe), box), ease: f.ease }));
-    run(shot.kind, field, rest, poses, Math.round(shot.ms / speed), from);
+    const fitted = shot.frames.map((f) => ({ ...f, pose: fitPose(f.pose, box, content, safe) }));
+    const peak = fitted.reduce((a, f) => (f.pose.zoom > a.zoom ? f.pose : a), fitted[0].pose);
+    const poses = fitted.map((f) => ({ at: f.at, m: poseMatrix(f.pose, box), ease: f.ease }));
+    run(shot.kind, peak, field, rest, poses, Math.round(shot.ms / speed), from);
   };
 
   /** A cinematic is starting: back to rest at once, quickly. */
@@ -186,7 +197,7 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if (!l || !field) return;
     const rest = restOf(field);
     const from = freeze();
-    run('rest', field, rest, [{ at: 0, m: IDENTITY, ease: 'ease-out' }, { at: 1, m: IDENTITY, ease: 'linear' }], BACK_MS, from);
+    run('rest', undefined, field, rest, [{ at: 0, m: IDENTITY, ease: 'ease-out' }, { at: 1, m: IDENTITY, ease: 'linear' }], BACK_MS, from);
   };
 
   // new events on the board shown: the strongest moment gets a shot

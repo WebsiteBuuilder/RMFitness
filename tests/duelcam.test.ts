@@ -3,7 +3,7 @@
 // action, and a card seen through the camera maps back to where it rests (so the 3D figures
 // stand on their cards all the way through a shot).
 // Run: npx tsx tests/duelcam.test.ts
-import { STRENGTH, fitPose, pickMoment, poseMatrix, shotFor, cssMatrix, type ShotKind } from '../src/ui/duelCamRules';
+import { STRENGTH, blowFrom, fitPose, pickMoment, poseMatrix, shotFor, cssMatrix, type ShotKind } from '../src/ui/duelCamRules';
 import { IDENTITY, apply, invert, isIdentity, mul, parseMatrix, unmapWith } from '../src/art/cam';
 import type { EngineEvent } from '../src/eds/types';
 
@@ -105,6 +105,13 @@ const pf = parseMatrix(cssMatrix(flat));
 ok(near(apply(pf, 50, 60)[0], apply(flat, 50, 60)[0], 0.01), 'parse matrix(...)');
 ok(parseMatrix('none') === IDENTITY, 'parse none');
 
+{
+  const pk = lean.frames[2].pose;
+  const b = blowFrom(pk, 1)!;
+  ok(b.frames[1].pose.zoom > pk.zoom && b.frames[1].pose.pitch > pk.pitch, 'a blow during an attack punches in past its peak');
+  ok(isIdentity(poseMatrix(b.frames[b.frames.length - 1].pose, box)), '...and ends at rest');
+  ok(b.frames[1].at * b.ms <= 80, '...in a snap');
+}
 // ----- the field stays in the free area -----
 {
   const fb = { cx: 206, cy: 380, w: 400, h: 520 };

@@ -98,6 +98,8 @@ export const STRENGTH: Record<DuelCam, number> = { full: 1, soft: 0.5, off: 0 };
 
 const OUT = 'cubic-bezier(.22,.8,.3,1)';
 const KICK = 'cubic-bezier(.2,1.4,.4,1)';
+/** the blow landing: straight in, no ease-in */
+const SNAP = 'cubic-bezier(.1,.9,.3,1)';
 /** the glide home: quick to leave, long and soft to arrive */
 const BACK = 'cubic-bezier(.3,0,.12,1)';
 
@@ -141,14 +143,15 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
       const p2 = pose(tgt, 1.055, 2.6 * lean + 0.3 * side(tgt), 13, 0);
       const frames: Shot['frames'] = [{ at: 0, pose: rest, ease: OUT }, { at: 0.26, pose: p1, ease: KICK }, { at: 0.38, pose: p2, ease: 'linear' }];
       // the blow: a short punch in at the target, then home
-      if ('blow' in m && m.blow) frames.push({ at: 0.46, pose: p2, ease: KICK }, { at: 0.52, pose: creep(p2, 0.025), ease: BACK });
+      if ('blow' in m && m.blow) frames.push({ at: 0.46, pose: p2, ease: SNAP }, { at: 0.505, pose: creep(p2, 0.05), ease: BACK });
       else frames.push({ at: 0.52, pose: creep(p2, 0.01), ease: BACK });
       frames.push({ at: 1, pose: rest, ease: 'linear' });
       return { kind: m.kind, ms: 1600, frames };
     }
     case 'impact': {
-      const p = pose(at, 1.02, 0.6 * side(at), 5, 0);
-      return { kind: m.kind, ms: 560, frames: [{ at: 0, pose: rest, ease: KICK }, { at: 0.2, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
+      // the blow: a 70 ms snap in, then home
+      const p = pose(at, 1.045, 0.8 * side(at), 7, 0);
+      return { kind: m.kind, ms: 640, frames: [{ at: 0, pose: rest, ease: SNAP }, { at: 0.11, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'settle': {
       // a cinematic just handed the board back: a short lean in where it ended, then back out
@@ -156,6 +159,13 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
       return { kind: m.kind, ms: 900, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.26, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
   }
+}
+
+/** A blow landing while its attack's move is on: from that move's peak, a 70 ms snap further in, then home. */
+export function blowFrom(peak: Pose, strength: number): Shot | null {
+  if (strength <= 0) return null;
+  const punch: Pose = { ...peak, zoom: peak.zoom + 0.05 * strength, pitch: peak.pitch + 3 * strength };
+  return { kind: 'impact', ms: 700, frames: [{ at: 0, pose: peak, ease: SNAP }, { at: 0.1, pose: punch, ease: BACK }, { at: 1, pose: { ...peak, zoom: 1, roll: 0, pitch: 0, pull: 0 }, ease: 'linear' }] };
 }
 
 /** A pose eased toward rest by k (0 = rest, 1 = the pose as planned). */
