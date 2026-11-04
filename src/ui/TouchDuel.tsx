@@ -18,6 +18,7 @@ import { attackForecast } from './forecast';
 import { playBlip, unlockAudio } from './sound';
 import { LpCount } from '../art/flow';
 import { LpCracks, LpPops, useLpShake } from './lpHits';
+import { lpCountMs } from './lpHitRules';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
 import { introLeft, whenIntroAt } from './immersionState';
@@ -568,9 +569,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     );
   };
 
+  // the gauge drains as long as the counter rolls (lpCountMs: longer for bigger changes)
+  const lpWas = useRef<Record<number, { lp: number; ms: number }>>({});
   const lpBar = (p: Pid, top: boolean) => {
     const ps = state.players[p];
     const hurt = anim && (anim.kind === 'damage' || anim.kind === 'heal') && anim.player === p ? `lp-${anim.kind}` : '';
+    const was = lpWas.current[p];
+    if (!was || was.lp !== state.players[p].lp) lpWas.current[p] = { lp: state.players[p].lp, ms: was ? lpCountMs(state.players[p].lp - was.lp) : 600 };
+    const drainMs = lpWas.current[p].ms;
     const isTurn = state.turnPlayer === p;
     const directOk = top && spots?.has('direct');
     // the Duel Disk gauge lights whole cells (20 of them: lphit.css), so any Life Points left keep one lit
@@ -608,7 +614,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
         <i class={`tgauge ${dangerLevel(ps.lp, !!e.speed) ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
-          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
+          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})`, transitionDuration: `${drainMs}ms, 400ms` }} />
         </i>
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>
