@@ -193,14 +193,20 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
   // A blink now and then: a class for a moment (a looping blink would repaint every frame).
   const layerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    let off = 0;
+    // (theirs blinks a couple of seconds after yours, not in step with it)
+    const timers: number[] = [];
+    const blinkOne = (sel: string) => {
+      const el = layerRef.current?.querySelector(sel);
+      if (!el || document.hidden) return;
+      el.classList.add('blink');
+      timers.push(window.setTimeout(() => el.classList.remove('blink'), 300));
+    };
     const blink = window.setInterval(() => {
-      const spots = layerRef.current?.querySelectorAll('.mate-spot');
-      if (!spots?.length || document.hidden) return;
-      spots.forEach((el) => el.classList.add('blink'));
-      off = window.setTimeout(() => spots.forEach((el) => el.classList.remove('blink')), 300);
+      timers.splice(0).forEach(clearTimeout);
+      blinkOne('.mate-spot.bottom');
+      timers.push(window.setTimeout(() => blinkOne('.mate-spot.top'), 2100));
     }, 4300);
-    return () => (clearInterval(blink), clearTimeout(off));
+    return () => (clearInterval(blink), timers.forEach(clearTimeout));
   }, []);
 
   // ----- where they stand -----

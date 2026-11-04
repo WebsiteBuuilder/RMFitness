@@ -126,7 +126,15 @@
    GPU). Its parts' own loops (wings, eyes, glows, tears) would repaint the drawing and its
    shadows on the main thread every frame, so they play during short reactions only, and the
    eyes blink once when the layer asks (a class for a moment every few seconds). */
-.mate-spot :is(.r-idle, .r-win, .r-lose, .r-sleep) :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear) {
+.mate-spot :is(.r-idle, .r-lose, .r-sleep) :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear),
+.sdh-mates-pic :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear) {
+  animation: none;
+}
+/* (the win keeps its flourish, a few times over, then rests) */
+.mate-spot .r-win :is(.mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid) {
+  animation-iteration-count: 4;
+}
+.mate-spot .r-win .mt-eyes {
   animation: none;
 }
 .mate-spot.blink .r-idle .mt-eyes {
