@@ -387,7 +387,7 @@ export const BONUS_GIFT_3: Gift = {
   packs: 150,
   title: 'Vault drop!',
   heading: 'Every card is in packs now',
-  opened: 'Any set you like. The new Starter Deck Vault, first in the Card Shop, holds the 148 Starter Deck cards.',
+  opened: 'Any set you like. The new Starter Deck Vault holds 148 cards.',
   note: '148 cards from Starter Decks and promos joined the packs. Here are 150 to go find them.',
   madeBefore: Date.UTC(2026, 10, 8),
 };
