@@ -8,6 +8,9 @@ import { aceOf, bondTitle, nextBond } from '../ace/ace';
 import '../ace/ace.css';
 import { chosenSleeve, hasSleeve, sleeveDef, SLEEVES } from '../sleeves/sleeves';
 import '../sleeves/sleeves.css';
+import { chosenJingle, hasJingle, jingleDef, JINGLES } from '../jingles/jingles';
+import '../jingles/jingles.css';
+import { musicThemePref, THEME_PREFS } from './music';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
@@ -34,7 +37,7 @@ import './speedhome.css';
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'music';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -289,6 +292,28 @@ function SleevesTile({ save, profileId, onPick }: { save: SpeedSave; profileId: 
   );
 }
 
+/** Your entrance jingle and the soundtrack's theme on one tile. */
+function MusicTile({ save, profileId, onPick }: { save: SpeedSave; profileId: string; onPick: () => void }) {
+  const solo = useMemo(() => loadSolo(profileId), [profileId, save]);
+  const d = jingleDef(chosenJingle(save, solo))!;
+  const got = JINGLES.filter((j) => hasJingle(save, j.id, solo)).length;
+  const theme = THEME_PREFS.find((p) => p.id === musicThemePref())?.name ?? '';
+  return (
+    <button class="sdh-music" style={{ '--jgl-hue': d.hue } as Record<string, string>} onClick={() => (playBlip(), onPick())}>
+      <span class="sdh-music-ic" aria-hidden="true">
+        ♪
+      </span>
+      <span class="sdh-music-txt">
+        <b>Duel Music</b>
+        <span>
+          Entrance: {d.name} · {got}/{JINGLES.length} yours · Theme: {theme}
+        </span>
+      </span>
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
     <button class="sdh-row" onClick={() => (playBlip(), onPick())}>
@@ -496,6 +521,7 @@ export function SpeedHome({
             <div class="sdh-list">
               <Row label="Mates" note="companions for your field" onPick={() => go('mates')} />
               <Row label="Sleeves" note="the backs of your cards" onPick={() => go('sleeves')} />
+              <Row label="Entrance jingles" note="your fanfare as a duel begins" onPick={() => go('music')} />
             </div>
           </>
         )}
@@ -515,6 +541,7 @@ export function SpeedHome({
             <MatesTile save={save} onPick={() => go('mates')} />
             <AceTile save={save} onPick={() => go('ace')} />
             <SleevesTile save={save} profileId={profile.id} onPick={() => go('sleeves')} />
+            <MusicTile save={save} profileId={profile.id} onPick={() => go('music')} />
             <Tile art="Slifer the Sky Dragon" fy={28} title="Duelist Rankings" sub="Leaderboard, rivals and titles" onPick={() => go('rankings')} />
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">

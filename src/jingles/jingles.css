@@ -1,0 +1,394 @@
+/* Duel Music page and the entrance name tag. */
+
+.jgl-h {
+  margin: 14px 2px 8px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffe36ecc;
+}
+.jgl-h:first-of-type {
+  margin-top: 4px;
+}
+
+/* the big player */
+.jgl-stage {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--jgl-hue) 28%, transparent), #ffffff08 60%);
+  border: 1px solid color-mix(in srgb, var(--jgl-hue) 45%, #ffffff22);
+}
+.jgl-big {
+  position: relative;
+  flex: 0 0 auto;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  border: 2px solid var(--jgl-hue);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--jgl-hue) 55%, #fff 0%), color-mix(in srgb, var(--jgl-hue) 35%, #0b1230) 70%);
+  color: #fff;
+  font-size: 28px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--jgl-hue) 45%, transparent);
+  overflow: hidden;
+}
+.jgl-big > span {
+  position: relative;
+  text-shadow: 0 2px 6px #0008;
+}
+.jgl-wave {
+  position: absolute;
+  inset: 22px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.jgl-wave i {
+  width: 5px;
+  height: 30%;
+  border-radius: 3px;
+  background: #fff9;
+}
+.jgl-big.on .jgl-wave {
+  opacity: 1;
+}
+.jgl-big.on > span {
+  opacity: 0;
+}
+.jgl-big.on .jgl-wave i {
+  animation: jgl-bar 0.5s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -0.13s);
+}
+@keyframes jgl-bar {
+  from {
+    transform: scaleY(0.4);
+  }
+  to {
+    transform: scaleY(2.6);
+  }
+}
+.jgl-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jgl-info b {
+  font-size: 18px;
+}
+.jgl-info p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+.jgl-buy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jgl-buy small,
+.jgl-off {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.jgl-earn {
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1.5px dashed #e9c46a88;
+  color: #ffe9a8;
+}
+.jgl-note {
+  margin: 8px 2px 0;
+}
+.jgl-off {
+  margin: 8px 2px 0;
+}
+
+/* the list */
+.jgl-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.jgl-row {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  min-height: 52px;
+  padding: 7px 9px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1.5px solid #ffffff1c;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jgl-hue) 18%, transparent), #ffffff06);
+  color: inherit;
+}
+.jgl-row.sel {
+  border-color: var(--jgl-hue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--jgl-hue) 50%, transparent) inset;
+}
+.jgl-row.locked b {
+  opacity: 0.75;
+}
+.jgl-dot {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--jgl-hue) 40%, #0b1230);
+  border: 1px solid color-mix(in srgb, var(--jgl-hue) 70%, transparent);
+}
+.jgl-row.on .jgl-dot {
+  font-size: 15px;
+  animation: jgl-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes jgl-pulse {
+  to {
+    transform: scale(1.15);
+  }
+}
+.jgl-row b {
+  font-size: 14px;
+  line-height: 1.15;
+}
+.jgl-row small {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.jgl-row small.own {
+  color: #ffe36e;
+  opacity: 1;
+}
+
+/* soundtrack */
+.jgl-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid #ffffff22;
+  background: #ffffff0a;
+  color: inherit;
+}
+.jgl-toggle b {
+  font-size: 15px;
+}
+.jgl-toggle span {
+  grid-row: 2;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.jgl-toggle i {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 13px;
+  background: #ffffff26;
+  transition: background 0.2s;
+}
+.jgl-toggle i::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.jgl-toggle.on i {
+  background: #e9b949;
+}
+.jgl-toggle.on i::after {
+  transform: translateX(20px);
+}
+.jgl-themes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.jgl-theme {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.jgl-theme-pick {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1.5px solid #ffffff1c;
+  background: #ffffff08;
+  color: inherit;
+}
+.jgl-theme.sel .jgl-theme-pick {
+  border-color: #e9c46a;
+  background: #e9c46a1c;
+}
+.jgl-theme-pick span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.jgl-theme-pick b {
+  font-size: 14px;
+}
+.jgl-theme-pick small {
+  font-size: 12px;
+  line-height: 1.3;
+  opacity: 0.75;
+}
+.jgl-radio {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #ffffff66;
+}
+.jgl-theme.sel .jgl-radio {
+  border-color: #e9c46a;
+  background: radial-gradient(circle, #ffe36e 0 40%, transparent 45%);
+}
+.jgl-listen {
+  flex: 0 0 48px;
+  border-radius: 12px;
+  border: 1.5px solid #ffffff1c;
+  background: #ffffff0a;
+  color: inherit;
+  font-size: 15px;
+}
+.jgl-listen.on {
+  border-color: #e9c46a;
+  color: #ffe36e;
+}
+
+/* the Duelist tab tile */
+.sdh-music {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--jgl-hue) 45%, #ffffff22);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--jgl-hue) 24%, #0b1230), #0b1230cc 70%);
+  color: inherit;
+}
+.sdh-music-ic {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  font-size: 22px;
+  background: color-mix(in srgb, var(--jgl-hue) 40%, #0b1230);
+  border: 1.5px solid var(--jgl-hue);
+}
+.sdh-music-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sdh-music-txt b {
+  font-size: 16px;
+}
+.sdh-music-txt span {
+  font-size: 12.5px;
+  opacity: 0.8;
+}
+
+/* the name tag while an entrance plays */
+.jgl-toast {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 7px 14px 7px 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--jgl-hue);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jgl-hue) 45%, #0b1230), #0b1230ee);
+  box-shadow: 0 6px 22px #0009, 0 0 16px color-mix(in srgb, var(--jgl-hue) 40%, transparent);
+  color: #fff;
+  pointer-events: none;
+  transform: translate(-50%, 0);
+  animation: jgl-in 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  white-space: nowrap;
+}
+.jgl-toast.out {
+  animation: jgl-out 0.3s ease-in both;
+}
+.jgl-toast i {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-style: normal;
+  background: var(--jgl-hue);
+  color: #0b1230;
+  font-weight: 800;
+}
+.jgl-toast b {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jgl-toast span {
+  font-size: 13px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes jgl-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.9);
+  }
+}
+@keyframes jgl-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jgl-toast,
+  .jgl-toast.out,
+  .jgl-big.on .jgl-wave i,
+  .jgl-row.on .jgl-dot {
+    animation: none;
+  }
+}
