@@ -6,6 +6,8 @@ import { chosenMate, hasMate, mateDef, MATES } from '../mates/roster';
 import '../mates/mates.css';
 import { aceOf, bondTitle, nextBond } from '../ace/ace';
 import '../ace/ace.css';
+import { chosenSleeve, hasSleeve, sleeveDef, SLEEVES } from '../sleeves/sleeves';
+import '../sleeves/sleeves.css';
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
@@ -32,7 +34,7 @@ import './speedhome.css';
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -264,6 +266,29 @@ function AceTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
   );
 }
 
+/** Your card sleeve on its own tile: the back your deck, Set cards and hand wear in duels. */
+function SleevesTile({ save, profileId, onPick }: { save: SpeedSave; profileId: string; onPick: () => void }) {
+  const solo = loadSolo(profileId);
+  const id = chosenSleeve(save, solo);
+  const d = sleeveDef(id)!;
+  const got = SLEEVES.filter((s) => hasSleeve(save, s.id, solo)).length;
+  return (
+    <button class="sdh-sleeves" style={{ '--sleeve-glow': d.glow } as Record<string, string>} onClick={() => (playBlip(), onPick())}>
+      <span class="sdh-sleeves-pic">
+        <CardImg name="" back sleeve={id} />
+        <CardImg name="" back sleeve={id} />
+      </span>
+      <span class="sdh-sleeves-txt">
+        <b>Sleeves</b>
+        <span>
+          {d.name} on your cards · {got}/{SLEEVES.length} yours
+        </span>
+      </span>
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
 function Row({ label, note, badge, onPick }: { label: string; note?: string; badge?: string | number | null; onPick: () => void }) {
   return (
     <button class="sdh-row" onClick={() => (playBlip(), onPick())}>
@@ -470,6 +495,7 @@ export function SpeedHome({
             </div>
             <div class="sdh-list">
               <Row label="Mates" note="companions for your field" onPick={() => go('mates')} />
+              <Row label="Sleeves" note="the backs of your cards" onPick={() => go('sleeves')} />
             </div>
           </>
         )}
@@ -488,6 +514,7 @@ export function SpeedHome({
             </div>
             <MatesTile save={save} onPick={() => go('mates')} />
             <AceTile save={save} onPick={() => go('ace')} />
+            <SleevesTile save={save} profileId={profile.id} onPick={() => go('sleeves')} />
             <Tile art="Slifer the Sky Dragon" fy={28} title="Duelist Rankings" sub="Leaderboard, rivals and titles" onPick={() => go('rankings')} />
             <Tile art="Relinquished" title="Shadow Realm" sub={sealed.length ? `${sealed.length} of your cards sealed` : 'Who got sent there'} badge={sealed.length || null} hot={sealed.length > 0} onPick={() => go('shadow')} />
             <div class="sdh-list">

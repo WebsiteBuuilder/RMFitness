@@ -11,6 +11,7 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
 import { drawHeld, whenIntroAt } from './immersionState';
+import { duelSleeveOf, sleeveStyle } from '../sleeves/duel';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -81,6 +82,8 @@ export interface Flight {
   fromOpp: boolean;
   /** a monster landing in a Monster Zone: its 3D figure waits for the landing */
   uid?: number;
+  /** whose side it lands on: a face-down copy wears that duelist's sleeve */
+  side?: Pid;
 }
 
 /** Flies one card copy (see the file comment). */
@@ -88,6 +91,8 @@ export function fly(f: Flight): void {
   const host = flightLayer();
   const el = document.createElement('div');
   el.className = `tflight ${f.face ? '' : 'back'}`;
+  const sl = f.face ? undefined : sleeveStyle(duelSleeveOf(f.side));
+  if (sl) el.style.setProperty('--card-back-img', sl['--card-back-img']);
   if (f.face) {
     const img = document.createElement('img');
     img.src = f.face;
@@ -235,6 +240,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         delay: isDraw ? draws++ * (fresh ? 110 : 90) : 0,
         fromOpp: w.endsWith(String(1 - acting)),
         uid: w.startsWith('mz') ? uid : undefined,
+        side: Number(w.slice(-1)) as Pid,
       });
     }
     if (!fresh) return flights.forEach(fly);

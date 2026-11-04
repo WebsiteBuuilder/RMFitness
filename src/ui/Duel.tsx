@@ -8,6 +8,7 @@ import { other } from '../eds/engine';
 import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
+import { duelSleeveOf, sleeveStyle } from '../sleeves/duel';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -377,7 +378,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${worn ? ' worn' : ''}`} onClick={() => c && tap(c.uid)}>
         {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c ? (
-          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
+          <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`} style={!c.faceUp && visible ? sleeveStyle(duelSleeveOf(c.owner)) : undefined}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && e.nameOf(c) !== c.name && <span class="namechg">{e.nameOf(c)}</span>}
@@ -408,7 +409,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
         </button>
         <div class="pile" data-pile={`deck${p}`}>
           <div class="pile-stack">
-            {ps.deck.length > 0 && <CardImg name="" back />}
+            {ps.deck.length > 0 && <CardImg name="" back owner={p} shine />}
             {p === acting && e.speed && canAct && !vet && <AutoDrawPill compact />}
           </div>
           <span>Deck {ps.deck.length}</span>
@@ -609,7 +610,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                       </div>
                     ) : c.owner !== acting && ((state.fx.banishedDown ?? []) as number[]).includes(c.uid) && ps0Removed(c.uid) ? (
                       <div key={c.uid} class="gcard">
-                        <CardImg name="" back />
+                        <CardImg name="" back owner={c.owner} />
                         <span>Face-down</span>
                       </div>
                     ) : (
