@@ -12,6 +12,7 @@ import './ui/speedui.css';
 import './ui/layout.css';
 import './ui/graphics.css';
 import './sleeves/sleeves.css';
+import './jingles/jingles.css';
 import './playmats/playmats.css';
 // (last: tablets, laptops and desktops get the whole screen)
 import './ui/fitscreen.css';
