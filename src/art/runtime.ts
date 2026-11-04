@@ -8,13 +8,15 @@
 import { DataTexture, PerspectiveCamera, RGBAFormat, Vector2, Vector3, type Mesh, type PlaneGeometry } from 'three';
 import { card } from '../eds/db';
 import type { Pid } from '../eds/types';
-import { cueUids, type CardRef, type Cue, type SummonHow, type Target } from './cues';
+import { CHAIN_CUES, cueUids, type CardRef, type ChainCard, type Cue, type SummonHow, type Target } from './cues';
+import { END_DURATION, liftStep, resolveDuration, stackDuration } from './chainRules';
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
 import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
 import { flickerAt, glitchAt, holoReveal, showAtFor, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
 import { calmMotion, getHolo } from './settings';
+import { chainLift, chainNegate, chainResolve } from '../ui/duelSfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
 import { SPELL_COLOR as SPELL, TRAP_COLOR as TRAP } from './profile';
@@ -22,6 +24,7 @@ import { FIN, finishGlow, finishId, finishOf, finishPalette } from './finish';
 import { fullArtCard, goldArt, millenniumEyeCanvas } from './fullArt';
 import { calloutFor, calloutMode, CALLOUT_SHOUT, speakShout, voicePitch } from './callouts';
 import { aceFor, bondTitle } from '../ace/ace';
+import { finisherFor, type FinisherKind } from './finishers';
 import { soundEnabled } from '../ui/sound';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
@@ -39,6 +42,18 @@ export interface Ui {
   callout?(o: { text: string; card: string; seat: Pid; side: 'near' | 'far'; color: number; light: number; dur: number; ace?: { lv: number; title: string } | null }): void;
   /** a slow-motion replay starts (true) or ends (false): its letterbox and tag */
   replay?(on: boolean): void;
+  /** the chain spotlight's cards (chainSpot.ts), over the stage */
+  chain?: ChainSpotUi;
+}
+
+/** What the director asks of the chain spotlight (chainSpot.ts ChainSpot). */
+export interface ChainSpotUi {
+  stack(stack: ChainCard[], added: number): void;
+  stackAt(t: number): void;
+  resolve(stack: ChainCard[], n: number, negated: boolean, D: number): void;
+  resolveAt(t: number): void;
+  end(): void;
+  hide(): void;
 }
 
 /** The Life Points plate on one side of the screen (Classic and Touch both show one per duelist). */
@@ -274,6 +289,28 @@ export const REPLAY_WARP = { attack: 0.6, hit: 0.55, other: 0.6 };
 export const REPLAY_ROLL = 0.12;
 /** ...and the replayed cinematic itself plays this much brisker (the slow motion stays, the wait does not). */
 export const REPLAY_RATE = 1.7;
+/** a Shadow Realm finish after the first one ever seen plays this much faster */
+export const SHADOW_REPEAT_RATE = 1.45;
+const SHADOW_KEY = 'eds.shadowSeen';
+let shadowSeenHere = false;
+/** Has this player watched a Shadow Realm finish through before? */
+export function shadowSeen(): boolean {
+  if (shadowSeenHere) return true;
+  try {
+    return localStorage.getItem(SHADOW_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+/** A Shadow Realm finish played through to its end (a skipped one does not count). */
+export function markShadowSeen() {
+  shadowSeenHere = true;
+  try {
+    localStorage.setItem(SHADOW_KEY, '1');
+  } catch {
+    /* (no storage: this session's memory is enough) */
+  }
+}
 
 /** Report the stage idle once the dim is under this (what is left is particles fading on their own). */
 const IDLE_DIM = 0.1;
@@ -342,6 +379,8 @@ export class Director {
   private probe = new PerspectiveCamera(BASE_FOV, 1, 0.1, 100);
   /** which side attacks in the battle on stage (mirrors the layout) */
   private battleSide: 'near' | 'far' = 'near';
+  /** the cinematic playing is a Shadow Realm finish (played through, it counts as seen) */
+  private curShadow = false;
   /** camera roll (radians): the dutch-angle punch on impacts */
   private roll = 0;
   /** the Trap a "Not so fast!" slam just put in the middle of the screen (its activation starts there) */
@@ -422,13 +461,15 @@ export class Director {
     this.queue.push(...cues.map((cue, i) => ({ cue, batch, scale: scales?.[i] ?? 1 })));
     if (this.queue.length > 10) {
       this.queue = this.queue.filter((q) => SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'damage' || q.cue.kind === 'destroy').slice(-10);
+      // (a chain spotlight cut short: its cards fold away with it)
+      if (!this.queue.some((q) => CHAIN_CUES.has(q.cue.kind))) this.ui.chain?.hide();
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     } else if (this.cinematics === 'all' && this.queue.length > QUEUE_KEEP) {
       // Everything plays under All, but an opponent's long chain (a spell, a set, a skill, a
       // flip... one after the other) keeps only its big beats past the first few.
       const v = this.viewer;
-      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || cueOwner(q.cue) === v);
+      this.queue = this.queue.filter((q, i) => i < QUEUE_KEEP || SLOW_KINDS.has(q.cue.kind) || q.cue.kind === 'destroy' || CHAIN_CUES.has(q.cue.kind) || cueOwner(q.cue) === v);
       const left = new Set(this.queue.map((q) => q.batch));
       for (const b of [...before, batch]) if (!left.has(b) && b !== this.curBatch) this.onBatchEnd?.(b);
     }
@@ -562,6 +603,8 @@ export class Director {
     const tl = this.current;
     if (!tl) return;
     if (skipped) tl.finish();
+    else if (this.curShadow) markShadowSeen();
+    this.curShadow = false;
     this.stage.warp = 1;
     if (!this.queue[0]?.cue.replay) this.setReplay(false);
     // An attack declaration with nothing behind it: the fighters hold their pose for the blow.
@@ -798,7 +841,8 @@ export class Director {
           this.endCurrent(false);
           return;
         }
-        tl.rate = rate;
+        // a Shadow Realm finish already seen once plays faster: the first is the show, the rest keep the game moving
+        tl.rate = item.cue.kind === 'win' && item.cue.shadow && shadowSeen() ? rate * SHADOW_REPEAT_RATE : rate;
         // (a slam sets its own warp as it goes)
         this.stage.warp = warp;
         if (replay) tl.slow = Math.max(tl.slow, 1 / warp);
@@ -807,8 +851,10 @@ export class Director {
         // the attack declaration held for this blow gives way to it
         if (this.held) this.dropHeld();
         this.current = tl;
+        // (a Shadow Realm finish that really started: played through, it counts as seen)
+        this.curShadow = item.cue.kind === 'win' && !!item.cue.shadow;
         if (!this.skipAll) cueSting(item.cue);
-        this.onCueStart?.(item.batch, (tl.duration / rate) * tl.slow);
+        this.onCueStart?.(item.batch, (tl.duration / tl.rate) * tl.slow);
         if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
@@ -850,6 +896,13 @@ export class Director {
     const U = this.U;
     const m = this.battleSide === 'near' ? 1 : -1;
     return role === 'att' ? { x: -0.4 * U * m, y: -0.78 * U, z: 0.8 } : { x: 0.34 * U * m, y: 0.78 * U, z: -2.2 };
+  }
+
+  /** Where a finisher's direct hit lands: off to the side and nearer, so the move crosses the screen. */
+  private finisherPoint(): P3 {
+    const U = this.U;
+    const m = this.battleSide === 'near' ? 1 : -1;
+    return { x: -1 * U * m, y: 0.75 * U * m, z: -1 };
   }
 
   /** Where a direct attack lands: the defending duelist, deep beyond the field. */
@@ -1520,13 +1573,15 @@ export class Director {
   }
 
   /** The over-the-shoulder battle camera: behind the attacker, ~25° off, the defender deep in the frame. */
-  private battleShot(att: Actor | null, tgt: Actor | null, T: P3, yaw = 0.3, pitch = 0.1, fill = 0.86): Shot {
+  private battleShot(att: Actor | null, tgt: Actor | null, T: P3, yaw = 0.3, pitch = 0.1, fill = 0.86, tallMax = 0.55, room = 0): Shot {
     const U = this.U;
     const m = this.battleSide === 'near' ? 1 : -1;
     // (much more than ~20° off its front and a relief figure shows its extrusion as streaky slices)
     yaw = Math.min(yaw, 0.35);
     // (the figure's painted subject fills ~90% of its box: framed on that, not on the empty margin)
     const boxes: Box[] = [tgt ? { ...this.boxOf(tgt), h: this.boxOf(tgt).h * 0.92 } : { ...T, w: 0.5 * U, h: 0.5 * U }];
+    // (`room`: sky kept in frame over the target, for what comes down on it)
+    if (room > 0) boxes[0] = { ...boxes[0], y: boxes[0].y + room / 2, h: boxes[0].h + room / 2 };
     let ab: Box | null = null;
     if (att) {
       // the attacker from the hips up, with headroom over it (its feet may run off the frame;
@@ -1561,7 +1616,7 @@ export class Director {
       return (y1 - y0) / 2;
     };
     let d = d0;
-    for (let i = 0; i < 24 && tall(d) > 0.55; i++) d *= 1.06;
+    for (let i = 0; i < 30 && tall(d) > tallMax; i++) d *= 1.06;
     return { pos: shot.look.clone().addScaledVector(dir, d), look: shot.look };
   }
 
@@ -1621,7 +1676,7 @@ export class Director {
       case 'attack':
         return this.attack(cue.attacker, cue.target, cue.defender);
       case 'hit':
-        return this.hit(cue.attacker, cue.target, cue.defender, cue.dmg);
+        return this.hit(cue.attacker, cue.target, cue.defender, cue.dmg, !!cue.replay);
       case 'damage':
         return this.damage(cue.player, cue.amount);
       case 'destroy':
@@ -1636,7 +1691,67 @@ export class Director {
         return cue.count > 0 ? this.draw(cue.player, cue.count) : null;
       case 'slam':
         return this.slam(cue.trap, cue.onto);
+      case 'chain':
+        return this.chainLift(cue.stack, cue.added);
+      case 'resolve':
+        return this.chainLink(cue.stack, cue.n, cue.negated);
+      case 'chainEnd':
+        return this.chainFold();
     }
+  }
+
+  // ------------------------------------------------------------ chain spotlight
+  /** The chain lifts off the field in order, each card numbered (the cards are the DOM's: chainSpot.ts). */
+  private chainLift(stack: ChainCard[], added: number): Timeline | null {
+    const ui = this.ui.chain;
+    if (!ui || !stack.length) return null;
+    const n = Math.max(...stack.map((l) => l.n));
+    const D = stackDuration(n);
+    const tl = new Timeline(D, this.stage);
+    this.bgTarget = 0.3;
+    this.dimTarget = 0.72;
+    this.focus.set(0.5, 0.42);
+    this.stage.backdrop.u.uColor.value.set(0.03, 0.03, 0.08);
+    tl.at(0, () => ui.stack(stack, added), false);
+    tl.span(0, D, (k) => ui.stackAt(k * D));
+    // each card's number lands with a note, a step higher per link
+    const step = liftStep(n);
+    for (const l of stack) tl.at((l.n - 1) * step + 0.24, () => chainLift(l.n, l.n === added));
+    return tl;
+  }
+
+  /** Link `n` resolves: it comes forward with its effect text and its own flash (negated: stamped). */
+  private chainLink(stack: ChainCard[], n: number, negated: boolean): Timeline | null {
+    const ui = this.ui.chain;
+    const l = stack.find((x) => x.n === n);
+    if (!ui || !l) return null;
+    const D = resolveDuration(l);
+    const tl = new Timeline(D, this.stage);
+    this.bgTarget = 0.35;
+    this.dimTarget = 0.8;
+    this.focus.set(0.5, 0.3);
+    const color = l.what === 'trap' ? TRAP : l.what === 'monster' ? 0xff9a2e : SPELL;
+    setRgb(this.stage.backdrop.u.uColor.value as unknown as Vector3, color);
+    this.stage.backdrop.u.uColor.value.multiplyScalar(0.12);
+    tl.at(0, () => ui.resolve(stack, n, negated, D), false);
+    tl.span(0, D, (k) => ui.resolveAt(k * D));
+    tl.at(0.22, () => {
+      this.flash(color, negated ? 0.12 : 0.22);
+      this.stage.pulse('flash', negated ? 0.08 : 0.16);
+      chainResolve(l.what, n);
+    });
+    if (negated) tl.at(0.4, () => chainNegate());
+    return tl;
+  }
+
+  /** The chain has resolved: it folds away. */
+  private chainFold(): Timeline | null {
+    const ui = this.ui.chain;
+    if (!ui) return null;
+    const tl = new Timeline(END_DURATION, this.stage);
+    this.dimTarget = 0.3;
+    tl.at(0, () => ui.end(), false);
+    return tl;
   }
 
   /** Where a summoned figure flies to at the end: onto its card on the field (as the board will draw it). */
@@ -3403,7 +3518,7 @@ export class Director {
   }
 
   /** The blow lands: wind-up release, the attacker's own attack style, impact, and a clash when the defender survives. */
-  private async hit(a: CardRef | null, t: CardRef | null, defender: Pid, dmg?: { player: Pid; amount: number }): Promise<Timeline> {
+  private async hit(a: CardRef | null, t: CardRef | null, defender: Pid, dmg?: { player: Pid; amount: number }, replay = false): Promise<Timeline> {
     const st = this.stage;
     const U = this.U;
     if (!this.actors.size && a) this.battleSide = this.side(a.controller);
@@ -3415,21 +3530,27 @@ export class Director {
     const tcol = tgt ? this.colors(tgt.prof, tgt.art) : { main: 0xff4a4a, accent: 0xffa07a, light: 0xffe0d0 };
     const sig = att ? SIG_ATTACKS[att.name] : undefined;
     const M = att ? this.muzzle(att) : { x: 0, y: -1.2 * U, z: 1.5 };
-    const T = tgt ? this.center(tgt) : this.directPoint();
+    // the winning blow's replay: the attacker's signature finisher (styled after its Type)
+    const fin0 = replay && att && a ? finisherFor(card(a.name)) : null;
+    // (a finisher's direct hit lands off to one side and nearer: its move crosses the screen,
+    // where straight down the camera's line it would read as a dot)
+    const T = tgt ? this.center(tgt) : fin0 ? this.finisherPoint() : this.directPoint();
     // will the defender survive this? (its destruction is already queued when it won't)
     const dies = (uid: number) => this.queue.some((q) => q.cue.kind === 'destroy' && q.cue.card.uid === uid);
     const clash = !!tgt && !dies(tgt.uid);
     const attLoses = clash && !!att && (dies(att.uid) || (dmg ? this.side(dmg.player) === att.side : this.queue.some((q) => q.cue.kind === 'damage' && this.side(q.cue.player) === att.side)));
-    const W = 0.18;
-    const travel = 0.22 + (1 - prof.speed) * 0.14;
+    // (an attacker that loses its own winning blow, a suicide attack, replays as it was)
+    const finisher = attLoses ? null : fin0;
+    const W = finisher ? FINISHER_CHARGE : 0.18;
+    const travel = finisher ? Math.max(0.3, 0.22 + (1 - prof.speed) * 0.14) : 0.22 + (1 - prof.speed) * 0.14;
     const hitAt = W + travel;
     const P = clash ? { x: lerp(M.x, T.x, 0.58), y: lerp(M.y, T.y, 0.58), z: lerp(M.z, T.z, 0.58) } : T;
-    const D = hitAt + (clash ? 0.85 : 0.55);
+    const D = hitAt + (clash ? 0.85 : 0.55) + (finisher ? 0.3 : 0);
     const tl = new Timeline(D, st);
     this.bgTarget = 0.45;
     this.dimTarget = 0.86;
     const w = prof.tier >= 3 ? 2.4 : prof.tier === 2 ? 1.6 : 1;
-    const ctx: HitCtx = { d: this, st, tl, U, A: M, T: P, col, prof, s: W, travel, att, q: this.q, w: w * (sig?.width ?? 1) };
+    const ctx: HitCtx = { d: this, st, tl, U, A: M, T: finisher ? T : P, col, prof, s: W, travel, att, q: this.q, w: w * (sig?.width ?? 1) };
     // release the wind-up
     if (att) {
       tl.span(0, W, (k) => {
@@ -3446,10 +3567,13 @@ export class Director {
     // (the blow's camera: see below)
     const lunges = ['slash', 'claw', 'ram'].includes(sig?.style ?? prof.style);
     // (a clash holds both fighters on screen for the whole exchange: framed tighter)
-    const whip = this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, clash ? 1 : tgt ? 0.95 : 0.95);
+    // (a finisher is seen wider: the whole move, attacker to target, has to read)
+    const whip = finisher ? this.battleShot(att, tgt, T, 0.2, 0.1, 0.8, 0.45, FINISHER_ROOM[finisher.kind] * U) : this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, clash ? 1 : tgt ? 0.95 : 0.95);
     // monster against monster: the numbers that decide it, up early (its text has faded in well
     // before the blow lands) and held a little past the impact
-    if (a && t && t.faceUp && t.name) {
+    if (finisher) {
+      tl.at(0.1, () => this.ui.banner({ title: finisher.title, sub: prof.attackName, color: col.main, big: true, dur: (hitAt + 0.45) / REPLAY_WARP.hit, pos: 'top' }));
+    } else if (a && t && t.faceUp && t.name) {
       const ai = card(a.name);
       const ti = card(t.name);
       const av = ai?.atk;
@@ -3464,14 +3588,17 @@ export class Director {
         });
       }
     }
-    STYLES[sig?.style ?? prof.style](ctx, 1);
-    if (prof.style2 && !sig) STYLES[prof.style2](ctx, 0.55);
-    sig?.travel?.(ctx);
+    if (finisher) FINISHERS[finisher.kind](ctx);
+    else {
+      STYLES[sig?.style ?? prof.style](ctx, 1);
+      if (prof.style2 && !sig) STYLES[prof.style2](ctx, 0.55);
+      sig?.travel?.(ctx);
+    }
     // the camera: a whip-pan with the blow, a dutch-angle punch on impact, then it settles;
     // every shot is fitted to the safe area, so attacker and target both stay framed
     const base = this.shot();
     const m = this.battleSide === 'near' ? 1 : -1;
-    const settle = this.battleShot(att, tgt, T, 0.3, 0.09, clash ? 0.98 : 0.92);
+    const settle = finisher ? this.battleShot(att, tgt, T, 0.26, 0.1, 0.82, 0.46, FINISHER_ROOM[finisher.kind] * U) : this.battleShot(att, tgt, T, 0.3, 0.09, clash ? 0.98 : 0.92);
     tl.span(W * 0.5, hitAt, (k) => this.setShot(base, whip, easeInOut(k)));
     tl.span(hitAt + 0.08, D, (k) => this.setShot(whip, settle, easeInOut(k)));
     const rollTo = 0.085 * m * (tgt ? 1 : 1.3);
@@ -3494,7 +3621,8 @@ export class Director {
         this.front.u.uSpeed.value = 1 - clamp01(k * 1.6);
         this.front.u.uRed.value = Math.max(this.front.u.uRed.value, 0.24 * (1 - easeIn(k)));
         this.front.u.uCrack.value = easeOut(clamp01(k * 3)) * 1.7;
-        this.front.u.uCrackOp.value = 1 - easeIn(k);
+        // (a finisher keeps only a trace of it: its own aftermath is the climax)
+        this.front.u.uCrackOp.value = (1 - easeIn(k)) * (finisher ? 0.25 : 1);
         this.front.u.uCrackAt.value.copy(crackAt);
       });
     }
@@ -3502,9 +3630,10 @@ export class Director {
     // a Millennium blow lands in gold
     const mill = !!a && finishOf(a) >= FIN.MI;
     if (mill) this.millenniumBlow(tl, M, P, W, hitAt);
-    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)) * (mill ? 0.6 : 1), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
+    this.impact(tl, hitAt, P, { color: mill ? 0xffc93a : col.main, light: mill ? 0xffe9a8 : col.light, debris: clash ? [col.main, tcol.main] : debris, power: finisher ? 0.4 : clamp01(0.45 + prof.tier * 0.18 + (tgt ? 0 : 0.2)) * (mill ? 0.6 : 1), ground: tgt ? tgt.y - tgt.size * 0.46 : T.y - 0.8 * U });
     tl.at(hitAt, () => {
-      boom(0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
+      boom(finisher ? 0.8 : 0.35 + prof.tier * 0.15 + (tgt ? 0 : 0.25));
+      if (finisher) st.hitStop(0.08);
       // the battle damage lands with the blow
       // (big: it has to read in the ~0.9 s it pops and flies to the Life Points)
       if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1.45 : 1.6) + Math.min(1, dmg.amount / 3000) * 0.7);
@@ -4397,7 +4526,7 @@ function lunge(c: HitCtx, reach: number) {
 const SPIRAL_OP = 0.5;
 
 /** A volumetric beam: soft outer glow, colored body, white-hot core, spiral ribbons, a muzzle flare. */
-function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number } = {}) {
+function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number; quiet?: boolean } = {}) {
   const { tl, U, A, T, col, s, travel } = c;
   const main = o.main ?? col.main;
   const light = o.light ?? col.light;
@@ -4459,7 +4588,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   muzzle.mesh.position.set(a.x, a.y, a.z + 0.1);
   muzzle.u.uK.value = 0.6;
   tl.span(s, end + 0.2, (k) => (muzzle.u.uOpacity.value = 0.75 * (1 - easeIn(k))));
-  tl.at(s, () => zap(travel + 0.3));
+  if (!o.quiet) tl.at(s, () => zap(travel + 0.3));
   tl.span(s, end, (_k, dt) => {
     for (let i = 0; i < rate(90 * power * c.q, dt); i++) c.st.particles.emit({ x: a.x, y: a.y, z: a.z, burst: 2 * U, life: 0.3, size: 0.1 * U, color: light, drag: 4 });
   });
@@ -4683,6 +4812,401 @@ const STYLES: Record<AttackStyle, StyleFn> = {
     tl.at(s, () => whoosh(travel, 300, 2500, 0.3));
   },
 };
+
+// ---------------------------------------------------------------- signature finishers
+// The winning blow's replay: a finisher styled after the attacker's Type (finishers.ts picks
+// it). Each charges up over [0, c.s] (the replay's longer wind-up), lands at c.s + c.travel,
+// and adds its own aftermath; hit() adds the big impact on top.
+/** the finisher's wind-up (seconds before the blow leaves) */
+export const FINISHER_CHARGE = 0.62;
+/** sky (in U) a finisher keeps in frame over its target: what comes down on it has to be seen coming */
+const FINISHER_ROOM: Record<FinisherKind, number> = { breath: 0, arcane: 0, holy: 2.2, blade: 0.6, salvo: 0.4, rend: 0.6, quake: 1.2, storm: 2, meteor: 1.8, tide: 1.2, dive: 1.2, curse: 0.6, swarm: 0.6 };
+type FinFn = (c: HitCtx) => void;
+const asPreset = (c: HitCtx) => c as unknown as PresetCtx;
+
+/** particles drawn into a point from all round it (a charge) */
+function gather(c: HitCtx, p: P3, t0: number, t1: number, color: number, light: number, radius = 1.6, per = 160) {
+  const { tl, U, st } = c;
+  tl.span(t0, t1, (k, dt) => {
+    for (let j = 0; j < rate(per * c.q * (0.4 + k), dt); j++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = radius * U * (0.7 + Math.random() * 0.5);
+      st.particles.emit({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r, z: p.z + 0.2, life: 0.35, size: 0.07 * U, color: j % 2 ? light : color, drag: 0.5, pull: { x: p.x, y: p.y, strength: 26 * U, swirl: 6 * U } });
+    }
+  });
+}
+
+/** a glow that swells on a point over [t0, t1] and bursts away just after */
+function swellAt(c: HitCtx, p: P3, t0: number, t1: number, s0: number, s1: number, color: number, light: number, mode: GlowMode = 'flare') {
+  const g = c.tl.own(new Glow(c.U, c.U, mode, color, light));
+  g.mesh.position.set(p.x, p.y, p.z + 0.15);
+  g.u.uOpacity.value = 0;
+  c.tl.span(t0, t1, (k) => {
+    g.mesh.scale.setScalar(lerp(s0, s1, easeIn(k)) * (1 + 0.08 * Math.sin(k * 40)));
+    g.u.uOpacity.value = 0.9 * easeOut(k);
+  });
+  c.tl.span(t1, t1 + 0.25, (k) => ((g.u.uOpacity.value = 0.9 * (1 - k)), g.mesh.scale.setScalar(s1 * (1 + k * 0.5))));
+  return g;
+}
+
+/** a ring of light facing the camera, popping open at t */
+function ringPop(c: HitCtx, p: P3, size: number, t: number, color: number, light: number, dur = 0.4) {
+  const g = c.tl.own(new Glow(size, size, 'shock', color, light));
+  g.mesh.position.set(p.x, p.y, p.z + 0.3);
+  c.tl.span(t, t + dur, (k) => ((g.u.uK.value = easeOut(k)), (g.u.uOpacity.value = 1 - k * 0.5)));
+  c.tl.at(t + dur, () => (g.u.uOpacity.value = 0));
+}
+
+/** a crescent cut through p: `ang` its direction, R its size */
+function crescent(c: HitCtx, p: P3, ang: number, R: number, t0: number, color: number, light: number, width = 1) {
+  const { tl, U } = c;
+  const core = tl.own(new Ribbon(28, 0xffffff, 0));
+  const body = tl.own(new Ribbon(28, light, 1));
+  const glow = tl.own(new Ribbon(28, color, 1));
+  const pts = Array.from({ length: 15 }, (_, j) => {
+    const q = j / 14;
+    const along = (q - 0.5) * 2 * R;
+    const bow = Math.sin(q * Math.PI) * R * 0.28;
+    return { x: p.x + Math.cos(ang) * along - Math.sin(ang) * bow, y: p.y + Math.sin(ang) * along + Math.cos(ang) * bow, z: p.z + 0.6 };
+  });
+  core.set(pts, (k) => 0.05 * U * width * Math.sin(k * Math.PI));
+  body.set(pts, (k) => 0.16 * U * width * Math.sin(k * Math.PI));
+  glow.set(pts, (k) => 0.5 * U * width * Math.sin(k * Math.PI));
+  glow.u.uOpacity.value = 0.55;
+  for (const r of [core, body, glow]) r.u.uHead.value = 0;
+  tl.span(t0, t0 + 0.09, (k) => (core.u.uHead.value = body.u.uHead.value = glow.u.uHead.value = k * 1.1));
+  tl.span(t0 + 0.3, t0 + 0.6, (k) => {
+    core.u.uOpacity.value = body.u.uOpacity.value = 1 - k;
+    glow.u.uOpacity.value = 0.55 * (1 - k);
+  });
+  tl.at(t0, () => whoosh(0.18, 3200, 700, 0.28));
+}
+
+const FINISHERS: Record<FinisherKind, FinFn> = {
+  // Dragon: the jaws fill with light, then a breath twice as thick as its everyday attack,
+  // with shockwaves riding down it
+  breath(c) {
+    const { tl, st, U, A, T, col, s, travel } = c;
+    gather(c, A, 0.02, s, col.main, col.light, 1.8, 140);
+    swellAt(c, A, 0.05, s, 0.3, 1.6, col.main, col.light);
+    tl.at(0.05, () => drone(s + 0.2));
+    beamFx({ ...c, w: Math.min(c.w, 2.4) }, 1.1, { widthMul: 2.1, hold: 0.36, spirals: 3 });
+    for (let i = 0; i < 3; i++) {
+      const t = s + travel * (0.35 + i * 0.25);
+      ringPop(c, P3lerp(A, T, 0.3 + i * 0.25), 2.2 * U, t, col.main, col.light, 0.35);
+    }
+    tl.at(s, () => (st.shake(0.8), st.pulse('flash', 0.16), boom(0.5)));
+  },
+  // Spellcaster: three spell circles open round the caster (side by side on screen, never stacked
+  // down the camera's line), then each fires and the beams meet on the target
+  arcane(c) {
+    const { tl, U, A, col, prof, s, travel } = c;
+    const m = c.d['battleSide'] === 'near' ? 1 : -1;
+    const spots = [
+      { x: A.x - 0.65 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
+      { x: A.x, y: A.y + 0.95 * U * m, z: A.z + 0.1 },
+      { x: A.x + 0.65 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
+    ];
+    spots.forEach((p, i) => {
+      const r = tl.own(new Ring((i === 1 ? 1.25 : 0.95) * U, i === 1 ? col.light : col.accent, prof.glyphs + i * 31, { inner: 0.7, outer: 0.93, star: i === 1 ? 6 : 5 }));
+      r.mesh.position.set(p.x, p.y, p.z);
+      r.spinSpeed = i % 2 ? -2.5 : 2.5;
+      r.u.uOpacity.value = 0;
+      const t0 = 0.06 + i * 0.13;
+      tl.span(t0, t0 + 0.28, (q) => ((r.u.uOpacity.value = easeOut(q)), r.mesh.scale.setScalar(lerp(0.2, 1, backOut(q)))));
+      tl.at(t0, () => chime(0.55 + i * 0.15));
+      // it fires: a flare and a spin-up
+      tl.span(s, s + 0.2, (q) => (r.mesh.scale.setScalar(1 + 0.3 * Math.sin(q * Math.PI)), (r.spinSpeed = (i % 2 ? -1 : 1) * (2.5 + 9 * (1 - q)))));
+      tl.span(s + travel + 0.25, s + travel + 0.6, (q) => (r.u.uOpacity.value = 1 - q));
+      beamFx({ ...c, A: p, w: Math.min(c.w, 2), q: i === 1 ? c.q : c.q * 0.4 }, i === 1 ? 0.85 : 0.6, { widthMul: 1, hold: 0.3, spirals: i === 1 ? 2 : 0, quiet: i !== 1 });
+    });
+    gather(c, spots[1], 0.05, s, col.accent, col.light, 1.1, 90);
+  },
+  // Fairy: a halo opens over the target and a pillar of light comes down on it
+  holy(c) {
+    const { tl, st, U, T, col, prof, s, travel } = c;
+    const top = { x: T.x, y: T.y + 1.7 * U, z: T.z + 0.2 };
+    const halo = tl.own(new Ring(2.2 * U, 0xfff6c0, prof.glyphs, { inner: 0.8, outer: 0.95, star: 8 }));
+    halo.mesh.position.set(top.x, top.y, top.z);
+    halo.spinSpeed = 1.5;
+    halo.u.uOpacity.value = 0;
+    tl.span(0.05, s, (k) => ((halo.u.uOpacity.value = easeOut(k)), halo.mesh.scale.setScalar(lerp(0.3, 1, easeOut(k)))));
+    tl.span(s + travel + 0.3, s + travel + 0.7, (k) => (halo.u.uOpacity.value = 1 - k));
+    tl.at(0.05, () => chime(0.9));
+    const foot = { x: T.x, y: T.y - 1 * U, z: T.z };
+    c.d['shafts'](tl, foot, 6 * U, 0xfff1a8, s - 0.1, s + travel + 0.75, 5, 0.95);
+    const pillar = tl.own(new Glow(1.5 * U, 7 * U, 'shaft', 0xffffff, col.light));
+    pillar.mesh.position.set(T.x, T.y + 2.4 * U, T.z + 0.4);
+    pillar.u.uOpacity.value = 0;
+    tl.span(s, s + travel, (k) => ((pillar.u.uOpacity.value = easeIn(k)), pillar.mesh.scale.set(lerp(0.2, 1, easeIn(k)), 1, 1)));
+    tl.span(s + travel, s + travel + 0.6, (k) => (pillar.u.uOpacity.value = 1 - easeIn(k)));
+    tl.span(s, s + travel + 0.5, (_k, dt) => {
+      for (let j = 0; j < rate(90 * c.q, dt); j++) st.particles.emit({ x: T.x + (Math.random() - 0.5) * 1.6 * U, y: T.y + 3 * U, z: T.z + 0.4, vy: -3 * U, life: 0.9, size: 0.09 * U, color: j % 2 ? 0xffffff : 0xfff1a8, drag: 0.6 });
+    });
+  },
+  // Warrior: a dash, two great cuts in an X, and a beat later the air splits white
+  blade(c) {
+    const { tl, st, U, A, T, col, s, travel } = c;
+    const glint = tl.own(new Glow(1.1 * U, 1.1 * U, 'star', 0xffffff, col.light));
+    glint.mesh.position.set(A.x + 0.3 * U, A.y + 0.4 * U, A.z + 0.4);
+    tl.span(s - 0.3, s, (k) => ((glint.u.uOpacity.value = Math.sin(k * Math.PI)), glint.mesh.scale.setScalar(0.5 + k)));
+    tl.at(s - 0.3, () => chime(1));
+    lunge(c, 0.88);
+    const hitAt = s + travel;
+    crescent(c, T, Math.PI * 0.25, 1.7 * U, hitAt - 0.08, col.main, col.light, 1.4);
+    crescent(c, T, -Math.PI * 0.25, 1.7 * U, hitAt + 0.06, col.accent, col.light, 1.4);
+    // the split line across the whole frame
+    const line = tl.own(new Ribbon(4, 0xffffff, 0));
+    line.set([{ x: T.x - 6 * U, y: T.y + 0.6 * U, z: T.z + 0.8 }, { x: T.x + 6 * U, y: T.y - 0.6 * U, z: T.z + 0.8 }], 0.03 * U);
+    line.u.uOpacity.value = 0;
+    tl.span(hitAt + 0.25, hitAt + 0.55, (k) => (line.u.uOpacity.value = k < 0.2 ? k * 5 : 1 - (k - 0.2) / 0.8));
+    tl.at(hitAt + 0.25, () => (st.shake(0.6), st.pulse('flash', 0.1), whoosh(0.3, 5000, 1500, 0.3)));
+  },
+  // Machine: lock-on sights close on the target, then a full salvo of missiles
+  salvo(c) {
+    const { tl, U, T, col, prof, s, travel } = c;
+    for (let i = 0; i < 2; i++) {
+      const r = tl.own(new Ring(2 * U, i ? 0xff4a4a : col.light, prof.glyphs + i, { inner: 0.86, outer: 0.95, star: 4 }));
+      r.mesh.position.set(T.x, T.y, T.z + 0.5);
+      r.spinSpeed = i ? -4 : 4;
+      r.u.uOpacity.value = 0;
+      tl.span(0.08 + i * 0.12, s, (k) => ((r.u.uOpacity.value = k > 0.85 ? 1 : 0.5 + 0.5 * Math.round(Math.sin(k * 30) * 0.5 + 0.5)), r.mesh.scale.setScalar(lerp(1.4, 0.45, easeOut(k)))));
+      tl.span(s, s + travel + 0.2, (k) => (r.u.uOpacity.value = 1 - k));
+    }
+    for (let i = 0; i < 4; i++) tl.at(0.1 + i * 0.12, () => chime(0.8 + i * 0.04));
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const j = { x: T.x + (Math.random() - 0.5) * 0.9 * U, y: T.y + (Math.random() - 0.5) * 0.9 * U, z: T.z };
+      const t0 = s + (i / n) * travel * 0.5;
+      const bend = (i % 2 ? 1 : -1) * (0.8 + Math.random() * 1.6) * U;
+      orbFx({ ...c, T: j }, t0, t0 + travel * 0.6, bend, 0.65 * U, i % 3 ? col.main : 0xffa040, 0xffffff, 110);
+      if (i % 3 === 0) tl.at(t0 + travel * 0.6, () => (c.st.shake(0.3), boom(0.2)));
+      ringPop(c, j, 1.1 * U, t0 + travel * 0.6, 0xffa040, 0xffffff, 0.3);
+    }
+  },
+  // Beast: it leaps in and rakes the target twice, crossways
+  rend(c) {
+    const { tl, st, U, T, col, s, travel } = c;
+    gather(c, c.A, 0.05, s, 0xff3a3a, col.light, 1.1, 80);
+    lunge(c, 0.8);
+    const hitAt = s + travel;
+    for (let set = 0; set < 2; set++) {
+      for (let i = 0; i < 3; i++) {
+        const sx = set ? -1 : 1;
+        const dx = (i - 1) * 0.42 * U;
+        const rib = tl.own(new Ribbon(14, i === 1 ? 0xffffff : col.light, 0));
+        const glow = tl.own(new Ribbon(14, 0xff2a2a, 1));
+        const pts = [
+          { x: T.x - sx * 1.1 * U + dx, y: T.y + 1.2 * U, z: T.z + 0.6 },
+          { x: T.x + sx * 0.9 * U + dx, y: T.y - 1.1 * U, z: T.z + 0.6 },
+        ];
+        rib.set(pts, (k) => 0.12 * U * Math.sin(k * Math.PI));
+        glow.set(pts, (k) => 0.4 * U * Math.sin(k * Math.PI));
+        glow.u.uOpacity.value = 0.6;
+        for (const r of [rib, glow]) r.u.uHead.value = 0;
+        const t0 = hitAt - 0.08 + set * 0.2 + i * 0.035;
+        tl.span(t0, t0 + 0.08, (k) => (rib.u.uHead.value = glow.u.uHead.value = k * 1.1));
+        tl.span(t0 + 0.25, t0 + 0.55, (k) => ((rib.u.uOpacity.value = 1 - k), (glow.u.uOpacity.value = 0.6 * (1 - k))));
+      }
+      tl.at(hitAt - 0.06 + set * 0.2, () => (whoosh(0.2, 2600, 600, 0.3), st.shake(0.4), c.d['flash'](0xff3a3a, 0.08)));
+    }
+  },
+  // Rock / Dinosaur: the ground cracks open in a line to the target and erupts under it
+  quake(c) {
+    const { tl, st, U, A, T, col, s, travel } = c;
+    tl.span(0.05, s, (_k, dt) => {
+      if (Math.random() < dt * 9) (st.shake(0.15), boom(0.08));
+    });
+    // it stamps: the ground rings out under it, three times
+    for (let i = 0; i < 3; i++) {
+      const g = tl.own(new Glow(2.4 * U, 2.4 * U, 'shock', 0xc08a4a, 0xffe0b0));
+      g.mesh.position.set(A.x, A.y - 0.9 * U, A.z);
+      g.mesh.rotation.x = -1.2;
+      const t0 = 0.05 + i * (s / 3.2);
+      tl.span(t0, t0 + 0.35, (k) => ((g.u.uK.value = easeOut(k)), (g.u.uOpacity.value = 1 - k)));
+      tl.at(t0, () => (st.shake(0.3), boom(0.15)));
+    }
+    const steps = 6;
+    for (let i = 0; i < steps; i++) {
+      const p = P3lerp(A, T, i / (steps - 1));
+      const ring = tl.own(new Glow(3 * U, 3 * U, 'shock', mix(col.main, 0xc08a4a, 0.5), 0xffe0b0));
+      ring.mesh.position.set(p.x, p.y - 0.6 * U, p.z);
+      ring.mesh.rotation.x = -1.2;
+      const t0 = s + (i / steps) * travel;
+      tl.span(t0, t0 + 0.4, (k) => ((ring.u.uK.value = easeOut(k)), (ring.u.uOpacity.value = 1 - k * 0.3)));
+      tl.at(t0, () => (st.shake(0.35), boom(0.2)));
+      tl.at(t0, () => st.particles.emit({ x: p.x, y: p.y - 0.6 * U, z: p.z, r: 0.3 * U, vy: 3 * U, burst: 1 * U, gravity: 12 * U, life: 0.6, size: 0.12 * U, color: 0x9a7a5a, drag: 0.3 }, Math.round(14 * c.q)));
+    }
+    const hitAt = s + travel;
+    const pillar = tl.own(new Glow(1.6 * U, 4.4 * U, 'shaft', 0xffb060, 0xffe0b0));
+    pillar.mesh.position.set(T.x, T.y + 1.2 * U, T.z + 0.3);
+    pillar.u.uOpacity.value = 0;
+    tl.span(hitAt, hitAt + 0.6, (k) => ((pillar.u.uOpacity.value = Math.sin(k * Math.PI) * 0.9), pillar.mesh.scale.set(1, easeOut(k), 1)));
+    tl.at(hitAt, () => st.particles.emit({ x: T.x, y: T.y - 0.7 * U, z: T.z, r: 0.7 * U, vy: 8 * U, burst: 2.5 * U, gravity: 14 * U, life: 1.2, size: 0.22 * U, size1: 0.06 * U, color: 0x8a6a4a, drag: 0.2 }, Math.round(110 * c.q)));
+  },
+  // Thunder: the sky darkens, bolts walk in, then one great strike
+  storm(c) {
+    const { tl, U, T, col, s, travel } = c;
+    tl.at(0.02, () => (c.d['dimTarget'] = 0.95));
+    const pc = asPreset(c);
+    // the storm cloud gathering over the target, the bolts striking out of it
+    const top = T.y + 2 * U;
+    const cloud = swellAt(c, { x: T.x, y: top, z: T.z - 0.2 }, 0.04, s + travel + 0.4, 1, 3.2, 0x4a4a8a, col.light, 'vortex');
+    void cloud;
+    for (let i = 0; i < 3; i++) bolt(pc, T.x + (i - 1) * 1.1 * U, T.y - 0.2 * U, 0.12 + i * 0.16, i % 2 ? col.light : 0xfff27a, T.y - 0.8 * U, top);
+    for (let i = 0; i < 3; i++) bolt(pc, T.x + (Math.random() - 0.5) * 0.6 * U, T.y, s + travel * (0.4 + i * 0.3), 0xfff27a, T.y - 0.8 * U, top);
+    tl.at(s + travel, () => (c.st.pulse('chroma', 1), c.d['flash'](0xffffff, 0.3)));
+  },
+  // Pyro: a meteor falls out of the sky onto the target
+  meteor(c) {
+    const { tl, st, U, T, s, travel } = c;
+    // (low enough to be in frame: the blow lands deep in it)
+    const sky = { x: T.x + 0.6 * U, y: T.y + 1.7 * U, z: T.z + 0.6 };
+    swellAt(c, sky, 0.05, s, 0.8, 3, 0xff5a1a, 0xffe08a);
+    tl.span(0.05, s, (k, dt) => {
+      for (let j = 0; j < rate(70 * c.q * k, dt); j++) st.particles.emit({ x: sky.x, y: sky.y, z: sky.z, burst: 1.2 * U, life: 0.4, size: 0.2 * U, size1: 0.04 * U, color: j % 2 ? 0xffe08a : 0xff5a1a, drag: 2 });
+    });
+    tl.at(0.05, () => whoosh(s + travel, 120, 700, 0.35));
+    orbFx({ ...c, A: sky }, s, s + travel, -0.4 * U, 2.6 * U, 0xff6a1a, 0xffe08a, 80);
+    // its burning tail, back up the sky
+    const tail = [tl.own(new Ribbon(12, 0xff3a1a, 1)), tl.own(new Ribbon(12, 0xffe08a, 1))];
+    const pts = Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0 }));
+    tl.span(s, s + travel + 0.15, (k) => {
+      const h = easeIn(Math.min(1, k * 1.35));
+      for (let j = 0; j < 8; j++) Object.assign(pts[j], bez(sky, T, -0.4 * U, Math.max(0, h - (j / 7) * 0.55)));
+      tail[0].set(pts, (q) => 0.7 * U * (1 - q));
+      tail[1].set(pts, (q) => 0.28 * U * (1 - q));
+      for (const r of tail) r.u.uOpacity.value = k > 0.75 ? (1 - k) * 4 : 1;
+    });
+    tl.span(s, s + travel, (k, dt) => {
+      const p = bez(sky, T, -0.4 * U, easeIn(k));
+      for (let j = 0; j < rate(150 * c.q, dt); j++) st.particles.emit({ x: p.x, y: p.y, z: p.z, r: 0.45 * U, vy: 1.2 * U, burst: 0.6 * U, life: 0.55, size: 0.48 * U, size1: 0.05 * U, color: j % 3 === 0 ? 0xffe08a : j % 3 === 1 ? 0xff6a1a : 0xff2a1a, drag: 2 });
+    });
+    tl.at(s + travel, () => {
+      st.particles.emit({ x: T.x, y: T.y, z: T.z + 0.3, burst: 8 * U, vy: 2.5 * U, life: 1.2, size: 0.32 * U, size1: 0.04 * U, color: 0xff7a2a, drag: 2.2 }, Math.round(160 * c.q));
+      c.d['flash'](0xff6a1a, 0.35);
+    });
+  },
+  // Aqua / Fish: the water rises behind it and crashes over the target as a wave
+  tide(c) {
+    const { tl, st, U, A, T, col, s, travel } = c;
+    tl.span(0.05, s, (k, dt) => {
+      for (let j = 0; j < rate(160 * c.q, dt); j++) st.particles.emit({ x: A.x + (Math.random() - 0.5) * 2.4 * U, y: A.y - 0.8 * U, z: A.z, vy: (2 + 3 * k) * U, gravity: 4 * U, life: 0.5, size: 0.12 * U, color: j % 2 ? 0x8fe0ff : 0x2a8aff, drag: 0.6 });
+    });
+    for (let i = 0; i < 3; i++) {
+      const rib = tl.own(new Ribbon(30, i === 1 ? 0xbfefff : i ? col.main : 0x2a8aff, 1));
+      const lift = (1.7 + i * 0.45) * U;
+      rib.u.uHead.value = 0;
+      const pts = Array.from({ length: 16 }, (_, j) => {
+        const q = j / 15;
+        const p = P3lerp(A, T, q);
+        return { x: p.x + (i - 1) * 0.35 * U, y: p.y + Math.sin(q * Math.PI) * lift, z: p.z + 0.3 };
+      });
+      // (a crest: thin where it leaves, a breaking wall where it lands)
+      rib.set(pts, (q) => (0.42 + i * 0.12) * U * (0.35 + 1.3 * q * q));
+      rib.u.uOpacity.value = i === 1 ? 0.9 : 0.75;
+      tl.span(s + i * 0.04, s + travel + i * 0.04, (k) => (rib.u.uHead.value = easeIn(k) * 1.05));
+      tl.span(s + travel + 0.15, s + travel + 0.55, (k) => ((rib.u.uTail.value = easeIn(k)), (rib.u.uOpacity.value *= 0.92)));
+    }
+    // the wave itself: a wall of water rolling from it onto the target, cresting white as it breaks
+    const wall = [tl.own(new Ribbon(20, 0x1a5aff, 1)), tl.own(new Ribbon(20, 0x7fd8ff, 1)), tl.own(new Ribbon(20, 0xffffff, 1))];
+    const wpts = Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0 }));
+    tl.span(s - 0.05, s + travel + 0.35, (k) => {
+      const go = easeIn(clamp01(k * 1.25));
+      const c0 = P3lerp(A, T, go);
+      const rise = Math.sin(Math.min(1, k * 1.25) * Math.PI * 0.85) * 0.9 * U;
+      const op = k > 0.8 ? (1 - k) * 5 : Math.min(1, k * 6);
+      wall.forEach((r, i) => {
+        for (let j = 0; j < 12; j++) {
+          const q = j / 11 - 0.5;
+          wpts[j].x = c0.x + q * 3.2 * U;
+          wpts[j].y = c0.y + rise * (1 - q * q * 2.4) + i * 0.32 * U - 0.35 * U;
+          wpts[j].z = c0.z + 0.35;
+        }
+        r.set(wpts, (q) => (i === 2 ? 0.14 : i ? 0.42 : 0.75) * U * Math.sin(q * Math.PI));
+        r.u.uOpacity.value = op * (i === 2 ? 0.9 : 0.75);
+      });
+    });
+    tl.at(s, () => whoosh(travel + 0.5, 200, 900, 0.4));
+    tl.at(s + travel, () => {
+      st.particles.emit({ x: T.x, y: T.y, z: T.z, vy: 5 * U, burst: 4 * U, gravity: 10 * U, life: 1, size: 0.2 * U, color: 0xbfefff, drag: 0.4 }, Math.round(150 * c.q));
+      // the foam where it breaks
+      st.particles.emit({ x: T.x, y: T.y - 0.3 * U, z: T.z + 0.3, r: 0.8 * U, vy: 1.5 * U, burst: 1.5 * U, gravity: 2 * U, life: 0.9, size: 0.34 * U, size1: 0.1 * U, color: 0xffffff, drag: 1.5 }, Math.round(60 * c.q));
+    });
+    ringPop(c, T, 3 * U, s + travel, 0x2a8aff, 0xbfefff, 0.5);
+  },
+  // Winged Beast: it climbs, folds its wings and dives in a whirlwind
+  dive(c) {
+    const { tl, att, U, T, col, s, travel } = c;
+    // the lunge first: the climb rides on top of it (the lunge sets the position each frame over the blow)
+    lunge(c, 0.85);
+    if (att) {
+      const y0 = att.oy;
+      tl.span(0.05, s, (k) => ((att.oy = y0 + 0.9 * U * easeOut(k)), c.d['place'](att)));
+      tl.span(s, s + travel, (k) => ((att.oy += 0.9 * U * (1 - easeIn(k))), c.d['place'](att)));
+    }
+    tl.span(0.05, s, (_k, dt) => {
+      for (let j = 0; j < rate(60 * c.q, dt); j++) c.st.particles.emit({ x: c.A.x + (Math.random() - 0.5) * U, y: c.A.y, z: c.A.z, vy: -1.5 * U, life: 0.8, size: 0.1 * U, color: 0xffffff, drag: 1, gravity: 1 * U });
+    });
+    // (the whirlwind stands on the bird's path, so the dive goes through it)
+    tornado(asPreset(c), P3lerp(c.A, T, 0.4), s - 0.1, s + travel + 0.6, col.main, col.light);
+  },
+  // Fiend / Zombie: the ground opens under the target, hands of shadow drag it down, then it implodes
+  curse(c) {
+    const { tl, st, U, T, col, s, travel } = c;
+    const rift = tl.own(new Glow(3 * U, 1.4 * U, 'rift', 0x9a3cff, 0xff2a5a));
+    rift.mesh.position.set(T.x, T.y - 0.9 * U, T.z + 0.1);
+    rift.u.uOpacity.value = 0;
+    tl.span(0.05, s, (k) => ((rift.u.uOpacity.value = easeOut(k)), rift.mesh.scale.set(lerp(0.2, 1, easeOut(k)), 1, 1)));
+    tl.span(s + travel + 0.3, s + travel + 0.7, (k) => (rift.u.uOpacity.value = 1 - k));
+    tl.at(0.05, () => drone(s + travel + 0.5));
+    STYLES.shadow(c, 1.5);
+    const hitAt = s + travel;
+    tl.span(hitAt - 0.15, hitAt, (_k, dt) => {
+      for (let j = 0; j < rate(160 * c.q, dt); j++) {
+        const a = Math.random() * Math.PI * 2;
+        st.particles.emit({ x: T.x + Math.cos(a) * 1.8 * U, y: T.y + Math.sin(a) * 1.8 * U, z: T.z + 0.3, life: 0.2, size: 0.1 * U, color: j % 2 ? 0x6a1aaa : 0xff4fd8, drag: 0.3, pull: { x: T.x, y: T.y, strength: 40 * U, swirl: 4 * U } });
+      }
+    });
+    tl.at(hitAt, () => (c.d['flash'](0x9a3cff, 0.25), ringPop(c, T, 3.2 * U, hitAt, col.main, 0xff4fd8, 0.5)));
+  },
+  // Insect / Plant: the swarm circles the target, tighter and tighter, then strikes
+  swarm(c) {
+    const { tl, st, U, A, T, col, s, travel } = c;
+    tl.at(0.05, () => whoosh(s + travel, 2000, 4500, 0.15));
+    tl.span(0.05, s + travel, (k, dt) => {
+      const r = lerp(2.2, 0.4, easeIn(k)) * U;
+      for (let j = 0; j < rate(140 * c.q, dt); j++) {
+        const a = Math.random() * Math.PI * 2;
+        const from = k < 0.35 ? A : T;
+        st.particles.emit({ x: from.x + Math.cos(a) * r, y: from.y + Math.sin(a) * r * 0.7, z: from.z + 0.3, life: 0.4, size: 0.14 * U, color: j % 2 ? col.main : col.accent, drag: 0.4, pull: { x: T.x, y: T.y, strength: 10 * U, swirl: 20 * U } });
+      }
+    });
+    STYLES.swarm(c, 1.1);
+    // the swarm's rings round the target, closing in
+    for (let i = 0; i < 3; i++) {
+      const rib = tl.own(new Ribbon(40, i === 1 ? col.light : i ? col.accent : col.main, 1));
+      const pts = Array.from({ length: 22 }, () => ({ x: 0, y: 0, z: 0 }));
+      const width = (q: number) => 0.09 * U * Math.sin(q * Math.PI);
+      tl.span(0.1, s + travel + 0.2, (k) => {
+        const r = lerp(1.9, 0.35, easeIn(Math.min(1, k * 1.15))) * U;
+        for (let j = 0; j < 22; j++) {
+          const a = (j / 21) * Math.PI * 1.6 + k * 16 + (i * Math.PI * 2) / 3;
+          const p = pts[j];
+          p.x = T.x + Math.cos(a) * r;
+          p.y = T.y + Math.sin(a) * r * 0.45 + (i - 1) * 0.3 * U;
+          p.z = T.z + 0.3 + Math.sin(a) * r * 0.3;
+        }
+        rib.set(pts, width);
+        rib.u.uOpacity.value = k < 0.1 ? k * 10 : k > 0.85 ? (1 - k) / 0.15 : 0.9;
+      });
+    }
+    ringPop(c, T, 2.6 * U, s + travel, col.main, col.light, 0.45);
+  },
+};
+
+/** the finisher kinds with a cinematic (for the tests) */
+export const FINISHER_KINDS = Object.keys(FINISHERS) as FinisherKind[];
 
 // ---------------------------------------------------------------- signature attacks
 interface WindupCtx {
@@ -6821,5 +7345,5 @@ export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
 /** The summon methods with their own shot ('normal' keeps the plain summon). */
 export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
 /** The cue kinds the director draws. */
-export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam'];
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd'];
 export { css };

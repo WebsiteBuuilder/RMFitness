@@ -2545,6 +2545,9 @@ export class Stage {
   speed = 1;
   /** slow motion: everything on stage (cinematic, particles, figures) runs at this speed; 1 = real time */
   warp = 1;
+  /** a chain card is being read (chain spotlight): everything on stage holds still */
+  pause = false;
+  private pauseDrawn = false;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
   running = false;
@@ -2744,6 +2747,8 @@ export class Stage {
   }
 
   resize() {
+    // (a resize clears the canvas: a paused stage draws its frame again)
+    this.pauseDrawn = false;
     if (!this.levels.length) return;
     this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
@@ -2853,10 +2858,17 @@ export class Stage {
   private loop = (now: number) => {
     this.raf = 0;
     if (!this.running) return;
+    // paused (a chain card being read): the frame already drawn stays; nothing is drawn or measured
+    if (this.pause && this.pauseDrawn) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
+    this.pauseDrawn = this.pause;
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
-    let dt = Math.min(0.2, ms / 1000) * this.speed * this.warp;
+    let dt = this.pause ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;
