@@ -40,28 +40,36 @@ export interface RoomPass {
 /** How long a tapped thing springs before its screen opens (short: it must never feel slow). */
 const PRESS_MS = 120;
 
+/** One press at a time across the whole room: a double tap, or two things tapped at once,
+ *  opens one screen. */
+let pressing = false;
+/** Fewer cores than this: a lighter room (no drifting dust). */
+const LITE_CORES = 4;
+const lite = typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= LITE_CORES;
+
 /** One thing in the room you can tap: a real button with a name tag under it. */
-function Spot({ cls, tag, hot, label, onPick, children }: { cls: string; tag?: ComponentChildren; hot?: boolean; label: string; onPick: () => void; children: ComponentChildren }) {
-  // one press at a time (a double tap opens its screen once), and no timer outlives the room
-  const busy = useRef(false);
+function Spot({ cls, tag, hot, label, onPick, children, twin }: { cls: string; tag?: ComponentChildren; hot?: boolean; label: string; onPick: () => void; children?: ComponentChildren; twin?: boolean }) {
+  // no timer outlives the room
   const timers = useRef<number[]>([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useEffect(() => () => (timers.current.forEach(clearTimeout), (pressing = false)), []);
   return (
     <button
       class={`sdr-spot ${cls} ${hot ? 'hot' : ''}`}
-      aria-label={label}
+      aria-label={twin ? undefined : label}
+      aria-hidden={twin ? 'true' : undefined}
+      tabIndex={twin ? -1 : undefined}
       onClick={(e) => {
         // keyboard and controller presses go straight there (the spring is for fingers)
         if (e.detail === 0) return void (playBlip(), onPick());
-        if (busy.current) return;
-        busy.current = true;
+        if (pressing) return;
+        pressing = true;
         playBlip();
         // a quick press-and-spring on the thing itself, then the screen it opens
         const el = e.currentTarget as HTMLElement;
         el.classList.add('pop');
         timers.current.push(
           window.setTimeout(onPick, PRESS_MS),
-          window.setTimeout(() => (el.classList.remove('pop'), (busy.current = false)), 320),
+          window.setTimeout(() => (el.classList.remove('pop'), (pressing = false)), 320),
         );
       }}
     >
@@ -208,7 +216,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
   }, [seen]);
 
   return (
-    <div ref={ref} class={`sdr ${seen ? '' : 'off'} ${pass ? 'has-pass' : ''}`} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
+    <div ref={ref} class={`sdr ${seen ? '' : 'off'} ${pass ? 'has-pass' : ''} ${lite ? 'lite' : ''}`} role="group" aria-label={`${profile.alias}'s Duelist Room`}>
       <div class="sdr-walls" aria-hidden="true">
         <i class="sdr-window" />
         <i class="sdr-light" />
@@ -220,7 +228,12 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
         {/* the shelf: trophies you've earned */}
         <Spot cls="sdr-shelf" label={`Trophies: ${trophies.length ? trophies.map((t) => t.label).join(', ') : 'none yet'}. Opens Duelist Rankings`} tag="Trophies" onPick={() => go('rankings')}>
           <span class="sdr-planks">
-            <span class="sdr-plank">{trophies.length ? trophies.slice(0, 3).map((t, i) => <TrophyArt key={i} t={t} />) : <em>Win duels to fill this shelf</em>}</span>
+            <span class="sdr-plank">{trophies.length ? trophies.slice(0, 3).map((t, i) => <TrophyArt key={i} t={t} />) : <>
+                  <span class="sdr-tro cup ghost">
+                    <i class="sdr-cup" />
+                  </span>
+                  <em>Win duels to fill this shelf</em>
+                </>}</span>
             <span class="sdr-plank">{trophies.slice(3).map((t, i) => <TrophyArt key={i} t={t} />)}</span>
           </span>
         </Spot>
@@ -263,9 +276,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
         )}
         {/* the Ace's tag is its own tap target above the floor, so the Mate's patch never takes it */}
         {ace && (
-          <button class="sdr-spot sdr-acetag" tabIndex={-1} aria-hidden="true" onClick={() => (playBlip(), go('ace'))}>
-            <span class="sdr-tag">{ace.ace ? `Ace ★${ace.ace.lv}` : 'Pick an Ace'}</span>
-          </button>
+          <Spot cls="sdr-acetag" twin label="" tag={ace.ace ? `Ace ★${ace.ace.lv}` : 'Pick an Ace'} onPick={() => go('ace')} />
         )}
 
         {/* your Mate, wandering */}

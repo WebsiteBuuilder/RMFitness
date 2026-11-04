@@ -88,6 +88,9 @@
   animation: sdr-dust 9s ease-in-out infinite;
   will-change: transform, opacity;
 }
+.sdr.lite .sdr-dust {
+  display: none;
+}
 @keyframes sdr-dust {
   0% {
     opacity: 0;
@@ -192,6 +195,36 @@
   transition: translate 0.25s ease-out;
 }
 .sdr-ace,
+/* tapped, the Ace flares: its halo flashes bright for a moment */
+.sdr-ace.pop .sdr-halo {
+  animation: sdr-flare 0.32s ease-out;
+}
+@keyframes sdr-flare {
+  30% {
+    opacity: 1;
+    transform: scale(1.25);
+    filter: brightness(1.8);
+  }
+}
+/* a dark contact shadow where its feet meet the floor */
+.sdr-pedestal::after {
+  content: '';
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 30%;
+  height: 40%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #0009, transparent);
+}
+/* narrow rooms (phones): a slightly smaller Ace, so it stands inside the room */
+@container (max-width: 450px) {
+  .sdr-cutw {
+    width: 60cqh;
+    height: 60cqh;
+    margin-left: -30cqh;
+  }
+}
 .sdr-acetag {
   translate: calc(var(--sdr-px, 0) * 3px) 0;
   transition: translate 0.25s ease-out;
@@ -272,6 +305,14 @@
   height: 2.2cqh;
   background: linear-gradient(180deg, #8a5a32, #5a3820 60%, #2c1a10);
   box-shadow: 0 1cqh 1.6cqh #000a;
+}
+/* a fresh shelf: the outline of the first cup to win */
+.sdr-tro.cup.ghost {
+  --m1: #ffffff40;
+  --m2: #ffffff22;
+  --m3: #ffffff10;
+  opacity: 0.6;
+  filter: none;
 }
 .sdr-plank em {
   align-self: center;
@@ -847,7 +888,7 @@
   transform: translate(-50%, -100%);
 }
 .sdr-packs {
-  right: 3%;
+  right: 5%;
   bottom: 12cqh;
   width: 19cqh;
   height: 17cqh;
