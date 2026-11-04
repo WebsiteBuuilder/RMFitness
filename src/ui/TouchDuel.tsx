@@ -1,7 +1,7 @@
 // Touch controls: a Master Duel-style duel screen. Tap a card to see it and what it can do,
 // drag a card from your hand onto the field to play it, drag a monster onto a target to attack.
 // The rules and every move go through the same engine actions as the Classic screen.
-import { measuredHand } from './fit';
+import { bigScreen, handCardW, handRoom, measuredHand } from './fit';
 import type { ComponentChildren, VNode } from 'preact';
 import { memo } from 'preact/compat';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -788,9 +788,23 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   };
 
   const handCount = me.hand.length;
+  // Big screens: the hand's real card width and room, measured when it resizes (never during a render)
+  const [handBox, setHandBox] = useState<{ cardW: number; room: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = root.current?.querySelector('.thand');
+    if (!el || !bigScreen() || typeof ResizeObserver === 'undefined') return void setHandBox(null);
+    const measure = () => {
+      const v = measuredHand(el);
+      setHandBox((b) => (b && b.cardW === v.cardW && b.room === v.room ? b : v));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [handCount === 0, resized]);
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const { cardW, room } = measuredHand(root.current?.querySelector('.thand'));
+  const { cardW, room } = handBox ?? { cardW: handCardW(), room: handRoom() };
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
   // the other player has a choice open: the middle row says so (never what: a prompt's title can name

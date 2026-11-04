@@ -8,7 +8,7 @@ export function bigScreen(): boolean {
 
 /** A landscape tablet or computer: the player bars move to the corners (fitscreen.css). */
 export function landscapeBig(): boolean {
-  return typeof window !== 'undefined' && window.innerWidth >= 900 && window.innerHeight >= 600 && window.innerWidth / window.innerHeight >= 1.25;
+  return typeof window !== 'undefined' && window.innerWidth >= 760 && window.innerHeight >= 560 && window.innerWidth / window.innerHeight >= 1.25;
 }
 
 /** Width of a card in your hand (fitscreen.css / layout.css: --th-w). */
@@ -33,7 +33,10 @@ export function measuredHand(hand: Element | null | undefined): { cardW: number;
 export function handRoom(): number {
   const w = window.innerWidth;
   // (landscape: between the two corner bars, --fit-bar)
-  if (landscapeBig()) return w - 2 * (Math.min(430, Math.max(320, w * 0.27)) + 24) - 20;
+  if (landscapeBig()) {
+    const bar = w >= 1800 && window.innerHeight >= 900 ? Math.min(620, Math.max(440, w * 0.24)) : Math.min(440, Math.max(250, w * 0.3));
+    return w - 2 * (bar + 24) - 20;
+  }
   return (bigScreen() ? w * 0.9 : Math.min(w, 560)) - 20;
 }
 
