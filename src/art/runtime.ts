@@ -802,7 +802,6 @@ export class Director {
     placeholder.rate = this.timeScale;
     this.current = placeholder;
     this.curKind = item.cue.kind;
-    this.curShadow = item.cue.kind === 'win' && !!item.cue.shadow;
     const own = cueOwner(item.cue);
     // (an opponent cue with more queued behind it: shifted off already, so one left means two were waiting)
     // (a cue already sped up, like their everyday summon, is fast enough)
@@ -834,6 +833,8 @@ export class Director {
         // the attack declaration held for this blow gives way to it
         if (this.held) this.dropHeld();
         this.current = tl;
+        // (a Shadow Realm finish that really started: played through, it counts as seen)
+        this.curShadow = item.cue.kind === 'win' && !!item.cue.shadow;
         if (!this.skipAll) cueSting(item.cue);
         this.onCueStart?.(item.batch, (tl.duration / tl.rate) * tl.slow);
         if (this.skipAll) this.endCurrent(true);
@@ -879,11 +880,11 @@ export class Director {
     return role === 'att' ? { x: -0.4 * U * m, y: -0.78 * U, z: 0.8 } : { x: 0.34 * U * m, y: 0.78 * U, z: -2.2 };
   }
 
-  /** Where a direct attack lands: the defending duelist, deep beyond the field. */
+  /** Where a finisher's direct hit lands: off to the side and nearer, so the move crosses the screen. */
   private finisherPoint(): P3 {
     const U = this.U;
     const m = this.battleSide === 'near' ? 1 : -1;
-    return { x: -1.5 * U * m, y: 1.1 * U * m, z: -1.6 };
+    return { x: -1 * U * m, y: 0.75 * U * m, z: -1 };
   }
 
   /** Where a direct attack lands: the defending duelist, deep beyond the field. */
@@ -4307,7 +4308,7 @@ function lunge(c: HitCtx, reach: number) {
 const SPIRAL_OP = 0.5;
 
 /** A volumetric beam: soft outer glow, colored body, white-hot core, spiral ribbons, a muzzle flare. */
-function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number } = {}) {
+function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; accent?: number; spirals?: number; widthMul?: number; off?: P3; hold?: number; quiet?: boolean } = {}) {
   const { tl, U, A, T, col, s, travel } = c;
   const main = o.main ?? col.main;
   const light = o.light ?? col.light;
@@ -4369,7 +4370,7 @@ function beamFx(c: HitCtx, power: number, o: { main?: number; light?: number; ac
   muzzle.mesh.position.set(a.x, a.y, a.z + 0.1);
   muzzle.u.uK.value = 0.6;
   tl.span(s, end + 0.2, (k) => (muzzle.u.uOpacity.value = 0.75 * (1 - easeIn(k))));
-  tl.at(s, () => zap(travel + 0.3));
+  if (!o.quiet) tl.at(s, () => zap(travel + 0.3));
   tl.span(s, end, (_k, dt) => {
     for (let i = 0; i < rate(90 * power * c.q, dt); i++) c.st.particles.emit({ x: a.x, y: a.y, z: a.z, burst: 2 * U, life: 0.3, size: 0.1 * U, color: light, drag: 4 });
   });
@@ -4684,9 +4685,9 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
     const { tl, U, A, col, prof, s, travel } = c;
     const m = c.d['battleSide'] === 'near' ? 1 : -1;
     const spots = [
-      { x: A.x - 0.85 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
+      { x: A.x - 0.65 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
       { x: A.x, y: A.y + 0.95 * U * m, z: A.z + 0.1 },
-      { x: A.x + 0.85 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
+      { x: A.x + 0.65 * U, y: A.y + 0.3 * U * m, z: A.z + 0.2 },
     ];
     spots.forEach((p, i) => {
       const r = tl.own(new Ring((i === 1 ? 1.25 : 0.95) * U, i === 1 ? col.light : col.accent, prof.glyphs + i * 31, { inner: 0.7, outer: 0.93, star: i === 1 ? 6 : 5 }));
@@ -4699,7 +4700,7 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
       // it fires: a flare and a spin-up
       tl.span(s, s + 0.2, (q) => (r.mesh.scale.setScalar(1 + 0.3 * Math.sin(q * Math.PI)), (r.spinSpeed = (i % 2 ? -1 : 1) * (2.5 + 9 * (1 - q)))));
       tl.span(s + travel + 0.25, s + travel + 0.6, (q) => (r.u.uOpacity.value = 1 - q));
-      beamFx({ ...c, A: p, w: Math.min(c.w, 2) }, i === 1 ? 0.85 : 0.6, { widthMul: 1, hold: 0.3, spirals: i === 1 ? 2 : 0 });
+      beamFx({ ...c, A: p, w: Math.min(c.w, 2), q: i === 1 ? c.q : c.q * 0.4 }, i === 1 ? 0.85 : 0.6, { widthMul: 1, hold: 0.3, spirals: i === 1 ? 2 : 0, quiet: i !== 1 });
     });
     gather(c, spots[1], 0.05, s, col.accent, col.light, 1.1, 90);
   },
@@ -4876,14 +4877,15 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
     });
     for (let i = 0; i < 3; i++) {
       const rib = tl.own(new Ribbon(30, i === 1 ? 0xbfefff : i ? col.main : 0x2a8aff, 1));
-      const lift = (0.9 + i * 0.5) * U;
+      const lift = (1.7 + i * 0.45) * U;
       rib.u.uHead.value = 0;
       const pts = Array.from({ length: 16 }, (_, j) => {
         const q = j / 15;
         const p = P3lerp(A, T, q);
-        return { x: p.x + (i - 1) * 0.5 * U, y: p.y + Math.sin(q * Math.PI) * lift, z: p.z + 0.3 };
+        return { x: p.x + (i - 1) * 0.35 * U, y: p.y + Math.sin(q * Math.PI) * lift, z: p.z + 0.3 };
       });
-      rib.set(pts, (q) => (0.35 + i * 0.12) * U * (0.5 + q));
+      // (a crest: thin where it leaves, a breaking wall where it lands)
+      rib.set(pts, (q) => (0.16 + i * 0.06) * U * (0.4 + 1.4 * q * q));
       rib.u.uOpacity.value = i === 1 ? 0.9 : 0.75;
       tl.span(s + i * 0.04, s + travel + i * 0.04, (k) => (rib.u.uHead.value = easeIn(k) * 1.05));
       tl.span(s + travel + 0.15, s + travel + 0.55, (k) => ((rib.u.uTail.value = easeIn(k)), (rib.u.uOpacity.value *= 0.92)));
@@ -4904,7 +4906,8 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
     tl.span(0.05, s, (_k, dt) => {
       for (let j = 0; j < rate(60 * c.q, dt); j++) c.st.particles.emit({ x: c.A.x + (Math.random() - 0.5) * U, y: c.A.y, z: c.A.z, vy: -1.5 * U, life: 0.8, size: 0.1 * U, color: 0xffffff, drag: 1, gravity: 1 * U });
     });
-    tornado(asPreset(c), T, s - 0.1, s + travel + 0.6, col.main, col.light);
+    // (the whirlwind stands on the bird's path, so the dive goes through it)
+    tornado(asPreset(c), P3lerp(c.A, T, 0.55), s - 0.1, s + travel + 0.6, col.main, col.light);
     STYLES.gale(c, 1.5);
   },
   // Fiend / Zombie: the ground opens under the target, hands of shadow drag it down, then it implodes
