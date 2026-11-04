@@ -9,6 +9,8 @@ import type { CutInShow } from './runtime';
 import type { Face } from './cutins';
 import { FOE_MARK } from './cutins';
 
+/** the halftone dots over a face (low-resolution card art reads as print, not blur) */
+const HALFTONE = 'radial-gradient(circle, rgba(0,0,0,0.14) 0 1px, transparent 1.6px)';
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
@@ -37,7 +39,7 @@ function half(f: Face, top: boolean, lead: boolean, why: CutInShow['why']): stri
   return (
     `<div class="ci-half ${top ? 'ci-top' : 'ci-bot'} ${lead ? 'ci-lead' : 'ci-foe'}" style="--c1:${c1};--c2:${c2}">` +
     `<i class="ci-bg"></i>${lead ? '<i class="ci-lines"></i>' : ''}` +
-    `<i class="ci-face"${url ? ` style="background-image:url('${url}')"` : ''}></i>` +
+    `<i class="ci-face" style="background-image:${HALFTONE}${url ? `, url('${url}')` : ''}"></i>` +
     `<div class="ci-plate"><b>${esc(f.name)}</b>${f.title ? `<span>${esc(f.title)}</span>` : ''}</div>` +
     (lead ? '' : `<b class="ci-mark">${FOE_MARK[why]}</b>`) +
     `</div>`
