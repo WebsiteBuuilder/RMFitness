@@ -135,7 +135,7 @@ check(scarsOf({ scars: [[1, 2, null, 99, 3], 'junk', [0]] }).length === 1 && sca
   const d = scarMark({ by: 0, from: 1, to: -1, attr: 'FIRE', n: 1 }, { ...geo, direct: true }, 1);
   const n = scarMark({ by: 0, from: 1, to: 2, attr: 'FIRE', n: 1 }, geo, 1);
   check(d.halo.rx > n.halo.rx, 'a direct attack leaves a bigger mark');
-  check(scarAge(23, 24) === 1 && scarAge(18, 24) === 1 && scarAge(0, 24) < scarAge(12, 24) && scarAge(0, 24) >= 0.5, 'old scars weather but never vanish');
+  check(scarAge(23, 24) === 1 && scarAge(22, 24) === 1 && scarAge(21, 24) < 1 && scarAge(0, 24) <= scarAge(12, 24) && scarAge(0, 24) >= 0.4, 'the newest two burn bright; older scars weather but never vanish');
 }
 
 if (fails) {

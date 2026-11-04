@@ -130,9 +130,9 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
   const ux = dx / len;
   const uy = dy / len;
   // the trail starts a little off the attacker's frame and runs into the blow
-  const T0: P = [A[0] + ux * zw * 0.12, A[1] + uy * zw * 0.12];
+  const T0: P = [A[0] + ux * zw * 0.18, A[1] + uy * zw * 0.18];
   const big = g.direct ? 1.25 : 1;
-  const R = zw * 0.52 * big * (0.9 + r() * 0.2);
+  const R = zw * 0.4 * big * (0.9 + r() * 0.2);
   const fwd = Math.atan2(uy, ux);
   const trail: Layer[] = [];
   const hit: Layer[] = [];
@@ -238,6 +238,12 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
         rays += lens([[x0, y0], [(x0 + x1) / 2, (y0 + y1) / 2], [x1, y1]], half, 0.35);
         if (r() < 0.7) rays += spike([[x2, y2], [I[0] + Math.cos(an) * L, I[1] + Math.sin(an) * L * 0.8]], half * 0.7);
       }
+      if (s.attr === 'DIVINE') {
+        // a god's blow splits the ground: gold-lit fissures under the rays and a ring of seared stone
+        let fis = '';
+        for (let k = 0; k < 6; k++) fis += spike(crack(r, I[0], I[1], (k / 6) * Math.PI * 2 + r() * 0.5, R * (1 + r() * 0.5), 1, 5), 2.2);
+        hit.push(['sc-soot', fis], ['sc-edge', fis]);
+      }
       hit.push(['sc-soot', blot(r, I[0], I[1], R * 0.36 * div, R * 0.28 * div, 0.7, 16)], ['sc-burn', rays], ['sc-hot', blot(r, I[0], I[1], R * 0.13 * div, R * 0.1 * div, 0.5, 8)]);
       break;
     }
@@ -303,8 +309,8 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
   return { attr: s.attr, halo: { cx: I[0], cy: I[1], rx: R * hs, ry: R * hs * 0.9 }, trail, hit };
 }
 
-/** Older scars weather: the newest 6 at full strength, then fading to 0.5. */
+/** Older scars weather: the newest two at full strength, then fading to 0.4 (never gone). */
 export function scarAge(index: number, count: number): number {
   const age = count - 1 - index;
-  return age < 6 ? 1 : Math.max(0.5, 1 - (age - 5) * 0.05);
+  return age < 2 ? 1 : Math.max(0.4, 0.85 - (age - 2) * 0.07);
 }

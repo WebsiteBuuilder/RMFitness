@@ -98,6 +98,8 @@ function measure(mat: HTMLElement, zones: number): Board | null {
   return { w: mat.offsetWidth, h: mat.offsetHeight, zw: z0.offsetWidth, top, bottom };
 }
 
+const boardKey = (b: Board) => [b.w, b.h, b.zw, b.top.top, b.top.bottom, b.bottom.top, b.bottom.bottom, ...b.top.xs, ...b.bottom.xs].map((v) => Math.round(v)).join(',');
+
 /** Where a scar sits: from the attacker's front edge, across the lane, into the defender's zone
  *  (a little toward the lane, where the blow lands); a direct attack strikes the defender's line
  *  straight ahead. The zone's well is see-through, so the mark shows in an empty zone and round a card. */
@@ -112,7 +114,7 @@ function geoOf(s: Scar, b: Board, near: Pid): ScarGeo | null {
   const mid = (def.top + def.bottom) / 2;
   return {
     a: { x: ax, y: fromNear ? atk.top : atk.bottom },
-    i: { x: direct ? ax : def.xs[s.to], y: mid + (fromNear ? 1 : -1) * zh * 0.14 },
+    i: { x: direct ? ax : def.xs[s.to], y: mid + (fromNear ? 1 : -1) * zh * 0.3 },
     zw: b.zw,
     direct,
   };
@@ -164,9 +166,12 @@ export function MatScars({ state, near }: Props) {
   const scars = scarsOf(state.fx as Record<string, unknown>);
   const count = scars.length;
   const lastN = count ? scars[count - 1].n : 0;
-  // the mark that lands while we watch flares; ones already there when the board opens (a rejoin, a replay jump) do not
-  const seenAtMount = useRef<number | null>(null);
-  if (seenAtMount.current === null) seenAtMount.current = lastN;
+  // the mark that lands while we watch flares; ones already there when the board opens (a rejoin, a replay
+  // jump), when the switch is turned back on, or when a rematch starts on the same screen do not
+  const seen = useRef<{ n: number; seed: number; on: boolean } | null>(null);
+  const seedNow = state.seed | 0;
+  if (!seen.current || seen.current.seed !== seedNow || (on && !seen.current.on)) seen.current = { n: lastN, seed: seedNow, on };
+  seen.current.on = on;
 
   useLayoutEffect(() => {
     if (!on || !count) return;
@@ -175,7 +180,8 @@ export function MatScars({ state, near }: Props) {
     if (!mat) return;
     const re = () => {
       const m = measure(mat, zones);
-      setBoard((old) => (m && old && m.w === old.w && m.h === old.h && m.zw === old.zw && m.top.bottom === old.top.bottom && m.bottom.top === old.bottom.top ? old : m));
+      // (a new object only when something moved: the marks redraw only then)
+      setBoard((old) => (m && old && boardKey(m) === boardKey(old) ? old : m));
     };
     re();
     if (typeof ResizeObserver === 'undefined') {
@@ -216,7 +222,7 @@ export function MatScars({ state, near }: Props) {
   const uid = useId().replace(/[^\w-]/g, '');
   if (!on || !count) return null;
   const used = new Set(marks.map((m) => m?.s.attr));
-  const fresh = lastN > (seenAtMount.current ?? 0) ? lastN : 0;
+  const fresh = lastN > seen.current.n ? lastN : 0;
   return (
     <svg ref={ref} class="tscars" viewBox={board ? `0 0 ${board.w} ${board.h}` : '0 0 1 1'} preserveAspectRatio="none" aria-hidden="true">
       <defs>
@@ -236,10 +242,11 @@ export function MatScars({ state, near }: Props) {
           m && (
             <g
               key={m.s.n}
-              class={`sc sc-${m.s.attr.toLowerCase()}${m.s.n === fresh ? ' fresh' : ''}${m.g.direct ? ' direct' : ''}`}
-              style={{ opacity: m.op, '--ix': `${m.g.i.x.toFixed(1)}px`, '--iy': `${m.g.i.y.toFixed(1)}px`, '--ax': `${m.g.a.x.toFixed(1)}px`, '--ay': `${m.g.a.y.toFixed(1)}px` } as Record<string, string | number>}
+              class={`sc sc-${m.s.attr.toLowerCase()}${m.s.n === fresh ? ' fresh' : ''}${m.g.direct ? ' direct' : ''}${m.op < 1 ? ' old' : ''}`}
+              style={{ '--age': m.op.toFixed(2), '--ix': `${m.g.i.x.toFixed(1)}px`, '--iy': `${m.g.i.y.toFixed(1)}px`, '--ax': `${m.g.a.x.toFixed(1)}px`, '--ay': `${m.g.a.y.toFixed(1)}px` } as Record<string, string | number>}
             >
               <ellipse class="sc-halo" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx} ry={m.halo.ry} fill={`url(#${uid}-${m.s.attr})`} />
+              {m.s.n === fresh && <ellipse class="sc-flash" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx * 0.8} ry={m.halo.ry * 0.8} />}
               <g class="sc-trail">
                 {m.trail.map(([c, d]) => (
                   <path key={c} class={c} d={d} />

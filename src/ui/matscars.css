@@ -11,27 +11,34 @@
   z-index: -1;
   overflow: visible;
   pointer-events: none;
+  /* its own layer: the board's glows and card moves repaint round it, never through two dozen marks */
+  will-change: transform;
 }
 /* every bright layer keeps a dark edge under it, so marks hold their shape on bright playmats */
 .tscars .sc-halo {
   stroke: none;
+  fill-opacity: var(--age, 1);
 }
 .tscars path {
   stroke-linejoin: round;
   paint-order: stroke;
 }
-.tscars .sc-soot { fill: var(--sc-soot); fill-opacity: 0.82; }
-.tscars .sc-pit { fill: var(--sc-pit, #000); fill-opacity: 0.85; }
+.tscars .sc-soot { fill: var(--sc-soot); fill-opacity: calc(0.6 * var(--age, 1) * var(--tr, 1)); }
+.tscars .sc-pit { fill: var(--sc-pit, #000); fill-opacity: calc(0.65 * var(--age, 1) * var(--tr, 1)); }
 .tscars .sc-burn,
 .tscars .sc-edge,
 .tscars .sc-hot {
   stroke: var(--sc-under);
   stroke-width: 1.4px;
-  stroke-opacity: 0.75;
+  stroke-opacity: calc(0.75 * var(--age, 1) * var(--tr, 1));
 }
-.tscars .sc-burn { fill: var(--sc-burn); fill-opacity: 0.85; }
-.tscars .sc-edge { fill: var(--sc-edge); fill-opacity: 0.85; }
-.tscars .sc-hot { fill: var(--sc-hot); fill-opacity: 0.95; }
+.tscars .sc-burn { fill: var(--sc-burn); fill-opacity: calc(0.75 * var(--age, 1) * var(--tr, 1)); }
+/* the lane trails stay quiet: the blow is the mark */
+.tscars .sc-trail { --tr: 0.6; }
+/* older marks lose their colour's heat as well as their strength */
+.tscars .sc.old .sc-hot { --tr: 0.45; }
+.tscars .sc-edge { fill: var(--sc-edge); fill-opacity: calc(0.85 * var(--age, 1) * var(--tr, 1)); }
+.tscars .sc-hot { fill: var(--sc-hot); fill-opacity: calc(0.95 * var(--age, 1) * var(--tr, 1)); }
 
 /* the Attributes */
 .sc-fire {
@@ -115,6 +122,20 @@
   0% { transform: scale(0.25); opacity: 0; }
   35% { opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
+}
+.tscars .sc-flash {
+  fill: #fff;
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: var(--ix) var(--iy);
+}
+.tscars .sc.fresh .sc-flash {
+  animation: sc-flash 0.7s ease-out both;
+}
+/* the blow lands white-hot, then the mark cools to its colour */
+@keyframes sc-flash {
+  0% { opacity: 0.9; transform: scale(0.4); }
+  100% { opacity: 0; transform: scale(1.5); }
 }
 @keyframes sc-trail {
   0% { opacity: 0; }
