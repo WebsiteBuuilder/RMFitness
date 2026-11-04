@@ -150,7 +150,7 @@ const HALO: Record<string, [string, number]> = {
 };
 
 /** layers that are ground (multiplied into the mat) rather than light */
-const BASE = new Set(['sc-soot', 'sc-pit']);
+const BASE = new Set(['sc-char', 'sc-soot', 'sc-pit']);
 /** halos that are stains (multiplied) rather than glows */
 const DARK_HALO = new Set(['EARTH', 'NONE', 'DARK']);
 /** sparks flung from a fresh blow (unit directions, scaled by the mark's size) */
