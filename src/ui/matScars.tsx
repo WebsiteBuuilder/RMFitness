@@ -49,6 +49,8 @@ interface Board {
   w: number;
   h: number;
   zw: number;
+  /** the turn pill in the lane: the trails keep clear of it */
+  pill: { x: number; y: number; w: number; h: number } | null;
   top: RowBox;
   bottom: RowBox;
 }
@@ -95,10 +97,12 @@ function measure(mat: HTMLElement, zones: number): Board | null {
   const bottom = row(rows[2], false);
   if (!top || !bottom) return null;
   const z0 = rows[2].children[1] as HTMLElement;
-  return { w: mat.offsetWidth, h: mat.offsetHeight, zw: z0.offsetWidth, top, bottom };
+  const pe = mat.querySelector<HTMLElement>(':scope > .tmid .tturn');
+  const pill = pe ? boxIn(pe, mat) : null;
+  return { w: mat.offsetWidth, h: mat.offsetHeight, zw: z0.offsetWidth, top, bottom, pill };
 }
 
-const boardKey = (b: Board) => [b.w, b.h, b.zw, b.top.top, b.top.bottom, b.bottom.top, b.bottom.bottom, ...b.top.xs, ...b.bottom.xs].map((v) => Math.round(v)).join(',');
+const boardKey = (b: Board) => [b.w, b.h, b.zw, b.pill?.x ?? 0, b.pill?.w ?? 0, b.pill?.y ?? 0, b.top.top, b.top.bottom, b.bottom.top, b.bottom.bottom, ...b.top.xs, ...b.bottom.xs].map((v) => Math.round(v)).join(',');
 
 /** Where a scar sits: from the attacker's front edge, across the lane, into the defender's zone
  *  (a little toward the lane, where the blow lands); a direct attack strikes the defender's line
@@ -117,6 +121,7 @@ function geoOf(s: Scar, b: Board, near: Pid): ScarGeo | null {
     i: { x: direct ? ax : def.xs[s.to], y: mid + (fromNear ? 1 : -1) * zh * 0.3 },
     zw: b.zw,
     direct,
+    avoid: b.pill && { x: b.pill.x - 7, y: b.pill.y - 7, w: b.pill.w + 14, h: b.pill.h + 14 },
   };
 }
 
@@ -137,12 +142,19 @@ const HALO: Record<string, [string, number]> = {
   FIRE: ['#ff4a10', 0.62],
   WATER: ['#aef0ff', 0.42],
   WIND: ['#8affc0', 0.3],
-  EARTH: ['#a8804c', 0.4],
-  NONE: ['#a8804c', 0.4],
-  LIGHT: ['#fff0a8', 0.45],
-  DIVINE: ['#ffd040', 0.55],
-  DARK: ['#2a0440', 0.85],
+  EARTH: ['#5a3a18', 0.55],
+  NONE: ['#5a3a18', 0.55],
+  LIGHT: ['#fff4dc', 0.4],
+  DIVINE: ['#ffe2a0', 0.48],
+  DARK: ['#3a0858', 0.75],
 };
+
+/** layers that are ground (multiplied into the mat) rather than light */
+const BASE = new Set(['sc-soot', 'sc-pit']);
+/** halos that are stains (multiplied) rather than glows */
+const DARK_HALO = new Set(['EARTH', 'NONE', 'DARK']);
+/** sparks flung from a fresh blow (unit directions, scaled by the mark's size) */
+const SPARKS: [number, number][] = [[1.1, -0.5], [-1, -0.7], [0.3, -1.2], [-0.4, 1], [1.2, 0.6], [-1.2, 0.3]];
 
 interface Drawn {
   s: Scar;
@@ -223,43 +235,100 @@ export function MatScars({ state, near }: Props) {
   if (!on || !count) return null;
   const used = new Set(marks.map((m) => m?.s.attr));
   const fresh = lastN > seen.current.n ? lastN : 0;
+  const vb = board ? `0 0 ${board.w} ${board.h}` : '0 0 1 1';
+  const groupOf = (m: NonNullable<(typeof marks)[number]>) => ({
+    key: m.s.n,
+    class: `sc sc-${m.s.attr.toLowerCase()}${m.s.n === fresh ? ' fresh' : ''}${m.g.direct ? ' direct' : ''}${m.op < 1 ? ' old' : ''}`,
+    style: { '--age': m.op.toFixed(2), '--ix': `${m.g.i.x.toFixed(1)}px`, '--iy': `${m.g.i.y.toFixed(1)}px` } as Record<string, string>,
+  });
+  const paths = (layers: Layer[], keep: (c: string) => boolean) => layers.filter(([c]) => keep(c)).map(([c, d]) => <path key={c} class={c} d={d} />);
+  const dark = (a: string) => DARK_HALO.has(a);
   return (
-    <svg ref={ref} class="tscars" viewBox={board ? `0 0 ${board.w} ${board.h}` : '0 0 1 1'} preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        {[...used].map(
-          (a) =>
-            a && (
-              <radialGradient key={a} id={`${uid}-${a}`}>
-                <stop offset="0" stop-color={HALO[a][0]} stop-opacity={HALO[a][1]} />
-                <stop offset="0.55" stop-color={HALO[a][0]} stop-opacity={HALO[a][1] * 0.5} />
-                <stop offset="1" stop-color={HALO[a][0]} stop-opacity="0" />
-              </radialGradient>
-            ),
-        )}
-      </defs>
-      {marks.map(
-        (m) =>
-          m && (
-            <g
-              key={m.s.n}
-              class={`sc sc-${m.s.attr.toLowerCase()}${m.s.n === fresh ? ' fresh' : ''}${m.g.direct ? ' direct' : ''}${m.op < 1 ? ' old' : ''}`}
-              style={{ '--age': m.op.toFixed(2), '--ix': `${m.g.i.x.toFixed(1)}px`, '--iy': `${m.g.i.y.toFixed(1)}px`, '--ax': `${m.g.a.x.toFixed(1)}px`, '--ay': `${m.g.a.y.toFixed(1)}px` } as Record<string, string | number>}
-            >
-              <ellipse class="sc-halo" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx} ry={m.halo.ry} fill={`url(#${uid}-${m.s.attr})`} />
-              {m.s.n === fresh && <ellipse class="sc-flash" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx * 0.8} ry={m.halo.ry * 0.8} />}
-              <g class="sc-trail">
-                {m.trail.map(([c, d]) => (
-                  <path key={c} class={c} d={d} />
-                ))}
+    <>
+      {/* the burnt, broken ground: multiplied into the mat, so its own texture shows through the char */}
+      <svg ref={ref} class="tscars base" viewBox={vb} preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          {[...used].map((a) => a && dark(a) && <Halo key={a} id={`${uid}-${a}`} a={a} />)}
+        </defs>
+        {/* the trails first: under every blow */}
+        <g>
+          {marks.map((m) => {
+            if (!m) return null;
+            const g = groupOf(m);
+            return (
+              <g key={g.key} class={`${g.class} sc-trail`} style={g.style}>
+                {paths(m.trail, (c) => BASE.has(c))}
               </g>
-              <g class="sc-hit">
-                {m.hit.map(([c, d]) => (
-                  <path key={c} class={c} d={d} />
-                ))}
-              </g>
+            );
+          })}
+        </g>
+        {marks.map((m) => {
+          if (!m) return null;
+          const g = groupOf(m);
+          return (
+            <g key={g.key} class={g.class} style={g.style}>
+              {dark(m.s.attr) && <ellipse class="sc-halo" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx} ry={m.halo.ry} fill={`url(#${uid}-${m.s.attr})`} />}
+              <g class="sc-hit">{paths(m.hit, (c) => BASE.has(c))}</g>
             </g>
-          ),
-      )}
-    </svg>
+          );
+        })}
+      </svg>
+      {/* what still glows: embers, frost, light burnt into the stone */}
+      <svg class="tscars glow" viewBox={vb} preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          {[...used].map((a) => a && !dark(a) && <Halo key={a} id={`${uid}-${a}`} a={a} />)}
+          <radialGradient id={`${uid}-f`}>
+            <stop offset="0" stop-color="#fff" stop-opacity="1" />
+            <stop offset="0.35" stop-color="#fff6d8" stop-opacity="0.85" />
+            <stop offset="1" stop-color="#ffd9a0" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        <g>
+          {marks.map((m) => {
+            if (!m) return null;
+            const g = groupOf(m);
+            return (
+              <g key={g.key} class={`${g.class} sc-trail`} style={g.style}>
+                {paths(m.trail, (c) => !BASE.has(c))}
+              </g>
+            );
+          })}
+        </g>
+        {marks.map((m) => {
+          if (!m) return null;
+          const g = groupOf(m);
+          const isFresh = m.s.n === fresh;
+          const hot = isFresh ? m.hit.filter(([c]) => c === 'sc-burn' || c === 'sc-hot' || c === 'sc-edge').map(([, d]) => d).join('') : '';
+          return (
+            <g key={g.key} class={g.class} style={g.style}>
+              {!dark(m.s.attr) && <ellipse class="sc-halo" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx} ry={m.halo.ry} fill={`url(#${uid}-${m.s.attr})`} />}
+              <g class="sc-hit">{paths(m.hit, (c) => !BASE.has(c))}</g>
+              {isFresh && (
+                <g class="sc-land">
+                  {/* white-hot first, cooling to the Attribute's colour from the outside in */}
+                  <path class="sc-whitehot" d={hot} />
+                  <ellipse class="sc-flash" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx * 0.9} ry={m.halo.ry * 0.9} fill={`url(#${uid}-f)`} />
+                  <ellipse class="sc-ring" cx={m.halo.cx} cy={m.halo.cy} rx={m.halo.rx * 0.6} ry={m.halo.ry * 0.6} />
+                  {SPARKS.map(([dx, dy], k) => (
+                    <circle key={k} class="sc-spark" cx={m.halo.cx} cy={m.halo.cy} r={1.1} style={{ '--sx': `${(dx * m.halo.rx).toFixed(1)}px`, '--sy': `${(dy * m.halo.ry).toFixed(1)}px`, animationDelay: `${(k % 3) * 40}ms` } as Record<string, string>} />
+                  ))}
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </>
+  );
+}
+
+function Halo({ id, a }: { id: string; a: string }) {
+  const [c, o] = HALO[a] ?? HALO.NONE;
+  return (
+    <radialGradient id={id}>
+      <stop offset="0" stop-color={c} stop-opacity={o} />
+      <stop offset="0.55" stop-color={c} stop-opacity={o * 0.5} />
+      <stop offset="1" stop-color={c} stop-opacity="0" />
+    </radialGradient>
   );
 }

@@ -14,6 +14,11 @@
   /* its own layer: the board's glows and card moves repaint round it, never through two dozen marks */
   will-change: transform;
 }
+/* the burnt ground multiplies into the mat (the mat's own texture shows through the char);
+   what still glows sits on top as it is */
+.tscars.base {
+  mix-blend-mode: multiply;
+}
 /* every bright layer keeps a dark edge under it, so marks hold their shape on bright playmats */
 .tscars .sc-halo {
   stroke: none;
@@ -23,8 +28,8 @@
   stroke-linejoin: round;
   paint-order: stroke;
 }
-.tscars .sc-soot { fill: var(--sc-soot); fill-opacity: calc(0.6 * var(--age, 1) * var(--tr, 1)); }
-.tscars .sc-pit { fill: var(--sc-pit, #000); fill-opacity: calc(0.65 * var(--age, 1) * var(--tr, 1)); }
+.tscars .sc-soot { fill: var(--sc-soot); fill-opacity: calc(0.85 * var(--age, 1) * var(--tr, 1)); }
+.tscars .sc-pit { fill: var(--sc-pit, #000); fill-opacity: calc(0.9 * var(--age, 1) * var(--tr, 1)); }
 .tscars .sc-burn,
 .tscars .sc-edge,
 .tscars .sc-hot {
@@ -34,10 +39,10 @@
 }
 .tscars .sc-burn { fill: var(--sc-burn); fill-opacity: calc(0.75 * var(--age, 1) * var(--tr, 1)); }
 /* the lane trails stay quiet: the blow is the mark */
-.tscars .sc-trail { --tr: 0.6; }
+.tscars .sc-trail { --tr: 0.8; }
 /* older marks lose their colour's heat as well as their strength */
 .tscars .sc.old .sc-hot { --tr: 0.45; }
-.tscars .sc-edge { fill: var(--sc-edge); fill-opacity: calc(0.85 * var(--age, 1) * var(--tr, 1)); }
+.tscars .sc-edge { fill: var(--sc-edge); fill-opacity: calc(0.75 * var(--age, 1) * var(--tr, 1)); }
 .tscars .sc-hot { fill: var(--sc-hot); fill-opacity: calc(0.95 * var(--age, 1) * var(--tr, 1)); }
 
 /* the Attributes */
@@ -109,13 +114,13 @@
 }
 
 /* ---- the newest mark lands: the blow spreads out from the impact, the trail burns in behind it ---- */
-.tscars .sc.fresh .sc-halo,
-.tscars .sc.fresh .sc-hit {
+.tscars .sc.fresh > .sc-halo,
+.tscars .sc.fresh > .sc-hit {
   transform-box: view-box;
   transform-origin: var(--ix) var(--iy);
   animation: sc-land 0.55s cubic-bezier(0.15, 0.8, 0.3, 1) 0.05s both;
 }
-.tscars .sc.fresh .sc-trail {
+.tscars .sc.fresh.sc-trail {
   animation: sc-trail 0.45s ease-out both;
 }
 @keyframes sc-land {
@@ -123,19 +128,47 @@
   35% { opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
-.tscars .sc-flash {
-  fill: #fff;
-  opacity: 0;
+.tscars .sc-land * {
   transform-box: view-box;
   transform-origin: var(--ix) var(--iy);
 }
-.tscars .sc.fresh .sc-flash {
-  animation: sc-flash 0.7s ease-out both;
+.tscars .sc-whitehot {
+  fill: #fff;
+  opacity: 0;
+  animation: sc-white 1s ease-in 0.08s both;
+}
+.tscars .sc-flash {
+  opacity: 0;
+  animation: sc-flash 0.6s ease-out both;
+}
+.tscars .sc-ring {
+  fill: none;
+  stroke: #fff4dc;
+  stroke-width: 1.6px;
+  opacity: 0;
+  animation: sc-ring 0.55s cubic-bezier(0.1, 0.7, 0.3, 1) 0.05s both;
+}
+.tscars .sc-spark {
+  fill: #fff0c0;
+  opacity: 0;
+  animation: sc-spark 0.65s cubic-bezier(0.2, 0.7, 0.4, 1) both;
 }
 /* the blow lands white-hot, then the mark cools to its colour */
+@keyframes sc-white {
+  0%, 30% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
 @keyframes sc-flash {
+  0% { opacity: 1; transform: scale(0.5); }
+  100% { opacity: 0; transform: scale(1.45); }
+}
+@keyframes sc-ring {
   0% { opacity: 0.9; transform: scale(0.4); }
-  100% { opacity: 0; transform: scale(1.5); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes sc-spark {
+  0% { opacity: 1; transform: translate(0, 0); }
+  100% { opacity: 0; transform: translate(var(--sx), var(--sy)); }
 }
 @keyframes sc-trail {
   0% { opacity: 0; }
@@ -147,6 +180,9 @@ body.art-on .tscars .sc.fresh * {
   animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
+  .tscars .sc-land {
+    display: none;
+  }
   .tscars .sc.fresh,
   .tscars .sc.fresh * {
     animation: none !important;

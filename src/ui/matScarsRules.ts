@@ -19,6 +19,8 @@ export interface ScarGeo {
   /** a zone's width: marks scale with the board */
   zw: number;
   direct: boolean;
+  /** a box the trails keep out of (the turn pill in the lane), already padded */
+  avoid?: { x: number; y: number; w: number; h: number } | null;
 }
 /** A mark is a few layers, one path each (classes styled per Attribute in matscars.css). */
 export type Layer = [cls: string, d: string];
@@ -115,6 +117,23 @@ function crack(r: () => number, cx: number, cy: number, ang: number, len: number
   return pts;
 }
 
+/** the parts of a line outside box b (each run long enough to draw) */
+const inBox = (b: ScarGeo['avoid'], [x, y]: P) => !!b && x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h;
+export function outside(pts: P[], b: ScarGeo['avoid']): P[][] {
+  if (!b) return [pts];
+  const inside = (p: P) => inBox(b, p);
+  const runs: P[][] = [];
+  let cur: P[] = [];
+  for (const p of pts) {
+    if (inside(p)) {
+      if (cur.length > 1) runs.push(cur);
+      cur = [];
+    } else cur.push(p);
+  }
+  if (cur.length > 1) runs.push(cur);
+  return runs;
+}
+
 /** Layer classes, painted in this order inside a mark (matscars.css colours them per Attribute). */
 export const LAYERS = ['sc-soot', 'sc-pit', 'sc-burn', 'sc-edge', 'sc-hot'] as const;
 
@@ -136,12 +155,17 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
   const fwd = Math.atan2(uy, ux);
   const trail: Layer[] = [];
   const hit: Layer[] = [];
-  const steps = Math.max(6, Math.round(len / 9));
+  const steps = Math.max(8, Math.round(len / 5));
+  // a trail drawn only where it is not under the turn pill (each piece tapers at the pill's edge)
+  const T = (pts: P[], half: number, ends?: number) =>
+    outside(pts, g.avoid)
+      .map((run) => lens(run, half, ends))
+      .join('');
 
   switch (s.attr) {
     case 'FIRE': {
       const line = wobbleLine(r, T0, I, steps, 1.2);
-      trail.push(['sc-soot', lens(line, zw * 0.085)], ['sc-hot', lens(line.slice(Math.floor(line.length * 0.35)), zw * 0.022)]);
+      trail.push(['sc-soot', T(line, zw * 0.085)], ['sc-hot', T(line.slice(Math.floor(line.length * 0.35)), zw * 0.022)]);
       hit.push(['sc-soot', blot(r, I[0], I[1], R * 0.78, R * 0.6, 0.7, 22)]);
       hit.push(['sc-burn', blot(r, I[0], I[1], R * 0.42, R * 0.32, 0.6)]);
       let hot = '';
@@ -160,10 +184,11 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
       let ticks = '';
       for (let k = 2; k < line.length - 1; k += 2) {
         const [x, y] = line[k];
+        if (inBox(g.avoid, line[k])) continue;
         const side = k % 4 === 0 ? 1 : -1;
         ticks += spike([[x, y], [x + (-uy * side + ux * 0.4) * zw * 0.09, y + (ux * side + uy * 0.4) * zw * 0.09]], 1.1);
       }
-      trail.push(['sc-burn', lens(line, zw * 0.06)], ['sc-edge', lens(line, zw * 0.03) + ticks]);
+      trail.push(['sc-burn', T(line, zw * 0.06)], ['sc-edge', T(line, zw * 0.03) + ticks]);
       hit.push(['sc-pit', blot(r, I[0], I[1], R * 0.4, R * 0.3, 0.3, 6)]);
       let ice = '';
       let barbs = '';
@@ -192,7 +217,7 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
         const off = k * zw * 0.07;
         const a2: P = [T0[0] - uy * off, T0[1] + ux * off];
         const b2: P = [I[0] - uy * off * 0.4, I[1] + ux * off * 0.4];
-        gust += lens(wobbleLine(r, a2, b2, steps, 0.3, zw * 0.05 * (k === 0 ? 1 : -0.6), r() * 2), 0.9 + (k === 0 ? 0.4 : 0));
+        gust += T(wobbleLine(r, a2, b2, steps, 0.3, zw * 0.05 * (k === 0 ? 1 : -0.6), r() * 2), 0.9 + (k === 0 ? 0.4 : 0));
       }
       trail.push(['sc-edge', gust]);
       // three blade gouges across the blow
@@ -218,8 +243,8 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
     case 'LIGHT':
     case 'DIVINE': {
       const div = s.attr === 'DIVINE' ? 1.25 : 1;
-      const line: P[] = [T0, I];
-      trail.push(['sc-burn', lens(wobbleLine(r, T0, I, steps, 0), 2.2 * div)], ['sc-hot', lens(line, 0.8 * div)]);
+      const line = wobbleLine(r, T0, I, steps, 0);
+      trail.push(['sc-burn', T(line, 2.2 * div)], ['sc-hot', T(line, 0.8 * div)]);
       let rays = '';
       const nr = 11 + Math.floor(r() * 6);
       for (let k = 0; k < nr; k++) {
@@ -249,7 +274,7 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
     }
     case 'DARK': {
       const line = wobbleLine(r, T0, I, steps, 0.8, zw * 0.06, r() * 6);
-      trail.push(['sc-soot', lens(line, zw * 0.075)], ['sc-burn', lens(line, zw * 0.025)]);
+      trail.push(['sc-soot', T(line, zw * 0.075)], ['sc-burn', T(line, zw * 0.025)]);
       let rot = '';
       for (let k = 0; k < 3; k++) {
         const an = r() * Math.PI * 2;
@@ -282,8 +307,8 @@ export function scarMark(s: Scar, g: ScarGeo, duelSeed = 0): ScarMark {
       // EARTH (and anything without an Attribute): a gouged furrow into a cracked crater
       const line = wobbleLine(r, T0, I, steps, 0.9);
       trail.push(
-        ['sc-soot', lens(line, zw * 0.07)],
-        ['sc-edge', lens(line.map(([x, y]) => [x - uy * zw * 0.075, y + ux * zw * 0.075] as P), 0.7) + lens(line.map(([x, y]) => [x + uy * zw * 0.075, y - ux * zw * 0.075] as P), 0.5)],
+        ['sc-soot', T(line, zw * 0.07)],
+        ['sc-edge', T(line.map(([x, y]) => [x - uy * zw * 0.075, y + ux * zw * 0.075] as P), 0.7) + T(line.map(([x, y]) => [x + uy * zw * 0.075, y - ux * zw * 0.075] as P), 0.5)],
       );
       let fis = '';
       const nf = 5 + Math.floor(r() * 3);
