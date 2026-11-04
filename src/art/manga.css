@@ -37,10 +37,9 @@ body.art-manga-on .art-callout,
 body.art-manga-on .art-number,
 body.art-manga-on .art-caption,
 body.art-manga-on .lppop,
+body.art-manga-on .art-skip,
 body.art-manga-on .art-layer > :not(.art-manga) {
   opacity: 0 !important;
-  /* (held with the frozen frame: the number flies on into the Life Points once the panel goes) */
-  animation-play-state: paused !important;
 }
 
 .mg-veil {
@@ -221,7 +220,8 @@ body.art-manga-on .art-layer > :not(.art-manga) {
   letter-spacing: -0.01em;
   white-space: nowrap;
   color: var(--ink);
-  -webkit-text-stroke: 0.06em var(--black);
+  /* (thin enough that a WebView drawing it over the letters still reads) */
+  -webkit-text-stroke: 0.04em var(--black);
   paint-order: stroke fill;
   text-shadow:
     0.06em 0.07em 0 var(--black),
@@ -423,13 +423,33 @@ body.art-manga-on .art-layer > :not(.art-manga) {
     transform: rotate(calc(var(--dir) * 5deg));
   }
 }
+/* the game's own Calm motion setting: the same */
+  .art-manga.calm.on,
+  .art-manga.calm.mega.on {
+    animation: mg-life var(--d) linear forwards;
+  }
+  .art-manga.calm .mg-main,
+  .art-manga.calm .mg-main .mg-art,
+  .art-manga.calm .mg-lines,
+  .art-manga.calm .mg-inset,
+  .art-manga.calm .mg-word,
+  .art-manga.calm .mg-kana,
+  .art-manga.calm .mg-flash {
+    animation: none;
+  }
+  .art-manga.calm .mg-flash {
+    opacity: 0;
+  }
+  .art-manga.calm .mg-main {
+    transform: rotate(calc(var(--dir) * -4deg));
+  }
+  .art-manga.calm .mg-inset {
+    transform: rotate(calc(var(--dir) * 7deg));
+  }
+  .art-manga.calm .mg-word {
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg);
+  }
+  .art-manga.calm .mg-kana {
+    transform: rotate(calc(var(--dir) * 5deg));
+  }
 
-/* (older Android WebViews draw the stroke over the letters: a thinner one there) */
-@supports not (paint-order: stroke) {
-  .mg-word {
-    -webkit-text-stroke-width: 0.025em;
-  }
-  .mg-burst span {
-    -webkit-text-stroke-width: 0.03em;
-  }
-}

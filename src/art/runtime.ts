@@ -4002,8 +4002,6 @@ export class Director {
       direct: h.direct,
     });
     this.manga = panel;
-    // (it counts from now: a second big hit in the same chain waits out the cooldown)
-    this.lastManga = performance.now();
     // (every hit, or a second panel soon after the last: a brisker beat)
     const brisk = !isMega(h) && (mode === 'all' || h.sinceLast < 25);
     const hold = (brisk ? MANGA_BRISK_S : MANGA_HOLD_S) / Math.max(1, this.timeScale);

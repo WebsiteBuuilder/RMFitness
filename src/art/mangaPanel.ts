@@ -3,6 +3,7 @@
 // what it hit. Built ahead of the impact (its art copied while the blow travels), shown when the
 // blow lands, gone on its own after the hold or at once on a tap. Transforms and opacity only.
 import './manga.css';
+import { calmMotion } from './settings';
 
 export interface MangaPanelOpts {
   /** the attacker's cropped art (square), or null when it has none */
@@ -82,7 +83,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&
 
 export function prepManga(layer: HTMLElement, o: MangaPanelOpts): MangaHandle {
   const el = document.createElement('div');
-  el.className = `art-manga side-${o.side}${o.mega ? ' mega' : ''}${o.direct ? ' direct' : ''}`;
+  el.className = `art-manga side-${o.side}${o.mega ? ' mega' : ''}${o.direct ? ' direct' : ''}${calmMotion() ? ' calm' : ''}`;
   el.style.setProperty('--ink', o.ink[0]);
   el.style.setProperty('--glow', o.ink[1]);
   const lum = o.bright ?? 0.45;
