@@ -1050,3 +1050,8 @@
       radial-gradient(120cqh 70cqh at 50% 30%, #2a3a7a 0, #17204c 45%, #0c1230 80%);
   }
 }
+
+/* the poster's tag says "Claim 6" in full, even on the smallest phones */
+.sdr-pass .sdr-tag {
+  max-width: none;
+}
