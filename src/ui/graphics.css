@@ -156,8 +156,8 @@
   position: absolute;
   left: 8%;
   right: 8%;
-  bottom: -6%;
-  height: 26%;
+  bottom: -11%;
+  height: 13%;
   pointer-events: none;
   background: radial-gradient(closest-side, #000000b0, transparent);
 }
@@ -197,6 +197,7 @@
   box-shadow: 0 0 0 1.5px #ffd76a, 0 0 16px #2a62ff70;
 }
 /* on your turn the opponent's half of the board sits a step back, so your side reads as the stage */
-.duel.touch.turn-me .tmat > .trow:has(~ .tmid) {
+/* (not while you aim at one of their cards: the targets stay at full strength) */
+.duel.touch.turn-me:not(.aiming) .tmat > .trow:has(~ .tmid):not(:has(.pick)) {
   opacity: 0.76;
 }

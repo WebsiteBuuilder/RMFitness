@@ -771,7 +771,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
   const cardW = window.innerWidth <= 380 ? 64 : window.innerHeight >= 880 ? 100 : window.innerHeight >= 820 ? 88 : window.innerHeight >= 760 ? 78 : 70;
-  const room = Math.min(window.innerWidth, 560) - 20;
+  // (the outer cards of the 3D fan swing out by about 20px each: leave them that room)
+  const room = Math.min(window.innerWidth, 560) - 60;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
   // the other player has a choice open: the middle row says so (never what: a prompt's title can name
