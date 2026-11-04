@@ -319,6 +319,16 @@ export class LivingField {
     window.addEventListener('resize', this.onResize);
     this.init();
     this.size();
+    // Draw one hidden frame while the duel is quiet: some GPU drivers (and software GL) build
+    // the shader's machine code at its first draw, which would otherwise land on the frame
+    // the first Field Spell or low-LP danger shows (a long freeze right as the LP drops).
+    const warm = () => {
+      if (this.disposed || !this.gl || this.active || document.hidden) return;
+      this.draw(performance.now());
+      this.gl.flush();
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
+    else setTimeout(warm, 1000);
   }
 
   /** false when the phone has no WebGL: the duel keeps its painted background. */
