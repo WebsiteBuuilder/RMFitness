@@ -1485,5 +1485,11 @@ body.art-finale .art-lp-shatter {
 /* its shout sits under the hero, over the bottom letterbox */
 .art-callout.finale {
   top: auto;
-  bottom: calc(max(52px, 10vh) + 3% + env(safe-area-inset-bottom));
+  bottom: calc(max(52px, 10vh) + 1% + env(safe-area-inset-bottom));
+}
+.art-callout.finale .co-who {
+  display: none;
+}
+.art-replay .bar.top {
+  background: linear-gradient(#000 70%, #0a0612);
 }

@@ -542,6 +542,7 @@ export class Director {
   /** Tap: skip the whole current chain (every cue of the same event batch). */
   skip() {
     this.fastFade = true;
+    this.finaleUid = -1;
     const b = this.curBatch;
     if (b >= 0) this.queue = this.queue.filter((q) => q.batch !== b);
     this.finishTrailing();
@@ -553,6 +554,7 @@ export class Director {
   /** Long press / double tap: skip everything queued, and whatever arrives until the queue has drained. */
   skipEverything() {
     this.skipAll = true;
+    this.finaleUid = -1;
     this.fastFade = true;
     const rest = [...new Set(this.queue.map((q) => q.batch))];
     this.queue = [];
@@ -1404,6 +1406,19 @@ export class Director {
         ring.u.uOpacity.value = 0.85 * (1 - k);
       });
     }
+  }
+
+  /** A grand Ace's pillars: thin, tall beams spread wide on both sides of it. */
+  private pillars(tl: Timeline, foot: P3, h: number, color: number, t0: number, t1: number, size: number) {
+    const U = this.U;
+    const xs = [-1.05, -0.7, 0.7, 1.05];
+    xs.forEach((f, i) => {
+      const g = tl.own(new Glow(0.32 * U, h, 'shaft', color, 0xffffff));
+      g.mesh.position.set(foot.x + f * size, foot.y + h * 0.45, foot.z - 0.4 - (Math.abs(f) > 1 ? 0.3 : 0));
+      const s0 = t0 + i * 0.06;
+      tl.span(s0, s0 + 0.25, (k) => ((g.u.uOpacity.value = easeOut(k)), g.mesh.scale.set(1, easeOut(k), 1)));
+      tl.span(t1 - 0.3, t1, (k) => (g.u.uOpacity.value = 1 - k));
+    });
   }
 
   private shafts(tl: Timeline, foot: P3, h: number, color: number, t0: number, t1: number, n = 3, peak = 0.85) {
@@ -3589,9 +3604,9 @@ export class Director {
     const hero = { ...box, y: box.y + box.h * (0.15 + room / 2), h: box.h * (1.05 + room), w: box.w * 1.25 };
     // (a narrow phone, an iPhone SE: a little wider still, clear of the letterbox)
     const narrow = st.camera.aspect < 0.5 ? 0.9 : 1;
-    const from = this.fit([hero], -0.28 * m, -0.12, { fill: 0.66 * narrow });
-    const to = this.fit([hero], 0.26 * m, -0.05, { fill: 0.76 * narrow });
-    const push = this.fit([hero], 0.3 * m, -0.04, { fill: 0.86 * narrow });
+    const from = this.fit([hero], -0.28 * m, -0.12, { fill: 0.7 * narrow });
+    const to = this.fit([hero], 0.26 * m, -0.05, { fill: 0.8 * narrow });
+    const push = this.fit([hero], 0.3 * m, -0.04, { fill: 0.92 * narrow });
     const cueAt = D - 0.5;
     tl.at(C - 0.03, () => this.setShot(from, from, 1));
     tl.span(C, cueAt, (k) => this.setShot(from, to, easeInOut(k)));
@@ -3610,9 +3625,14 @@ export class Director {
     tl.at(D, () => ((att.lean = -0.3), (att.oz = -0.25), att.fig && (att.fig.u.uTint.value = 0), this.place(att)), false);
     // its crest: a star ring standing behind it
     const grand = lv >= 4;
+    const foot0 = { x: att.x, y: att.y - att.size * 0.46, z: att.z };
     const crest = tl.own(new Ring(att.size * (grand ? 2.4 : 1.55), aura, 8080, { inner: 0.8, outer: 0.93, star: 8 }));
     crest.mesh.renderOrder = -4;
-    crest.mesh.position.set(att.x, att.y + att.size * (grand ? -0.05 : 0.08), att.z - (grand ? 1.1 : 0.7));
+    if (grand) {
+      // the grandest bonds: a sigil laid on the ground under it
+      crest.mesh.position.set(foot0.x, foot0.y + 0.04 * U, foot0.z);
+      crest.mesh.rotation.x = -1.2;
+    } else crest.mesh.position.set(att.x, att.y + att.size * 0.08, att.z - 0.7);
     crest.spinSpeed = 0.6;
     crest.u.uOpacity.value = 0;
     tl.span(C, C + 0.35, (k) => ((crest.u.uOpacity.value = 0.85 * easeOut(k)), crest.mesh.scale.setScalar(lerp(0.4, 1, backOut(k)))));
@@ -3636,7 +3656,8 @@ export class Director {
 
     // bond 2: pillars of light and rising embers
     if (lv >= 2) {
-      this.shafts(tl, foot, (grand ? 6.5 : 4.2) * U, aura, C + 0.05, D + 0.5, grand ? 5 : 3, grand ? 0.95 : 0.65);
+      if (grand) this.pillars(tl, foot, 7 * U, aura, C + 0.05, D + 0.5, att.size);
+      else this.shafts(tl, foot, 4.2 * U, aura, C + 0.05, D + 0.5, 3, 0.65);
       tl.span(C, D, (_k, dt) =>
         emit(50, dt, () => P.emit({ x: foot.x + (Math.random() - 0.5) * att.size, y: foot.y, z: foot.z + 0.2, vy: 1.6 * U, life: 1, size: 0.06 * U, color: Math.random() < 0.5 ? aura : 0xffffff, drag: 0.4 })),
       );
@@ -3686,8 +3707,8 @@ export class Director {
     } else tl.at(cueAt, () => this.ui.banner({ title: shout, sub: a.name, color: col.main, big: true, dur: 1.1, pos: 'bottom' }));
     // the impact frame under the shout
     tl.at(cueAt, () => (st.pulse('flash', 0.5), st.pulse('chroma', 0.5), st.punch(3, 0.16), this.flash(col.light, 0.35)));
-    // the letterbox lifts as the finisher takes over
-    tl.at(D - 0.04, () => (this.ui.finale?.(false), st.backdrop.u.uColor.value.copy(bg0)), false);
+    // (the letterbox lifts once the finisher's strike lands: see hit())
+    tl.at(D - 0.04, () => st.backdrop.u.uColor.value.copy(bg0), false);
     // the finisher picks up straight from its wind-up
     tl.handoff = D - 0.04;
     return tl;
@@ -3747,10 +3768,13 @@ export class Director {
     const whip = finisher ? this.battleShot(att, tgt, T, 0.2, 0.1, 0.8, 0.45, FINISHER_ROOM[finisher.kind] * U) : this.battleShot(att, tgt, T, lunges ? 0.22 : 0.16, 0.07, clash ? 1 : tgt ? 0.95 : 0.95);
     // monster against monster: the numbers that decide it, up early (its text has faded in well
     // before the blow lands) and held a little past the impact
+    // (after an ending cutscene its attack was just shouted: the move needs no second name,
+    // and its letterbox holds until the winning strike has landed)
+    const afterFinale = replay && this.finaleUid === a?.uid;
+    this.finaleUid = -1;
+    if (afterFinale) tl.at(hitAt + 0.45, () => this.ui.finale?.(false), false);
     if (finisher) {
-      // (after an ending cutscene its attack was just shouted: the move needs no second name)
-      if (this.finaleUid !== a?.uid) tl.at(0.1, () => this.ui.banner({ title: finisher.title, sub: prof.attackName, color: col.main, big: true, dur: (hitAt + 0.45) / REPLAY_WARP.hit, pos: 'top' }));
-      this.finaleUid = -1;
+      if (!afterFinale) tl.at(0.1, () => this.ui.banner({ title: finisher.title, sub: prof.attackName, color: col.main, big: true, dur: (hitAt + 0.45) / REPLAY_WARP.hit, pos: 'top' }));
     } else if (a && t && t.faceUp && t.name) {
       const ai = card(a.name);
       const ti = card(t.name);
