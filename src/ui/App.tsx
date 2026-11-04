@@ -32,6 +32,7 @@ import { liveRoomOf, setLiveRoom, touchLiveRoom, type LiveRoom } from '../online
 import type { SyncAdapter } from '../sync/types';
 import { Duel } from './Duel';
 import { useBackButton } from './backButton';
+import { packBack } from '../packopen/Ceremony';
 import { DeckSwitch } from './DeckPick';
 import { LinkMenu, Lobby, startFromSeats, type LinkChoice, type SeatEntry, type SeatProfile } from './Link';
 import { TossScreen } from './Toss';
@@ -1127,6 +1128,8 @@ export function App() {
 
   // Android back button: back to the main menu from any menu screen; in a duel, ask first.
   useBackButton(() => {
+    // a pack opening skips to its results, then closes, before back leaves the shop
+    if (packBack()) return true;
     if (replaying) {
       setReplaying(null);
       return true;

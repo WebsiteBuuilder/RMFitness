@@ -576,9 +576,10 @@ function press() {
       if (next) setFocus(next);
     }, 90);
   }
-  if (el.matches('.rv:not(.up)')) {
+  if (el.matches('.rv:not(.up), .po-card:not(.up)')) {
     return void setTimeout(() => {
-      const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up)')][0];
+      // (a pack opening's glowing best card charges by itself after A: let it, the ring stays on it)
+      const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up), .po-card:not(.up)')].find((c) => !c.matches('.charging'));
       if (next) setFocus(next);
       else validate(true);
     }, 80);

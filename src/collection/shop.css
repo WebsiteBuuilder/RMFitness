@@ -932,3 +932,14 @@
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
   box-shadow: 0 -8px 12px var(--sd-card, #141f3d);
 }
+/* a batch of packs lands on its results with the haul line sliding in first */
+.reveal.summary.haul > p:first-child {
+  animation: haul-in 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  font-size: 15px;
+}
+@keyframes haul-in {
+  from { transform: translateY(-14px) scale(0.92); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal.summary.haul > p:first-child { animation: none; }
+}
