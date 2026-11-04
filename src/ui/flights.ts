@@ -38,13 +38,13 @@ export function placesOf(s: DuelState): Map<number, Where> {
   return out;
 }
 
-/** Who owns the card with this uid (a card taken over still wears its owner's sleeve). */
-function ownerOf(s: DuelState, uid: number): Pid | undefined {
-  for (const ps of s.players) {
-    const c = [...ps.hand, ...ps.mz, ...ps.sz, ps.field, ...ps.gy, ...ps.deck, ...ps.removed, ...ps.fusion].find((x) => x && x.uid === uid);
-    if (c) return (c as { owner?: Pid }).owner;
-  }
-  return undefined;
+/** Who owns each card (a card taken over still wears its owner's sleeve): one pass per board change. */
+function ownersOf(s: DuelState): Map<number, Pid> {
+  const out = new Map<number, Pid>();
+  for (const ps of s.players)
+    for (const zone of [ps.hand, ps.mz, ps.sz, [ps.field], ps.gy, ps.deck, ps.removed, ps.fusion])
+      for (const c of zone) if (c) out.set(c.uid, (c as { owner: Pid }).owner);
+  return out;
 }
 
 /** The pile a place shows up at when the card itself has no element there. */
@@ -225,6 +225,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
       });
     if (moved.length === 0 || moved.length > 12) return;
     let draws = 0;
+    let owners: Map<number, Pid> | undefined;
     for (const [uid, was, w] of moved) {
       const fromSnap = (before?.snaps.get(`u${uid}`) && was && !pileOf(was) ? before.snaps.get(`u${uid}`) : null) ?? (was && pileOf(was) ? (before ?? prev.current).snaps.get(pileOf(was)!) : null);
       const targetEl = el.querySelector(`[data-uid="${uid}"]`) as HTMLElement | null;
@@ -247,7 +248,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         delay: isDraw ? draws++ * (fresh ? 110 : 90) : 0,
         fromOpp: w.endsWith(String(1 - acting)),
         uid: w.startsWith('mz') ? uid : undefined,
-        side: ownerOf(state, uid) ?? (Number(w.slice(-1)) as Pid),
+        side: (owners ??= ownersOf(state)).get(uid) ?? (Number(w.slice(-1)) as Pid),
       });
     }
     if (!fresh) return flights.forEach(fly);

@@ -35,9 +35,12 @@ export function duelSleeveOf(owner: Pid | undefined): SleeveId | null {
 const written = new Set<string>();
 let sheet: HTMLStyleElement | null = null;
 function writeRule(id: SleeveId) {
-  if (written.has(id) || typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || (written.has(id) && sheet?.isConnected)) return;
   written.add(id);
   if (!sheet || !sheet.isConnected) {
+    // (a new sheet: every sleeve is written again as it shows)
+    written.clear();
+    written.add(id);
     sheet = document.createElement('style');
     sheet.dataset.sleeves = '';
     document.head.appendChild(sheet);

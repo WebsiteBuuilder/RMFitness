@@ -56,17 +56,27 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
   const prog = owned ? null : sleeveProgress(save, def, solo);
   // Drag over the preview: the held card tilts toward the finger and its sheen slides (no re-render).
   const held = useRef<HTMLDivElement>(null);
+  const box = useRef<DOMRect | null>(null);
+  const frame = useRef(0);
   const tilt = (ev: PointerEvent) => {
     const el = held.current;
-    const box = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    if (!el || !box.width) return;
-    const x = Math.max(-1, Math.min(1, ((ev.clientX - box.left) / box.width) * 2 - 1));
-    const y = Math.max(-1, Math.min(1, ((ev.clientY - box.top) / box.height) * 2 - 1));
-    el.style.setProperty('--tx', x.toFixed(3));
-    el.style.setProperty('--ty', y.toFixed(3));
-    el.classList.add('live');
+    // (the box is measured once per touch, and the card moves at most once a frame)
+    const b = (box.current ??= (ev.currentTarget as HTMLElement).getBoundingClientRect());
+    if (!el || !b.width) return;
+    const x = Math.max(-1, Math.min(1, ((ev.clientX - b.left) / b.width) * 2 - 1));
+    const y = Math.max(-1, Math.min(1, ((ev.clientY - b.top) / b.height) * 2 - 1));
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      el.style.setProperty('--tx', x.toFixed(3));
+      el.style.setProperty('--ty', y.toFixed(3));
+      el.classList.add('live');
+    });
   };
-  const untilt = () => held.current?.classList.remove('live');
+  const untilt = () => {
+    cancelAnimationFrame(frame.current);
+    box.current = null;
+    held.current?.classList.remove('live');
+  };
 
   return (
     <div class="screen sleeves" ref={top}>
@@ -93,7 +103,7 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
             </div>
           </div>
           <div class="slv-info">
-            <b>{def.name}</b>
+            <b>{/^[A-Z]+$/.test(def.name) ? `${def.name} Attribute` : def.name}</b>
             <p>{def.blurb}</p>
             {look === current ? (
               <span class="mt-cost own">★ On your cards</span>
@@ -103,7 +113,12 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
               </button>
             ) : price ? (
               chipsOf(save) < price ? (
-                <span class="mt-need">🔒 {price} Duel Chips · {price - chipsOf(save)} more to go</span>
+                <span class="slv-buy-wait">
+                  <button class="gbtn mt-go slv-go" disabled>
+                    Get for ● {price}
+                  </button>
+                  <small>Win {price - chipsOf(save)} more Duel Chips in duels</small>
+                </span>
               ) : (
                 <button class="gbtn mt-go slv-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
                   Get for ● {price}
@@ -113,7 +128,7 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
               <span class="slv-earn">
                 <span class="slv-earn-t">🔒 {sleeveCostNote(save, def, solo)}</span>
                 {prog && (
-                  <i class="slv-bar">
+                  <i class="slv-bar" style={{ '--n': prog[1] } as Record<string, string | number>}>
                     <i style={{ width: `${Math.round((100 * prog[0]) / Math.max(1, prog[1]))}%` }} />
                   </i>
                 )}
