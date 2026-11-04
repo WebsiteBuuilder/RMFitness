@@ -13,7 +13,7 @@ import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
 import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
-import { flickerAt, glitchAt, holoReveal, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
+import { flickerAt, glitchAt, holoReveal, showAtFor, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
 import { calmMotion, getHolo } from './settings';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
@@ -1303,9 +1303,11 @@ export class Director {
       u.uHoloScroll.value = calm ? 0 : 1;
       // the front climbs the subject itself (its feet to the top of its head), not the empty art above it
       const lo = fig.foot.v - 0.04;
-      const hi = Math.min(1.06, (fig.foot.top ?? 0.92) + 0.05);
+      const hi = Math.min(1.06, fig.foot.top + 0.05);
       span(0, h.solidEnd + 0.04, (t) => {
         u.uHolo.value = 1;
+        // projected light is never washed white by an entrance's tint: the monster's own colors show through
+        u.uTint.value = 0;
         u.uHoloLine.value = t < h.solidAt ? lo - 0.02 : lerp(lo, hi, easeInOut(clamp01((t - h.solidAt) / (h.solidEnd - h.solidAt))));
         // it builds up: fainter as it first forms, fuller as the lock comes
         u.uFlick.value = (calm ? 0 : flickerAt(t, o.seed) * (t < h.solidAt ? 1 : 0.35)) + 0.18 * (1 - clamp01((t - h.reveal) / Math.max(0.05, h.solidAt - h.reveal)));
@@ -1876,8 +1878,7 @@ export class Director {
     });
 
     // light shafts behind the monster
-    const showAt = over ? 0.62 : 0.42;
-    // (softer under a hologram: the projected monster is the light to look at)
+    const showAt = showAtFor(over);
     // (under a hologram the projector is the only light until it locks solid; the shafts come up with the lock)
     if (holo) this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + holo.solidEnd - 0.05, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
     else this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
@@ -1889,7 +1890,6 @@ export class Director {
       fig.u.uOpacity.value = 0;
       fig.mesh.position.set(0, restY, 0);
     }
-    if (holo) this.hologram(tl, S, holo, fig, { ground, restY, size, mill, seed: prof.seed, fin, finPal });
     const emit = (rate: number, dt: number, f: () => void) => {
       const n = Math.floor(rate * dt + Math.random());
       for (let i = 0; i < n; i++) f();
@@ -2042,6 +2042,8 @@ export class Director {
         });
         at(showAt, () => chime(r()));
     }
+    // (after the entrances: the hologram has the last word on the figure's look while it plays)
+    if (holo) this.hologram(tl, S, holo, fig, { ground, restY, size, mill, seed: prof.seed, fin, finPal });
     at(landAt, () => {
       if (tier >= 2) {
         st.shake(0.3 + prof.shake * 0.5);
@@ -2260,7 +2262,7 @@ export class Director {
         const fall = own(new Glow(1.8 * U, 6 * U, 'shaft', col.light, 0xffffff));
         fall.mesh.position.set(c.x, ground + 2.8 * U, -0.4);
         // (softer under a hologram, so the falling light never drowns it)
-        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, soft ? 0.4 : 1);
+        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, soft ? 0.15 : 1);
         tl.at(S + 0.02, () => (whoosh(0.35, 300, 1800, 0.18), chime(0.3)));
         tl.at(show - 0.05, () => (boom(0.4), this.flash(0xfff0d0, 0.18)));
         break;

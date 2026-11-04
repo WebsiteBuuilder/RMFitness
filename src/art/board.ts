@@ -559,7 +559,7 @@ export class BoardLayer {
       const u = fig.u;
       // a monster arriving without a cinematic still comes in as a Duel Disk hologram (holographic
       // summon): projected light first, then a line of light climbs it and it locks solid
-      const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show, this.hb) : null;
+            const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show, this.hb) : null;
       if (hb && hb.holo > 0) {
         if (!p.holoStarted) {
           p.holoStarted = true;
@@ -577,7 +577,8 @@ export class BoardLayer {
         u.uFlick.value = p.calm || hb.line > 0 ? 0 : flickerAt(t, p.seed);
         // (no tearing at card size: it only reads as broken bars)
         u.uGlitch.value = 0;
-      } else if (u.uHolo.value > 0) {
+      } else if (u.uHolo.value > 0 && !p.leaving) {
+        // (one leaving mid-arrival fades out as it is, without snapping solid first)
         u.uHolo.value = 0;
         u.uFlick.value = 0;
         u.uGlitch.value = 0;
@@ -627,6 +628,7 @@ export class BoardLayer {
     this.canvas.removeEventListener("webglcontextrestored", this.onRestored, false);
     this.ro?.disconnect();
     for (const p of this.pieces.values()) {
+      p.stopHum?.();
       p.fig?.dispose();
       p.disc?.dispose();
     }

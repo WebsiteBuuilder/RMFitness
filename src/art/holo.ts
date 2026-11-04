@@ -9,8 +9,11 @@
 import type { SummonHow } from './cues';
 
 /** When the monster first shows in a summon (s from its start): runtime.ts's reveal, shared with the tests. */
+/** When a summon's monster starts to show (an Overframe card's frame bursts first). */
+export const showAtFor = (over: boolean): number => (over ? 0.62 : 0.42);
+
 export function holoReveal(entrance: string, over: boolean): number {
-  const show = over ? 0.62 : 0.42;
+  const show = showAtFor(over);
   return entrance === 'fusion' || entrance === 'ritual' ? show + 0.2 : entrance === 'materialize' ? show + 0.1 : show;
 }
 
@@ -65,7 +68,7 @@ export function holoPlan(power: HoloPower, reveal: number, end: number): HoloPla
   if (power >= 2) glitches.push([reveal + hold * 0.5, 0.07]);
   // (in a short summon the tears squeeze into the hologram's own time, or drop out)
   const fit = glitches.map(([a, d]): [number, number] => [Math.max(reveal, a), Math.min(a + d, solidEnd) - Math.max(reveal, a)]).filter(([, d]) => d >= 0.04);
-  return { power, reveal, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.28), glitches: fit };
+  return { power, reveal, beamAt, solidAt, solidEnd, beamEnd: Math.min(end, solidEnd + 0.18), glitches: fit };
 }
 
 /** 0..1 signal tearing at time t (s) of a plan. */
