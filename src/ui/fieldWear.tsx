@@ -58,6 +58,7 @@ const crescent = (cx: number, cy: number, rx: number, ry: number, a: number, b: 
   return `M${pts.join('L')}Z`;
 };
 const DARK: [number, number][] = [[0, 0.03], [0.07, 0.33], [0.39, 0.48]];
+const SP = 5; // how far the soot reaches past the frame (zone units, about px)
 const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y}a${r} ${r} 0 1 0 ${(2 * r).toFixed(2)} 0a${r} ${r} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
 const merge = (h: WearHit): Drawn => ({
   h,
@@ -90,6 +91,24 @@ function embersOf(p: number, zone: number, lv: number, seed: number): string {
     const y = e === 0 ? o : e === 1 ? t * H : e === 2 ? H - o : t * H;
     const rr = 0.5 + r() * 0.8;
     d += dot([+x.toFixed(1), +y.toFixed(1), +rr.toFixed(2)]);
+  }
+  return d;
+}
+
+/** ash flung past the zone's frame onto the mat: dots in the band just outside the frame, thicker toward the blow */
+function ashOf(p: number, zone: number, lv: number, seed: number, hx: number, hy: number): string {
+  let s = (p * 613 + zone * 389 + 11 + Math.imul(seed, 2654435761)) >>> 0;
+  const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  let d = '';
+  for (let i = 0; i < 6 + lv * 4; i++) {
+    // aim near the blow: an angle round it, then out to just past the frame
+    const a = r() * Math.PI * 2;
+    const c = Math.cos(a), sn = Math.sin(a);
+    const tx = c > 0 ? (W - hx) / c : c < 0 ? -hx / c : 1e9;
+    const ty = sn > 0 ? (H - hy) / sn : sn < 0 ? -hy / sn : 1e9;
+    const t = Math.min(tx, ty) + 0.8 + r() * 3.4;
+    const rr = 0.35 + r() * (0.5 + lv * 0.2);
+    d += dot([+(hx + c * t).toFixed(1), +(hy + sn * t).toFixed(1), +rr.toFixed(2)]);
   }
   return d;
 }
@@ -137,6 +156,20 @@ export function ZoneWear({ state, p, zone }: Props) {
   return (
     <>
     {/* a monster standing on the damage: a soot band and embers show in the gap round the card */}
+    {/* the blast reaches past the zone: soot over the frame and ash on the mat round it */}
+    {hits.length > 0 && (
+      <svg class={`fwear-spill st-${style} lv-${lv}`} viewBox={`${-SP} ${-SP} ${W + 2 * SP} ${H + 2 * SP}`} preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <radialGradient id={`${id}s`}>
+            <stop offset="0.4" class="fw-s-sp0" />
+            <stop offset="0.66" class="fw-s-sp1" />
+            <stop offset="1" class="fw-s-sp2" />
+          </radialGradient>
+        </defs>
+        <ellipse cx={hits[hits.length - 1].h.x} cy={hits[hits.length - 1].h.y} rx={W * (0.62 + 0.08 * lv)} ry={H * (0.5 + 0.06 * lv)} fill={`url(#${id}s)`} />
+        <path class="fw-ash" d={ashOf(p, zone, lv, seed, hits[hits.length - 1].h.x, hits[hits.length - 1].h.y)} />
+      </svg>
+    )}
     {held && (
       <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         <rect class="fw-held-soot" x="1.5" y="1.5" width={W - 3} height={H - 3} rx="4" />

@@ -9,6 +9,25 @@
 .zone.worn > * {
   grid-area: 1 / 1;
 }
+.fwear-spill {
+  /* (5px past the frame on each side: into the gap between zones, short of the next zone) */
+  align-self: stretch;
+  justify-self: stretch;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  margin: -5px;
+  overflow: visible;
+  pointer-events: none;
+}
+.fw-s-sp0 { stop-color: #000; stop-opacity: 0; }
+.fw-s-sp1 { stop-color: #000; stop-opacity: 0.7; }
+.fw-s-sp2 { stop-color: #000; stop-opacity: 0; }
+.fwear-spill.lv-2 .fw-s-sp1 { stop-opacity: 0.82; }
+.fwear-spill.lv-3 .fw-s-sp1 { stop-opacity: 0.95; }
+.fwear-spill .fw-ash {
+  fill: var(--fw-speck);
+  opacity: 0.85;
+}
 .fwear,
 .fwear-held {
   align-self: stretch;
@@ -24,7 +43,8 @@
   border-radius: inherit;
 }
 .fwear,
-.fwear-held {
+.fwear-held,
+.fwear-spill {
   /* the plain slab: soot and an ember glow */
   --fw-core: #000000;
   --fw-mid: #0b0604;
@@ -191,7 +211,8 @@
 
 /* ---- each landscape scars its own way (the duelist's own Field Spell; re-tints when it changes) ---- */
 .fwear.st-volcano,
-.fwear-held.st-volcano {
+.fwear-held.st-volcano,
+.fwear-spill.st-volcano {
   --fw-rim: #8a2a06;
   --fw-mid: #1a0503;
   --fw-glow: #ff5a14;
@@ -204,7 +225,8 @@
   --fw-rest: 0.55;
 }
 .fwear.st-ocean,
-.fwear-held.st-ocean {
+.fwear-held.st-ocean,
+.fwear-spill.st-ocean {
   --fw-rim: #0a4a5e;
   --fw-core: #01080e;
   --fw-mid: #031722;
@@ -220,7 +242,8 @@
   --fw-rest: 0.26;
 }
 .fwear.st-forest,
-.fwear-held.st-forest {
+.fwear-held.st-forest,
+.fwear-spill.st-forest {
   --fw-rim: #4a2a0a;
   --fw-mid: #0d0904;
   --fw-glow: #e0661c;
@@ -232,7 +255,8 @@
   --fw-rest: 0.3;
 }
 .fwear.st-sky,
-.fwear-held.st-sky {
+.fwear-held.st-sky,
+.fwear-spill.st-sky {
   --fw-rim: #3a4a6a;
   --fw-core: #10141f;
   --fw-mid: #1c2436;
@@ -247,7 +271,8 @@
   --fw-rest: 0.3;
 }
 .fwear.st-holy,
-.fwear-held.st-holy {
+.fwear-held.st-holy,
+.fwear-spill.st-holy {
   --fw-rim: #6a4a10;
   --fw-core: #120c02;
   --fw-mid: #22180a;
@@ -262,7 +287,8 @@
   --fw-rest: 0.32;
 }
 .fwear.st-shadow,
-.fwear-held.st-shadow {
+.fwear-held.st-shadow,
+.fwear-spill.st-shadow {
   --fw-rim: #3a0e52;
   --fw-core: #000000;
   --fw-mid: #12061c;
@@ -277,7 +303,8 @@
   --fw-rest: 0.4;
 }
 .fwear.st-arcane,
-.fwear-held.st-arcane {
+.fwear-held.st-arcane,
+.fwear-spill.st-arcane {
   --fw-rim: #5a0e52;
   --fw-mid: #1a0418;
   --fw-out: #1a041800;
@@ -290,7 +317,8 @@
   --fw-rest: 0.36;
 }
 .fwear.st-tech,
-.fwear-held.st-tech {
+.fwear-held.st-tech,
+.fwear-spill.st-tech {
   --fw-rim: #0a4a4a;
   --fw-mid: #021012;
   --fw-out: #02101200;
@@ -305,7 +333,8 @@
   --fw-rest: 0.4;
 }
 .fwear.st-wasteland,
-.fwear-held.st-wasteland {
+.fwear-held.st-wasteland,
+.fwear-spill.st-wasteland {
   --fw-rim: #6a4418;
   --fw-core: #140c04;
   --fw-mid: #2a1c0c;
@@ -320,7 +349,8 @@
   --fw-rest: 0.28;
 }
 .fwear.st-cosmos,
-.fwear-held.st-cosmos {
+.fwear-held.st-cosmos,
+.fwear-spill.st-cosmos {
   --fw-rim: #1a2266;
   --fw-core: #000000;
   --fw-mid: #060818;
@@ -436,7 +466,12 @@ body.art-on .fwear .fw-hit.fresh {
 .zone.sel .fwear,
 .zone.sel .fwear-held,
 .zone.pick .fwear,
-.zone.pick .fwear-held {
+.zone.pick .fwear-held,
+.tz.drop-ok .fwear-spill,
+.tz.drop-on .fwear-spill,
+.tz.pick .fwear-spill,
+.zone.sel .fwear-spill,
+.zone.pick .fwear-spill {
   opacity: 0.4;
 }
 
