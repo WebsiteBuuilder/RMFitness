@@ -18,6 +18,8 @@ export interface BoardPost {
   stars: number;
   /** Pharaoh Points */
   kp: number;
+  /** Ascensions this season (they rank first) */
+  asc?: number;
   w: number;
   l: number;
   /** when it was posted */
@@ -50,6 +52,8 @@ export function cleanPost(id: string, x: unknown): BoardPost | null {
   // every Pharaoh Point is a win; and nobody climbs faster than 3 stars a win above where a season can start them
   const kp = step === TOP ? Math.min(n(o.kp, 100000), w) : 0;
   if (ladderScore(step, stars, kp) > ladderScore(tierFloor(KING - 1), 0, 0) + 3 * w) return null;
+  // an Ascension is a whole climb from Diamond back to Pharaoh: dozens of wins each
+  const asc = Math.min(n(o.asc, 99), Math.floor(w / 30));
   return {
     id,
     name,
@@ -57,6 +61,7 @@ export function cleanPost(id: string, x: unknown): BoardPost | null {
     step,
     stars,
     kp,
+    ...(asc ? { asc } : {}),
     w,
     l: n(o.l, 1e6),
     at: n(o.at, 1e14),
@@ -78,13 +83,13 @@ export function boardFrom(raw: unknown): BoardPost[] {
     const p = cleanPost(id, body);
     if (p) out.push(p);
   }
-  out.sort((a, b) => ladderScore(b.step, b.stars, b.kp) - ladderScore(a.step, a.stars, a.kp) || b.w - a.w || a.at - b.at);
+  out.sort((a, b) => (b.asc ?? 0) - (a.asc ?? 0) || ladderScore(b.step, b.stars, b.kp) - ladderScore(a.step, a.stars, a.kp) || b.w - a.w || a.at - b.at);
   return out.slice(0, BOARD_MAX);
 }
 
 /** The line a duelist posts for their rank now. */
 export function postOf(id: string, name: string, color: string, p: RankedProgress, at = Date.now()): BoardPost {
-  return { id: keyOf(id), name: name.slice(0, 24), color, step: p.step, stars: p.stars, kp: p.kp, w: p.w, l: p.l, at };
+  return { id: keyOf(id), name: name.slice(0, 24), color, step: p.step, stars: p.stars, kp: p.kp, ...(p.asc ? { asc: p.asc } : {}), w: p.w, l: p.l, at };
 }
 
 let last = '';
@@ -136,6 +141,7 @@ export interface LadderRow {
   step: number;
   stars: number;
   kp: number;
+  asc?: number;
   w: number;
   l: number;
   kind: 'me' | 'phone' | 'friend' | 'world';
@@ -145,12 +151,13 @@ export interface LadderRow {
 }
 
 /** A ladder line from a rank. */
-export const rowOf = (name: string, color: string, rp: Pick<RankedProgress, 'step' | 'stars' | 'kp' | 'w' | 'l'>, kind: LadderRow['kind'], isOn?: boolean): LadderRow => ({
+export const rowOf = (name: string, color: string, rp: Pick<RankedProgress, 'step' | 'stars' | 'kp' | 'w' | 'l' | 'asc'>, kind: LadderRow['kind'], isOn?: boolean): LadderRow => ({
   name,
   color,
   step: rp.step,
   stars: rp.step === TOP ? 0 : rp.stars,
   kp: rp.step === TOP ? rp.kp : 0,
+  ...(rp.asc ? { asc: rp.asc } : {}),
   w: rp.w,
   l: rp.l,
   kind,
@@ -171,9 +178,9 @@ export function mergeLadder(local: LadderRow[], world: BoardPost[] | null, myKey
     if (m.has(p.name.toLowerCase())) continue;
     m.set(`#${p.id}`, { ...rowOf(p.name, p.color, p, 'world'), id: p.id });
   }
-  return [...m.values()].sort((a, b) => score(b) - score(a) || b.w - a.w || a.name.localeCompare(b.name));
+  return [...m.values()].sort((a, b) => (b.asc ?? 0) - (a.asc ?? 0) || score(b) - score(a) || b.w - a.w || a.name.localeCompare(b.name));
 }
 
 /** Stars between two rows ("3 stars"), for the rival line. */
-export const starsBetween = (a: LadderRow, b: LadderRow) => Math.max(0, score(a) - score(b));
+export const starsBetween = (a: LadderRow, b: LadderRow) => ((a.asc ?? 0) !== (b.asc ?? 0) ? 0 : Math.max(0, score(a) - score(b)));
 

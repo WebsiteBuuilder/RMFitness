@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { loadProfiles, loadSave, type Profile } from '../eds/save';
 import { loadSolo } from '../eds/speedCampaign/save';
-import { TOP, starsAt, migrateRanked, seasonOf, ladderClock, stepName, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { TOP, starsAt, migrateRanked, seasonOf, ladderClock, pharaohLevel, rankName, type RankedProgress } from '../eds/speedCampaign/ranked';
 import { mergeLadder, postRanked, rowOf, watchRanked, type BoardPost, type LadderRow } from '../online/rankedBoard';
 export { mergeLadder, starsBetween, type LadderRow } from '../online/rankedBoard';
 import { online } from '../online/controller';
@@ -53,7 +53,7 @@ export function useLadder(me: Profile, myName: string, season: string): { rows: 
 }
 
 /** Where a row stands: "Gold II · 2★" or "Pharaoh · 12 PP". */
-export const rowRank = (r: Pick<LadderRow, 'step' | 'stars' | 'kp'>) => (r.step === TOP ? `${stepName(r.step)} · ${r.kp} PP` : `${stepName(r.step)} · ${r.stars}★`);
+export const rowRank = (r: Pick<LadderRow, 'step' | 'stars' | 'kp' | 'asc'>) => `${r.asc ? `${'★'.repeat(Math.min(3, r.asc))} ` : ''}${rankName(r)} · ${r.step === TOP ? `${r.kp} PP` : `${r.stars}★`}`;
 
 const who = (r: LadderRow) => (r.kind === 'me' ? 'you' : r.kind === 'phone' ? 'on this phone' : r.kind === 'friend' ? (r.online ? 'friend · online' : 'friend') : `${r.w}W ${r.l}L`);
 
@@ -65,13 +65,13 @@ export function LadderList({ rows, limit }: { rows: LadderRow[]; limit?: number 
   const line = (r: LadderRow, i: number) => (
     <li key={`${r.kind}:${r.id ?? r.name}`} class={`rank-row ${r.kind === 'me' ? 'me' : ''} ${i === 0 ? 'top' : ''}`}>
       <span class="rank-place">{i === 0 ? '👑' : i + 1}</span>
-      <RankEmblem step={r.step} size="s" />
+      <RankEmblem step={r.step} size="s" asc={r.asc ?? 0} level={r.step === TOP ? pharaohLevel(r.kp) : 0} />
       <span class="rank-who">
         <b>{r.name}</b>
         <small>{who(r)}</small>
       </span>
       <span class="rank-rec">
-        <b>{stepName(r.step)}</b>
+        <b>{rankName(r)}</b>
         <small>{r.step === TOP ? `${r.kp} Pharaoh Points` : `${r.stars} star${r.stars === 1 ? '' : 's'}`}</small>
       </span>
     </li>
