@@ -800,6 +800,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    // (a card can change size while the row doesn't: --th-w follows the window's height)
+    const card = el.querySelector('.thcard');
+    if (card) ro.observe(card);
     return () => ro.disconnect();
   }, [handCount === 0, resized]);
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.

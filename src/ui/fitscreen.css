@@ -180,16 +180,16 @@
   }
   @supports (width: 1cqh) {
     :root .duel.touch.speed .tphase {
-      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.1 - 76px) * 0.1715 * 5 + 32px) / 2 - 110px));
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.05 - 76px) * 0.1715 * 5 + 32px) / 2 - 110px));
     }
     :root .duel.touch .tphase {
-      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.1 - 76px) * 0.1715 * 7 + 48px) / 2 - 110px));
+      right: max(16px, calc(50cqw - min(100cqw / 1.08, (100cqh * 1.05 - 76px) * 0.1715 * 7 + 48px) / 2 - 110px));
     }
   }
   @supports (width: 1cqh) {
     :root .duel.touch .tmat,
     :root .duel.touch.speed .tmat {
-      width: min(100%, calc(100cqw / 1.08), calc((100cqh * 1.1 - 76px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 8px));
+      width: min(100%, calc(100cqw / 1.08), calc((100cqh * 1.05 - 76px) * 0.1715 * var(--cols, 7) + (var(--cols, 7) - 1) * 8px));
     }
   }
   :root .duel.touch .tbar .tname span,
@@ -295,7 +295,7 @@
   :root .sdh-tile,
   :root .sdh-tile.half,
   :root .sdh-tile.hero {
-    height: clamp(160px, 25vh, 300px);
+    height: clamp(160px, 28vh, 330px);
     border-radius: 18px;
   }
   :root .sdh-tile-txt {
@@ -537,7 +537,52 @@
   :root .sdh-tile,
   :root .sdh-tile.half,
   :root .sdh-tile.hero {
-    height: clamp(160px, 26vh, 380px);
+    height: clamp(160px, 33vh, 520px);
+  }
+  /* the top bar, the deck card and the rows scale with the window too */
+  :root .sdh-who-txt b {
+    font-size: 22px;
+  }
+  :root .sdh-who-txt small,
+  :root .sdh-row-n {
+    font-size: 16px;
+  }
+  :root .sdh-cash .shop-pill {
+    height: 40px;
+    font-size: 18px;
+    padding: 0 14px;
+  }
+  :root .sdh-gear {
+    width: 48px;
+    height: 48px;
+  }
+  :root .sdh-deck-txt b {
+    font-size: 24px;
+  }
+  :root .sdh-deck-txt small,
+  :root .sdh-deck-txt > span,
+  :root .sdh-note,
+  :root .sdh-friends {
+    font-size: 17px;
+  }
+  :root .sdh-row-l {
+    font-size: 20px;
+  }
+  :root .sdh-tile-txt b {
+    font-size: clamp(30px, 1.6vw, 44px);
+  }
+  :root .sdh-tile.hero .sdh-tile-txt b {
+    font-size: clamp(44px, 2.4vw, 64px);
+  }
+  :root .sdh-tile-txt small {
+    font-size: clamp(18px, 0.95vw, 24px);
+  }
+  :root .sdh-tab {
+    max-width: 200px;
+    font-size: 16px;
+  }
+  :root .sdh {
+    --sdh-nav: 86px;
   }
 }
 
@@ -560,6 +605,22 @@
   }
   :root .duel.touch .tdetail-img {
     width: min(100%, 150px);
+  }
+  :root .duel.touch .tdetail,
+  :root .duel.touch .tdetail.right {
+    width: 184px;
+    padding: 10px;
+  }
+  :root .duel.touch .tbar .tskill {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+  :root .duel.touch .tbar .tgear {
+    width: 30px;
+    height: 30px;
+  }
+  :root .duel.touch .tbar .tname {
+    min-width: 40px;
   }
   :root .duel.touch .tdetail-text p {
     font-size: 12px;
@@ -614,5 +675,19 @@
   :root .duel.touch .taction,
   :root .duel.touch .tphase-item {
     font-size: 19px;
+  }
+  :root .duel.touch .tbar .tskill {
+    font-size: 16px;
+    padding: 8px 16px;
+  }
+  :root .duel.touch .tlp small,
+  :root .duel.touch .tdetail-more,
+  :root .duel.touch .tdetail-type {
+    font-size: 15px;
+  }
+  :root .duel.touch .tbar .tgear {
+    width: 46px;
+    height: 46px;
+    font-size: 22px;
   }
 }
