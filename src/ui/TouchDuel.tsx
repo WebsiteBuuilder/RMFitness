@@ -21,6 +21,7 @@ import { LpCracks, LpPops, useLpShake } from './lpHits';
 import { lpCountMs } from './lpHitRules';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { AutoDrawPill } from './heartDraw';
 import { introLeft, whenIntroAt } from './immersionState';
 import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
 import './arena.css';
@@ -42,6 +43,8 @@ export interface TouchCtl {
   me: PlayerState;
   opp: PlayerState;
   canAct: boolean;
+  /** your deck carries the Auto draw switch (a Speed Duel you play, not the tutorial) */
+  autoPill?: boolean;
   /** watching the computer duel itself: every card is shown */
   spectator?: boolean;
   /** a Tag Duel where your teammate is in (their hand shows, nothing takes input) */
@@ -508,9 +511,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const ps = state.players[p];
     const extra = ps.fusion.length > 0 || ps.removed.length > 0;
     return (
-      <div class="tpile deck" data-pile={`deck${p}`}>
+      <div class={`tpile deck${p === acting && ctl.autoPill ? ' has-auto' : ''}`} data-pile={`deck${p}`}>
         {ps.deck.length > 0 ? <CardImg name="" back /> : <span class="tz-label">DECK</span>}
         <span class="tcount">{ps.deck.length}</span>
+        {p === acting && ctl.autoPill && <AutoDrawPill />}
         {extra && (
           <div class="textra">
             {ps.fusion.length > 0 && (
