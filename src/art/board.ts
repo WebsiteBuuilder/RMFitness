@@ -203,6 +203,8 @@ interface Piece {
   /** a glance at a monster that just arrived: when (ms, -1 none) and at which */
   glanceAt: number;
   glanceUid: number;
+  /** its base ring is tinted red (danger) */
+  ringRed: boolean;
   /** the others still have to glance at it (it just arrived) */
   announce: boolean;
   /** smoothed glance direction -1..1 */
@@ -213,6 +215,7 @@ interface Piece {
 
 const DEF_GLOW = 0x4a8aff;
 const ACE_GLOW = 0xffc84a;
+const DANGER_RING = 0xff3a2a;
 /** With idle life off: exactly the plain breath and turn the figures always had. */
 function plainPose(out: IdlePose, t: number, seed: number): IdlePose {
   const b = Math.sin(t * 1.9 + seed) * 0.006;
@@ -263,8 +266,9 @@ export class BoardLayer {
   /** Attribute motes behind and in front of the figures (made with the first one that needs them) */
   private motesBack: Particles | null = null;
   private motesFront: Particles | null = null;
-  /** a mote was emitted this frame */
-  private emitted = false;
+  /** a mote was emitted into the back / front pool this frame */
+  private emittedBack = false;
+  private emittedFront = false;
   private calmQ: MediaQueryList | null = typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
   private raf = 0;
   private last = 0;
@@ -425,6 +429,7 @@ export class BoardLayer {
         glanceUid: 0,
         // the others glance at it once it stands solid (not at the field a resumed duel opens on)
         announce: performance.now() - this.born > 1200,
+        ringRed: false,
         glanceDir: 0,
         idle: newIdlePose(),
         mood: { braced: false, worn: 0, tense: false, kneel: 0, presence: 0, glance: 0 },
@@ -753,6 +758,11 @@ export class BoardLayer {
         rimColor(fg, u.uRim.value as Vector3);
         if (p.finish >= FIN.GL) rimColor(fg, p.disc.u.uRing.value as Vector3);
       }
+      // in danger its base ring runs red, pulsing with its quick breaths
+      if (p.finish < FIN.GL && mood.tense !== p.ringRed) {
+        p.ringRed = mood.tense;
+        rimColor(mood.tense ? DANGER_RING : p.glow, p.disc.u.uRing.value as Vector3);
+      }
       u.uDark.value = p.kneel * 0.2 + idle.dark;
       u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
       setRgb(u.uFlash.value as Vector3, HIT_FLASH);
@@ -770,7 +780,7 @@ export class BoardLayer {
       // the projector's light on the base while the hologram forms
       if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line)) + 2.4 * clamp01((hb.line - 0.8) / 0.25);
       // a boss's (or an Ace's) aura breathes in its base ring
-      d.u.uRingAmt.value += idle.aura * 1.6;
+      d.u.uRingAmt.value += idle.aura * 1.6 + (mood.tense ? 0.5 + Math.max(0, idle.sy - 1) * 60 : 0);
       // its Attribute's motes (only once it stands solid, not while a cinematic is about it)
       if (live && p.motes && !p.leaving && p.show >= 1 && p.vis >= 1 && !(hb && hb.holo > 0)) this.emitMotes(p, dt, idle.lift);
     }
@@ -778,13 +788,17 @@ export class BoardLayer {
       // (the last frame drawn when the field empties carries no motes frozen in the air)
       if (!this.pieces.size) (this.motesBack.clear(), this.motesFront!.clear());
       // nothing in the air and nothing new: no stepping, no upload, no draw
-      for (const m of [this.motesBack, this.motesFront!]) {
-        const busy = m.active > 0 || this.emitted;
-        if (busy) m.update(dt);
-        m.points.visible = busy && m.active > 0;
-      }
-      this.emitted = false;
+      this.stepPool(this.motesBack, this.emittedBack, dt);
+      this.stepPool(this.motesFront!, this.emittedFront, dt);
+      this.emittedBack = this.emittedFront = false;
     }
+  }
+
+  /** A mote pool with nothing in the air and nothing new is not stepped, uploaded or drawn. */
+  private stepPool(m: Particles, emitted: boolean, dt: number) {
+    const busy = m.active > 0 || emitted;
+    if (busy) m.update(dt);
+    m.points.visible = busy && m.active > 0;
   }
 
   /** Motes off a monster's Attribute: embers, bubbles, leaves, dust, sparkles, smoke, gold dust. */
@@ -792,7 +806,7 @@ export class BoardLayer {
     const m = p.motes!;
     // (fewer on the cheapest tier, and while a cinematic plays)
     // (and fewer on a small phone, where each card is small and they would crowd it)
-    const scale = (stageTier() === 0 ? 0.5 : 1) * (artBusy() ? 0.4 : 1) * presenceMotes(p.presence) * (p.def ? 0.6 : 1) * (p.cw < 60 ? 0.7 : 1);
+    const scale = (stageTier() === 0 ? 0.5 : 1) * (artBusy() ? 0.4 : 1) * presenceMotes(p.presence) * (p.def ? 0.6 : 1) * (p.cw < 60 ? 0.85 : 1);
     p.moteAcc += m.rate * scale * dt;
     if (p.moteAcc < 1) return;
     this.ensureMotes();
@@ -811,7 +825,7 @@ export class BoardLayer {
       // where it starts: low for embers, smoke and dust (they rise off it), anywhere on it otherwise
       // (smoke and dust rise off its feet; embers from its flanks; the rest anywhere on it)
       const low = m.kind === "smoke" || m.kind === "dust";
-      const y = base + (low ? Math.random() * 0.45 : m.kind === "ember" ? 0.1 + Math.random() * 0.6 : 0.2 + Math.random() * 0.85) * tall;
+      const y = base + (low ? Math.random() * 0.45 : m.kind === "ember" ? 0.1 + Math.random() * 0.95 : 0.2 + Math.random() * 0.85) * tall;
       // (mostly round its edges, where they show against the dark mat rather than over its art)
       const side = Math.random() < 0.5 ? -1 : 1;
       const spread = (m.kind === "leaf" ? 0.85 : 0.7) * (0.45 + 0.55 * Math.sqrt(Math.random())) * side;
@@ -839,7 +853,8 @@ export class BoardLayer {
         e.pull = PULL;
       } else e.pull = undefined;
       pool.emit(e);
-      this.emitted = true;
+      if (front) this.emittedFront = true;
+      else this.emittedBack = true;
     }
   }
 

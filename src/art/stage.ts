@@ -998,6 +998,8 @@ void main(){
   vAlpha = aAlpha;
   vColor = aColor;
   vKind = aKind;
+  // an ember flickers as it rises
+  if (aKind < 0.5) vAlpha *= 0.7 + 0.3 * sin(position.y * 0.35 + position.x);
   // a leaf turns as it drifts (its angle follows where it is)
   vSpin = position.x * 0.045 + position.y * 0.07;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -1019,7 +1021,7 @@ void main(){
     // ember: a bright drop, its glow trailing down (screen y grows downward in gl_PointCoord)
     vec2 q = vec2(p.x * 1.7, p.y + 0.1);
     float tail = soft(length(vec2(p.x * 2.6, max(0.0, p.y + 0.1) * 0.8)), 0.4);
-    a = soft(length(q), 0.3) * 1.3 + tail * 0.6 + soft(d, 0.5) * 0.25;
+    a = soft(length(q), 0.32) * 1.6 + tail * 0.75 + soft(d, 0.5) * 0.3;
     c = mix(vColor, vec3(1.0, 0.96, 0.8), soft(length(q), 0.13));
   } else if (vKind < 1.5) {
     // bubble: a thin ring and a highlight
@@ -1040,9 +1042,10 @@ void main(){
     a = soft(d, 0.12) + rays * 0.9 + soft(d, 0.5) * 0.12;
     c = mix(vColor, vec3(1.0), soft(d, 0.07));
   } else {
-    // smoke: a wide, faint puff
-    a = soft(d, 0.5);
-    a = a * a * 0.55;
+    // smoke: a puff with a curling violet rim and a thinner middle (reads as smoke on the dark mat)
+    float body = soft(d, 0.5);
+    a = body * body * 0.45 + soft(abs(d - 0.32), 0.1) * 0.55;
+    c = mix(vColor * 0.6, vColor * 1.35, smoothstep(0.15, 0.38, d));
   }
   ${GLOW_OUT.replace('OUT', 'c * clamp(a, 0.0, 1.4) * vAlpha')}
 }`;
@@ -1087,6 +1090,7 @@ export class Particles implements Fx {
   private phys: Float32Array; // gravity drag
   private pull: Float32Array; // px py strength swirl
   private kind: Float32Array | null = null;
+  private kindAttr: BufferAttribute | null = null;
   private next = 0;
   private lim: number;
   active = 0;
@@ -1114,7 +1118,8 @@ export class Particles implements Fx {
     this.geo.setAttribute('aAlpha', new BufferAttribute(this.alpha, 1));
     if (shapes) {
       this.kind = new Float32Array(max);
-      this.geo.setAttribute('aKind', new BufferAttribute(this.kind, 1));
+      this.kindAttr = new BufferAttribute(this.kind, 1);
+      this.geo.setAttribute('aKind', this.kindAttr);
     }
     this.mat = material(shapes ? 'motes' : 'particles', {});
     this.points = new Points(this.geo, this.mat);
@@ -1169,7 +1174,7 @@ export class Particles implements Fx {
       this.pull[i * 4 + 3] = p ? p.swirl : 0;
       if (this.kind) {
         this.kind[i] = o.kind ?? 0;
-        (this.geo.getAttribute('aKind') as BufferAttribute).needsUpdate = true;
+        this.kindAttr!.needsUpdate = true;
       }
       const c = o.color;
       // a little color jitter keeps bursts from looking flat
@@ -2305,7 +2310,7 @@ void main(){
  * instance never deletes the program and the next cinematic links nothing.
  */
 export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'motes' | 'ribbon' | 'ring' | 'backdrop' | 'veil' | 'glow' | 'crack' | 'shards' | 'cutin' | 'bright' | 'kawase' | 'composite';
-export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'veil', 'glow', 'crack', 'shards', 'cutin', 'bright', 'kawase', 'composite'];
+export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'motes', 'ribbon', 'ring', 'backdrop', 'veil', 'glow', 'crack', 'shards', 'cutin', 'bright', 'kawase', 'composite'];
 
 const uniforms = (o: Record<string, unknown>) => {
   const r: Record<string, IUniform> = {};

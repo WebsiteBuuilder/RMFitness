@@ -133,13 +133,13 @@ export interface MoteStyle {
 }
 
 const MOTES: Record<string, MoteStyle> = {
-  FIRE: { kind: 'ember', color: 0xff6a12, color2: 0xffb03a, rate: 4.6, rise: 0.42, drift: 0.1, life: 1.5, size: 0.34, size1: 0.12, swirl: 0 },
-  WATER: { kind: 'bubble', color: 0x6fd8ff, color2: 0xc8f4ff, rate: 3.2, rise: 0.3, drift: 0.06, life: 1.8, size: 0.13, size1: 0.21, swirl: 0 },
-  WIND: { kind: 'leaf', color: 0x7cf2a0, color2: 0xd8ffc0, rate: 3.4, rise: 0.16, drift: 0.05, life: 2.2, size: 0.24, size1: 0.2, swirl: 1 },
-  EARTH: { kind: 'dust', color: 0xd8a860, color2: 0xb89870, rate: 3.0, rise: 0.08, drift: 0.14, life: 2.4, size: 0.16, size1: 0.26, swirl: 0 },
-  LIGHT: { kind: 'spark', color: 0xfff2b0, color2: 0xffffff, rate: 3.6, rise: 0.22, drift: 0.05, life: 1.4, size: 0.3, size1: 0.05, swirl: 0 },
-  DARK: { kind: 'smoke', color: 0x7a3ae0, color2: 0x4a2a9a, rate: 3.0, rise: 0.16, drift: 0.06, life: 2.6, size: 0.26, size1: 0.6, swirl: 0 },
-  DIVINE: { kind: 'divine', color: 0xffd65a, color2: 0xfff4c0, rate: 5.0, rise: 0.34, drift: 0.07, life: 1.7, size: 0.32, size1: 0.06, swirl: 0.5 },
+  FIRE: { kind: 'ember', color: 0xff6a12, color2: 0xffb03a, rate: 5.5, rise: 0.42, drift: 0.1, life: 1.5, size: 0.34, size1: 0.12, swirl: 0 },
+  WATER: { kind: 'bubble', color: 0x6fd8ff, color2: 0xc8f4ff, rate: 3.8, rise: 0.3, drift: 0.06, life: 1.8, size: 0.13, size1: 0.21, swirl: 0 },
+  WIND: { kind: 'leaf', color: 0x7cf2a0, color2: 0xd8ffc0, rate: 4.1, rise: 0.16, drift: 0.05, life: 2.2, size: 0.24, size1: 0.2, swirl: 1 },
+  EARTH: { kind: 'dust', color: 0xd8a860, color2: 0xb89870, rate: 3.6, rise: 0.08, drift: 0.14, life: 2.4, size: 0.16, size1: 0.26, swirl: 0 },
+  LIGHT: { kind: 'spark', color: 0xfff2b0, color2: 0xffffff, rate: 4.3, rise: 0.22, drift: 0.05, life: 1.4, size: 0.3, size1: 0.05, swirl: 0 },
+  DARK: { kind: 'smoke', color: 0x9a52ff, color2: 0x6a3ad0, rate: 5.3, rise: 0.16, drift: 0.06, life: 2.6, size: 0.26, size1: 0.6, swirl: 0 },
+  DIVINE: { kind: 'divine', color: 0xffd65a, color2: 0xfff4c0, rate: 6.0, rise: 0.34, drift: 0.07, life: 1.7, size: 0.32, size1: 0.06, swirl: 0.5 },
 };
 
 /** The shape each kind of mote is drawn in (stage.ts M_FRAG). */
