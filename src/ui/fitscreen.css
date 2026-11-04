@@ -710,3 +710,343 @@
     font-size: 22px;
   }
 }
+
+/* ================= the duel (Classic controls) =================
+   The flat board is four zone rows tall, so its width follows the height it gets. Tablets and
+   computers: bigger hand, piles, bars and text. Landscape: the message window becomes a panel down
+   the right side, so the rows get the 160px it took from the column. */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .duel:not(.touch) .hand,
+  :root .duel.speed:not(.touch) .hand {
+    --card-w: clamp(60px, 8.4vh, 112px);
+    --card-h: calc(var(--card-w) * 86 / 59);
+    justify-content: safe center;
+    gap: 8px;
+    padding: 18px 16px 6px;
+  }
+  :root .duel:not(.touch) .hand .hname {
+    font-size: 12px;
+  }
+  :root .duel:not(.touch) .opp-hand {
+    gap: 4px;
+    padding: 5px;
+  }
+  :root .duel:not(.touch) .opp-hand .hcard {
+    width: 28px;
+    height: 28px;
+  }
+  :root .duel:not(.touch) .pbar {
+    gap: 16px;
+    padding: 7px max(16px, env(safe-area-inset-right)) 7px max(16px, env(safe-area-inset-left));
+    font-size: 15px;
+  }
+  :root .duel:not(.touch) .lp {
+    font-size: 18px;
+  }
+  :root .duel:not(.touch) .hcount {
+    font-size: 13px;
+  }
+  :root .duel:not(.touch) .field {
+    gap: 10px;
+    padding: 6px 12px;
+  }
+  :root .duel:not(.touch) .rows,
+  :root .duel:not(.touch) .row {
+    gap: 6px;
+  }
+  :root .duel:not(.touch) .center {
+    gap: 10px;
+    padding: 5px 8px;
+  }
+  :root .duel:not(.touch) .ph {
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+  :root .duel:not(.touch) .turninfo {
+    display: block;
+    font-size: 12px;
+  }
+  :root .duel:not(.touch) .phasebtns .gbtn,
+  :root .duel.speed:not(.touch) .phasebtns .gbtn,
+  :root .duel:not(.touch) .center .menu-btn {
+    font-size: 13px;
+    padding: 6px 12px;
+  }
+  :root .duel:not(.touch) .fstat {
+    font-size: 12px;
+    padding: 0 3px;
+  }
+  :root .duel:not(.touch) .pile,
+  :root .duel:not(.touch) .pile.small {
+    font-size: 11px;
+  }
+  @supports (width: 1cqh) {
+    /* piles as big as a zone, but five of them (EDS) still fit down the side */
+    :root .duel:not(.touch) .field {
+      --pile-w: max(34px, min(110px, (100cqh - var(--mid) - 20px) / 4 * 59 / 86 * 0.8, (100cqh - 90px) / 5 * 59 / 86));
+    }
+    :root .duel:not(.touch) .sidebox {
+      width: calc(var(--pile-w) + 14px);
+    }
+    :root .duel:not(.touch) .pile-stack,
+    :root .duel:not(.touch) .z-f {
+      width: var(--pile-w);
+      height: auto;
+      aspect-ratio: 59 / 86;
+    }
+  }
+  :root .duel:not(.touch) > .msgwin {
+    height: 180px;
+    margin: 6px 12px 10px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-title {
+    font-size: 15px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-body,
+  :root .duel:not(.touch) > .msgwin .hint {
+    font-size: 14px;
+  }
+  :root .duel:not(.touch) > .msgwin .menu-item {
+    min-height: 38px;
+    font-size: 14px;
+  }
+  :root .duel:not(.touch) > .msgwin .menu-label {
+    font-size: 15px;
+  }
+  :root .duel:not(.touch) .pbar .pname {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  :root .duel:not(.touch) {
+    --fit-side: clamp(290px, 26vw, 460px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--fit-side);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'ohand ptop'
+      'field side'
+      'field pbot'
+      'hand  hand';
+  }
+  :root .duel:not(.touch) > .pbar.top {
+    grid-area: ptop;
+    border: 0;
+    border-left: 2px solid var(--border);
+    border-bottom: 2px solid var(--border);
+    border-radius: 0 0 0 6px;
+  }
+  :root .duel:not(.touch) > .opp-hand {
+    grid-area: ohand;
+    align-self: start;
+  }
+  :root .duel:not(.touch) > .field {
+    grid-area: field;
+    height: auto;
+  }
+  :root .duel:not(.touch) > .pbar.bottom {
+    grid-area: pbot;
+    border: 0;
+    border-left: 2px solid var(--border);
+    border-top: 2px solid var(--border);
+    border-radius: 6px 0 0 0;
+  }
+  :root .duel:not(.touch) > .hand {
+    grid-area: hand;
+    border-top: 2px solid var(--border);
+  }
+  :root .duel:not(.touch) > .msgwin,
+  :root .duel.speed:not(.touch) > .msgwin {
+    grid-area: side;
+    position: relative;
+    box-shadow: none;
+    align-self: stretch;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin: 10px max(12px, env(safe-area-inset-right)) 10px 4px;
+  }
+  /* the bars are a side column now: one line each, a long name gives way */
+  :root .duel:not(.touch) > .pbar {
+    white-space: nowrap;
+  }
+  :root .duel:not(.touch) > .pbar .pname {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :root .duel:not(.touch) > .pbar .lp,
+  :root .duel:not(.touch) > .pbar .hcount {
+    flex: none;
+  }
+  /* (EDS's pixel font runs wide) */
+  :root .duel:not(.touch):not(.speed) > .pbar .lp {
+    font-size: 15px;
+  }
+  /* the selected card and its text under the commands */
+  :root .duel:not(.touch) > .msgwin .msg-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #ffffff1f;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 220px, 30vh);
+    height: auto;
+    aspect-ratio: 59 / 86;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px #000a;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    white-space: pre-line;
+    color: var(--ink);
+  }
+  /* four or more commands: one column, the panel is tall enough */
+  :root .duel:not(.touch) > .msgwin .menu:not(.scroll):has(> li:nth-child(4)) {
+    display: block;
+  }
+}
+@media (min-width: 1800px) and (min-height: 900px) {
+  :root .duel:not(.touch) .pbar,
+  :root .duel:not(.touch) .pbar .pname {
+    font-size: 19px;
+  }
+  :root .duel:not(.touch) .hcount {
+    font-size: 16px;
+  }
+  :root .duel:not(.touch) .lp {
+    font-size: 24px;
+  }
+  :root .duel:not(.touch) .ph {
+    font-size: 14px;
+  }
+  :root .duel:not(.touch) .phasebtns .gbtn,
+  :root .duel.speed:not(.touch) .phasebtns .gbtn,
+  :root .duel:not(.touch) .center .menu-btn,
+  :root .duel:not(.touch) .turninfo {
+    font-size: 16px;
+  }
+  :root .duel:not(.touch) .fstat {
+    font-size: 15px;
+  }
+  :root .duel:not(.touch) .hand .hname {
+    font-size: 14px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-title {
+    font-size: 19px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-body,
+  :root .duel:not(.touch) > .msgwin .hint,
+  :root .duel:not(.touch) > .msgwin .menu-item,
+  :root .duel:not(.touch) > .msgwin .menu-label {
+    font-size: 17px;
+  }
+}
+@media (min-width: 1800px) and (min-height: 900px) {
+  :root .duel:not(.touch) > .msgwin .msg-card p {
+    font-size: 17px;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 300px, 30vh);
+  }
+}
+/* Classic, small landscape windows (800x600 and the like): the bars fit their slim side column */
+@media (min-width: 760px) and (max-width: 1023px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  /* (EDS: the centre strip wraps to three lines with MENU, so the rows leave it the room) */
+  :root .duel:not(.touch):not(.speed) .field {
+    --mid: 104px;
+  }
+  :root .duel:not(.touch):not(.speed) .turninfo {
+    display: none;
+  }
+  :root .duel:not(.touch) > .pbar {
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: max(10px, env(safe-area-inset-right));
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  :root .duel:not(.touch) > .pbar .pname {
+    font-size: 13px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :root .duel:not(.touch) > .pbar .lp {
+    font-size: 16px;
+  }
+  :root .duel:not(.touch) > .pbar .hcount {
+    font-size: 11px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-body,
+  :root .duel:not(.touch) > .msgwin .hint,
+  :root .duel:not(.touch) > .msgwin .menu-item,
+  :root .duel:not(.touch) > .msgwin .menu-label,
+  :root .duel:not(.touch) > .msgwin .msg-card p {
+    font-size: 13px;
+  }
+}
+@media (min-width: 1800px) and (min-height: 900px) and (min-aspect-ratio: 5/4) {
+  :root .duel:not(.touch) {
+    --fit-side: clamp(460px, 24vw, 620px);
+  }
+}
+@media (min-width: 1800px) and (min-height: 900px) {
+  :root .duel:not(.touch) .opp-hand .hcard {
+    width: 40px;
+    height: 40px;
+  }
+  :root .duel:not(.touch) .pbar {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+@media (min-width: 2200px) and (min-height: 1200px) {
+  :root .duel:not(.touch) .pbar,
+  :root .duel:not(.touch) .pbar .pname {
+    font-size: 22px;
+  }
+  :root .duel:not(.touch) .hcount {
+    font-size: 18px;
+  }
+  :root .duel:not(.touch) .lp {
+    font-size: 30px;
+  }
+  :root .duel:not(.touch) .ph,
+  :root .duel:not(.touch) .pile,
+  :root .duel:not(.touch) .pile.small {
+    font-size: 16px;
+  }
+  :root .duel:not(.touch) .phasebtns .gbtn,
+  :root .duel.speed:not(.touch) .phasebtns .gbtn,
+  :root .duel:not(.touch) .center .menu-btn,
+  :root .duel:not(.touch) .turninfo {
+    font-size: 19px;
+  }
+  :root .duel:not(.touch) .fstat,
+  :root .duel:not(.touch) .hand .hname {
+    font-size: 17px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-title {
+    font-size: 23px;
+  }
+  :root .duel:not(.touch) > .msgwin .win-body,
+  :root .duel:not(.touch) > .msgwin .hint,
+  :root .duel:not(.touch) > .msgwin .menu-item,
+  :root .duel:not(.touch) > .msgwin .menu-label,
+  :root .duel:not(.touch) > .msgwin .selstat,
+  :root .duel:not(.touch) > .msgwin .msg-card p {
+    font-size: 20px;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 380px, 30vh);
+  }
+}
