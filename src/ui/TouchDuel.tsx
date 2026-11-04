@@ -25,6 +25,7 @@ import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters
 import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
+import { wearKey, ZoneWear } from './fieldWear';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -422,7 +423,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     const mine = owner === acting;
     const dropId = mine ? `${kind}z${i}` : c && kind === 'm' ? `t${c.uid}` : undefined;
     const draggable = mine && kind === 'm' && c && state.phase === 'BP';
-    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}`;
+    const wear = e.speed && kind === 'm' ? wearKey(state, owner, i) : '';
+    const cls = `tz tz-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${dropId ? spotCls(dropId) : ''}${wear ? ' worn' : ''}`;
     const named = c && c.faceUp ? e.nameOf(c) : '';
     const stat = c && c.faceUp && kind === 'm' ? (c.pos === 'atk' ? e.atkOf(c) : e.defOf(c)) : '';
     // raised or lowered from the printed value: the plate turns green or red
@@ -431,7 +433,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     // aiming an attack (tap Attack, then a target): each target says how the battle would go
     const fc = c && !mine && kind === 'm' && mode?.kind === 'attack' && cls.includes(' pick') ? forecast(mode.uid, c.uid) : null;
     const fcShort = fc ? (fc.tone === 'good' ? (/(\d+) damage/.exec(fc.text)?.[1] ? `+${/(\d+) damage/.exec(fc.text)![1]}` : 'Win') : fc.tone === 'bad' ? (/take (\d+)/.exec(fc.text) ? `−${/take (\d+)/.exec(fc.text)![1]}` : 'Lose') : fc.text.includes('luck:') ? '🎲' : fc.text.startsWith('both') ? 'Trade' : fc.text.startsWith('face') ? '?' : '0') : '';
-    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}` : cls;
+    const sig = c ? `${fcShort}|${cls}|${c.uid}|${c.name}|${c.owner}|${c.pos}|${c.faceUp}|${visible}|${named}|${stat}|${c.equips.length}|${c.mats?.length ?? 0}|${countersKey(shownCounters(c))}|${kind === 'm' && figuresOn}|${!!draggable}|${wear}` : `${cls}|${wear}`;
     return <Piece key={`${owner}${kind}${i}`} sig={sig} render={() => (
       <div
         class={cls}
@@ -444,6 +446,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         }}
         {...(draggable ? liveDrag(c, 'mz') : {})}
       >
+        {/* (always there in a Speed Duel's Monster Zone, so it sees the first mark land) */}
+        {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
