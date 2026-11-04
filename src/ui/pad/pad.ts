@@ -980,11 +980,16 @@ function connected() {
   return pads().length;
 }
 
+/** the ring following sliding things while no controller loop runs (set up by installPad) */
+let follow: () => void = () => {};
+let followId = 0;
+
 function wake() {
   if (!on) {
     on = true;
     document.documentElement.classList.add('pad-on');
   }
+  follow();
 }
 
 function frame(now: number) {
@@ -1137,12 +1142,18 @@ export function installPad() {
   addEventListener('resize', () => drawRing());
   addEventListener('scroll', () => drawRing(), true);
   // the ring follows things that slide (sheets, the hand fan) even without a controller loop
-  setInterval(() => {
-    if (!on || loop) return;
-    validate();
-    drawRing();
-    renderHints();
-  }, 120);
+  // (only while a controller drives the screen: a touch player's phone gets no timer at all)
+  follow = () => {
+    if (followId) return;
+    followId = window.setInterval(() => {
+      if (!on) return void (clearInterval(followId), (followId = 0));
+      if (loop) return;
+      validate();
+      drawRing();
+      renderHints();
+    }, 120);
+  };
+  if (on) follow();
 }
 
 /** For tests in the browser: how long since a controller button was pressed. */
