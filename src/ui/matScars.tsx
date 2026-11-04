@@ -139,7 +139,7 @@ function merged(layers: Layer[]): Layer[] {
 
 /** the soft stain round each blow, per Attribute: colour, strength at the centre */
 const HALO: Record<string, [string, number]> = {
-  FIRE: ['#ff4a10', 0.62],
+  FIRE: ['#ff5a14', 0.5],
   WATER: ['#aef0ff', 0.42],
   WIND: ['#8affc0', 0.3],
   EARTH: ['#5a3a18', 0.55],
@@ -326,8 +326,10 @@ function Halo({ id, a }: { id: string; a: string }) {
   const [c, o] = HALO[a] ?? HALO.NONE;
   return (
     <radialGradient id={id}>
+      {/* (a quick falloff: a glow or a stain, never a disc) */}
       <stop offset="0" stop-color={c} stop-opacity={o} />
-      <stop offset="0.55" stop-color={c} stop-opacity={o * 0.5} />
+      <stop offset="0.3" stop-color={c} stop-opacity={o * 0.6} />
+      <stop offset="0.65" stop-color={c} stop-opacity={o * 0.18} />
       <stop offset="1" stop-color={c} stop-opacity="0" />
     </radialGradient>
   );
