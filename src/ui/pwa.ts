@@ -45,6 +45,7 @@ export function registerServiceWorker() {
     } catch {
       return;
     }
+    if (!reg) return; // (service workers blocked: some browsers resolve without one)
     const offer = (w: ServiceWorker) => {
       // Just opened (title screen): switch straight away. Later on, maybe mid-duel: ask first.
       if (Date.now() - loadedAt < 10_000) w.postMessage('skip-waiting');
