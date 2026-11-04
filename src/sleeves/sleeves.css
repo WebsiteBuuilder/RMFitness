@@ -54,8 +54,8 @@
   }
 }
 /* the deck pile wears a faint halo in its sleeve's colour */
-.duel .tpile.deck > .cback[style],
-.duel .pile-stack > .cback[style] {
+.duel .tpile.deck > .cback[class*='slv-id-'],
+.duel .pile-stack > .cback[class*='slv-id-'] {
   box-shadow:
     1px 1px 0 #00000080,
     2px 2px 0 #1a1208,
@@ -131,14 +131,41 @@ body.art-on .cback.slv-shine::after,
   transform: rotate(9deg);
   animation: slv-deal 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
-.slv-held .cimg {
+/* drag over the preview: the held card leans toward the finger, a light band slides across it */
+.slv-tilt {
+  --tx: 0;
+  --ty: 0;
+  position: relative;
   width: 100%;
   height: 100%;
+  transform: perspective(500px) rotateY(calc(var(--tx) * 16deg)) rotateX(calc(var(--ty) * -14deg));
+  transition: transform 0.35s ease-out;
   border-radius: 5px;
+  overflow: hidden;
   box-shadow:
     0 8px 16px #000c,
     0 0 0 1px #0008,
     0 0 18px -4px var(--sleeve-glow);
+}
+.slv-tilt.live {
+  transition: transform 0.06s linear;
+}
+.slv-sheen {
+  position: absolute;
+  inset: -30% -60%;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, #ffffff12 44%, #ffffff66 50%, #ffffff12 56%, transparent 62%);
+  transform: translateX(calc(var(--tx) * -32% - 8%));
+  transition: transform 0.35s ease-out;
+  mix-blend-mode: screen;
+}
+.slv-tilt.live .slv-sheen {
+  transition: none;
+}
+.slv-held .cimg {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
 }
 @keyframes slv-deal {
   from {
@@ -181,10 +208,24 @@ body.art-on .cback.slv-shine::after,
   min-width: 0;
 }
 .slv-card.on {
-  border-color: #e9c46a;
+  border-color: #9fd2ff;
   box-shadow:
-    0 0 0 2px #e9c46a44,
-    0 0 14px #e9c46a44;
+    0 0 0 2px #9fd2ff40,
+    0 0 12px #6cc4ff40;
+}
+/* the sleeve your cards wear: a gold frame and a tag, whichever one you're looking at */
+.slv-card.using {
+  position: relative;
+  border-color: #e9c46a;
+  background: linear-gradient(180deg, #3a3466, #1c1a40);
+  box-shadow:
+    0 0 0 2px #e9c46a55,
+    0 0 16px #e9c46a55;
+}
+.slv-card.using.on {
+  box-shadow:
+    0 0 0 2px #e9c46a,
+    0 0 18px #e9c46a77;
 }
 .slv-card.locked {
   background: linear-gradient(180deg, #1a2048, #10142e);
@@ -201,7 +242,7 @@ body.art-on .cback.slv-shine::after,
   box-shadow: 0 2px 5px #000a;
 }
 .slv-card.locked .slv-pic .cimg {
-  filter: brightness(0.5) saturate(0.7);
+  filter: brightness(0.82);
 }
 .slv-lock {
   position: absolute;
@@ -215,6 +256,37 @@ body.art-on .cback.slv-shine::after,
   font-size: 11.5px;
   line-height: 1.15;
   text-align: center;
+  min-height: 2.3em;
+  display: flex;
+  align-items: center;
+}
+.slv-go {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 8px 16px;
+}
+.slv-earn {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.slv-earn-t {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #ffe9a8;
+}
+.slv-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #ffffff1a;
+  overflow: hidden;
+}
+.slv-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #e9c46a, #ffe9a8);
 }
 .slv-card small {
   font-size: 10.5px;
@@ -292,4 +364,18 @@ body.art-on .cback.slv-shine::after,
 .sdh-sleeves-txt span {
   font-size: 13px;
   opacity: 0.85;
+}
+
+/* Touch duels: your own Set card's SET tag sits in a corner, so its sleeve stays in view */
+.duel.touch .fcard.myset .setmark {
+  left: auto;
+  top: auto;
+  right: 2px;
+  bottom: 2px;
+  transform: none;
+  font-size: 7.5px;
+  padding: 0 3px;
+}
+.duel.touch .fcard.def.myset .setmark {
+  transform: none;
 }

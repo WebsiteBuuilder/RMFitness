@@ -8,7 +8,7 @@ import { aceOf, bondTitle, nextBond } from '../ace/ace';
 import '../ace/ace.css';
 import { chosenSleeve, hasSleeve, sleeveDef, SLEEVES } from '../sleeves/sleeves';
 import '../sleeves/sleeves.css';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { card, imageUrl } from '../eds/db';
 import { LESSONS, lessonsDone, nextLesson } from '../eds/tutorial';
@@ -268,7 +268,7 @@ function AceTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
 
 /** Your card sleeve on its own tile: the back your deck, Set cards and hand wear in duels. */
 function SleevesTile({ save, profileId, onPick }: { save: SpeedSave; profileId: string; onPick: () => void }) {
-  const solo = loadSolo(profileId);
+  const solo = useMemo(() => loadSolo(profileId), [profileId, save]);
   const id = chosenSleeve(save, solo);
   const d = sleeveDef(id)!;
   const got = SLEEVES.filter((s) => hasSleeve(save, s.id, solo)).length;

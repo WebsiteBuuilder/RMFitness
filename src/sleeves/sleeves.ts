@@ -69,6 +69,19 @@ export function sleeveCostNote(s: SpeedSave, d: SleeveDef, solo?: SoloSave | nul
   if ('bond' in c) return `Take an Ace to bond ${MAX_BOND} (best: ${bestBond(s)})`;
   return `Finish Duel School (${lessonsDone(s).length}/${LESSONS.length})`;
 }
+/** How far along an earned sleeve is ([have, need]; null for free and Duel Chip ones). */
+export function sleeveProgress(s: SpeedSave, d: SleeveDef, solo?: SoloSave | null): [number, number] | null {
+  const c = d.cost;
+  if ('ranked' in c) {
+    const need = RANKED_TIERS.findIndex((t) => t.id === c.ranked);
+    return [Math.min(need, Math.max(0, bestRankedTier(solo))), need];
+  }
+  if ('stamps' in c) return [Math.min(stampsClaimed(s), c.stamps), c.stamps];
+  if ('bond' in c) return [Math.min(bestBond(s), MAX_BOND), MAX_BOND];
+  if ('school' in c) return [Math.min(lessonsDone(s).length, LESSONS.length), LESSONS.length];
+  return null;
+}
+
 /** The short version for a grid tile. */
 export function sleeveCostShort(d: SleeveDef): string {
   const c = d.cost;

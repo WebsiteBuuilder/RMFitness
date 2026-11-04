@@ -1,7 +1,7 @@
 // Card sleeves: the roster and its economy (free, Duel Chips, earned), the duel's sleeves per
 // side, and the sleeve riding a room's JOIN to the other phone.
 import assert from 'node:assert/strict';
-import { buySleeve, cantBuySleeve, chosenSleeve, DEFAULT_SLEEVE, duelSleeveOf, hasSleeve, isSleeve, pickSleeve, showDuelSleeves, sleeveForName, sleeveFromWire, sleeveStyle, sleeveShineClass, SLEEVES, bestRankedTier } from '../src/sleeves/sleeves';
+import { buySleeve, cantBuySleeve, chosenSleeve, DEFAULT_SLEEVE, duelSleeveOf, hasSleeve, isSleeve, pickSleeve, showDuelSleeves, sleeveForName, sleeveFromWire, sleeveClass, sleeveShineClass, SLEEVES, bestRankedTier } from '../src/sleeves/sleeves';
 import { SLEEVE_SVG, sleeveUrl } from '../src/sleeves/art';
 import { DuelSession } from '../src/eds/session';
 import { MemoryAdapter } from '../src/sync/memory';
@@ -123,9 +123,10 @@ t('the duel on screen: each side its own sleeve, the classic needs no style', ()
   assert.equal(duelSleeveOf(0), 'gold');
   assert.equal(duelSleeveOf(1), 'water');
   assert.equal(duelSleeveOf(undefined), null);
-  assert.equal(sleeveStyle('vortex'), undefined);
-  assert.equal(sleeveStyle(null), undefined);
-  assert.ok(sleeveStyle('gold')!['--card-back-img'].startsWith('url('));
+  assert.equal(sleeveClass('vortex'), '');
+  assert.equal(sleeveClass(null), '');
+  assert.equal(sleeveClass('gold'), ' slv-id-gold');
+  assert.equal(sleeveClass('nonsense' as never), '');
   assert.equal(sleeveShineClass('duelist'), '');
   assert.match(sleeveShineClass('holo'), /slv-shine slv-holo/);
   showDuelSleeves(null);

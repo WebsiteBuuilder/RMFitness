@@ -9,7 +9,7 @@ import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { CardImg } from '../ui/CardImg';
 import { chipsOf } from '../collection/economy';
 import { playBlip, playWin } from '../ui/sound';
-import { buySleeve, cantBuySleeve, chosenSleeve, hasSleeve, pickSleeve, sleeveCostNote, sleeveCostShort, sleeveDef, SLEEVES, type SleeveId } from './sleeves';
+import { buySleeve, cantBuySleeve, chosenSleeve, hasSleeve, pickSleeve, sleeveCostNote, sleeveCostShort, sleeveDef, sleeveProgress, SLEEVES, type SleeveId } from './sleeves';
 import '../mates/mates.css';
 import './sleeves.css';
 
@@ -53,6 +53,20 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
   };
   const why = cantBuySleeve(save, look);
   const price = 'chips' in def.cost ? def.cost.chips : 0;
+  const prog = owned ? null : sleeveProgress(save, def, solo);
+  // Drag over the preview: the held card tilts toward the finger and its sheen slides (no re-render).
+  const held = useRef<HTMLDivElement>(null);
+  const tilt = (ev: PointerEvent) => {
+    const el = held.current;
+    const box = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    if (!el || !box.width) return;
+    const x = Math.max(-1, Math.min(1, ((ev.clientX - box.left) / box.width) * 2 - 1));
+    const y = Math.max(-1, Math.min(1, ((ev.clientY - box.top) / box.height) * 2 - 1));
+    el.style.setProperty('--tx', x.toFixed(3));
+    el.style.setProperty('--ty', y.toFixed(3));
+    el.classList.add('live');
+  };
+  const untilt = () => held.current?.classList.remove('live');
 
   return (
     <div class="screen sleeves" ref={top}>
@@ -64,7 +78,7 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
           </span>
         </div>
         <div class="slv-stage" style={{ '--sleeve-glow': def.glow } as Record<string, string>}>
-          <div class="slv-show" aria-hidden="true">
+          <div class="slv-show" aria-hidden="true" onPointerMove={tilt} onPointerLeave={untilt} onPointerUp={untilt} onPointerCancel={untilt}>
             <i class="slv-floor" />
             <div class="slv-deck">
               <CardImg name="" back sleeve={look} class="slv-d3" />
@@ -72,33 +86,43 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
               <CardImg name="" back sleeve={look} class="slv-d1" shine />
             </div>
             <div key={flip} class="slv-held">
-              <CardImg name="" back sleeve={look} shine />
+              <div class="slv-tilt" ref={held}>
+                <CardImg name="" back sleeve={look} />
+                <i class="slv-sheen" />
+              </div>
             </div>
           </div>
           <div class="slv-info">
             <b>{def.name}</b>
             <p>{def.blurb}</p>
-            <span class={`mt-cost ${owned ? 'own' : ''}`}>{look === current ? '★ On your cards' : owned ? 'Yours' : price ? `● ${price} Duel Chips` : '🔒 Earned'}</span>
+            {look === current ? (
+              <span class="mt-cost own">★ On your cards</span>
+            ) : owned ? (
+              <button class="gbtn mt-go slv-go" onClick={take}>
+                Use this sleeve
+              </button>
+            ) : price ? (
+              chipsOf(save) < price ? (
+                <span class="mt-need">🔒 {price} Duel Chips · {price - chipsOf(save)} more to go</span>
+              ) : (
+                <button class="gbtn mt-go slv-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
+                  Get for ● {price}
+                </button>
+              )
+            ) : (
+              <span class="slv-earn">
+                <span class="slv-earn-t">🔒 {sleeveCostNote(save, def, solo)}</span>
+                {prog && (
+                  <i class="slv-bar">
+                    <i style={{ width: `${Math.round((100 * prog[0]) / Math.max(1, prog[1]))}%` }} />
+                  </i>
+                )}
+              </span>
+            )}
           </div>
         </div>
         <div class="mt-act">
-          {look === current ? (
-            <span class="mt-hint">Your deck, your hand as your opponent sees it, and your Set cards all wear this sleeve.</span>
-          ) : owned ? (
-            <button class="gbtn mt-go" onClick={take}>
-              Use {def.name}
-            </button>
-          ) : price ? (
-            why && chipsOf(save) < price ? (
-              <span class="mt-need">🔒 Costs {price} Duel Chips · you need {price - chipsOf(save)} more</span>
-            ) : (
-              <button class="gbtn mt-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
-                Get for {price} Duel Chips
-              </button>
-            )
-          ) : (
-            <span class="mt-hint">🔒 {sleeveCostNote(save, def, solo)} to unlock.</span>
-          )}
+          {look === current && <span class="mt-hint">Your deck, your Set cards and your hand as your opponent sees it all wear this sleeve.</span>}
           {note && <span class="mt-note">{note}</span>}
         </div>
 
@@ -106,7 +130,7 @@ export function SleevesScreen({ save, solo, onSave, onBack }: { save: SpeedSave;
           {SLEEVES.map((s) => {
             const has = hasSleeve(save, s.id, solo);
             return (
-              <button key={s.id} class={`slv-card ${look === s.id ? 'on' : ''} ${has ? '' : 'locked'}`} aria-label={`${s.name}${has ? '' : ', locked'}`} onClick={() => pick(s.id)}>
+              <button key={s.id} class={`slv-card${look === s.id ? ' on' : ''}${s.id === current ? ' using' : ''}${has ? '' : ' locked'}`} aria-label={`${s.name}${has ? '' : ', locked'}`} onClick={() => pick(s.id)}>
                 <span class="slv-pic">
                   <CardImg name="" back sleeve={s.id} />
                   {!has && <i class="slv-lock">🔒</i>}

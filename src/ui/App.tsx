@@ -12,7 +12,7 @@ import { LocalAdapter } from '../sync/local';
 import { DuelChat } from './DuelChat';
 import type { MatePlan } from '../mates/MateLayer';
 import { aceFromWire, aceOf, aceToWire, showDuelAces, withAceWin } from '../ace/ace';
-import { chosenSleeve, showDuelSleeves, sleeveForName, sleeveFromWire, type SleeveId } from '../sleeves/sleeves';
+import { chosenSleeve, DEFAULT_SLEEVE, showDuelSleeves, sleeveForName, sleeveFromWire, type SleeveId } from '../sleeves/sleeves';
 import { chosenMate, mateForName, retireOldMates, type MateId } from '../mates/roster';
 import { MemoryAdapter } from '../sync/memory';
 import { aiAction } from '../eds/ai';
@@ -130,13 +130,14 @@ registerPackOpener(openPack);
 
 type NewsCards = { who: string; won: string[]; lost: string[] }[];
 
-/** A profile's sleeve (its Ranked sleeves need the solo save: read once per Speed save, not every render). */
-const sleeveMemo = new WeakMap<object, SleeveId>();
+/** A profile's sleeve (its Ranked sleeves need the solo save: read at most every few seconds, not every render). */
+const sleeveMemo = new WeakMap<object, { id: SleeveId; at: number }>();
 function mySleeveOf(s: SpeedSave | null | undefined, profileId: string): SleeveId | undefined {
   if (!s) return undefined;
-  let id = sleeveMemo.get(s);
-  if (!id) sleeveMemo.set(s, (id = chosenSleeve(s, loadSolo(profileId))));
-  return id;
+  const now = Date.now();
+  let m = sleeveMemo.get(s);
+  if (!m || now - m.at > 3000) sleeveMemo.set(s, (m = { id: chosenSleeve(s, loadSolo(profileId)), at: now }));
+  return m.id;
 }
 
 export function App() {
@@ -1733,7 +1734,13 @@ function Running({
   };
   showDuelAces(view.state.started && view.state.rules?.mode === 'speed' && !view.state.tag ? [seatAce(0), seatAce(1)] : null);
   // Sleeves: each side's card backs wear its first seat's sleeve (a seat that sent none: one picked by its name).
-  const seatSleeve = (p: Pid) => sleeveFromWire(view.seats[p].sleeve) ?? sleeveForName(view.seats[p].name || view.state.players[p]?.name || '');
+  // (a tag duel: the side's first phone; a computer side wears the team's own; a phone that sent none: the classic)
+  const seatSleeve = (side: Pid): SleeveId => {
+    const c = view.state.tag?.ctl?.[side];
+    const seat = c ? c[0] : side;
+    if (seat === 'cpu') return sleeveForName(view.state.players[side]?.name ?? '');
+    return sleeveFromWire(view.seats[seat as Pid]?.sleeve) ?? DEFAULT_SLEEVE;
+  };
   showDuelSleeves(view.state.started ? [seatSleeve(0), seatSleeve(1)] : null);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).

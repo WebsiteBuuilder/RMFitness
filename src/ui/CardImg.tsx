@@ -6,7 +6,7 @@ import { TIERS, meterOf, tierIndex } from '../level/leveling';
 import { figUrl, useFigs } from '../level/figs';
 import { profileXpOf, rarityFor } from '../level/view';
 import { spellWord } from './gameUi';
-import { duelSleeveOf, sleeveShineClass, sleeveStyle, useDuelSleeves } from '../sleeves/duel';
+import { duelSleeveOf, sleeveClass, sleeveShineClass, useDuelSleeves } from '../sleeves/duel';
 import type { SleeveId } from '../sleeves/roster';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
@@ -45,7 +45,7 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
 function CardBack({ cls, owner, sleeve, shine }: { cls: string; owner?: Pid; sleeve?: SleeveId | null; shine: boolean }) {
   useDuelSleeves();
   const id = sleeve !== undefined ? sleeve : duelSleeveOf(owner);
-  return <div class={`cimg cback ${cls}${shine ? sleeveShineClass(id) : ''}`} style={sleeveStyle(id)} />;
+  return <div class={`cimg cback ${cls}${sleeveClass(id)}${shine ? sleeveShineClass(id) : ''}`} />;
 }
 
 function CardFace({ name, cls, owner, forceTier, lazy }: { name: string; cls: string; owner?: Pid; forceTier?: number; lazy: boolean }) {

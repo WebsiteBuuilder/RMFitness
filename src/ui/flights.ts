@@ -11,7 +11,7 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { DuelState, Pid } from '../eds/types';
 import { holdFigure, hush } from '../art/hold';
 import { drawHeld, whenIntroAt } from './immersionState';
-import { duelSleeveOf, sleeveStyle } from '../sleeves/duel';
+import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
 
 /** Where a card is: a place name ("hand0", "mz1", "gy0", ...). */
 type Where = string;
@@ -36,6 +36,15 @@ export function placesOf(s: DuelState): Map<number, Where> {
     ps.fusion.forEach((c) => out.set(c.uid, `ex${p}`));
   });
   return out;
+}
+
+/** Who owns the card with this uid (a card taken over still wears its owner's sleeve). */
+function ownerOf(s: DuelState, uid: number): Pid | undefined {
+  for (const ps of s.players) {
+    const c = [...ps.hand, ...ps.mz, ...ps.sz, ps.field, ...ps.gy, ...ps.deck, ...ps.removed, ...ps.fusion].find((x) => x && x.uid === uid);
+    if (c) return (c as { owner?: Pid }).owner;
+  }
+  return undefined;
 }
 
 /** The pile a place shows up at when the card itself has no element there. */
@@ -82,7 +91,7 @@ export interface Flight {
   fromOpp: boolean;
   /** a monster landing in a Monster Zone: its 3D figure waits for the landing */
   uid?: number;
-  /** whose side it lands on: a face-down copy wears that duelist's sleeve */
+  /** whose card it is: a face-down copy wears that duelist's sleeve */
   side?: Pid;
 }
 
@@ -90,9 +99,7 @@ export interface Flight {
 export function fly(f: Flight): void {
   const host = flightLayer();
   const el = document.createElement('div');
-  el.className = `tflight ${f.face ? '' : 'back'}`;
-  const sl = f.face ? undefined : sleeveStyle(duelSleeveOf(f.side));
-  if (sl) el.style.setProperty('--card-back-img', sl['--card-back-img']);
+  el.className = `tflight ${f.face ? '' : `back${sleeveClass(duelSleeveOf(f.side))}`}`;
   if (f.face) {
     const img = document.createElement('img');
     img.src = f.face;
@@ -240,7 +247,7 @@ export function useFlights(root: { current: HTMLElement | null }, state: DuelSta
         delay: isDraw ? draws++ * (fresh ? 110 : 90) : 0,
         fromOpp: w.endsWith(String(1 - acting)),
         uid: w.startsWith('mz') ? uid : undefined,
-        side: Number(w.slice(-1)) as Pid,
+        side: ownerOf(state, uid) ?? (Number(w.slice(-1)) as Pid),
       });
     }
     if (!fresh) return flights.forEach(fly);

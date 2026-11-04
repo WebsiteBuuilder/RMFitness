@@ -1,4 +1,4 @@
-// The sleeves of the duel on screen: each side's, as inline style on its face-down cards.
+// The sleeves of the duel on screen: each side's, as a class on its face-down cards.
 import { useEffect, useState } from 'preact/hooks';
 import type { Pid } from '../eds/types';
 import { sleeveUrl } from './art';
@@ -30,11 +30,25 @@ export function duelSleeveOf(owner: Pid | undefined): SleeveId | null {
   return owner === 0 || owner === 1 ? duelSleeves[owner] : null;
 }
 
-/** Inline style that dresses a card back in a sleeve (undefined: the classic back from graphics.css). */
-export function sleeveStyle(id: SleeveId | null | undefined): Record<string, string> | undefined {
-  if (!id || id === DEFAULT_SLEEVE) return undefined;
-  const d = sleeveDef(id);
-  return { '--card-back-img': sleeveUrl(id), '--sleeve-glow': d?.glow ?? '#ffb04a' };
+/** The sleeves' rules, written into the page once each the first time a sleeve shows (one class per
+ *  sleeve, so a card back carries a short class name instead of its whole picture). */
+const written = new Set<string>();
+let sheet: HTMLStyleElement | null = null;
+function writeRule(id: SleeveId) {
+  if (written.has(id) || typeof document === 'undefined') return;
+  written.add(id);
+  if (!sheet || !sheet.isConnected) {
+    sheet = document.createElement('style');
+    sheet.dataset.sleeves = '';
+    document.head.appendChild(sheet);
+  }
+  sheet.appendChild(document.createTextNode(`.slv-id-${id}{--card-back-img:${sleeveUrl(id)};--sleeve-glow:${sleeveDef(id)?.glow ?? '#ffb04a'}}\n`));
+}
+/** The class that dresses a card back (or anything holding one) in a sleeve ('' : the classic back from graphics.css). */
+export function sleeveClass(id: SleeveId | null | undefined): string {
+  if (!id || id === DEFAULT_SLEEVE || !sleeveDef(id)) return '';
+  writeRule(id);
+  return ` slv-id-${id}`;
 }
 /** The class a sleeve's light adds where it is allowed to move (the deck pile, the picker). */
 export const sleeveShineClass = (id: SleeveId | null | undefined): string => {
