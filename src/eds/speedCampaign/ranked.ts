@@ -117,6 +117,8 @@ export const COMEBACK_LOSSES = 2;
 /** "Pharaoh 3": the level at this many Pharaoh Points (0: plain Pharaoh). */
 export const pharaohLevel = (kp: number) => Math.floor(Math.max(0, kp) / PHARAOH_LEVEL);
 /** The rank's full name: Pharaoh shows its level ("Pharaoh 3"), every other step its stepName. */
+/** Ascension stars as shown everywhere: ★, ★★, ★★★, then ★4, ★5... */
+export const ascStars = (n: number) => (n <= 0 ? '' : n <= 3 ? '★'.repeat(n) : `★${n}`);
 export const rankName = (p: Pick<RankedProgress, 'step' | 'kp'>) => (p.step === TOP && pharaohLevel(p.kp) > 0 ? `Pharaoh ${pharaohLevel(p.kp)}` : stepName(p.step));
 /** What an Ascension pays (once each, ASCENSION_PRIZES a season). */
 export const ASCENSION_PRIZE: Reward[] = [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }];
@@ -395,7 +397,7 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     const t = tierIndexOf(step);
     const costs = RANKED_TIERS[t].loses || forfeit;
     // a Streak Shield takes the hit for a lost duel (never for pressing Leave)
-    if (costs && shield && !forfeit && (step === TOP ? kp > 0 : stars > 0 || step > tierFloor(t))) {
+    if (costs && shield && !forfeit && !link && (step === TOP ? kp > 0 : stars > 0 || step > tierFloor(t))) {
       shield = false;
       shieldUsed = true;
     }
@@ -422,7 +424,8 @@ function applyResult(p: RankedProgress, result: 'w' | 'l' | 'd', now: Date, forf
     lossRun,
     fast,
     best: Math.max(p.best ?? 0, streak),
-    lvlPeak: Math.max(p.lvlPeak ?? 0, step === TOP ? pharaohLevel(kp) : 0),
+    // (a level reached in a link battle still flashes on the next Ranked win, where its prize pays)
+    lvlPeak: link ? (p.lvlPeak ?? 0) : Math.max(p.lvlPeak ?? 0, step === TOP ? pharaohLevel(kp) : 0),
     peak: Math.max(p.peak, step),
     w: p.w + (result === 'w' ? 1 : 0),
     l: p.l + (result === 'l' ? 1 : 0),
@@ -541,7 +544,7 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
   const lvlBefore = p.step === TOP ? pharaohLevel(p.kp) : 0;
   const lvlNow = next.step === TOP ? pharaohLevel(next.kp) : 0;
   // a Pharaoh Level reached for the first time this season (not one won back after a loss)
-  const levelUp = lvlNow > lvlBefore && lvlNow > (p.lvlPeak ?? 0) ? lvlNow : null;
+  let levelUp = lvlNow > lvlBefore && lvlNow > (p.lvlPeak ?? 0) ? lvlNow : null;
   if (o.result === 'w' && !o.forfeit) {
     const day = todayString(now);
     const counts = RANKED_TIERS[tierIndexOf(p.step)].loses;
@@ -566,6 +569,8 @@ export function settleRanked(speed: SpeedSave, solo: SoloSave, o: DuelOutcome, n
       next = { ...next, lvlPaid: l };
       levelPaid = true;
     }
+    // (a level prize always gets its flash, even one caught up from a level reached before)
+    if (levelPaid) levelUp = lvlNow;
   }
   const chipsBefore = speed.chips ?? 0;
   const chipsDue = extra.reduce((a, r) => a + (r.kind === 'chips' ? r.n : 0), 0);
@@ -685,7 +690,7 @@ export function ascendRanked(speed: SpeedSave, solo: SoloSave, now = new Date(),
   const next: RankedProgress = { ...p, step: tierFloor(ASCEND_TIER), stars: 0, kp: 0, asc: n, streak: 0, lossRun: 0 };
   const paidN = p.ascPaid ?? 0;
   if (paidN >= ASCENSION_PRIZES) return { speed: opened.speed, solo: { ...opened.solo, ranked: next }, n, lines: [], cards: [], paid: false };
-  const g = grant(opened.speed, opened.solo, [...ASCENSION_PRIZE, { kind: 'title', name: `Ascended ${'★'.repeat(Math.min(n, 5))} · ${seasonName(p.season)}` }], [], seed + 61);
+  const g = grant(opened.speed, opened.solo, [...ASCENSION_PRIZE, { kind: 'title', name: `Ascended ${ascStars(n)} · ${seasonName(p.season)}` }], [], seed + 61);
   return { speed: g.speed, solo: { ...g.solo, ranked: { ...next, ascPaid: paidN + 1 } }, n, lines: g.lines, cards: g.cards, paid: true };
 }
 

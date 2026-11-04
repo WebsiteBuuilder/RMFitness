@@ -1,6 +1,6 @@
 // The Ranked Duel badge: the tier's shield, the rank's stars and the one-line summary, shared by
 // the Ranked screen and the home screen's tile.
-import { PHARAOH_LEVEL, TOP, daysLeft, ladderClock, pharaohLevel, rankName, starsAt, stepName, tierOf, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { PHARAOH_LEVEL, TOP, ascStars, daysLeft, ladderClock, pharaohLevel, rankName, starsAt, stepName, tierOf, type RankedProgress } from '../eds/speedCampaign/ranked';
 import './ranked.css';
 
 /** The tier's badge: a shield in the tier's colors with its first letter (a crown at the top),
@@ -15,7 +15,7 @@ export function RankEmblem({ step, size = 'm', asc = 0, level = 0 }: { step: num
       </svg>
       <b>{tierMark(t.id, t.name)}</b>
       {step === TOP && level > 0 && <em class="rk-lvl">{level}</em>}
-      {asc > 0 && <i class="rk-asc">{asc > 3 ? `★${asc}` : '★'.repeat(asc)}</i>}
+      {asc > 0 && <i class="rk-asc">{ascStars(asc)}</i>}
     </span>
   );
 }
@@ -31,7 +31,7 @@ export function RankStars({ p, fresh = 0 }: { p: Pick<RankedProgress, 'step' | '
       <span class="rk-kp">
         ☥ {p.kp} Pharaoh Point{p.kp === 1 ? '' : 's'}
         <span class="rk-lvlbar" aria-label={`${into} of ${PHARAOH_LEVEL} points to Pharaoh ${pharaohLevel(p.kp) + 1}`}>
-          <i style={{ width: `${Math.round((into / PHARAOH_LEVEL) * 100)}%` }} />
+          <i style={{ transform: `scaleX(${into / PHARAOH_LEVEL})` }} />
         </span>
       </span>
     );
@@ -49,5 +49,5 @@ export function RankStars({ p, fresh = 0 }: { p: Pick<RankedProgress, 'step' | '
 
 /** The short line under the rank on the home tile. */
 export function rankedNote(p: RankedProgress): string {
-  return `${rankName(p)}${p.asc ? ` ${'★'.repeat(Math.min(3, p.asc))}` : ''} · ${p.step === TOP ? `${p.kp} Pharaoh Points` : `${p.stars}/${starsAt(p.step)} stars`} · ${daysLeft(ladderClock(p))} day${daysLeft(ladderClock(p)) === 1 ? '' : 's'} left`;
+  return `${rankName(p)}${p.asc ? ` ${ascStars(p.asc)}` : ''} · ${p.step === TOP ? `${p.kp} Pharaoh Points` : `${p.stars}/${starsAt(p.step)} stars`} · ${daysLeft(ladderClock(p))} day${daysLeft(ladderClock(p)) === 1 ? '' : 's'} left`;
 }

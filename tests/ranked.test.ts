@@ -10,11 +10,11 @@ import type { Pid } from '../src/eds/types';
 import { newSpeedSave, speedDeckProblems } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
-import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, TOP_MILESTONE, TOP_MILESTONES, KING, migrateRanked, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, pharaohLevel, rankName, rankedCpuSetup, ascendRanked, rankedStats, ASCEND_TIER, ASCENSION_PRIZES, FAST_START, SHIELD_STREAK, COMEBACK_LOSSES, type RankedProgress } from '../src/eds/speedCampaign/ranked';
+import { settleLinkRanked, LINK_STARS_PER_DAY, cancelRanked, ladderClock, rankedFirst, starsAt, DAILY_GOAL, TOP_MILESTONE, TOP_MILESTONES, KING, migrateRanked, RANKED_TIERS, STEPS, TOP, openRanked, rankedFoe, rankedProgress, seasonOf, seasonStart, settleRanked, startRanked, stepName, tierFloor, tierIndexOf, newRanked, pharaohLevel, rankName, rankedCpuSetup, ascendRanked, rankedStats, ASCEND_TIER, ASCEND_LEVEL, PHARAOH_LEVEL, ASCENSION_PRIZES, FAST_START, SHIELD_STREAK, COMEBACK_LOSSES, type RankedProgress } from '../src/eds/speedCampaign/ranked';
 import { todayString } from '../src/eds/speedCampaign/labyrinth';
 import { cleanStats } from '../src/collection/rankings';
 import { weekMissions, weekOf } from '../src/eds/speedCampaign/rankedWeekly';
-import { boardFrom, ladderScore, postOf } from '../src/online/rankedBoard';
+import { boardFrom, climbScore, ladderScore, postOf } from '../src/online/rankedBoard';
 import { mergeLadder } from '../src/online/rankedBoard';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
@@ -432,6 +432,8 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   ok(settleRanked(sp, blocked.solo, LOSS, day(10, 14)).gained === -1, 'the loss after that costs a star again');
   const left = settleRanked(sp, sh, LEFT, day(10, 13));
   ok(!left.shieldUsed && left.gained === -1, 'pressing Leave is never shielded');
+  const linkLoss = settleLinkRanked(sp, sh, 'l', 'Brother', day(10, 13));
+  ok(!!rankedProgress(linkLoss.solo).shield, 'a link battle loss leaves the Shield for Ranked Duels');
   // Comeback
   let cb: SoloSave = at(newSoloSave(), { step: 7, stars: 3, peak: 7, paid: [0, 1, 2, 3], bonusDay: todayString(day(11)) });
   cb = settleRanked(sp, cb, LOSS, day(11, 9)).solo;
@@ -454,10 +456,21 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   st = settleRanked(sp, st, LOSS, day(13, 11), undefined, { deckId: 'B', foe: 'Mako Tsunami' }).solo;
   const stats = rankedStats(rankedProgress(st));
   ok(stats.rate === 67 && stats.best === 2 && stats.deck?.id === 'A' && stats.deck.w === 2 && stats.foe?.name === 'Bandit Keith' && stats.foe.n === 2, `season stats (${JSON.stringify(stats)})`);
-  // the board: Ascensions rank first, and need the wins behind them
+  // the board counts the whole climb: Ascending never costs a place, Pharaoh Levels still count, and Ascensions need the wins (and a rank) behind them
   const base = { name: 'X', color: '#123', step: TOP, stars: 0, kp: 50, w: 200, l: 3, at: 1 };
-  const board = boardFrom({ a: JSON.stringify({ ...base, name: 'Pharaoh50' }), b: JSON.stringify({ ...base, name: 'Asc1', step: 12, kp: 0, asc: 1 }), c: JSON.stringify({ ...base, name: 'Cheat', w: 20, kp: 20, asc: 5 }) });
-  ok(board[0].name === 'Asc1' && board.find((r) => r.name === 'Cheat')?.asc === undefined, `Ascended ranks first; Ascensions without the wins don't count (${board.map((r) => `${r.name}:${r.asc ?? 0}`).join(' ')})`);
+  const d3 = tierFloor(ASCEND_TIER);
+  const board = boardFrom({
+    a: JSON.stringify({ ...base, name: 'Pharaoh50' }),
+    b: JSON.stringify({ ...base, name: 'Asc1', step: d3, kp: 0, asc: 1 }),
+    c: JSON.stringify({ ...base, name: 'Cheat', w: 20, kp: 20, asc: 5 }),
+    d: JSON.stringify({ ...base, name: 'Pharaoh5', kp: 5 }),
+    e: JSON.stringify({ ...base, name: 'RookieAsc', step: 0, kp: 0, asc: 3 }),
+    f: JSON.stringify({ ...base, name: 'Asc2', step: d3, kp: 0, asc: 2 }),
+  });
+  const order = board.map((r) => r.name);
+  ok(climbScore({ step: d3, stars: 0, kp: 0, asc: 1 }) === climbScore({ step: TOP, stars: 0, kp: ASCEND_LEVEL * PHARAOH_LEVEL }), 'Ascending keeps your place on the board exactly');
+  ok(order.indexOf('Asc2') < order.indexOf('Pharaoh50') && order.indexOf('Pharaoh50') < order.indexOf('Asc1') && order.indexOf('Asc1') < order.indexOf('Pharaoh5'), `the board sorts by the whole climb (${order.join(' ')})`);
+  ok(board.find((r) => r.name === 'Cheat')?.asc === undefined && board.find((r) => r.name === 'RookieAsc')?.asc === undefined, "Ascensions without the wins, or under Diamond, don't count");
 }
 
 if (fails) {

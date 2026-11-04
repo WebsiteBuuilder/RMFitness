@@ -97,6 +97,9 @@
 }
 .rk-emblem.t-pharaoh svg {
   filter: drop-shadow(0 0 12px rgba(255, 225, 120, 0.85));
+}
+/* (only the big hero shield breathes: a looping filter on every small badge repaints every frame) */
+.rk-emblem.l.t-pharaoh svg {
   animation: rk-pharaoh 2.4s ease-in-out infinite;
 }
 @keyframes rk-pharaoh {
@@ -289,8 +292,15 @@
   font-style: normal;
   color: var(--so-gold);
   font-weight: 900;
-  width: 16px;
+  min-width: 16px;
+  flex: none;
   text-align: center;
+  font-size: 13px;
+}
+.rk-prize > b {
+  width: auto;
+  min-width: 78px;
+  max-width: 120px;
 }
 .rk-prize.got {
   opacity: 0.6;
@@ -556,7 +566,9 @@
   display: block;
   height: 100%;
   background: linear-gradient(90deg, #c8961e, #ffe58a);
-  transition: width 0.6s ease-out;
+  width: 100%;
+  transform-origin: left;
+  transition: transform 0.6s ease-out;
 }
 
 /* Ascend card */
@@ -618,7 +630,12 @@
 
 /* a new Pharaoh Level or an Ascension on the result sheet */
 .rk-change.level .rk-emblem {
-  animation: rk-glow 1.4s ease-in-out 2;
+  animation:
+    rk-rise 0.8s ease-out both,
+    rk-glow 0.7s 0.8s ease-in-out 2 alternate;
+}
+.rk-change.level .rk-flash {
+  margin-bottom: 14px;
 }
 .rk-flash.level {
   font-size: 19px;
