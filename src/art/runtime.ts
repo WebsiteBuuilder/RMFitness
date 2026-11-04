@@ -13,7 +13,9 @@ import { END_DURATION, liftStep, resolveDuration, stackDuration } from './chainR
 import { artFor, cardBack, type ArtData } from './depth';
 import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, type AttackStyle } from './profile';
 import { cueSting } from './cueSound';
-import { boom, chime, drone, slowdown, swell, whoosh, zap } from './sfx';
+import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
+import { flickerAt, glitchAt, holoReveal, showAtFor, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
+import { calmMotion, getHolo } from './settings';
 import { chainLift, chainNegate, chainResolve } from '../ui/duelSfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
@@ -1289,6 +1291,113 @@ export class Director {
     });
   }
 
+  /**
+   * Holographic summon (S: the summon's start; `h` its plan, times from S): the Duel Disk's
+   * beam rises out of the card on the circle, the monster forms in it as scanlined blue-white
+   * light that tears and flickers, then a line of light climbs it from the feet and it locks
+   * solid with a flash. Bigger summons (`h.power`) get a wider beam, more tearing and a bigger lock.
+   */
+  private hologram(tl: Timeline, S: number, h: ReturnType<typeof holoPlan>, fig: Figure | null, o: { ground: number; restY: number; size: number; mill: boolean; seed: number; fin: number; finPal: number[] | null }) {
+    const st = this.stage;
+    const U = this.U;
+    const P = st.particles;
+    const q = this.q;
+    const calm = calmMotion();
+    const pw = h.power;
+    const beamCol = o.mill ? HOLO_GOLD : HOLO_COLOR;
+    const at = (t: number, fn: () => void) => tl.at(S + t, fn);
+    const span = (a: number, b: number, fn: (t: number, k: number, dt: number) => void) => tl.span(S + a, S + b, (k, dt) => fn(a + k * (b - a), k, dt));
+    // the beam: a cone opening up out of the card
+    const bh = o.size * (1.15 + pw * 0.08);
+    // (narrower on a phone the governor turned down: less additive overdraw)
+    const beam = tl.own(new Glow(o.size * (0.95 + pw * 0.15) * (q < 1 ? 0.8 : 1), bh, 'beam', beamCol, HOLO_CORE));
+    // behind the monster: the hologram draws over its own light
+    beam.mesh.position.set(0, o.ground + bh * 0.47, -0.2);
+    beam.mesh.renderOrder = -5;
+    beam.u.uOpacity.value = 0;
+    const peak = [0.62, 0.7, 0.78][pw];
+    span(h.beamAt, h.beamEnd, (t) => {
+      const up = clamp01((t - h.beamAt) / 0.1);
+      const down = 1 - clamp01((t - h.solidEnd) / Math.max(0.05, h.beamEnd - h.solidEnd));
+      const fl = calm ? 0 : flickerAt(t * 1.3, o.seed) * 0.6;
+      beam.u.uOpacity.value = peak * easeOut(up) * down * (1 - fl);
+      // it shoots up out of the card: grows from its base, not from its middle
+      const sy = lerp(0.2, 1, easeOut(up));
+      beam.mesh.scale.set(lerp(0.4, 1, easeOut(up)), sy, 1);
+      beam.mesh.position.y = o.ground + bh * 0.47 * sy;
+    });
+    // the hum stops with the summon (a tap that skips it silences it too)
+    let stopHum: (() => void) | null = null;
+    tl.own({ update: () => true, dispose: () => stopHum?.() });
+    // the signal tears with a flick of color split
+    if (!calm) for (const [g] of h.glitches) at(g, () => st.pulse('chroma', 0.18 + pw * 0.08));
+    at(h.beamAt, () => (stopHum = holoHum(((h.solidEnd - h.beamAt + 0.12) * tl.slow) / tl.rate, pw / 2)));
+    // the source: a hot flare on the card as the beam fires
+    const src = tl.own(new Glow(1.4 * U, 1.4 * U, 'flare', beamCol, HOLO_CORE));
+    src.mesh.position.set(0, o.ground + 0.06 * U, 0.4);
+    src.u.uOpacity.value = 0;
+    // (a flash as it fires, then the emitter keeps glowing on the card until the lock)
+    span(h.beamAt, h.solidEnd + 0.1, (t, k) => {
+      const f = (t - h.beamAt) / 0.35;
+      const lockFade = 1 - clamp01((t - h.solidEnd) / 0.1);
+      src.u.uOpacity.value = (f < 1 ? 0.38 * (f < 0.15 ? f / 0.15 : 1 - easeOut((f - 0.15) / 0.85)) : 0) + 0.2 * clamp01(f) * lockFade;
+      k = clamp01(f);
+      src.mesh.scale.set(lerp(0.6, 1.4, easeOut(k)), lerp(0.6, 0.5, k), 1);
+    });
+    // light motes climbing the beam while the hologram forms
+    span(h.beamAt, h.solidEnd, (_t, _k, dt) => {
+      const n = Math.floor((40 + pw * 30) * q * dt + Math.random());
+      for (let i = 0; i < n; i++) P.emit({ x: (Math.random() - 0.5) * 0.5 * o.size, y: o.ground + 0.05 * U, z: 0.3, vy: (1.6 + Math.random() * 1.6) * U, life: 0.6, size: 0.05 * U, color: Math.random() < 0.5 ? beamCol : HOLO_CORE, drag: 0.4 });
+    });
+    if (fig) {
+      const u = fig.u;
+      const col = o.mill ? HOLO_GOLD_RGB : HOLO_RGB;
+      (u.uHoloCol.value as Vector3).set(col[0], col[1], col[2]);
+      u.uHoloScroll.value = calm ? 0 : 1;
+      // the front climbs the subject itself (its feet to the top of its head), not the empty art above it
+      const lo = fig.foot.v - 0.04;
+      const hi = Math.min(1.06, fig.foot.top + 0.05);
+      span(0, h.solidEnd + 0.04, (t) => {
+        u.uHolo.value = 1;
+        // projected light is never washed white by an entrance's tint: the monster's own colors show through
+        u.uTint.value = 0;
+        u.uHoloLine.value = t < h.solidAt ? lo - 0.02 : lerp(lo, hi, easeInOut(clamp01((t - h.solidAt) / (h.solidEnd - h.solidAt))));
+        // it builds up: fainter as it first forms, fuller as the lock comes
+        u.uFlick.value = (calm ? 0 : flickerAt(t, o.seed) * (t < h.solidAt ? 1 : 0.35)) + 0.18 * (1 - clamp01((t - h.reveal) / Math.max(0.05, h.solidAt - h.reveal)));
+        u.uGlitch.value = calm ? 0 : glitchAt(h, t) * (0.6 + pw * 0.25);
+      });
+      // (not cosmetic: a skipped summon still ends on a solid monster)
+      tl.at(
+        S + h.solidEnd + 0.04,
+        () => {
+          u.uHolo.value = 0;
+          u.uFlick.value = 0;
+          u.uGlitch.value = 0;
+        },
+        false,
+      );
+    }
+    // it locks solid: a flash of light, a ring, sparks in the finish's colors (or the hologram's)
+    at(h.solidEnd, () => {
+      const fk = calm ? 0.5 : 1;
+      st.pulse('flash', [0.1, 0.14, 0.2][pw] * fk);
+      this.flash(o.mill ? HOLO_GOLD : HOLO_CORE, [0.07, 0.11, 0.17][pw] * fk);
+      holoLock(pw / 2);
+      const cols = o.finPal && o.fin >= FIN.GL ? o.finPal : [beamCol, HOLO_CORE];
+      cols.forEach((fc, i) => P.emit({ x: 0, y: o.restY, z: 0.35, burst: (2.2 + pw * 0.6 + i * 0.3) * U, life: 0.6, size: 0.07 * U, color: fc, drag: 2.2 }, Math.round((10 + pw * 8) * q)));
+    });
+    {
+      // the lock snaps off as a ring of light
+      const ring = tl.own(new Glow((2.6 + pw * 0.8) * U, (2.6 + pw * 0.8) * U, 'shock', beamCol, HOLO_CORE));
+      ring.mesh.position.set(0, o.restY, 0.32);
+      ring.u.uOpacity.value = 0;
+      span(h.solidEnd, h.solidEnd + 0.4, (_t, k) => {
+        ring.u.uK.value = easeOut(k);
+        ring.u.uOpacity.value = 0.85 * (1 - k);
+      });
+    }
+  }
+
   private shafts(tl: Timeline, foot: P3, h: number, color: number, t0: number, t1: number, n = 3, peak = 0.85) {
     const U = this.U;
     for (let i = 0; i < n; i++) {
@@ -1717,6 +1826,13 @@ export class Director {
     const span = (a: number, b: number, fn: (k: number, dt: number) => void) => tl.span(S + a, S + b, fn);
     const sub = !info ? '' : info.kind === 'monster' ? `${'★'.repeat(Math.min(12, info.level ?? 0))}  ATK ${info.atk ?? '?'} / DEF ${info.def ?? '?'}` : '';
     const how = method ? SUMMON_LABEL[method] : entr === 'fusion' ? 'Fusion Summon' : entr === 'ritual' ? 'Ritual Summon' : (info?.level ?? 0) >= 5 ? 'Tribute Summon' : '';
+    // holographic summon (Duel Disk projector, like the anime): planned inside the summon's own
+    // reveal window, so it never makes the summon longer
+    const holoOn = getHolo() && !!art;
+    const revealAt = holoReveal(entr, over);
+    const calmHolo = calmMotion();
+    const hp = holoPower(method, { tribute: how === 'Tribute Summon', over, ace: aceFull, fusionish });
+    const holo = holoOn ? holoPlan(hp, revealAt, E) : null;
 
     // the cut-in: a slanted band, the art racing across it, the name slamming in
     if (C && art) {
@@ -1816,6 +1932,25 @@ export class Director {
         });
       });
       if (mill) this.millenniumEye(tl, S, { x: 0, y: restY + 0.45 * size, z: -0.6 }, ground, size, E);
+    } else if (holo) {
+      // hologram: the card drops flat onto the circle, face up and lit, and the projector fires out of it
+      span(0.32, 0.46, (k) => {
+        const e = easeInOut(k);
+        flyer.mesh.position.set(0, lerp(ground + 0.4 * U, ground + 0.03 * U, e), lerp(1.2, 0.15, e));
+        flyer.mesh.rotation.set(lerp(-0.5, -1.25, e), 0, 0);
+        flyer.mesh.scale.setScalar(lerp(1.35, 0.9, e));
+        flyer.u.uOpacity.value = 1;
+        flyer.u.uTint.value = 0.35 * (1 - e) + 0.18 * e;
+      });
+      span(0.46, holo.solidEnd, (k) => {
+        flyer.u.uTint.value = 0.1 + (calmHolo ? 0 : 0.05 * Math.sin(k * 40));
+        flyer.u.uSheen.value = -0.4 + ((k * 2.5) % 1) * 2.2;
+      });
+      span(holo.solidEnd, Math.min(E, holo.beamEnd + 0.12), (k) => (flyer.u.uOpacity.value = 1 - easeIn(k)));
+      span(0.4, 0.5, (_k, dt) => {
+        const n = Math.floor(140 * this.q * dt + 0.5);
+        for (let i = 0; i < n; i++) st.particles.emit({ x: (r() - 0.5) * 1.1 * U, y: ground + 0.05 * U, z: 0.2, vy: (1.5 + r()) * U, life: 0.45, size: 0.07 * U, color: i % 2 ? HOLO_CORE : HOLO_COLOR, drag: 1.2 });
+      });
     } else {
       // it dissolves into light as the monster's reveal starts (showAt, below)
       span(0.32, 0.5, (k) => {
@@ -1832,7 +1967,7 @@ export class Director {
     if (!C) at(0, () => (tier >= 2 ? swell(0.6) : whoosh(0.3, 400, 2000, 0.15)));
 
     // the summon method's own shot (Xyz galaxy, Synchro rings, Link arrows, Tribute souls...)
-    if (method && method !== 'normal') this.methodFx(tl, method, S, { x: 0, y: restY, z: 0 }, ground, size, col, info, r);
+    if (method && method !== 'normal') this.methodFx(tl, method, S, { x: 0, y: restY, z: 0 }, ground, size, col, info, r, !!holo);
 
     // the circle on the ground
     const star = entr === 'fusion' ? 6 : entr === 'ritual' ? 5 : 0;
@@ -1858,8 +1993,10 @@ export class Director {
     });
 
     // light shafts behind the monster
-    const showAt = over ? 0.62 : 0.42;
-    this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    const showAt = showAtFor(over);
+    // (under a hologram the projector is the only light until it locks solid; the shafts come up with the lock)
+    if (holo) this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + holo.solidEnd - 0.05, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
+    else this.shafts(tl, { x: 0, y: ground, z: 0 }, 4.2 * U, col.main, S + showAt - 0.1, S + E, tier >= 2 ? 3 : 2, 0.6 + tier * 0.1);
 
     // the monster
     const fig = art ? tl.own(this.figure(art, size, prof, col.main)) : null;
@@ -1891,7 +2028,8 @@ export class Director {
       shock.u.uK.value = easeOut(k);
       shock.u.uOpacity.value = 1 - k * 0.3;
     });
-    switch (entr) {
+    // a hologram rises out of its card: no falling from the sky or bursting from the floor under one
+    switch (holo && (entr === 'descend' || entr === 'erupt') ? 'rise' : entr) {
       case 'descend':
         span(showAt, showAt + 0.5, (k) => {
           if (!fig) return;
@@ -2012,12 +2150,15 @@ export class Director {
         // rise
         span(showAt, showAt + 0.55, (k) => {
           if (!fig) return;
-          fig.mesh.position.y = lerp(ground - 0.2 * U, restY, easeOut(k));
+          // (a hologram rises out of the card itself, never from under the floor)
+          fig.mesh.position.y = lerp(holo ? restY - 0.12 * U : ground - 0.2 * U, restY, easeOut(k));
           fig.u.uOpacity.value = 1;
           fig.u.uReveal.value = easeOut(k);
         });
         at(showAt, () => chime(r()));
     }
+    // (after the entrances: the hologram has the last word on the figure's look while it plays)
+    if (holo) this.hologram(tl, S, holo, fig, { ground, restY, size, mill, seed: prof.seed, fin, finPal });
     at(landAt, () => {
       if (tier >= 2) {
         st.shake(0.3 + prof.shake * 0.5);
@@ -2090,7 +2231,7 @@ export class Director {
    * material orbs, Synchro rings with stars rising through them, Link arrows lighting,
    * Tribute souls rising and the light falling, or a Special Summon's gate.
    */
-  private methodFx(tl: Timeline, method: SummonHow, S: number, c: P3, ground: number, size: number, col: Colors, info: ReturnType<typeof card>, r: () => number) {
+  private methodFx(tl: Timeline, method: SummonHow, S: number, c: P3, ground: number, size: number, col: Colors, info: ReturnType<typeof card>, r: () => number, soft = false) {
     const st = this.stage;
     const U = this.U;
     const P = st.particles;
@@ -2235,7 +2376,8 @@ export class Director {
         }
         const fall = own(new Glow(1.8 * U, 6 * U, 'shaft', col.light, 0xffffff));
         fall.mesh.position.set(c.x, ground + 2.8 * U, -0.4);
-        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, 1);
+        // (softer under a hologram, so the falling light never drowns it)
+        fade(fall, show - 0.12, show - 0.02, show + 0.15, show + 0.55, soft ? 0.15 : 1);
         tl.at(S + 0.02, () => (whoosh(0.35, 300, 1800, 0.18), chime(0.3)));
         tl.at(show - 0.05, () => (boom(0.4), this.flash(0xfff0d0, 0.18)));
         break;

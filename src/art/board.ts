@@ -23,6 +23,9 @@ import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
+import { boardHolo, flickerAt, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
+import { calmMotion, getHolo } from "./settings";
+import { holoHum, holoLock } from "./sfx";
 
 export interface BoardMonster {
   uid: number;
@@ -174,6 +177,13 @@ interface Piece {
   flourishAt: number;
   flourishKind: number;
   flourishT: number;
+  /** comes in as a hologram (Hologram summons on; decided when it is placed) */
+  holo: boolean;
+  holoStarted: boolean;
+  /** silences its arrival hum (it leaves, or the field closes, mid-arrival) */
+  stopHum: (() => void) | null;
+  /** the phone asks for reduced motion: no flicker or tearing */
+  calm: boolean;
 }
 
 const DEF_GLOW = 0x4a8aff;
@@ -196,6 +206,11 @@ export class BoardLayer {
   private scene = new Scene();
   private camera = new PerspectiveCamera(30, 1, 1, 5000);
   private pieces = new Map<number, Piece>();
+  /** the field it found when it opened (a resumed duel, a view switch) appears plainly: only new arrivals are holograms */
+  private born = performance.now();
+  private lastHum = 0;
+  /** scratch for the field holograms (no allocation per frame) */
+  private hb: BoardHolo = { holo: 0, line: -1, reveal: 1 };
   private raf = 0;
   private last = 0;
   private unsub: () => void;
@@ -258,7 +273,11 @@ export class BoardLayer {
     const want = new Map(list.map((m) => [m.uid, m]));
     for (const p of this.pieces.values()) {
       const m = want.get(p.uid);
-      if (!m || m.name !== p.name) p.leaving = true;
+      if (!m || m.name !== p.name) {
+        p.leaving = true;
+        p.stopHum?.();
+        p.stopHum = null;
+      }
       else {
         p.def = m.def;
         p.ready = !!m.ready;
@@ -302,6 +321,10 @@ export class BoardLayer {
         flourishAt: performance.now() + FLOURISH_MIN_MS + (prof.seed % 4000),
         flourishKind: prof.seed % 3,
         flourishT: -1,
+        holo: getHolo() && performance.now() - this.born > 1200,
+        holoStarted: false,
+        stopHum: null,
+        calm: calmMotion(),
         finish: m.finish ?? 0,
       };
       this.pieces.set(m.uid, piece);
@@ -337,6 +360,7 @@ export class BoardLayer {
   }
 
   private drop(p: Piece) {
+    p.stopHum?.();
     p.fig?.dispose();
     p.disc?.dispose();
     p.pivot.removeFromParent();
@@ -535,7 +559,41 @@ export class BoardLayer {
       fig.mesh.renderOrder = order;
       fig.wall.renderOrder = order - 0.5;
       const u = fig.u;
-      u.uReveal.value = p.quick ? 1 : k;
+      // a monster arriving without a cinematic still comes in as a Duel Disk hologram (holographic
+      // summon): projected light first, then a line of light climbs it and it locks solid
+            const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show, this.hb) : null;
+      if (hb && hb.holo > 0) {
+        if (!p.holoStarted) {
+          p.holoStarted = true;
+          const hc = p.finish >= FIN.MI ? HOLO_GOLD_RGB : HOLO_RGB;
+          (u.uHoloCol.value as Vector3).set(hc[0], hc[1], hc[2]);
+          u.uHoloScroll.value = p.calm ? 0 : 1;
+          // (a softer lock band at card size: full strength it reads as a white bar)
+          u.uHoloEdge.value = 0.4;
+          // one hum for monsters arriving together, none for one hidden under a cinematic
+          if (p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
+            this.lastHum = now;
+            p.stopHum = holoHum(0.6, 0);
+          }
+        }
+        u.uHolo.value = hb.holo;
+        u.uHoloLine.value = lerp(fig.foot.v - 0.04, Math.min(1.06, fig.foot.top + 0.05), clamp01((hb.line + 0.05) / 1.12));
+        u.uFlick.value = p.calm || hb.line > 0 ? 0 : flickerAt(t, p.seed);
+        // (no tearing at card size: it only reads as broken bars)
+        u.uGlitch.value = 0;
+      } else if (u.uHolo.value > 0 && !p.leaving) {
+        // (one leaving mid-arrival fades out as it is, without snapping solid first)
+        u.uHolo.value = 0;
+        u.uFlick.value = 0;
+        u.uGlitch.value = 0;
+        // (its hum has run its course: let go of its nodes)
+        p.stopHum = null;
+        if (p.holoStarted && !p.leaving && p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
+          this.lastHum = now;
+          holoLock(0);
+        }
+      }
+      u.uReveal.value = p.quick ? 1 : hb ? hb.reveal : k;
       u.uOpacity.value = (p.leaving ? Math.max(0, p.show) : p.quick ? k : 1) * p.vis;
       // a finished card glows in its finish: its rim light and base ring (Overframe turns through
       // the rainbow, Glossy rolls pink-violet-cyan, Royal breathes gold); one color per frame, no allocations
@@ -558,6 +616,8 @@ export class BoardLayer {
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
       d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
+      // the projector's light on the base while the hologram forms
+      if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line)) + 2.4 * clamp01((hb.line - 0.8) / 0.25);
     }
   }
 
@@ -572,6 +632,7 @@ export class BoardLayer {
     this.canvas.removeEventListener("webglcontextrestored", this.onRestored, false);
     this.ro?.disconnect();
     for (const p of this.pieces.values()) {
+      p.stopHum?.();
       p.fig?.dispose();
       p.disc?.dispose();
     }
