@@ -230,8 +230,8 @@ interface Colors {
   light: number;
 }
 
-/** the timelines that are portrait cut-ins (a tap on one skips just it) */
-const CUTINS = new WeakSet<Timeline>();
+/** the portrait cut-ins that are on screen (drawn, not still waiting on shaders): a tap on one skips just it */
+export const CUTINS_SHOWN = new WeakSet<Timeline>();
 
 const SLOW_KINDS = new Set(['summon', 'attack', 'hit', 'win']);
 
@@ -441,7 +441,7 @@ export class Director {
 
   /** A portrait cut-in is on screen (a tap skips just it). */
   get cutinOnScreen(): boolean {
-    return (this.curKind === 'cutin' && this.current !== null) || this.trailing.some((t) => CUTINS.has(t));
+    return (this.curKind === 'cutin' && this.current !== null && CUTINS_SHOWN.has(this.current)) || this.trailing.some((t) => CUTINS_SHOWN.has(t));
   }
 
   /** The WebGL context is gone: cinematics are skipped until the browser restores it. */
@@ -570,11 +570,12 @@ export class Director {
     this.ui.cutinOff?.();
     // a tap on a portrait cut-in skips just the cut-in: what it announces plays on
     // (also in its last moments, when what it announces has already started under it)
-    if (this.curKind === 'cutin' && this.current) {
+    // (only one that is really drawn: a cut-in still waiting on its shaders was never seen)
+    if (this.curKind === 'cutin' && this.current && CUTINS_SHOWN.has(this.current)) {
       this.endCurrent(true);
       return;
     }
-    const tail = this.trailing.find((t) => CUTINS.has(t));
+    const tail = this.trailing.find((t) => CUTINS_SHOWN.has(t));
     if (tail) {
       tail.finish();
       tail.dispose();
@@ -1782,8 +1783,8 @@ export class Director {
     const tl = new Timeline(D, this.stage);
     // a light dim (never lighter than what is already on screen: no dip between darker cues)
     this.dimTarget = Math.max(0.5, this.dimTarget);
-    CUTINS.add(tl);
     tl.at(0, () => {
+      CUTINS_SHOWN.add(tl);
       show({ why: c.why, line: c.line, about: c.about, lead: this.side(c.seat), me, foe, dur: D / Math.max(0.25, tl.rate) });
       whoosh(0.32, 380, 3400, 0.2);
     });

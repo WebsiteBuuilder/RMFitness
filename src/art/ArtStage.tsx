@@ -297,9 +297,9 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
 
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
+    if (stateRef.current.winner !== null) return skipAll(false);
     // a portrait cut-in on screen: the tap skips just it (the spotlight and the cue it announces stay)
     if (dir.current?.cutinOnScreen) return dir.current.skip();
-    if (stateRef.current.winner !== null) return skipAll(false);
     tapToResult();
     clearLayer();
     chainSpot.current?.hide();

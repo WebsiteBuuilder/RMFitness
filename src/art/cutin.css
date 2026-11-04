@@ -51,7 +51,7 @@
   22% {
     transform: translate3d(0, 0, 0);
   }
-  76% {
+  84% {
     transform: translate3d(2%, 0, 0);
     opacity: 1;
   }
@@ -71,7 +71,7 @@
   22% {
     transform: translate3d(0, 0, 0);
   }
-  76% {
+  84% {
     transform: translate3d(-2%, 0, 0);
     opacity: 1;
   }
@@ -88,6 +88,12 @@
 }
 .ci-lead .ci-bg {
   background: radial-gradient(ellipse at 30% 40%, var(--c2) 0, var(--c1) 20%, #160a2a 86%);
+}
+.ci-lead .ci-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 40%, transparent 30%, rgba(6, 4, 16, 0.5) 100%);
 }
 .ci-foe .ci-bg {
   background:
@@ -157,17 +163,19 @@
 .ci-top .ci-face {
   left: 0;
   top: 0;
-  -webkit-mask-image: linear-gradient(100deg, #000 48%, transparent 96%), linear-gradient(180deg, #000 78%, transparent);
+  -webkit-mask-image: linear-gradient(100deg, #000 34%, transparent 88%), linear-gradient(180deg, #000 78%, transparent);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(100deg, #000 48%, transparent 96%), linear-gradient(180deg, #000 78%, transparent);
+  mask-image: linear-gradient(100deg, #000 34%, transparent 88%), linear-gradient(180deg, #000 78%, transparent);
   mask-composite: intersect;
 }
 .ci-bot .ci-face {
   right: 0;
   bottom: 0;
-  -webkit-mask-image: linear-gradient(280deg, #000 48%, transparent 96%), linear-gradient(0deg, #000 78%, transparent);
+  /* (its half starts under the slant: a shorter box puts the head below the seam) */
+  height: 46%;
+  -webkit-mask-image: linear-gradient(280deg, #000 34%, transparent 88%), linear-gradient(0deg, #000 78%, transparent);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(280deg, #000 48%, transparent 96%), linear-gradient(0deg, #000 78%, transparent);
+  mask-image: linear-gradient(280deg, #000 34%, transparent 88%), linear-gradient(0deg, #000 78%, transparent);
   mask-composite: intersect;
 }
 .ci-lead .ci-face {
@@ -349,12 +357,13 @@
     transform: scale(1);
     opacity: 1;
   }
-  86% {
+  82% {
     transform: scale(1.03);
     opacity: 1;
   }
+  92%,
   100% {
-    transform: scale(1.08);
+    transform: scale(1.06);
     opacity: 0;
   }
 }
@@ -439,6 +448,7 @@
   }
   .ci-top .ci-mark {
     left: min(calc(var(--band) * 0.88), 43vw);
+    top: 12%;
   }
   .ci-bot .ci-mark {
     right: min(calc(var(--band) * 0.88), 43vw);

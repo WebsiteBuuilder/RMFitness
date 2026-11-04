@@ -5,7 +5,7 @@ import type { Pid } from '../src/eds/types';
 import type { CardRef, ChainCard, Cue } from '../src/art/cues';
 import { attackLine, bestMonster, chainLine, CUTIN_DUR, CUTIN_OVERLAP, CutInPlan, duelFace, facesReady, finalLine, shoutName, showDuelFaces, showFaceHints } from '../src/art/cutins';
 import { lineSize, shoutRows } from '../src/art/cutinDom';
-import { CUE_KINDS_DRAWN, cueOwner } from '../src/art/runtime';
+import { CUE_KINDS_DRAWN, CUTINS_SHOWN, cueOwner, Director, Timeline } from '../src/art/runtime';
 import { showDuelAces } from '../src/ace/ace';
 import { getCutins, setCutins, useCinematicsMenu } from '../src/art/settings';
 import { DB } from './speedkit';
@@ -148,8 +148,50 @@ const css = readFileSync(new URL('../src/art/cutin.css', import.meta.url), 'utf8
 const anims = [...css.matchAll(/@keyframes[^{]+\{([\s\S]*?)\n\}/g)].map((m) => m[1]);
 check(anims.length > 5 && anims.every((b) => !/(^|\s)(width|height|left|top|right|bottom|clip-path|filter|box-shadow|background)\s*:/.test(b)), 'the cut-in animates transforms and opacity only (cheap on a mid-range phone)');
 check(!/infinite/.test(css), 'nothing loops forever');
+// ---------- the director: a tap on a cut-in ----------
+{
+  // a bare director (no WebGL): only what skip() touches
+  const mk = () => {
+    const d = Object.create(Director.prototype) as Director & Record<string, unknown>;
+    const log: string[] = [];
+    Object.assign(d, { ui: { cutinOff: () => log.push('off') }, queue: [{ cue: attack(DM, BE), batch: 4, scale: 1 }], trailing: [], current: null, curKind: null, curBatch: 4, held: null, fastFade: false, finaleUid: -1, stage: { particles: { clear: () => {} } } });
+    d['endCurrent'] = (sk: boolean) => (log.push(`end:${sk}`), (d['current'] = null));
+    d['finishTrailing'] = () => log.push('trail-all');
+    d['dropHeld'] = () => {};
+    return { d, log };
+  };
+  const tl = () => new Timeline(0.7, {} as never);
+  {
+    const { d, log } = mk();
+    const t = tl();
+    CUTINS_SHOWN.add(t);
+    Object.assign(d, { current: t, curKind: 'cutin' });
+    check(d.cutinOnScreen, 'a drawn cut-in is on screen');
+    d.skip();
+    check(log.join() === 'off,end:true' && (d['queue'] as unknown[]).length === 1, 'a tap on a cut-in ends just it: the attack it announces stays queued');
+  }
+  {
+    const { d, log } = mk();
+    Object.assign(d, { current: tl(), curKind: 'cutin' });
+    check(!d.cutinOnScreen, 'a cut-in still waiting on its shaders is not on screen (a tap is not swallowed by it)');
+    d.skip();
+    check(log.includes('trail-all') && (d['queue'] as unknown[]).length === 0, '...and the tap skips the chain as usual');
+  }
+  {
+    const { d, log } = mk();
+    const t = tl();
+    CUTINS_SHOWN.add(t);
+    Object.assign(d, { current: tl(), curKind: 'attack', trailing: [t] });
+    check(d.cutinOnScreen, 'a cut-in wiping away over the attack it handed off to is still on screen');
+    d.skip();
+    check((d['trailing'] as unknown[]).length === 0 && !log.some((x) => x.startsWith('end')) && (d['queue'] as unknown[]).length === 1, 'a tap in its last moments takes just the cut-in: the attack plays on');
+  }
+}
+const art = readFileSync(new URL('../src/art/ArtStage.tsx', import.meta.url), 'utf8');
+check(art.indexOf('winner !== null) return skipAll') < art.indexOf('cutinOnScreen) return'), 'after a win a tap still goes straight to the result, cut-in or not');
+check(/hideCutIn\(\), stopShout\(\), chain\?\.hide\(\)/.test(art) && /stopShout\(\), hideCutIn\(\)\), \[\]/.test(art), 'leaving the duel or clearing the stage takes the cut-in away');
 const rt = readFileSync(new URL('../src/art/runtime.ts', import.meta.url), 'utf8');
-check(/const tail = this\.trailing\.find\(\(t\) => CUTINS\.has\(t\)\)/.test(rt), 'a tap in a cut-in\'s last moments (after the handoff) still skips just the cut-in');
+void rt;
 check(css.includes('z-index: 72'), 'the cut-in is drawn over the chain spotlight (z 71)');
 const flow = readFileSync(new URL('../src/art/flow.tsx', import.meta.url), 'utf8');
 check(flow.includes('getCutins()') && flow.includes('this.cutins.plan'), 'the flow plans cut-ins only when they are on');
