@@ -1,0 +1,489 @@
+/* ---------- field wear: scorch marks and cracks where monsters were destroyed (fieldWear.tsx) ---------- */
+/* The marks paint over the zone's own floor and under everything else in it. No stacking tricks:
+   the marks and the card share the zone's one grid cell and stay in normal flow, the marks first,
+   so the card paints over them; the empty-zone emblem and the stat/forecast badges (positioned)
+   paint over both, and their own z-index still reaches past the 3D figures canvas. Nothing in the
+   card changes what it is positioned against (the zone has no padding: a badge's grid area is the
+   same box it had). */
+.tz.worn > *,
+.zone.worn > * {
+  grid-area: 1 / 1;
+}
+.fwear-spill {
+  /* (3px past the frame on each side: into the gap between zones, short of the next zone) */
+  align-self: stretch;
+  justify-self: stretch;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  margin: -3px;
+  overflow: visible;
+  pointer-events: none;
+}
+.fw-s-sp0 { stop-color: #000; stop-opacity: 0; }
+.fw-s-sp1 { stop-color: #000; stop-opacity: 0.7; }
+.fw-s-sp2 { stop-color: #000; stop-opacity: 0; }
+.fwear-spill.lv-2 .fw-s-sp1 { stop-opacity: 0.82; }
+.fwear-spill.lv-3 .fw-s-sp1 { stop-opacity: 0.95; }
+.fwear-spill .fw-ash {
+  fill: var(--fw-speck);
+  opacity: 0.85;
+}
+.fwear,
+.fwear-held {
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+.fwear {
+  overflow: hidden;
+  border-radius: inherit;
+}
+.fwear,
+.fwear-held,
+.fwear-spill {
+  /* the plain slab: soot and an ember glow */
+  --fw-core: #000000;
+  --fw-mid: #0b0604;
+  --fw-rim: #5a2408; /* heat-scorched edge */
+  --fw-out: #0b060400;
+  --fw-dark: #020101;
+  --fw-glow: #ff7a2a;
+  --fw-pit0: #000000;
+  --fw-pit1: #1a0e08;
+  --fw-chip: #34406e; /* the slab's own face, lifted out */
+  --fw-chip-edge: #b7c3ff;
+  --fw-speck: #8a7e74;
+  --fw-flash: #ffd38a;
+  --fw-rest: 0.4; /* the embers left in the cracks once they cool (burnt stone, not lightning) */
+}
+.fw-s-core { stop-color: var(--fw-core); stop-opacity: 0.97; }
+.fw-s-mid { stop-color: var(--fw-mid); stop-opacity: 0.9; }
+.fw-s-rim { stop-color: var(--fw-rim); stop-opacity: 0.75; }
+.fw-s-out { stop-color: var(--fw-out); stop-opacity: 0; }
+.fw-s-f0 { stop-color: #ffffff; stop-opacity: 1; }
+.fw-s-f1 { stop-color: var(--fw-flash); stop-opacity: 0.85; }
+.fw-s-f2 { stop-color: var(--fw-glow); stop-opacity: 0; }
+.fw-s-g0 { stop-color: var(--fw-flash); stop-opacity: 1; }
+.fw-s-g1 { stop-color: var(--fw-glow); stop-opacity: 0.9; }
+.fw-s-g2 { stop-color: var(--fw-glow); stop-opacity: 0.25; }
+.fw-s-pit0 { stop-color: var(--fw-pit0); stop-opacity: 0.95; }
+.fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.8; }
+
+.fwear .fw-soot {
+  opacity: 0.4;
+}
+.fwear .fw-blot {
+  opacity: 0.9;
+}
+.fwear .fw-dark path {
+  fill: var(--fw-dark);
+  fill-opacity: 0.95;
+  /* (a faint broken edge catching the light: the crack reads on dark floors too) */
+  stroke: var(--fw-chip-edge);
+  stroke-opacity: 0.14;
+  stroke-width: 0.3px;
+}
+.fwear .fw-glow {
+  fill: var(--fw-glow);
+}
+.fwear .fw-glow path {
+  fill: inherit;
+}
+.fwear .fw-glow {
+  opacity: calc(var(--fw-rest) + var(--fw-lift));
+}
+/* each destruction burns hotter */
+.fwear { --fw-lift: 0; }
+.fwear.lv-2 { --fw-lift: 0.1; }
+.fwear.lv-3 { --fw-lift: 0.2; }
+.fwear.more { --fw-lift: 0.28; }
+.fwear .fw-pit {
+  stroke: none;
+}
+.fwear .fw-lip-lit {
+  /* the crater's far, upper-left slope catching the light */
+  fill: var(--fw-chip-edge);
+  fill-opacity: 0.42;
+  stroke: none;
+}
+.fwear .fw-lip-dark {
+  fill: none;
+  stroke: #000;
+  stroke-opacity: 0.85;
+  stroke-width: 2.4px;
+}
+.fwear .fw-chip-sh {
+  fill: #000;
+  opacity: 0.85;
+}
+.fwear .fw-chip-char {
+  /* (the plates take the burn's colour: scorched stone, not glass) */
+  fill: var(--fw-rim);
+  opacity: 0.55;
+}
+.fwear .fw-chip-face {
+  fill: var(--fw-chip);
+}
+.fwear .fw-chip-lit {
+  fill: none;
+  stroke: var(--fw-chip-edge);
+  stroke-opacity: 0.85;
+  stroke-width: 0.7px;
+  stroke-linecap: round;
+}
+.fwear .fw-lip-dark {
+  stroke-linecap: round;
+}
+/* a worn empty zone keeps its marks at full strength on the Classic board */
+.zone.empty.worn,
+.ui-speed .duel.speed:not(.touch) .zone.empty.worn {
+  opacity: 1;
+}
+/* a monster standing on the damage: a soot band and embers show in the gap round the card */
+.fwear-held {
+  overflow: hidden;
+}
+.fwear-held .fw-held-soot {
+  fill: none;
+  stroke: #000;
+  stroke-opacity: 0.7;
+  stroke-width: 5px;
+}
+.fwear-held .fw-held-heat {
+  fill: none;
+  stroke: var(--fw-glow);
+  stroke-opacity: 0.4;
+  stroke-width: 1px;
+  stroke-dasharray: 3 9 2 14 5 11;
+}
+.fwear-held.lv-2 .fw-held-soot { stroke-opacity: 0.85; }
+.fwear-held.lv-3 .fw-held-soot { stroke-opacity: 0.95; stroke-width: 6px; }
+.fwear-held.lv-3 .fw-held-heat { stroke-opacity: 0.55; }
+.fwear-held .fw-held-embers {
+  fill: var(--fw-flash);
+  opacity: 0.95;
+}
+.fwear .fw-ember {
+  fill: var(--fw-glow);
+  opacity: 0.95;
+}
+/* the third hit's plates: the slab's own face, sooty, lifted, edges catching the light */
+.fwear .fw-plate-sh {
+  fill: #000;
+  opacity: 0.55;
+}
+.fwear .fw-plate-fire {
+  opacity: 0.7;
+}
+.fwear .fw-plate-face {
+  fill: var(--fw-chip);
+  fill-opacity: 0.92;
+}
+/* the plates are the same burnt stone as the lighter hits: the char runs across them */
+.fwear .fw-plate-char {
+  opacity: 0.5;
+}
+.fwear .fw-plate-lit {
+  fill: none;
+  stroke: var(--fw-chip-edge);
+  stroke-opacity: 0.6;
+  stroke-width: 0.7px;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+.fwear .fw-speck {
+  fill: var(--fw-speck);
+  opacity: 0.55;
+}
+.fwear .fw-flash,
+.fwear .fw-ring {
+  opacity: 0;
+}
+.fwear .fw-ring {
+  fill: none;
+  stroke: var(--fw-flash);
+  stroke-width: 1.6px;
+}
+
+/* ---- each landscape scars its own way (the duelist's own Field Spell; re-tints when it changes) ---- */
+.fwear.st-volcano,
+.fwear-held.st-volcano,
+.fwear-spill.st-volcano {
+  --fw-rim: #8a2a06;
+  --fw-mid: #1a0503;
+  --fw-glow: #ff5a14;
+  --fw-pit0: #ff6a10;
+  --fw-pit1: #3a0802;
+  --fw-chip: #2b0e08;
+  --fw-chip-edge: #ff9a4a;
+  --fw-speck: #ffb15a;
+  --fw-flash: #ffcf6a;
+  --fw-rest: 0.55;
+}
+.fwear.st-ocean,
+.fwear-held.st-ocean,
+.fwear-spill.st-ocean {
+  --fw-rim: #0a4a5e;
+  --fw-core: #01080e;
+  --fw-mid: #031722;
+  --fw-out: #03172200;
+  --fw-dark: #000a10;
+  --fw-glow: #3fb8c8;
+  --fw-pit0: #04324a;
+  --fw-pit1: #0a5a74;
+  --fw-chip: #0c3346;
+  --fw-chip-edge: #a8f2ff;
+  --fw-speck: #9be8ff;
+  --fw-flash: #cdf8ff;
+  --fw-rest: 0.26;
+}
+.fwear.st-forest,
+.fwear-held.st-forest,
+.fwear-spill.st-forest {
+  --fw-rim: #4a2a0a;
+  --fw-mid: #0d0904;
+  --fw-glow: #e0661c;
+  --fw-pit1: #1a1206;
+  --fw-chip: #1e2412;
+  --fw-chip-edge: #c9e08a;
+  --fw-speck: #a49a8a; /* ash */
+  --fw-flash: #ffe08a;
+  --fw-rest: 0.3;
+}
+.fwear.st-sky,
+.fwear-held.st-sky,
+.fwear-spill.st-sky {
+  --fw-rim: #3a4a6a;
+  --fw-core: #10141f;
+  --fw-mid: #1c2436;
+  --fw-out: #1c243600;
+  --fw-dark: #0a0e18;
+  --fw-glow: #d8ecff;
+  --fw-pit1: #26324e;
+  --fw-chip: #3a4766;
+  --fw-chip-edge: #eef4ff;
+  --fw-speck: #e8f0ff;
+  --fw-flash: #ffffff;
+  --fw-rest: 0.3;
+}
+.fwear.st-holy,
+.fwear-held.st-holy,
+.fwear-spill.st-holy {
+  --fw-rim: #6a4a10;
+  --fw-core: #120c02;
+  --fw-mid: #22180a;
+  --fw-out: #22180a00;
+  --fw-dark: #0c0802;
+  --fw-glow: #ffd970;
+  --fw-pit1: #3a2a0e;
+  --fw-chip: #3a3018;
+  --fw-chip-edge: #fff0b8;
+  --fw-speck: #ffeaa0;
+  --fw-flash: #fff6d0;
+  --fw-rest: 0.32;
+}
+.fwear.st-shadow,
+.fwear-held.st-shadow,
+.fwear-spill.st-shadow {
+  --fw-rim: #3a0e52;
+  --fw-core: #000000;
+  --fw-mid: #12061c;
+  --fw-out: #12061c00;
+  --fw-glow: #c45cff;
+  --fw-pit0: #000000;
+  --fw-pit1: #2a0c3e;
+  --fw-chip: #1c0c2a;
+  --fw-chip-edge: #e0a0ff;
+  --fw-speck: #ff5a9a;
+  --fw-flash: #e8a8ff;
+  --fw-rest: 0.4;
+}
+.fwear.st-arcane,
+.fwear-held.st-arcane,
+.fwear-spill.st-arcane {
+  --fw-rim: #5a0e52;
+  --fw-mid: #1a0418;
+  --fw-out: #1a041800;
+  --fw-glow: #ff5ae6;
+  --fw-pit1: #3a0a36;
+  --fw-chip: #2a0c28;
+  --fw-chip-edge: #ffb0f4;
+  --fw-speck: #ff9af0;
+  --fw-flash: #ffc8f6;
+  --fw-rest: 0.36;
+}
+.fwear.st-tech,
+.fwear-held.st-tech,
+.fwear-spill.st-tech {
+  --fw-rim: #0a4a4a;
+  --fw-mid: #021012;
+  --fw-out: #02101200;
+  --fw-dark: #000607;
+  --fw-glow: #2af5e0;
+  --fw-pit0: #000a0c;
+  --fw-pit1: #06363a;
+  --fw-chip: #0a2a2e;
+  --fw-chip-edge: #8afff2;
+  --fw-speck: #7afff0; /* sparks */
+  --fw-flash: #b8fff6;
+  --fw-rest: 0.4;
+}
+.fwear.st-wasteland,
+.fwear-held.st-wasteland,
+.fwear-spill.st-wasteland {
+  --fw-rim: #6a4418;
+  --fw-core: #140c04;
+  --fw-mid: #2a1c0c;
+  --fw-out: #2a1c0c00;
+  --fw-dark: #120a03;
+  --fw-glow: #ff9a3a;
+  --fw-pit1: #3a2812;
+  --fw-chip: #4a3418;
+  --fw-chip-edge: #f0cc90;
+  --fw-speck: #d8b480; /* dust */
+  --fw-flash: #ffd89a;
+  --fw-rest: 0.28;
+}
+.fwear.st-cosmos,
+.fwear-held.st-cosmos,
+.fwear-spill.st-cosmos {
+  --fw-rim: #1a2266;
+  --fw-core: #000000;
+  --fw-mid: #060818;
+  --fw-out: #06081800;
+  --fw-glow: #9ab0ff;
+  --fw-pit0: #000000;
+  --fw-pit1: #141a44;
+  --fw-chip: #14183a;
+  --fw-chip-edge: #c8d2ff;
+  --fw-speck: #ffffff; /* stars through the hole */
+  --fw-flash: #dfe6ff;
+  --fw-rest: 0.32;
+}
+.fwear.st-cosmos .fw-speck,
+.fwear.st-tech .fw-speck,
+.fwear.st-volcano .fw-speck {
+  opacity: 0.8;
+}
+
+/* ---- a fresh mark lands: the flash, the scorch spreading, the cracks glowing white-hot and cooling ---- */
+/* (it waits for the destruction to play out: a short delay, and held while a cinematic is up) */
+.fwear .fw-hit.fresh .fw-blot,
+.fwear .fw-hit.fresh .fw-pit,
+.fwear .fw-hit.fresh .fw-chip,
+.fwear .fw-hit.fresh .fw-plates,
+.fwear .fw-hit.fresh .fw-speck {
+  transform-box: view-box;
+  transform-origin: var(--hx) var(--hy);
+  animation: fw-spread 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.35s both;
+}
+.fwear .fw-hit.fresh .fw-dark,
+.fwear .fw-hit.fresh .fw-glow {
+  transform-box: view-box;
+  transform-origin: var(--hx) var(--hy);
+}
+.fwear .fw-hit.fresh .fw-dark {
+  animation: fw-run 0.6s ease-out 0.4s both;
+}
+.fwear .fw-hit.fresh .fw-glow {
+  animation:
+    fw-run 0.6s ease-out 0.4s both,
+    fw-cool 2s ease-out 0.4s both;
+}
+.fwear .fw-hit.fresh .fw-flash {
+  animation: fw-flash 0.9s ease-out 0.35s both;
+}
+@keyframes fw-spread {
+  from { transform: scale(0.35); opacity: 0; }
+  to { transform: none; }
+}
+/* (the cracks run out from the blow: a transform, which every phone's WebView animates) */
+@keyframes fw-run {
+  from { transform: scale(0.12); }
+  to { transform: none; }
+}
+@keyframes fw-cool {
+  0%, 35% { opacity: 1; }
+  100% { opacity: calc(var(--fw-rest) + var(--fw-lift)); }
+}
+/* (white-hot first: a white copy of the cracks fades off them; opacity only, no colour animation) */
+.fwear .fw-hot {
+  fill: #fff8e8;
+  opacity: 0;
+}
+.fwear .fw-hit.fresh .fw-hot {
+  transform-box: view-box;
+  transform-origin: var(--hx) var(--hy);
+  animation:
+    fw-run 0.6s ease-out 0.4s both,
+    fw-hot 0.9s ease-out 0.4s both;
+}
+@keyframes fw-hot {
+  0%, 20% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes fw-flash {
+  0% { opacity: 1; transform: scale(0.45); }
+  10% { opacity: 1; transform: scale(0.75); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+@keyframes fw-ring {
+  0% { opacity: 0.95; transform: scale(0.3); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+.fwear .fw-hit.fresh .fw-flash,
+.fwear .fw-hit.fresh .fw-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.fwear .fw-hit.fresh .fw-ring {
+  animation: fw-ring 0.6s cubic-bezier(0.1, 0.7, 0.3, 1) 0.35s both;
+}
+body.art-on .fwear .fw-hit.fresh *,
+body.art-on .fwear .fw-hit.fresh {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fwear .fw-hit.fresh *,
+  .fwear .fw-hit.fresh {
+    animation: none !important;
+  }
+}
+
+
+
+/* ---- a zone being aimed at, dropped on or picked: its highlight wins over the marks ---- */
+.tz.drop-ok .fwear,
+.tz.drop-ok .fwear-held,
+.tz.drop-on .fwear,
+.tz.drop-on .fwear-held,
+.tz.pick .fwear,
+.tz.pick .fwear-held,
+.zone.sel .fwear,
+.zone.sel .fwear-held,
+.zone.pick .fwear,
+.zone.pick .fwear-held,
+.tz.drop-ok .fwear-spill,
+.tz.drop-on .fwear-spill,
+.tz.pick .fwear-spill,
+.zone.sel .fwear-spill,
+.zone.pick .fwear-spill {
+  opacity: 0.4;
+}
+
+/* ---- a worn empty zone: the damage replaces the zone's emblem (cut into the stone, not a decal under glass) ---- */
+.duel.touch .tz.worn.empty::after {
+  opacity: 0.05;
+}
+
+/* (strokes keep their width when a zone is not exactly a card's shape) */
+.fwear-held rect,
+.fwear .fw-lip-dark,
+.fwear .fw-chip-lit,
+.fwear .fw-ring {
+  vector-effect: non-scaling-stroke;
+}

@@ -16,6 +16,7 @@ import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { wearOf, ZoneWear } from './fieldWear';
 import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
@@ -371,8 +372,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
 
   const zone = (c: FieldCard | null, owner: Pid, kind: 'm' | 's', i: number) => {
     const visible = c ? c.faceUp || owner === acting || !!spectator : false;
+    const worn = e.speed && kind === 'm' && wearOf(state, owner, i) > 0;
     return (
-      <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}`} onClick={() => c && tap(c.uid)}>
+      <div key={`${owner}${kind}${i}`} data-uid={c?.uid} class={`zone z-${kind} ${c ? '' : 'empty'} ${c ? highlight(c.uid) : ''}${worn ? ' worn' : ''}`} onClick={() => c && tap(c.uid)}>
+        {e.speed && kind === 'm' && <ZoneWear state={state} p={owner} zone={i} />}
         {c ? (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? 'myset' : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
