@@ -614,7 +614,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
         <i class={`tgauge ${dangerLevel(ps.lp, !!e.speed) ? 'low' : frac <= 0.5 ? 'mid' : ''}`}>
           <i class="trail" style={{ transform: `scaleX(${frac.toFixed(4)})` }} />
-          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})`, transitionDuration: `${drainMs}ms, 400ms`, transitionTimingFunction: 'cubic-bezier(0.25, 0.4, 0.55, 1), ease' }} />
+          <i class="fill" style={{ transform: `scaleX(${frac.toFixed(4)})`, transitionDuration: `${drainMs}ms, 400ms` }} />
         </i>
         {top && (
           <button class="tgear" aria-label="Menu" onClick={(ev) => (ev.stopPropagation(), ctl.openMenu())}>

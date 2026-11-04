@@ -15,7 +15,7 @@ const ok = (c: boolean, msg: string) => {
 let started = 0;
 // (and the value changes scheduled: the Life Point counter's beeps are gate steps on one pair of oscillators)
 let steps = 0;
-const param = () => ({ value: 0, setValueAtTime: () => steps++, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
+const param = () => ({ value: 0, setValueAtTime: () => steps++, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime: () => steps++, cancelScheduledValues() {} });
 const node = () => ({ connect: (n: unknown) => n });
 let clockT = 0;
 class FakeCtx {

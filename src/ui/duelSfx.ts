@@ -2,7 +2,7 @@
 // (original sounds, no audio files): the Life Point counter draining, attacks and
 // clashes, cards shattering, a sting per Summon method, Spells, Traps, Skills.
 // Silent until the player's first tap (phones) and while Sound is Off.
-import { audioContext } from './sound';
+import { audioContext, soundEnabled } from './sound';
 import { rumble } from './pad/rumble';
 
 let noiseBuf: AudioBuffer | null = null;
@@ -80,6 +80,15 @@ const thud = (size = 0.5, when = 0) => tone(95 + size * 30, 0.3 + size * 0.3, 0.
 let counting: { ctx: BaseAudioContext; osc: OscillatorNode[]; gate: GainNode; at: number; amt: number } | null = null;
 
 
+// Sound turned Off mid-count: the rattle stops at once
+if (typeof window !== 'undefined')
+  window.addEventListener('eds-sound', () => {
+    if (!counting || soundEnabled()) return;
+    const t = counting.ctx.currentTime;
+    counting.gate.gain.cancelScheduledValues(t);
+    counting.gate.gain.setTargetAtTime(0, t, 0.004);
+  });
+
 /** Tick spacing of the counter (s): about 30 a second, the rolling-digits rattle of the show's counter. */
 export const LP_TICK_S = 0.034;
 
@@ -120,7 +129,8 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
   counting = null;
   const dmg = delta < 0;
   const s = ms / 1000;
-  const vol = (dmg ? 0.06 : 0.045) + Math.min(1, amt / 2000) * 0.05;
+  // (bigger hits tick a little louder, but mostly longer: never harsher than the other duel sounds)
+  const vol = (dmg ? 0.042 : 0.035) + Math.min(1, amt / 2000) * 0.022;
   const f0 = dmg ? 1976 : 1568;
   const f1 = dmg ? 1568 : 2093;
   // a bright square for the beep, an octave-down square under it for body, softened a touch
@@ -147,8 +157,9 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
   const on = LP_TICK_S * 0.5;
   for (let i = 0; i < n; i++) {
     const t = now + i * LP_TICK_S;
-    gate.gain.setValueAtTime(vol, t);
-    gate.gain.setValueAtTime(0, t + on);
+    // (each beep's edges ramp over ~1 ms: crisp, no clicks)
+    gate.gain.setTargetAtTime(vol, t, 0.0006);
+    gate.gain.setTargetAtTime(0, t + on, 0.0006);
   }
   const end = now + s;
   const stopAt = left <= 0 ? end : end + 0.16;
@@ -156,7 +167,7 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
     // the number lands: one longer beep, a step down for damage, up for a gain
     hi.frequency.setValueAtTime(dmg ? f1 * 0.75 : f1 * 1.19, end);
     lo.frequency.setValueAtTime(dmg ? (f1 * 0.75) / 2 : (f1 * 1.19) / 2, end);
-    gate.gain.setValueAtTime(vol * 1.1, end + 0.012);
+    gate.gain.setTargetAtTime(vol * 1.1, end + 0.012, 0.0006);
     gate.gain.setTargetAtTime(0, end + 0.07, 0.015);
   }
   hi.start(now);
