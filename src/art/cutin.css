@@ -411,6 +411,10 @@
 .why-final .ci-seam {
   box-shadow: 0 0 18px #ffc23a;
 }
+.why-final .ci-lead .ci-face {
+  /* (the gold backdrop washes a dark face out: the winner reads stronger) */
+  filter: brightness(1.15) contrast(1.25) saturate(1.3);
+}
 .why-final .ci-foe .ci-face {
   filter: grayscale(0.75) brightness(0.8);
 }
