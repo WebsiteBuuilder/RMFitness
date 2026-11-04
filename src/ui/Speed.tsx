@@ -3,6 +3,7 @@
 import { MatesScreen } from '../mates/MatesScreen';
 import { AceScreen } from '../ace/AceScreen';
 import { SleevesScreen } from '../sleeves/SleevesScreen';
+import { PassScreen } from '../pass/PassScreen';
 import { PlaymatsScreen } from '../playmats/PlaymatsScreen';
 import { loadSolo as loadSoloSave } from '../eds/speedCampaign/save';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -113,7 +114,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'playmats';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'playmats' | 'pass';
 
 /** profiles whose presents were put off with "Not now": none show again until the game is next opened */
 const notNow = new Set<string>();
@@ -135,7 +136,7 @@ export function SpeedHub({
   onLink,
 }: {
   /** a screen to open straight away (Duel School's "Build a deck" and "Open my packs") */
-  open?: 'decks' | 'shop' | null;
+  open?: 'decks' | 'shop' | 'pass' | null;
   onOpened?: () => void;
   /** this profile's Speed Duel control style (EDS keeps its own) */
   controls: ControlStyle;
@@ -226,6 +227,7 @@ export function SpeedHub({
   if (sub === 'mates') return <MatesScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'ace') return <AceScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'sleeves') return <SleevesScreen save={save} solo={loadSoloSave(profile.id)} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'pass') return <PassScreen save={save} profile={profile} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'playmats') return <PlaymatsScreen save={save} solo={loadSoloSave(profile.id)} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'record') return <SpeedRecord save={save} onBack={() => setSub('menu')} />;
   if (sub === 'replays') return <ReplayList profileId={profile.id} controls={controls} onBack={() => setSub('menu')} />;

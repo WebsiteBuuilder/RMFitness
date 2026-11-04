@@ -10,6 +10,8 @@ import type { MateId } from '../mates/roster';
 import * as sfx from './duelSfx';
 import { setIntroFor } from './immersionState';
 import './immersion.css';
+import { duelBadge } from '../pass/duel';
+import { FaceOffBadge } from '../pass/ui';
 
 export const INTRO_MS = 2700;
 /** when the panels start to split (the deal can begin under them) */
@@ -58,6 +60,7 @@ export function FaceOff({ state, acting, mateOf, onDone }: { state: DuelState; a
     const ps = state.players[p];
     const id = mateOf(p);
     const first = state.turnPlayer === p;
+    const badge = duelBadge(p);
     return (
       <div class={`fo-panel ${top ? 'opp' : 'me'}`}>
         <div class="fo-streaks" />
@@ -66,6 +69,7 @@ export function FaceOff({ state, acting, mateOf, onDone }: { state: DuelState; a
           <b class="fo-name" style={{ '--len': String(Math.max(6, ps.name.length)) } as Record<string, string>}>
             {ps.name}
           </b>
+          {badge && <FaceOffBadge b={badge} />}
           <span class="fo-line">
             LP {ps.lp} · Deck {ps.deck.length + ps.hand.length}
           </span>

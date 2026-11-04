@@ -32,11 +32,14 @@ import { TOP, ladderClock, pharaohLevel, rankName, rankedProgress, seasonOf, ste
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
 import './speedhome.css';
+import { passSeasonName, shownTrack, TIER_XP, TIERS, tierAt, tierProgress, toClaim, worn } from '../pass/pass';
+import { Framed, NameBadge } from '../pass/ui';
+import '../pass/pass.css';
 
 export type HomeTab = 'duel' | 'solo' | 'deck' | 'shop' | 'me';
 
 /** The screens a home tile opens (the hub's sub-screens, plus the modes App runs). */
-export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'playmats';
+export type HomeGo = 'decks' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'playmats' | 'pass';
 
 /** The tab the player was on, kept across duels so they come back where they left. */
 let lastTab: HomeTab = 'duel';
@@ -232,6 +235,31 @@ function SchoolTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
   return <Tile art="Dark Magician" fy={26} title="Duel School" sub={sub} badge={done < all ? `${done}/${all}` : null} hot={done === 0} onPick={onPick} />;
 }
 
+/** The Duel Pass on its own tile: the season, your tier and how far to the next. */
+function PassTile({ save, ready, onPick }: { save: SpeedSave; ready: number; onPick: () => void }) {
+  const t = shownTrack(save);
+  const tier = tierAt(t.xp);
+  const [have] = tierProgress(t.xp);
+  return (
+    <button class={`dp-tile ${ready ? 'hot' : ''} ${t.prem ? 'prem' : ''}`} onClick={() => (playBlip(), onPick())}>
+      <i class="dp-tile-rays" aria-hidden="true" />
+      <span class="dp-medal small" aria-hidden="true">
+        <small>Tier</small>
+        <b>{tier}</b>
+      </span>
+      <span class="dp-tile-txt">
+        <b>Duel Pass</b>
+        <small>{ready ? `${ready} reward${ready === 1 ? '' : 's'} to claim!` : tier >= TIERS ? 'Top tier! Every reward reached' : `${passSeasonName()} · ${TIER_XP - have} XP to tier ${tier + 1}`}</small>
+        <i class="dp-bar">
+          <i style={{ transform: `scaleX(${tier >= TIERS ? 1 : have / TIER_XP})` }} />
+        </i>
+      </span>
+      {ready > 0 && <i class="sdh-badge">{ready}</i>}
+      <span class="sdh-tile-go">›</span>
+    </button>
+  );
+}
+
 /** A plain list row for things that don't need a picture. */
 /** Your Mate on its own tile: the little companion beside your field in duels. */
 function MatesTile({ save, onPick }: { save: SpeedSave; onPick: () => void }) {
@@ -385,7 +413,8 @@ export function SpeedHome({
   const packs = packsOf(save);
   const stamps = stampsToClaim(save);
   const ace = deckAce(deck);
-  const shopBadge = packs + stamps || null;
+  const passReady = toClaim(save);
+  const shopBadge = packs + stamps + passReady || null;
   const badges: Partial<Record<HomeTab, string | number | null>> = {
     deck: problems.length ? '!' : null,
     shop: shopBadge,
@@ -401,7 +430,9 @@ export function SpeedHome({
     <div class="sdh">
       <header class="sdh-top">
         <button class="sdh-who" onClick={() => (playBlip(), onTab('me'))} aria-label="Your duelist page">
-          <Avatar p={profile} size="small" />
+          <Framed frame={worn(save).frame} size="small">
+            <Avatar p={profile} size="small" />
+          </Framed>
           <span class="sdh-who-txt">
             <b>
               {profile.alias}
@@ -510,6 +541,7 @@ export function SpeedHome({
         {tab === 'shop' && (
           <>
             <h2 class="sdh-h">Shop</h2>
+            <PassTile save={save} ready={passReady} onPick={() => go('pass')} />
             <Tile art="Jar of Greed" title="Card Shop" sub={packs ? `${packs} pack${packs === 1 ? '' : 's'} to open!` : `Packs, your cards, crafting · ${chipsOf(save)} Duel Chips`} badge={packs || null} hot={packs > 0} onPick={() => go('shop')} />
             <div class="sdh-pair">
               <Tile size="half" art="Time Wizard" title="Requests" sub={requestsNote} onPick={() => go('requests')} />
@@ -526,9 +558,11 @@ export function SpeedHome({
         {tab === 'me' && (
           <>
             <div class="sdh-card">
-              <Avatar p={profile} size="big" />
+              <Framed frame={worn(save).frame} size="big">
+                <Avatar p={profile} size="big" />
+              </Framed>
               <div>
-                <b>{profile.alias}</b>
+                {worn(save).title || worn(save).plate ? <NameBadge name={profile.alias} title={worn(save).title} plate={worn(save).plate} small /> : <b>{profile.alias}</b>}
                 <span>
                   {save.wins} {save.wins === 1 ? 'win' : 'wins'} · {save.losses} {save.losses === 1 ? 'loss' : 'losses'} · {save.draws} {save.draws === 1 ? 'draw' : 'draws'}
                 </span>
