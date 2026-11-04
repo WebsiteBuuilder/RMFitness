@@ -54,6 +54,7 @@ import {
 } from 'three';
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
 import { DEFAULT_FADE, tuneFor } from './overrides';
+import { pressQuiet } from './hold';
 
 export type Quality = 'full' | 'fast';
 
@@ -2474,12 +2475,19 @@ export function material(kind: MaterialKind, values: Record<string, unknown>): S
   return m;
 }
 
-/** Waits for an idle moment (a new task: the frames in between are free). */
-function slice(): Promise<void> {
+/**
+ * Waits for an idle moment (a new task: the frames in between are free) that is not
+ * right after a touch or during the opening deal (art/hold.ts), so a tap's own frames come first.
+ */
+export function whenQuiet(): Promise<void> {
   return new Promise((ok) => {
     const w = (typeof window !== 'undefined' ? window : undefined) as (Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) | undefined;
-    if (w?.requestIdleCallback) w.requestIdleCallback(() => ok(), { timeout: 120 });
-    else setTimeout(ok, 16);
+    const next = () => {
+      if (pressQuiet()) return void setTimeout(next, 150);
+      if (w?.requestIdleCallback) w.requestIdleCallback(() => (pressQuiet() ? next() : ok()), { timeout: 120 });
+      else setTimeout(ok, 16);
+    };
+    next();
   });
 }
 
@@ -2501,6 +2509,8 @@ export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, k
   const parallel = typeof renderer.compileAsync === 'function' && !!renderer.extensions?.has?.('KHR_parallel_shader_compile');
   try {
     for (const k of kinds) {
+      // every compile, the first one too, waits for a quiet moment: never in the frames right after a tap
+      await whenQuiet();
       if (!alive()) break;
       const scene = new Scene();
       // shards draw instanced, particles as points: warm those variants of their programs
@@ -2515,7 +2525,6 @@ export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, k
       renderer.render(scene, camera);
       renderer.setRenderTarget(prev);
       if (o instanceof InstancedMesh) o.dispose();
-      await slice();
     }
   } catch (err) {
     console.warn('art engine: prewarm failed', err);
@@ -2828,6 +2837,8 @@ export class Stage {
   private uploads: Texture[] = [];
   // (paced by idle time, not back-to-back frames: each upload competes with the board for the GPU)
   private uploadRaf = 0;
+  /** (a timer, not a frame: an upload put off by a tap) */
+  private uploadWait = 0;
 
   /**
    * Uploads a card picture's textures to the GPU ahead of its cinematic, one texture
@@ -2839,13 +2850,16 @@ export class Stage {
     // (and the figure's colour taming worked out now, in loading time, not at the start of its shot)
     artTame(art);
     for (const x of [t.art, t.depth]) if (!this.uploads.includes(x)) this.uploads.push(x);
-    this.uploadRaf ||= nextQuiet(this.onUpload);
+    if (!this.uploadWait) this.uploadRaf ||= nextQuiet(this.onUpload);
   }
 
   private onUpload = () => this.uploadOne();
   private uploadOne() {
     this.uploadRaf = 0;
+    this.uploadWait = 0;
     if (this.lost || this.disposed) return void (this.uploads.length = 0);
+    // right after a tap: the tap's frames first, the upload a moment later
+    if (pressQuiet() && this.uploads.length) return void (this.uploadWait = window.setTimeout(this.onUpload, 150));
     const x = this.uploads.shift();
     if (!x) return;
     try {
@@ -3166,6 +3180,7 @@ export class Stage {
     this.cancelPark();
     this.clear();
     this.disposed = true;
+    clearTimeout(this.uploadWait);
     cancelAnimationFrame(this.uploadRaf);
     (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.uploadRaf);
     this.uploads.length = 0;

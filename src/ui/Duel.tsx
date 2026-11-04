@@ -9,6 +9,8 @@ import { getEffect } from '../eds/effects';
 import { card as cardInfo } from '../eds/db';
 import { CardImg, CardInfoPanel } from './CardImg';
 import { duelSleeveOf, sleeveClass } from '../sleeves/duel';
+import { PlaymatHalves } from '../playmats/Halves';
+import { fieldTerrain } from './atmosphereRules';
 import { CounterLines, CounterMarks, shownCounters } from './counters';
 import { Menu, Overlay, Win } from './Window';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -532,7 +534,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       );
     }
     return (
-      <Win title={myTurn && !locked ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} class="msgwin">
+      <Win title={myTurn && !locked && !spectator ? 'Your turn' : `${state.players[state.turnPlayer].name}'s turn`} class="msgwin">
         <p class="hint">
           {!myTurn
             ? 'Waiting for your opponent.'
@@ -775,7 +777,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       </div>
       <div class="field">
         {sideBox(other(acting), true)}
-        <div class="rows">
+        <div class={`rows${e.speed ? ' pm-rows' : ''}`}>
+          {e.speed && <PlaymatHalves me={acting} opp={other(acting)} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, other(acting)) }} turn={state.turn} />}
           <div class="row">{opp.sz.map((c, i) => zone(c, other(acting), 's', i))}</div>
           <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
           <div class="center">
