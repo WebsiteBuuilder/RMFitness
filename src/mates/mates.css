@@ -122,6 +122,37 @@
 .mate-spot.top .r-idle .mt-eyes {
   animation-delay: -2.1s;
 }
+/* On the duel screen a resting Mate moves only as a whole (the div's transform runs on the
+   GPU). Its parts' own loops (wings, eyes, glows, tears) would repaint the drawing and its
+   shadows on the main thread every frame, so they play during short reactions only, and the
+   eyes blink once when the layer asks (a class for a moment every few seconds). */
+.mate-spot :is(.r-idle, .r-lose, .r-sleep) :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear),
+.sdh-mates-pic :is(.mt-eyes, .mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid, .mt-tear) {
+  animation: none;
+}
+/* (the win keeps its flourish, a few times over, then rests) */
+.mate-spot .r-win :is(.mt-wing, .mt-tail, .mt-leaf, .mt-flame, .mt-blink, .mt-twinkle, .mt-glow, .mt-wisp, .mt-gloop, .mt-lid) {
+  animation-iteration-count: 4;
+}
+.mate-spot .r-win .mt-eyes {
+  animation: none;
+}
+/* (and a loss sheds a few tears before it just slumps) */
+.mate-spot .r-lose .mt-tear {
+  animation: mate-tear 0.9s ease-in 3;
+}
+.mate-spot.blink .r-idle .mt-eyes {
+  animation: mate-blink-once 0.26s ease-in-out;
+}
+@keyframes mate-blink-once {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.12);
+  }
+}
 @keyframes mate-blink {
   0%,
   93%,
@@ -1070,6 +1101,7 @@
 .sdh-mates-pic .mate-svg {
   animation: mate-breathe 2.8s ease-in-out infinite;
   transform-origin: 50% 94%;
+  will-change: transform;
 }
 .sdh-mates-txt {
   display: flex;
