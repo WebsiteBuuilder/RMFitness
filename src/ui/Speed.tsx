@@ -558,7 +558,16 @@ function savedSize(): TileSize {
 
 export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false, openChat = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean; openChat?: boolean }) {
   // Deck chat's code downloads while the editor is open, so tapping Chat opens it at once.
-  useEffect(() => void preloadDeckChat().catch(() => {}), []);
+  // fetch the chat's code once the editor is on screen and the phone is idle, not in the tap that opens it
+  useEffect(() => {
+    const go = () => void preloadDeckChat().catch(() => {});
+    if (typeof requestIdleCallback !== 'function') {
+      const t = setTimeout(go, 400);
+      return () => clearTimeout(t);
+    }
+    const id = requestIdleCallback(go, { timeout: 2000 });
+    return () => cancelIdleCallback(id);
+  }, []);
   const [random, setRandom] = useState(openRandom);
   /** the deck chat sheet (Claude builds and edits the deck) */
   const [chat, setChat] = useState(openChat);

@@ -2302,12 +2302,26 @@ export function material(kind: MaterialKind, values: Record<string, unknown>): S
   return m;
 }
 
-/** Waits for an idle moment (a new task: the frames in between are free). */
-function slice(): Promise<void> {
+/** When the player last touched the screen or pressed a key (shader warm-up waits for a quiet moment after). */
+let lastInput = -1e9;
+if (typeof window !== 'undefined') {
+  const mark = () => void (lastInput = performance.now());
+  for (const t of ['pointerdown', 'keydown'] as const) window.addEventListener(t, mark, { capture: true, passive: true });
+}
+/** How long after a touch the warm-up keeps off the main thread, so the tap's own frames come first (ms). */
+const INPUT_QUIET_MS = 450;
+
+/** Waits for an idle moment (a new task: the frames in between are free) that is not right after a touch. */
+export function whenQuiet(): Promise<void> {
   return new Promise((ok) => {
     const w = (typeof window !== 'undefined' ? window : undefined) as (Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }) | undefined;
-    if (w?.requestIdleCallback) w.requestIdleCallback(() => ok(), { timeout: 120 });
-    else setTimeout(ok, 16);
+    const next = () => {
+      const wait = INPUT_QUIET_MS - (performance.now() - lastInput);
+      if (wait > 0) return void setTimeout(next, wait);
+      if (w?.requestIdleCallback) w.requestIdleCallback(() => (performance.now() - lastInput < INPUT_QUIET_MS ? next() : ok()), { timeout: 120 });
+      else setTimeout(ok, 16);
+    };
+    next();
   });
 }
 
@@ -2329,6 +2343,8 @@ export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, k
   const parallel = typeof renderer.compileAsync === 'function' && !!renderer.extensions?.has?.('KHR_parallel_shader_compile');
   try {
     for (const k of kinds) {
+      // every compile, the first one too, waits for a quiet moment: never in the frames right after a tap
+      await whenQuiet();
       if (!alive()) break;
       const scene = new Scene();
       // shards draw instanced, particles as points: warm those variants of their programs
@@ -2343,7 +2359,6 @@ export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, k
       renderer.render(scene, camera);
       renderer.setRenderTarget(prev);
       if (o instanceof InstancedMesh) o.dispose();
-      await slice();
     }
   } catch (err) {
     console.warn('art engine: prewarm failed', err);
