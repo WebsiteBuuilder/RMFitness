@@ -314,8 +314,10 @@
 }
 .duel.touch .tgauge .fill {
   box-shadow: none;
-  /* drains in step with the count (LpCount: 0.6 s, easing out) */
-  transition: transform 0.6s cubic-bezier(0.33, 1, 0.68, 1), background 0.4s;
+  /* drains in step with the rolling digits: as long as the count (TouchDuel sets the duration
+     from lpCountMs) and on its curve, 1-(1-k)^1.4 (linear() where supported, a close cubic otherwise) */
+  transition: transform 0.6s cubic-bezier(0.25, 0.4, 0.55, 1), background 0.4s;
+  transition-timing-function: linear(0, 0.137 10%, 0.268 20%, 0.393 30%, 0.511 40%, 0.621 50%, 0.723 60%, 0.815 70%, 0.895 80%, 0.96 90%, 1), ease;
 }
 /* the 1000 LP line (a quarter of the gauge): a red notch the fill breaks through */
 .duel.touch .tgauge::before {

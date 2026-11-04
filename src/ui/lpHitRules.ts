@@ -54,6 +54,14 @@ export interface LpHit {
   reach: number;
 }
 
+/**
+ * How long the Life Points counter takes to roll to its new value, like the counter on the
+ * show: a small change rolls by in under half a second, a big one keeps ticking up to 1.5 s.
+ */
+export function lpCountMs(delta: number): number {
+  return Math.round(Math.min(1500, 450 + Math.abs(delta) * 0.28));
+}
+
 /** The starting Life Points of the game. */
 export const startLp = (speed: boolean) => (speed ? 4000 : 8000);
 
