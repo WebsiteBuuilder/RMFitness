@@ -1,5 +1,5 @@
 // Damage counter pop: how hard a Life Points change lands (lpHitRules.ts).
-import { crackPaths, emitLpHit, lpHit, lpListeners, sparkCount } from '../src/ui/lpHitRules';
+import { crackPaths, emitLpHit, lpCountMs, lpHit, lpListeners, sparkCount } from '../src/ui/lpHitRules';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -47,6 +47,10 @@ emitLpHit(0, 0, 4000);
 emitLpHit(1, 1000, 1500);
 lpListeners.delete(l);
 ok(seen.join() === '-1000,500', 'hits reach listeners; a reset from 0 does not');
+
+// the counter rolls longer for bigger changes, like the show's
+ok(lpCountMs(-100) < lpCountMs(-1000) && lpCountMs(-1000) < lpCountMs(-3000), 'bigger change, longer roll');
+ok(lpCountMs(-50) >= 450 && lpCountMs(-8000) === 1500 && lpCountMs(500) === lpCountMs(-500), 'roll between 0.45 s and 1.5 s, same for gains');
 
 if (fails) {
   console.log(`${fails} failed`);

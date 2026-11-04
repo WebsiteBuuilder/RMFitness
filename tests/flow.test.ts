@@ -6,6 +6,7 @@ import type { DuelState, Prompt } from '../src/eds/types';
 import { artBusy, artFocus, bannerOnce, clearArtFocus, coalesce, cueUids, focusArt, onArtChange, setArtBusy, toCues, type Cue, type CardRef } from '../src/art/cues';
 import { attachArtSink, Flow, LP_TICK_MS, pickCues, START_GRACE_MS, WATCHDOG_SLACK_MS, WIN_AFTER_LP_MS } from '../src/art/flow';
 import { SKIP_W, skipSpot } from '../src/art/skipspot';
+import { lpCountMs } from '../src/ui/lpHitRules';
 import { cueOwner, flowRate, OPP_BACKLOG_RATE, Timeline } from '../src/art/runtime';
 import { DB, SPEED } from './speedkit';
 import { SIGNATURE_CARDS } from '../src/art/profile';
@@ -241,16 +242,17 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   let redraws = 0;
   f.rerender = () => redraws++;
   f.update(e.state, 0);
+  const T = lpCountMs(-e.state.players[1].lp); // (the count takes longer the bigger the change)
   e.state.players[1].lp = 0;
   e.state.winner = 0;
   const s1 = f.update(e.state, 0);
   ok(lp(s1, 1) === 0 && s1.winner === null && f.winPending, 'a won duel shows its last Life Points first, without the result');
-  await new Promise((r) => setTimeout(r, LP_TICK_MS - 150));
+  await new Promise((r) => setTimeout(r, T - 150));
   ok(f.update(e.state, 0).winner === null, 'still no result while the count is running');
   f.flushAll();
   ok(f.update(e.state, 0).winner === null, 'a tap before the count reads 0 does not jump to the result');
   await new Promise((r) => setTimeout(r, 150 + WIN_AFTER_LP_MS + 60));
-  ok(f.update(e.state, 0).winner === 0 && !f.winPending && redraws === 1, `then the result shows (${LP_TICK_MS + WIN_AFTER_LP_MS} ms after the LP change)`);
+  ok(f.update(e.state, 0).winner === 0 && !f.winPending && redraws === 1, `then the result shows (${T + WIN_AFTER_LP_MS} ms after the LP change)`);
   f.dispose();
 }
 {
@@ -258,10 +260,11 @@ const lp = (s: DuelState, p: 0 | 1) => s.players[p].lp;
   const e = duel();
   const f = new Flow();
   f.update(e.state, 0);
+  const T = lpCountMs(-e.state.players[1].lp); // (the count takes longer the bigger the change)
   e.state.players[1].lp = 0;
   e.state.winner = 0;
   f.update(e.state, 0);
-  await new Promise((r) => setTimeout(r, LP_TICK_MS + 20));
+  await new Promise((r) => setTimeout(r, T + 20));
   f.flushAll();
   ok(f.update(e.state, 0).winner === 0, 'a tap after the LP read 0 shows the result at once');
   f.dispose();
