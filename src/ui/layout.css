@@ -61,7 +61,8 @@
   }
 }
 .duel.touch .thcard:active:not(.sel) {
-  transform: translateY(-6px) scale(1.05);
+  /* (the same functions as the 3D fan's, so pressing eases without a wobble) */
+  transform: perspective(900px) translateY(-6px) rotate(0deg) rotateY(0deg) rotateX(0deg) scale(1.05);
   transform-origin: 50% 100%;
   z-index: 3;
 }

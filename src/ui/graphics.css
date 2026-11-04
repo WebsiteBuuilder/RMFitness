@@ -40,18 +40,9 @@
   border-radius: 7px;
   pointer-events: none;
   box-shadow: 0 0 0 2px #8fd8ff, 0 0 14px 2px #3aa0ff, inset 0 0 10px #3aa0ff80;
-  animation: tcan 1.8s ease-in-out infinite alternate;
 }
 .duel.touch.turn-me .thcard.can.sel::before {
   box-shadow: 0 0 0 2px #ffe08a, 0 0 16px 3px #ffb400;
-}
-@keyframes tcan {
-  from {
-    opacity: 0.55;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 /* ---- a monster's ATK / DEF plate: green when raised, red when lowered (as in Master Duel) ---- */
@@ -81,12 +72,6 @@
   border-color: #ff6a7c;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .duel.touch.turn-me .thcard.can::before {
-    animation: none;
-  }
-}
-
 /* ---- cards on the field: the same clear-coat sheen as in your hand ---- */
 .duel.touch .tz:not(.empty):not(.pick)::after {
   content: '';
@@ -94,15 +79,15 @@
   inset: 4%;
   border-radius: 3px;
   pointer-events: none;
-  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff26 0, transparent 9%);
+  background: linear-gradient(125deg, transparent 30%, #ffffff22 42%, #ffffff06 52%, transparent 60%), linear-gradient(180deg, #ffffff38 0, #ffffff0c 14%, transparent 22%);
 }
 .duel.touch .tz.tz-m:has(.fcard.def):not(.pick)::after {
   inset: 18% 4%;
 }
 
 /* ---- foil and depth on the cards in a duel ----
-   A band of light glides over every face-up card now and then (staggered, so the hand
-   shimmers in a wave), each card has an edge (it reads as a real card, not a picture),
+   A band of light glides once over each card as it arrives (in hand: staggered, so a new hand
+   shimmers in a wave; nothing keeps running afterwards, which keeps an idle duel cheap), each card has an edge (it reads as a real card, not a picture),
    and the picked hand card leans toward you. Transform/opacity only. */
 .tshine {
   position: absolute;
@@ -121,27 +106,24 @@
   width: 45%;
   background: linear-gradient(100deg, transparent 0%, #ffffff10 25%, #fff6d855 46%, #ffffffa0 50%, #c8f0ff55 54%, #ffffff10 75%, transparent 100%);
   transform: translateX(-130%) skewX(-18deg);
-  animation: tshine 7s ease-in-out infinite;
-  animation-delay: calc(var(--arc, 0) * 0.18s + 1.2s);
+  animation: tshine 1.6s ease-out 1 both;
+  animation-delay: calc(var(--arc, 0) * 0.12s + 0.5s);
 }
 /* (a field card's shine waits a different beat from the hand's) */
 .duel.touch .fcard .tshine::before {
-  animation-duration: 9s;
-  animation-delay: 3s;
+  animation-delay: 0.6s;
 }
 @keyframes tshine {
-  0%,
-  72% {
+  0% {
     transform: translateX(-130%) skewX(-18deg);
   }
-  92%,
   100% {
     transform: translateX(330%) skewX(-18deg);
   }
 }
 /* the card's edge under it: a printed card has thickness */
 .duel.touch .thcard .cimg {
-  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 8px 14px #000000d0;
+  box-shadow: 0 1px 0 #e9dcc0, 0 2px 0 #9a8a68, 0 3px 0 #2a2216, 0 10px 18px #000000e0;
 }
 .duel.touch .tz .fcard .cimg {
   box-shadow:
@@ -153,11 +135,76 @@
 }
 /* the picked card leans toward you */
 .duel.touch .thcard.sel {
-  transform: perspective(700px) translateY(-10px) rotateX(-10deg) scale(1.07);
+  /* (same function list as the fan's, then more: it eases in without a wobble) */
+  transform: perspective(900px) translateY(-10px) rotate(0deg) rotateY(0deg) rotateX(-10deg) scale(1.07);
 }
 @media (prefers-reduced-motion: reduce) {
   .tshine::before {
     animation: none;
     opacity: 0;
   }
+}
+
+/* ---- depth, all static (nothing redraws while the duel is idle) ----
+   your hand fans in 3D like cards held in a hand; a monster on the field throws a soft shadow
+   on the slab; the cards on your side catch your turn's light along their top edge */
+.duel.touch .thcard:not(.sel):not(:active) {
+  transform: perspective(900px) translateY(calc(var(--arc2, 0) * 2.6px)) rotate(calc(var(--arc, 0) * 3.4deg)) rotateY(calc(var(--arc, 0) * -7deg));
+}
+.duel.touch .tz.tz-m:not(.empty)::before {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -11%;
+  height: 13%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, #000000b0, transparent);
+}
+/* the 3D hand and a picked card's lean reach past the screen's edge: clip (not just hidden) so focusing a card can't scroll the duel by a few pixels */
+.duel.touch {
+  overflow: clip;
+}
+
+/* ---- the slab: empty zones are carved into it, cards sit on top (static) ----
+   An empty zone is a recess: shadow under its top lip, light on its bottom lip, a darker floor.
+   Highlighted zones (pick / drop targets) keep their own glow. */
+.duel.touch .tz.empty:not(.pick):not(.drop-ok):not(.drop-on) {
+  box-shadow:
+    inset 0 5px 8px -2px #000000c0,
+    inset 0 -1px 0 #9fb4ff2e,
+    inset 0 0 0 1px #00000070,
+    inset 0 0 18px #02051acc;
+}
+/* a card on the field has a bevel: light catches its top edge, its bottom edge sits in shade */
+.duel.touch .tz:not(.empty):not(.pick)::after {
+  box-shadow: inset 0 1px 0 #fff4dc66, inset 0 -1.5px 0 #000000a0;
+}
+/* picking a card from your hand: it stays bright, the rest of the fan steps back */
+.duel.touch .thand:has(.thcard.sel) .thcard:not(.sel):not(.lifted) {
+  opacity: 0.62;
+}
+
+/* your turn, in gold: the tab on your bar and the row across the middle wear the gold of the phase orb */
+.duel.touch.turn-me .ttab.bottom.me:not(.ask):not(.wait) {
+  box-shadow: 0 0 0 1.5px #ffd76a, 0 4px 14px #2a62ff90;
+}
+.duel.touch.turn-me .ttab.bottom.me:not(.ask):not(.wait) b,
+.duel.touch.turn-me .tmid .tturn.mine:not(.ask) b {
+  color: #ffe08a;
+}
+.duel.touch.turn-me .tmid .tturn.mine:not(.ask) {
+  box-shadow: 0 0 0 1.5px #ffd76a, 0 0 16px #2a62ff70;
+}
+/* on your turn the opponent's half of the board sits a step back, so your side reads as the stage */
+/* (not while you aim at one of their cards: the targets stay at full strength) */
+.duel.touch.turn-me:not(.aiming):not(:has(.tmat .pick)) .tmat > .trow.opp {
+  opacity: 0.76;
+}
+
+/* a pick (a target, a card to choose) pulses three times to catch the eye, then holds its glow:
+   a box-shadow pulse repaints every frame, so it doesn't run for as long as the question is up */
+.duel.touch .tz.pick,
+.duel.touch .thcard.pick {
+  animation-iteration-count: 3;
 }

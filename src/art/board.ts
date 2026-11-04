@@ -16,13 +16,16 @@ import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } 
 import { card } from "../eds/db";
 import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { ContactShadow, Figure, Glow, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
+import { ContactShadow, Figure, Glow, Particles, type Emit, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
+// (the duel screen waits on this before it makes the figures' WebGL context)
+export { whenQuiet } from "./stage";
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
 import { boardHolo, flickerAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
-import { calmMotion, getHolo } from "./settings";
+import { calmMotion, getHolo, getIdle, onArtSettings } from "./settings";
+import { GLANCE_S, glanceEnvelope, idlePoseInto, idleStyleFor, moteStyleFor, newIdlePose, presenceMotes, presenceOf, wornAmount, MOTE_SHAPE, type IdleMood, type IdlePose, type IdleStyle, type MoteStyle, type Presence } from "./idleLife";
 import { holoHum, holoLock } from "./sfx";
 
 export interface BoardMonster {
@@ -37,6 +40,12 @@ export interface BoardMonster {
   lp?: number;
   /** its finish (TIERS index, the owner's card leveling): Ultra Rare and up glow in it */
   finish?: number;
+  /** an attack is aimed at it (battle-worn if it is still standing after) */
+  attacked?: boolean;
+  /** its duelist's Ace: a gold aura */
+  ace?: boolean;
+  /** its duelist's LP are in danger: quick, tense breaths */
+  danger?: boolean;
 }
 
 /** Where a field figure stands on screen. Every length is in viewport CSS px. */
@@ -184,9 +193,51 @@ interface Piece {
   beam: Glow | null;
   /** the phone asks for reduced motion: no flicker or tearing */
   calm: boolean;
+  /** idle life (idleLife.ts): how it moves, its Attribute's motes, its presence, its moods */
+  style: IdleStyle;
+  motes: MoteStyle | null;
+  presence: Presence;
+  moteAcc: number;
+  wasAttacked: boolean;
+  /** when it last survived an attack (ms), or -1 */
+  wornAt: number;
+  danger: boolean;
+  /** a glance at a monster that just arrived: when (ms, -1 none) and at which */
+  glanceAt: number;
+  glanceUid: number;
+  /** its base ring is tinted red (danger) */
+  ringRed: boolean;
+  /** the others still have to glance at it (it just arrived) */
+  announce: boolean;
+  /** smoothed glance direction -1..1 */
+  glanceDir: number;
+  idle: IdlePose;
+  mood: IdleMood;
 }
 
 const DEF_GLOW = 0x4a8aff;
+const ACE_GLOW = 0xffc84a;
+const DANGER_RING = 0xff3a2a;
+/** With idle life off: exactly the plain breath and turn the figures always had. */
+function plainPose(out: IdlePose, t: number, seed: number): IdlePose {
+  const b = Math.sin(t * 1.9 + seed) * 0.006;
+  out.sx = 1 + b;
+  out.sy = (1 + b) * (1 + b * 0.5);
+  out.lift = 0;
+  out.float = 0;
+  out.turn = Math.sin(t * 0.45 + seed) * 0.14;
+  out.roll = 0;
+  out.lean = 0;
+  out.dark = 0;
+  out.aura = 0;
+  return out;
+}
+/** One scratch emit (and swirl) reused for every mote: nothing allocated per mote. */
+const EMIT: Emit = { x: 0, y: 0, color: 0 };
+const PULL = { x: 0, y: 0, strength: 0, swirl: 0 };
+/** Attribute motes: one pool drawn behind the figures and one in front (share of motes in front). */
+const MOTE_POOL = 140;
+const MOTE_FRONT = 0.4;
 const HIT_FLASH = 0xff2a1a;
 /** Idle flourishes (a hop or a lean) come every FLOURISH_MIN_MS..+FLOURISH_SPREAD_MS per figure. */
 const FLOURISH_MIN_MS = 6000;
@@ -211,6 +262,16 @@ export class BoardLayer {
   private lastHum = 0;
   /** scratch for the field holograms (no allocation per frame) */
   private hb: BoardHolo = { holo: 0, line: -1, reveal: 1 };
+  /** idle life on (the duel menu's "Monster idle life", and not Reduce motion) */
+  private idleOn = getIdle() && !calmMotion();
+  private unsubIdle: () => void;
+  /** Attribute motes behind and in front of the figures (made with the first one that needs them) */
+  private motesBack: Particles | null = null;
+  private motesFront: Particles | null = null;
+  /** a mote was emitted into the back / front pool this frame */
+  private emittedBack = false;
+  private emittedFront = false;
+  private calmQ: MediaQueryList | null = typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
   private raf = 0;
   private last = 0;
   private unsub: () => void;
@@ -243,9 +304,13 @@ export class BoardLayer {
       this.ro = new ResizeObserver(this.markDirty);
       this.ro.observe(document.body);
     }
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "motes"], () => !this.dead && !this.lost);
     // a cinematic starting or ending: no polling, just a wake-up
     this.unsub = onArtChange(this.onArt);
+    // (dev builds: the field layer, for the browser checks)
+    if (import.meta.env.DEV) (window as unknown as { __board?: BoardLayer }).__board = this;
+    this.unsubIdle = onArtSettings(this.onIdleSetting);
+    this.calmQ?.addEventListener?.("change", this.onIdleSetting);
   }
 
   private onArt = () => {
@@ -263,7 +328,30 @@ export class BoardLayer {
     this.camera.position.set(0, 0, this.h / 2 / Math.tan((15 * Math.PI) / 180));
     this.camera.lookAt(0, 0, 0);
     this.camera.updateProjectionMatrix();
+    this.setMotePx();
     this.dirty = true;
+  }
+
+  private onIdleSetting = () => {
+    this.idleOn = getIdle() && !calmMotion();
+    if (!this.idleOn) (this.motesBack?.clear(), this.motesFront?.clear());
+  };
+
+  /** Mote sizes are in CSS px on the card plane. */
+  private setMotePx() {
+    const px = this.camera.position.z * this.renderer.getPixelRatio();
+    for (const m of [this.motesBack, this.motesFront]) if (m) m.mat.uniforms.uPx.value = px;
+  }
+
+  private ensureMotes() {
+    if (this.motesBack) return;
+    this.motesBack = new Particles(MOTE_POOL, true);
+    this.motesFront = new Particles(MOTE_POOL, true);
+    // behind every figure (over the base discs), and over every figure
+    this.motesBack.points.renderOrder = -2;
+    this.motesFront.points.renderOrder = 1e6;
+    this.scene.add(this.motesBack.points, this.motesFront.points);
+    this.setMotePx();
   }
 
   /** The face-up monsters now on the field. */
@@ -284,6 +372,11 @@ export class BoardLayer {
         p.finish = m.finish ?? 0;
         if ((m.hit && !p.wasHit) || (m.lp !== undefined && m.lp < p.lp)) p.hitPending = true;
         p.wasHit = !!m.hit;
+        // the attack on it is over and it still stands: battle-worn for a while
+        if (p.wasAttacked && !m.attacked) p.wornAt = performance.now();
+        p.wasAttacked = !!m.attacked;
+        p.danger = !!m.danger;
+        if (p.presence !== 2 && m.ace) p.presence = 2;
         if (m.lp !== undefined) p.lp = m.lp;
       }
     }
@@ -327,6 +420,21 @@ export class BoardLayer {
         beam: null,
         calm: calmMotion(),
         finish: m.finish ?? 0,
+        style: idleStyleFor(info?.race, info?.level ?? 4),
+        motes: moteStyleFor(info?.attribute),
+        presence: presenceOf(info?.level, info?.atk, !!m.ace),
+        moteAcc: Math.random(),
+        wasAttacked: !!m.attacked,
+        wornAt: -1,
+        danger: !!m.danger,
+        glanceAt: -1,
+        glanceUid: 0,
+        // the others glance at it once it stands solid (not at the field a resumed duel opens on)
+        announce: performance.now() - this.born > 1200,
+        ringRed: false,
+        glanceDir: 0,
+        idle: newIdlePose(),
+        mood: { braced: false, worn: 0, tense: false, kneel: 0, presence: 0, glance: 0 },
       };
       this.pieces.set(m.uid, piece);
       artFor(m.name)
@@ -410,7 +518,7 @@ export class BoardLayer {
   private onRestored = () => {
     // three.js rebuilds its GL state; textures and buffers re-upload on next draw.
     this.lost = false;
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "motes"], () => !this.dead && !this.lost);
     this.dirty = true;
     this.start();
   };
@@ -429,13 +537,15 @@ export class BoardLayer {
       if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
       return;
     }
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // (never negative: a frame stamped before the moment the loop was restarted would step everything backward)
+    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
     // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
     // (and 15 for the slow idle sway once every figure has settled: a quarter of the GPU work and heat;
     // the sway is slow enough that it still reads as smooth)
     const settling = this.dirty || now < this.settleUntil;
-    const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 6) : settling ? 1 : 4;
+    // (idle life moves more than the old sway: 20 fps once settled instead of 15)
+    const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 6) : settling ? 1 : this.idleOn ? 3 : 4;
     // a finger just went down: the tap's answer paints first, the figures wait a beat
     const hush = !this.dirty && pressQuiet(now);
     if (!hush && (++this.frame % every === 0 || dt > 0.055)) {
@@ -548,19 +658,43 @@ export class BoardLayer {
         } else lean = Math.sin(f * Math.PI) ** 2 * (p.flourishKind === 1 ? 1 : -1);
       }
       p.pulse += ((p.ready && !p.def ? 1 : 0) - p.pulse) * Math.min(1, dt * 4);
-      const breath = 1 + Math.sin(t * 1.9 + p.seed) * 0.006;
+      // idle life: its Type's breathing, hover and sway, and its moods (idleLife.ts)
+      const mood = p.mood;
+      const live = this.idleOn;
+      mood.braced = live && p.wasHit && !p.leaving;
+      mood.worn = live && p.wornAt >= 0 ? wornAmount(now - p.wornAt) : 0;
+      mood.tense = live && p.danger;
+      mood.kneel = p.kneel;
+      mood.presence = live ? p.presence : 0;
+      let gl = 0;
+      if (live && p.glanceAt >= 0 && now >= p.glanceAt) {
+        const gk = (now - p.glanceAt) / 1000 / GLANCE_S;
+        if (gk >= 1) p.glanceAt = -1;
+        else {
+          const o = this.pieces.get(p.glanceUid);
+          const dx = o && o.cw > 0 ? o.pose.cx - pose.cx : 0;
+          gl = glanceEnvelope(gk) * (dx > 4 ? 1 : dx < -4 ? -1 : 0);
+        }
+      }
+      if (p.announce && p.show >= 1 && p.cw > 0 && !p.leaving) {
+        p.announce = false;
+        for (const o of this.pieces.values()) if (!o.leaving && o !== p && o.show >= 1) (o.glanceAt = now + (o.seed % 5) * 60), (o.glanceUid = p.uid);
+      }
+      p.glanceDir += (gl - p.glanceDir) * Math.min(1, dt * 8);
+      mood.glance = p.glanceDir;
+      const idle = live ? idlePoseInto(p.idle, p.style, mood, t, p.seed) : plainPose(p.idle, t, p.seed);
       const grow = p.quick ? 1 : lerp(0.75, 1, k);
       // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
       // an Overframe monster stands a little taller than the rest, a Millennium one taller still
-      const s = pose.size * grow * breath * (p.finish >= FIN.MI ? 1.08 : p.finish >= FIN.OF ? 1.05 : 1);
-      const sy = lerp(1, 0.85, p.kneel) * (1 - squash * 0.08);
-      const sx = 1 + squash * 0.05;
+      const s = pose.size * grow * (p.finish >= FIN.MI ? 1.08 : p.finish >= FIN.OF ? 1.05 : 1);
+      const sy = lerp(1, 0.85, p.kneel) * (1 - squash * 0.08) * idle.sy;
+      const sx = (1 + squash * 0.05) * idle.sx;
       // pivot at the feet on the card; the figure hangs from it
       const fx = pose.cx - this.w / 2 + shake * p.cw * 0.05;
-      const fy = this.h / 2 - pose.foot + hop * p.cw * 0.16;
+      const fy = this.h / 2 - pose.foot + (hop * 0.16 + idle.lift) * p.cw;
       p.pivot.position.set(fx, fy, 0);
-      p.pivot.rotation.set(lerp(STAND_TILT, KNEEL_TILT, p.kneel) - recoil * 0.4 + Math.abs(lean) * 0.08, Math.sin(t * 0.45 + p.seed) * 0.14, lean * 0.13 + shake * 0.06);
-      fig.mesh.scale.set(s * sx, s * sy * (1 + (breath - 1) * 0.5), s);
+      p.pivot.rotation.set(lerp(STAND_TILT, KNEEL_TILT, p.kneel) - recoil * 0.4 + Math.abs(lean) * 0.08 + idle.lean, idle.turn, lean * 0.13 + shake * 0.06 + idle.roll);
+      fig.mesh.scale.set(s * sx, s * sy, s);
       fig.mesh.position.set(-(pose.footU - 0.5) * s * sx, -(pose.footV - 0.5) * s * sy, -fig.foot.relief * fig.u.uDepthAmt.value * 0.45 * s);
       // nearer rows (lower on screen) draw over farther ones
       const order = Math.round(pose.foot);
@@ -622,26 +756,114 @@ export class BoardLayer {
       // a finished card glows in its finish: its rim light and base ring (Overframe turns through
       // the rainbow, Glossy rolls pink-violet-cyan, Royal breathes gold); one color per frame, no allocations
       const fg = p.finish >= FIN.UR ? finishGlow(p.finish, t + p.seed) : -1;
-      setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : fg >= 0 ? fg : p.glow);
+      setRgb(u.uGlow.value as Vector3, p.def ? DEF_GLOW : fg >= 0 ? fg : mood.presence === 2 ? ACE_GLOW : p.glow);
       if (fg >= 0) {
         rimColor(fg, u.uRim.value as Vector3);
         if (p.finish >= FIN.GL) rimColor(fg, p.disc.u.uRing.value as Vector3);
       }
-      u.uDark.value = p.kneel * 0.2;
+      // in danger its base ring runs red, pulsing with its quick breaths
+      if (p.finish < FIN.GL && mood.tense !== p.ringRed) {
+        p.ringRed = mood.tense;
+        // (a saturated red, not lifted toward white like the other ring colors)
+        if (mood.tense) setRgb(p.disc.u.uRing.value as Vector3, DANGER_RING);
+        else rimColor(p.glow, p.disc.u.uRing.value as Vector3);
+      }
+      u.uDark.value = p.kneel * 0.2 + idle.dark;
       u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
       setRgb(u.uFlash.value as Vector3, HIT_FLASH);
       (u.uFlash.value as Vector3).multiplyScalar(recoil * 0.9);
       // the base disc + shadow lies on the card under the feet (it stays put while the figure hops)
       const d = p.disc;
       const dsz = Math.max(p.cw * 0.55, fig.foot.w * s * 1.15);
-      const lift = 1 - hop * 0.35;
+      // (the shadow shrinks and pales under a hovering monster)
+      const lift = (1 - hop * 0.35) * (1 - 0.3 * idle.float);
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
-      d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis;
+      d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis * (1 - 0.3 * idle.float);
       d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
       // the projector's light on the base while the hologram forms
       if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line)) + 2.4 * clamp01((hb.line - 0.8) / 0.25);
+      // a boss's (or an Ace's) aura breathes in its base ring
+      d.u.uRingAmt.value += idle.aura * 1.6 + (mood.tense ? 0.5 + Math.max(0, idle.sy - 1) * 60 : 0);
+      // its Attribute's motes (only once it stands solid, not while a cinematic is about it)
+      if (live && p.motes && !p.leaving && p.show >= 1 && p.vis >= 1 && !(hb && hb.holo > 0)) this.emitMotes(p, dt, idle.lift);
+    }
+    if (this.motesBack) {
+      // (the last frame drawn when the field empties carries no motes frozen in the air)
+      if (!this.pieces.size) (this.motesBack.clear(), this.motesFront!.clear());
+      // nothing in the air and nothing new: no stepping, no upload, no draw
+      this.stepPool(this.motesBack, this.emittedBack, dt);
+      this.stepPool(this.motesFront!, this.emittedFront, dt);
+      this.emittedBack = this.emittedFront = false;
+    }
+  }
+
+  /** A mote pool with nothing in the air and nothing new is not stepped, uploaded or drawn. */
+  private stepPool(m: Particles, emitted: boolean, dt: number) {
+    const busy = m.active > 0 || emitted;
+    if (busy) m.update(dt);
+    m.points.visible = busy && m.active > 0;
+  }
+
+  /** Motes off a monster's Attribute: embers, bubbles, leaves, dust, sparkles, smoke, gold dust. */
+  private emitMotes(p: Piece, dt: number, lift: number) {
+    const m = p.motes!;
+    // (fewer on the cheapest tier, and while a cinematic plays)
+    // (and fewer on a small phone, where each card is small and they would crowd it)
+    const scale = (stageTier() === 0 ? 0.5 : 1) * (artBusy() ? 0.4 : 1) * presenceMotes(p.presence) * (p.def ? 0.6 : 1) * (p.cw < 60 ? 0.85 : 1);
+    p.moteAcc += m.rate * scale * dt;
+    if (p.moteAcc < 1) return;
+    this.ensureMotes();
+    const pose = p.pose;
+    const cw = p.cw;
+    const cx = pose.cx - this.w / 2;
+    const base = this.h / 2 - pose.foot + lift * cw;
+    const tall = Math.max(cw * 0.5, pose.h);
+    while (p.moteAcc >= 1) {
+      p.moteAcc -= 1;
+      const front = Math.random() < MOTE_FRONT;
+      const pool = front ? this.motesFront! : this.motesBack!;
+      // an Ace mixes gold dust into its own motes
+      const gold = p.presence === 2 && Math.random() < 0.35;
+      const color = gold ? (Math.random() < 0.5 ? ACE_GLOW : 0xfff0b8) : Math.random() < 0.6 ? m.color : m.color2;
+      // where it starts: low for embers, smoke and dust (they rise off it), anywhere on it otherwise
+      // (smoke and dust rise off its feet; embers from its flanks; the rest anywhere on it)
+      const low = m.kind === "smoke" || m.kind === "dust";
+      const y = base + (low ? Math.random() * 0.45 : m.kind === "ember" ? 0.1 + Math.random() * 0.95 : 0.2 + Math.random() * 0.85) * tall;
+      // (mostly round its edges, where they show against the dark mat rather than over its art)
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const spread = (m.kind === "leaf" ? 0.85 : 0.7) * (0.45 + 0.55 * Math.sqrt(Math.random())) * side;
+      const x = cx + spread * Math.max(cw * 0.55, pose.w * 0.6);
+      const rise = m.rise * cw;
+      const e = EMIT;
+      e.x = x;
+      e.y = y;
+      e.z = front ? 8 : -8;
+      e.vx = (Math.random() - 0.5) * 2 * m.drift * cw;
+      e.vy = rise;
+      // (it fades before it drifts over the row beyond: a little above the figure's head at most)
+      const room = base + tall + cw * 0.45 - y;
+      e.life = rise > 1 ? Math.max(0.5, Math.min(m.life, room / (rise * 1.15))) : m.life;
+      // (a small phone's cards are small: the motes keep a readable size)
+      const big = cw < 60 ? 1.2 : 1;
+      e.size = m.size * cw * big;
+      e.size1 = m.size1 * cw * big;
+      e.color = color;
+      e.kind = gold ? MOTE_SHAPE.divine : MOTE_SHAPE[m.kind];
+      // embers and gold dust speed up as they rise; dust settles
+      e.gravity = m.kind === "ember" || m.kind === "divine" ? -rise * 0.5 : m.kind === "dust" ? rise * 0.25 : 0;
+      e.drag = m.swirl > 0 ? 0.9 : 0.25;
+      if (m.swirl > 0) {
+        PULL.x = cx;
+        PULL.y = base + tall * 0.5;
+        PULL.strength = cw * 0.2;
+        PULL.swirl = cw * 0.45 * m.swirl * (p.seed & 1 ? 1 : -1);
+        e.pull = PULL;
+      } else e.pull = undefined;
+      pool.emit(e);
+      if (front) this.emittedFront = true;
+      else this.emittedBack = true;
     }
   }
 
@@ -649,6 +871,11 @@ export class BoardLayer {
     this.dead = true;
     this.halt();
     this.unsub();
+    this.unsubIdle();
+    this.calmQ?.removeEventListener?.("change", this.onIdleSetting);
+    if (import.meta.env.DEV && (window as unknown as { __board?: BoardLayer }).__board === this) delete (window as unknown as { __board?: BoardLayer }).__board;
+    this.motesBack?.dispose();
+    this.motesFront?.dispose();
     window.removeEventListener("resize", this.onResize);
     window.removeEventListener("scroll", this.markDirty, { capture: true });
     document.removeEventListener("visibilitychange", this.onVisibility);

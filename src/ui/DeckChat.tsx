@@ -10,6 +10,7 @@ import { chatKey, looksLikeKey, setChatKey } from '../deckchat/key';
 import { clean, localModel, type Memory } from '../deckchat/local';
 import { buzz, playBlip } from './sound';
 import { card, imageUrl } from '../eds/db';
+import { chatStoreKey } from './deckChatLazy';
 import './deckchat.css';
 
 interface Turn {
@@ -31,7 +32,7 @@ interface Chat {
 
 /** Chats per deck: kept in memory and on the phone, so closing the chat or the game doesn't lose them. */
 const chats = new Map<string, Chat>();
-const STORE = (deckId: string) => `eds.deckChat.${deckId}`;
+const STORE = chatStoreKey;
 
 function loadChat(deckId: string): Chat {
   const hit = chats.get(deckId);
