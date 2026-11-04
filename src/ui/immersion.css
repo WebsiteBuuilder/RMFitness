@@ -855,7 +855,9 @@
   display: none;
 }
 .hd-auto.compact.on {
-  background: linear-gradient(#3a2f08f2, #14100af2);
+  /* filled when on, hollow when off: readable without colour */
+  color: #1a1300;
+  background: linear-gradient(#ffe48a, #e8b631);
   box-shadow: 0 0 8px #ffd35a66, 0 2px 6px #000a;
 }
 .pile-stack > .hd-auto::before {
