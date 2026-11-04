@@ -16,8 +16,11 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
+import { prepManga } from "./mangaPanel";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
+import { aceFor } from "../ace/ace";
+import { dangerLevel } from "../ui/atmosphereRules";
 import "./art.css";
 import "./chainspot.css";
 
@@ -85,6 +88,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
+    manga: (o) => prepManga(layer, o),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
     clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
     chain,
@@ -264,7 +268,9 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (board.current || boardLoading.current || broken.current) return;
     boardLoading.current = true;
     import("./board")
-      .then(({ BoardLayer }) => {
+      .then(async ({ BoardLayer, whenQuiet }) => {
+        // making a WebGL context holds the main thread: not in the frames right after a tap
+        await whenQuiet();
         if (!boardCanvas.current || board.current) return;
         board.current = new BoardLayer(boardCanvas.current);
         // under a cinematic's full dim only the stage draws
@@ -292,6 +298,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
     if (stateRef.current.winner !== null) return skipAll(false);
+    // a manga panel holding the frame: the tap only sends the panel away (the blow plays on)
+    if (dir.current?.dismissManga()) return;
     tapToResult();
     clearLayer();
     chainSpot.current?.hide();
@@ -449,9 +457,12 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
             hit: state.battle?.target === c.uid || state.chain.some((l) => l.targetUid === c.uid),
             lp: state.players[p].lp,
             finish: finishOf({ name: c.name, owner: c.owner, controller: p }),
+            attacked: state.battle?.target === c.uid,
+            ace: !!aceFor(c.owner, c.name),
+            danger: dangerLevel(state.players[p].lp, state.rules?.mode === "speed") > 0,
           });
   const standKey = standing
-    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}:${m.finish}`)
+    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}:${m.finish}:${m.attacked ? 1 : 0}:${m.ace ? 1 : 0}:${m.danger ? 1 : 0}`)
     .join(",");
   useEffect(() => {
     if (board.current) return board.current.sync(standing);
