@@ -1765,12 +1765,15 @@ function Running({
     return sleeveFromWire(view.seats[seat as Pid]?.sleeve) ?? DEFAULT_SLEEVE;
   };
   showDuelSleeves(view.state.started ? [seatSleeve(0), seatSleeve(1)] : null);
-  // Entrance jingles: each side's first seat's (a computer side: its own by name; a phone that sent none: no entrance).
+  // Entrance jingles: one per side. A tag side plays this phone's own if it is on it, else its
+  // first phone's that sent one, else (a computer team) its own by name; a phone that sent none: no entrance.
   const seatJingle = (side: Pid): JingleId | null => {
     const c = view.state.tag?.ctl?.[side];
-    const seat = c ? c[0] : side;
-    if (seat === 'cpu') return jingleForName(view.state.players[side]?.name ?? '');
-    return jingleFromWire(view.seats[seat as Pid]?.jingle);
+    if (!c) return jingleFromWire(view.seats[side]?.jingle);
+    const phones = c.filter((x): x is Pid => x !== 'cpu');
+    const pick = phones.includes(mySeat) ? mySeat : phones.find((x) => jingleFromWire(view.seats[x]?.jingle));
+    if (pick !== undefined) return jingleFromWire(view.seats[pick]?.jingle);
+    return c.includes('cpu') ? jingleForName(view.state.players[side]?.name ?? '') : null;
   };
   showDuelJingles(view.state.started && view.state.rules?.mode === 'speed' ? [seatJingle(0), seatJingle(1)] : null);
   // Playmats: each side's half lies on its first seat's mat, chosen the same way as its sleeve.

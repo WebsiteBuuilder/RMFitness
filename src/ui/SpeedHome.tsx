@@ -9,8 +9,7 @@ import '../ace/ace.css';
 import { chosenSleeve, hasSleeve, sleeveDef, SLEEVES } from '../sleeves/sleeves';
 import '../sleeves/sleeves.css';
 import { chosenJingle, hasJingle, jingleDef, JINGLES } from '../jingles/jingles';
-import '../jingles/jingles.css';
-import { musicThemePref, THEME_PREFS } from './music';
+import { THEME_PREFS, useMusicThemePref } from './music';
 import { chosenPlaymat, hasPlaymat, playmatDef, PLAYMATS } from '../playmats/playmats';
 import { matUrl } from '../playmats/art';
 import { useEffect, useMemo, useState } from 'preact/hooks';
@@ -299,7 +298,8 @@ function MusicTile({ save, profileId, onPick }: { save: SpeedSave; profileId: st
   const solo = useMemo(() => loadSolo(profileId), [profileId, save]);
   const d = jingleDef(chosenJingle(save, solo))!;
   const got = JINGLES.filter((j) => hasJingle(save, j.id, solo)).length;
-  const theme = THEME_PREFS.find((p) => p.id === musicThemePref())?.name ?? '';
+  const pref = useMusicThemePref();
+  const theme = THEME_PREFS.find((p) => p.id === pref)?.name ?? '';
   return (
     <button class="sdh-music" style={{ '--jgl-hue': d.hue } as Record<string, string>} onClick={() => (playBlip(), onPick())}>
       <span class="sdh-music-ic" aria-hidden="true">

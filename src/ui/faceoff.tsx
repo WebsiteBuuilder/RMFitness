@@ -9,6 +9,7 @@ import { MateArt } from '../mates/MateArt';
 import type { MateId } from '../mates/roster';
 import * as sfx from './duelSfx';
 import { setIntroFor } from './immersionState';
+import { entranceComing } from './music';
 import './immersion.css';
 
 export const INTRO_MS = 2700;
@@ -39,9 +40,11 @@ export function FaceOff({ state, acting, mateOf, onDone }: { state: DuelState; a
     onDone();
   };
   useEffect(() => {
-    sfx.faceoffSweep();
+    // your entrance jingle opening the duel is the face-off's music: the sweep and clash step aside for it
+    const quiet = entranceComing(state.seed, acting);
+    if (!quiet) sfx.faceoffSweep();
     const ts = [
-      setTimeout(() => (sfx.faceoffClash(), setStage(1)), 430),
+      setTimeout(() => (quiet || sfx.faceoffClash(), setStage(1)), 430),
       setTimeout(() => (sfx.duelSlam(), setStage(2)), 1450),
       setTimeout(finish, INTRO_MS),
     ];

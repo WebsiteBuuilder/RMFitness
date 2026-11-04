@@ -2,7 +2,7 @@
 // and short, the duel's jingles per side, the jingle riding a room's JOIN, and the music themes.
 import assert from 'node:assert/strict';
 import { buyJingle, cantBuyJingle, chosenJingle, DEFAULT_JINGLE, duelJingleOf, hasJingle, isJingle, jingleForName, jingleFromWire, jingleLength, JINGLES, pickJingle, showDuelJingles } from '../src/jingles/jingles';
-import { playJingle } from '../src/jingles/play';
+import { performJingle, playJingle, stopAllJingles } from '../src/jingles/play';
 import { pickTheme, THEMES, THEME_PREFS, themeDef, DuelMusic } from '../src/ui/music';
 import { DuelSession } from '../src/eds/session';
 import { MemoryAdapter } from '../src/sync/memory';
@@ -72,6 +72,22 @@ t('every jingle is short (about 3 s) and plays real notes', () => {
     assert.ok(notes.every((x) => x.t >= 0 && x.t <= len + 0.1), `${j.id}: a note outside its length`);
     for (const x of notes) if (x.f !== undefined) assert.ok(x.f > 20 && x.f < 12000, `${j.id}: ${x.f} Hz`);
   }
+});
+
+t('a jingle can be cut short: it fades and lets go, once; leaving a duel cuts them all', () => {
+  const g: { ramps: number; gone: number } = { ramps: 0, gone: 0 };
+  const c2 = Object.assign(new FakeCtx(), {
+    createGain: () => ({ connect: (x: unknown) => x, disconnect: () => g.gone++, gain: { ...param(1), linearRampToValueAtTime: () => g.ramps++ } }),
+  }) as unknown as AudioContext;
+  const a = performJingle('duelist', 0, c2)!;
+  const b = performJingle('magic', 0.5, c2)!;
+  assert.ok(a.len > 1.5 && b.len > 1.5);
+  a.stop();
+  a.stop(); // twice is harmless
+  assert.equal(g.ramps, 1);
+  stopAllJingles(); // only b is left
+  assert.equal(g.ramps, 2);
+  assert.equal(performJingle('nope', 0, c2), null);
 });
 
 t('nothing plays while the audio is not running (no late bursts)', () => {

@@ -98,11 +98,18 @@
   opacity: 0.75;
 }
 .jgl-earn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 13px;
   padding: 7px 10px;
   border-radius: 10px;
   border: 1.5px dashed #e9c46a88;
   color: #ffe9a8;
+}
+.jgl-earn small {
+  font-size: 12px;
+  opacity: 0.8;
 }
 .jgl-note {
   margin: 8px 2px 0;
@@ -114,7 +121,7 @@
 /* the list */
 .jgl-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: 6px;
   margin-top: 10px;
 }
@@ -331,7 +338,7 @@
   position: fixed;
   z-index: 1000;
   left: 50%;
-  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  top: 24%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -346,6 +353,10 @@
   transform: translate(-50%, 0);
   animation: jgl-in 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both;
   white-space: nowrap;
+}
+/* each tag on its owner's empty monster row (the field is bare as a duel begins) */
+.jgl-toast.mine {
+  top: 58%;
 }
 .jgl-toast.out {
   animation: jgl-out 0.3s ease-in both;

@@ -143,24 +143,71 @@ class Band {
   }
 }
 
-/** Plays a jingle `delay` seconds from now. Returns its length in seconds (0: nothing played). */
-export function playJingle(id: JingleId | string | null | undefined, delay = 0, ctx: BaseAudioContext | null = rawAudioContext(), volume = 0.55, offline = false): number {
+/** A jingle playing (or about to): its length in seconds and a way to cut it short. */
+export interface JingleHandle {
+  len: number;
+  stop(): void;
+}
+
+/** Every performance still sounding, so a duel that ends (or a phone that locks) can silence them. */
+const playing = new Set<JingleHandle>();
+
+/** Plays a jingle `delay` seconds from now and hands back a way to stop it (null: nothing played). */
+export function performJingle(id: JingleId | string | null | undefined, delay = 0, ctx: BaseAudioContext | null = rawAudioContext(), volume = 0.55, offline = false): JingleHandle | null {
   const d = jingleDef(id ?? undefined);
-  if (!d || !ctx || (!offline && ctx.state !== 'running')) return 0;
+  if (!d || !ctx || (!offline && ctx.state !== 'running')) return null;
   const band = new Band(ctx, ctx.destination, volume);
   const t0 = ctx.currentTime + delay + 0.03;
   const beat = 60 / d.bpm;
   for (const [b, inst, notes, len, v] of d.score) band.play(inst, Array.isArray(notes) ? notes : [notes], t0 + b * beat, len * beat, v ?? 1);
   const length = jingleLength(d);
-  // let go of the band once it has rung out
-  if (typeof setTimeout !== 'undefined')
-    setTimeout(() => {
+  let done = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const letGo = () => {
+    try {
+      band.out.disconnect();
+      band.comp.disconnect();
+    } catch {
+      /* gone */
+    }
+  };
+  const h: JingleHandle = {
+    len: length,
+    stop() {
+      if (done) return;
+      done = true;
+      playing.delete(h);
+      if (timer !== undefined) clearTimeout(timer);
+      // a quick fade (no click), then the band is let go
       try {
-        band.out.disconnect();
-        band.comp.disconnect();
+        const g = band.out.gain;
+        g.cancelScheduledValues(ctx.currentTime);
+        g.setValueAtTime(g.value, ctx.currentTime);
+        g.linearRampToValueAtTime(0, ctx.currentTime + 0.06);
       } catch {
         /* gone */
       }
+      if (typeof setTimeout !== 'undefined') setTimeout(letGo, 120);
+      else letGo();
+    },
+  };
+  playing.add(h);
+  // let go of the band once it has rung out
+  if (typeof setTimeout !== 'undefined')
+    timer = setTimeout(() => {
+      done = true;
+      playing.delete(h);
+      letGo();
     }, (delay + length + 2) * 1000);
-  return length;
+  return h;
+}
+
+/** Plays a jingle `delay` seconds from now. Returns its length in seconds (0: nothing played). */
+export function playJingle(id: JingleId | string | null | undefined, delay = 0, ctx: BaseAudioContext | null = rawAudioContext(), volume = 0.55, offline = false): number {
+  return performJingle(id, delay, ctx, volume, offline)?.len ?? 0;
+}
+
+/** Cuts every jingle still sounding (the duel ended, Music went Off, the phone locked). */
+export function stopAllJingles() {
+  for (const h of [...playing]) h.stop();
 }

@@ -1,7 +1,7 @@
 // The Duel Music page: your entrance jingle (heard by both duelists as a duel begins) and the
 // soundtrack's theme (one always, taking turns, or picked by the moment). Every jingle and theme
 // can be heard here first.
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { SpeedSave } from '../eds/speedSave';
 import type { SoloSave } from '../eds/speedCampaign/save';
 import { Win } from '../ui/Window';
@@ -10,50 +10,67 @@ import { chipsOf } from '../collection/economy';
 import { playBlip, playWin, rawAudioContext, setMusicEnabled, unlockAudio, useMusicEnabled } from '../ui/sound';
 import { DuelMusic, setMusicThemePref, THEME_PREFS, themeDef, useMusicThemePref, type ThemeId, type ThemePref } from '../ui/music';
 import { buyJingle, cantBuyJingle, chosenJingle, hasJingle, jingleCostNote, jingleCostShort, jingleDef, JINGLES, pickJingle, type JingleId } from './jingles';
-import { playJingle } from './play';
+import { performJingle } from './play';
 import '../mates/mates.css';
 import './jingles.css';
 
-/** One thing playing at a time on this page: a jingle or a theme's preview. */
+/**
+ * One thing playing at a time on this page: a jingle or a theme's preview. Every new tap (and
+ * leaving the page) bumps `ticket`, so a preview still waiting for the audio to wake up never
+ * starts late, and the one before it is always stopped.
+ */
 let stopPreview: (() => void) | null = null;
+let ticket = 0;
 function stopAll() {
-  stopPreview?.();
+  ticket++;
+  const s = stopPreview;
   stopPreview = null;
+  s?.();
 }
 
-function previewJingle(id: JingleId): number {
+/** Plays a jingle's preview; `onStart` gets its length once it really sounds. */
+function previewJingle(id: JingleId, onStart: (secs: number) => void) {
   stopAll();
+  const mine = ticket;
   unlockAudio();
   const ctx = rawAudioContext();
-  if (!ctx) return 0;
-  const go = () => playJingle(id, 0, ctx);
+  if (!ctx) return;
+  const go = () => {
+    if (mine !== ticket) return;
+    const h = performJingle(id, 0, ctx);
+    if (!h) return;
+    stopPreview = h.stop;
+    onStart(h.len);
+  };
   // (the first tap on a phone may still be waking the audio up)
-  if (ctx.state === 'running') return go();
-  ctx.resume().then(go, () => {});
-  return 3;
+  if (ctx.state === 'running') go();
+  else ctx.resume().then(go, () => {});
 }
 
 function previewTheme(id: ThemeId, onEnd: () => void) {
   stopAll();
+  const mine = ticket;
   unlockAudio();
   const ctx = rawAudioContext();
   if (!ctx) return onEnd();
   const start = () => {
+    if (mine !== ticket) return; // another tap (or leaving) came first
     const m = new DuelMusic(ctx, Date.now(), themeDef(id));
     m.setMood({ level: 1, myTurn: true });
     const tick = setInterval(() => m.pump(), 60);
     m.pump();
-    const done = setTimeout(() => stopPreview?.(), 9000);
-    stopPreview = () => {
+    const stop = () => {
       clearInterval(tick);
       clearTimeout(done);
       m.stop();
-      stopPreview = null;
+      if (stopPreview === stop) stopPreview = null;
       onEnd();
     };
+    const done = setTimeout(stop, 9000);
+    stopPreview = stop;
   };
   if (ctx.state === 'running') start();
-  else ctx.resume().then(start, onEnd);
+  else ctx.resume().then(start, () => mine === ticket && onEnd());
 }
 
 export function MusicScreen({ save, solo, onSave, onBack }: { save: SpeedSave; solo: SoloSave | null; onSave: (s: SpeedSave) => void; onBack: () => void }) {
@@ -70,6 +87,11 @@ export function MusicScreen({ save, solo, onSave, onBack }: { save: SpeedSave; s
   const owned = hasJingle(save, look, solo);
   const got = JINGLES.filter((j) => hasJingle(save, j.id, solo)).length;
   useEffect(() => () => (stopAll(), clearTimeout(playTimer.current)), []);
+  // open at the top (the menu below may have been scrolled down to reach the tile)
+  useLayoutEffect(() => {
+    for (let el = top.current?.parentElement; el; el = el.parentElement) if (el.scrollTop) el.scrollTop = 0;
+    top.current?.scrollTo?.(0, 0);
+  }, []);
 
   const mark = (key: string, secs: number) => {
     clearTimeout(playTimer.current);
@@ -77,8 +99,9 @@ export function MusicScreen({ save, solo, onSave, onBack }: { save: SpeedSave; s
     playTimer.current = window.setTimeout(() => setPlaying(null), secs * 1000);
   };
   const hear = (id: JingleId) => {
-    const len = previewJingle(id);
-    if (len) mark(`j:${id}`, len);
+    clearTimeout(playTimer.current);
+    setPlaying(null);
+    previewJingle(id, (len) => mark(`j:${id}`, len));
   };
   const pick = (id: JingleId) => {
     setNote(null);
@@ -108,6 +131,7 @@ export function MusicScreen({ save, solo, onSave, onBack }: { save: SpeedSave; s
       stopAll();
       return setPlaying(null);
     }
+    stopAll();
     clearTimeout(playTimer.current);
     setPlaying(`t:${id}`);
     previewTheme(id, () => setPlaying((p) => (p === `t:${id}` ? null : p)));
@@ -148,12 +172,16 @@ export function MusicScreen({ save, solo, onSave, onBack }: { save: SpeedSave; s
               <button class="gbtn mt-go" onClick={take}>
                 Make it my entrance
               </button>
-            ) : price ? (
+            ) : price && !why ? (
               <span class="jgl-buy">
-                <button class="gbtn mt-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>
-                  Get for ● {price}
+                <button class="gbtn mt-go" onClick={() => (playBlip(), setBuying(look))}>
+                  Get for {price} Duel Chips
                 </button>
-                {chipsOf(save) < price && <small>Win {price - chipsOf(save)} more Duel Chips in duels</small>}
+              </span>
+            ) : price ? (
+              <span class="jgl-earn">
+                🔒 {price} Duel Chips · you have {chipsOf(save)}
+                <small>Win {Math.max(1, price - chipsOf(save))} more in duels</small>
               </span>
             ) : (
               <span class="jgl-earn">🔒 {jingleCostNote(save, def, solo)}</span>

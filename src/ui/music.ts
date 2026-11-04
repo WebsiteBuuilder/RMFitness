@@ -4,12 +4,12 @@
 // (heroic for your ace, ominous for your opponent's). The win or loss gets its own cadence.
 // Silent until the first tap (phones) and while Music is Off.
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rawAudioContext, useMusicEnabled } from './sound';
+import { musicEnabled, rawAudioContext, useMusicEnabled } from './sound';
 import { artBusy } from '../art/cues';
 import { aceFor } from '../ace/ace';
 import { duelJingleOf, jingleDef } from '../jingles/jingles';
-import { playJingle } from '../jingles/play';
-import { showJingleToast } from '../jingles/toast';
+import { playJingle, stopAllJingles } from '../jingles/play';
+import { clearJingleToasts, showJingleToast } from '../jingles/toast';
 import type { CardInfo, DuelState, EngineEvent, Pid } from '../eds/types';
 
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -572,7 +572,7 @@ export function isAceSummon(c: Pick<CardInfo, 'kind' | 'level' | 'atk'> | undefi
 /** The Theme setting: one theme always, a different one each duel, or picked by the moment. */
 export type ThemePref = 'moment' | 'rotate' | ThemeId;
 export const THEME_PREFS: { id: ThemePref; name: string; note: string }[] = [
-  { id: 'moment', name: 'By the moment', note: 'Battle City online and in Ranked, Kingdom against a boss, Shadow Game late at night and against villains' },
+  { id: 'moment', name: 'By the moment', note: 'Battle City online, in Ranked and against rivals; Kingdom in Boss Raids and against heroes; Shadow Game against villains and late at night' },
   { id: 'rotate', name: 'Take turns', note: 'a different theme every duel' },
   ...THEMES.map((t) => ({ id: t.id as ThemePref, name: t.name, note: t.blurb })),
 ];
@@ -650,12 +650,41 @@ function nextTurn(): number {
 
 /** Duels whose entrance jingles already played (by seed), and when their music may begin. */
 const intros = new Map<number, number>();
+/** The theme each duel got (by seed): a remount or Music Off and On keeps it, and "Take turns" counts each duel once. */
+const themes = new Map<number, ThemeId>();
+const INTRO_KEY = 'eds.introsDone';
+/** Seeds whose entrances played, kept on the phone too: a reload and rejoin never plays them again. */
+function introsDone(): number[] {
+  try {
+    const v = JSON.parse(store.get(INTRO_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+function markIntro(seed: number) {
+  const done = introsDone().filter((x) => x !== seed);
+  store.set(INTRO_KEY, JSON.stringify([...done.slice(-29), seed]));
+}
+/** Will this duel open with the listener's entrance? (the face-off then lets the jingle be its music) */
+export function entranceComing(seed: number, side: Pid): boolean {
+  const ctx = rawAudioContext();
+  return musicEnabled() && !!ctx && ctx.state === 'running' && !!duelJingleOf(side) && !intros.has(seed) && !introsDone().includes(seed);
+}
+/** Cuts the entrances short (the duel was left, Music went Off, the phone locked). */
+function cutEntrances() {
+  stopAllJingles();
+  clearJingleToasts();
+}
+let entranceBye: ReturnType<typeof setTimeout> | null = null;
+let entranceSeed = 0;
 
 /**
  * Plays each side's entrance jingle as a duel begins (the listener's first), with a name tag
  * on screen. Returns the audio time the soundtrack may start (0: no entrances).
  */
-function playEntrances(ctx: AudioContext, s: DuelState, order: Pid[]): number {
+function playEntrances(ctx: AudioContext, s: DuelState, order: Pid[], me: Pid): number {
+  markIntro(s.seed);
   let t = 0.25;
   for (const p of order) {
     const id = duelJingleOf(p);
@@ -664,7 +693,7 @@ function playEntrances(ctx: AudioContext, s: DuelState, order: Pid[]): number {
     const at = t;
     const len = playJingle(id, at, ctx);
     if (!len) continue;
-    showJingleToast(s.players[p]?.name ?? '', d.name, d.hue, at * 1000, Math.min(len, 3) * 1000);
+    showJingleToast(s.players[p]?.name ?? '', d.name, d.hue, at * 1000, Math.min(len, 3) * 1000, p === me);
     t += len + 0.25;
   }
   return t > 0.25 ? ctx.currentTime + t : 0;
@@ -727,6 +756,13 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
     let m: DuelMusic | null = null;
     let endSeen = 0;
     const mountedAt = Date.now();
+    // the same duel came back within a moment (a replay jump remounts the board): its entrances go on
+    if (entranceBye) {
+      clearTimeout(entranceBye);
+      entranceBye = null;
+      if (entranceSeed !== seed) cutEntrances(); // (a different duel: the last one's go now)
+    }
+    entranceSeed = seed;
     const tick = () => {
       const { state: s, seat: me, table: tb, watching: w, engine: e } = live.current;
       if (!s) return;
@@ -736,13 +772,34 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
         if (!ctx || ctx.state !== 'running') return; // waits for the first tap
         // the entrances first: only at the very start of a duel (not a rejoin, a replay jump or a late tap)
         if (!intros.has(s.seed)) {
-          const fresh = s.winner === null && s.turn <= 1 && Date.now() - mountedAt < 5000 && !(typeof document !== 'undefined' && document.hidden);
-          intros.set(s.seed, fresh ? playEntrances(ctx, s, tb ? [0, 1] : [me, me === 0 ? 1 : 0]) : 0);
+          const fresh = s.winner === null && s.turn <= 1 && Date.now() - mountedAt < 5000 && !(typeof document !== 'undefined' && document.hidden) && !introsDone().includes(s.seed);
+          let until = 0;
+          try {
+            until = fresh ? playEntrances(ctx, s, tb ? [0, 1] : [me, me === 0 ? 1 : 0], me) : 0;
+          } catch {
+            cutEntrances(); // (out of audio nodes, say): straight to the music
+          }
+          intros.set(s.seed, until);
           if (intros.size > 40) intros.delete(intros.keys().next().value as number);
         }
-        if (ctx.currentTime < (intros.get(s.seed) ?? 0)) return;
+        if (ctx.currentTime < (intros.get(s.seed) ?? 0)) {
+          // the phone locked mid-entrance: cut it rather than let it finish late
+          if (typeof document !== 'undefined' && document.hidden) {
+            cutEntrances();
+            intros.set(s.seed, 0);
+          }
+          return;
+        }
         const opp = s.players[me === 0 ? 1 : 0]?.name ?? '';
-        m = take(ctx, s.seed, s.winner !== null, () => themeDef(pickTheme(musicThemePref(), scene, tb ? '' : opp, new Date().getHours(), nextTurn())));
+        m = take(ctx, s.seed, s.winner !== null, () => {
+          let id = themes.get(s.seed);
+          if (!id) {
+            id = pickTheme(musicThemePref(), scene, tb ? '' : opp, new Date().getHours(), nextTurn());
+            themes.set(s.seed, id);
+            if (themes.size > 40) themes.delete(themes.keys().next().value as number);
+          }
+          return themeDef(id);
+        });
         if (!m) return;
         seen.current = (s.events ?? []).reduce((x, ev) => Math.max(x, ev.seq), s.lastEvent?.seq ?? 0);
       }
@@ -771,6 +828,9 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
     return () => {
       clearInterval(id);
       if (m) release(m);
+      // left the duel or turned Music Off: the entrances stop too (a quick remount keeps them)
+      if (entranceBye) clearTimeout(entranceBye);
+      entranceBye = setTimeout(() => ((entranceBye = null), cutEntrances()), 400);
     };
   }, [active, seed]);
 }

@@ -57,7 +57,7 @@ export function jingleCostNote(s: SpeedSave, d: JingleDef, solo?: SoloSave | nul
 export function jingleCostShort(d: JingleDef): string {
   const c = d.cost;
   if ('free' in c) return 'Free';
-  if ('chips' in c) return `● ${c.chips}`;
+  if ('chips' in c) return `${c.chips} Chips`;
   if ('ranked' in c) return `Ranked ${RANKED_TIERS.find((t) => t.id === c.ranked)?.name ?? ''}`;
   if ('stamps' in c) return `${c.stamps} Stamps`;
   if ('bond' in c) return `Ace bond ${MAX_BOND}`;

@@ -247,7 +247,7 @@ export const JINGLES: JingleDef[] = [
     name: 'Shadow Game',
     blurb: 'A drone, a wrong-sounding bell, and dread. For Duel King and above.',
     cost: { ranked: 'king' },
-    bpm: 84,
+    bpm: 90,
     hue: '#c070ff',
     score: [
       [0, 'pad', [38, 50], 4],
@@ -268,5 +268,6 @@ export const DEFAULT_JINGLE: JingleId = 'duelist';
 /** How long a jingle runs, in seconds (its last note's end plus the ring-out). */
 export function jingleLength(d: JingleDef): number {
   const end = Math.max(...d.score.map(([b, , , len]) => b + len));
-  return (end * 60) / d.bpm + 0.5;
+  // (the bells ring 0.6 s past their note, so the next part waits for them)
+  return (end * 60) / d.bpm + 0.65;
 }
