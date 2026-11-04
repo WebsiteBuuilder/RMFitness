@@ -10,6 +10,12 @@ import { frameDef, plateDef, rewardName, SEASON_TITLES, titleName, type Claimed,
 import './pass.css';
 
 /** A reward's picture, sized by its box. */
+/** Whose name the plate and frame previews show (set by the pass screens). */
+let who = 'Duelist';
+export const setPassWho = (name: string | null | undefined) => {
+  if (name?.trim()) who = name.trim().slice(0, 14);
+};
+
 export function RewardPic({ r }: { r: PassReward }) {
   switch (r.k) {
     case 'sleeve':
@@ -30,7 +36,7 @@ export function RewardPic({ r }: { r: PassReward }) {
       return (
         <span class="dp-pic dp-pic-frame">
           <Framed frame={r.id}>
-            <span class="dp-face">J</span>
+            <span class="dp-face">{who.charAt(0).toUpperCase()}</span>
           </Framed>
         </span>
       );
@@ -38,7 +44,7 @@ export function RewardPic({ r }: { r: PassReward }) {
       return (
         <span class="dp-pic dp-pic-plate">
           <Plate plate={r.id} small>
-            <b>Name</b>
+            <b>{who}</b>
           </Plate>
         </span>
       );

@@ -265,6 +265,8 @@
   display: grid;
   grid-template-rows: 1fr 34px 1fr;
   pointer-events: none;
+  background: #0a1028;
+  border-right: 1px solid #ffffff14;
 }
 .dp-lanes span {
   writing-mode: vertical-rl;
@@ -288,6 +290,9 @@
   gap: 8px;
   padding: 6px 24px 10px 30px;
   overflow-x: auto;
+  /* tiers fade in and out at the edges instead of being cut */
+  -webkit-mask-image: linear-gradient(90deg, transparent 24px, #000 52px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, transparent 24px, #000 52px, #000 calc(100% - 28px), transparent);
   scroll-snap-type: x proximity;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
@@ -586,30 +591,6 @@
 }
 
 /* ---------- frames and plates ---------- */
-.dp-frame {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  padding: 3px;
-  border-radius: 50%;
-}
-.dp-frame.big {
-  padding: 4px;
-}
-.dp-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--ring);
-  box-shadow: 0 0 10px var(--fglow);
-}
-.dp-frame.spin .dp-ring {
-  animation: dp-turn 6s linear infinite;
-}
-.dp-frame > :not(.dp-ring) {
-  position: relative;
-}
 .dp-plate {
   display: inline-grid;
   justify-items: start;
@@ -1007,7 +988,8 @@
   padding: 8px 12px;
   border-radius: 14px;
   border: 1px solid #f2c14e88;
-  background: linear-gradient(120deg, #2a1e4af2, #121a3af2);
+  background: linear-gradient(120deg, #2a1e4a, #121a3a);
+  box-shadow: 0 10px 28px #000c;
   color: #fff;
   text-align: left;
   box-shadow: 0 10px 26px #000a;
@@ -1143,11 +1125,16 @@
   }
 }
 /* the medal's glow and the shockwave ring: separate layers that only fade and grow */
+.dp-up-hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
 .dp-up-glow,
 .dp-up-ring {
   position: absolute;
   left: 50%;
-  top: 38%;
+  top: 50%;
   border-radius: 50%;
   pointer-events: none;
 }
@@ -1186,7 +1173,11 @@
   }
 }
 .dp-up.s0 {
-  animation: dp-fade 0.25s ease-out, dp-shake 0.36s 0.55s linear;
+  animation: dp-fade 0.25s ease-out;
+}
+/* the hit shakes the medal and what's round it, never the screen's edges */
+.dp-up.s0 .dp-up-hero {
+  animation: dp-shake 0.36s 0.55s linear;
 }
 @keyframes dp-shake {
   20% {
@@ -1408,15 +1399,16 @@
   top: 0;
   bottom: 0;
   left: 0;
-  width: 50%;
-  background: linear-gradient(100deg, transparent, #ffffff88, transparent);
-  transform: translateX(-120%);
+  width: 40%;
+  background: linear-gradient(100deg, #fff0 0%, #ffffff14 30%, #ffffff60 50%, #ffffff14 70%, #fff0 100%);
+  transform: translateX(-120%) skewX(-12deg);
   animation: dp-sheen-once 0.8s 0.35s ease-out both;
   pointer-events: none;
 }
 @keyframes dp-sheen-once {
   to {
-    transform: translateX(260%);
+    transform: translateX(300%) skewX(-12deg);
+    opacity: 0;
   }
 }
 .dp-claim-it small {
@@ -1480,6 +1472,7 @@
   .dp-claim-rays,
   .dp-up-ring,
   .dp-up.s0,
+  .dp-up.s0 .dp-up-hero,
   .dp-frame.spin .dp-ring,
   .dp-plate.shine::after,
   .dp-cell.ready::after,

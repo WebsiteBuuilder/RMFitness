@@ -1355,6 +1355,7 @@ export function App() {
           key={`${passGain.from}:${passGain.to}`}
           gain={passGain}
           save={speedSave ?? speedSaveOf(profile.id)}
+          who={profile.alias}
           onSave={setSpeedSave}
           onClose={() => setPassGain(null)}
           onOpen={!soloMode && !tagOpen && !raidOpen && !school ? () => ((hubGo.current = 'pass'), setHubNonce((n) => n + 1)) : undefined}

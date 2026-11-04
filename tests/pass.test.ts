@@ -249,21 +249,31 @@ t('the clock: set back, the pass freezes (no XP, no claims) until the real date 
   const back = now - 2 * 86400000;
   assert.equal(trackOf(save, back), null);
   assert.equal(earnPass(save, win, back).gain, null);
-  assert.equal(claimAll(save, back), null);
+  // what was already reached can still be claimed (nothing new is earned)
+  const cb = claimAll(save, back)!;
+  assert.ok(cb.got.length > 0 && claimAll(cb.save, back) === null && trackOf(cb.save, back) === null);
   assert.equal(openPrem(chips(save, 99), back), null);
   // a season set back is frozen too
   const nextMonth = new Date(2026, 11, 3).getTime();
   const rolled = earnPass(save, win, nextMonth).save;
   const g = earnPass(rolled, win, nextMonth - 86400000).gain;
   assert.ok(!g || g.to === g.from, 'a season a day behind earns nothing');
-  // a clock that once read years ahead doesn't freeze the pass for good: the track comes back to
-  // today with its XP and claims kept, and today already spent (back and forth earns nothing)
-  const glitch = earnPass(save, win, new Date(2036, 0, 5).getTime()).save;
-  const fixed = trackOf(glitch, now)!;
-  assert.ok(fixed && fixed.season === trackOf(save, now)!.season && fixed.xp === trackOf(glitch, new Date(2036, 0, 5).getTime())!.xp);
-  const after = earnPass(glitch, win, now).gain;
-  assert.ok(!after || after.to === after.from, 'nothing more today');
-  assert.ok((earnPass(earnPass(glitch, win, now).save, win, now + 86400000).gain?.to ?? 0) > fixed.xp, 'the next real day earns again');
+  // forward and back, again and again, never beats the daily cap
+  let hop = save;
+  for (let i = 1; i <= 6; i++) {
+    hop = earnPass(hop, { ...win, requests: 9 }, now + i * 3 * 86400000).save;
+    assert.equal(earnPass(hop, { ...win, requests: 9 }, now).gain, null);
+  }
+  assert.ok(trackOf(hop, now) === null, 'back on the real date: frozen');
+  // a Chips lane bought, then the clock into next month and back: still there, still November's
+  const nov29 = new Date(2026, 10, 29, 12).getTime();
+  const bought = openPrem(chips(at(TIER_XP * 3, newSpeedSave(), new Date(2026, 10, 27, 12).getTime()).save, 100), nov29)!;
+  const dec = earnPass(bought, win, new Date(2026, 11, 2).getTime()).save;
+  assert.equal(earnPass(dec, win, nov29).gain, null);
+  // a broken track from somewhere (fields missing) doesn't break the menus
+  const broken = { ...newSpeedSave(), pass: { season: '2026-11', xp: 900 } } as unknown as SpeedSave;
+  assert.equal(toClaim(broken, NOV), 1);
+  assert.ok(bought && (bought as SpeedSave & { pass: { prem: boolean } }).pass.prem);
 });
 
 t('the top: XP stops at tier 50, and unclaimed counts every lane', () => {

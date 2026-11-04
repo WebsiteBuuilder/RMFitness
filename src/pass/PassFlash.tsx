@@ -5,10 +5,11 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SpeedSave } from '../eds/speedSave';
 import { buzz, playFanfare, playStar } from '../ui/sound';
 import { claimAll, passSeasonName, ROAD, shownTrack, TIER_XP, TIERS, tierAt, tierProgress, type Claimed, type PassGain } from './pass';
-import { ClaimCeremony, RewardPic } from './ui';
+import { ClaimCeremony, RewardPic, setPassWho } from './ui';
 import './pass.css';
 
-export function PassFlash({ gain, save, onSave, onClose, onOpen }: { gain: PassGain; save: SpeedSave; onSave: (s: SpeedSave) => void; onClose: () => void; /** opens the pass (only where it can be opened from) */ onOpen?: () => void }) {
+export function PassFlash({ gain, save, who, onSave, onClose, onOpen }: { gain: PassGain; save: SpeedSave; /** the duelist's name, for the plate previews */ who?: string; onSave: (s: SpeedSave) => void; onClose: () => void; /** opens the pass (only where it can be opened from) */ onOpen?: () => void }) {
+  setPassWho(who);
   const from = tierAt(gain.from);
   const to = tierAt(gain.to);
   if (to > from) return <TierUp gain={gain} save={save} onSave={onSave} onClose={onClose} onOpen={onOpen} />;
@@ -76,12 +77,14 @@ function TierUp({ gain, save, onSave, onClose, onOpen }: { gain: PassGain; save:
     <div class={`dp-up s${stage}`} role="dialog" aria-modal="true" aria-label={`Duel Pass tier ${to} reached`} onClick={() => stage < 2 && setStage(2)}>
       <div class="dp-up-rays" aria-hidden="true" />
       <div class="dp-up-flash" aria-hidden="true" />
-      <div class="dp-up-glow" aria-hidden="true" />
-      <div class="dp-up-ring" aria-hidden="true" />
-      <div class="dp-up-ring r2" aria-hidden="true" />
-      <div class="dp-up-medal">
-        <small>Tier</small>
-        <b>{to}</b>
+      <div class="dp-up-hero">
+        <div class="dp-up-glow" aria-hidden="true" />
+        <div class="dp-up-ring" aria-hidden="true" />
+        <div class="dp-up-ring r2" aria-hidden="true" />
+        <div class="dp-up-medal">
+          <small>Tier</small>
+          <b>{to}</b>
+        </div>
       </div>
       <h2 class="dp-up-title" data-text={multi ? `+${to - from} TIERS` : 'TIER UP!'}>
         {multi ? `+${to - from} TIERS` : 'TIER UP!'}

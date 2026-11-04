@@ -38,11 +38,6 @@ export const passSeason = (now = Date.now()) => {
   const d = new Date(now);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 };
-/** A saved day ("2026-11-04") as a whole day count. */
-const dayNum = (day: string) => {
-  const [y, m, d] = day.split('-').map(Number);
-  return Math.round(new Date(y, (m || 1) - 1, d || 1).getTime() / 86400000);
-};
 const dayOf = (now: number) => {
   const d = new Date(now);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -56,25 +51,37 @@ export function passDaysLeft(now = Date.now()): number {
 export const passSeasonName = (now = Date.now()) => seasonName(passSeason(now));
 
 const freshTrack = (season: string, day: string): PassTrack => ({ season, xp: 0, prem: false, gotF: [], gotP: [], day, dayXp: 0, firstWin: false });
+const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : []);
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0);
+/** A saved track with every field there (a synced or hand-edited one may be missing some). */
+function saneTrack(t: Partial<PassTrack> | null | undefined, season: string, day: string): PassTrack | null {
+  if (!t || typeof t !== 'object') return null;
+  return {
+    season: typeof t.season === 'string' ? t.season : season,
+    day: typeof t.day === 'string' ? t.day : day,
+    xp: Math.min(num(t.xp), MAX_XP),
+    dayXp: num(t.dayXp),
+    prem: t.prem === true,
+    gotF: nums(t.gotF),
+    gotP: nums(t.gotP),
+    firstWin: t.firstWin === true,
+  };
+}
 
 /** This season's track as it stands (a new season or day starts fresh; null: the clock reads earlier than a day already played). */
 export function trackOf(s: SpeedSave, now = Date.now()): PassTrack | null {
-  const t = passOf(s)?.pass;
   const season = passSeason(now);
   const day = dayOf(now);
+  const t = saneTrack(passOf(s)?.pass, season, day);
   if (!t) return freshTrack(season, day);
-  if (t.season > season || t.day > day) {
-    // a small skew (time zones, a clock a day out) waits for the real date. A clock that once read
-    // far ahead (a glitch, a year typed wrong) would freeze the pass for good: that track is brought
-    // back to today as it stands (its XP and claims kept, today already spent), so nothing is lost
-    // and going back and forth earns nothing new.
-    return dayNum(t.day) - dayNum(day) > 2 ? { ...t, season, day, dayXp: DAY_CAP, firstWin: true } : null;
-  }
+  // (the same rule as daily Duel Chips and Duelist Requests: earning waits for the real date; what
+  // was already reached can still be claimed, see claimAll)
+  if (t.season > season || t.day > day) return null;
   if (t.season < season) return freshTrack(season, day);
   return t.day === day ? t : { ...t, day, dayXp: 0, firstWin: false };
 }
 /** The track to show even while the clock is behind (frozen: nothing earned, nothing claimed). */
-export const shownTrack = (s: SpeedSave, now = Date.now()): PassTrack => trackOf(s, now) ?? passOf(s)!.pass!;
+export const shownTrack = (s: SpeedSave, now = Date.now()): PassTrack => trackOf(s, now) ?? saneTrack(passOf(s)?.pass, passSeason(now), dayOf(now))!;
 
 export const tierAt = (xp: number) => Math.min(TIERS, Math.floor(Math.max(0, xp) / TIER_XP));
 /** XP into the tier being climbed, and what that tier needs ([have, need]; the top tier: full). */
@@ -197,8 +204,8 @@ export function unclaimed(t: PassTrack): { tier: number; lane: 'free' | 'prem'; 
   return out;
 }
 export const toClaim = (s: SpeedSave, now = Date.now()) => {
-  const t = trackOf(s, now);
-  return t ? unclaimed(t).length : 0;
+  const t = trackOf(s, now) ?? shownTrack(s, now);
+  return unclaimed(t).length;
 };
 
 /**
@@ -206,7 +213,7 @@ export const toClaim = (s: SpeedSave, now = Date.now()) => {
  * track starts again from tier 0 (the Chips lane closed). Nothing to do: the same save back.
  */
 export function rollSeason(s: SpeedSave, now = Date.now()): { save: SpeedSave; carried: Claimed[] } {
-  const old = passOf(s)?.pass;
+  const old = saneTrack(passOf(s)?.pass, passSeason(now), dayOf(now));
   if (!old || old.season >= passSeason(now)) return { save: s, carried: [] };
   let save = s;
   const carried: Claimed[] = [];
@@ -221,8 +228,8 @@ export function rollSeason(s: SpeedSave, now = Date.now()): { save: SpeedSave; c
 /** Claims everything reached (null: nothing to claim, or the clock is behind). */
 export function claimAll(s: SpeedSave, now = Date.now()): { save: SpeedSave; got: Claimed[] } | null {
   const rolled = rollSeason(s, now).save;
-  const t = trackOf(rolled, now);
-  if (!t) return null;
+  // while the clock is behind, what was already reached can still be claimed (nothing new is earned)
+  const t = trackOf(rolled, now) ?? shownTrack(rolled, now);
   const list = unclaimed(t);
   if (!list.length) return null;
   let save = rolled;
@@ -301,7 +308,6 @@ export function earnPass(s: SpeedSave, d: PassDuel, now = Date.now()): { save: S
   const want = parts.reduce((a, p) => a + p.xp, 0);
   const room = Math.max(0, Math.min(DAY_CAP - t.dayXp, MAX_XP - t.xp));
   const xp = Math.min(room, want);
-  // (a track brought back from a clock far ahead is kept even when nothing more is earned today)
   if (xp <= 0) return { save: passOf(rolled)?.pass === t ? rolled : ({ ...(rolled as PS), pass: t } as SpeedSave), gain: want > 0 ? { season: t.season, from: t.xp, to: t.xp, parts, capped: true } : null, carried };
   const next: PassTrack = { ...t, xp: t.xp + xp, dayXp: t.dayXp + xp, firstWin };
   return { save: { ...(rolled as PS), pass: next } as SpeedSave, gain: { season: t.season, from: t.xp, to: next.xp, parts, capped: xp < want }, carried };

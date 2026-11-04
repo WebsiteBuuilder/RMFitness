@@ -48,7 +48,7 @@ import {
   type PassReward,
   type WearKind,
 } from './pass';
-import { ClaimCeremony, Framed, NameBadge, RewardPic } from './ui';
+import { ClaimCeremony, Framed, NameBadge, RewardPic, setPassWho } from './ui';
 import './pass.css';
 
 type Pick = { tier: number; lane: 'free' | 'prem'; r: PassReward };
@@ -63,11 +63,12 @@ export function PassScreen({ save, profile, onSave, onBack }: { save: SpeedSave;
       if (r.carried.length) setCarried(r.carried);
     }
   }, []);
+  setPassWho(profile.alias);
   const t = shownTrack(save);
   const frozen = !trackOf(save);
   const tier = tierAt(t.xp);
   const [have, need] = tierProgress(t.xp);
-  const ready = frozen ? [] : unclaimed(t);
+  const ready = unclaimed(t);
   const [got, setGot] = useState<Claimed[] | null>(null);
   const [buying, setBuying] = useState(false);
   const [look, setLook] = useState<Pick | null>(null);
@@ -181,7 +182,7 @@ export function PassScreen({ save, profile, onSave, onBack }: { save: SpeedSave;
               if (!r) return <span class="dp-cell empty" aria-hidden="true">·</span>;
               const claimed = (lane === 'free' ? t.gotF : t.gotP).includes(d.n);
               const locked = lane === 'prem' && !t.prem;
-              const canClaim = reached && !claimed && !locked && !frozen;
+              const canClaim = reached && !claimed && !locked;
               const own = !claimed && ownsReward(save, r, t.season);
               return (
                 <button class={`dp-cell ${lane} ${reached ? 'reached' : ''} ${claimed ? 'claimed' : ''} ${canClaim ? 'ready' : ''} ${locked ? 'locked' : ''} ${passOnly(r) ? 'excl' : ''} r-${r.k}`} onClick={() => (playBlip(), setLook({ tier: d.n, lane, r }))} aria-label={`Tier ${d.n} ${lane === 'free' ? 'free' : 'Chips lane'}: ${rewardName(r, t.season).name}${claimed ? ', claimed' : canClaim ? ', ready to claim' : ''}`}>
@@ -231,7 +232,7 @@ export function PassScreen({ save, profile, onSave, onBack }: { save: SpeedSave;
 
       {look && <RewardSheet pick={look} season={t.season} save={save} tier={tier} prem={t.prem} inUse={inUse(look.r)} onUse={() => useIt(look.r)} onClose={() => setLook(null)} />}
       {buying && (
-        <ConfirmSheet look="md" title="Open the Chips lane?" confirmLabel={`Spend ${PREM_PRICE} Duel Chips`} onConfirm={open} onCancel={() => setBuying(false)}>
+        <ConfirmSheet look="md" title="Open the Chips lane?" confirmLabel={`Spend ● ${PREM_PRICE}`} onConfirm={open} onCancel={() => setBuying(false)}>
           You have {chipsOf(save)} Duel Chips. The Chips lane adds a reward on every tier for {passSeasonName()}, including {ROAD.filter((d) => passOnly(d.prem) && (d.prem.k === 'sleeve' || d.prem.k === 'mat')).length} pass-only sleeves and playmats.{tier > 0 ? ` Tiers 1 to ${tier} pay at once.` : ''}
         </ConfirmSheet>
       )}
