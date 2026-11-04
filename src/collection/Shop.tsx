@@ -98,8 +98,8 @@ export function ChipBar({ save, cpus = [], compact = false }: { save: SpeedSave;
   );
 }
 
-export function CardShop({ save, onSave, onBack }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onBack: () => void }) {
-  const [tab, setTab] = useState<Tab>(packsOf(save) > 0 ? 'packs' : 'binder');
+export function CardShop({ save, onSave, onBack, start }: { save: SpeedSave; onSave: (s: SpeedSave) => void; onBack: () => void; /** the tab to open on (default: Packs when there are packs) */ start?: Tab }) {
+  const [tab, setTab] = useState<Tab>(start ?? (packsOf(save) > 0 ? 'packs' : 'binder'));
   const [opened, setOpened] = useState<Opened[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [n, setN] = useState(0);

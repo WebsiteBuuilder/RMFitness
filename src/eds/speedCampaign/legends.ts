@@ -514,7 +514,7 @@ export interface LegendSettled {
   rematchPaid: boolean;
   /** this win finished the legend */
   finished: Legend | null;
-  /** chips that would have come but the 30 cap was full */
+  /** chips that would have come but the chip cap was full */
   capped: boolean;
   /** won with an Anything goes deck: the story moves on, nothing is paid */
   noEarn?: boolean;

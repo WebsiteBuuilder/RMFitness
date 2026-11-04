@@ -38,23 +38,24 @@ const before = GIFT.madeBefore - 86_400_000;
 // ---------- the bonus drop: a second present on top ----------
 {
   const s = migrate(newSpeedSave());
-  ok(BONUS_GIFT.packs === 145 && BONUS_GIFT_2.packs === 200 && BONUS_GIFT_3.packs === 0 && BONUS_GIFT_3.chips === 150 && GIFTS.length === 4 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'bonus gifts of 145 and 200 packs, then 150 Duel Chips, each with its own id');
+  ok(BONUS_GIFT.packs === 145 && BONUS_GIFT_2.packs === 200 && BONUS_GIFT_3.packs === 150 && !BONUS_GIFT_3.chips && GIFTS.length === 4 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'bonus gifts of 145, 200 and 150 packs, each with its own id');
   ok(nextGift(s, before)?.id === GIFT.id, 'the welcome present comes first');
   const one = claimGift(s, before, GIFT)!;
   ok(nextGift(one, before)?.id === BONUS_GIFT.id, 'then the bonus drop');
   const both = claimGift(one, before, BONUS_GIFT)!;
   ok(nextGift(both, before)?.id === BONUS_GIFT_2.id, 'then the 200-pack mega drop');
   const three = claimGift(both, before, BONUS_GIFT_2)!;
-  ok(nextGift(three, before)?.id === BONUS_GIFT_3.id, 'then the 150-chip drop');
+  ok(nextGift(three, before)?.id === BONUS_GIFT_3.id, 'then the 150-pack vault drop');
   const all = claimGift(three, before, BONUS_GIFT_3)!;
   const total = GIFT.packs + BONUS_GIFT.packs + BONUS_GIFT_2.packs + BONUS_GIFT_3.packs;
-  ok(total === 595 && giftPacksOf(all) === total && chipsOf(all) === chipsOf(three) + 150 && nextGift(all, before) === null, `all four gifts give ${total} packs and 150 Duel Chips, then nothing more`);
-  ok(CHIP_CAP === 200 && chipsOf(claimGift({ ...three, chips: CHIP_CAP - 10 } as SpeedSave, before, BONUS_GIFT_3)!) === CHIP_CAP, 'the chip cap is 200 and the gift stops there');
+  ok(total === 745 && giftPacksOf(all) === total && chipsOf(all) === chipsOf(three) && nextGift(all, before) === null, `all four gifts give ${total} packs, then nothing more`);
+  const full = claimGift({ ...three, chips: CHIP_CAP - 10, shards: 0 } as SpeedSave, before, { ...BONUS_GIFT_3, id: 'chips-test', chips: 150 })! as SpeedSave & { shards?: number };
+  ok(CHIP_CAP === 200 && chipsOf(full) === CHIP_CAP && full.shards === 140 * 10, 'the chip cap is 200; a chips gift past it comes as shards, none lost');
   ok(claimGift(both, before, BONUS_GIFT) === null && claimGift(all, before, BONUS_GIFT_2) === null && claimGift(all, before, BONUS_GIFT_3) === null, 'each bonus can be claimed only once');
   const late = Date.UTC(2026, 9, 19);
   ok(nextGift(s, late)?.id === BONUS_GIFT.id, 'a profile made after the welcome cutoff still gets the bonus');
   ok(nextGift(s, BONUS_GIFT.madeBefore)?.id === BONUS_GIFT_2.id, 'a profile made after the first bonus cutoff still gets the mega drop');
-  ok(nextGift(s, BONUS_GIFT_2.madeBefore)?.id === BONUS_GIFT_3.id, 'a profile made after the mega cutoff still gets the chip drop');
+  ok(nextGift(s, BONUS_GIFT_2.madeBefore)?.id === BONUS_GIFT_3.id, 'a profile made after the mega cutoff still gets the vault drop');
   ok(nextGift(s, BONUS_GIFT_3.madeBefore) === null, 'a profile made after the last cutoff gets nothing');
   ok(nextGift(s, before, undefined, [GIFT.id])?.id === BONUS_GIFT.id && nextGift(s, before, undefined, GIFTS.map((g) => g.id)) === null, 'skipped gifts are passed over');
 }

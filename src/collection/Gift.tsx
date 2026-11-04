@@ -114,6 +114,13 @@ export function GiftReveal({
           </>
         ) : (
           <>
+            {!gift.packs ? (
+              <div class="gift-chips" aria-hidden="true">
+                {[-2, -1, 0, 1, 2].map((i) => (
+                  <i key={i} class="gift-coin" style={{ ['--i' as string]: i }} />
+                ))}
+              </div>
+            ) : (
             <div class="gift-fan" aria-hidden="true">
               {fan.map((n, i) => (
                 <span key={n} class="gift-pack" style={{ ['--i' as string]: i - 2 }}>
@@ -122,6 +129,7 @@ export function GiftReveal({
                 </span>
               ))}
             </div>
+            )}
             <p class="gift-count">
               <b>{count}</b> {unit}
             </p>

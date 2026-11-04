@@ -875,7 +875,7 @@ function Road(p: Ctx) {
           </div>
           <div class="so-group">Duel Chips</div>
           <p>
-            {speed.chips ?? 0}/{CHIP_CAP}. You earn one the first time you three-star a duel, one a day from a Labyrinth boss, one a day for beating your brother, and more from Card Legends (every first win, every finished legend and a daily rematch). They're for betting in duels with your brother.
+            {speed.chips ?? 0}/{CHIP_CAP}. You earn one the first time you three-star a duel, one a day from a Labyrinth boss, one a day for beating your brother, and more from Card Legends (every first win, every finished legend and a daily rematch). Spend them crafting cards in the Card Shop, or bet them in duels with your brother.
           </p>
           <div class="so-group">Titles</div>
           <p>{c.titles.length ? c.titles.join(' · ') : 'None yet. Bosses give you titles.'}</p>

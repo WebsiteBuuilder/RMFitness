@@ -381,15 +381,14 @@ export const BONUS_GIFT_2: Gift = {
   note: 'Another round of cards for every duelist.',
   madeBefore: Date.UTC(2026, 9, 31),
 };
-/** 2026-11: every card is now in packs (the Starter Deck Vault joined the Card Shop) and Duel Chips hold 200, so 150 chips to craft with. */
+/** 2026-11: every card is now in packs (the Starter Deck Vault joined the Card Shop) and Duel Chips hold 200, so 150 packs to chase them. */
 export const BONUS_GIFT_3: Gift = {
   id: 'bonus-drop-3',
-  packs: 0,
-  chips: 150,
-  title: 'Chip drop!',
-  heading: 'The Vault is open',
-  opened: 'Craft any card you want in the Card Shop. The new Starter Deck Vault pack sits first there too.',
-  note: '148 cards from Starter Decks and promos are in packs now, and Duel Chips hold up to 200.',
+  packs: 150,
+  title: 'Vault drop!',
+  heading: 'Every card is in packs now',
+  opened: 'Any set you like. The new Starter Deck Vault, first in the Card Shop, holds the 148 Starter Deck cards.',
+  note: '148 cards from Starter Decks and promos joined the packs. Here are 150 to go find them.',
   madeBefore: Date.UTC(2026, 10, 8),
 };
 /** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
@@ -429,7 +428,10 @@ export function claimGift(s: SpeedSave, created: number, gift: Gift = GIFT, prof
       /* storage blocked */
     }
   const next = { ...s, giftPacks: giftPacksOf(s) + gift.packs, gifts: [...(E(s).gifts ?? []), gift.id] } as EconSave;
-  return gift.chips ? withChips(next, gift.chips) : next;
+  if (!gift.chips) return next;
+  // Chips past the cap aren't lost: they come as shards, saved for later.
+  const over = Math.max(0, chipsOf(next) + gift.chips - CHIP_CAP);
+  return { ...withChips(next, gift.chips), shards: shardsOf(next) + over * SHARDS_PER_CHIP } as EconSave;
 }
 
 /** The oldest gift this profile can still claim, skipping any in `skip` (put off with "Not now"). */
