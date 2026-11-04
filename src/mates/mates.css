@@ -137,6 +137,10 @@
 .mate-spot .r-win .mt-eyes {
   animation: none;
 }
+/* (and a loss sheds a few tears before it just slumps) */
+.mate-spot .r-lose .mt-tear {
+  animation: mate-tear 0.9s ease-in 3;
+}
 .mate-spot.blink .r-idle .mt-eyes {
   animation: mate-blink-once 0.26s ease-in-out;
 }

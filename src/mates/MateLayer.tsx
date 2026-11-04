@@ -203,8 +203,8 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
     };
     const blink = window.setInterval(() => {
       timers.splice(0).forEach(clearTimeout);
-      blinkOne('.mate-spot.bottom');
-      timers.push(window.setTimeout(() => blinkOne('.mate-spot.top'), 2100));
+      blinkOne('.mate-spot.mine');
+      timers.push(window.setTimeout(() => blinkOne('.mate-spot.theirs'), 2100));
     }, 4300);
     return () => (clearInterval(blink), timers.forEach(clearTimeout));
   }, []);
