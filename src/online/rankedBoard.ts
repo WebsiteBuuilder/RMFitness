@@ -6,7 +6,7 @@
 // anything. What comes back is cleaned before it's shown. With no online service the
 // leaderboard falls back to the duelists this phone knows (see Rankings.tsx).
 import { checkCloud, onlineDb } from '../sync/cloud';
-import { KING, TOP, starsAt, tierFloor, type RankedProgress } from '../eds/speedCampaign/ranked';
+import { ASCEND_LEVEL, ASCEND_TIER, KING, PHARAOH_LEVEL, TOP, starsAt, tierFloor, type RankedProgress } from '../eds/speedCampaign/ranked';
 
 /** One duelist's line on the shared leaderboard. */
 export interface BoardPost {
@@ -18,6 +18,10 @@ export interface BoardPost {
   stars: number;
   /** Pharaoh Points */
   kp: number;
+  /** Ascensions this season (they rank first) */
+  asc?: number;
+  /** Pharaoh Points banked by those Ascensions */
+  ab?: number;
   w: number;
   l: number;
   /** when it was posted */
@@ -37,6 +41,28 @@ export function ladderScore(step: number, stars: number, kp: number): number {
   return step >= TOP ? n + kp : n + stars;
 }
 
+/** One Ascension on the board: the whole climb from Diamond III to the first Pharaoh Level it needs. */
+export const ASC_SPAN = (() => {
+  let n = 0;
+  for (let i = tierFloor(ASCEND_TIER); i < TOP; i++) n += starsAt(i);
+  return n + ASCEND_LEVEL * PHARAOH_LEVEL;
+})();
+/** Fewest wins an Ascension can take: up to Master a win can bring 3 stars (bonus and streak), from Duel King on 2 at most. */
+const ASC_WINS = (() => {
+  let n = 0;
+  for (let i = tierFloor(ASCEND_TIER); i < TOP; i++) n += starsAt(i) / (i < tierFloor(KING) ? 3 : 2);
+  return Math.ceil(n + (ASCEND_LEVEL * PHARAOH_LEVEL) / 2);
+})();
+
+/** The whole season's climb in stars, Ascensions included: Ascending never loses a place, and every Pharaoh Level still counts. */
+export const climbScore = (r: { step: number; stars: number; kp: number; asc?: number; ab?: number }) => (r.asc ?? 0) * ASC_SPAN + (r.asc ? (r.ab ?? 0) : 0) + ladderScore(r.step, r.stars, r.kp);
+/** Banked Pharaoh Points another phone claims: only with an Ascension, and every point is a win. */
+export const saneBank = (ab: unknown, asc: number, w: number) => (!asc || typeof ab !== 'number' || !Number.isFinite(ab) ? 0 : Math.max(0, Math.min(Math.floor(ab), w)));
+
+/** An Ascension count another phone or a friend claims, kept possible: never under Diamond, and a full climb's wins each. */
+export const saneAsc = (asc: unknown, step: number, w: number) =>
+  typeof asc !== 'number' || !Number.isFinite(asc) || step < tierFloor(ASCEND_TIER) ? 0 : Math.max(0, Math.min(99, Math.floor(asc), Math.floor(w / ASC_WINS)));
+
 /** Keeps a posted line sane (it comes from another phone). */
 export function cleanPost(id: string, x: unknown): BoardPost | null {
   const o = x as Partial<BoardPost> | null;
@@ -49,7 +75,10 @@ export function cleanPost(id: string, x: unknown): BoardPost | null {
   const stars = step === TOP ? 0 : Math.min(n(o.stars, 9), starsAt(step) - 1);
   // every Pharaoh Point is a win; and nobody climbs faster than 3 stars a win above where a season can start them
   const kp = step === TOP ? Math.min(n(o.kp, 100000), w) : 0;
-  if (ladderScore(step, stars, kp) > ladderScore(tierFloor(KING - 1), 0, 0) + 3 * w) return null;
+  // an Ascension is a whole climb from Diamond back to Pharaoh: dozens of wins each
+  const asc = saneAsc(o.asc, step, w);
+  const ab = saneBank(o.ab, asc, w);
+  if (climbScore({ step, stars, kp, asc, ab }) > ladderScore(tierFloor(KING - 1), 0, 0) + 3 * w) return null;
   return {
     id,
     name,
@@ -57,6 +86,8 @@ export function cleanPost(id: string, x: unknown): BoardPost | null {
     step,
     stars,
     kp,
+    ...(asc ? { asc } : {}),
+    ...(ab ? { ab } : {}),
     w,
     l: n(o.l, 1e6),
     at: n(o.at, 1e14),
@@ -78,13 +109,13 @@ export function boardFrom(raw: unknown): BoardPost[] {
     const p = cleanPost(id, body);
     if (p) out.push(p);
   }
-  out.sort((a, b) => ladderScore(b.step, b.stars, b.kp) - ladderScore(a.step, a.stars, a.kp) || b.w - a.w || a.at - b.at);
+  out.sort((a, b) => climbScore(b) - climbScore(a) || b.w - a.w || a.at - b.at);
   return out.slice(0, BOARD_MAX);
 }
 
 /** The line a duelist posts for their rank now. */
 export function postOf(id: string, name: string, color: string, p: RankedProgress, at = Date.now()): BoardPost {
-  return { id: keyOf(id), name: name.slice(0, 24), color, step: p.step, stars: p.stars, kp: p.kp, w: p.w, l: p.l, at };
+  return { id: keyOf(id), name: name.slice(0, 24), color, step: p.step, stars: p.stars, kp: p.kp, ...(p.asc ? { asc: p.asc } : {}), ...(p.asc && p.ascBank ? { ab: p.ascBank } : {}), w: p.w, l: p.l, at };
 }
 
 let last = '';
@@ -136,6 +167,8 @@ export interface LadderRow {
   step: number;
   stars: number;
   kp: number;
+  asc?: number;
+  ab?: number;
   w: number;
   l: number;
   kind: 'me' | 'phone' | 'friend' | 'world';
@@ -145,19 +178,21 @@ export interface LadderRow {
 }
 
 /** A ladder line from a rank. */
-export const rowOf = (name: string, color: string, rp: Pick<RankedProgress, 'step' | 'stars' | 'kp' | 'w' | 'l'>, kind: LadderRow['kind'], isOn?: boolean): LadderRow => ({
+export const rowOf = (name: string, color: string, rp: Pick<RankedProgress, 'step' | 'stars' | 'kp' | 'w' | 'l' | 'asc'> & { ab?: number; ascBank?: number }, kind: LadderRow['kind'], isOn?: boolean): LadderRow => ({
   name,
   color,
   step: rp.step,
   stars: rp.step === TOP ? 0 : rp.stars,
   kp: rp.step === TOP ? rp.kp : 0,
+  ...(rp.asc ? { asc: rp.asc } : {}),
+  ...(rp.asc && (rp.ab ?? rp.ascBank) ? { ab: rp.ab ?? rp.ascBank } : {}),
   w: rp.w,
   l: rp.l,
   kind,
   ...(isOn ? { online: true } : {}),
 });
 
-const score = (r: LadderRow) => ladderScore(r.step, r.stars, r.kp);
+const score = (r: LadderRow) => climbScore(r);
 
 /** Both lists as one board: one line a name (yours always from this phone), best first. */
 export function mergeLadder(local: LadderRow[], world: BoardPost[] | null, myKey?: string): LadderRow[] {

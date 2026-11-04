@@ -97,6 +97,9 @@
 }
 .rk-emblem.t-pharaoh svg {
   filter: drop-shadow(0 0 12px rgba(255, 225, 120, 0.85));
+}
+/* (only the big hero shield breathes: a looping filter on every small badge repaints every frame) */
+.rk-emblem.l.t-pharaoh svg {
   animation: rk-pharaoh 2.4s ease-in-out infinite;
 }
 @keyframes rk-pharaoh {
@@ -289,8 +292,15 @@
   font-style: normal;
   color: var(--so-gold);
   font-weight: 900;
-  width: 16px;
+  min-width: 16px;
+  flex: none;
   text-align: center;
+  font-size: 13px;
+}
+.rk-prize > b {
+  width: auto;
+  min-width: 78px;
+  max-width: 120px;
 }
 .rk-prize.got {
   opacity: 0.6;
@@ -494,4 +504,151 @@
   gap: 8px;
   font-size: 12px;
   opacity: 0.9;
+}
+
+/* Pharaoh Levels and Ascension stars on the shield */
+.rk-emblem .rk-lvl {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: linear-gradient(#ffe58a, #c8961e);
+  color: #3a2600;
+  font: 900 11px/16px system-ui, sans-serif;
+  font-style: normal;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.rk-emblem.l .rk-lvl {
+  font-size: 15px;
+  line-height: 22px;
+  min-width: 26px;
+  border-radius: 11px;
+}
+.rk-emblem.s .rk-lvl {
+  font-size: 9px;
+  line-height: 12px;
+  min-width: 13px;
+  bottom: -3px;
+  right: -5px;
+}
+.rk-emblem .rk-asc {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffd75e;
+  font: 900 12px/1 system-ui, sans-serif;
+  font-style: normal;
+  letter-spacing: -1px;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(255, 200, 60, 0.9), 0 1px 2px #000;
+}
+.rk-emblem.l .rk-asc {
+  font-size: 18px;
+  top: -12px;
+}
+.rk-emblem.s .rk-asc {
+  font-size: 9px;
+  top: -6px;
+}
+.rk-lvlbar {
+  display: block;
+  height: 5px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.rk-lvlbar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #c8961e, #ffe58a);
+  width: 100%;
+  transform-origin: left;
+  transition: transform 0.6s ease-out;
+}
+
+/* Ascend card */
+.rk-ascend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 215, 94, 0.45);
+  background: linear-gradient(135deg, rgba(255, 215, 94, 0.14), rgba(120, 60, 200, 0.16));
+}
+.rk-ascend > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rk-ascend b {
+  color: var(--so-gold);
+}
+.rk-ascend span {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* season stats */
+.rk-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.rk-stat {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+}
+.rk-stat b {
+  display: block;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--so-gold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rk-stat span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a new Pharaoh Level or an Ascension on the result sheet */
+.rk-change.level .rk-emblem {
+  animation:
+    rk-rise 0.8s ease-out both,
+    rk-glow 0.7s 0.8s ease-in-out 2 alternate;
+}
+.rk-change.level .rk-flash {
+  margin-bottom: 14px;
+}
+.rk-flash.level {
+  font-size: 19px;
+  color: #ffe58a;
+}
+
+.rk-ascprize {
+  position: relative;
+  color: #ffe58a;
+  opacity: 1;
+}
+.rk-past > b {
+  width: auto;
+  min-width: 78px;
+  max-width: 130px;
 }
