@@ -2,7 +2,7 @@
 // opening a four-duel path; a story scene before each duel and after each win; the daily
 // Legend Rematch; Duel Chips for firsts. Rules and content live in speedCampaign/legends.ts.
 import { useState } from 'preact/hooks';
-import { owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
+import { CHIP_CAP, owned as ownedCopies, type SpeedDeck } from '../eds/speedSave';
 import { soloDeckProblems } from '../eds/speedCampaign/campaign';
 import {
   LEGENDS,
@@ -96,7 +96,7 @@ export function Legends(p: Ctx) {
     <div class="screen so road lg">
       <Top
         title="Card Legends"
-        sub={`${done}/${LEGENDS.length} legends · ${speed.chips ?? 0}/30 Duel Chips`}
+        sub={`${done}/${LEGENDS.length} legends · ${speed.chips ?? 0}/${CHIP_CAP} Duel Chips`}
         onBack={sel ? () => setOpenId(null) : p.onExit}
         right={
           <button class="so-chip" onClick={() => setHelp(true)}>

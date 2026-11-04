@@ -3,7 +3,7 @@
 // Run: npx tsx tests/legends.test.ts
 import { DB as KIT, aiAction, playDuel } from './speedkit';
 import { DB } from '../src/eds/db';
-import { newSpeedSave, speedDeckProblems, withCards } from '../src/eds/speedSave';
+import { CHIP_CAP, newSpeedSave, speedDeckProblems, withCards } from '../src/eds/speedSave';
 import { getSkill } from '../src/eds/skills';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
 import { settleSolo } from '../src/eds/speedCampaign/settle';
@@ -116,10 +116,10 @@ ok(r3.speed.chips === speed.chips, "a rematch flag on another duel than today's 
 const lost = settleLegend(speed, solo, pick.id, LOSS, true);
 ok(rematchPays(lost.solo, today), 'losing the rematch keeps it open');
 
-// The 30 cap still holds.
-const full = { ...speed, chips: 30 };
+// The chip cap still holds.
+const full = { ...speed, chips: CHIP_CAP };
 const capped = settleLegend(full, LEGENDS.reduce((x) => x, solo), 'hp1', WIN);
-ok(capped.speed.chips === 30 && capped.capped, 'chips stop at 30 and say so');
+ok(capped.speed.chips === CHIP_CAP && capped.capped, `chips stop at ${CHIP_CAP} and say so`);
 
 // Totals: what the whole mode pays before rematches.
 ok(LEGEND_CHIPS_TOTAL === 8 * (4 + 3), `whole mode pays ${LEGEND_CHIPS_TOTAL} chips`);

@@ -159,6 +159,8 @@ export function SpeedHub({
   const [editing, setEditing] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<EditMode | undefined>();
   const [gift, setGift] = useState<Gift | null>(null);
+  /** the Card Shop tab a present sends you to (Craft for a chips present) */
+  const [shopTab, setShopTab] = useState<'packs' | 'binder' | 'craft' | undefined>(undefined);
   /** a present was just closed: the next one waits until the player leaves the menu and comes back */
   const [held, setHeld] = useState(false);
   useEffect(() => {
@@ -214,7 +216,7 @@ export function SpeedHub({
   }
   const deckSwitch = <DeckSwitch decks={save.decks} current={deck} problemsOf={(d) => [...speedDeckProblems(d), ...collectionProblems(save, d)]} onPick={(d) => onSave({ ...save, active: d.id })} onManage={() => setSub('decks')} />;
   if (sub === 'cpu') return <CpuPick save={save} problems={problems} deckSwitch={deckSwitch} onPick={onCpu} onBack={() => setSub('menu')} />;
-  if (sub === 'shop') return <CardShop save={save} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'shop') return <CardShop save={save} onSave={onSave} onBack={() => (setShopTab(undefined), setSub('menu'))} start={shopTab} />;
   if (sub === 'requests') return <RequestsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'mates') return <MatesScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
@@ -237,7 +239,7 @@ export function SpeedHub({
           Duel School teaches you everything from zero in a few short, hands-on lessons with a coach{prizesHere(profile.id) ? ', and each lesson pays a card pack the first time' : ''}. You can find it any time in the Solo tab.
         </ConfirmSheet>
       )}
-      {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (closeGift(), setSub('shop'))} onLater={closeGift} onNotNow={putOff} />}
+      {gift && <GiftReveal key={gift.id} gift={gift} onClaim={claim} onOpen={() => (closeGift(), setShopTab(gift.packs ? undefined : 'craft'), setSub('shop'))} onLater={closeGift} onNotNow={putOff} />}
       <SpeedHome
         tab={tab}
         onTab={setTab}
