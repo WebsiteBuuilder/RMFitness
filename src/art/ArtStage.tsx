@@ -90,9 +90,9 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
     cutin: (o) => void showCutIn(layer, o),
-    cutinOff: () => hideCutIn(layer),
+    cutinOff: () => hideCutIn(),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
-    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
+    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), hideCutIn(), stopShout(), chain?.hide())),
     chain,
     replay: (on) => {
       // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
@@ -141,7 +141,7 @@ const idle = (f: () => void) => {
 
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   // (a shout still being said stops when the duel screen goes)
-  useEffect(() => () => stopShout(), []);
+  useEffect(() => () => (stopShout(), hideCutIn()), []);
   // (the phone's speech engine wakes, silently, on the first tap of the duel: waking it on the
   // first attack is what made that shout late)
   // (pointerup/click: a touch only counts as a gesture that may start speech once the finger lifts;
@@ -297,6 +297,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
 
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
+    // a portrait cut-in on screen: the tap skips just it (the spotlight and the cue it announces stay)
+    if (dir.current?.cutinOnScreen) return dir.current.skip();
     if (stateRef.current.winner !== null) return skipAll(false);
     tapToResult();
     clearLayer();

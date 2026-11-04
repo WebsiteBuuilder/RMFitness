@@ -4,7 +4,7 @@ import { DB as APP_DB } from '../src/eds/db';
 import type { Pid } from '../src/eds/types';
 import type { CardRef, ChainCard, Cue } from '../src/art/cues';
 import { attackLine, bestMonster, chainLine, CUTIN_DUR, CUTIN_OVERLAP, CutInPlan, duelFace, facesReady, finalLine, shoutName, showDuelFaces, showFaceHints } from '../src/art/cutins';
-import { lineSize } from '../src/art/cutinDom';
+import { lineSize, shoutRows } from '../src/art/cutinDom';
 import { CUE_KINDS_DRAWN, cueOwner } from '../src/art/runtime';
 import { showDuelAces } from '../src/ace/ace';
 import { getCutins, setCutins, useCinematicsMenu } from '../src/art/settings';
@@ -45,7 +45,13 @@ showFaceHints([null, { art: 'Blue-Eyes White Dragon', title: 'Duel Monsters Cham
 check(duelFace(1)?.title === 'Duel Monsters Champion' && duelFace(1)?.name === 'Seto Kaiba', 'a computer duelist gets its VS portrait and title, its name stays');
 showFaceHints([null, { art: 'No Such Card Anywhere', title: 'x' }]);
 check(duelFace(1)?.art === 'Blue-Eyes White Dragon', 'an unknown portrait card falls back to the seat face');
+showFaceHints([null, { art: 'Blue-Eyes White Dragon', title: 'Duel Monsters Champion' }]);
+const keep = duelFace(1);
+showDuelFaces(null);
+showDuelFaces([keep && { ...keep, title: '' }, { name: 'Seto Kaiba', art: 'Celtic Guardian', title: '' }]);
+check(duelFace(1)?.art === 'Blue-Eyes White Dragon' && duelFace(1)?.title === 'Duel Monsters Champion', 'the duel screen drawn before the duel starts never wipes the computer duelist portrait');
 showFaceHints(null);
+showDuelFaces([{ name: 'Jammy', art: 'Dark Magician', title: '' }, { name: 'Seto Kaiba', art: 'Blue-Eyes White Dragon', title: '' }]);
 
 // ---------- attacks ----------
 {
@@ -125,7 +131,8 @@ check(new Set([0, 1, 2, 3].map((i) => attackLine('Jinzo', { ace: false, direct: 
 check(chainLine(link(2, ref(5, 'Trap Hole', 1), 'trap'), 0).startsWith('Trap card'), 'a Trap is opened');
 check(chainLine(link(2, ref(5, '', 1), 'trap'), 0).length > 0, "a card the viewer can't know still gets a shout");
 check(finalLine(0) !== finalLine(1), 'final shouts vary');
-check(lineSize('Go, Jinzo!') === 1 && lineSize('Straight at you! Go, Blue-Eyes White Dragon!') < 0.6, 'long shouts are drawn smaller');
+check(lineSize('Go, Jinzo!') === 1 && lineSize('Nothing stops this! Blue-Eyes White Dragon!') < 1 && lineSize('Nothing stops this! Blue-Eyes White Dragon!') >= 0.62, 'long shouts are drawn smaller, never too small');
+check(shoutRows('TRAP CARD, OPEN! MIRROR FORCE!').length === 2 && shoutRows('GO, JINZO!').length === 1, 'a long shout breaks onto two rows after its first "!"');
 
 // ---------- the director and the settings ----------
 check(CUE_KINDS_DRAWN.includes('cutin'), 'the director draws the cut-in');
@@ -141,6 +148,9 @@ const css = readFileSync(new URL('../src/art/cutin.css', import.meta.url), 'utf8
 const anims = [...css.matchAll(/@keyframes[^{]+\{([\s\S]*?)\n\}/g)].map((m) => m[1]);
 check(anims.length > 5 && anims.every((b) => !/(^|\s)(width|height|left|top|right|bottom|clip-path|filter|box-shadow|background)\s*:/.test(b)), 'the cut-in animates transforms and opacity only (cheap on a mid-range phone)');
 check(!/infinite/.test(css), 'nothing loops forever');
+const rt = readFileSync(new URL('../src/art/runtime.ts', import.meta.url), 'utf8');
+check(/const tail = this\.trailing\.find\(\(t\) => CUTINS\.has\(t\)\)/.test(rt), 'a tap in a cut-in\'s last moments (after the handoff) still skips just the cut-in');
+check(css.includes('z-index: 72'), 'the cut-in is drawn over the chain spotlight (z 71)');
 const flow = readFileSync(new URL('../src/art/flow.tsx', import.meta.url), 'utf8');
 check(flow.includes('getCutins()') && flow.includes('this.cutins.plan'), 'the flow plans cut-ins only when they are on');
 

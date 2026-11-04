@@ -230,6 +230,9 @@ interface Colors {
   light: number;
 }
 
+/** the timelines that are portrait cut-ins (a tap on one skips just it) */
+const CUTINS = new WeakSet<Timeline>();
+
 const SLOW_KINDS = new Set(['summon', 'attack', 'hit', 'win']);
 
 /** A cue waiting to play: `batch` groups the cues of one engine update (one chain), `scale` speeds up a repeat. */
@@ -436,6 +439,11 @@ export class Director {
     return this.stage.prewarm();
   }
 
+  /** A portrait cut-in is on screen (a tap skips just it). */
+  get cutinOnScreen(): boolean {
+    return (this.curKind === 'cutin' && this.current !== null) || this.trailing.some((t) => CUTINS.has(t));
+  }
+
   /** The WebGL context is gone: cinematics are skipped until the browser restores it. */
   get broken() {
     return this.stage.lost;
@@ -561,8 +569,16 @@ export class Director {
   skip() {
     this.ui.cutinOff?.();
     // a tap on a portrait cut-in skips just the cut-in: what it announces plays on
+    // (also in its last moments, when what it announces has already started under it)
     if (this.curKind === 'cutin' && this.current) {
       this.endCurrent(true);
+      return;
+    }
+    const tail = this.trailing.find((t) => CUTINS.has(t));
+    if (tail) {
+      tail.finish();
+      tail.dispose();
+      this.trailing = this.trailing.filter((t) => t !== tail);
       return;
     }
     this.fastFade = true;
@@ -1764,8 +1780,9 @@ export class Director {
     if (!show || !me || !foe) return null;
     const D = CUTIN_DUR[c.why];
     const tl = new Timeline(D, this.stage);
-    // (fighters held for a blow stay under it, a little darker)
-    this.dimTarget = Math.max(0.5, this.held ? this.dimTarget : 0.5);
+    // a light dim (never lighter than what is already on screen: no dip between darker cues)
+    this.dimTarget = Math.max(0.5, this.dimTarget);
+    CUTINS.add(tl);
     tl.at(0, () => {
       show({ why: c.why, line: c.line, about: c.about, lead: this.side(c.seat), me, foe, dur: D / Math.max(0.25, tl.rate) });
       whoosh(0.32, 380, 3400, 0.2);

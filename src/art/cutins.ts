@@ -22,7 +22,7 @@ export interface Face {
 }
 
 /** How long each cut-in lasts at 1× (cinematic seconds). Every one stays under a second. */
-export const CUTIN_DUR: Record<CutInWhy, number> = { attack: 0.62, chain: 0.56, final: 0.88 };
+export const CUTIN_DUR: Record<CutInWhy, number> = { attack: 0.74, chain: 0.78, final: 0.96 };
 /** From this far before its end the next cinematic of the chain starts under it (the cut-in wipes away over it). */
 export const CUTIN_OVERLAP = 0.16;
 
@@ -35,8 +35,8 @@ let warmKey = '';
 
 /** The duel screen calls this with each seat's duelist (null to stop): both phones of an online room see both. */
 export function showDuelFaces(f: [Face | null, Face | null] | null) {
+  // (the hints are FaceHints' own: a duel screen drawn before the duel starts must not wipe them)
   faces = f ?? [null, null];
-  if (!f) hints = [null, null];
   preloadFaces();
 }
 

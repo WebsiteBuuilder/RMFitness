@@ -20,7 +20,16 @@ export function faceColors(f: Face): [string, string] {
 }
 
 /** How big the shout is drawn: long lines shrink to stay on screen. */
-export const lineSize = (line: string) => Math.max(0.5, Math.min(1, 15 / Math.max(1, line.length)));
+export const lineSize = (line: string) => {
+  const longest = Math.max(...shoutRows(line).map((r) => r.length));
+  return Math.max(0.62, Math.min(1, 15 / Math.max(1, longest)));
+};
+
+/** A long shout breaks after its first "!" onto two rows ("TRAP CARD, OPEN!" / "MIRROR FORCE!"). */
+export function shoutRows(line: string): string[] {
+  const i = line.indexOf('! ');
+  return line.length > 20 && i > 0 && i < line.length - 3 ? [line.slice(0, i + 1), line.slice(i + 2)] : [line];
+}
 
 function half(f: Face, top: boolean, lead: boolean, why: CutInShow['why']): string {
   const url = imageUrl(f.art);
@@ -35,16 +44,20 @@ function half(f: Face, top: boolean, lead: boolean, why: CutInShow['why']): stri
   );
 }
 
-/** Shows one cut-in on `layer` (a new one replaces one still showing). */
-export function showCutIn(layer: HTMLElement, o: CutInShow): HTMLElement {
-  hideCutIn(layer);
+/** Shows one cut-in (a new one replaces one still showing). */
+// It is drawn on the page, over the chain spotlight's cards (z 71) and the board's bars: the
+// faces are the moment. Taps go through it to the stage, which skips it.
+export function showCutIn(_layer: HTMLElement, o: CutInShow): HTMLElement {
+  const layer = document.body;
+  hideCutIn();
   const el = document.createElement('div');
   const leadTop = o.lead === 'far';
   el.className = `cut-in why-${o.why} lead-${leadTop ? 'top' : 'bot'}`;
   el.style.setProperty('--d', `${o.dur}s`);
   // the seam's slant, so the shout lies along it on any screen
-  const W = layer.clientWidth || window.innerWidth;
-  const H = layer.clientHeight || window.innerHeight;
+  // (the window's size: no layout is read mid-frame)
+  const W = window.innerWidth;
+  const H = window.innerHeight;
   const band = Math.min(H * 0.6, W * 1.25);
   el.style.setProperty('--band', `${Math.round(band)}px`);
   el.style.setProperty('--ang', `${(-Math.atan2(band * 0.16, W) * 180) / Math.PI}deg`);
@@ -56,7 +69,7 @@ export function showCutIn(layer: HTMLElement, o: CutInShow): HTMLElement {
   const bot = leadTop ? o.foe : o.me;
   el.innerHTML =
     `<div class="ci-band">${half(top, true, leadTop, o.why)}${half(bot, false, !leadTop, o.why)}` +
-    `<i class="ci-seam"></i><div class="ci-line"><span>${esc(o.line.toUpperCase())}</span></div></div>` +
+    `<i class="ci-seam"></i><div class="ci-line"><span>${shoutRows(o.line.toUpperCase()).map(esc).join('<br>')}</span></div></div>` +
     `<i class="ci-flash"></i>`;
   layer.appendChild(el);
   const t = window.setTimeout(() => el.remove(), o.dur * 1000 + 40);
@@ -65,6 +78,6 @@ export function showCutIn(layer: HTMLElement, o: CutInShow): HTMLElement {
 }
 
 /** Takes the cut-in on `layer` away at once. */
-export function hideCutIn(layer: HTMLElement) {
-  layer.querySelectorAll<HTMLElement & { _t?: number }>(':scope > .cut-in').forEach((x) => (clearTimeout(x._t), x.remove()));
+export function hideCutIn(_layer?: HTMLElement) {
+  document.querySelectorAll<HTMLElement & { _t?: number }>('body > .cut-in').forEach((x) => (clearTimeout(x._t), x.remove()));
 }

@@ -3,10 +3,11 @@
    clip paths, masks and gradients are drawn once. --d: how long it lasts, --band: its height,
    --ang: the seam's slant, --fs: the shout's size (long ones shrink), --l1/--l2: the lead's colours. */
 .cut-in {
-  position: absolute;
+  position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  /* over the chain spotlight (71) and the board's bars */
+  z-index: 72;
   contain: layout paint;
 }
 .ci-band {
@@ -25,10 +26,12 @@
   animation: var(--d) cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 .ci-top {
+  box-shadow: inset 0 3px 0 #fff, inset 0 6px 0 #000;
   clip-path: polygon(0 0, 100% 0, 100% 42%, 0 58%);
   animation-name: ci-in-top;
 }
 .ci-bot {
+  box-shadow: inset 0 -3px 0 #fff, inset 0 -6px 0 #000;
   clip-path: polygon(0 58%, 100% 42%, 100% 100%, 0 100%);
   animation-name: ci-in-bot;
 }
@@ -84,7 +87,7 @@
   background: #0b0a16;
 }
 .ci-lead .ci-bg {
-  background: radial-gradient(ellipse at 30% 40%, var(--c2) 0, var(--c1) 34%, #160a2a 88%);
+  background: radial-gradient(ellipse at 30% 40%, var(--c2) 0, var(--c1) 20%, #160a2a 86%);
 }
 .ci-foe .ci-bg {
   background:
@@ -109,8 +112,6 @@
   background:
     repeating-linear-gradient(0deg, transparent 0 13px, rgba(255, 255, 255, 0.85) 13px 15px, transparent 15px 37px),
     repeating-linear-gradient(0deg, transparent 0 29px, rgba(0, 0, 0, 0.5) 29px 33px, transparent 33px 61px);
-  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0, #000 22%, transparent 34%, #000 46%, #000 60%, transparent 70%, #000 80%);
-  mask-image: repeating-linear-gradient(90deg, #000 0, #000 22%, transparent 34%, #000 46%, #000 60%, transparent 70%, #000 80%);
   will-change: transform;
   animation: ci-race var(--d) linear both;
 }
@@ -136,25 +137,38 @@
 /* the face: the card art cropped close (the art box is ~76% of the card's width) */
 .ci-face {
   position: absolute;
-  width: min(calc(var(--band) * 0.58), 60vw);
-  aspect-ratio: 1;
+  /* each face fills its half: a wide crop of the art box, faded into the half on both sides */
+  width: min(calc(var(--band) * 0.92), 70vw);
+  height: 53%;
   background-color: #1b2448;
-  background-size: 152% auto;
-  background-position: 50% 33%;
+  /* zoomed so the card's frame never shows, the head near the top of the art box */
+  background-size: 170% auto;
+  background-position: 50% 32%;
   background-repeat: no-repeat;
-  will-change: transform;
+  filter: contrast(1.08) saturate(1.15);
+}
+/* a light halftone over the art: low-resolution card art reads as print, not blur */
+.ci-face::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.14) 0 1px, transparent 1.6px) 0 0 / 5px 5px;
 }
 .ci-top .ci-face {
   left: 0;
   top: 0;
-  -webkit-mask-image: linear-gradient(100deg, #000 45%, transparent 94%);
-  mask-image: linear-gradient(100deg, #000 45%, transparent 94%);
+  -webkit-mask-image: linear-gradient(100deg, #000 48%, transparent 96%), linear-gradient(180deg, #000 78%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(100deg, #000 48%, transparent 96%), linear-gradient(180deg, #000 78%, transparent);
+  mask-composite: intersect;
 }
 .ci-bot .ci-face {
   right: 0;
   bottom: 0;
-  -webkit-mask-image: linear-gradient(280deg, #000 45%, transparent 94%);
-  mask-image: linear-gradient(280deg, #000 45%, transparent 94%);
+  -webkit-mask-image: linear-gradient(280deg, #000 48%, transparent 96%), linear-gradient(0deg, #000 78%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(280deg, #000 48%, transparent 96%), linear-gradient(0deg, #000 78%, transparent);
+  mask-composite: intersect;
 }
 .ci-lead .ci-face {
   animation: ci-push var(--d) ease-out both;
@@ -250,8 +264,8 @@
   animation: ci-mark var(--d) cubic-bezier(0.3, 1.6, 0.5, 1) both;
 }
 .ci-top .ci-mark {
-  left: min(calc(var(--band) * 0.5), 52vw);
-  top: 12%;
+  left: min(calc(var(--band) * 0.5), 46vw);
+  top: 30%;
 }
 .ci-bot .ci-mark {
   right: min(calc(var(--band) * 0.5), 52vw);
@@ -316,24 +330,26 @@
   font: italic 900 calc(min(8.6vw, 62px) * var(--fs)) / 1.05 system-ui, sans-serif;
   letter-spacing: 0.01em;
   color: #fff;
-  -webkit-text-stroke: 1.5px var(--l1);
+  text-align: center;
+  -webkit-text-stroke: 2px #000;
+  paint-order: stroke fill;
   text-shadow:
     0 3px 0 #000,
-    0 0 16px var(--l1);
-  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.78) 10%, rgba(0, 0, 0, 0.78) 90%, transparent);
+    0 0 14px var(--l1);
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.86) 8%, rgba(0, 0, 0, 0.86) 92%, transparent);
   animation: ci-shout var(--d) cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 @keyframes ci-shout {
   0%,
-  12% {
+  8% {
     transform: scale(1.7);
     opacity: 0;
   }
-  24% {
+  17% {
     transform: scale(1);
     opacity: 1;
   }
-  80% {
+  86% {
     transform: scale(1.03);
     opacity: 1;
   }
@@ -364,7 +380,6 @@
 }
 .why-final .ci-line span {
   color: #ffe9a8;
-  -webkit-text-stroke-color: #a85a00;
   text-shadow:
     0 3px 0 #000,
     0 0 20px #ffb21a;
@@ -380,7 +395,9 @@
 }
 /* a chain answered: the lead's backdrop in its card's colours is enough; the shout leans the other way */
 .why-chain .ci-line span {
-  -webkit-text-stroke-color: #e0379a;
+  text-shadow:
+    0 3px 0 #000,
+    0 0 14px #e0379a;
 }
 /* reduce motion: a plain fade, no slides, no flash */
 @media (prefers-reduced-motion: reduce) {
@@ -416,8 +433,6 @@
   /* a wider crop: more of the art, the same face size */
   .ci-face {
     width: min(calc(var(--band) * 0.95), 46vw);
-    aspect-ratio: 1.5;
-    background-position: 50% 36%;
   }
   .ci-plate {
     font-size: clamp(16px, 2vw, 30px);
