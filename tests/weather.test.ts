@@ -27,8 +27,8 @@ ok(skyFor([1000, 4000]) === 'storm' && skyFor([3000, 0]) === 'storm', 'a storm a
 // --- what falls
 ok(precipFor([null, null]) === 'rain', 'rain with no Field Spell');
 ok(precipFor(['volcano', 'ocean']) === 'ash', 'ash over a volcano');
-ok(precipFor([null, 'wasteland']) === 'sand', 'blowing sand over a wasteland');
-ok(precipFor(['wasteland', 'volcano']) === 'ash', 'a volcano wins over a wasteland');
+ok(precipFor([null, 'wasteland']) === 'rain', 'rain over a wasteland (Sogen and friends)');
+ok(precipFor(['wasteland', 'volcano']) === 'ash', 'a volcano anywhere brings ash');
 
 // --- a whole duel state
 const st = (lps: [number, number], turn: number, winner: number | null = null, field: string | null = null) =>

@@ -5,8 +5,7 @@
 //   The sky follows the soundtrack's levels (music.ts levelFor): clear while both duelists
 //     are above 2000 LP, clouds and rain when either is at 2000 or less (when the drums come
 //     in), a storm with lightning on the music's bar lines at 1000 or less.
-//   A Field Spell can change what falls: ash and embers over a volcano, blowing sand over a
-//     wasteland; rain everywhere else.
+//   A Field Spell can change what falls: ash and embers over a volcano, rain everywhere else.
 //   When the duel is won, the storm breaks and the sky clears.
 import type { DuelState } from '../eds/types';
 import type { Terrain } from '../art/families';
@@ -39,10 +38,9 @@ export function skyFor(lps: number[]): Sky {
   return low <= 1000 ? 'storm' : low <= 2000 ? 'rain' : 'clear';
 }
 
-/** What falls, given the Field Spells up (a volcano wins over a wasteland). */
+/** What falls, given the Field Spells up. ('sand' stays in the type for the canvas; no field calls it now.) */
 export function precipFor(terrains: (Terrain | null)[]): Precip {
   if (terrains.includes('volcano')) return 'ash';
-  if (terrains.includes('wasteland')) return 'sand';
   return 'rain';
 }
 

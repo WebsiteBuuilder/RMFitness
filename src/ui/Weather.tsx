@@ -13,6 +13,7 @@ import { STRIKE_GAP, weatherFor, type Sky } from './weatherRules';
 import { WeatherFx } from '../art/weather';
 import { BPM, onMusicBar } from './music';
 import { thunder } from './duelSfx';
+import { artBusy } from '../art/cues';
 import './weather.css';
 
 // ------------------------------------------------------------ the Weather setting
@@ -87,6 +88,10 @@ export function WeatherWash({ state }: { state: DuelState }) {
 const AMOUNT: Record<Sky, number> = { clear: 0, rain: 0.5, storm: 1 };
 /** the last strike (kept across a hotseat hand-over's remount, so the gap holds) */
 let lastStrike = 0;
+/** when the music last called a bar line (ms; kept across remounts too) */
+let heard = 0;
+/** a cinematic on screen (the same test the soundtrack ducks for) */
+const cinematic = () => document.body.classList.contains('art-on') || artBusy();
 
 export function WeatherFront({ state }: { state: DuelState }) {
   const on = useWeatherEnabled();
@@ -98,8 +103,6 @@ export function WeatherFront({ state }: { state: DuelState }) {
   sky.current = w.sky;
   /** a strike that came while a cinematic covered the screen: it lands when the cinematic ends */
   const queued = useRef<boolean | null>(null);
-  /** when the music last called a bar line (ms) */
-  const heard = useRef(0);
   const minLp = Math.min(...state.players.map((p) => p.lp));
   const lastLp = useRef(minLp);
 
@@ -107,7 +110,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
   const strike = (near: boolean) => {
     const now = performance.now();
     if (now - lastStrike < STRIKE_GAP || document.hidden) return;
-    if (document.body.classList.contains('art-on')) {
+    if (cinematic()) {
       queued.current = (queued.current ?? false) || near;
       return;
     }
@@ -155,12 +158,19 @@ export function WeatherFront({ state }: { state: DuelState }) {
     };
     const onBar = (inSec: number, bar: number) => {
       const s = sky.current;
+      // (a strike still held from a cinematic that ended without a class change)
+      if (queued.current !== null && !cinematic() && s !== 'clear') {
+        const near = queued.current;
+        queued.current = null;
+        later(inSec * 1000, () => strikeRef.current(near));
+        return;
+      }
       // (the sky is asked again when the strike lands: it may have cleared in between)
       if (s === 'storm' && bar % 2 === 0 && Math.random() < 0.7) later(inSec * 1000, () => sky.current === 'storm' && strikeRef.current(true));
       else if (s === 'rain' && bar % 4 === 0 && Math.random() < 0.5) later(inSec * 1000, () => sky.current !== 'clear' && strikeRef.current(false));
     };
     const stop = onMusicBar((inSec, bar) => {
-      heard.current = performance.now(); // (only the music's own bar lines: the fallback clock steps aside)
+      heard = performance.now(); // (only the music's own bar lines: the fallback clock steps aside)
       onBar(inSec, bar);
     });
     onBarRef.current = onBar;
@@ -185,7 +195,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
     let id: ReturnType<typeof setTimeout>;
     const tick = () => {
       const lv = sky.current === 'storm' ? 2 : 1;
-      if (performance.now() - heard.current > 4000) onBarRef.current?.(0, ++bar);
+      if (performance.now() - heard > 4000) onBarRef.current?.(0, ++bar);
       id = setTimeout(tick, (60 / BPM[lv]) * 4 * 1000);
     };
     id = setTimeout(tick, 1500);
@@ -218,6 +228,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
     <div class={`wx-front tod-${w.tod} sky-${w.sky}`} aria-hidden="true">
       <i class="wx-light" />
       <i class="wx-mist" />
+      <i class="wx-bank" />
       <canvas ref={canvas} class="wx-fall" />
       <i ref={flash} class="wx-flash" />
     </div>

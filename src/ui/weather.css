@@ -101,7 +101,7 @@ body.lf-on .wx-tod.on {
 }
 /* fair-weather clouds drift across an afternoon or golden sky */
 .wx-fair {
-  inset: -5% -20% 55% -20% !important;
+  inset: -5% -12% 55% -12% !important;
   background:
     radial-gradient(18% 22% at 20% 40%, #ffffff40, transparent 70%),
     radial-gradient(14% 16% at 30% 30%, #ffffff30, transparent 70%),
@@ -115,9 +115,8 @@ body.lf-on .wx-tod.on {
   animation-play-state: running;
 }
 .wx-sky.sky-clear.tod-golden .wx-fair {
-  opacity: 0.55;
+  opacity: 0.45;
   animation-play-state: running;
-  filter: sepia(0.8) saturate(1.6);
 }
 .wx-twinkle {
   background:
@@ -142,14 +141,14 @@ body.lf-on .wx-tod.on {
   animation-play-state: paused;
 }
 .wx-cloud.a {
-  inset: -10% -30% 40% -30% !important;
+  inset: -10% -12% 40% -12% !important;
   background:
     radial-gradient(40% 50% at 25% 30%, #1a2038cc, transparent 70%),
     radial-gradient(35% 45% at 60% 20%, #20263ecc, transparent 70%),
     radial-gradient(45% 50% at 90% 35%, #161c32cc, transparent 70%);
 }
 .wx-cloud.b {
-  inset: 20% -30% 20% -30% !important;
+  inset: 20% -12% 20% -12% !important;
   background:
     radial-gradient(35% 40% at 15% 50%, #12182c99, transparent 70%),
     radial-gradient(40% 45% at 55% 60%, #1a1f3699, transparent 70%),
@@ -159,11 +158,9 @@ body.lf-on .wx-tod.on {
 }
 .wx-sky.sky-rain .wx-cloud {
   animation-play-state: running;
-  will-change: transform;
 }
 .wx-sky.sky-storm .wx-cloud {
   animation-play-state: running;
-  will-change: transform;
 }
 .wx-sky.sky-rain .wx-cloud.a {
   opacity: 0.55;
@@ -177,19 +174,12 @@ body.lf-on .wx-tod.on {
 .wx-sky.sky-storm .wx-cloud.b {
   opacity: 0.65;
 }
-/* (over a volcano the clouds are ash; over a wasteland, dust) */
-.wx-sky.pre-ash .wx-cloud {
-  filter: sepia(0.5) hue-rotate(-20deg);
-}
-.wx-sky.pre-sand .wx-cloud {
-  filter: sepia(0.9) saturate(1.3);
-}
 @keyframes wx-drift {
   from {
-    transform: translateX(-6%);
+    transform: translateX(-5%);
   }
   to {
-    transform: translateX(6%);
+    transform: translateX(5%);
   }
 }
 
@@ -212,10 +202,11 @@ body.lf-on .wx-tod.on {
 }
 .wx-wash.tod-golden {
   opacity: 1;
+  /* (blended, not laid over: orange over a blue mat would turn grey) */
+  mix-blend-mode: overlay;
   background:
-    radial-gradient(90% 55% at 90% 0%, #ffc86a70, transparent 72%),
-    linear-gradient(200deg, #ffb04a40, #ffa04a24 50%, #ff9a4a30),
-    linear-gradient(90deg, transparent 50%, #ffd27a24);
+    radial-gradient(90% 55% at 90% 0%, #ffd070d0, transparent 72%),
+    linear-gradient(200deg, #ffa030b0, #ff9030a0 50%, #ff8a3090);
 }
 .wx-wash.tod-dusk {
   opacity: 1;
@@ -312,6 +303,24 @@ body.danger-opp .wx-sky.sky-storm .wx-cloud.a {
   opacity: 0.7;
 }
 .wx-front.sky-storm .wx-mist {
+  opacity: 1;
+}
+/* a storm's cloud bank along the top of the field: the bolts fall out of it */
+.wx-bank {
+  opacity: 0;
+  transition: opacity 3s ease;
+  background:
+    radial-gradient(28% 13% at 18% 0%, #1a2036f0, transparent 75%),
+    radial-gradient(34% 15% at 50% 0%, #20263ef0, transparent 75%),
+    radial-gradient(30% 13% at 82% 0%, #181e34f0, transparent 75%),
+    radial-gradient(60% 9% at 35% 4%, #2a3250b0, transparent 80%),
+    radial-gradient(60% 9% at 70% 5%, #262e4ab0, transparent 80%),
+    linear-gradient(180deg, #0c1022c0, transparent 14%);
+}
+.wx-front.sky-rain .wx-bank {
+  opacity: 0.5;
+}
+.wx-front.sky-storm .wx-bank {
   opacity: 1;
 }
 .wx-flash {

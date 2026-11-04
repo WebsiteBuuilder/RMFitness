@@ -15,7 +15,7 @@ interface Bolt {
 }
 
 /** how many drops a full storm keeps on a phone-sized field (scaled by the field's area) */
-const STORM_DROPS = 240;
+const STORM_DROPS = 300;
 const AREA_REF = 380 * 520;
 
 export class WeatherFx {
@@ -24,6 +24,7 @@ export class WeatherFx {
   private h = 1;
   private dpr = 1;
   private raf = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private last = 0;
   private frameMs = 1000 / 30;
   private slow = 0;
@@ -117,7 +118,7 @@ export class WeatherFx {
     // (left of centre: the opponent's panel sits over the top right on wide screens)
     const x0 = this.w * (0.14 + Math.random() * 0.46);
     const y1 = this.h * (0.3 + Math.random() * 0.18);
-    const pts = [x0, -this.h * 0.04];
+    const pts = [x0, this.h * 0.03];
     let x = x0;
     const steps = 11;
     for (let i = 1; i <= steps; i++) {
@@ -131,7 +132,7 @@ export class WeatherFx {
       let bx = pts[k];
       let by = pts[k + 1];
       const dir = branches.length ? -1 : 1;
-      for (let i = 1; i <= 4; i++) {
+      for (let i = 1; i <= 3; i++) {
         bx += dir * this.w * (0.02 + Math.random() * 0.035);
         by += y1 * (0.05 + Math.random() * 0.04);
         br.push(bx, by);
@@ -153,9 +154,18 @@ export class WeatherFx {
   }
 
   private wake() {
-    if (this.raf || this.paused || !this.busy) return;
+    if (this.raf || this.timer || this.paused || !this.busy) return;
     this.last = 0;
     this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /** the next frame: a timer waits out the gap, then one rAF (no wake-ups on every vsync of a 120 Hz screen) */
+  private next(spent: number) {
+    const wait = Math.max(0, (this.reduced ? 100 : this.frameMs) - spent - 4);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (!this.paused) this.raf = requestAnimationFrame(this.frame);
+    }, wait);
   }
 
   private frame = (now: number) => {
@@ -165,7 +175,7 @@ export class WeatherFx {
     if (typeof document !== 'undefined' && document.hidden) return;
     const since = this.last ? now - this.last : this.frameMs;
     // (reduced motion: a slow 10 frames a second)
-    if (since < (this.reduced ? 100 : this.frameMs) - 2) {
+    if (since < (this.reduced ? 100 : this.frameMs) - 8) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
@@ -182,7 +192,7 @@ export class WeatherFx {
     }
     this.last = now;
     this.draw(Math.min(0.1, since / 1000), now);
-    if (this.busy) this.raf = requestAnimationFrame(this.frame);
+    if (this.busy) this.next(performance.now() - now);
     else this.ctx.clearRect(0, 0, this.w, this.h);
   };
 
@@ -353,8 +363,6 @@ export class WeatherFx {
         [26, `rgba(120,150,255,${(0.14 * a).toFixed(3)})`],
         [14, `rgba(150,175,255,${(0.26 * a).toFixed(3)})`],
         [7, `rgba(190,205,255,${(0.5 * a).toFixed(3)})`],
-        [4, `rgba(230,238,255,${(0.9 * a).toFixed(3)})`],
-        [2, `rgba(255,255,255,${a.toFixed(3)})`],
       ] as [number, string][]) {
         c.strokeStyle = col;
         c.beginPath();
@@ -364,6 +372,25 @@ export class WeatherFx {
         c.beginPath();
         for (const br of b.branches) path(br);
         c.lineWidth = lw * dpr * 0.55;
+        c.stroke();
+      }
+      // the hot core tapers from the cloud down to the strike
+      const n = b.pts.length / 2 - 1;
+      for (const [lw, col] of [
+        [4.4, `rgba(230,238,255,${(0.9 * a).toFixed(3)})`],
+        [2.2, `rgba(255,255,255,${a.toFixed(3)})`],
+      ] as [number, string][]) {
+        c.strokeStyle = col;
+        for (let i = 0; i < n; i++) {
+          c.beginPath();
+          c.moveTo(b.pts[i * 2], b.pts[i * 2 + 1]);
+          c.lineTo(b.pts[i * 2 + 2], b.pts[i * 2 + 3]);
+          c.lineWidth = lw * dpr * (1 - (i / n) * 0.55);
+          c.stroke();
+        }
+        c.beginPath();
+        for (const br of b.branches) path(br);
+        c.lineWidth = lw * dpr * 0.4;
         c.stroke();
       }
       // where it strikes the field: a hot bloom
@@ -386,6 +413,8 @@ export class WeatherFx {
   dispose() {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     this.ro?.disconnect();
     this.mq?.removeEventListener?.('change', this.onMotion);
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
