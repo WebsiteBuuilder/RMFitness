@@ -14,6 +14,7 @@ import { useMatesShown } from './settings';
 import { playMate, unlockAudio } from '../ui/sound';
 import { setStageMates } from './onStage';
 import { CALLOUT_SHOUT, type CalloutShout } from '../art/callouts';
+import { landscapeBig } from '../ui/fit';
 import './mates.css';
 
 export interface MatePlan {
@@ -227,11 +228,14 @@ export function MateLayer({ session, view, state, acting, plan, touch }: { sessi
       const bar = root.querySelector(bottom ? '.pbar.bottom' : '.pbar.top')?.getBoundingClientRect();
       if (!bar || bar.width < 8) return null;
       // (landscape tablets and computers: the bars sit in the side panel, so the Mates stand in the
-      // field's free corners, yours bottom-left and theirs top-right, clear of the piles)
-      const field = bar.left > window.innerWidth / 2 ? root.querySelector('.field')?.getBoundingClientRect() : null;
+      // field's corners beside them, yours by your bar and theirs by theirs)
+      const field = landscapeBig() ? root.querySelector('.field')?.getBoundingClientRect() : null;
       if (field && field.width > 200) {
         const big = Math.round(Math.max(46, Math.min(84, field.height * 0.11)));
-        return bottom ? { x: Math.round(field.left + big * 0.9 + 12), y: Math.round(field.bottom - 6), size: big } : { x: Math.round(field.right - big * 0.9 - 12), y: Math.round(field.top + big + 10), size: big };
+        // (yours goes to the left corner when your piles leave no room on the right)
+        const piles = root.querySelector('.sidebox.bottom')?.getBoundingClientRect();
+        const right = !piles || field.right - piles.right > big * 1.9;
+        return bottom ? { x: Math.round(right ? field.right - big * 0.9 - 12 : field.left + big * 0.9 + 12), y: Math.round(field.bottom - 6), size: big } : { x: Math.round(field.right - big * 0.9 - 12), y: Math.round(field.top + big + 10), size: big };
       }
       const size = 46;
       return bottom ? { x: Math.round(bar.left + size * 0.75), y: Math.round(bar.top - 1), size } : { x: Math.round(bar.right - size * 1.9), y: Math.round(bar.bottom + size - 4), size };

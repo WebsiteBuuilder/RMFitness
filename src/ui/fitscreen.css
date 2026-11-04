@@ -711,6 +711,11 @@
   }
 }
 
+/* the card box's picture and text show only in the landscape side panel (below) */
+.duel > .msgwin .msg-card {
+  display: none;
+}
+
 /* ================= the duel (Classic controls) =================
    The flat board is four zone rows tall, so its width follows the height it gets. Tablets and
    computers: bigger hand, piles, bars and text. Landscape: the message window becomes a panel down
@@ -896,7 +901,7 @@
     border-top: 1px solid #ffffff1f;
   }
   :root .duel:not(.touch) > .msgwin .msg-card .cimg {
-    width: min(100%, 220px, 30vh);
+    width: min(100%, 220px, 22vh);
     height: auto;
     aspect-ratio: 59 / 86;
     border-radius: 6px;
@@ -955,7 +960,7 @@
     font-size: 17px;
   }
   :root .duel:not(.touch) > .msgwin .msg-card .cimg {
-    width: min(100%, 300px, 30vh);
+    width: min(100%, 300px, 24vh);
   }
 }
 /* Classic, small landscape windows (800x600 and the like): the bars fit their slim side column */
@@ -990,6 +995,8 @@
   :root .duel:not(.touch) > .msgwin .hint,
   :root .duel:not(.touch) > .msgwin .menu-item,
   :root .duel:not(.touch) > .msgwin .menu-label,
+  :root .duel.speed:not(.touch) > .msgwin .menu-item,
+  :root .duel.speed:not(.touch) > .msgwin .menu-label,
   :root .duel:not(.touch) > .msgwin .msg-card p {
     font-size: 13px;
   }
@@ -1047,6 +1054,79 @@
     font-size: 20px;
   }
   :root .duel:not(.touch) > .msgwin .msg-card .cimg {
-    width: min(100%, 380px, 30vh);
+    width: min(100%, 380px, 24vh);
+  }
+}
+
+/* ---- Classic, round 2 ---- */
+@media (min-width: 700px) and (min-height: 600px) {
+  :root .duel:not(.touch) .hand,
+  :root .duel.speed:not(.touch) .hand {
+    --card-w: clamp(64px, 10.5vh, 150px);
+  }
+  /* the piles' labels and buttons are as wide as the piles, centred under them */
+  :root .duel:not(.touch) .sidebox > .pile,
+  :root .duel:not(.touch) .sidebox > .pile.small {
+    width: var(--pile-w, auto);
+    align-self: center;
+    box-sizing: border-box;
+  }
+}
+@media (min-width: 760px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  /* Speed Duel: the board leans back like Master Duel's PC table, so it is laid out taller than its
+     box (--fit-tall) and reads the same height: the zones come out wider */
+  :root .duel.speed:not(.touch) > .field {
+    --fit-tall: 1.38;
+    transform: perspective(1700px) rotateX(28deg);
+    transform-origin: 50% 100%;
+    align-items: flex-end;
+  }
+  @supports (width: 1cqh) {
+    :root .duel.speed:not(.touch) .rows {
+      flex: none;
+      max-width: none;
+      width: calc((100cqh * var(--fit-tall) - var(--mid) - 38px) / 4 * 59 / 86 * 3 + 12px);
+    }
+    :root .duel.speed:not(.touch) .row {
+      width: 100%;
+    }
+    :root .duel.speed:not(.touch) .field {
+      --pile-w: max(34px, min(130px, (100cqh * var(--fit-tall) - var(--mid) - 38px) / 4 * 59 / 86 * 0.82, (100cqh * var(--fit-tall) - 90px) / 4 * 59 / 86));
+    }
+    :root .duel.speed:not(.touch) .sidebox {
+      max-height: calc(100cqh * var(--fit-tall));
+    }
+    /* the pile columns line up with the leaned-back rows: theirs from the top row, yours to the bottom */
+    /* (laid out from the bottom edge, which stays put; the far rows lean away into the slack) */
+    :root .duel.speed:not(.touch) .sidebox.top {
+      align-self: flex-start;
+      margin-top: calc(100cqh * (1 - var(--fit-tall)));
+    }
+    :root .duel.speed:not(.touch) .sidebox.bottom {
+      align-self: flex-end;
+    }
+  }
+  /* the side panel's card picture takes up to half the panel; the text below it scrolls, fading out
+     at the panel's foot */
+  :root .duel:not(.touch) > .msgwin,
+  :root .duel.speed:not(.touch) > .msgwin {
+    container-type: size;
+    overflow: hidden;
+  }
+  :root .duel:not(.touch) > .msgwin .win-body {
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 24px), #0000);
+    mask-image: linear-gradient(#000 calc(100% - 24px), #0000);
+    padding-bottom: 20px;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card {
+    display: flex;
+  }
+  :root .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 340px, 46cqh * 59 / 86);
+  }
+}
+@media (min-width: 2200px) and (min-height: 1200px) and (min-aspect-ratio: 5/4) {
+  :root .duel:not(.touch) > .msgwin .msg-card .cimg {
+    width: min(100%, 420px, 46cqh * 59 / 86);
   }
 }
