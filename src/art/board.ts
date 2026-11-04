@@ -762,7 +762,9 @@ export class BoardLayer {
       // in danger its base ring runs red, pulsing with its quick breaths
       if (p.finish < FIN.GL && mood.tense !== p.ringRed) {
         p.ringRed = mood.tense;
-        rimColor(mood.tense ? DANGER_RING : p.glow, p.disc.u.uRing.value as Vector3);
+        // (a saturated red, not lifted toward white like the other ring colors)
+        if (mood.tense) setRgb(p.disc.u.uRing.value as Vector3, DANGER_RING);
+        else rimColor(p.glow, p.disc.u.uRing.value as Vector3);
       }
       u.uDark.value = p.kneel * 0.2 + idle.dark;
       u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
