@@ -341,11 +341,23 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
   useLayoutEffect(() => {
     const el = chipRef.current;
     if (!el || !deck) return setChipAt(null);
-    const place = () => setChipAt(chipSpot(el, deck, deckEl(acting)));
+    const place = () => {
+      const at = chipSpot(el, deck, deckEl(acting));
+      setChipAt((o) => (o && Math.abs(o.left - at.left) < 1 && Math.abs(o.top - at.top) < 1 ? o : at));
+    };
     place();
-    // once more after the board settles (a banner or the phase bar can still be arriving)
-    const t = setTimeout(place, 450);
-    return () => clearTimeout(t);
+    // again when the screen around it changes (a banner, the phase bar, a toast, chat opening):
+    // at most every 250 ms, and only while the hint is up
+    let t = setTimeout(place, 450);
+    let last = 0;
+    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver((list) => {
+      if (list.every((m) => el.contains(m.target))) return;
+      const wait = Math.max(0, last + 250 - performance.now());
+      clearTimeout(t);
+      t = setTimeout(() => ((last = performance.now()), place()), wait);
+    }) : null;
+    mo?.observe(document.body, { childList: true, subtree: true });
+    return () => (clearTimeout(t), mo?.disconnect());
   }, [deck?.left, deck?.top, deck?.width, deck?.height, phase]);
   const flipRef = useRef<HTMLDivElement>(null);
   const auraRef = useRef<HTMLDivElement>(null);
