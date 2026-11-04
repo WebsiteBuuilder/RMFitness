@@ -438,6 +438,8 @@ function DeckList({ save, onSave, onEdit, onBack }: { save: SpeedSave; onSave: (
 const SHORT_NAME: Record<string, string> = { 'Yami Yugi': 'Yugi', 'Seto Kaiba': 'Kaiba', 'Maximillion Pegasus': 'Pegasus' };
 
 const PAGE = 60;
+/** card list rows drawn in the editor's first frame (the rest follow right after) */
+const FIRST_ROWS = 12;
 type Kind = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
 type Sort = 'type' | 'name' | 'atk' | 'def' | 'level';
 const SORTS: [Sort, string][] = [
@@ -558,15 +560,17 @@ function savedSize(): TileSize {
 
 export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: crafter, openRandom = false, openChat = false }: { deck: SpeedDeck; onChange: (d: SpeedDeck) => void; onBack: () => void; collection?: Record<string, number>; /** crafting with Duel Chips, for decks built from your own cards */ craft?: DeckCrafter; openRandom?: boolean; openChat?: boolean }) {
   // Deck chat's code downloads while the editor is open, so tapping Chat opens it at once.
-  // fetch the chat's code once the editor is on screen and the phone is idle, not in the tap that opens it
+  // after the editor's first paint: the rest of the card list, then (a moment later) the chat's code,
+  // so neither lands in the tap that opens the editor
+  const [opened, setOpened] = useState(false);
   useEffect(() => {
-    const go = () => void preloadDeckChat().catch(() => {});
-    if (typeof requestIdleCallback !== 'function') {
-      const t = setTimeout(go, 400);
-      return () => clearTimeout(t);
-    }
-    const id = requestIdleCallback(go, { timeout: 2000 });
-    return () => cancelIdleCallback(id);
+    let t1 = 0;
+    let t2 = 0;
+    const raf = requestAnimationFrame(() => {
+      t1 = window.setTimeout(() => setOpened(true), 0);
+      t2 = window.setTimeout(() => void preloadDeckChat().catch(() => {}), 250);
+    });
+    return () => (cancelAnimationFrame(raf), clearTimeout(t1), clearTimeout(t2));
   }, []);
   const [random, setRandom] = useState(openRandom);
   /** the deck chat sheet (Claude builds and edits the deck) */
@@ -774,7 +778,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
     },
     [pool, kind, setF, attr, lvl, q, inText, showAll, sort, craftOn, crafter?.chips],
   );
-  const shown = rows.slice(0, limit);
+  // opening: the first rows paint with the editor, the rest of the page a moment later (one long task becomes two short ones)
+  const shown = rows.slice(0, opened ? limit : FIRST_ROWS);
   const main = [...deck.main].sort(byType);
   const extra = [...deck.extra].sort(byType);
   const count = (k: string) => deck.main.filter((n) => card(n)?.kind === k).length;
