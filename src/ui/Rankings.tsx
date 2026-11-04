@@ -23,7 +23,7 @@ export function boardStatsOf(name: string, speed: SpeedSave | null, eds: SaveFil
   const out = linkStats(speed, eds, shadowSends(name));
   const saved = profileId ? loadSolo(profileId).ranked : undefined;
   const rp = saved && migrateRanked(saved);
-  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp, st: rp.stars, ...(rp.asc ? { a: rp.asc } : {}) } } : out;
+  return rp && (rp.w + rp.l > 0 || rp.step > 0) ? { ...out, rk: { s: rp.season, step: rp.step, kp: rp.kp, st: rp.stars, ...(rp.asc ? { a: rp.asc, ...(rp.ascBank ? { b: rp.ascBank } : {}) } : {}) } } : out;
 }
 
 export function Rankings({ profile, speed, eds, onBack }: { profile: Profile; speed: SpeedSave | null; eds: SaveFile | null; onBack: () => void }) {

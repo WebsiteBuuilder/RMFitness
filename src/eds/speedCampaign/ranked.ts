@@ -116,9 +116,9 @@ export const SHIELD_STREAK = 3;
 export const COMEBACK_LOSSES = 2;
 /** "Pharaoh 3": the level at this many Pharaoh Points (0: plain Pharaoh). */
 export const pharaohLevel = (kp: number) => Math.floor(Math.max(0, kp) / PHARAOH_LEVEL);
-/** The rank's full name: Pharaoh shows its level ("Pharaoh 3"), every other step its stepName. */
 /** Ascension stars as shown everywhere: ★, ★★, ★★★, then ★4, ★5... */
 export const ascStars = (n: number) => (n <= 0 ? '' : n <= 3 ? '★'.repeat(n) : `★${n}`);
+/** The rank's full name: Pharaoh shows its level ("Pharaoh 3"), every other step its stepName. */
 export const rankName = (p: Pick<RankedProgress, 'step' | 'kp'>) => (p.step === TOP && pharaohLevel(p.kp) > 0 ? `Pharaoh ${pharaohLevel(p.kp)}` : stepName(p.step));
 /** What an Ascension pays (once each, ASCENSION_PRIZES a season). */
 export const ASCENSION_PRIZE: Reward[] = [{ kind: 'pack' }, { kind: 'pack' }, { kind: 'chips', n: 1 }];
@@ -195,6 +195,8 @@ export interface RankedProgress {
   deckId?: string | null;
   /** Ascensions this season (from Pharaoh back to Diamond, against harder opponents) */
   asc?: number;
+  /** Pharaoh Points past Pharaoh 1 banked by this season's Ascensions (the leaderboard keeps counting them) */
+  ascBank?: number;
   /** Ascension prizes paid this season */
   ascPaid?: number;
   /** the highest Pharaoh Level whose pack was paid this season */
@@ -687,7 +689,7 @@ export function ascendRanked(speed: SpeedSave, solo: SoloSave, now = new Date(),
   const p = rankedProgress(opened.solo, now);
   if (!canAscend(p) || opened.resume) return null;
   const n = (p.asc ?? 0) + 1;
-  const next: RankedProgress = { ...p, step: tierFloor(ASCEND_TIER), stars: 0, kp: 0, asc: n, streak: 0, lossRun: 0 };
+  const next: RankedProgress = { ...p, step: tierFloor(ASCEND_TIER), stars: 0, kp: 0, asc: n, ascBank: (p.ascBank ?? 0) + Math.max(0, p.kp - ASCEND_LEVEL * PHARAOH_LEVEL), streak: 0, lossRun: 0 };
   const paidN = p.ascPaid ?? 0;
   if (paidN >= ASCENSION_PRIZES) return { speed: opened.speed, solo: { ...opened.solo, ranked: next }, n, lines: [], cards: [], paid: false };
   const g = grant(opened.speed, opened.solo, [...ASCENSION_PRIZE, { kind: 'title', name: `Ascended ${ascStars(n)} · ${seasonName(p.season)}` }], [], seed + 61);

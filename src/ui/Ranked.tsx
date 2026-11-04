@@ -94,7 +94,7 @@ export function Ranked(p: Ctx) {
   };
   const rp = rankedProgress(solo);
   // the shared leaderboard: post this rank whenever it changes
-  useEffect(() => postProfileRank(p.profile, p.name, solo.ranked), [rp.season, rp.step, rp.stars, rp.kp, rp.w, rp.l, rp.asc]);
+  useEffect(() => postProfileRank(p.profile, p.name, solo.ranked), [rp.season, rp.step, rp.stars, rp.kp, rp.w, rp.l, rp.asc, rp.ascBank]);
   const ladder = useLadder(p.profile, p.name, rp.season);
   const [boardOpen, setBoardOpen] = useState(false);
   const passed = usePassed(p.profile.id, ladder.rows, ladder.world);
@@ -149,7 +149,7 @@ export function Ranked(p: Ctx) {
     const notes = [
       rankedFirst(rp) === 'me' ? 'You go first.' : `${foe.duelist.name} goes first.`,
       ...(foe.wandering ? ['Wandering Duelist: a deck shuffled together for this one duel.'] : []),
-      ...(lp || hand ? [`${rankName(rp)}${asc ? ` · Ascended ${asc}` : ''} rule: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
+      ...(lp || hand ? [`${rankName(rp)}${asc ? ` ${ascStars(asc)}` : ''}: the computer starts with ${lp ?? 4000} LP${hand ? ` and ${hand} extra card` : ''}.`] : []),
       `${DIFFICULTY_LABEL[tier.level]} computer. ${!tier.loses ? "Losses don't cost stars in this tier." : rp.shield ? '🛡 Your Shield is ready: a loss here costs no star.' : 'A loss takes a star.'} Pressing Leave costs a star (or today's bonus star if you have none); if the game closes, the duel resumes.`,
     ];
     p.onDuel({
@@ -385,7 +385,7 @@ export function Ranked(p: Ctx) {
             <RankEmblem step={tierFloor(ASCEND_TIER)} size="l" asc={asc + 1} />
           </div>
           <p>
-            You go back to {RANKED_TIERS[ASCEND_TIER].name} III with Ascension star {asc + 1} and your Pharaoh Points start again at 0. Every opponent from here starts with {Math.min(3000, 500 * (asc + 1))} more LP.
+            You go back to {RANKED_TIERS[ASCEND_TIER].name} III with Ascension star {asc + 1} and your Pharaoh Points start again at 0. Every opponent from here starts with {Math.min(3000, 500 * (asc + 1))} more LP. The leaderboard banks your {rp.kp} points, so you keep your place.
           </p>
           <p class="so-dim">{(rp.ascPaid ?? 0) < ASCENSION_PRIZES ? `Ascending now pays ${prizeText(ASCENSION_PRIZE)} and a title.` : `This season's ${ASCENSION_PRIZES} Ascension prizes are paid: this one is for the star and the leaderboard.`} Tier and Pharaoh prizes already paid this season don't pay again on the way back up.</p>
           <Btn kind="gold" onClick={ascend}>
@@ -403,7 +403,7 @@ export function Ranked(p: Ctx) {
             <b>{stepName(tierFloor(ASCEND_TIER))}</b>
             <span class="rk-delta">Ascension {ascended.n} this season · opponents +{Math.min(3000, 500 * ascended.n)} LP</span>
           </div>
-          <div class="so-group">{ascended.cards.length ? 'Ascension prize' : 'Ascension'} · title “Ascended {ascStars(ascended.n)}”</div>
+          <div class="so-group rk-ascprize">{ascended.cards.length ? 'Ascension prize' : 'Ascension'} · title “Ascended {ascStars(ascended.n)}”</div>
           {ascended.cards.length > 0 && <CardRow names={ascended.cards} reveal own={(n) => ownedCopies(speed, n)} />}
           {prizeLines(ascended.lines).map((l) => (
             <div key={l} class="so-reward">

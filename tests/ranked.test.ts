@@ -471,6 +471,13 @@ ok(!rankedFoe({ ...p0, step: 0, played: 3 }).wandering, 'no Wandering Duelists i
   ok(climbScore({ step: d3, stars: 0, kp: 0, asc: 1 }) === climbScore({ step: TOP, stars: 0, kp: ASCEND_LEVEL * PHARAOH_LEVEL }), 'Ascending keeps your place on the board exactly');
   ok(order.indexOf('Asc2') < order.indexOf('Pharaoh50') && order.indexOf('Pharaoh50') < order.indexOf('Asc1') && order.indexOf('Asc1') < order.indexOf('Pharaoh5'), `the board sorts by the whole climb (${order.join(' ')})`);
   ok(board.find((r) => r.name === 'Cheat')?.asc === undefined && board.find((r) => r.name === 'RookieAsc')?.asc === undefined, "Ascensions without the wins, or under Diamond, don't count");
+  // Ascending past Pharaoh 1 banks the extra points: the board place never drops
+  const hi = at(newSoloSave(), { step: TOP, kp: 23, peak: TOP, paid: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], w: 120, asc: 1, ascBank: 4 });
+  const hiP = rankedProgress(hi);
+  const up = ascendRanked(sp, hi, day(14, 9));
+  const upP = up ? rankedProgress(up.solo) : null;
+  ok(!!upP && upP.ascBank === 4 + 13 && climbScore(postOf('x', 'X', '#123', upP)) === climbScore(postOf('x', 'X', '#123', hiP)), `Ascending at 23 points keeps the board score (${upP && climbScore(postOf('x', 'X', '#123', upP))} vs ${climbScore(postOf('x', 'X', '#123', hiP))})`);
+  ok(boardFrom({ a: JSON.stringify({ ...base, name: 'Bank', w: 10, kp: 10, ab: 500 }) })[0]?.ab === undefined, 'banked points need an Ascension and the wins');
 }
 
 if (fails) {

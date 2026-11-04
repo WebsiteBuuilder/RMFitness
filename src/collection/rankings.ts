@@ -18,7 +18,7 @@ export interface BoardStats extends Rec {
   /** duelists this one sent to the Shadow Realm */
   shadow?: number;
   /** Ranked Duel: the season ("2026-10"), the ladder step and Duel King points */
-  rk?: { s: string; step: number; kp: number; st?: number; a?: number };
+  rk?: { s: string; step: number; kp: number; st?: number; a?: number; b?: number };
 }
 
 export interface BoardEntry extends BoardStats {

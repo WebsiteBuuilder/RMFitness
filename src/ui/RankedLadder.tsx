@@ -6,7 +6,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { loadProfiles, loadSave, type Profile } from '../eds/save';
 import { loadSolo } from '../eds/speedCampaign/save';
 import { TOP, ascStars, starsAt, migrateRanked, seasonOf, ladderClock, pharaohLevel, rankName, type RankedProgress } from '../eds/speedCampaign/ranked';
-import { mergeLadder, postRanked, rowOf, saneAsc, watchRanked, type BoardPost, type LadderRow } from '../online/rankedBoard';
+import { mergeLadder, postRanked, rowOf, saneAsc, saneBank, watchRanked, type BoardPost, type LadderRow } from '../online/rankedBoard';
 export { mergeLadder, starsBetween, type LadderRow } from '../online/rankedBoard';
 import { online } from '../online/controller';
 import { RankEmblem } from './RankBadge';
@@ -37,7 +37,7 @@ export function localLadder(me: Profile, myName: string, season: string): Ladder
     const rk = f.board?.rk;
     if (f.status !== 'friend' || !rk || rk.s !== season || names.has(f.name.toLowerCase())) continue;
     names.add(f.name.toLowerCase());
-    out.push(rowOf(f.name, f.color, { step: Math.min(rk.step, TOP), stars: Math.min(rk.st ?? 0, starsAt(Math.min(rk.step, TOP)) - 1), kp: rk.kp, asc: saneAsc(rk.a, Math.min(rk.step, TOP), f.board!.w), w: f.board!.w, l: f.board!.l }, 'friend', live.has(f.code)));
+    out.push(rowOf(f.name, f.color, { step: Math.min(rk.step, TOP), stars: Math.min(rk.st ?? 0, starsAt(Math.min(rk.step, TOP)) - 1), kp: rk.kp, asc: saneAsc(rk.a, Math.min(rk.step, TOP), f.board!.w), ab: saneBank(rk.b, saneAsc(rk.a, Math.min(rk.step, TOP), f.board!.w), f.board!.w), w: f.board!.w, l: f.board!.l }, 'friend', live.has(f.code)));
   }
   return out;
 }
