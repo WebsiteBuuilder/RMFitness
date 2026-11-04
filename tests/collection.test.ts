@@ -75,8 +75,8 @@ const fake: SpeedSet[] = [
   { name: 'Speed Duel Starter Deck: Someone', code: 'SS01', date: '2018-01-01', cards: names.slice(40, 60).map((n) => [n, 'Common'] as [string, 'Common']) },
 ];
 setSets(fake);
-ok(boosterSets().map((s) => s.code).join() === 'OLD,NEW,SVLT', 'Starter Decks are not sold as packs; their cards fill the Starter Deck Vault');
-ok(boosterSets()[2].cards.length === 20 && boosterSets()[2].cards.every(([n]) => names.slice(40, 60).includes(n)), 'the Vault holds exactly the cards no box has');
+ok(boosterSets().map((s) => s.code).join() === 'SVLT,OLD,NEW', 'Starter Decks are not sold as packs; their cards fill the Starter Deck Vault');
+ok(boosterSets()[0].cards.length === 20 && boosterSets()[0].cards.every(([n]) => names.slice(40, 60).includes(n)), 'the Vault holds exactly the cards no box has');
 ok(unlockedSets(0).map((s) => s.code).join() === 'OLD,SVLT' && unlockedSets(4).map((s) => s.code).join() === 'OLD,NEW,SVLT', 'a new set unlocks every 4 wins; the Vault is always open');
 ok(rarityOf(names[40]) === 'Common', 'a Vault card keeps its rarity for crafting');
 {
@@ -111,7 +111,7 @@ ok(rarityOf(names[40]) === 'Common', 'a Vault card keeps its rarity for crafting
 
 // ---------- Duel Chips ----------
 {
-  let s = withChips(newSpeedSave(), 99);
+  let s = withChips(newSpeedSave(), CHIP_CAP + 99);
   ok(chipsOf(s) === CHIP_CAP, `chips stop at ${CHIP_CAP}`);
   s = withChips(newSpeedSave(), 1);
   ok(craft(s, names[21]) === null && !!cantCraft(s, names[21]), 'a Secret Rare costs more than 1 chip');

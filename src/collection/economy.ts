@@ -16,7 +16,7 @@ import { CHIP_CAP, COPIES, isExtraCard, owned, withCards, withChips, type SpeedD
 import { OF_TIER, TIERS, cardLevels, tierIndex } from '../level/leveling';
 import { rollFinishes, withFinishes } from './finish';
 import { RETIRED, RETIRED_PRICE, dropRetired } from './retired';
-import { openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
+import { VAULT_SET, openPack, rarityIn, rarityOf, setByName, unlockedSets, type Rarity } from './sets';
 
 export const SHARDS_PER_CHIP = 10;
 /** an Ultra Rare or better is guaranteed at least once every PITY packs */
@@ -322,11 +322,14 @@ export function packsFor(s: SpeedSave, setName: string): number {
 export function openOwnedPack(s: SpeedSave, setName: string, seed = Date.now()): Opened | null {
   if (packsFor(s, setName) < 1 || !setByName(setName)) return null;
   const gift = giftPacksOf(s) > 0;
-  const cards = openPack(setName, [], seed, pityLeft(s) <= 1 ? 'Ultra Rare' : 'Rare');
-  const big = cards.some((n) => ['Ultra Rare', 'Secret Rare'].includes(rarityIn(setName, n)));
+  // The Starter Deck Vault's foils craft as Common, so a Vault pack neither spends nor fills the Ultra Rare pity.
+  const vault = setName === VAULT_SET;
+  const cards = openPack(setName, [], seed, !vault && pityLeft(s) <= 1 ? 'Ultra Rare' : 'Rare');
+  const big = !vault && cards.some((n) => ['Ultra Rare', 'Secret Rare'].includes(rarityIn(setName, n)));
+  const dry = vault ? (E(s).dry ?? 0) : big ? 0 : (E(s).dry ?? 0) + 1;
   const fresh = [...new Set(cards.filter((n) => owned(s, n) === 0))];
   const finishes = rollFinishes(setName, cards, seed);
-  const { save, shards } = breakExtras(withCards({ ...s, ...(gift ? { giftPacks: giftPacksOf(s) - 1 } : { packs: ownPacks(s) - 1 }), dry: big ? 0 : (E(s).dry ?? 0) + 1 } as EconSave, cards));
+  const { save, shards } = breakExtras(withCards({ ...s, ...(gift ? { giftPacks: giftPacksOf(s) - 1 } : { packs: ownPacks(s) - 1 }), dry } as EconSave, cards));
   return { save: withFinishes(save, cards, finishes), set: setName, cards, fresh, shards, finishes };
 }
 
@@ -342,6 +345,8 @@ export interface Gift {
   id: string;
   /** change this to give a different number of packs */
   packs: number;
+  /** Duel Chips that come with the packs (none when left out) */
+  chips?: number;
   title: string;
   /** the big line over the wrapped box (default "A present for you") */
   heading?: string;
@@ -376,17 +381,18 @@ export const BONUS_GIFT_2: Gift = {
   note: 'Another round of cards for every duelist.',
   madeBefore: Date.UTC(2026, 9, 31),
 };
-/** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
-/** 2026-11: every card is now in packs (the Starter Deck Vault joined the Card Shop), so a drop to chase them. */
+/** 2026-11: every card is now in packs (the Starter Deck Vault joined the Card Shop) and Duel Chips hold 200, so 150 chips to craft with. */
 export const BONUS_GIFT_3: Gift = {
   id: 'bonus-drop-3',
-  packs: 150,
-  title: 'Vault drop!',
-  heading: 'Every card is in packs now',
-  opened: 'Any set, any rarity, Overframe included. The new Starter Deck Vault holds every card the boxes never had.',
-  note: 'The Card Shop has every card now. Here are packs to go find them.',
+  packs: 0,
+  chips: 150,
+  title: 'Chip drop!',
+  heading: 'The Vault is open',
+  opened: 'Craft any card you want in the Card Shop. The new Starter Deck Vault pack sits first there too.',
+  note: '148 cards from Starter Decks and promos are in packs now, and Duel Chips hold up to 200.',
   madeBefore: Date.UTC(2026, 10, 8),
 };
+/** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
 export const GIFTS: Gift[] = [GIFT, BONUS_GIFT, BONUS_GIFT_2, BONUS_GIFT_3];
 /** A phone hands each gift to at most this many profiles (like the welcome packs). */
 export const GIFT_PROFILES = 2;
@@ -422,7 +428,8 @@ export function claimGift(s: SpeedSave, created: number, gift: Gift = GIFT, prof
     } catch {
       /* storage blocked */
     }
-  return { ...s, giftPacks: giftPacksOf(s) + gift.packs, gifts: [...(E(s).gifts ?? []), gift.id] } as EconSave;
+  const next = { ...s, giftPacks: giftPacksOf(s) + gift.packs, gifts: [...(E(s).gifts ?? []), gift.id] } as EconSave;
+  return gift.chips ? withChips(next, gift.chips) : next;
 }
 
 /** The oldest gift this profile can still claim, skipping any in `skip` (put off with "Not now"). */

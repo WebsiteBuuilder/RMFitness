@@ -200,7 +200,8 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
   const ladder = all.filter((s) => s.code !== VAULT_CODE);
   const vault = all.filter((s) => s.code === VAULT_CODE);
   const openN = open.filter((s) => s.code !== VAULT_CODE).length;
-  const shown = gifts > 0 ? all : [...ladder.slice(0, openN), ...vault, ...ladder.slice(openN, openN + 1)];
+  // The Vault goes first: it is new, always open, and the only place for the Starter Deck cards.
+  const shown = gifts > 0 ? [...vault, ...ladder] : [...vault, ...ladder.slice(0, openN + 1)];
   const pickN = pick ? packsFor(save, pick) : 0;
   return (
     <div class="cardlist">

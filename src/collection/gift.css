@@ -238,7 +238,7 @@
     opacity: 0;
   }
   to {
-    transform: translateX(calc(var(--i) * 46px)) rotate(calc(var(--i) * 11deg));
+    transform: translateX(calc(var(--i) * var(--fan-step, 46px))) rotate(calc(var(--i) * 11deg));
   }
 }
 @keyframes gift-fall {
@@ -264,4 +264,24 @@
   color: var(--sd-dim, #a9b5da);
   font-size: 15px;
   text-decoration: underline;
+}
+
+/* Small phones (iPhone SE): a narrower, shorter fan so the outer packs stay on screen. */
+@media (max-width: 389px), (max-height: 700px) {
+  .gift-fan {
+    height: 132px;
+    margin: 8px 0 2px;
+  }
+  .gift-pack {
+    width: 72px;
+    height: 108px;
+    margin-left: -36px;
+    --fan-step: 34px;
+  }
+  .gift-count b {
+    font-size: 46px;
+  }
+  .gift-card h2 {
+    font-size: 23px;
+  }
 }

@@ -46,6 +46,9 @@ export function GiftReveal({
   const [torn, setTorn] = useState(false);
   const [count, setCount] = useState(0);
   const fan = useMemo(fanCards, []);
+  // A chips-only present counts up its Duel Chips instead of packs.
+  const total = gift.packs || gift.chips || 0;
+  const unit = gift.packs ? 'packs' : 'Duel Chips';
   // Keep the floating Friends button off the present.
   useEffect(() => {
     document.documentElement.classList.add('no-pill');
@@ -66,10 +69,10 @@ export function GiftReveal({
     let last = 0;
     const t = window.setInterval(() => {
       const k = Math.min(1, (Date.now() - start) / 1100);
-      const n = Math.round(gift.packs * (1 - (1 - k) ** 3));
+      const n = Math.round(total * (1 - (1 - k) ** 3));
       setCount(n);
       // a tick each time the count passes another 10% of the gift
-      const step = Math.floor((n / gift.packs) * 10);
+      const step = Math.floor((n / total) * 10);
       if (step > last) (playStar(), (last = step));
       if (k >= 1) window.clearInterval(t);
     }, 40);
@@ -120,11 +123,11 @@ export function GiftReveal({
               ))}
             </div>
             <p class="gift-count">
-              <b>{count}</b> packs
+              <b>{count}</b> {unit}
             </p>
             <p class="gift-sub">{gift.opened ?? 'Any set, even locked ones. Any rarity can drop, Overframe included. Open them, then hit Random deck to build with your new cards.'}</p>
             <button class="gbtn gift-go" onClick={onOpen}>
-              Open packs now
+              {gift.packs ? 'Open packs now' : 'Go to the Card Shop'}
             </button>
             <button class="gbtn gift-later" onClick={onLater}>
               Later

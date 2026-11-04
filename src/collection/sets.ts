@@ -79,19 +79,13 @@ const isBooster = (s: SpeedSet) => !/Starter Deck|Demo Deck|Duelist Kit|particip
 export const VAULT_SET = 'Speed Duel: Starter Deck Vault';
 export const VAULT_CODE = 'SVLT';
 
-/** The booster sets, oldest first, then the Starter Deck Vault (a single mix set when the set file is missing). */
+/** The Starter Deck Vault, then the booster sets oldest first (a single mix set when the set file is missing). */
 export function boosterSets(): SpeedSet[] {
   if (boosters) return boosters;
-  const real = (raw ?? []).map(skillNames).filter((s) => s.cards.some(([n]) => card(n))).filter(isBooster);
+  const real = (raw ?? []).filter((s) => s.cards.some(([n]) => card(n))).filter(isBooster);
   const vault = vaultSet(real);
-  boosters = real.length ? (vault ? [...real, vault] : real) : [mixSet()];
+  boosters = real.length ? (vault ? [vault, ...real] : real) : [mixSet()];
   return boosters;
-}
-
-/** The set file names some Skills "X (Skill Card)"; the game knows them as "X", so those dropped nothing. */
-function skillNames(st: SpeedSet): SpeedSet {
-  const fix = (n: string) => (card(n) ? n : card(n.replace(/ \(Skill Card\)$/, ''))?.name ?? n);
-  return st.cards.some(([n]) => fix(n) !== n) ? { ...st, cards: st.cards.map(([n, r]) => [fix(n), r] as [string, Rarity]) } : st;
 }
 
 /** Real booster sets only (no Vault): what the win ladder unlocks one by one and what rarityOf reads. */
@@ -100,19 +94,25 @@ const ladderSets = () => boosterSets().filter((s) => s.code !== VAULT_CODE);
 /**
  * Every card Konami only printed in Starter Decks, Demo Decks, Tournament Packs 1-2 or event
  * packs, gathered into one always-open pack so every card in the game can be pulled. Each
- * card shows the best rarity it was printed at there, so the Vault's hits are the decks'
- * foil cards. Its rarity for crafting and breaking stays the same (see rarityOf).
+ * card shows the best rarity it was printed at there, and the decks' big monsters (Extra
+ * Deck, Ritual, Level 5+ or 1700+ ATK) show as Rare, so the hit slot has a wide spread
+ * instead of the same dozen foils. Skills stay out (they come with decks and crafting, like
+ * in every other pack). Its rarity for crafting and breaking stays the same (see rarityOf).
  */
 function vaultSet(real: SpeedSet[]): SpeedSet | null {
   if (!real.length || !raw) return null;
   const inPacks = new Set(real.flatMap((s) => s.cards.map(([n]) => n)));
   const best = new Map<string, Rarity>();
   const codes = new Set(real.map((s) => s.name));
-  for (const st of raw.map(skillNames)) {
+  for (const st of raw) {
     if (codes.has(st.name)) continue;
-    for (const [n, r] of st.cards) if (!inPacks.has(n) && card(n) && (!best.has(n) || rank(r) > rank(best.get(n)!))) best.set(n, r);
+    for (const [n, r] of st.cards) if (!inPacks.has(n) && card(n) && card(n)!.sub !== 'Skill' && (!best.has(n) || rank(r) > rank(best.get(n)!))) best.set(n, r);
   }
   if (!best.size) return null;
+  for (const [n, r] of best) {
+    const c = card(n)!;
+    if (r === 'Common' && c.kind === 'monster' && (!['Effect', 'Normal'].includes(c.sub) || (c.level ?? 0) >= 5 || (c.atk ?? 0) >= 1700)) best.set(n, 'Rare');
+  }
   const cards = [...best].sort((a, b) => a[0].localeCompare(b[0]));
   return { name: VAULT_SET, code: VAULT_CODE, date: '', cards };
 }
@@ -171,8 +171,8 @@ export const shortSetName = (name: string) => name.replace(/^Speed Duel( GX)?:\s
  */
 export function openPack(setName: string | undefined, pool: string[] = [], seed = Date.now(), minTop: Rarity = 'Rare'): string[] {
   const next = rng(seed);
-  const sets = boosterSets();
-  const set = setByName(setName) ?? sets[Math.floor(next() * sets.length)];
+  const ladder = ladderSets();
+  const set = setByName(setName) ?? ladder[Math.floor(next() * ladder.length)];
   if (!set || !set.cards.length) return pool.slice(0, PACK_SIZE);
   const byRarity = (r: Rarity) => {
     const all = set.cards.filter(([, x]) => x === r).map(([n]) => n);
