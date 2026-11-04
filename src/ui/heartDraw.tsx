@@ -182,40 +182,56 @@ const handEl = (uid: number) => document.querySelector(`.thand [data-uid="${uid}
 const deckEl = (p: Pid) => document.querySelector(`[data-pile="deck${p}"]`) as HTMLElement | null;
 const faceOf = (el: HTMLElement | null) => (el?.querySelector('img.cimg') as HTMLImageElement | null)?.src ?? '';
 
-/** Where the hint chip fits best by the deck: left of it, under it, over it, or centred under it;
- *  the first spot that covers no button outside the draw screen, else the one that covers least. */
-export function chipSpot(el: HTMLElement, deck: DOMRect): { left: number; top: number } {
+/** Where the hint chip fits best by the deck: beside it, under it or over it. Each spot is scored
+ *  by what it would cover: a control (button, link, field to type in) costs most, then a card
+ *  or the switch and arrows of the draw screen itself, then plain area; off-screen is never
+ *  picked while anything else fits. The cheapest spot wins (the first that covers nothing). */
+const CONTROLS = 'button, [role="button"], a[href], input, textarea, select';
+const CARDS = '.cimg, [data-uid], [data-pile]';
+export function chipSpot(el: HTMLElement, deck: DOMRect, deckNode: Element | null): { left: number; top: number } {
   const cw = el.offsetWidth;
   const ch = el.offsetHeight;
   const gate = el.closest('.hd-gate');
-  const blocks: DOMRect[] = [];
-  document.querySelectorAll('button, [role="button"]').forEach((b) => {
-    if (gate?.contains(b)) return;
-    const r = b.getBoundingClientRect();
-    if (r.width && r.height && r.bottom > 0 && r.top < innerHeight) blocks.push(r);
-  });
+  const blocks: { r: DOMRect; w: number }[] = [];
+  const add = (sel: string, w: number, inGate: boolean) =>
+    (inGate ? gate : document)?.querySelectorAll(sel).forEach((b) => {
+      if (b === el || (!inGate && gate?.contains(b)) || deckNode?.contains(b)) return;
+      // hidden or untouchable things are no obstacle
+      const vis = (b as Element & { checkVisibility?: (o?: object) => boolean }).checkVisibility;
+      if (vis && !vis.call(b, { visibilityProperty: true, opacityProperty: true })) return;
+      const r = b.getBoundingClientRect();
+      if (r.width && r.height && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth) blocks.push({ r, w });
+    });
+  add(CONTROLS, 1e6, false);
+  add(CARDS, 1e3, false);
+  add('.hd-auto, .hd-hint', 1e3, true);
   const pad = 6;
   const clampX = (x: number) => Math.min(Math.max(8, x), innerWidth - cw - 8);
+  const midY = deck.top + deck.height / 2 - ch / 2;
   const cands = [
-    { left: deck.left - 10 - cw, top: deck.top + deck.height / 2 - ch / 2 },
-    { left: clampX(deck.right - cw), top: deck.bottom + 8 },
-    { left: clampX(deck.right - cw), top: deck.top - 8 - ch },
+    { left: deck.left - 10 - cw, top: midY },
+    { left: deck.left - 10 - cw, top: deck.top + 4 },
+    { left: deck.left - 10 - cw, top: deck.bottom - ch - 4 },
+    { left: deck.left - 10 - cw, top: deck.bottom - ch / 2 },
     { left: clampX(deck.left + deck.width / 2 - cw / 2), top: deck.bottom + 8 },
+    { left: clampX(deck.right - cw), top: deck.bottom + 8 },
+    { left: clampX(deck.left + deck.width / 2 - cw / 2), top: deck.top - 8 - ch },
+    { left: deck.right + 10, top: midY },
   ];
   let best = cands[0];
   let bestCost = Infinity;
   for (const c of cands) {
-    const off = c.left < 4 || c.top < 4 || c.left + cw > innerWidth - 4 || c.top + ch > innerHeight - 4;
-    let cost = off ? 1e9 : 0;
-    for (const r of blocks) {
-      const w = Math.min(c.left + cw, r.right + pad) - Math.max(c.left, r.left - pad);
-      const hh = Math.min(c.top + ch, r.bottom + pad) - Math.max(c.top, r.top - pad);
-      if (w > 0 && hh > 0) cost += w * hh;
+    let cost = c.left < 4 || c.top < 4 || c.left + cw > innerWidth - 4 || c.top + ch > innerHeight - 4 ? 1e12 : 0;
+    for (const { r, w } of blocks) {
+      const ow = Math.min(c.left + cw, r.right + pad) - Math.max(c.left, r.left - pad);
+      const oh = Math.min(c.top + ch, r.bottom + pad) - Math.max(c.top, r.top - pad);
+      if (ow > 0 && oh > 0) cost += w + ow * oh;
     }
     if (cost === 0) return c;
     if (cost < bestCost) (best = c), (bestCost = cost);
   }
-  return best;
+  // nothing fits cleanly: at least keep it on the screen
+  return { left: clampX(best.left), top: Math.min(Math.max(8, best.top), innerHeight - ch - 8) };
 }
 
 export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { gate: DrawGateInfo; state: DuelState; acting: Pid; blocked: boolean; /** a question of yours is up: the card goes straight to your hand (it may be one of the answers) */ prompted: boolean; onDone: () => void }) {
@@ -325,7 +341,11 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
   useLayoutEffect(() => {
     const el = chipRef.current;
     if (!el || !deck) return setChipAt(null);
-    setChipAt(chipSpot(el, deck));
+    const place = () => setChipAt(chipSpot(el, deck, deckEl(acting)));
+    place();
+    // once more after the board settles (a banner or the phase bar can still be arriving)
+    const t = setTimeout(place, 450);
+    return () => clearTimeout(t);
   }, [deck?.left, deck?.top, deck?.width, deck?.height, phase]);
   const flipRef = useRef<HTMLDivElement>(null);
   const auraRef = useRef<HTMLDivElement>(null);
