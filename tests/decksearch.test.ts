@@ -24,7 +24,7 @@ ok(m(dm, 'def<2200') && !m(pot, 'def<2200'), 'DEF words only find monsters');
 ok(m(bewd, 'dragon atk>2000'), 'words and stats together');
 ok(!m(pot, 'draw') && m(pot, 'draw', true), 'card text is searched only with In text on');
 ok(m(sk, 'kaiba') && m(sk, 'skill'), 'Skills are found by their duelist');
-ok(m(bewd, 'dragon atk>') && m(dm, 'dark def'), 'a half-typed stat word waits for its number');
+ok(m(bewd, 'dragon atk>') && m(dm, 'dark def') && m(bewd, 'atk dragon') && m(bewd, 'atk> dragon'), 'a half-typed stat word waits for its number');
 ok(!m(bewd, 'zzz'), 'a word nowhere finds nothing');
 ok(matchRank(dm, parseQuery('dark magician')) < matchRank(bewd, parseQuery('dragon')), 'an exact name ranks first');
 

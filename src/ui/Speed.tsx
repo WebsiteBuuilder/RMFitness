@@ -963,7 +963,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             In text
           </button>
           <button class={`chip ${moreFilters || attr !== 'all' || lvl !== 'all' || setF !== 'all' || minAtk ? 'on' : ''}`} onClick={() => setMoreFilters(!moreFilters)} aria-label="More filters, sort, card size and Quick add">
-            More ▾
+            Sort ▾
           </button>
           {(kind !== 'all' || attr !== 'all' || lvl !== 'all' || setF !== 'all' || !!minAtk) && (
             <button class="chip" onClick={clearSearch}>
@@ -1071,7 +1071,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
         )}
         {shown.length === 0 && (
           <div class="dk-empty">
-            <p>{q ? `No ${show === 'mine' ? 'cards of yours' : show === 'craft' ? 'cards to craft' : 'cards'} match "${q}".` : 'No cards match these filters.'}</p>
+            <p>{dq ? `No ${show === 'mine' ? 'cards of yours' : show === 'craft' ? 'cards to craft' : 'cards'} match "${dq}".` : 'No cards match these filters.'}</p>
             {elsewhere > 0 && (
               <button class="gbtn" onClick={() => (playBlip(), setShow('all'))}>
                 See {elsewhere} in All cards
@@ -1101,7 +1101,7 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
                 {...({ onpadx: () => !why && can && addCard(n), onpady: () => openPool(n) } as object)}
                 {...tile(() => (quick && mine ? addCard(n) : openPool(n)), () => openPool(n))}
               >
-                <CardImg name={n} />
+                <CardImg name={n} lazy />
                 {limitStatus(n) && (
                   <i class={`dk-lim ${limitStatus(n) === 'Forbidden' ? '' : 'dk-lim-n'}`} title={limitStatus(n)!}>
                     {limitStatus(n) === 'Forbidden' ? '⊘' : `Lim ${limitStatus(n)!.slice(-1)}`}

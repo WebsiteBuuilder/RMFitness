@@ -42,7 +42,7 @@ export function parseQuery(q: string): { words: string[]; stats: { stat: 'atk' |
     return ' ';
   });
   // "atk" or "def>" still being typed: wait for the number instead of finding nothing
-  const half = rest.replace(/\b(atk|def)\s*(>=|<=|>|<|=)?\s*$/, ' ');
+  const half = rest.replace(/\b(atk|def)\s*(>=|<=|>|<|=)?(?![\w])/g, ' ');
   return { words: normSearch(half).split(' ').filter(Boolean), stats };
 }
 

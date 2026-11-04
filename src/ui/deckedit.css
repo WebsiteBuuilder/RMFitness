@@ -870,7 +870,7 @@
 }
 /* in All cards, the cards you'd have to craft read as clearly not yours */
 .dk-poolgrid .dk-tile.unowned .cimg {
-  filter: grayscale(0.9) brightness(0.68);
+  filter: grayscale(0.7) brightness(0.72);
 }
 .dk-poolgrid .dk-tile.unowned:active .cimg {
   filter: grayscale(0.4) brightness(0.9);
@@ -889,4 +889,10 @@
 }
 .dk-skills + .hint {
   text-align: center;
+}/* Skill pictures still on their way show the name: whole words, small */
+.dk-skills .ctext-name {
+  word-break: normal;
+  overflow-wrap: normal;
+  font-size: 7px;
+  line-height: 1.1;
 }
