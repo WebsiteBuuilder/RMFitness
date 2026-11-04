@@ -54,7 +54,7 @@
 .fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.8; }
 
 .fwear .fw-soot {
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .fwear .fw-blot {
   opacity: 0.9;
@@ -85,11 +85,10 @@
   stroke: none;
 }
 .fwear .fw-lip-lit {
-  fill: none;
-  /* (a broken rim catching the light on its far, upper-left side: not a ring) */
-  stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.95;
-  stroke-width: 2.3px;
+  /* the crater's far, upper-left slope catching the light */
+  fill: var(--fw-chip-edge);
+  fill-opacity: 0.42;
+  stroke: none;
 }
 .fwear .fw-lip-dark {
   fill: none;
@@ -116,7 +115,6 @@
   stroke-width: 0.7px;
   stroke-linecap: round;
 }
-.fwear .fw-lip-lit,
 .fwear .fw-lip-dark {
   stroke-linecap: round;
 }
@@ -159,20 +157,20 @@
   opacity: 0.55;
 }
 .fwear .fw-plate-fire {
-  opacity: 0.8;
+  opacity: 0.7;
 }
 .fwear .fw-plate-face {
   fill: var(--fw-chip);
-  fill-opacity: 0.55;
+  fill-opacity: 0.92;
 }
 /* the plates are the same burnt stone as the lighter hits: the char runs across them */
 .fwear .fw-plate-char {
-  opacity: 0.85;
+  opacity: 0.5;
 }
 .fwear .fw-plate-lit {
   fill: none;
   stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.35;
+  stroke-opacity: 0.6;
   stroke-width: 0.7px;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
@@ -225,7 +223,7 @@
 .fwear-held.st-forest {
   --fw-rim: #4a2a0a;
   --fw-mid: #0d0904;
-  --fw-glow: #ffb43a;
+  --fw-glow: #e0661c;
   --fw-pit1: #1a1206;
   --fw-chip: #1e2412;
   --fw-chip-edge: #c9e08a;
@@ -449,7 +447,6 @@ body.art-on .fwear .fw-hit.fresh {
 
 /* (strokes keep their width when a zone is not exactly a card's shape) */
 .fwear-held rect,
-.fwear .fw-lip-lit,
 .fwear .fw-lip-dark,
 .fwear .fw-chip-lit,
 .fwear .fw-ring {

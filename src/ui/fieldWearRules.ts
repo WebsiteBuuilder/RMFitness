@@ -239,7 +239,7 @@ function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
     // shrink toward the plate's middle (the gap), then shove it out of place
     const mx = pts.reduce((t, p) => t + p[0], 0) / pts.length;
     const my = pts.reduce((t, p) => t + p[1], 0) / pts.length;
-    const k = 0.85;
+    const k = 0.92;
     // pushed away from the blow (the seams open wider outward), plus a little knock sideways
     const ox = mx - cx;
     const oy = my - cy;

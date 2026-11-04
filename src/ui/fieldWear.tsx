@@ -41,7 +41,22 @@ const arcs = (cx: number, cy: number, rx: number, ry: number, segs: [number, num
     const pt = (f: number) => `${(cx + rx * Math.cos(f * 2 * Math.PI)).toFixed(2)} ${(cy + ry * Math.sin(f * 2 * Math.PI)).toFixed(2)}`;
     return `M${pt(a)}A${rx.toFixed(2)} ${ry.toFixed(2)} 0 ${b - a > 0.5 ? 1 : 0} 1 ${pt(b)}`;
   }).join('');
-const LIT: [number, number][] = [[0.52, 0.61], [0.64, 0.78], [0.82, 0.9]];
+// a lit slope: a jagged crescent between the crater's rim and a smaller ellipse nudged down-right
+const crescent = (cx: number, cy: number, rx: number, ry: number, a: number, b: number) => {
+  const pts: string[] = [];
+  const n = 9;
+  for (let i = 0; i <= n; i++) {
+    const t = (a + ((b - a) * i) / n) * 2 * Math.PI;
+    const j = i % 2 ? 1.04 : 0.98;
+    pts.push(`${(cx + rx * j * Math.cos(t)).toFixed(2)} ${(cy + ry * j * Math.sin(t)).toFixed(2)}`);
+  }
+  for (let i = n; i >= 0; i--) {
+    const t = (a + ((b - a) * i) / n) * 2 * Math.PI;
+    const thick = Math.sin((Math.PI * i) / n); // thickest mid-way, tapering to points
+    pts.push(`${(cx + 0.9 + rx * (1 - 0.32 * thick) * Math.cos(t)).toFixed(2)} ${(cy + 1.1 + ry * (1 - 0.32 * thick) * Math.sin(t)).toFixed(2)}`);
+  }
+  return `M${pts.join('L')}Z`;
+};
 const DARK: [number, number][] = [[0, 0.03], [0.07, 0.33], [0.39, 0.48]];
 const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y}a${r} ${r} 0 1 0 ${(2 * r).toFixed(2)} 0a${r} ${r} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
 const merge = (h: WearHit): Drawn => ({
@@ -173,8 +188,8 @@ export function ZoneWear({ state, p, zone }: Props) {
             {k >= 2 && (
               // a crater: dark pit, a lit rim toward the light (up-left), a shadowed lip opposite
               <g class="fw-crater">
-                <path class="fw-lip-lit" d={arcs(h.x - 0.7, h.y - 0.8, h.r * 0.48, h.r * 0.58, LIT)} />
                 <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.46} ry={h.r * 0.56} fill={`url(#${id}p)`} />
+                <path class="fw-lip-lit" d={crescent(h.x, h.y, h.r * 0.5, h.r * 0.6, 0.5, 0.92)} />
                 <path class="fw-lip-dark" d={arcs(h.x + 0.5, h.y + 0.7, h.r * 0.38, h.r * 0.47, DARK)} />
               </g>
             )}
