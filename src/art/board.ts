@@ -24,6 +24,7 @@ import { figureHeld, pressQuiet } from "./hold";
 import { boardHolo, flickerAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
 import { calmMotion, getHolo } from "./settings";
 import { holoHum, holoLock } from "./sfx";
+import { unmapRect } from "./cam";
 
 export interface BoardMonster {
   uid: number;
@@ -465,7 +466,8 @@ export class BoardLayer {
         p.cw = 0;
         continue;
       }
-      const r = el.getBoundingClientRect();
+      // (where the card rests: the Duel Disk camera carries this canvas along with the field)
+      const r = unmapRect(el.getBoundingClientRect());
       p.cw = r.width > 0 ? Math.min(r.width, r.height) : 0;
       if (p.cw > 0) {
         poseInto(p.pose, r, p.def, p.fig.foot);

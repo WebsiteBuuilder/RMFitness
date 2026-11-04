@@ -61,6 +61,19 @@ export const calmMotion = (): boolean => {
   return !!calmQuery?.matches;
 };
 
+const CAM_KEY = 'eds.duelCam';
+export type DuelCam = 'full' | 'soft' | 'off';
+const CAM_ORDER: DuelCam[] = ['full', 'soft', 'off'];
+const CAM_NAMES: Record<DuelCam, string> = { full: 'Full', soft: 'Soft', off: 'Off' };
+/** The Duel Disk camera (the field pushes in and tilts on summons and attacks): Full unless changed; Soft under the phone's Reduce motion. */
+export function getDuelCam(): DuelCam {
+  const v = read(CAM_KEY);
+  if (v && (CAM_ORDER as string[]).includes(v)) return v as DuelCam;
+  return calmMotion() ? 'soft' : 'full';
+}
+export const setDuelCam = (v: DuelCam) => write(CAM_KEY, v);
+const nextDuelCam = (v: DuelCam): DuelCam => CAM_ORDER[(CAM_ORDER.indexOf(v) + 1) % CAM_ORDER.length];
+
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
 export const nextCinematics = (v: Cinematics): Cinematics => CINE_ORDER[(CINE_ORDER.indexOf(v) + 1) % CINE_ORDER.length];
@@ -80,15 +93,18 @@ function useStored<T>(get: () => T): T {
 export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
+export const useDuelCam = () => useStored(getDuelCam);
 
 /** The duel-menu items (Speed Duel): tap to cycle each. */
 export function useCinematicsMenu(): { label: string; note: string; onPick: () => void }[] {
   const cine = useCinematics();
   const speed = useAnimSpeed();
   const holo = useHolo();
+  const cam = useDuelCam();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
+    { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: 'tap to change', onPick: () => setDuelCam(nextDuelCam(cam)) },
   ];
 }
