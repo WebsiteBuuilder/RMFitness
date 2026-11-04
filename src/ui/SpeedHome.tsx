@@ -31,6 +31,8 @@ import { loadSolo } from '../eds/speedCampaign/save';
 import { TOP, ladderClock, pharaohLevel, rankName, rankedProgress, seasonOf, stepName } from '../eds/speedCampaign/ranked';
 import { todayString } from '../eds/speedCampaign/labyrinth';
 import { RankEmblem, rankedNote } from './RankBadge';
+import { DuelistRoom, type RoomPass } from './room/DuelistRoom';
+import { homeLook, onHomeLook, roomSupported, setHomeLook } from './room/roomData';
 import './speedhome.css';
 import { passSeasonName, shownTrack, TIER_XP, TIERS, tierAt, tierProgress, toClaim, worn } from '../pass/pass';
 import { Framed, NameBadge } from '../pass/ui';
@@ -372,6 +374,7 @@ export function SpeedHome({
   cpus,
   onPickDeck,
   problemsOf,
+  pass,
 }: {
   tab: HomeTab;
   onTab: (t: HomeTab) => void;
@@ -397,12 +400,18 @@ export function SpeedHome({
   /** makes another deck the one you duel with */
   onPickDeck: (d: SpeedDeck) => void;
   problemsOf: (d: SpeedDeck) => string[];
+  /** the Duel Pass's spot in the Duelist Room (a poster on the wall), once the pass exists */
+  pass?: RoomPass;
 }) {
   const [deckMenu, setDeckMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const soundOn = useSoundEnabled();
   const musicOn = useMusicEnabled();
   const [rules, setRules] = useState(false);
+  const [look, setLook] = useState(homeLook);
+  useEffect(() => onHomeLook(() => setLook(homeLook())), []);
+  const canRoom = useMemo(roomSupported, []);
+  const room = canRoom && look === 'room';
   lastTab = tab;
   // Lift the floating Friends button above the tab bar while the home screen is up.
   useEffect(() => {
@@ -459,7 +468,8 @@ export function SpeedHome({
       <main class="sdh-page" key={tab}>
         {tab === 'duel' && (
           <>
-            <button class="sdh-deck" onClick={() => (playBlip(), save.decks.length > 1 ? setDeckMenu(true) : go('decks'))}>
+            {room && <DuelistRoom profile={profile} save={save} deck={deck} deckAce={ace} pass={pass} go={go} onDeck={() => (save.decks.length > 1 ? setDeckMenu(true) : go('decks'))} />}
+            {!room && <button class="sdh-deck" onClick={() => (playBlip(), save.decks.length > 1 ? setDeckMenu(true) : go('decks'))}>
               <span class="sdh-deck-pic">{ace ? <CardImg name={ace} /> : <span class="cimg cback" />}</span>
               <span class="sdh-deck-txt">
                 <small>Active deck{save.decks.length > 1 ? ' · tap to switch' : ''}</small>
@@ -475,7 +485,7 @@ export function SpeedHome({
                 )}
               </span>
               <span class="sdh-tile-go">›</span>
-            </button>
+            </button>}
 
             {problems.length > 0 && (
               <button class="sdh-note bad" onClick={() => (playBlip(), go('decks'))}>
@@ -603,6 +613,7 @@ export function SpeedHome({
                 { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'duel sound effects', onPick: () => setSoundEnabled(!soundOn) },
                 { label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'the duel soundtrack', onPick: () => setMusicEnabled(!musicOn) },
+                ...(canRoom ? [{ label: `Home: ${room ? 'Duelist Room' : 'Plain menu'}`, note: room ? 'your Ace, Mate, trophies and deck in a room' : 'just the tiles, no room', onPick: () => setHomeLook(room ? 'plain' : 'room') }] : []),
                 { label: 'Speed Duel rules', onPick: () => (setSettings(false), setRules(true)) },
                 { label: 'Back to Eternal Duelist Soul', onPick: onExit },
               ]}

@@ -15,7 +15,9 @@ import { ELEMENT_COLORS, profileFor, rand, SIGNATURE_CARDS, type ArtProfile, typ
 import { cueSting } from './cueSound';
 import { boom, chime, drone, holoHum, holoLock, slowdown, swell, whoosh, zap } from './sfx';
 import { flickerAt, glitchAt, holoReveal, showAtFor, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, holoPlan, holoPower } from './holo';
-import { calmMotion, getHolo } from './settings';
+import { calmMotion, getHolo, getManga } from './settings';
+import { insetText, inkFor, isMega, MANGA_BRISK_S, MANGA_HOLD_S, mangaWorthy, soundWordFor, type MangaHit } from './mangaRules';
+import type { MangaHandle, MangaPanelOpts } from './mangaPanel';
 import { chainLift, chainNegate, chainResolve } from '../ui/duelSfx';
 import { backOut, BASE_FOV, CardPanel, rimColor, clamp01, ContactShadow, Crack, CutIn, easeIn, easeInOut, easeOut, Figure, Glow, lerp, Ribbon, Ring, setRgb, Shards, Stage, Veil, type Emit, type Fx, type GlowMode, type Quality } from './stage';
 import { characterName, classify, effectText, FX_FAMILIES, TERRAINS, type FxClass, type FxFamily, type Terrain } from './families';
@@ -46,6 +48,8 @@ export interface Ui {
   replay?(on: boolean): void;
   /** the chain spotlight's cards (chainSpot.ts), over the stage */
   chain?: ChainSpotUi;
+  /** a manga attack panel (mangaPanel.ts), built now and shown when the blow lands */
+  manga?(o: MangaPanelOpts): MangaHandle;
 }
 
 /** What the director asks of the chain spotlight (chainSpot.ts ChainSpot). */
@@ -79,6 +83,14 @@ export function lpBeat(side: 'top' | 'bottom', cls: string, ms = 400): DOMRect |
   el.classList.add(cls);
   setTimeout(() => el.classList.remove(cls), ms);
   return el.getBoundingClientRect();
+}
+
+/** Average brightness (0..1) of a small RGBA copy of an art, or undefined. */
+function brightness(px: Uint8ClampedArray | undefined): number | undefined {
+  if (!px?.length) return undefined;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+  return sum / (px.length / 4) / 255;
 }
 
 /** Summed screen flash (WebGL flash layer + post flash) never goes past this: the subject stays readable. */
@@ -121,6 +133,8 @@ export class Timeline implements Fx {
   handoff: number | null = null;
   /** how much longer than `duration / rate` it takes in real time (its slow motion) */
   slow = 1;
+  /** real seconds it stands still on top of that (a manga panel's freeze) */
+  hold = 0;
   private items: { t0: number; t1: number; fn: SpanFn; done: boolean; cosmetic: boolean }[] = [];
   owned: Fx[] = [];
   constructor(
@@ -331,6 +345,34 @@ export class Director {
   private fastFade = false;
   /** Animation speed setting: 1, 1.5 or 2 */
   timeScale = 1;
+  /** the manga panel built for the blow on stage (shown, or waiting for the impact) */
+  private manga: MangaHandle | null = null;
+  /** when the last manga panel showed (performance.now ms) */
+  private lastManga = -Infinity;
+  /**
+   * A tap while a manga panel holds the frame: the panel whips away and the blow plays on
+   * (the tap skips nothing else). False when no panel is up.
+   */
+  dismissManga(): boolean {
+    if (!this.manga?.showing) return false;
+    this.manga.end();
+    this.manga = null;
+    this.unfreeze();
+    return true;
+  }
+  private dropManga() {
+    if (!this.manga) return;
+    this.manga.drop();
+    this.manga = null;
+    this.unfreeze();
+  }
+  /** the stage paused itself for a manga panel */
+  private mangaPaused = false;
+  private unfreeze() {
+    if (!this.mangaPaused) return;
+    this.mangaPaused = false;
+    this.stage.freeze = false;
+  }
   /** Aces whose full entrance has played on this stage (owner:name) */
   private acesShown = new Set<string>();
   /** A new duel (or a fresh preview): each Ace's full entrance plays again. */
@@ -541,6 +583,7 @@ export class Director {
 
   /** Tap: skip the whole current chain (every cue of the same event batch). */
   skip() {
+    this.dropManga();
     this.fastFade = true;
     this.finaleUid = -1;
     const b = this.curBatch;
@@ -553,6 +596,7 @@ export class Director {
 
   /** Long press / double tap: skip everything queued, and whatever arrives until the queue has drained. */
   skipEverything() {
+    this.dropManga();
     this.skipAll = true;
     this.finaleUid = -1;
     this.fastFade = true;
@@ -572,6 +616,7 @@ export class Director {
    */
   hideNow(): boolean {
     if (this.current || this.queue.length || this.trailing.length) return false;
+    this.dropManga();
     this.stage.warp = 1;
     this.setReplay(false);
     this.dropHeld();
@@ -642,6 +687,7 @@ export class Director {
 
   /** Leaving (or 3D turned off): drop everything. */
   clear() {
+    this.dropManga();
     this.stage.warp = 1;
     this.finaleUid = -1;
     this.slammed = -1;
@@ -674,6 +720,7 @@ export class Director {
   }
 
   dispose() {
+    this.dropManga();
     this.clear();
     this.veil.dispose();
     this.front.dispose();
@@ -864,7 +911,7 @@ export class Director {
         // (a Shadow Realm finish that really started: played through, it counts as seen)
         this.curShadow = item.cue.kind === 'win' && !!item.cue.shadow;
         if (!this.skipAll) cueSting(item.cue);
-        this.onCueStart?.(item.batch, (tl.duration / tl.rate) * tl.slow);
+        this.onCueStart?.(item.batch, (tl.duration / tl.rate) * tl.slow + tl.hold);
         if (this.skipAll) this.endCurrent(true);
       })
       .catch((err) => {
@@ -3841,6 +3888,8 @@ export class Director {
       if (dmg) this.damageNumber(this.side(dmg.player) === 'near' ? 'bottom' : 'top', `-${dmg.amount}`, (tgt ? 1.45 : 1.6) + Math.min(1, dmg.amount / 3000) * 0.7);
     });
     tl.commit(hitAt);
+    // a big hit: the frame freezes on an inked manga panel of the attacker (mangaRules.ts)
+    if (a && att && !finisher && !this.skipAll && this.ui.manga) this.mangaBeat(tl, a, att, tgt, clash, attLoses || dies(att.uid), hitAt, dmg && this.side(dmg.player) !== att.side ? dmg.amount : 0, replay);
     if (dmg) {
       const k = Math.min(1, dmg.amount / 3000);
       // a direct hit keeps its red wash; monster against monster only tints the edges a
@@ -3917,6 +3966,57 @@ export class Director {
     // otherwise (a clash both survive, a direct hit) what follows starts as the blow settles
     tl.handoff ??= Math.max(hitAt + 0.3, D - 0.3);
     return tl;
+  }
+
+  /**
+   * The manga panel for a big hit: built now (its art copied while the blow travels), shown
+   * just after the impact while the stage holds still (a wall-clock hit-stop), for about a
+   * second at 1x. A tap ends it early (dismissManga); a skip drops it.
+   */
+  private mangaBeat(tl: Timeline, a: CardRef, att: Actor, tgt: Actor | null, clash: boolean, attackerLoses: boolean, hitAt: number, dmg: number, replay: boolean) {
+    const h: MangaHit = {
+      dmg,
+      direct: !tgt,
+      destroys: !!tgt && !clash,
+      tier: att.prof.tier,
+      lethal: this.queue.some((q) => q.cue.kind === 'win' || !!q.cue.replay),
+      replay,
+      attackerLoses,
+      sinceLast: (performance.now() - this.lastManga) / 1000,
+    };
+    const mode = getManga();
+    if (!mangaWorthy(h, mode)) return;
+    const info = card(a.name);
+    const sw = soundWordFor(info?.race, att.uid + (info?.id ?? 0));
+    this.dropManga();
+    const panel = this.ui.manga!({
+      art: att.art?.art ?? null,
+      bright: brightness(att.art?.artPx),
+      inset: h.destroys && tgt?.art ? tgt.art.art : null,
+      insetText: insetText(h),
+      word: sw.word,
+      kana: sw.kana,
+      ink: inkFor(info?.attribute),
+      side: att.side,
+      mega: isMega(h),
+      direct: h.direct,
+    });
+    this.manga = panel;
+    // (every hit, or a second panel soon after the last: a brisker beat)
+    const brisk = !isMega(h) && (mode === 'all' || h.sinceLast < 25);
+    const hold = (brisk ? MANGA_BRISK_S : MANGA_HOLD_S) / Math.max(1, this.timeScale);
+    tl.hold = hold;
+    tl.at(hitAt + 0.05, () => {
+      if (this.manga !== panel) return;
+      // the stage stops drawing altogether while the panel holds (its last frame stays): free
+      if (!panel.show(hold, () => this.unfreeze())) return;
+      this.stage.freeze = true;
+      this.mangaPaused = true;
+      whoosh(0.16, 2400, 7000, 0.07);
+      this.lastManga = performance.now();
+    });
+    // never left behind (a skipped blow drops its cosmetic steps, this one runs anyway)
+    tl.at(tl.duration, () => this.manga === panel && !panel.showing && this.dropManga(), false);
   }
 
   /**
