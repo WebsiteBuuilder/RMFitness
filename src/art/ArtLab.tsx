@@ -103,10 +103,15 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
             if (!el && on) {
               el = document.createElement('div');
               el.className = 'art-replay';
-              el.innerHTML = '<i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
+              el.innerHTML = '<i class="bar top"></i><i class="bar bottom"><b class="tag"><i class="dot"></i>REPLAY<span>Final blow</span></b><i class="skiphint">Tap to skip</i></i>';
               host.appendChild(el);
             }
             el?.classList.toggle('on', on);
+            if (!on) el?.classList.remove('finale');
+          },
+          finale: (on) => {
+            ui.parentElement?.querySelector(':scope > .art-replay')?.classList.toggle('finale', on);
+            document.body.classList.toggle('art-finale', on);
           },
         });
         dir.current = d;
@@ -218,6 +223,21 @@ export function ArtLab({ onBack, initial, ace }: { onBack: () => void; initial?:
               { kind: 'win', winner: 0, shadow: null },
             ];
             run([atk, chain[0], ...finishingReplay(chain), chain[1]]);
+          },
+        },
+        {
+          label: 'Ace finale',
+          go: () => {
+            // the ending cutscene as a duelist's Ace at bond 5, then its finisher
+            const a = me();
+            const hit: Cue = { kind: 'hit', attacker: a, target: null, defender: 1, dmg: { player: 1, amount: info?.atk ?? 2500 } };
+            run([
+              { kind: 'attack', attacker: a, target: null, defender: 1 },
+              hit,
+              { kind: 'finale', card: a, line: 'Your Ace ends it', lv: 5, ace: true, replay: true },
+              { ...hit, replay: true },
+              { kind: 'win', winner: 0, shadow: null },
+            ]);
           },
         },
         {

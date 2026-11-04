@@ -58,11 +58,14 @@ import { pressQuiet } from './hold';
 
 export type Quality = 'full' | 'fast';
 
-/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. */
-export function dprCap(): number {
+/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. A big canvas
+    (tablet, desktop) also keeps to a pixel budget, so a full-screen layer on a 4K monitor or a
+    big iPad costs about what a phone's does (never under 1:1). */
+export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5);
+  const budget = Math.max(1, Math.sqrt((small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
+  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5, budget);
 }
 
 /** A WebGL renderer set up the same way everywhere (so compiled programs match). */
@@ -2108,7 +2111,8 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   const fontOf = (s: number) => `italic 900 ${s}px ${DISPLAY_FONT}`;
   g.font = fontOf(fs);
   const name = title.toUpperCase();
-  while (fs > 34 && g.measureText(name).width > W - 70) g.font = fontOf((fs -= 4));
+  // (kept clear of the band's ends: on a narrow phone they run past the screen's edges)
+  while (fs > 34 && g.measureText(name).width > W - 220) g.font = fontOf((fs -= 4));
   g.textAlign = 'center';
   g.textBaseline = 'alphabetic';
   const y = 40 + fs;
@@ -2129,12 +2133,17 @@ function cutInText(title: string, sub: string, color: number, edge: number): HTM
   g.fillStyle = grad;
   g.fillText(name, W / 2, y);
   if (sub) {
-    g.font = `italic 800 40px ${DISPLAY_FONT}`;
+    // (a short line is drawn bigger, so it reads on a small phone)
+    let ss = 58;
+    const subOf = (n: number) => `italic 800 ${n}px ${DISPLAY_FONT}`;
+    g.font = subOf(ss);
+    while (ss > 40 && g.measureText(sub).width > W - 110) g.font = subOf((ss -= 3));
+    const sy = Math.min(H - 14, y + 18 + ss);
     g.lineWidth = 8;
     g.strokeStyle = '#000';
-    g.strokeText(sub, W / 2, y + 58);
+    g.strokeText(sub, W / 2, sy);
     g.fillStyle = hexCss(edge);
-    g.fillText(sub, W / 2, y + 58);
+    g.fillText(sub, W / 2, sy);
   }
   return cv;
 }
@@ -2779,7 +2788,8 @@ export class Stage {
     this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const dpr = this.levels[this.level].dpr;
+    // (the quality level's ratio, held to the big-screen pixel budget)
+    const dpr = Math.min(this.levels[this.level].dpr, Math.max(1, dprCap(w, h)));
     if (this.levels[this.level].post && !this.post) this.post = new Post();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);

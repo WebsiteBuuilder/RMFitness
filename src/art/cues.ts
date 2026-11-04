@@ -56,6 +56,8 @@ type CueBody =
   | { kind: 'win'; winner: Pid | 'draw'; shadow: ShadowResult | null }
   /** "Not so fast!": a Trap answers the opponent's card (its attacker, its summon, its Spell): time slows and the two slam together */
   | { kind: 'slam'; trap: CardRef; onto: CardRef }
+  /** the ending cutscene before the winning blow's replay: an iconic monster or an Ace takes the stage (finishers.ts finaleFor) */
+  | { kind: 'finale'; card: CardRef; line: string; lv: number; ace: boolean }
   /** Chain spotlight: the chain so far lifts off the field in order, numbered (`added`: the link just put on it) */
   | { kind: 'chain'; stack: ChainCard[]; added: number }
   /** ...link `n` resolves: it comes forward, bigger, with its effect text and its own flash */
@@ -439,6 +441,8 @@ export function weight(c: Cue): number {
     case 'skill':
     case 'slam':
       return 4;
+    case 'finale':
+      return 6;
     case 'activate':
     case 'target':
     case 'leave':

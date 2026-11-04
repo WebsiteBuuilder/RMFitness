@@ -24,6 +24,8 @@ import { CHAIN_CUES, coalesce, cueUids, focusArt, memoField, setArtBusy, toCues,
 import { profileFor, SIGNATURE_CARDS } from './profile';
 import { getCinematics, type Cinematics } from './settings';
 import { FIN, finishOf } from './finish';
+import { finaleFor } from './finishers';
+import { aceFor } from '../ace/ace';
 
 /** How the art stage plays what the flow hands it. */
 export interface ArtSink {
@@ -170,6 +172,8 @@ function owner(c: Cue): Pid | null {
       return c.attacker?.controller ?? (c.defender === 0 ? 1 : 0);
     case 'slam':
       return c.trap.controller;
+    case 'finale':
+      return c.card.controller;
     default:
       return null;
   }
@@ -197,6 +201,12 @@ export function finishingReplay(cues: Cue[]): Cue[] {
     const c = cues[i];
     if (c.kind === 'hit' && c.dmg && c.dmg.player === loser) {
       const out: Cue[] = [];
+      // an iconic monster or its duelist's Ace takes the stage first: the ending cutscene
+      const a = c.attacker;
+      // (a borrowed monster is not its taker's Ace: Change of Heart on my Ace gives them no gold cutscene)
+      const own = a && (a.owner ?? a.controller) === a.controller;
+      const fin = a && a.controller !== loser && a.faceUp !== false && a.name ? finaleFor(a.name, own ? aceFor(a.controller, a.name) : null) : null;
+      if (a && fin) out.push(again({ kind: 'finale', card: a, line: fin.line, lv: fin.lv, ace: fin.ace }));
       // (from the swing: the declaration and its wind-up were just seen)
       out.push(again(c));
       for (let j = i + 1; j < w && cues[j].kind === 'destroy'; j++) out.push(again(cues[j]));
