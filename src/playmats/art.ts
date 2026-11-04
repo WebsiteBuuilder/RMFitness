@@ -160,9 +160,10 @@ const CHROME: [string, string, string] = ['#e6fbff', '#3c6a7a', '#9fe6ff'];
 
 // ---------- shared depth: grain, light from the far left, haze, floor seals ----------
 
-/** A faint mottled grain (stone, sand, felt). One filter per picture, rendered once when decoded. */
-const GRAIN_DEF = `<filter id='gn' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 0 0 0 -.62'/></filter>`;
-const grain = (op = 0.5) => `<rect width='${W}' height='${H}' filter='url(#gn)' opacity='${op}'/>`;
+/** Each mat's grain strength (stone, sand, felt). The grain is NOT in the scene: an SVG filter
+ *  would be rasterised again on the CPU at every new size the picture is drawn at. It is one small
+ *  filter-free tile of dots (grainTile) that CSS repeats over the scene at this opacity. */
+const GRAIN = new Map<string, number>();
 /** Light from the far left corner, falling off toward you. */
 const LIGHT_DEF = lin('lt', [[0, '#fff', 0.16], [0.45, '#fff', 0], [1, '#000', 0.25]], 0.6, 1);
 const light = fill('lt');
@@ -173,10 +174,9 @@ const glowDef = (id: string, c: string, a = 0.6) => rad(id, [[0, c, a], [1, c, 0
 const spot = (id: string, cx: number, cy: number, rx: number, ry = rx) => `<ellipse cx='${cx}' cy='${cy}' rx='${rx}' ry='${ry}' fill='url(#${id})'/>`;
 
 function scene(defs: string, body: string, opts: { grain?: number; light?: boolean } = {}): string {
-  return svg(
-    defs + (opts.grain ? GRAIN_DEF : '') + (opts.light === false ? '' : LIGHT_DEF),
-    body + (opts.grain ? grain(opts.grain) : '') + (opts.light === false ? '' : light),
-  );
+  const out = svg(defs + (opts.light === false ? '' : LIGHT_DEF), body + (opts.light === false ? '' : light));
+  GRAIN.set(out, opts.grain ?? 0);
+  return out;
 }
 /** Inner glow along a path (drawn twice: a wide soft stroke, then a bright core). */
 const glowLine = (d: string, c: string, w: number, core = '#fff') =>
@@ -349,9 +349,12 @@ const fireMat = scene(
     `<g fill='#ffb04a' fill-opacity='.7'>${scatter(8, 501, [280, 0, 60, 24], (x, y) => `<circle cx='${x}' cy='${y}' r='1.4'/>`)}</g>` +
     `<path d='M0 80H380' stroke='#ff9a4a' stroke-opacity='.5'/>` +
     // cracked basalt plates with lava seams
-    glowLine('M0 110L60 100L110 118L170 104L220 116L280 102L340 114L380 106', '#ff5a1a', 1.4, '#ffd27a') +
-    glowLine('M20 160L70 146L96 170L150 156L190 176L240 154L300 170L360 150', '#ff5a1a', 1.6, '#ffd27a') +
-    glowLine('M60 100L70 146M170 104L150 156M280 102L300 170M110 118L96 170M220 116L240 154M340 114L360 150', '#ff5a1a', 1.1, '#ffd27a') +
+    glowLine('M0 104L40 98L74 110', '#ff5a1a', 0.9, '#ffd27a') +
+    glowLine('M380 100L338 96L300 108', '#ff5a1a', 0.9, '#ffd27a') +
+    glowLine('M0 170L34 160L60 176L96 168', '#ff5a1a', 1.1, '#ffd27a') +
+    glowLine('M380 166L346 156L318 172L284 164', '#ff5a1a', 1.1, '#ffd27a') +
+    glowLine('M40 98L48 128L36 160M338 96L330 126L346 156', '#ff5a1a', 0.7, '#ffd27a') +
+    glowLine('M130 210L150 196L176 204M250 212L232 198L206 206', '#ff5a1a', 0.7, '#ffd27a') +
     spot('lava', CX, 160, 120, 40) +
     onFloor(162, 0.5, `<circle cx='${CX}' cy='${CY}' r='70' fill='none' stroke='#ffd27a' stroke-opacity='.55' stroke-width='2'/>` + flame(CX, CY + 42, 96, '#ff7a1a', 0.55) + flame(CX, CY + 38, 62, '#ffd27a', 0.6) + flame(CX, CY + 34, 30, '#fff6d0', 0.8)) +
     Array.from({ length: 14 }, (_, i) => flame(14 + i * 27.5, 224, 22 + ((i * 37) % 20), i % 2 ? '#ff7a1a' : '#ffb04a', 0.5)).join(''),
@@ -499,31 +502,36 @@ const dome = scene(
 );
 const domeTrim = trim(CHROME, '#6cc4ff', 'wing', '#cfe6ff');
 
-/** Pegasus's castle: the great hall, a rose window over the middle, the red carpet to your feet. */
+/** Pegasus's castle: the great hall at dusk. Light from the rose window falls across the marble to the red carpet at your feet. */
 const castle = scene(
-  lin('bg', [[0, '#3a1e3a'], [1, '#120812']]) +
-    rad('rose', [[0, '#fff2c0'], [0.3, '#ff9ae8', 0.8], [0.7, '#6a5aff', 0.6], [1, '#2a1a5a', 0]]) +
-    lin('cp', [[0, '#a01a2a'], [1, '#5a0a14']]) +
-    lin('col', [[0, '#5a4a5a'], [0.5, '#8a7a8a'], [1, '#3a2a3a']], 1, 0),
+  lin('bg', [[0, '#2a1430'], [1, '#0e0610']]) +
+    rad('rose', [[0, '#fff2c0'], [0.3, '#ff9ae8', 0.85], [0.7, '#6a5aff', 0.6], [1, '#2a1a5a', 0]]) +
+    lin('shaft', [[0, '#ffd0f0', 0.35], [1, '#ffd0f0', 0]]) +
+    lin('cp', [[0, '#7a0e1c'], [1, '#c02238']]) +
+    lin('col', [[0, '#3a2a3a'], [0.35, '#b8a0b8'], [0.6, '#7a6a7a'], [1, '#2a1a2a']], 1, 0) +
+    lin('fl', [[0, '#3a2a3a'], [1, '#140a14']]) +
+    glowDef('cand', '#ffd27a', 0.55),
   fill('bg') +
-    // arches along the far wall
-    `<g fill='#1e0e1e' stroke='#c8a0c8' stroke-opacity='.25'>${Array.from({ length: 7 }, (_, i) => `<path d='M${i * 56 - 12} 92 V40 Q${i * 56 + 16} 10 ${i * 56 + 44} 40 V92 Z'/>`).join('')}</g>` +
-    // the rose window
-    `<circle cx='${CX}' cy='40' r='38' fill='url(#rose)'/>` +
-    `<g fill='none' stroke='#2a1a2a' stroke-width='2'>${around(12, 36, CX, 40).map(([x, y]) => `<line x1='${CX}' y1='40' x2='${x}' y2='${y}'/>`).join('')}<circle cx='${CX}' cy='40' r='36'/><circle cx='${CX}' cy='40' r='22'/><circle cx='${CX}' cy='40' r='8'/></g>` +
-    `<circle cx='${CX}' cy='40' r='40' fill='none' stroke='#f0cf7a' stroke-opacity='.6' stroke-width='2'/>` +
-    // columns down each side
-    `<g fill='url(#col)'><rect x='26' y='60' width='16' height='160'/><rect x='338' y='60' width='16' height='160'/><rect x='92' y='76' width='10' height='144' opacity='.7'/><rect x='278' y='76' width='10' height='144' opacity='.7'/></g>` +
-    `<g fill='#f0cf7a' fill-opacity='.5'><rect x='22' y='56' width='24' height='5'/><rect x='334' y='56' width='24' height='5'/></g>` +
-    // the floor: checked marble, the carpet down the middle with gold edges
-    `<path d='M0 92H380V220H0Z' fill='#2a1a2a'/>` +
-    `<g fill='#e6d0e6' fill-opacity='.06'>${Array.from({ length: 40 }, (_, i) => { const row = Math.floor(i / 10); const col = i % 10; return (row + col) % 2 ? '' : `<rect x='${col * 38}' y='${92 + row * 32}' width='38' height='32'/>`; }).join('')}</g>` +
-    `<path d='M160 92 L120 220 H260 L220 92 Z' fill='url(#cp)'/>` +
-    `<path d='M160 92 L120 220 M220 92 L260 220' stroke='#f0cf7a' stroke-width='2.4' stroke-opacity='.85'/>` +
-    `<g fill='none' stroke='#f0cf7a' stroke-opacity='.4'><path d='M150 140h80M140 180h100'/></g>` +
-    // gold candelabra light either side
-    `<g fill='#ffd27a'><circle cx='34' cy='120' r='3'/><circle cx='346' cy='120' r='3'/></g>` +
-    `<circle cx='34' cy='120' r='18' fill='#ffd27a' fill-opacity='.12'/><circle cx='346' cy='120' r='18' fill='#ffd27a' fill-opacity='.12'/>`,
+    // the far wall: a row of arched windows, deep in shadow, with the rose window in the middle
+    `<g fill='#160a18' stroke='#c8a0c8' stroke-opacity='.3'>${[0, 1, 2, 4, 5, 6].map((i) => `<path d='M${i * 56 - 10} 84V40Q${i * 56 + 16} 12 ${i * 56 + 42} 40V84Z'/>`).join('')}</g>` +
+    `<g fill='#6a5aff' fill-opacity='.18'>${[0, 1, 2, 4, 5, 6].map((i) => `<path d='M${i * 56 - 2} 84V44Q${i * 56 + 16} 22 ${i * 56 + 34} 44V84Z'/>`).join('')}</g>` +
+    `<circle cx='${CX}' cy='42' r='40' fill='url(#rose)'/>` +
+    `<g fill='none' stroke='#1a0a1a' stroke-width='2'>${around(12, 37, CX, 42).map(([x, y]) => `<line x1='${CX}' y1='42' x2='${x}' y2='${y}'/>`).join('')}<circle cx='${CX}' cy='42' r='37'/><circle cx='${CX}' cy='42' r='22'/><circle cx='${CX}' cy='42' r='8'/></g>` +
+    `<circle cx='${CX}' cy='42' r='41' fill='none' stroke='#f0cf7a' stroke-opacity='.7' stroke-width='2.4'/>` +
+    // light from the window falling across the hall
+    `<path d='M160 60L220 60L300 220H80Z' fill='url(#shaft)'/>` +
+    // the floor: polished marble with the window's reflection, the carpet down the middle
+    `<rect y='84' width='${W}' height='136' fill='url(#fl)'/>` +
+    `<g stroke='#e6d0e6' stroke-opacity='.12'>${Array.from({ length: 13 }, (_, i) => `<path d='M${CX} 40L${i * 36 - 26} 220'/>`).join('')}${[100, 122, 152, 192].map((y) => `<path d='M0 ${y}H380'/>`).join('')}</g>` +
+    `<ellipse cx='${CX}' cy='120' rx='30' ry='8' fill='#ff9ae8' fill-opacity='.25'/>` +
+    `<path d='M172 84L138 220H242L208 84Z' fill='url(#cp)'/>` +
+    `<path d='M172 84L138 220M208 84L242 220' stroke='#f0cf7a' stroke-width='2.4'/>` +
+    `<g fill='#f0cf7a' fill-opacity='.55'>${[110, 140, 176].map((y) => { const k = (y - 84) / 136; const w = 18 + k * 34; return `<path d='M${f(CX - w / 3)} ${y}l${f(w / 3)} -4l${f(w / 3)} 4l${f(-w / 3)} 4z'/>`; }).join('')}</g>` +
+    // columns down each side, lit on the window side
+    [[22, 20, 60], [338, 20, 60], [88, 12, 76], [280, 12, 76]].map(([x, w, y]) => `<rect x='${x}' y='${y}' width='${w}' height='${220 - y}' fill='url(#col)'/><rect x='${x - 3}' y='${y - 5}' width='${w + 6}' height='6' fill='#f0cf7a' fill-opacity='.65'/><rect x='${x - 3}' y='${y + 4}' width='${w + 6}' height='2' fill='#000' fill-opacity='.4'/>`).join('') +
+    // candelabras
+    [[52, 112], [328, 112]].map(([x, y]) => spot('cand', x, y, 34, 26) + `<path d='M${x} ${y + 24}V${y}M${x - 9} ${y + 2}Q${x} ${y + 10} ${x + 9} ${y + 2}' fill='none' stroke='#f0cf7a' stroke-width='1.6'/>` + flame(x - 9, y + 1, 7, '#ffe2a0') + flame(x, y - 1, 8, '#ffe2a0') + flame(x + 9, y + 1, 7, '#ffe2a0')).join(''),
+  { grain: 0.15 },
 );
 const castleTrim = trim(GOLD, '#ff9ae8', 'gem');
 
@@ -611,26 +619,34 @@ const millennium = scene(
     eye(CX, CY + 3, 30, '#2a1a08', '#fbe7a8') +
     // hieroglyph bands either side
     `<g fill='#3a2208' fill-opacity='.55'>${Array.from({ length: 6 }, (_, i) => `<rect x='18' y='${30 + i * 26}' width='12' height='4'/><circle cx='24' cy='${40 + i * 26}' r='3'/><rect x='350' y='${30 + i * 26}' width='12' height='4'/><path d='M350 ${44 + i * 26}h12l-6 -6z'/>`).join('')}</g>`,
+  { grain: 0.18 },
 );
 const millenniumTrim = trim(GOLD, '#2aa0a0', 'ankh');
 
-/** The Shadow Realm: violet fog over broken stone, a great eye watching from the dark. */
+/** The Shadow Realm: an eye in a violet sky, broken stone plates hanging in the void, chains, and fog. */
 const shadowrealm = scene(
-  rad('bg', [[0, '#4a1a6a'], [0.5, '#1a0828'], [1, '#05020a']], '50%', '30%', '85%') +
-    rad('fog', [[0, '#c070ff', 0.45], [1, '#c070ff', 0]]) +
-    rad('eyeg', [[0, '#ff4ad0', 0.9], [0.4, '#a020ff', 0.5], [1, '#a020ff', 0]]),
+  rad('bg', [[0, '#5a1a7a'], [0.5, '#1e0a30'], [1, '#05020a']], '50%', '15%', '90%') +
+    glowDef('fog', '#c070ff', 0.4) +
+    rad('eyeg', [[0, '#ff4ad0', 0.9], [0.4, '#a020ff', 0.5], [1, '#a020ff', 0]]) +
+    lin('plate', [[0, '#3a2050'], [1, '#120820']]) +
+    glowDef('rune', '#ff4ad0', 0.5),
   fill('bg') +
-    `<ellipse cx='${CX}' cy='40' rx='120' ry='40' fill='url(#eyeg)'/>` +
-    eye(CX, 44, 70, '#f0c0ff', '#ff4ad0', 0.75) +
-    // spires of rock rising through the fog
-    `<g fill='#0c0414' stroke='#c070ff' stroke-opacity='.55' stroke-width='1.2'><path d='M10 220 L30 120 L44 160 L56 104 L72 220 Z'/><path d='M310 220 L326 110 L338 150 L352 96 L370 220 Z'/><path d='M120 220 L134 168 L146 220 Z'/><path d='M240 220 L252 160 L266 220 Z'/></g>` +
-    `<g fill='#ff4ad0' fill-opacity='.8'><circle cx='44' cy='150' r='1.6'/><circle cx='338' cy='140' r='1.6'/><circle cx='52' cy='130' r='1.2'/></g>` +
-    // the floating stone the duel stands on, cracked, with a summoning circle cut in it
-    `<ellipse cx='${CX}' cy='150' rx='150' ry='46' fill='#1e0c2e' stroke='#c070ff' stroke-opacity='.45'/>` +
-    `<g fill='none' stroke='#e0a0ff' stroke-opacity='.5'><ellipse cx='${CX}' cy='150' rx='100' ry='30'/><ellipse cx='${CX}' cy='150' rx='84' ry='24' stroke-dasharray='3 4'/></g>` +
-    `<polygon points='${star(5, 92, 36, CX, 150).split(' ').map((p) => { const [x, y] = p.split(',').map(Number); return `${x},${f(150 + (y - 150) * 0.32)}`; }).join(' ')}' fill='none' stroke='#ff4ad0' stroke-opacity='.45' stroke-width='1.2'/>` +
-    `<g stroke='#05020a' stroke-width='1.6' fill='none'><path d='M80 140l20 10l-6 14M300 136l-18 14l8 12M170 186l10 -12l14 6'/></g>` +
-    `<ellipse cx='100' cy='110' rx='130' ry='30' fill='url(#fog)'/><ellipse cx='300' cy='190' rx='120' ry='30' fill='url(#fog)'/>`,
+    `<ellipse cx='${CX}' cy='34' rx='130' ry='40' fill='url(#eyeg)'/>` +
+    eye(CX, 38, 72, '#f0c0ff', '#ff4ad0', 0.85) +
+    `<g fill='none' stroke='#e0a0ff' stroke-opacity='.25'>${[60, 80, 100].map((r) => `<ellipse cx='${CX}' cy='38' rx='${r * 1.6}' ry='${r * 0.32}'/>`).join('')}</g>` +
+    // spires far off, with violet rim light
+    `<g fill='#0c0414' stroke='#c070ff' stroke-opacity='.6' stroke-width='1.2'><path d='M0 120L18 60L28 90L40 50L56 120Z'/><path d='M324 120L340 56L350 86L364 44L380 120Z'/></g>` +
+    // stone plates hanging in the void, lit along their top edges, the duel's plate in the middle
+    [[40, 150, 46, 14], [334, 140, 40, 12], [100, 204, 40, 10], [290, 206, 44, 10]].map(([x, y, rx, ry]) => `<ellipse cx='${x}' cy='${y + 6}' rx='${rx}' ry='${ry}' fill='#05020a'/><ellipse cx='${x}' cy='${y}' rx='${rx}' ry='${ry}' fill='url(#plate)' stroke='#c070ff' stroke-opacity='.6'/>`).join('') +
+    `<ellipse cx='${CX}' cy='160' rx='132' ry='42' fill='#05020a'/><ellipse cx='${CX}' cy='152' rx='132' ry='42' fill='url(#plate)' stroke='#e0a0ff' stroke-opacity='.7' stroke-width='1.4'/>` +
+    `<g stroke='#05020a' stroke-width='1.6' fill='none'><path d='M90 140l20 10l-6 14M296 136l-18 14l8 12M176 184l10 -12l14 6'/></g>` +
+    spot('rune', CX, 152, 110, 34) +
+    onFloor(152, 0.32, `<g fill='none' stroke='#ff4ad0' stroke-opacity='.75'><circle cx='${CX}' cy='${CY}' r='100' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='86' stroke-dasharray='3 5' stroke-width='2'/></g><polygon points='${star(5, 96, 38)}' fill='none' stroke='#ff4ad0' stroke-opacity='.7' stroke-width='2'/>`) +
+    // chains down into the dark
+    `<g fill='none' stroke='#8a6aa8' stroke-opacity='.6' stroke-width='1.6'>${[70, 312].map((x) => Array.from({ length: 6 }, (_, i) => `<ellipse cx='${x}' cy='${96 + i * 9}' rx='2.4' ry='4.6'/>`).join('')).join('')}</g>` +
+    spot('fog', 90, 112, 140, 22) +
+    spot('fog', 300, 196, 140, 24),
+  { grain: 0.2 },
 );
 const shadowrealmTrim = trim(OBSIDIAN, '#ff4ad0', 'diamond', '#e0a0ff');
 
@@ -654,13 +670,14 @@ const tomb = scene(
     `<g transform='translate(${CX} 140)'><path d='M-14 -6 Q-70 -30 -120 -10 Q-80 -14 -60 0 Q-90 0 -110 14 Q-60 6 -14 10 Z' fill='#f6dc96' fill-opacity='.28' stroke='#fbe7a8' stroke-opacity='.6'/><path d='M14 -6 Q70 -30 120 -10 Q80 -14 60 0 Q90 0 110 14 Q60 6 14 10 Z' fill='#f6dc96' fill-opacity='.28' stroke='#fbe7a8' stroke-opacity='.6'/></g>` +
     ankh(CX, 140, 70, '#fbe7a8', 0.9) +
     `<circle cx='${CX}' cy='117' r='4' fill='#2aa0a0'/>`,
+  { grain: 0.18 },
 );
 const tombTrim = trim(GOLD, '#2aa0a0', 'ankh');
 
 /** Holo Arena: a mirrored foil stage, rainbow light washing across it, prism shards hanging over the horizon. */
 const holo = scene(
   lin('bg', [[0, '#ff7ad8'], [0.2, '#7ab8ff'], [0.4, '#7affd8'], [0.6, '#fff07a'], [0.8, '#ffaa7a'], [1, '#c07aff']], 1, 0.4) +
-    lin('fl', [[0, '#1a1040', 0.55], [1, '#05030e', 0.95]]) +
+    lin('fl', [[0, '#1a1040', 0.3], [1, '#05030e', 0.8]]) +
     lin('sky', [[0, '#05030e', 0.85], [1, '#1a1040', 0.4]]) +
     glowDef('gl', '#ffffff', 0.5) +
     `<pattern id='dm' width='16' height='16' patternUnits='userSpaceOnUse'><path d='M8 0L16 8L8 16L0 8Z' fill='none' stroke='#fff' stroke-opacity='.16' stroke-width='.8'/></pattern>`,
@@ -680,28 +697,32 @@ const holo = scene(
 );
 const holoTrim = trim(['#ffffff', '#b07ad8', '#7ad8ff'], '#ff9ae8', 'star', '#ffffff');
 
-/** Heart of the Cards: warm light pouring from a heart, five cards rising round it, the floor aglow. */
+/** Heart of the Cards: dusk over a field of light, a deck on a stone pedestal sending up a pillar of warm light. */
 const heart = scene(
-  rad('bg', [[0, '#ffcf8a'], [0.35, '#a0442a'], [1, '#1a0806']], '50%', '30%', '80%') +
-    glowDef('gl', '#fff6d0', 0.85) +
-    lin('card', [[0, '#5a2a1a'], [1, '#2a1008']]) +
-    glowDef('fl', '#ffb04a', 0.5),
-  fill('bg') +
-    rays(24, 30, 280, '#ffe2b0', 2.4, 0.18, CX, 60) +
-    spot('gl', CX, 60, 110, 70) +
-    // five cards rising in a fan, each with a lit edge
-    [-44, -22, 0, 22, 44]
-      .map((a, i) => `<g transform='rotate(${a} ${CX} 130)'><rect x='${CX - 17}' y='${36 - (i === 2 ? 6 : 0)}' width='34' height='50' rx='3' fill='url(#card)' stroke='#ffe2b0' stroke-width='1.4'/><rect x='${CX - 12}' y='${41 - (i === 2 ? 6 : 0)}' width='24' height='22' fill='#ffb04a' fill-opacity='.35'/><path d='M${CX - 17} ${36 - (i === 2 ? 6 : 0)}h34' stroke='#fff' stroke-opacity='.8'/></g>`)
-      .join('') +
-    `<path d='M${CX} 102 C${CX - 40} 78 ${CX - 28} 46 ${CX} 62 C${CX + 28} 46 ${CX + 40} 78 ${CX} 102 Z' fill='#ff5a3a' stroke='#fff6d0' stroke-width='2.4'/>` +
-    `<path d='M${CX - 14} 64 q-8 8 -4 16' fill='none' stroke='#fff' stroke-opacity='.8' stroke-width='2.6' stroke-linecap='round'/>` +
-    // the floor it lights
-    `<path d='M0 120H380V220H0Z' fill='#2a0e08' opacity='.6'/>` +
-    `<path d='M0 120H380' stroke='#ffe2b0' stroke-opacity='.45'/>` +
-    spot('fl', CX, 160, 160, 50) +
-    onFloor(160, 0.5, `<circle cx='${CX}' cy='${CY}' r='92' fill='none' stroke='#ffe2b0' stroke-opacity='.65' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='78' fill='none' stroke='#ffe2b0' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/>${rays(16, 30, 74, '#ffe2b0', 2, 0.4)}`) +
-    scatter(22, 101, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.6 + r * 1.4)}' fill='#fff6d0' fill-opacity='${f(0.2 + r * 0.5)}'/>`),
-  { grain: 0.12 },
+  lin('sky', [[0, '#2a0e2a'], [0.5, '#a0402a'], [1, '#ffb070']]) +
+    lin('fl', [[0, '#5a2a14'], [1, '#1a0806']]) +
+    lin('pil', [[0, '#fff6d0', 0], [0.5, '#fff6d0', 0.7], [1, '#fff6d0', 0]], 1, 0) +
+    glowDef('gl', '#fff2c0', 0.8) +
+    glowDef('fl2', '#ffb04a', 0.45) +
+    lin('ped', [[0, '#a07a5a'], [1, '#3a2010']], 1, 0),
+  `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
+    `<rect width='${W}' height='92' fill='url(#sky)'/>` +
+    scatter(20, 701, [0, 0, 380, 50], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.4 + r * 0.8)}' fill='#fff' fill-opacity='${f(0.3 + r * 0.5)}'/>`) +
+    `<g fill='#5a2030' fill-opacity='.7'><path d='M0 92Q60 76 120 86T260 82T380 90V92Z'/></g>` +
+    // the pillar of light and the glow round it
+    `<rect x='${CX - 26}' y='0' width='52' height='96' fill='url(#pil)'/>` +
+    spot('gl', CX, 84, 90, 46) +
+    // the pedestal and the deck on it, edge lit
+    `<path d='M${CX - 26} 102H${CX + 26}L${CX + 20} 92H${CX - 20}Z' fill='url(#ped)'/><rect x='${CX - 30}' y='102' width='60' height='6' fill='#3a2010'/>` +
+    `<g opacity='1'>${[3, 2, 1, 0].map((i) => `<rect x='${CX - 11 + i}' y='${70 - i * 1.6}' width='22' height='22' rx='2' fill='${i ? '#3a1a10' : '#5a2a14'}' stroke='#ffe2b0' stroke-opacity='${i ? 0.3 : 0.9}'/>`).join('')}</g>` +
+    `<path d='M${CX} 86 C${CX - 8} 80 ${CX - 6} 74 ${CX} 77 C${CX + 6} 74 ${CX + 8} 80 ${CX} 86 Z' fill='#ffcf8a'/>` +
+    // the field of light toward you
+    `<g stroke='#ffe2b0' stroke-opacity='.18'>${Array.from({ length: 13 }, (_, i) => `<path d='M${CX} 92L${i * 36 - 26} 220'/>`).join('')}</g>` +
+    `<path d='M0 92H380' stroke='#ffe2b0' stroke-opacity='.55'/>` +
+    spot('fl2', CX, 160, 170, 54) +
+    onFloor(160, 0.5, `<circle cx='${CX}' cy='${CY}' r='94' fill='none' stroke='#ffe2b0' stroke-opacity='.7' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='80' fill='none' stroke='#ffe2b0' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/>${rays(16, 30, 76, '#ffe2b0', 2, 0.45)}<path d='M${CX} ${CY + 26} C${CX - 36} ${CY + 2} ${CX - 24} ${CY - 26} ${CX} ${CY - 12} C${CX + 24} ${CY - 26} ${CX + 36} ${CY + 2} ${CX} ${CY + 26} Z' fill='#ff7a4a' fill-opacity='.35' stroke='#ffe2b0' stroke-opacity='.7' stroke-width='1.6'/>`) +
+    scatter(22, 101, [0, 92, 380, 128], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.6 + r * 1.4)}' fill='#fff6d0' fill-opacity='${f(0.2 + r * 0.5)}'/>`),
+  { grain: 0.15 },
 );
 const heartTrim = trim(GOLD, '#ff6a4a', 'gem');
 
@@ -728,6 +749,13 @@ export const PLAYMAT_SVG = {
   heart,
 };
 export type PlaymatId = keyof typeof PLAYMAT_SVG;
+/** How strong each mat's grain lies over its scene (0: none). */
+export const PLAYMAT_GRAIN = Object.fromEntries(Object.entries(PLAYMAT_SVG).map(([k, v]) => [k, GRAIN.get(v) ?? 0])) as Record<PlaymatId, number>;
+/** The grain: 96 px of fixed dots, light and dark, no filter (cheap at any size). */
+export function grainTile(): string {
+  const T = 96;
+  return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${T} ${T}' width='${T}' height='${T}'>${scatter(340, 77, [0, 0, T, T], (x, y, r, i) => `<rect x='${x}' y='${y}' width='${r > 0.8 ? 2 : 1}' height='1' fill='${i % 3 ? '#000' : '#fff'}' opacity='${f(0.25 + r * 0.6)}'/>`)}</svg>`;
+}
 
 export const PLAYMAT_TRIM: Record<PlaymatId, string> = {
   blue: blueTrim,
@@ -792,6 +820,12 @@ export function trimUrl(id: PlaymatId): string {
   const k = `t:${id}`;
   let u = urls.get(k);
   if (!u) urls.set(k, (u = cssUrl(PLAYMAT_TRIM[id])));
+  return u;
+}
+/** The CSS url() of the grain tile (made once). */
+export function grainUrl(): string {
+  let u = urls.get('grain');
+  if (!u) urls.set('grain', (u = cssUrl(grainTile())));
   return u;
 }
 /** The CSS url() of a motion tile ('none' when the motion needs none). */

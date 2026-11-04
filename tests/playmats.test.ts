@@ -2,7 +2,7 @@
 // side, the mat riding a room's JOIN to the other phone, and staying cheap on a phone.
 import assert from 'node:assert/strict';
 import { buyPlaymat, cantBuyPlaymat, chosenPlaymat, DEFAULT_PLAYMAT, duelPlaymatOf, hasPlaymat, isPlaymat, pickPlaymat, playmatClass, playmatForName, playmatFromWire, showDuelPlaymats, PLAYMATS, playmatProgress } from '../src/playmats/playmats';
-import { PLAYMAT_SVG, PLAYMAT_TRIM, fxTile, fxUrl, matUrl, trimUrl } from '../src/playmats/art';
+import { PLAYMAT_GRAIN, PLAYMAT_SVG, PLAYMAT_TRIM, fxTile, grainTile, fxUrl, matUrl, trimUrl } from '../src/playmats/art';
 import { DuelSession } from '../src/eds/session';
 import { MemoryAdapter } from '../src/sync/memory';
 import { newSpeedSave, type SpeedSave } from '../src/eds/speedSave';
@@ -180,6 +180,13 @@ t('cheap on phones: one moving layer a half, transform/opacity only, held for ci
   assert.ok(!/mix-blend-mode|backdrop-filter|filter:\s*blur/.test(css.split('the Playmats page')[0]), 'no blend or blur on the duel screen');
   const halves = readFileSync('src/playmats/Halves.tsx', 'utf8');
   assert.equal((halves.match(/class="pm-fx"/g) ?? []).length, 1, 'one moving layer per half');
+  // (no SVG filter anywhere: a filter is rasterised again on the CPU at every new drawn size)
+  for (const [id, svg] of Object.entries({ ...PLAYMAT_SVG, ...Object.fromEntries(Object.entries(PLAYMAT_TRIM).map(([k, v]) => [`${k} trim`, v])) })) assert.ok(!/<filter|filter=/.test(svg), `${id} has no filter`);
+  assert.ok(!/<filter|filter=/.test(grainTile()) && grainTile().length < 30000);
+  assert.ok(Object.values(PLAYMAT_GRAIN).some((g) => g > 0) && Object.values(PLAYMAT_GRAIN).every((g) => g >= 0 && g < 0.5));
+  // (the motion bursts restart from the turn number in both layouts, not from a turn-opp class)
+  for (const f of ['src/ui/TouchDuel.tsx', 'src/ui/Duel.tsx']) assert.match(readFileSync(f, 'utf8'), /<PlaymatHalves [^\n]*turn=\{state\.turn\}/, f);
+  assert.ok(!/turn-opp/.test(css) && /\.pm-t-odd \.pm-fx/.test(css));
 });
 
 console.log(`\n${n} playmat tests passed`);

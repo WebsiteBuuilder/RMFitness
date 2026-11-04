@@ -771,7 +771,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
       <div class="field">
         {sideBox(other(acting), true)}
         <div class={`rows${e.speed ? ' pm-rows' : ''}`}>
-          {e.speed && <PlaymatHalves me={acting} opp={other(acting)} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, other(acting)) }} />}
+          {e.speed && <PlaymatHalves me={acting} opp={other(acting)} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, other(acting)) }} turn={state.turn} />}
           <div class="row">{opp.sz.map((c, i) => zone(c, other(acting), 's', i))}</div>
           <div class="row">{opp.mz.map((c, i) => zone(c, other(acting), 'm', i))}</div>
           <div class="center">

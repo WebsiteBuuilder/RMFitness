@@ -1,7 +1,7 @@
 // The playmats of the duel on screen: each side's, as a class on its half of the field.
 import { useEffect, useState } from 'preact/hooks';
 import type { Pid } from '../eds/types';
-import { fxUrl, matUrl, trimUrl } from './art';
+import { fxUrl, grainUrl, matUrl, PLAYMAT_GRAIN, trimUrl } from './art';
 import { playmatDef, type PlaymatId } from './roster';
 
 let duelMats: [PlaymatId | null, PlaymatId | null] = [null, null];
@@ -39,11 +39,13 @@ function writeRule(id: PlaymatId) {
     sheet = document.createElement('style');
     sheet.dataset.playmats = '';
     document.head.appendChild(sheet);
+    // (the one grain tile every mat shares)
+    sheet.appendChild(document.createTextNode(`:root{--pm-grain-img:${grainUrl()}}\n`));
   }
   written.add(id);
   const d = playmatDef(id)!;
   sheet.appendChild(
-    document.createTextNode(`.pm-id-${id}{--pm-img:${matUrl(id)};--pm-trim:${trimUrl(id)};--pm-fx:${fxUrl(d.fx, d.fxColor)};--pm-fx-c:${d.fxColor};--pm-line:${d.line};--pm-glow:${d.glow}}\n`),
+    document.createTextNode(`.pm-id-${id}{--pm-img:${matUrl(id)};--pm-trim:${trimUrl(id)};--pm-fx:${fxUrl(d.fx, d.fxColor)};--pm-fx-c:${d.fxColor};--pm-line:${d.line};--pm-glow:${d.glow};--pm-grain:${PLAYMAT_GRAIN[id]}}\n`),
   );
 }
 /** The classes that dress a half (or a picker preview) in a mat. */

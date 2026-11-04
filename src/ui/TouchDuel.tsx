@@ -905,7 +905,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <i class="tarena-floor" />
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
-          {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} />}
+          {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} turn={state.turn} />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
           <div class={`trow${e.speed ? rowMatClass(oppId) : ''}`}>

@@ -76,8 +76,7 @@ export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave
   const price = 'chips' in def.cost ? def.cost.chips : 0;
   const prog = owned ? null : playmatProgress(save, def, solo);
   const cls = playmatClass(look);
-  const isAttr = /^[A-Z]+$/.test(def.name);
-
+  
   return (
     <div class="screen sleeves playmats" ref={top}>
       <Win title="Playmats" onClose={onBack}>
@@ -111,7 +110,7 @@ export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave
           </div>
         </div>
         <div class="slv-info pmp-info">
-          <b>{isAttr ? `${def.name} Attribute` : def.name}</b>
+          <b>{def.name}</b>
           <p>{def.blurb}</p>
           {look === current ? (
             <span class="mt-cost own">★ Under your cards</span>
@@ -121,11 +120,9 @@ export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave
             </button>
           ) : price ? (
             chipsOf(save) < price ? (
-              <span class="slv-buy-wait">
-                <button class="gbtn mt-go slv-go" disabled>
-                  Get for ● {price}
-                </button>
-                <small>Win {price - chipsOf(save)} more Duel Chips in duels</small>
+              <span class="pmp-price">
+                <b>● {price} Duel Chips</b>
+                <small>You have {chipsOf(save)}. Win {price - chipsOf(save)} more in duels to get it.</small>
               </span>
             ) : (
               <button class="gbtn mt-go slv-go" disabled={!!why} onClick={() => (playBlip(), setBuying(look))}>

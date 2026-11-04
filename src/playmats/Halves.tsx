@@ -7,11 +7,11 @@
 import type { Pid } from '../eds/types';
 import { duelPlaymatOf, playmatClass, useDuelPlaymats } from './duel';
 
-function Half({ side, pos, fieldUp }: { side: Pid; pos: 'me' | 'opp'; fieldUp: boolean }) {
+function Half({ side, pos, fieldUp, odd }: { side: Pid; pos: 'me' | 'opp'; fieldUp: boolean; odd: boolean }) {
   const id = duelPlaymatOf(side);
   if (!id) return null;
   return (
-    <div class={`pm-half ${pos}${playmatClass(id)}${fieldUp ? ' fieldup' : ''}`} aria-hidden="true">
+    <div class={`pm-half ${pos}${playmatClass(id)}${fieldUp ? ' fieldup' : ''}${odd ? ' pm-t-odd' : ''}`} aria-hidden="true">
       <i class="pm-art" />
       <i class="pm-fx" />
       <i class="pm-trim" />
@@ -19,13 +19,16 @@ function Half({ side, pos, fieldUp }: { side: Pid; pos: 'me' | 'opp'; fieldUp: b
   );
 }
 
-/** Both halves (nothing when neither side has a mat). `field` says which halves a Field Spell's landscape holds. */
-export function PlaymatHalves({ me, opp, field }: { me: Pid; opp: Pid; field: { me: boolean; opp: boolean } }) {
+/** Both halves (nothing when neither side has a mat). `field` says which halves a Field Spell's
+ *  landscape holds; `turn` is the duel's turn number (its motion name flips with it each turn, so
+ *  the burst of motion starts again every turn in every layout, hotseat included). */
+export function PlaymatHalves({ me, opp, field, turn }: { me: Pid; opp: Pid; field: { me: boolean; opp: boolean }; turn: number }) {
+  const odd = turn % 2 === 1;
   useDuelPlaymats();
   return (
     <>
-      <Half side={opp} pos="opp" fieldUp={field.opp} />
-      <Half side={me} pos="me" fieldUp={field.me} />
+      <Half side={opp} pos="opp" fieldUp={field.opp} odd={odd} />
+      <Half side={me} pos="me" fieldUp={field.me} odd={odd} />
     </>
   );
 }
