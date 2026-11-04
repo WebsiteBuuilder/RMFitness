@@ -1084,7 +1084,8 @@ export function SpeedDeckEdit({ deck, onChange, onBack, collection, craft: craft
             )}
           </div>
         )}
-        <div class={`dk-grid dk-poolgrid dk-size-${size}`}>
+        {/* a new search or view deals its first cards in, like a hand being dealt */}
+        <div class={`dk-grid dk-poolgrid dk-size-${size}`} key={`${dq}|${show}|${kind}|${attr}|${lvl}|${setF}|${minAtk}|${inText}`}>
           {shown.map((n) => {
             const why = unplayableReason(n);
             const inDeck = copies(n);

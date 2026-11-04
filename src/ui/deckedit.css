@@ -860,7 +860,7 @@
 .dk-empty p {
   margin: 0;
 }
-.dk-skillsearch {
+.win input.search.dk-skillsearch {
   display: block;
   width: 100%;
   max-width: none;
@@ -869,10 +869,11 @@
   box-sizing: border-box;
 }
 /* in All cards, the cards you'd have to craft read as clearly not yours */
-.dk-poolgrid .dk-tile.unowned .cimg {
+/* every layer of the picture (some cards draw theirs in extra layers), never the badges */
+.dk-poolgrid .dk-tile.unowned > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
   filter: grayscale(0.7) brightness(0.72);
 }
-.dk-poolgrid .dk-tile.unowned:active .cimg {
+.dk-poolgrid .dk-tile.unowned:active > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
   filter: grayscale(0.4) brightness(0.9);
 }
 /* Limited cards say so in words, not a lone number that reads like a price */
@@ -889,10 +890,69 @@
 }
 .dk-skills + .hint {
   text-align: center;
-}/* Skill pictures still on their way show the name: whole words, small */
+}/* a Skill without its picture shows a star: its name is right beside it */
 .dk-skills .ctext-name {
-  word-break: normal;
-  overflow-wrap: normal;
-  font-size: 7px;
-  line-height: 1.1;
+  display: none;
+}
+.dk-skills .ctext {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dk-skills .ctext::after {
+  content: '✦';
+  font-size: 18px;
+  color: #f3d27a;
+}
+
+/* a fresh result set deals its first cards in; later pages just appear */
+.dk-poolgrid .dk-tile:nth-child(-n + 16) {
+  animation: dk-deal 0.22s ease-out both;
+}
+.dk-poolgrid .dk-tile:nth-child(2) { animation-delay: 15ms; }
+.dk-poolgrid .dk-tile:nth-child(3) { animation-delay: 30ms; }
+.dk-poolgrid .dk-tile:nth-child(4) { animation-delay: 45ms; }
+.dk-poolgrid .dk-tile:nth-child(5) { animation-delay: 60ms; }
+.dk-poolgrid .dk-tile:nth-child(6) { animation-delay: 75ms; }
+.dk-poolgrid .dk-tile:nth-child(7) { animation-delay: 90ms; }
+.dk-poolgrid .dk-tile:nth-child(8) { animation-delay: 105ms; }
+.dk-poolgrid .dk-tile:nth-child(n + 9):nth-child(-n + 16) { animation-delay: 120ms; }
+@keyframes dk-deal {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+/* a tile you press gives under your thumb */
+.dk-poolgrid .dk-tile {
+  transition: transform 0.12s ease;
+}
+.dk-poolgrid .dk-tile:active {
+  transform: scale(0.95);
+}
+.dk-show-b.on {
+  animation: dk-show-on 0.2s ease-out;
+}
+@keyframes dk-show-on {
+  from {
+    transform: scale(0.92);
+  }
+}
+/* far down All cards, tiles off the screen skip layout and paint until you get near them */
+.dk-poolgrid .dk-tile:nth-child(n + 61) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 112px;
+}
+.dk-poolgrid.dk-size-s .dk-tile:nth-child(n + 61) {
+  contain-intrinsic-block-size: auto 76px;
+}
+.dk-poolgrid.dk-size-l .dk-tile:nth-child(n + 61) {
+  contain-intrinsic-block-size: auto 170px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dk-poolgrid .dk-tile,
+  .dk-show-b.on {
+    animation: none;
+    transition: none;
+  }
 }
