@@ -182,6 +182,42 @@ const handEl = (uid: number) => document.querySelector(`.thand [data-uid="${uid}
 const deckEl = (p: Pid) => document.querySelector(`[data-pile="deck${p}"]`) as HTMLElement | null;
 const faceOf = (el: HTMLElement | null) => (el?.querySelector('img.cimg') as HTMLImageElement | null)?.src ?? '';
 
+/** Where the hint chip fits best by the deck: left of it, under it, over it, or centred under it;
+ *  the first spot that covers no button outside the draw screen, else the one that covers least. */
+export function chipSpot(el: HTMLElement, deck: DOMRect): { left: number; top: number } {
+  const cw = el.offsetWidth;
+  const ch = el.offsetHeight;
+  const gate = el.closest('.hd-gate');
+  const blocks: DOMRect[] = [];
+  document.querySelectorAll('button, [role="button"]').forEach((b) => {
+    if (gate?.contains(b)) return;
+    const r = b.getBoundingClientRect();
+    if (r.width && r.height && r.bottom > 0 && r.top < innerHeight) blocks.push(r);
+  });
+  const pad = 6;
+  const clampX = (x: number) => Math.min(Math.max(8, x), innerWidth - cw - 8);
+  const cands = [
+    { left: deck.left - 10 - cw, top: deck.top + deck.height / 2 - ch / 2 },
+    { left: clampX(deck.right - cw), top: deck.bottom + 8 },
+    { left: clampX(deck.right - cw), top: deck.top - 8 - ch },
+    { left: clampX(deck.left + deck.width / 2 - cw / 2), top: deck.bottom + 8 },
+  ];
+  let best = cands[0];
+  let bestCost = Infinity;
+  for (const c of cands) {
+    const off = c.left < 4 || c.top < 4 || c.left + cw > innerWidth - 4 || c.top + ch > innerHeight - 4;
+    let cost = off ? 1e9 : 0;
+    for (const r of blocks) {
+      const w = Math.min(c.left + cw, r.right + pad) - Math.max(c.left, r.left - pad);
+      const hh = Math.min(c.top + ch, r.bottom + pad) - Math.max(c.top, r.top - pad);
+      if (w > 0 && hh > 0) cost += w * hh;
+    }
+    if (cost === 0) return c;
+    if (cost < bestCost) (best = c), (bestCost = cost);
+  }
+  return best;
+}
+
 export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { gate: DrawGateInfo; state: DuelState; acting: Pid; blocked: boolean; /** a question of yours is up: the card goes straight to your hand (it may be one of the answers) */ prompted: boolean; onDone: () => void }) {
   const card = state.players[acting].hand.find((c) => c.uid === gate.uid);
   // the gate opens once no cinematic is playing (and the phone has been handed over)
@@ -280,6 +316,17 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
 
   // ----- the destiny reveal -----
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // The "Swipe up to draw" chip goes beside the deck, at the first spot that covers none of the
+  // board's buttons (Battle / End Turn sit right next to the deck in Classic on a small phone).
+  // Measured once per deck position: a querySelectorAll and some rects, no per-frame work.
+  const chipRef = useRef<HTMLDivElement>(null);
+  const [chipAt, setChipAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = chipRef.current;
+    if (!el || !deck) return setChipAt(null);
+    setChipAt(chipSpot(el, deck));
+  }, [deck?.left, deck?.top, deck?.width, deck?.height, phase]);
   const flipRef = useRef<HTMLDivElement>(null);
   const auraRef = useRef<HTMLDivElement>(null);
   const [named, setNamed] = useState(false);
@@ -419,7 +466,11 @@ export function DrawGate({ gate, state, acting, blocked, prompted, onDone }: { g
               <span>Swipe up for your destiny draw</span>
             </div>
           ) : (
-            hintCount() < HINT_TIMES && <div class="hd-chip">Swipe up to draw</div>
+            hintCount() < HINT_TIMES && (
+              <div ref={chipRef} class="hd-chip" style={chipAt ? { left: `${chipAt.left}px`, top: `${chipAt.top}px`, right: 'auto', translate: 'none' } : undefined}>
+                Swipe up to draw
+              </div>
+            )
           )}
         </>
       )}
