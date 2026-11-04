@@ -667,9 +667,9 @@ function markIntro(seed: number) {
   store.set(INTRO_KEY, JSON.stringify([...done.slice(-29), seed]));
 }
 /** Will this duel open with the listener's entrance? (the face-off then lets the jingle be its music) */
-export function entranceComing(seed: number, side: Pid): boolean {
+export function entranceComing(seed: number, side: Pid, turn: number): boolean {
   const ctx = rawAudioContext();
-  return musicEnabled() && !!ctx && ctx.state === 'running' && !!duelJingleOf(side) && !intros.has(seed) && !introsDone().includes(seed);
+  return turn <= 1 && !(typeof document !== 'undefined' && document.hidden) && musicEnabled() && !!ctx && ctx.state === 'running' && !!duelJingleOf(side) && !intros.has(seed) && !introsDone().includes(seed);
 }
 /** Cuts the entrances short (the duel was left, Music went Off, the phone locked). */
 function cutEntrances() {
@@ -677,6 +677,16 @@ function cutEntrances() {
   clearJingleToasts();
 }
 let entranceBye: ReturnType<typeof setTimeout> | null = null;
+// The phone locked (or the tab went away) mid-entrance: cut it now, before the audio is put to
+// sleep, so it never finishes late on wake; the duel's music then starts straight away.
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    const ctx = rawAudioContext();
+    let cut = false;
+    for (const [seed, until] of intros) if (until && (!ctx || ctx.currentTime < until)) (intros.set(seed, 0), (cut = true));
+    if (cut) cutEntrances();
+  });
 let entranceSeed = 0;
 
 /**

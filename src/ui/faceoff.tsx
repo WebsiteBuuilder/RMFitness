@@ -41,7 +41,7 @@ export function FaceOff({ state, acting, mateOf, onDone }: { state: DuelState; a
   };
   useEffect(() => {
     // your entrance jingle opening the duel is the face-off's music: the sweep and clash step aside for it
-    const quiet = entranceComing(state.seed, acting);
+    const quiet = entranceComing(state.seed, acting, state.turn);
     if (!quiet) sfx.faceoffSweep();
     const ts = [
       setTimeout(() => (quiet || sfx.faceoffClash(), setStage(1)), 430),
