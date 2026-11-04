@@ -4885,13 +4885,37 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
         return { x: p.x + (i - 1) * 0.35 * U, y: p.y + Math.sin(q * Math.PI) * lift, z: p.z + 0.3 };
       });
       // (a crest: thin where it leaves, a breaking wall where it lands)
-      rib.set(pts, (q) => (0.16 + i * 0.06) * U * (0.4 + 1.4 * q * q));
+      rib.set(pts, (q) => (0.42 + i * 0.12) * U * (0.35 + 1.3 * q * q));
       rib.u.uOpacity.value = i === 1 ? 0.9 : 0.75;
       tl.span(s + i * 0.04, s + travel + i * 0.04, (k) => (rib.u.uHead.value = easeIn(k) * 1.05));
       tl.span(s + travel + 0.15, s + travel + 0.55, (k) => ((rib.u.uTail.value = easeIn(k)), (rib.u.uOpacity.value *= 0.92)));
     }
+    // the wave itself: a wall of water rolling from it onto the target, cresting white as it breaks
+    const wall = [tl.own(new Ribbon(20, 0x1a5aff, 1)), tl.own(new Ribbon(20, 0x7fd8ff, 1)), tl.own(new Ribbon(20, 0xffffff, 1))];
+    const wpts = Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0 }));
+    tl.span(s - 0.05, s + travel + 0.35, (k) => {
+      const go = easeIn(clamp01(k * 1.25));
+      const c0 = P3lerp(A, T, go);
+      const rise = Math.sin(Math.min(1, k * 1.25) * Math.PI * 0.85) * 0.9 * U;
+      const op = k > 0.8 ? (1 - k) * 5 : Math.min(1, k * 6);
+      wall.forEach((r, i) => {
+        for (let j = 0; j < 12; j++) {
+          const q = j / 11 - 0.5;
+          wpts[j].x = c0.x + q * 3.2 * U;
+          wpts[j].y = c0.y + rise * (1 - q * q * 2.4) + i * 0.32 * U - 0.35 * U;
+          wpts[j].z = c0.z + 0.35;
+        }
+        r.set(wpts, (q) => (i === 2 ? 0.14 : i ? 0.42 : 0.75) * U * Math.sin(q * Math.PI));
+        r.u.uOpacity.value = op * (i === 2 ? 0.9 : 0.75);
+      });
+    });
     tl.at(s, () => whoosh(travel + 0.5, 200, 900, 0.4));
-    tl.at(s + travel, () => st.particles.emit({ x: T.x, y: T.y, z: T.z, vy: 5 * U, burst: 4 * U, gravity: 10 * U, life: 1, size: 0.16 * U, color: 0xbfefff, drag: 0.4 }, Math.round(150 * c.q)));
+    tl.at(s + travel, () => {
+      st.particles.emit({ x: T.x, y: T.y, z: T.z, vy: 5 * U, burst: 4 * U, gravity: 10 * U, life: 1, size: 0.2 * U, color: 0xbfefff, drag: 0.4 }, Math.round(150 * c.q));
+      // the foam where it breaks
+      st.particles.emit({ x: T.x, y: T.y - 0.3 * U, z: T.z + 0.3, r: 0.8 * U, vy: 1.5 * U, burst: 1.5 * U, gravity: 2 * U, life: 0.9, size: 0.34 * U, size1: 0.1 * U, color: 0xffffff, drag: 1.5 }, Math.round(60 * c.q));
+    });
+    ringPop(c, T, 3 * U, s + travel, 0x2a8aff, 0xbfefff, 0.5);
   },
   // Winged Beast: it climbs, folds its wings and dives in a whirlwind
   dive(c) {
@@ -4907,8 +4931,7 @@ const FINISHERS: Record<FinisherKind, FinFn> = {
       for (let j = 0; j < rate(60 * c.q, dt); j++) c.st.particles.emit({ x: c.A.x + (Math.random() - 0.5) * U, y: c.A.y, z: c.A.z, vy: -1.5 * U, life: 0.8, size: 0.1 * U, color: 0xffffff, drag: 1, gravity: 1 * U });
     });
     // (the whirlwind stands on the bird's path, so the dive goes through it)
-    tornado(asPreset(c), P3lerp(c.A, T, 0.55), s - 0.1, s + travel + 0.6, col.main, col.light);
-    STYLES.gale(c, 1.5);
+    tornado(asPreset(c), P3lerp(c.A, T, 0.4), s - 0.1, s + travel + 0.6, col.main, col.light);
   },
   // Fiend / Zombie: the ground opens under the target, hands of shadow drag it down, then it implodes
   curse(c) {
