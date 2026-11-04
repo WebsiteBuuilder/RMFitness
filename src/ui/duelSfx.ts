@@ -77,7 +77,7 @@ const thud = (size = 0.5, when = 0) => tone(95 + size * 30, 0.3 + size * 0.3, 0.
 // ------------------------------------------------------------ Life Points
 
 /** The counter sound now playing (a new count cuts it off: counts never stack). */
-let counting: { ctx: BaseAudioContext; osc: OscillatorNode[]; gate: GainNode } | null = null;
+let counting: { ctx: BaseAudioContext; osc: OscillatorNode[]; gate: GainNode; at: number; amt: number } | null = null;
 
 
 /** Tick spacing of the counter (s): about 30 a second, the rolling-digits rattle of the show's counter. */
@@ -103,6 +103,9 @@ export function lpCount(delta: number, left: number, ms = 600) {
 /** The counter's beeps into `out` (the speakers, or an offline render in a test). */
 export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number, left: number, ms: number) {
   const now = ctx.currentTime;
+  const amt = Math.abs(delta);
+  // both duelists' counters starting together (a battle, a Skill hitting both): one rattle, the bigger change's
+  if (counting && counting.ctx === ctx && now - counting.at < 0.05 && counting.amt >= amt) return;
   if (counting && counting.ctx === ctx) {
     counting.gate.gain.cancelScheduledValues(now);
     counting.gate.gain.setTargetAtTime(0, now, 0.004);
@@ -115,7 +118,6 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
     }
   }
   counting = null;
-  const amt = Math.abs(delta);
   const dmg = delta < 0;
   const s = ms / 1000;
   const vol = (dmg ? 0.06 : 0.045) + Math.min(1, amt / 2000) * 0.05;
@@ -149,7 +151,7 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
     gate.gain.setValueAtTime(0, t + on);
   }
   const end = now + s;
-  const stopAt = left <= 0 ? end : end + 0.13;
+  const stopAt = left <= 0 ? end : end + 0.16;
   if (left > 0) {
     // the number lands: one longer beep, a step down for damage, up for a gain
     hi.frequency.setValueAtTime(dmg ? f1 * 0.75 : f1 * 1.19, end);
@@ -161,7 +163,7 @@ export function lpCountInto(ctx: BaseAudioContext, out: AudioNode, delta: number
   lo.start(now);
   hi.stop(stopAt);
   lo.stop(stopAt);
-  const me = { ctx, osc: [hi, lo], gate };
+  const me = { ctx, osc: [hi, lo], gate, at: now, amt };
   counting = me;
   hi.onended = () => {
     if (counting === me) counting = null;

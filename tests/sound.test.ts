@@ -17,8 +17,12 @@ let started = 0;
 let steps = 0;
 const param = () => ({ value: 0, setValueAtTime: () => steps++, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
 const node = () => ({ connect: (n: unknown) => n });
+let clockT = 0;
 class FakeCtx {
-  currentTime = 0;
+  // (time moves on between sounds: counts asked for at the same moment would merge)
+  get currentTime() {
+    return (clockT += 0.1);
+  }
   sampleRate = 8000;
   state = 'running';
   destination = node();

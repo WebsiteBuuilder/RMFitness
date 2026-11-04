@@ -259,6 +259,8 @@ export class Flow {
   private promptSkipped: unknown = null;
   /** when the Life Points on screen last changed (performance.now() ms) */
   private lpAt = -1e9;
+  /** how long the last Life Points change takes to count (lpCountMs of the bigger change) */
+  private lpMs = LP_TICK_MS;
   /** the won duel waiting for its Life Points to finish counting before the result shows */
   private winHeld: DuelState | null = null;
   private winTimer = 0;
@@ -467,11 +469,14 @@ export class Flow {
     // (the live state changes in place: what it showed before is the copy taken at the last update)
     const prev = this.shown === this.real && this.prevSnap ? this.prevSnap : this.shown;
     const now = clock();
-    if (prev && lpOf(prev) !== lpOf(next)) this.lpAt = now;
+    if (prev && lpOf(prev) !== lpOf(next)) {
+      this.lpAt = now;
+      this.lpMs = Math.max(...next.players.map((p, i) => lpCountMs(p.lp - prev.players[i].lp)));
+    }
     clearTimeout(this.winTimer);
     this.winHeld = null;
     if (prev && next.winner !== null && prev.winner === null) {
-      const wait = this.lpAt + LP_TICK_MS + WIN_AFTER_LP_MS - now;
+      const wait = this.lpAt + this.lpMs + WIN_AFTER_LP_MS - now;
       if (wait > 0) {
         this.winHeld = next;
         this.shown = { ...next, winner: null };
@@ -551,7 +556,7 @@ export class Flow {
     this.outbox = [];
     if (this.pending.length) this.advance(this.pending.length - 1);
     // a tap once the Life Points read their last value goes straight to the result
-    else if (this.winHeld && clock() >= this.lpAt + LP_TICK_MS && lpCounted(this.winHeld)) this.revealWin(true);
+    else if (this.winHeld && clock() >= this.lpAt + this.lpMs && lpCounted(this.winHeld)) this.revealWin(true);
   }
 
   /** Hold to skip all: during the opponent's turn, no more cinematics until it ends. */
@@ -705,7 +710,8 @@ export function LpCount({ value, who }: { value: number; who?: Pid }) {
     if (from === value) return void (who !== undefined && lpShown.set(who, value));
     if (value < from) setHits((h) => h + 1);
     // (the roll takes longer the bigger the change, and its ticking sound runs exactly as long)
-    const ms = lpCountMs(value - from);
+    // (one that cuts into a count still rolling, as in a fast replay, rolls quickly so it lands)
+    const ms = from !== aimed ? Math.min(450, lpCountMs(value - from)) : lpCountMs(value - from);
     lpCountSound(value - from, value, ms);
     if (who !== undefined && aimed !== value) emitLpHit(who, aimed, value);
     const t0 = performance.now();
