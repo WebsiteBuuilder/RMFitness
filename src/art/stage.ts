@@ -2667,6 +2667,8 @@ export class Stage {
   warp = 1;
   /** a chain card is being read (chain spotlight): everything on stage holds still */
   pause = false;
+  /** held still for a manga panel (its own flag: a chain card read meanwhile keeps `pause`) */
+  freeze = false;
   private pauseDrawn = false;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
@@ -2985,16 +2987,17 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     // paused (a chain card being read): the frame already drawn stays; nothing is drawn or measured
-    if (this.pause && this.pauseDrawn) {
+    const still = this.pause || this.freeze;
+    if (still && this.pauseDrawn) {
       this.last = now;
       this.raf = requestAnimationFrame(this.loop);
       return;
     }
-    this.pauseDrawn = this.pause;
+    this.pauseDrawn = still;
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
-    let dt = this.pause ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
+    let dt = still ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;
