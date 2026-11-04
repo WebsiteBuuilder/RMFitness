@@ -30,7 +30,7 @@ import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
 import { wearKey, ZoneWear } from './fieldWear';
-import { WeatherFront, WeatherSky } from './Weather';
+import { WeatherFront, WeatherSky, WeatherWash } from './Weather';
 import { fieldTerrain } from './atmosphereRules';
 import { PlaymatHalves, rowMatClass } from '../playmats/Halves';
 import { useDuelPlaymats } from '../playmats/duel';
@@ -912,6 +912,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} turn={state.turn} />}
+          {e.speed && <WeatherWash state={state} />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
           <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>

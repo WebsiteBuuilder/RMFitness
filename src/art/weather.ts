@@ -205,7 +205,7 @@ export class WeatherFx {
     }
     // splashes on the mat (rain only): small rings that open and fade
     if (this.kind === 'rain' && this.count > 0 && !this.reduced) {
-      const want = this.amount * 9 * dt * 30;
+      const want = this.amount * 12 * dt * 30;
       for (let i = 0; i < want; i++) if (Math.random() < want - i) this.splashes.push(w * (0.08 + Math.random() * 0.84), h * (0.12 + Math.random() * 0.8), 0);
     }
     if (this.splashes.length) {
@@ -224,8 +224,8 @@ export class WeatherFx {
         c.ellipse(s[i], s[i + 1], r, r * 0.38, 0, 0, Math.PI * 2);
       }
       s.length = j;
-      c.lineWidth = 0.8 * dpr;
-      c.strokeStyle = 'rgba(205,225,255,0.24)';
+      c.lineWidth = 1 * dpr;
+      c.strokeStyle = 'rgba(210,228,255,0.34)';
       c.stroke();
     }
     if (this.bolts.length) this.drawBolts(now);
@@ -251,8 +251,8 @@ export class WeatherFx {
         c.moveTo(d[o], d[o + 1]);
         c.lineTo(d[o] - len * wind, d[o + 1] - len);
       }
-      c.lineWidth = [0.7, 1.1, 1.8][layer] * dpr;
-      c.strokeStyle = ['rgba(170,190,235,0.2)', 'rgba(200,216,250,0.34)', 'rgba(228,238,255,0.55)'][layer];
+      c.lineWidth = [0.8, 1.3, 2.1][layer] * dpr;
+      c.strokeStyle = ['rgba(170,190,235,0.22)', 'rgba(205,220,252,0.4)', 'rgba(232,240,255,0.66)'][layer];
       c.stroke();
     }
   }
@@ -324,10 +324,11 @@ export class WeatherFx {
       c.lineCap = 'round';
       c.lineJoin = 'round';
       for (const [lw, col] of [
-        [16, `rgba(120,140,255,${(0.16 * a).toFixed(3)})`],
-        [8, `rgba(170,190,255,${(0.35 * a).toFixed(3)})`],
-        [3.6, `rgba(225,232,255,${(0.85 * a).toFixed(3)})`],
-        [1.6, `rgba(255,255,255,${a.toFixed(3)})`],
+        [26, `rgba(120,150,255,${(0.14 * a).toFixed(3)})`],
+        [14, `rgba(150,175,255,${(0.26 * a).toFixed(3)})`],
+        [7, `rgba(190,205,255,${(0.5 * a).toFixed(3)})`],
+        [4, `rgba(230,238,255,${(0.9 * a).toFixed(3)})`],
+        [2, `rgba(255,255,255,${a.toFixed(3)})`],
       ] as [number, string][]) {
         c.strokeStyle = col;
         c.beginPath();
@@ -342,7 +343,7 @@ export class WeatherFx {
       // where it strikes the field: a hot bloom
       const ex = b.pts[b.pts.length - 2];
       const ey = b.pts[b.pts.length - 1];
-      const R = 46 * dpr;
+      const R = 70 * dpr;
       const g = c.createRadialGradient(ex, ey, 0, ex, ey, R);
       g.addColorStop(0, `rgba(255,255,255,${(0.9 * a).toFixed(3)})`);
       g.addColorStop(0.25, `rgba(200,215,255,${(0.45 * a).toFixed(3)})`);

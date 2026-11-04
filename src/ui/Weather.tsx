@@ -71,6 +71,16 @@ export function WeatherSky({ state }: { state: DuelState }) {
   );
 }
 
+// ------------------------------------------------------------ the hour's light on the mat
+
+/** The hour washes over the mat itself (over the playmats, under the cards and the cracks). */
+export function WeatherWash({ state }: { state: DuelState }) {
+  const on = useWeatherEnabled();
+  if (!on) return null;
+  const w = weatherFor(state);
+  return <i class={`wx-wash tod-${w.tod} sky-${w.sky}`} aria-hidden="true" />;
+}
+
 // ------------------------------------------------------------ over the field
 
 /** how hard it falls for each sky */

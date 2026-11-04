@@ -41,10 +41,10 @@
 /* night: deep blue and a moon */
 .wx-tod.night {
   background:
-    radial-gradient(circle at calc(16% + 4px) calc(9% - 3px), #c8d2ee 0 3px, transparent 4px),
-    radial-gradient(circle at calc(16% - 5px) calc(9% + 4px), #cdd6f0 0 2px, transparent 3px),
-    radial-gradient(circle at calc(16% - 4px) calc(9% - 4px), #ffffff 0 9px, #f2f5ff 12px, #d8e0f8 13px, #b8c8ff88 15px, #a8b8ff3a 26px, #98a8ff18 48px, transparent 80px),
-    radial-gradient(circle at 16% 9%, #b8c8ff30, transparent 160px),
+    radial-gradient(circle at calc(14% + 5px) 16px, #c8d2ee 0 3px, transparent 4px),
+    radial-gradient(circle at calc(14% - 6px) 26px, #cdd6f0 0 2.5px, transparent 3.5px),
+    radial-gradient(circle at 14% 20px, #ffffff 0 11px, #eef2ff 14px, #d8e0f8 15px, #c0ceff99 17px, #a8b8ff44 30px, #98a8ff1c 56px, transparent 90px),
+    radial-gradient(circle at 14% 20px, #b8c8ff34, transparent 180px),
     linear-gradient(180deg, #01021ae0, #040826c0 45%, #0a1236b0 80%, #141c4a90);
 }
 /* (over a Field Spell's landscape the hour only tints it: the landscape stays the arena) */
@@ -54,28 +54,40 @@ body.lf-on .wx-tod.on {
 /* stars come out at dusk and night while the sky is clear */
 .wx-stars {
   background:
-    radial-gradient(2px 2px at 12% 8%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 33% 6%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 77% 11%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 92% 34%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 41% 38%, #fffc, transparent),
-    radial-gradient(1px 1px at 28% 16%, #fffd, transparent),
-    radial-gradient(1.5px 1.5px at 44% 5%, #fff, transparent),
-    radial-gradient(1px 1px at 61% 13%, #fffc, transparent),
-    radial-gradient(1px 1px at 9% 24%, #fffa, transparent),
-    radial-gradient(1.5px 1.5px at 90% 20%, #fff, transparent),
-    radial-gradient(1px 1px at 72% 26%, #fffb, transparent),
-    radial-gradient(1px 1px at 35% 30%, #fff9, transparent),
-    radial-gradient(1px 1px at 52% 22%, #fffa, transparent),
-    radial-gradient(1px 1px at 4% 12%, #fffc, transparent),
-    radial-gradient(1px 1px at 96% 6%, #fffa, transparent),
-    radial-gradient(1px 1px at 18% 34%, #fff9, transparent),
-    radial-gradient(1px 1px at 47% 14%, #fffb, transparent),
-    radial-gradient(1px 1px at 66% 4%, #fffc, transparent),
-    radial-gradient(1px 1px at 83% 30%, #fff9, transparent),
-    radial-gradient(1px 1px at 25% 2%, #fffb, transparent),
-    radial-gradient(1.5px 1.5px at 6% 30%, #fff, transparent),
-    radial-gradient(1px 1px at 58% 33%, #fff9, transparent);
+    radial-gradient(2px 2px at 84% 12%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 16% 6%, #fffe, transparent),
+    radial-gradient(2px 2px at 32% 33%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 19% 24%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 63% 16%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 55% 3%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 8% 9%, #fffe, transparent),
+    radial-gradient(2px 2px at 67% 18%, #fff, transparent),
+    radial-gradient(2.5px 2.5px at 32% 24%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 46% 13%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 78% 28%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 25% 23%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 52% 35%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 72% 12%, #fffe, transparent),
+    radial-gradient(2px 2px at 96% 6%, #fff, transparent),
+    radial-gradient(2px 2px at 42% 31%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 17% 20%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 6% 27%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 75% 23%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 86% 13%, #fff, transparent),
+    radial-gradient(2px 2px at 69% 24%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 58% 19%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 83% 38%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 48% 27%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 8% 28%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 64% 40%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 81% 12%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 39% 27%, #fff, transparent),
+    radial-gradient(2.5px 2.5px at 4% 19%, #fff, transparent),
+    radial-gradient(2px 2px at 18% 6%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 8% 31%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 14% 11%, #fffe, transparent),
+    radial-gradient(1.5px 1.5px at 40% 35%, #fffe, transparent),
+    radial-gradient(2.5px 2.5px at 10% 19%, #fff, transparent);
 }
 .wx-sky.sky-clear.tod-night .wx-stars {
   opacity: 0.85;
@@ -171,6 +183,49 @@ body.lf-on .wx-tod.on {
   to {
     transform: translateX(6%);
   }
+}
+
+/* ---- the hour's light on the mat (over the playmats, under the cards) ---- */
+.wx-wash {
+  position: absolute;
+  inset: -9px -10px;
+  z-index: -1;
+  border-radius: 14px;
+  pointer-events: none;
+  transition: opacity 4s ease;
+  opacity: 0;
+}
+.wx-wash.tod-day {
+  opacity: 1;
+  background:
+    radial-gradient(80% 45% at 85% 0%, #fff2c838, transparent 70%),
+    linear-gradient(200deg, #ffffff12, transparent 50%);
+}
+.wx-wash.tod-golden {
+  opacity: 1;
+  background:
+    radial-gradient(90% 55% at 90% 0%, #ffb45a66, transparent 72%),
+    linear-gradient(200deg, #ff9a3a50, #ff8a3a30 50%, #c8602a3c);
+}
+.wx-wash.tod-dusk {
+  opacity: 1;
+  background:
+    radial-gradient(110% 45% at 50% -5%, #ff6a3a66, transparent 72%),
+    linear-gradient(180deg, #ff6a3a40, #a03a8a48 45%, #3a1a7a66);
+}
+.wx-wash.tod-night {
+  opacity: 1;
+  background:
+    radial-gradient(50% 30% at 15% 0%, #c8d8ff2a, transparent 70%),
+    radial-gradient(120% 90% at 50% 50%, transparent 30%, #010420b0),
+    linear-gradient(180deg, #06104a80, #040a3478);
+}
+/* a storm darkens the mat to slate (blue-grey, so it never reads as the danger red) */
+.wx-wash.sky-storm {
+  box-shadow: inset 0 0 0 999px #0a122838;
+}
+.wx-wash.sky-rain {
+  box-shadow: inset 0 0 0 999px #0a122220;
 }
 
 /* ---- over the field (cards included, never the hand) ---- */
