@@ -229,6 +229,7 @@
   transform: translateX(20px);
 }
 .jgl-themes {
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -357,6 +358,13 @@
 /* each tag on its owner's empty monster row (the field is bare as a duel begins) */
 .jgl-toast.mine {
   top: 58%;
+}
+/* the opponent's tag steps back while a turn banner sweeps by (it shows again after) */
+.jgl-toast.theirs {
+  transition: opacity 0.18s;
+}
+body:has(.tbanner:not(.phase)) .jgl-toast.theirs {
+  opacity: 0 !important;
 }
 .jgl-toast.out {
   animation: jgl-out 0.3s ease-in both;

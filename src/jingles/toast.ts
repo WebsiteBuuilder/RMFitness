@@ -26,8 +26,10 @@ export function showJingleToast(who: string, name: string, hue: string, delayMs:
     s.textContent = name;
     el.append(n, b, s);
     document.body.appendChild(el);
-    later(() => el.classList.add('out'), Math.max(600, forMs - 350));
-    later(() => el.remove(), forMs + 200);
+    // (the opponent's stays a little longer: it steps back while the turn banner passes)
+    const stay = mine ? forMs : forMs + 1200;
+    later(() => el.classList.add('out'), Math.max(600, stay - 350));
+    later(() => el.remove(), stay + 200);
   }, Math.max(0, delayMs));
 }
 

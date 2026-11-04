@@ -706,7 +706,8 @@ function playEntrances(ctx: AudioContext, s: DuelState, order: Pid[], me: Pid): 
     showJingleToast(s.players[p]?.name ?? '', d.name, d.hue, at * 1000, Math.min(len, 3) * 1000, p === me);
     t += len + 0.25;
   }
-  return t > 0.25 ? ctx.currentTime + t : 0;
+  // the soundtrack comes in under the last jingle's ring-out
+  return t > 0.25 ? ctx.currentTime + t - 0.75 : 0;
 }
 
 // One track per duel. A replay jump remounts the board, so letting go waits a moment and a
