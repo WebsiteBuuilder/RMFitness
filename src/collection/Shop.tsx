@@ -34,7 +34,7 @@ import {
   type Opened,
 } from './economy';
 import { oddsTable } from './finish';
-import { RARITIES, RARITY_SHORT, WINS_PER_SET, boosterSets, rarityIn, rarityOf, setByName, shortSetName, unlockedSets, type Rarity } from './sets';
+import { RARITIES, RARITY_SHORT, VAULT_CODE, WINS_PER_SET, boosterSets, rarityIn, rarityOf, setByName, shortSetName, unlockedSets, type Rarity } from './sets';
 
 const setCards = (name: string): [string, Rarity][] => setByName(name)?.cards ?? [];
 import './shop.css';
@@ -196,7 +196,11 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
   const gifts = giftPacksOf(save);
   const toNext = WINS_PER_SET - (save.wins % WINS_PER_SET);
   const [pick, setPick] = useState<string | null>(null);
-  const shown = gifts > 0 ? all : all.slice(0, open.length + 1);
+  // The win ladder unlocks the real sets one by one; the Starter Deck Vault is always open.
+  const ladder = all.filter((s) => s.code !== VAULT_CODE);
+  const vault = all.filter((s) => s.code === VAULT_CODE);
+  const openN = open.filter((s) => s.code !== VAULT_CODE).length;
+  const shown = gifts > 0 ? all : [...ladder.slice(0, openN), ...vault, ...ladder.slice(openN, openN + 1)];
   const pickN = pick ? packsFor(save, pick) : 0;
   return (
     <div class="cardlist">
@@ -224,10 +228,10 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
       <p class="hint">
         {packsOf(save) > 0 ? `You have ${packsOf(save)} pack${packsOf(save) === 1 ? '' : 's'} to open. Pick a set:` : 'No packs to open. Win them in duels (tap the bar above to see how).'}
       </p>
-      {!gifts && open.length < all.length && (
+      {!gifts && openN < ladder.length && (
         <div class="next-set">
           <span>
-            Next set: <b>{shortSetName(all[open.length].name)}</b> in {toNext} win{toNext === 1 ? '' : 's'}
+            Next set: <b>{shortSetName(ladder[openN].name)}</b> in {toNext} win{toNext === 1 ? '' : 's'}
           </span>
           <span class="win-pips" aria-label={`${WINS_PER_SET - toNext} of ${WINS_PER_SET} wins`}>
             {Array.from({ length: WINS_PER_SET }, (_, i) => (
@@ -238,7 +242,7 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
       )}
       <div class="pack-grid">
         {shown.map((s, i) => {
-          const unlocked = i < open.length;
+          const unlocked = open.includes(s);
           const c = completion(save, s.cards);
           const n = packsFor(save, s.name);
           return (
@@ -250,15 +254,15 @@ function Packs({ save, onOpen }: { save: SpeedSave; onOpen: (set: string | null,
               )}
               <span class="pack-logo">SPEED DUEL</span>
               <span class="pack-name">{shortSetName(s.name)}</span>
-              <span class="pack-note">{unlocked || gifts ? `${c.have}/${c.of} owned` : i === open.length ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
+              <span class="pack-note">{unlocked || gifts ? `${c.have}/${c.of} owned` : s === ladder[openN] ? `${toNext} more win${toNext === 1 ? '' : 's'}` : 'locked'}</span>
               <span class="pack-odds">OVER 1 in {OVER_ONE_IN}</span>
             </button>
           );
         })}
       </div>
-      {!gifts && all.length > open.length + 1 && (
+      {!gifts && ladder.length > openN + 1 && (
         <p class="later-sets">
-          🔒 Still to unlock: {all.slice(open.length + 1).map((s) => shortSetName(s.name)).join(' · ')}
+          🔒 Still to unlock: {ladder.slice(openN + 1).map((s) => shortSetName(s.name)).join(' · ')}
         </p>
       )}
       <p class="pity">

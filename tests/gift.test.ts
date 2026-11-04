@@ -4,8 +4,9 @@
 import { readFileSync } from 'node:fs';
 import { DB as APP_DB } from '../src/eds/db';
 import { STARTERS, deckFromStarter, newSpeedSave, speedDeckProblems, type SpeedDeck, type SpeedSave } from '../src/eds/speedSave';
-import { BONUS_GIFT, BONUS_GIFT_2, GIFT, GIFTS, GIFT_PROFILES, claimGift, nextGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
-import { boosterSets, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
+import { BONUS_GIFT, BONUS_GIFT_2, BONUS_GIFT_3, GIFT, GIFTS, GIFT_PROFILES, claimGift, nextGift, collectionProblems, giftFor, giftPacksOf, migrate, openOwnedPack, packsFor, packsOf, withPacks, withStarter } from '../src/collection/economy';
+import { VAULT_CODE, boosterSets, rarityOf, setSets, unlockedSets, type SpeedSet } from '../src/collection/sets';
+import { card } from '../src/eds/db';
 import { randomSpeedDeck } from '../src/eds/speedRandom';
 import { DB } from './speedkit';
 
@@ -37,20 +38,23 @@ const before = GIFT.madeBefore - 86_400_000;
 // ---------- the bonus drop: a second present on top ----------
 {
   const s = migrate(newSpeedSave());
-  ok(BONUS_GIFT.packs === 145 && BONUS_GIFT_2.packs === 200 && GIFTS.length === 3 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'bonus gifts of 145 and 200 packs, each with its own id');
+  ok(BONUS_GIFT.packs === 145 && BONUS_GIFT_2.packs === 200 && BONUS_GIFT_3.packs === 150 && GIFTS.length === 4 && new Set(GIFTS.map((g) => g.id)).size === GIFTS.length, 'bonus gifts of 145, 200 and 150 packs, each with its own id');
   ok(nextGift(s, before)?.id === GIFT.id, 'the welcome present comes first');
   const one = claimGift(s, before, GIFT)!;
   ok(nextGift(one, before)?.id === BONUS_GIFT.id, 'then the bonus drop');
   const both = claimGift(one, before, BONUS_GIFT)!;
   ok(nextGift(both, before)?.id === BONUS_GIFT_2.id, 'then the 200-pack mega drop');
-  const all = claimGift(both, before, BONUS_GIFT_2)!;
-  const total = GIFT.packs + BONUS_GIFT.packs + BONUS_GIFT_2.packs;
-  ok(giftPacksOf(all) === total && nextGift(all, before) === null, `all three gifts give ${total} packs, then nothing more`);
-  ok(claimGift(both, before, BONUS_GIFT) === null && claimGift(all, before, BONUS_GIFT_2) === null, 'each bonus can be claimed only once');
+  const three = claimGift(both, before, BONUS_GIFT_2)!;
+  ok(nextGift(three, before)?.id === BONUS_GIFT_3.id, 'then the 150-pack vault drop');
+  const all = claimGift(three, before, BONUS_GIFT_3)!;
+  const total = GIFT.packs + BONUS_GIFT.packs + BONUS_GIFT_2.packs + BONUS_GIFT_3.packs;
+  ok(total === 745 && giftPacksOf(all) === total && nextGift(all, before) === null, `all four gifts give ${total} packs, then nothing more`);
+  ok(claimGift(both, before, BONUS_GIFT) === null && claimGift(all, before, BONUS_GIFT_2) === null && claimGift(all, before, BONUS_GIFT_3) === null, 'each bonus can be claimed only once');
   const late = Date.UTC(2026, 9, 19);
   ok(nextGift(s, late)?.id === BONUS_GIFT.id, 'a profile made after the welcome cutoff still gets the bonus');
   ok(nextGift(s, BONUS_GIFT.madeBefore)?.id === BONUS_GIFT_2.id, 'a profile made after the first bonus cutoff still gets the mega drop');
-  ok(nextGift(s, BONUS_GIFT_2.madeBefore) === null, 'a profile made after the last cutoff gets nothing');
+  ok(nextGift(s, BONUS_GIFT_2.madeBefore)?.id === BONUS_GIFT_3.id, 'a profile made after the mega cutoff still gets the vault drop');
+  ok(nextGift(s, BONUS_GIFT_3.madeBefore) === null, 'a profile made after the last cutoff gets nothing');
   ok(nextGift(s, before, undefined, [GIFT.id])?.id === BONUS_GIFT.id && nextGift(s, before, undefined, GIFTS.map((g) => g.id)) === null, 'skipped gifts are passed over');
 }
 
@@ -71,7 +75,8 @@ const before = GIFT.madeBefore - 86_400_000;
 // ---------- opening ----------
 {
   const sets = boosterSets();
-  const locked = sets[sets.length - 1].name;
+  const ladder = sets.filter((x) => x.code !== VAULT_CODE);
+  const locked = ladder[ladder.length - 1].name;
   const first = sets[0].name;
   const s0 = withPacks(migrate(newSpeedSave()), 2);
   ok(unlockedSets(s0.wins).length < sets.length && packsFor(s0, locked) === 0, 'without gift packs a locked set stays shut');
@@ -108,6 +113,32 @@ const before = GIFT.madeBefore - 86_400_000;
     if (!speedDeckProblems(d).length && !collectionProblems(s, d).length) good++;
   }
   ok(good === 20, 'Random deck makes 20 legal decks out of the gifted cards');
+}
+
+// ---------- every card in the game can come out of a pack ----------
+{
+  const pool = (JSON.parse(readFileSync('public/cards/speed.json', 'utf8')) as { name: string }[]).map((c) => c.name).filter((n) => n !== 'Malus Token');
+  const low = (n: string) => n.toLowerCase();
+  const inPacks = new Set(boosterSets().flatMap((x) => x.cards.map(([n]) => low(card(n)?.name ?? n))));
+  const missing = pool.filter((n) => !inPacks.has(low(n)));
+  ok(missing.length === 0, `all ${pool.length} cards and Skills are in some pack (missing: ${missing.slice(0, 8).join(', ') || 'none'})`);
+  const vault = boosterSets().find((x) => x.code === VAULT_CODE)!;
+  ok(!!vault && vault.cards.length >= 150, `the Starter Deck Vault holds the cards no box has (${vault?.cards.length})`);
+  const fresh = migrate(newSpeedSave());
+  ok(unlockedSets(0).some((x) => x.code === VAULT_CODE) && packsFor(withPacks(fresh, 1), vault.name) === packsOf(fresh) + 1, 'the Vault is open from the first day, for won packs too');
+  ok(unlockedSets(0).filter((x) => x.code !== VAULT_CODE).length === 1, 'the win ladder still opens one real set at a time');
+  const ids = new Set(boosterSets().map((x) => x.code));
+  ok(ids.size === boosterSets().length, 'every pack has its own code (Set Stamps key on it)');
+  // Crafting and breaking keep their prices: a Starter-only card is still Common, foils stay Ultra Rare only where they were.
+  ok(rarityOf('Abyss Actor - Extras') === 'Common', 'a Starter Deck card still crafts as Common');
+  let opened = new Set<string>();
+  let v = withPacks(fresh, 200);
+  for (let i = 0; i < 200; i++) {
+    const r = openOwnedPack(v, vault.name, 900 + i * 31)!;
+    r.cards.forEach((n) => opened.add(n));
+    v = r.save;
+  }
+  ok(opened.size >= 140 && [...opened].every((n) => vault.cards.some(([m]) => m === n)), `200 Vault packs pull only Vault cards and most of them (${opened.size} different)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall gift tests passed');

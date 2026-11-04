@@ -377,7 +377,17 @@ export const BONUS_GIFT_2: Gift = {
   madeBefore: Date.UTC(2026, 9, 31),
 };
 /** every gift, oldest first: a profile opens the ones it hasn't had, one after another */
-export const GIFTS: Gift[] = [GIFT, BONUS_GIFT, BONUS_GIFT_2];
+/** 2026-11: every card is now in packs (the Starter Deck Vault joined the Card Shop), so a drop to chase them. */
+export const BONUS_GIFT_3: Gift = {
+  id: 'bonus-drop-3',
+  packs: 150,
+  title: 'Vault drop!',
+  heading: 'Every card is in packs now',
+  opened: 'Any set, any rarity, Overframe included. The new Starter Deck Vault holds every card the boxes never had.',
+  note: 'The Card Shop has every card now. Here are packs to go find them.',
+  madeBefore: Date.UTC(2026, 10, 8),
+};
+export const GIFTS: Gift[] = [GIFT, BONUS_GIFT, BONUS_GIFT_2, BONUS_GIFT_3];
 /** A phone hands each gift to at most this many profiles (like the welcome packs). */
 export const GIFT_PROFILES = 2;
 

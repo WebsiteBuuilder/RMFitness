@@ -75,8 +75,10 @@ const fake: SpeedSet[] = [
   { name: 'Speed Duel Starter Deck: Someone', code: 'SS01', date: '2018-01-01', cards: names.slice(40, 60).map((n) => [n, 'Common'] as [string, 'Common']) },
 ];
 setSets(fake);
-ok(boosterSets().map((s) => s.code).join() === 'OLD,NEW', 'Starter Decks are not sold as packs');
-ok(unlockedSets(0).length === 1 && unlockedSets(4).length === 2, 'a new set unlocks every 4 wins');
+ok(boosterSets().map((s) => s.code).join() === 'OLD,NEW,SVLT', 'Starter Decks are not sold as packs; their cards fill the Starter Deck Vault');
+ok(boosterSets()[2].cards.length === 20 && boosterSets()[2].cards.every(([n]) => names.slice(40, 60).includes(n)), 'the Vault holds exactly the cards no box has');
+ok(unlockedSets(0).map((s) => s.code).join() === 'OLD,SVLT' && unlockedSets(4).map((s) => s.code).join() === 'OLD,NEW,SVLT', 'a new set unlocks every 4 wins; the Vault is always open');
+ok(rarityOf(names[40]) === 'Common', 'a Vault card keeps its rarity for crafting');
 {
   let good = 0;
   const spots = new Set<number>();
