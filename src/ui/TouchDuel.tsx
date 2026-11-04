@@ -457,7 +457,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? `myset${sleeveClass(duelSleeveOf(c.owner))}` : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
-            {c.faceUp && <i class="tshine" aria-hidden="true" />}
+            {/* (a face-down card's glint is idle life: idlelife.css) */}
+            <i class="tshine" aria-hidden="true" />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && named !== c.name && <span class="namechg">{named}</span>}
           </div>

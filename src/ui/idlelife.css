@@ -1,0 +1,95 @@
+/* ---- Monster idle life: the cards on the table stir too (the 3D figures live in board.ts) ----
+   body.idle-on: the duel menu's "Monster idle life" is on. Transform/opacity only (the
+   individual `translate` / `scale` properties, so the hand's fan and a Defense card's turn
+   stay as they are); everything holds still under a cinematic (body.art-on) and with the
+   phone's Reduce motion. */
+
+/* your hand breathes: each card floats a hair up and down, in a slow wave along the fan */
+@keyframes idl-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -2.5px;
+  }
+}
+.idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus) {
+  animation: idl-float 4.2s ease-in-out infinite;
+  animation-delay: calc(var(--arc, 0) * -0.55s);
+}
+/* the opponent's hand too, a beat slower (downward: their hand sits against the top edge) */
+@keyframes idl-float-down {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 2px;
+  }
+}
+.idle-on .duel.touch .topp-hand .thc:not(.anim-draw) {
+  animation: idl-float-down 5.2s ease-in-out infinite;
+  animation-delay: calc(var(--arc, 0) * -0.7s - 1s);
+}
+
+/* face-down cards: a faint cool glint runs over the card back now and then */
+.duel.touch .fcard.fd .tshine {
+  display: none;
+}
+.idle-on .duel.touch .fcard.fd .tshine {
+  display: block;
+}
+.idle-on .duel.touch .fcard.fd .tshine::before {
+  background: linear-gradient(100deg, transparent 0%, #9fd8ff10 28%, #c8ecff3a 47%, #f0faff70 50%, #c8ecff3a 53%, #9fd8ff10 72%, transparent 100%);
+  animation-duration: 10s;
+  animation-delay: 4.5s;
+}
+.idle-on .duel.touch .tz:nth-child(2) .fcard.fd .tshine::before {
+  animation-delay: 6.2s;
+}
+.idle-on .duel.touch .tz:nth-child(3) .fcard.fd .tshine::before {
+  animation-delay: 7.9s;
+}
+.idle-on .duel.touch .tz:nth-child(4) .fcard.fd .tshine::before {
+  animation-delay: 9.6s;
+}
+
+/* with the 3D figures off, a face-up monster's card itself breathes */
+@keyframes idl-breathe {
+  0%,
+  100% {
+    scale: 1;
+  }
+  45% {
+    scale: 1.022;
+  }
+}
+.idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd) {
+  animation: idl-breathe 3.6s ease-in-out infinite;
+}
+.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(2):not([class*='anim-']) .fcard:not(.fd) {
+  animation-delay: -1.2s;
+}
+.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(3):not([class*='anim-']) .fcard:not(.fd) {
+  animation-delay: -2.4s;
+}
+
+/* a cinematic on screen: the table holds still under it (only idle life's own motions: a card
+   being drawn or picked keeps its animation) */
+body.art-on.idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus),
+body.art-on.idle-on .duel.touch .topp-hand .thc:not(.anim-draw),
+body.art-on.idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd),
+body.art-on.idle-on .duel.touch .fcard.fd .tshine::before {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus),
+  .idle-on .duel.touch .topp-hand .thc:not(.anim-draw),
+  .idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd) {
+    animation: none;
+  }
+  .idle-on .duel.touch .fcard.fd .tshine {
+    display: none;
+  }
+}
