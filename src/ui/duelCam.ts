@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DuelState } from '../eds/types';
 import { getAnimSpeed, useDuelCam as useCamMode } from '../art/settings';
 import { IDENTITY, camLive, setCamLive, unmapRect, type Mat } from '../art/cam';
-import { STRENGTH, cssMatrix, pickMoment, stronger, poseMatrix, shotFor, type Moment, type Pt, type Shot } from './duelCamRules';
+import { STRENGTH, cssMatrix, fitPose, pickMoment, type Bounds, stronger, poseMatrix, shotFor, type Moment, type Pt, type Shot } from './duelCamRules';
 
 /** The flat layers over the figures that ride along (fixed-position: their resting top-left is offsetLeft/Top). */
 const RIDERS = '.art-board, .ctrfloat, .tmid-float';
@@ -31,6 +31,28 @@ interface Live {
   anims: Animation[];
   els: HTMLElement[];
   kind: string;
+}
+
+/** Some ancestor of el (up to the duel screen) has a transform of its own. */
+function tiltedAbove(el: HTMLElement): boolean {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const t = getComputedStyle(p).transform;
+    if (t && t !== 'none') return true;
+    if (p.classList.contains('duel')) break;
+  }
+  return false;
+}
+
+/** The free area for the field: between the two Life Points bars when they run across the screen (phones), else the whole screen. */
+function safeArea(): Bounds {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const out: Bounds = { left: 0, top: 0, right: w, bottom: h };
+  const top = document.querySelector('.duel .tbar.top, .duel .pbar.top')?.getBoundingClientRect();
+  const bot = document.querySelector('.duel .tbar.bottom, .duel .pbar:not(.top)')?.getBoundingClientRect();
+  if (top && top.width > w * 0.6) out.top = top.bottom;
+  if (bot && bot.width > w * 0.6) out.bottom = bot.top;
+  return out;
 }
 
 const artOn = () => typeof document !== 'undefined' && document.body.classList.contains('art-on');
@@ -118,6 +140,9 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     const field = fieldEl();
     const strength = STRENGTH[modeRef.current];
     if (!field || strength <= 0 || typeof field.animate !== 'function') return;
+    // (a field already leaning in 3D inside a tilted parent, the Classic big-screen layout, keeps still:
+    // the figures canvas could not follow a move inside that tilt)
+    if (tiltedAbove(field)) return;
     // (one settle per hand-back: the batch arriving right after it does not start another;
     // an attack's move already lands its blow: the hit that follows does not cut it short)
     if (live.current && (settle || (m.kind === 'impact' && (live.current.kind === 'attack' || live.current.kind === 'direct')))) return;
@@ -136,7 +161,10 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if (!shot) return;
     const from = freeze();
     const speed = Math.sqrt(getAnimSpeed());
-    const poses = shot.frames.map((f) => ({ at: f.at, m: poseMatrix(f.pose, box), ease: f.ease }));
+    // the field never slides under the Life Points bars or off the screen's sides
+    const content = unmapRect((field.querySelector('.tmat') ?? field).getBoundingClientRect());
+    const safe = safeArea();
+    const poses = shot.frames.map((f) => ({ at: f.at, m: poseMatrix(fitPose(f.pose, box, content, safe), box), ease: f.ease }));
     run(shot.kind, field, rest, poses, Math.round(shot.ms / speed), from);
   };
 

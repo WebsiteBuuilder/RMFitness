@@ -7,7 +7,7 @@
 // dips toward it). Everything is one plane-to-plane map (src/art/cam.ts), so the 3D figures
 // canvas can follow it exactly.
 import type { EngineEvent, Pid } from '../eds/types';
-import { mul, type Mat } from '../art/cam';
+import { apply, mul, type Mat } from '../art/cam';
 
 import type { DuelCam } from '../art/settings';
 
@@ -92,8 +92,11 @@ export interface Shot {
 export const STRENGTH: Record<DuelCam, number> = { full: 1, soft: 0.5, off: 0 };
 
 const OUT = 'cubic-bezier(.22,.8,.3,1)';
-const IN_OUT = 'cubic-bezier(.45,0,.25,1)';
 const KICK = 'cubic-bezier(.2,1.4,.4,1)';
+/** the glide home: quick to leave, long and soft to arrive */
+const BACK = 'cubic-bezier(.3,0,.12,1)';
+/** the swing along an attack */
+const SWING = 'cubic-bezier(.5,0,.2,1)';
 
 /**
  * The move for a moment. `field` is the field's resting rectangle; `at` the card it is
@@ -107,45 +110,83 @@ export function shotFor(m: Moment | { kind: ShotKind }, field: { cx: number; cy:
   // which way the action sits from the field's middle (-1..1), for the roll
   const side = (p: Pt) => Math.max(-1, Math.min(1, (p.x - field.cx) / (field.w / 2 || 1)));
   const pose = (focus: Pt, zoom: number, roll: number, pitch: number, pull: number): Pose => ({ zoom: 1 + (zoom - 1) * s, roll: roll * s, pitch: pitch * s, focus, pull });
+  // after the peak the camera keeps creeping in a touch (never a dead stop), then glides back out
+  const creep = (p: Pose, more: number): Pose => ({ ...p, zoom: p.zoom + more * s, pitch: p.pitch + more * 60 * s });
   switch (m.kind) {
     case 'set': {
-      const p = pose(at, 1.018, 0.25 * side(at), 1.5, 0.3);
-      return { kind: m.kind, ms: 640, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.35, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      const p = pose(at, 1.012, 0.3 * side(at), 4, 0.2);
+      return { kind: m.kind, ms: 700, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.35, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'summon': {
-      const p = pose(at, 1.06, 0.7 * side(at), 5, 0.35);
-      return { kind: m.kind, ms: 1250, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.34, pose: p, ease: 'linear' }, { at: 0.5, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      const p = pose(at, 1.035, 0.8 * side(at), 11, 0.25);
+      return { kind: m.kind, ms: 1300, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p, ease: 'linear' }, { at: 0.48, pose: creep(p, 0.005), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'bigSummon': {
-      // a bigger push and a lower camera, with a small extra push as it lands
-      const p1 = pose(at, 1.08, 1.0 * side(at), 8, 0.45);
-      const p2 = pose(at, 1.09, 1.1 * side(at), 9, 0.45);
-      return { kind: m.kind, ms: 1600, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p1, ease: KICK }, { at: 0.42, pose: p2, ease: 'linear' }, { at: 0.58, pose: p2, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      // a deeper dip, with a small extra push as it lands
+      const p1 = pose(at, 1.05, 1.1 * side(at), 14, 0.3);
+      const p2 = pose(at, 1.06, 1.2 * side(at), 15, 0.3);
+      return { kind: m.kind, ms: 1650, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.28, pose: p1, ease: KICK }, { at: 0.4, pose: p2, ease: 'linear' }, { at: 0.55, pose: creep(p2, 0.004), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'attack':
     case 'direct': {
-      // the camera looks along the attack: at the middle of the line, rolled toward the target
+      // two beats: the camera leans on the attacker, then swings along the attack to the target
       const tgt = to ?? { x: field.cx, y: field.cy - field.h / 2 };
-      const mid = { x: at.x * 0.45 + tgt.x * 0.55, y: at.y * 0.45 + tgt.y * 0.55 };
       const lean = Math.max(-1, Math.min(1, (tgt.x - at.x) / (field.w / 2 || 1)));
-      const p1 = pose(mid, 1.065, 1.2 * lean + 0.3 * side(mid), 7, 0.4);
-      const p2 = pose(mid, 1.08, 1.4 * lean + 0.3 * side(mid), 8, 0.45);
-      return { kind: m.kind, ms: 1500, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.3, pose: p1, ease: 'linear' }, { at: 0.55, pose: p2, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      const p1 = pose(at, 1.03, 0.5 * lean + 0.4 * side(at), 9, 0);
+      const p2 = pose(tgt, 1.055, 1.4 * lean + 0.3 * side(tgt), 13, 0);
+      return { kind: m.kind, ms: 1550, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.24, pose: p1, ease: SWING }, { at: 0.46, pose: p2, ease: 'linear' }, { at: 0.6, pose: creep(p2, 0.005), ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'impact': {
-      const p = pose(at, 1.03, 0.6 * side(at), 3, 0.2);
-      return { kind: m.kind, ms: 520, frames: [{ at: 0, pose: rest, ease: KICK }, { at: 0.22, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      const p = pose(at, 1.02, 0.6 * side(at), 5, 0);
+      return { kind: m.kind, ms: 560, frames: [{ at: 0, pose: rest, ease: KICK }, { at: 0.2, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
     case 'settle': {
       // a cinematic just handed the board back: a short lean in where it ended, then back out
-      const p = pose(at, 1.03, 0.5 * side(at), 3, 0.3);
-      return { kind: m.kind, ms: 820, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.28, pose: p, ease: IN_OUT }, { at: 1, pose: rest, ease: 'linear' }] };
+      const p = pose(at, 1.02, 0.5 * side(at), 7, 0.2);
+      return { kind: m.kind, ms: 900, frames: [{ at: 0, pose: rest, ease: OUT }, { at: 0.26, pose: p, ease: BACK }, { at: 1, pose: rest, ease: 'linear' }] };
     }
   }
 }
 
+/** A pose eased toward rest by k (0 = rest, 1 = the pose as planned). */
+export const scalePose = (p: Pose, k: number): Pose => ({ zoom: 1 + (p.zoom - 1) * k, roll: p.roll * k, pitch: p.pitch * k, focus: p.focus, pull: p.pull * k });
+
+export interface Bounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * The pose, scaled back just enough that the field's corners stay inside the screen's free
+ * area (between the Life Points bars, inside the screen sides, `slack` px of give on the
+ * sides): a corner already past an edge at rest may not go further out. One small search a
+ * pose, once a shot.
+ */
+export function fitPose(p: Pose, field: { cx: number; cy: number; w: number; h: number }, content: Bounds, safe: Bounds, slack = 6): Pose {
+  const corners: [number, number][] = [[content.left, content.top], [content.right, content.top], [content.left, content.bottom], [content.right, content.bottom]];
+  const lim = { l: Math.min(content.left, safe.left - slack), r: Math.max(content.right, safe.right + slack), t: Math.min(content.top, safe.top), b: Math.max(content.bottom, safe.bottom) };
+  const fits = (q: Pose) => {
+    const m = poseMatrix(q, field);
+    return corners.every(([x, y]) => {
+      const [u, v] = apply(m, x, y);
+      return u >= lim.l - 0.5 && u <= lim.r + 0.5 && v >= lim.t - 0.5 && v <= lim.b + 0.5;
+    });
+  };
+  if (fits(p)) return p;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 7; i++) {
+    const k = (lo + hi) / 2;
+    if (fits(scalePose(p, k))) lo = k;
+    else hi = k;
+  }
+  return scalePose(p, lo);
+}
+
 /** Perspective distance of the camera, from the field's size (px). */
-export const persp = (field: { w: number; h: number }): number => Math.max(field.w, field.h) * 2.2;
+export const persp = (field: { w: number; h: number }): number => Math.max(field.w, field.h) * 1.25;
 
 /** A pose as one viewport-space homography (src/art/cam.ts): tilt in perspective about the focus, then push, roll and drift. */
 export function poseMatrix(p: Pose, field: { cx: number; cy: number; w: number; h: number }): Mat {

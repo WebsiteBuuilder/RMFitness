@@ -108,7 +108,12 @@ export function unmapWith(r: RectLike, m: Mat): RectLike {
     x1 = Math.max(x1, u);
     y1 = Math.max(y1, v);
   }
-  return { left: x0, top: y0, width: x1 - x0, height: y1 - y0, right: x1, bottom: y1 };
+  // the centre maps back on its own (a box of the mapped-back corners is a little wider than the
+  // card under a strong tilt, and lopsided); the size is that box's (a few percent large at the peak)
+  const [cx, cy] = apply(inv, r.left + r.width / 2, r.top + r.height / 2);
+  const w = x1 - x0;
+  const h = y1 - y0;
+  return { left: cx - w / 2, top: cy - h / 2, width: w, height: h, right: cx + w / 2, bottom: cy + h / 2 };
 }
 
 /** A field card's rectangle as it rests (the same rectangle, and no style read, whenever no shot is live). */

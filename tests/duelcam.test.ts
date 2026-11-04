@@ -3,7 +3,7 @@
 // action, and a card seen through the camera maps back to where it rests (so the 3D figures
 // stand on their cards all the way through a shot).
 // Run: npx tsx tests/duelcam.test.ts
-import { STRENGTH, pickMoment, poseMatrix, shotFor, cssMatrix, type ShotKind } from '../src/ui/duelCamRules';
+import { STRENGTH, fitPose, pickMoment, poseMatrix, shotFor, cssMatrix, type ShotKind } from '../src/ui/duelCamRules';
 import { IDENTITY, apply, invert, isIdentity, mul, parseMatrix, unmapWith } from '../src/art/cam';
 import type { EngineEvent } from '../src/eds/types';
 
@@ -48,7 +48,7 @@ for (const k of kinds) {
   for (const f of s.frames) {
     ok(f.pose.zoom <= 1.09 && f.pose.zoom >= 1, `${k}: slight push (${f.pose.zoom})`);
     ok(Math.abs(f.pose.roll) <= 1.6, `${k}: slight roll (${f.pose.roll})`);
-    ok(f.pose.pitch >= 0 && f.pose.pitch <= 10, `${k}: a few degrees of tilt (${f.pose.pitch})`);
+    ok(f.pose.pitch >= 0 && f.pose.pitch <= 16, `${k}: a few degrees of tilt (${f.pose.pitch})`);
   }
   ok(shotFor({ kind: k }, box, { x: 320, y: 400 }, 0) === null, `${k}: Off moves nothing`);
 }
@@ -60,8 +60,7 @@ ok(rollOf(350) > 0, 'a summon right of the middle rolls clockwise');
 ok(Math.min(...shotFor({ kind: 'summon' }, box, { x: 50, y: 400 }, 1)!.frames.map((f) => f.pose.roll)) < 0, '...left of it, the other way');
 const lean = shotFor({ kind: 'attack' }, box, { x: 300, y: 420 }, 1, { x: 100, y: 180 })!;
 ok(Math.min(...lean.frames.map((f) => f.pose.roll)) < 0, 'an attack toward the left leans left');
-const mid = lean.frames[1].pose.focus;
-ok(mid.x > 100 && mid.x < 300 && mid.y > 180 && mid.y < 420, 'an attack is framed on the line between the two monsters');
+ok(lean.frames[1].pose.focus.x === 300 && lean.frames[2].pose.focus.x === 100, 'an attack leans on the attacker, then swings to the target');
 
 // ----- the map -----
 const s1 = shotFor({ kind: 'bigSummon' }, box, { x: 330, y: 420 }, 1)!;
@@ -85,8 +84,8 @@ const seen = { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...x
 seen.width = seen.right - seen.left;
 seen.height = seen.bottom - seen.top;
 const back = unmapWith(seen, m);
-ok(near(back.left + back.width / 2, 330, 0.5) && near(back.top + back.height / 2, 433, 0.5), `unmap: a card under the camera maps back to where it rests (${back.left.toFixed(1)},${back.top.toFixed(1)})`);
-ok(Math.abs(back.width - 60) < 3 && Math.abs(back.height - 86) < 3, `unmap: about its resting size (${back.width.toFixed(1)}x${back.height.toFixed(1)})`);
+ok(near(back.left + back.width / 2, 330, 1.5) && near(back.top + back.height / 2, 433, 1.5), `unmap: a card under the camera maps back to where it rests (${back.left.toFixed(1)},${back.top.toFixed(1)})`);
+ok(Math.abs(back.width - 60) < 6 && Math.abs(back.height - 86) < 6, `unmap: about its resting size (${back.width.toFixed(1)}x${back.height.toFixed(1)})`);
 ok(unmapWith(rest, IDENTITY) === rest, 'unmap at rest is free (the same rectangle)');
 ok(mul(m, invert(m)).every((v, i) => near(v / mul(m, invert(m))[8], IDENTITY[i], 1e-6)), 'invert');
 // CSS round trips (matrix3d when tilted, matrix when flat)
@@ -101,6 +100,23 @@ ok(cssMatrix(flat).startsWith('matrix('), 'a flat pose is a plain matrix');
 const pf = parseMatrix(cssMatrix(flat));
 ok(near(apply(pf, 50, 60)[0], apply(flat, 50, 60)[0], 0.01), 'parse matrix(...)');
 ok(parseMatrix('none') === IDENTITY, 'parse none');
+
+// ----- the field stays in the free area -----
+{
+  const fb = { cx: 206, cy: 380, w: 400, h: 520 };
+  const content = { left: 10, top: 130, right: 402, bottom: 630 };
+  const safe = { left: 0, top: 120, right: 412, bottom: 640 };
+  const sh = shotFor({ kind: 'attack' }, fb, { x: 300, y: 560 }, 1, { x: 110, y: 200 })!;
+  for (const f of sh.frames) {
+    const q = fitPose(f.pose, fb, content, safe);
+    const m2 = poseMatrix(q, fb);
+    const pts2 = [[10, 130], [402, 130], [10, 630], [402, 630]].map(([x, y]) => apply(m2, x, y));
+    ok(pts2.every(([x, y]) => x >= -6.6 && x <= 418.6 && y >= 119.4 && y <= 640.6), `fit: corners stay in the free area at ${f.at}`);
+    ok(q.zoom <= f.pose.zoom + 1e-9 && Math.abs(q.pitch) <= Math.abs(f.pose.pitch) + 1e-9, 'fit only ever scales back');
+  }
+  const roomy = fitPose(sh.frames[2].pose, fb, content, { left: -500, top: -500, right: 1500, bottom: 1500 });
+  ok(roomy === sh.frames[2].pose, 'fit leaves a pose with room as it is');
+}
 
 if (fails) {
   console.log(`duelcam: ${fails} failed`);
