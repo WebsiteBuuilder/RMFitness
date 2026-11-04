@@ -866,7 +866,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
-          <div class="trow">
+          <div class="trow opp">
             {deck(oppId)}
             {opp.sz
               .map((c, i) => zone(c, oppId, 's', i))
@@ -874,7 +874,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               .reverse()}
             {fieldZone(oppId)}
           </div>
-          <div class="trow">
+          <div class="trow opp">
             {gy(oppId)}
             {opp.mz
               .map((c, i) => zone(c, oppId, 'm', i))

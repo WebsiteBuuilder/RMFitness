@@ -198,6 +198,13 @@
 }
 /* on your turn the opponent's half of the board sits a step back, so your side reads as the stage */
 /* (not while you aim at one of their cards: the targets stay at full strength) */
-.duel.touch.turn-me:not(.aiming) .tmat > .trow:has(~ .tmid):not(:has(.pick)) {
+.duel.touch.turn-me:not(.aiming):not(:has(.tmat .pick)) .tmat > .trow.opp {
   opacity: 0.76;
+}
+
+/* a pick (a target, a card to choose) pulses three times to catch the eye, then holds its glow:
+   a box-shadow pulse repaints every frame, so it doesn't run for as long as the question is up */
+.duel.touch .tz.pick,
+.duel.touch .thcard.pick {
+  animation-iteration-count: 3;
 }
