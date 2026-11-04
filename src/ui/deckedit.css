@@ -807,3 +807,163 @@
   color: var(--dim);
   font-size: 12px;
 }
+
+/* Which cards the list shows: Mine / All cards / To craft, with your chips on the right */
+.dk-show {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.dk-show-b {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dim, #aab);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dk-show-b.on {
+  background: linear-gradient(#2f4a8a, #22366a);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(243, 210, 122, 0.6);
+}
+.dk-wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 10px 0 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.dk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 8px;
+  text-align: center;
+  color: var(--dim, #aab);
+}
+.dk-empty p {
+  margin: 0;
+}
+.win input.search.dk-skillsearch {
+  display: block;
+  width: 100%;
+  max-width: none;
+  flex: none;
+  margin: 0 0 8px;
+  box-sizing: border-box;
+}
+/* in All cards, the cards you'd have to craft read as clearly not yours */
+/* every layer of the picture (some cards draw theirs in extra layers), never the badges */
+.dk-poolgrid .dk-tile.unowned > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
+  filter: grayscale(0.85) brightness(0.7);
+}
+.dk-poolgrid .dk-tile.unowned:active > :not(.dk-own):not(.dk-lim):not(.dk-tname) {
+  filter: grayscale(0.4) brightness(0.9);
+}
+/* Limited cards say so in words, not a lone number that reads like a price */
+.dk-lim.dk-lim-n {
+  width: auto;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+/* a button the card sheet can't use right now looks plainly off */
+.dk-view-acts .gbtn:disabled {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+.dk-skills + .hint {
+  text-align: center;
+}/* a Skill without its picture shows a star: its name is right beside it */
+.dk-skills .ctext-name {
+  display: none;
+}
+.dk-skills .ctext {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dk-skills .ctext::after {
+  content: '✦';
+  font-size: 18px;
+  color: #f3d27a;
+}
+
+/* a fresh result set deals its first cards in; later pages just appear */
+.dk-poolgrid .dk-tile:nth-child(-n + 16) {
+  animation: dk-deal 0.22s ease-out backwards;
+}
+.dk-poolgrid .dk-tile:nth-child(2) { animation-delay: 15ms; }
+.dk-poolgrid .dk-tile:nth-child(3) { animation-delay: 30ms; }
+.dk-poolgrid .dk-tile:nth-child(4) { animation-delay: 45ms; }
+.dk-poolgrid .dk-tile:nth-child(5) { animation-delay: 60ms; }
+.dk-poolgrid .dk-tile:nth-child(6) { animation-delay: 75ms; }
+.dk-poolgrid .dk-tile:nth-child(7) { animation-delay: 90ms; }
+.dk-poolgrid .dk-tile:nth-child(8) { animation-delay: 105ms; }
+.dk-poolgrid .dk-tile:nth-child(n + 9):nth-child(-n + 16) { animation-delay: 120ms; }
+@keyframes dk-deal {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+/* a tile you press gives under your thumb */
+.dk-poolgrid .dk-tile {
+  transition: transform 0.12s ease;
+}
+.dk-poolgrid .dk-tile:active {
+  transform: scale(0.95);
+}
+.dk-show-b.on {
+  animation: dk-show-on 0.2s ease-out;
+}
+@keyframes dk-show-on {
+  from {
+    transform: scale(0.92);
+  }
+}
+/* far down All cards, tiles off the screen skip layout and paint until you get near them */
+.dk-poolgrid .dk-tile:nth-child(n + 61) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 112px;
+}
+.dk-poolgrid.dk-size-s .dk-tile:nth-child(n + 61) {
+  contain-intrinsic-block-size: auto 76px;
+}
+.dk-poolgrid.dk-size-l .dk-tile:nth-child(n + 61) {
+  contain-intrinsic-block-size: auto 170px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dk-poolgrid .dk-tile,
+  .dk-show-b.on {
+    animation: none;
+    transition: none;
+  }
+}
+
+.ui-speed .dk .dk-filters.dk-searchrow,
+.dk .dk-filters.dk-searchrow {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  background: var(--bg, #0d1430);
+  box-shadow: 0 6px 10px -6px rgba(0, 0, 0, 0.6);
+}

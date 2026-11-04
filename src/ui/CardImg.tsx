@@ -34,7 +34,7 @@ const GLINTS = (
 // Memoized: a duel re-renders on every move, and an unchanged card needn't be diffed again.
 export const CardImg = memo(CardImgView);
 
-function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number }) {
+function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier, lazy = false }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number; /** long lists: the picture loads only when it scrolls near the screen */ lazy?: boolean }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
   const [broken, setBroken] = useState<string | null>(null);
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
@@ -106,7 +106,7 @@ function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTi
   if (url)
     return (
       <>
-        <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} onError={() => setBroken(name)} />
+        <img class={`cimg ${cls}`} src={url} alt={name} draggable={false} loading={lazy ? 'lazy' : undefined} decoding={lazy ? 'async' : undefined} onError={() => setBroken(name)} />
         {fx}
       </>
     );
