@@ -1,0 +1,455 @@
+/* Manga attack panels (mangaPanel.ts): an inked panel that freezes a big hit for about a second.
+   Everything that moves is a transform or opacity on its own layer; the ink filter, screentone
+   and focus lines are painted once when the panel appears. --d is the hold (real seconds). */
+.art-manga {
+  --ph: clamp(160px, 36vh, 340px);
+  --dir: 1;
+  --paper: #f3efe4;
+  --black: #0b0b0d;
+  position: absolute;
+  inset: 0;
+  /* over whatever else the blow put on the layer (numbers, flashes, captions) */
+  z-index: 5;
+  display: none;
+  pointer-events: none;
+  contain: strict;
+}
+.art-manga.side-far {
+  --dir: -1;
+}
+.art-manga.on {
+  display: block;
+  will-change: opacity, transform;
+  animation: mg-life var(--d) linear forwards;
+}
+.art-manga.mega.on {
+  animation:
+    mg-life var(--d) linear forwards,
+    mg-shake calc(var(--d) * 0.24) steps(1, end) 1;
+}
+.art-manga.out {
+  animation: mg-out 0.16s ease-in forwards !important;
+}
+/* while a panel is up, the banners and the shout step back, and the damage number lets the
+   panel's starburst say it (it shows again as it flies on into the Life Points) */
+body.art-manga-on .art-banner,
+body.art-manga-on .art-callout,
+body.art-manga-on .art-number,
+body.art-manga-on .art-caption,
+body.art-manga-on .lppop,
+body.art-manga-on .art-skip,
+body.art-manga-on .art-layer > :not(.art-manga) {
+  opacity: 0 !important;
+}
+
+.mg-veil {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(4, 4, 10, 0.32) 20%, rgba(4, 4, 10, 0.72) 100%);
+}
+.mg-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: mg-flash var(--d) linear forwards;
+}
+
+/* the panel and what sits on it, all placed on the panel's box */
+.mg-frame {
+  position: absolute;
+  left: 50%;
+  top: var(--mid, 45%);
+  width: min(100vw, 980px);
+  height: var(--ph);
+  transform: translate(-50%, -50%);
+}
+.mg-panel {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--paper);
+  border: 5px solid var(--black);
+  /* the white gutter round a manga panel, then its outer rule */
+  box-shadow:
+    0 0 0 5px var(--paper),
+    0 0 0 8px var(--black),
+    0 14px 30px rgba(0, 0, 0, 0.55);
+}
+.mg-main {
+  /* (bleeds past the screen's edges on a phone) */
+  inset: 0 -7%;
+  will-change: transform, opacity;
+  animation: mg-main var(--d) cubic-bezier(0.12, 0.9, 0.2, 1) forwards;
+}
+.mg-art {
+  position: absolute;
+  inset: 0;
+}
+.mg-art canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 32%;
+  /* black ink on paper */
+  filter: grayscale(1) contrast(var(--ink-c, 1.9)) brightness(var(--ink-b, 1.14));
+}
+.mg-main .mg-art {
+  will-change: transform;
+  animation: mg-push var(--d) linear forwards;
+}
+.art-manga.no-art .mg-main .mg-art {
+  background: radial-gradient(circle at 50% 45%, var(--paper) 0 18%, #c9c2b0 60%);
+  background: radial-gradient(circle at 50% 45%, var(--paper) 0 18%, color-mix(in srgb, var(--glow) 40%, var(--paper)) 60%);
+}
+/* screentone: dots thick in one corner, fading across */
+.mg-tone {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.6) 0 1.25px, transparent 1.55px);
+  background-size: 6px 6px;
+  -webkit-mask-image: linear-gradient(calc(var(--dir) * 115deg), #000 0%, rgba(0, 0, 0, 0.5) 30%, transparent 58%);
+  mask-image: linear-gradient(calc(var(--dir) * 115deg), #000 0%, rgba(0, 0, 0, 0.5) 30%, transparent 58%);
+}
+/* focus lines, two uneven sets so they read hand-ruled; clear in the middle */
+.mg-lines {
+  position: absolute;
+  inset: -22%;
+  background:
+    repeating-conic-gradient(from 0deg at 50% 46%, rgba(10, 10, 12, 0.9) 0deg 0.55deg, transparent 0.55deg 3.3deg),
+    repeating-conic-gradient(from 1.4deg at 50% 46%, rgba(10, 10, 12, 0.7) 0deg 0.3deg, transparent 0.3deg 5.1deg);
+  -webkit-mask-image: radial-gradient(closest-side at 50% 46%, transparent 34%, rgba(0, 0, 0, 0.55) 52%, #000 74%);
+  mask-image: radial-gradient(closest-side at 50% 46%, transparent 34%, rgba(0, 0, 0, 0.55) 52%, #000 74%);
+  will-change: transform;
+  animation: mg-jitter 0.18s steps(1, end) infinite;
+}
+
+/* the small panel: what it hit (or a starburst with the damage) */
+.mg-inset {
+  width: clamp(92px, min(31vw, 21vh), 220px);
+  aspect-ratio: 1;
+  bottom: calc(var(--ph) * -0.2);
+  right: 7%;
+  border-width: 4px;
+  will-change: transform, opacity;
+  animation: mg-inset var(--d) cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+.side-far .mg-inset {
+  right: auto;
+  left: 7%;
+  /* (the opponent's blow: its inset stays inside the panel, clear of your hand and bar) */
+  bottom: 7%;
+}
+.mg-inset {
+  overflow: visible;
+}
+.mg-inset .mg-art,
+.mg-inset .mg-crack {
+  overflow: hidden;
+}
+.mg-inset .mg-art canvas {
+  filter: grayscale(1) contrast(2.1) brightness(1.05);
+}
+/* the defender broken: a white crack ruled across it */
+.mg-crack {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(calc(var(--dir) * 62deg), transparent 47%, var(--black) 47.5%, #fff 48.5%, #fff 50.5%, var(--black) 51.5%, transparent 52%);
+}
+.mg-inset.text-only {
+  background: none;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+}
+.mg-inset.text-only .mg-crack {
+  display: none;
+}
+.mg-burst {
+  position: absolute;
+  left: 38%;
+  bottom: -10%;
+  z-index: 1;
+  transform: translateX(-50%) rotate(calc(var(--dir) * -6deg));
+  display: grid;
+  place-items: center;
+  width: 104%;
+  aspect-ratio: 1.6;
+  font-family: Impact, 'Arial Black', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: clamp(18px, 5.8vw, 40px);
+  color: #fff;
+}
+.mg-burst::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #e5132c;
+  clip-path: polygon(50% 0%, 58% 22%, 78% 6%, 74% 30%, 100% 24%, 82% 44%, 98% 62%, 74% 62%, 82% 92%, 60% 74%, 50% 100%, 42% 74%, 18% 92%, 26% 62%, 2% 62%, 18% 44%, 0% 24%, 26% 30%, 22% 6%, 42% 22%);
+}
+.mg-burst span {
+  position: relative;
+  -webkit-text-stroke: 0.07em var(--black);
+  paint-order: stroke fill;
+  text-shadow: 0.05em 0.06em 0 var(--black);
+}
+.side-far .mg-burst {
+  left: 62%;
+}
+.mg-inset.text-only .mg-burst {
+  left: 40%;
+  bottom: 18%;
+  width: 135%;
+  font-size: clamp(26px, 9vw, 56px);
+}
+
+/* the sound word, slammed on over the panel's top edge */
+.mg-word {
+  position: absolute;
+  left: 4%;
+  top: 0;
+  transform-origin: 30% 60%;
+  font-family: Impact, 'Arial Black', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: calc(clamp(42px, min(16vw, calc(var(--ph) * 0.36)), 128px) * var(--wl));
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--ink);
+  /* (thin enough that a WebView drawing it over the letters still reads) */
+  -webkit-text-stroke: 0.04em var(--black);
+  paint-order: stroke fill;
+  text-shadow:
+    0.06em 0.07em 0 var(--black),
+    0 0 0.28em var(--glow);
+  animation: mg-word var(--d) linear forwards;
+}
+.side-far .mg-word {
+  left: auto;
+  right: 4%;
+  transform-origin: 70% 60%;
+}
+.art-manga.mega .mg-word {
+  font-size: calc(clamp(48px, min(19vw, calc(var(--ph) * 0.42)), 150px) * var(--wl));
+}
+.mg-kana {
+  position: absolute;
+  right: 3%;
+  top: 9%;
+  writing-mode: vertical-rl;
+  font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP', 'Yu Gothic', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: clamp(24px, 7.5vw, 54px);
+  line-height: 1;
+  color: var(--black);
+  text-shadow:
+    2px 0 0 #fff,
+    -2px 0 0 #fff,
+    0 2px 0 #fff,
+    0 -2px 0 #fff,
+    2px 2px 0 #fff,
+    -2px -2px 0 #fff;
+  will-change: transform, opacity;
+  animation: mg-kana var(--d) linear forwards;
+}
+.side-far .mg-kana {
+  top: 22%;
+}
+
+@keyframes mg-life {
+  0%,
+  86% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mg-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+@keyframes mg-flash {
+  0% {
+    opacity: 0.85;
+  }
+  7%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mg-main {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--dir) * -4deg)) translateX(calc(var(--dir) * -32%)) scaleX(1.25);
+  }
+  7% {
+    opacity: 1;
+    transform: rotate(calc(var(--dir) * -4deg)) translateX(calc(var(--dir) * 1.2%)) scaleX(0.98);
+  }
+  12% {
+    transform: rotate(calc(var(--dir) * -4deg)) translateX(0) scaleX(1);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(calc(var(--dir) * -4deg)) translateX(calc(var(--dir) * 1.6%)) scaleX(1);
+  }
+}
+@keyframes mg-push {
+  from {
+    transform: scale(1.16);
+  }
+  to {
+    transform: scale(1.05);
+  }
+}
+@keyframes mg-jitter {
+  0% {
+    transform: rotate(0deg);
+  }
+  33% {
+    transform: rotate(0.9deg) scale(1.01);
+  }
+  66% {
+    transform: rotate(-0.6deg);
+  }
+}
+@keyframes mg-inset {
+  0%,
+  10% {
+    opacity: 0;
+    transform: rotate(calc(var(--dir) * 7deg)) scale(0.4);
+  }
+  20% {
+    opacity: 1;
+    transform: rotate(calc(var(--dir) * 7deg)) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(calc(var(--dir) * 8deg)) scale(1.02);
+  }
+}
+@keyframes mg-word {
+  0%,
+  3% {
+    opacity: 0;
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg) scale(2.6);
+  }
+  9% {
+    opacity: 1;
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg) scale(0.9);
+  }
+  13% {
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg) scale(1.05);
+  }
+  17% {
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg) scale(1.07);
+  }
+}
+@keyframes mg-kana {
+  0%,
+  10% {
+    opacity: 0;
+    transform: translateY(-12%) rotate(calc(var(--dir) * 5deg));
+  }
+  18%,
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(calc(var(--dir) * 5deg));
+  }
+}
+@keyframes mg-shake {
+  0% {
+    transform: translate(6px, -4px);
+  }
+  20% {
+    transform: translate(-5px, 3px);
+  }
+  40% {
+    transform: translate(4px, 4px);
+  }
+  60% {
+    transform: translate(-3px, -2px);
+  }
+  80% {
+    transform: translate(1px, 1px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art-manga.on,
+  .art-manga.mega.on {
+    animation: mg-life var(--d) linear forwards;
+  }
+  .mg-main,
+  .mg-main .mg-art,
+  .mg-lines,
+  .mg-inset,
+  .mg-word,
+  .mg-kana,
+  .mg-flash {
+    animation: none;
+  }
+  .mg-flash {
+    opacity: 0;
+  }
+  .mg-main {
+    transform: rotate(calc(var(--dir) * -4deg));
+  }
+  .mg-inset {
+    transform: rotate(calc(var(--dir) * 7deg));
+  }
+  .mg-word {
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg);
+  }
+  .mg-kana {
+    transform: rotate(calc(var(--dir) * 5deg));
+  }
+}
+/* the game's own Calm motion setting: the same */
+  .art-manga.calm.on,
+  .art-manga.calm.mega.on {
+    animation: mg-life var(--d) linear forwards;
+  }
+  .art-manga.calm .mg-main,
+  .art-manga.calm .mg-main .mg-art,
+  .art-manga.calm .mg-lines,
+  .art-manga.calm .mg-inset,
+  .art-manga.calm .mg-word,
+  .art-manga.calm .mg-kana,
+  .art-manga.calm .mg-flash {
+    animation: none;
+  }
+  .art-manga.calm .mg-flash {
+    opacity: 0;
+  }
+  .art-manga.calm .mg-main {
+    transform: rotate(calc(var(--dir) * -4deg));
+  }
+  .art-manga.calm .mg-inset {
+    transform: rotate(calc(var(--dir) * 7deg));
+  }
+  .art-manga.calm .mg-word {
+    transform: translateY(-58%) rotate(calc(var(--dir) * -9deg)) skewX(-8deg);
+  }
+  .art-manga.calm .mg-kana {
+    transform: rotate(calc(var(--dir) * 5deg));
+  }
+

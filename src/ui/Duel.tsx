@@ -532,6 +532,13 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           )}
           {canSeeSel && <CounterLines list={shownCounters(e.fieldCard(selCard.uid))} />}
           <Menu items={commands} />
+          {/* landscape tablets and computers: the window is a tall side panel, so it shows the card and its text (fitscreen.css) */}
+          {canSeeSel && info && (
+            <div class="msg-card">
+              <CardImg name={selCard.name} owner={selCard.owner} />
+              <p>{info.desc}</p>
+            </div>
+          )}
         </Win>
       );
     }
