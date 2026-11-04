@@ -189,6 +189,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
           "full",
           makeUi(layer.current, (): number => d.stage.speed * d.rate, spot),
         );
+        // (dev builds: the duel's director, for the browser checks)
+        if (import.meta.env.DEV) (window as unknown as { __artDuel?: Director }).__artDuel = d;
         // reading a chain card: everything on stage holds still, and the board waits with it
         // a choice for the player waiting behind the chain: a card is read for 8 s at most
         spot.pauseLimit = () => (promptWaiting() ? 8000 : 25000);
