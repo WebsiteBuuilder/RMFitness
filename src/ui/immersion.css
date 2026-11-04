@@ -761,3 +761,137 @@
   letter-spacing: 0.08em;
   animation: hd-fade 0.4s 0.6s both;
 }
+
+/* ============================================================ the Auto draw switch on your deck */
+
+.hd-auto {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: -11px;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid #ffffff66;
+  background: #060a20f2;
+  color: #ffffffd6;
+  font: 800 10px/1 system-ui, sans-serif;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 6px #000a;
+  -webkit-tap-highlight-color: transparent;
+}
+/* a finger-sized (44px) target around the small pill, reaching down over the deck more than up */
+.hd-auto::before {
+  content: '';
+  position: absolute;
+  inset: -16px -10px -8px;
+}
+/* off: a hollow ring; on: a lit green lamp */
+.hd-auto-dot {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid #c9cde0;
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.hd-auto.on {
+  border-color: #ffd35a;
+  color: #ffe9a0;
+  background: linear-gradient(#1d1a08f2, #060a20f2);
+}
+.hd-auto.on .hd-auto-dot {
+  border-color: #b9ffd2;
+  background: #5dff9a;
+  box-shadow: 0 0 6px 1px #5dff9aaa;
+}
+.hd-auto.pop {
+  animation: hd-auto-pop 0.34s ease-out;
+}
+@keyframes hd-auto-pop {
+  0% {
+    scale: 1;
+  }
+  40% {
+    scale: 1.16;
+    box-shadow: 0 0 14px 2px #ffd35a99;
+  }
+  100% {
+    scale: 1;
+  }
+}
+.hd-auto:active {
+  scale: 0.94;
+}
+/* Touch: with the switch along the bottom of your deck, the card count steps up above it */
+.tpile.deck.has-auto > .tcount {
+  bottom: 12px;
+}
+/* Classic: the deck's name sits under the card, so the switch rides its top edge */
+.pile[data-pile] .pile-stack {
+  position: relative;
+}
+.pile-stack > .hd-auto {
+  top: -10px;
+  bottom: auto;
+}
+.hd-auto.compact {
+  /* the Classic deck is only 34-40px wide: the word alone, its colour tells on from off */
+  gap: 0;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+}
+.hd-auto.compact .hd-auto-dot {
+  display: none;
+}
+.hd-auto.compact.on {
+  background: linear-gradient(#3a2f08f2, #14100af2);
+  box-shadow: 0 0 8px #ffd35a66, 0 2px 6px #000a;
+}
+.pile-stack > .hd-auto::before {
+  inset: -4px -10px -20px;
+}
+/* over the waiting-to-draw screen, exactly where the deck's own switch is */
+.hd-auto.floating {
+  z-index: 59;
+}
+/* what the switch now does: to its left, so it never covers the deck */
+.hd-auto-say {
+  position: fixed;
+  z-index: 60;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0b1230f2;
+  border: 1px solid #ffffff30;
+  color: #fff;
+  font: 700 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px #000a;
+  pointer-events: none;
+  translate: 0 -50%;
+  animation: hd-say 1.5s ease-out both;
+}
+@keyframes hd-say {
+  0% {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  12%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}

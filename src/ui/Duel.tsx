@@ -29,7 +29,7 @@ import { MateLayer, type MatePlan } from '../mates/MateLayer';
 import { DuelAtmosphere } from './Atmosphere';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 import { isMate } from '../mates/roster';
-import { DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
+import { AutoDrawPill, DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
 import { FaceOff, introDue, startIntro } from './faceoff';
 import { getCinematics } from '../art/settings';
 import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
@@ -407,7 +407,10 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
           <span>GY {ps.gy.length}</span>
         </button>
         <div class="pile" data-pile={`deck${p}`}>
-          <div class="pile-stack">{ps.deck.length > 0 && <CardImg name="" back />}</div>
+          <div class="pile-stack">
+            {ps.deck.length > 0 && <CardImg name="" back />}
+            {p === acting && e.speed && canAct && !vet && <AutoDrawPill compact />}
+          </div>
           <span>Deck {ps.deck.length}</span>
         </div>
         <div class={`zone z-f ${ps.field ? '' : 'empty'} ${ps.field ? highlight(ps.field.uid) : ''} ${ps.field && !ps.field.faceUp && (p === acting || spectator) ? 'myset' : ''}`} onClick={() => (ps.field ? tap(ps.field.uid) : fieldSkillOf(p) && setSkillOf(p))}>
@@ -730,7 +733,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   if (style === 'touch')
     return (
       <TouchDuel
-        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish, clockFor }}
+        ctl={{ state, e, acting, mySeat, hotseat, me, opp, canAct, autoPill: !!e.speed && canAct && !vet, spectator, locked, myTurn, prompt, sel, setSel, mode, setMode, picks, togglePick, send, tap, commands, highlight, anim, selCard, canSeeSel, oppHandShown, nextPhaseLabel, setInfo, setPile, openSkill: setSkillOf, openMenu: () => setShowMenu(true), setShowLog, onFinished: finish, clockFor }}
         overlays={overlays}
       />
     );
