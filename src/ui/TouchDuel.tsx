@@ -179,7 +179,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
   // (a tag duel: while your teammate is in, it's their turn, by name)
-  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
+  const turnWho = state.turnPlayer === acting && !ctl.locked && !ctl.spectator ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) {
@@ -563,7 +563,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       dots = true;
     }
     return (
-      <span class={`ttab ${top ? 'top' : 'bottom'} ${kind}`} key={`${kind}|${text}`}>
+      <span class={`ttab ${top ? 'top' : 'bottom'} ${kind}${mine ? ' me' : ''}`} key={`${kind}|${text}`}>
         <b>{text}</b>
         {dots && (
           <i class="tdots" aria-hidden="true">
@@ -809,7 +809,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   }, [handCount === 0, resized]);
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const { cardW, room } = handBox ?? { cardW: handCardW(), room: handRoom() };
+  const box = handBox ?? { cardW: handCardW(), room: handRoom() };
+  const cardW = box.cardW;
+  // (the outer cards of the 3D fan swing out by about 20px each: leave them that room)
+  const room = box.room - 40;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
   // the other player has a choice open: the middle row says so (never what: a prompt's title can name
@@ -817,9 +820,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const theirAsk = state.winner === null && !!state.prompt && state.prompt.player !== acting;
   const midText = (
     <>
-      <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
+      <span class={`tturn ${state.turnPlayer === acting && !ctl.locked && !ctl.spectator ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
         {(state.turnPlayer !== acting || theirAsk) && <i class="tturn-arrow up" aria-hidden="true" />}
-        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
+        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked && !ctl.spectator ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
         {theirAsk || decider !== acting ? (
           <i class="tdots" aria-hidden="true">
             <i />
@@ -903,7 +906,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
-          <div class="trow">
+          <div class="trow opp">
             {deck(oppId)}
             {opp.sz
               .map((c, i) => zone(c, oppId, 's', i))
@@ -911,7 +914,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               .reverse()}
             {fieldZone(oppId)}
           </div>
-          <div class="trow">
+          <div class="trow opp">
             {gy(oppId)}
             {opp.mz
               .map((c, i) => zone(c, oppId, 'm', i))
