@@ -177,6 +177,9 @@ export async function loadSpeedDb(): Promise<boolean> {
   if (!list) return false;
   addSpeedCards(list);
   speedLoaded = true;
+  // sort the pool lists while the phone is idle, so the first deck editor or shop opens without it
+  const w = globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+  if (w.requestIdleCallback) w.requestIdleCallback(() => void pools(), { timeout: 4000 });
   return true;
 }
 
@@ -190,14 +193,15 @@ export function speedDbLoaded(): boolean {
  * Callers get their own copy, so sorting or editing one never touches the cache.
  */
 let poolCache: { at: string; speed: CardInfo[]; skills: CardInfo[] } | null = null;
+const byName = (a: CardInfo, b: CardInfo) => a.name.localeCompare(b.name);
 function pools() {
   if (poolCache && poolCache.at === dbStamp()) return poolCache;
   const seenA = new Set<number>();
   const speed = [...DB.values()]
     .filter((c) => c.speed && c.sub !== 'Skill' && (seenA.has(c.id) ? false : (seenA.add(c.id), true)))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(byName);
   const seenB = new Set<number>();
-  const skills = [...DB.values()].filter((c) => c.sub === 'Skill' && (seenB.has(c.id) ? false : (seenB.add(c.id), true))).sort((a, b) => a.name.localeCompare(b.name));
+  const skills = [...DB.values()].filter((c) => c.sub === 'Skill' && (seenB.has(c.id) ? false : (seenB.add(c.id), true))).sort(byName);
   return (poolCache = { at: dbStamp(), speed, skills });
 }
 
