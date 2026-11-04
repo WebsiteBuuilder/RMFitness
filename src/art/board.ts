@@ -16,14 +16,14 @@ import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } 
 import { card } from "../eds/db";
 import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { ContactShadow, Figure, Glow, Particles, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
+import { ContactShadow, Figure, Glow, Particles, type Emit, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
 import { boardHolo, flickerAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
 import { calmMotion, getHolo, getIdle, onArtSettings } from "./settings";
-import { GLANCE_S, glanceEnvelope, idlePoseInto, idleStyleFor, moteStyleFor, newIdlePose, presenceMotes, presenceOf, wornAmount, type IdleMood, type IdlePose, type IdleStyle, type MoteStyle, type Presence } from "./idleLife";
+import { GLANCE_S, glanceEnvelope, idlePoseInto, idleStyleFor, moteStyleFor, newIdlePose, presenceMotes, presenceOf, wornAmount, MOTE_SHAPE, type IdleMood, type IdlePose, type IdleStyle, type MoteStyle, type Presence } from "./idleLife";
 import { holoHum, holoLock } from "./sfx";
 
 export interface BoardMonster {
@@ -203,6 +203,8 @@ interface Piece {
   /** a glance at a monster that just arrived: when (ms, -1 none) and at which */
   glanceAt: number;
   glanceUid: number;
+  /** the others still have to glance at it (it just arrived) */
+  announce: boolean;
   /** smoothed glance direction -1..1 */
   glanceDir: number;
   idle: IdlePose;
@@ -211,8 +213,23 @@ interface Piece {
 
 const DEF_GLOW = 0x4a8aff;
 const ACE_GLOW = 0xffc84a;
-/** With idle life off: the plain breath and turn the figures always had. */
-const PLAIN_STYLE: IdleStyle = { ...idleStyleFor("", 4), breathAmp: 0.006, rollAmp: 0 };
+/** With idle life off: exactly the plain breath and turn the figures always had. */
+function plainPose(out: IdlePose, t: number, seed: number): IdlePose {
+  const b = Math.sin(t * 1.9 + seed) * 0.006;
+  out.sx = 1 + b;
+  out.sy = (1 + b) * (1 + b * 0.5);
+  out.lift = 0;
+  out.float = 0;
+  out.turn = Math.sin(t * 0.45 + seed) * 0.14;
+  out.roll = 0;
+  out.lean = 0;
+  out.dark = 0;
+  out.aura = 0;
+  return out;
+}
+/** One scratch emit (and swirl) reused for every mote: nothing allocated per mote. */
+const EMIT: Emit = { x: 0, y: 0, color: 0 };
+const PULL = { x: 0, y: 0, strength: 0, swirl: 0 };
 /** Attribute motes: one pool drawn behind the figures and one in front (share of motes in front). */
 const MOTE_POOL = 140;
 const MOTE_FRONT = 0.4;
@@ -246,6 +263,9 @@ export class BoardLayer {
   /** Attribute motes behind and in front of the figures (made with the first one that needs them) */
   private motesBack: Particles | null = null;
   private motesFront: Particles | null = null;
+  /** a mote was emitted this frame */
+  private emitted = false;
+  private calmQ: MediaQueryList | null = typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
   private raf = 0;
   private last = 0;
   private unsub: () => void;
@@ -278,15 +298,13 @@ export class BoardLayer {
       this.ro = new ResizeObserver(this.markDirty);
       this.ro.observe(document.body);
     }
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "particles"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "motes"], () => !this.dead && !this.lost);
     // a cinematic starting or ending: no polling, just a wake-up
     this.unsub = onArtChange(this.onArt);
     // (dev builds: the field layer, for the browser checks)
     if (import.meta.env.DEV) (window as unknown as { __board?: BoardLayer }).__board = this;
-    this.unsubIdle = onArtSettings(() => {
-      this.idleOn = getIdle() && !calmMotion();
-      if (!this.idleOn) (this.motesBack?.clear(), this.motesFront?.clear());
-    });
+    this.unsubIdle = onArtSettings(this.onIdleSetting);
+    this.calmQ?.addEventListener?.("change", this.onIdleSetting);
   }
 
   private onArt = () => {
@@ -308,6 +326,11 @@ export class BoardLayer {
     this.dirty = true;
   }
 
+  private onIdleSetting = () => {
+    this.idleOn = getIdle() && !calmMotion();
+    if (!this.idleOn) (this.motesBack?.clear(), this.motesFront?.clear());
+  };
+
   /** Mote sizes are in CSS px on the card plane. */
   private setMotePx() {
     const px = this.camera.position.z * this.renderer.getPixelRatio();
@@ -316,8 +339,8 @@ export class BoardLayer {
 
   private ensureMotes() {
     if (this.motesBack) return;
-    this.motesBack = new Particles(MOTE_POOL);
-    this.motesFront = new Particles(MOTE_POOL);
+    this.motesBack = new Particles(MOTE_POOL, true);
+    this.motesFront = new Particles(MOTE_POOL, true);
     // behind every figure (over the base discs), and over every figure
     this.motesBack.points.renderOrder = -2;
     this.motesFront.points.renderOrder = 1e6;
@@ -357,9 +380,6 @@ export class BoardLayer {
       if (have) this.drop(have);
       const info = card(m.name);
       const prof = profileFor(info, m.name);
-      // the others glance at a monster that just arrived (not at the field a resumed duel opens on)
-      const at = performance.now();
-      if (at - this.born > 1200) for (const o of this.pieces.values()) if (!o.leaving && o.uid !== m.uid) (o.glanceAt = at + (o.seed % 5) * 60), (o.glanceUid = m.uid);
       const piece: Piece = {
         uid: m.uid,
         name: m.name,
@@ -403,6 +423,8 @@ export class BoardLayer {
         danger: !!m.danger,
         glanceAt: -1,
         glanceUid: 0,
+        // the others glance at it once it stands solid (not at the field a resumed duel opens on)
+        announce: performance.now() - this.born > 1200,
         glanceDir: 0,
         idle: newIdlePose(),
         mood: { braced: false, worn: 0, tense: false, kneel: 0, presence: 0, glance: 0 },
@@ -489,7 +511,7 @@ export class BoardLayer {
   private onRestored = () => {
     // three.js rebuilds its GL state; textures and buffers re-upload on next draw.
     this.lost = false;
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "particles"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow", "motes"], () => !this.dead && !this.lost);
     this.dirty = true;
     this.start();
   };
@@ -646,9 +668,13 @@ export class BoardLayer {
           gl = glanceEnvelope(gk) * (dx > 4 ? 1 : dx < -4 ? -1 : 0);
         }
       }
+      if (p.announce && p.show >= 1 && p.cw > 0 && !p.leaving) {
+        p.announce = false;
+        for (const o of this.pieces.values()) if (!o.leaving && o !== p && o.show >= 1) (o.glanceAt = now + (o.seed % 5) * 60), (o.glanceUid = p.uid);
+      }
       p.glanceDir += (gl - p.glanceDir) * Math.min(1, dt * 8);
       mood.glance = p.glanceDir;
-      const idle = idlePoseInto(p.idle, live ? p.style : PLAIN_STYLE, mood, t, p.seed);
+      const idle = live ? idlePoseInto(p.idle, p.style, mood, t, p.seed) : plainPose(p.idle, t, p.seed);
       const grow = p.quick ? 1 : lerp(0.75, 1, k);
       // the size the pose was measured for, kneeling or not (pose already includes the Defense size)
       // an Overframe monster stands a little taller than the rest, a Millennium one taller still
@@ -728,7 +754,7 @@ export class BoardLayer {
         if (p.finish >= FIN.GL) rimColor(fg, p.disc.u.uRing.value as Vector3);
       }
       u.uDark.value = p.kneel * 0.2 + idle.dark;
-      u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2)) + idle.aura * 0.22;
+      u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
       setRgb(u.uFlash.value as Vector3, HIT_FLASH);
       (u.uFlash.value as Vector3).multiplyScalar(recoil * 0.9);
       // the base disc + shadow lies on the card under the feet (it stays put while the figure hops)
@@ -751,8 +777,13 @@ export class BoardLayer {
     if (this.motesBack) {
       // (the last frame drawn when the field empties carries no motes frozen in the air)
       if (!this.pieces.size) (this.motesBack.clear(), this.motesFront!.clear());
-      this.motesBack.update(dt);
-      this.motesFront!.update(dt);
+      // nothing in the air and nothing new: no stepping, no upload, no draw
+      for (const m of [this.motesBack, this.motesFront!]) {
+        const busy = m.active > 0 || this.emitted;
+        if (busy) m.update(dt);
+        m.points.visible = busy && m.active > 0;
+      }
+      this.emitted = false;
     }
   }
 
@@ -760,7 +791,8 @@ export class BoardLayer {
   private emitMotes(p: Piece, dt: number, lift: number) {
     const m = p.motes!;
     // (fewer on the cheapest tier, and while a cinematic plays)
-    const scale = (stageTier() === 0 ? 0.5 : 1) * (artBusy() ? 0.4 : 1) * presenceMotes(p.presence) * (p.def ? 0.6 : 1);
+    // (and fewer on a small phone, where each card is small and they would crowd it)
+    const scale = (stageTier() === 0 ? 0.5 : 1) * (artBusy() ? 0.4 : 1) * presenceMotes(p.presence) * (p.def ? 0.6 : 1) * (p.cw < 60 ? 0.7 : 1);
     p.moteAcc += m.rate * scale * dt;
     if (p.moteAcc < 1) return;
     this.ensureMotes();
@@ -777,28 +809,37 @@ export class BoardLayer {
       const gold = p.presence === 2 && Math.random() < 0.35;
       const color = gold ? (Math.random() < 0.5 ? ACE_GLOW : 0xfff0b8) : Math.random() < 0.6 ? m.color : m.color2;
       // where it starts: low for embers, smoke and dust (they rise off it), anywhere on it otherwise
-      const low = m.kind === "ember" || m.kind === "smoke" || m.kind === "dust";
-      const y = base + (low ? Math.random() * 0.45 : 0.2 + Math.random() * 0.85) * tall;
+      // (smoke and dust rise off its feet; embers from its flanks; the rest anywhere on it)
+      const low = m.kind === "smoke" || m.kind === "dust";
+      const y = base + (low ? Math.random() * 0.45 : m.kind === "ember" ? 0.1 + Math.random() * 0.6 : 0.2 + Math.random() * 0.85) * tall;
       // (mostly round its edges, where they show against the dark mat rather than over its art)
       const side = Math.random() < 0.5 ? -1 : 1;
       const spread = (m.kind === "leaf" ? 0.85 : 0.7) * (0.45 + 0.55 * Math.sqrt(Math.random())) * side;
       const x = cx + spread * Math.max(cw * 0.55, pose.w * 0.6);
       const rise = m.rise * cw;
-      pool.emit({
-        x,
-        y,
-        z: front ? 8 : -8,
-        vx: (Math.random() - 0.5) * 2 * m.drift * cw,
-        vy: rise,
-        life: m.life,
-        size: m.size * cw,
-        size1: m.size1 * cw,
-        color,
-        // embers and gold dust speed up as they rise; bubbles wobble up steadily; dust settles
-        gravity: m.kind === "ember" || m.kind === "divine" ? -rise * 0.5 : m.kind === "dust" ? rise * 0.25 : 0,
-        drag: m.swirl > 0 ? 0.9 : 0.25,
-        pull: m.swirl > 0 ? { x: cx, y: base + tall * 0.5, strength: cw * 0.2, swirl: cw * 0.45 * m.swirl * (p.seed & 1 ? 1 : -1) } : undefined,
-      });
+      const e = EMIT;
+      e.x = x;
+      e.y = y;
+      e.z = front ? 8 : -8;
+      e.vx = (Math.random() - 0.5) * 2 * m.drift * cw;
+      e.vy = rise;
+      e.life = m.life;
+      e.size = m.size * cw;
+      e.size1 = m.size1 * cw;
+      e.color = color;
+      e.kind = gold ? MOTE_SHAPE.divine : MOTE_SHAPE[m.kind];
+      // embers and gold dust speed up as they rise; dust settles
+      e.gravity = m.kind === "ember" || m.kind === "divine" ? -rise * 0.5 : m.kind === "dust" ? rise * 0.25 : 0;
+      e.drag = m.swirl > 0 ? 0.9 : 0.25;
+      if (m.swirl > 0) {
+        PULL.x = cx;
+        PULL.y = base + tall * 0.5;
+        PULL.strength = cw * 0.2;
+        PULL.swirl = cw * 0.45 * m.swirl * (p.seed & 1 ? 1 : -1);
+        e.pull = PULL;
+      } else e.pull = undefined;
+      pool.emit(e);
+      this.emitted = true;
     }
   }
 
@@ -807,6 +848,8 @@ export class BoardLayer {
     this.halt();
     this.unsub();
     this.unsubIdle();
+    this.calmQ?.removeEventListener?.("change", this.onIdleSetting);
+    if (import.meta.env.DEV && (window as unknown as { __board?: BoardLayer }).__board === this) delete (window as unknown as { __board?: BoardLayer }).__board;
     this.motesBack?.dispose();
     this.motesFront?.dispose();
     window.removeEventListener("resize", this.onResize);

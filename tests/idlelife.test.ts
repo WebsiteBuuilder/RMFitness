@@ -116,6 +116,10 @@ const settings = readFileSync(new URL('../src/art/settings.ts', import.meta.url)
 ok(settings.includes('Monster idle life:'), 'the duel menu has the Monster idle life switch');
 const css = readFileSync(new URL('../src/ui/idlelife.css', import.meta.url), 'utf8');
 ok(css.includes('prefers-reduced-motion') && css.includes('body.art-on'), 'the table holds still for Reduce motion and under a cinematic');
+ok(css.includes(':not(.pad-focus)') && css.includes(':not(.anim-draw)') && css.includes(":not([class*='anim-'])"), "idle motions never override a card's draw, summon, pick or controller-focus animation");
+ok(!/body\.art-on \.duel/.test(css) && !/animation: none !important/.test(css), 'pausing and Reduce motion only touch idle life, never the other card animations');
+ok(!board.includes('idle.aura * 0.22') && !/uPulse\.value = .*aura/.test(board), "the aura never borrows the attack-ready pulse");
+ok(/const EMIT: Emit/.test(board) && !/pool\.emit\(\{/.test(board), 'motes reuse one scratch emit (no allocation per mote)');
 ok(!/box-shadow|filter:|width:|height:|top:|left:/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'the stylesheet animates nothing that repaints or reflows');
 
 if (fails) {

@@ -979,6 +979,74 @@ void main(){
   ${GLOW_OUT.replace('OUT', 'vColor * (1.0 + a * 0.6) * a * vAlpha')}
 }`;
 
+// ---------------------------------------------------------------- Motes (field idle life)
+// The same points as Particles, each with its own shape: 0 ember (a hot drop with a tail
+// below it), 1 bubble (a ring with a highlight), 2 leaf (a turning lens), 3 dust (a soft
+// dim dot), 4 spark (a four-point twinkle), 5 smoke (a wide faint puff), 6 gold (a star).
+const M_VERT = /* glsl */ `
+attribute float aSize;
+attribute float aAlpha;
+attribute vec3 aColor;
+attribute float aKind;
+uniform float uPx;
+uniform float uMaxPx;
+varying float vAlpha;
+varying vec3 vColor;
+varying float vKind;
+varying float vSpin;
+void main(){
+  vAlpha = aAlpha;
+  vColor = aColor;
+  vKind = aKind;
+  // a leaf turns as it drifts (its angle follows where it is)
+  vSpin = position.x * 0.045 + position.y * 0.07;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = min(aSize * uPx / max(0.1, -mv.z), uMaxPx);
+  gl_Position = projectionMatrix * mv;
+}`;
+const M_FRAG = /* glsl */ `
+varying float vAlpha;
+varying vec3 vColor;
+varying float vKind;
+varying float vSpin;
+float soft(float d, float r){ return 1.0 - smoothstep(0.0, r, d); }
+void main(){
+  vec2 p = gl_PointCoord - 0.5;
+  float d = length(p);
+  float a = 0.0;
+  vec3 c = vColor;
+  if (vKind < 0.5) {
+    // ember: a bright drop, its glow trailing down (screen y grows downward in gl_PointCoord)
+    vec2 q = vec2(p.x * 1.7, p.y + 0.1);
+    float tail = soft(length(vec2(p.x * 2.6, max(0.0, p.y + 0.1) * 0.8)), 0.4);
+    a = soft(length(q), 0.3) * 1.3 + tail * 0.6 + soft(d, 0.5) * 0.25;
+    c = mix(vColor, vec3(1.0, 0.96, 0.8), soft(length(q), 0.13));
+  } else if (vKind < 1.5) {
+    // bubble: a thin ring and a highlight
+    a = soft(abs(d - 0.36), 0.06) * 0.9 + soft(length(p - vec2(-0.13, -0.14)), 0.07) * 1.2 + soft(d, 0.36) * 0.08;
+  } else if (vKind < 2.5) {
+    // leaf: a lens, turning
+    float cs = cos(vSpin), sn = sin(vSpin);
+    vec2 r = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
+    float e = (r.x * r.x) / 0.19 + (r.y * r.y) / 0.022;
+    a = (1.0 - smoothstep(0.75, 1.0, e)) * (0.75 + 0.25 * sign(r.y));
+    a += soft(abs(r.y), 0.012) * step(abs(r.x), 0.38) * 0.4;
+  } else if (vKind < 3.5) {
+    // dust: a soft dim mote
+    a = soft(d, 0.42) * 0.5;
+  } else if (vKind < 4.5 || vKind > 5.5) {
+    // spark / gold: a four-point twinkle with a core
+    float rays = soft(abs(p.x), 0.035) * soft(abs(p.y), 0.5) + soft(abs(p.y), 0.035) * soft(abs(p.x), 0.5);
+    a = soft(d, 0.12) + rays * 0.9 + soft(d, 0.5) * 0.12;
+    c = mix(vColor, vec3(1.0), soft(d, 0.07));
+  } else {
+    // smoke: a wide, faint puff
+    a = soft(d, 0.5);
+    a = a * a * 0.55;
+  }
+  ${GLOW_OUT.replace('OUT', 'c * clamp(a, 0.0, 1.4) * vAlpha')}
+}`;
+
 export interface Emit {
   x: number;
   y: number;
@@ -999,6 +1067,8 @@ export interface Emit {
   drag?: number;
   /** pull toward (px,py) with a swirl around it (Shadow Realm vortex) */
   pull?: { x: number; y: number; strength: number; swirl: number };
+  /** a pool made with shapes (motes): which shape (see M_FRAG) */
+  kind?: number;
 }
 
 const P_ATTRS = ['position', 'aColor', 'aSize', 'aAlpha'] as const;
@@ -1016,6 +1086,7 @@ export class Particles implements Fx {
   private s01: Float32Array; // size0 size1
   private phys: Float32Array; // gravity drag
   private pull: Float32Array; // px py strength swirl
+  private kind: Float32Array | null = null;
   private next = 0;
   private lim: number;
   active = 0;
@@ -1023,7 +1094,8 @@ export class Particles implements Fx {
   emitScale = 1;
   mat: ShaderMaterial;
 
-  constructor(max: number) {
+  /** `shapes`: each point drawn in its own shape (the field's idle-life motes) */
+  constructor(max: number, shapes = false) {
     this.max = max;
     this.lim = max;
     this.geo = new BufferGeometry();
@@ -1040,7 +1112,11 @@ export class Particles implements Fx {
     this.geo.setAttribute('aColor', new BufferAttribute(this.col, 3));
     this.geo.setAttribute('aSize', new BufferAttribute(this.size, 1));
     this.geo.setAttribute('aAlpha', new BufferAttribute(this.alpha, 1));
-    this.mat = material('particles', {});
+    if (shapes) {
+      this.kind = new Float32Array(max);
+      this.geo.setAttribute('aKind', new BufferAttribute(this.kind, 1));
+    }
+    this.mat = material(shapes ? 'motes' : 'particles', {});
     this.points = new Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 10;
@@ -1091,6 +1167,10 @@ export class Particles implements Fx {
       this.pull[i * 4 + 1] = p ? p.y : 0;
       this.pull[i * 4 + 2] = p ? p.strength : 0;
       this.pull[i * 4 + 3] = p ? p.swirl : 0;
+      if (this.kind) {
+        this.kind[i] = o.kind ?? 0;
+        (this.geo.getAttribute('aKind') as BufferAttribute).needsUpdate = true;
+      }
       const c = o.color;
       // a little color jitter keeps bursts from looking flat
       const j = 0.85 + Math.random() * 0.3;
@@ -2224,7 +2304,7 @@ void main(){
  * holding the program in every renderer that compiled it (prewarm), disposing an
  * instance never deletes the program and the next cinematic links nothing.
  */
-export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'ribbon' | 'ring' | 'backdrop' | 'veil' | 'glow' | 'crack' | 'shards' | 'cutin' | 'bright' | 'kawase' | 'composite';
+export type MaterialKind = 'figure' | 'shadow' | 'panel' | 'particles' | 'motes' | 'ribbon' | 'ring' | 'backdrop' | 'veil' | 'glow' | 'crack' | 'shards' | 'cutin' | 'bright' | 'kawase' | 'composite';
 export const MATERIAL_KINDS: readonly MaterialKind[] = ['figure', 'shadow', 'panel', 'particles', 'ribbon', 'ring', 'backdrop', 'veil', 'glow', 'crack', 'shards', 'cutin', 'bright', 'kawase', 'composite'];
 
 const uniforms = (o: Record<string, unknown>) => {
@@ -2294,6 +2374,7 @@ const SPECS: Record<MaterialKind, () => ShaderMaterial> = {
     }),
   panel: () => new ShaderMaterial({ vertexShader: BASIC_VERT, fragmentShader: PANEL_FRAG, ...FX, side: DoubleSide, uniforms: uniforms({ uMap: null, uOpacity: 1, uTint: 0, uGlow: new Vector3(1, 1, 1), uSheen: -1 }) }),
   particles: () => new ShaderMaterial({ vertexShader: P_VERT, fragmentShader: P_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300, uMaxPx: 64 }) }),
+  motes: () => new ShaderMaterial({ vertexShader: M_VERT, fragmentShader: M_FRAG, ...FX, ...GLOW, uniforms: uniforms({ uPx: 300, uMaxPx: 48 }) }),
   ribbon: () =>
     new ShaderMaterial({
       vertexShader: RIB_VERT,
@@ -2415,7 +2496,7 @@ export async function prewarmRenderer(renderer: WebGLRenderer, camera: Camera, k
       if (!alive()) break;
       const scene = new Scene();
       // shards draw instanced, particles as points: warm those variants of their programs
-      const o = k === 'particles' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
+      const o = k === 'particles' || k === 'motes' ? new Points(dot, baseMaterial(k)) : k === 'shards' ? new InstancedMesh(plane, baseMaterial(k), 1) : new Mesh(plane, baseMaterial(k));
       o.frustumCulled = false;
       scene.add(o);
       // Never wait forever (a context lost mid-compile never reports ready).

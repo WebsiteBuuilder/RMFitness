@@ -133,14 +133,17 @@ export interface MoteStyle {
 }
 
 const MOTES: Record<string, MoteStyle> = {
-  FIRE: { kind: 'ember', color: 0xff7a1a, color2: 0xffc04a, rate: 5.9, rise: 0.55, drift: 0.12, life: 1.6, size: 0.50, size1: 0.10, swirl: 0 },
-  WATER: { kind: 'bubble', color: 0x5fd0ff, color2: 0xb8f2ff, rate: 4.1, rise: 0.38, drift: 0.08, life: 1.9, size: 0.36, size1: 0.60, swirl: 0 },
-  WIND: { kind: 'leaf', color: 0x8cffb0, color2: 0xe0ffd0, rate: 4.3, rise: 0.22, drift: 0.05, life: 2.2, size: 0.41, size1: 0.29, swirl: 1 },
-  EARTH: { kind: 'dust', color: 0xd8a860, color2: 0xa8885a, rate: 3.2, rise: 0.12, drift: 0.16, life: 2.4, size: 0.46, size1: 0.70, swirl: 0 },
-  LIGHT: { kind: 'spark', color: 0xfff2b0, color2: 0xffffff, rate: 4.8, rise: 0.3, drift: 0.06, life: 1.5, size: 0.46, size1: 0.00, swirl: 0 },
-  DARK: { kind: 'smoke', color: 0x9a4aff, color2: 0x5a2ab0, rate: 3.6, rise: 0.2, drift: 0.07, life: 2.6, size: 0.55, size1: 1.10, swirl: 0 },
-  DIVINE: { kind: 'divine', color: 0xffd65a, color2: 0xfff4c0, rate: 6.6, rise: 0.42, drift: 0.08, life: 1.8, size: 0.50, size1: 0.10, swirl: 0.5 },
+  FIRE: { kind: 'ember', color: 0xff6a12, color2: 0xffb03a, rate: 4.6, rise: 0.42, drift: 0.1, life: 1.5, size: 0.34, size1: 0.12, swirl: 0 },
+  WATER: { kind: 'bubble', color: 0x6fd8ff, color2: 0xc8f4ff, rate: 3.2, rise: 0.3, drift: 0.06, life: 1.8, size: 0.13, size1: 0.21, swirl: 0 },
+  WIND: { kind: 'leaf', color: 0x7cf2a0, color2: 0xd8ffc0, rate: 3.4, rise: 0.16, drift: 0.05, life: 2.2, size: 0.24, size1: 0.2, swirl: 1 },
+  EARTH: { kind: 'dust', color: 0xd8a860, color2: 0xb89870, rate: 3.0, rise: 0.08, drift: 0.14, life: 2.4, size: 0.16, size1: 0.26, swirl: 0 },
+  LIGHT: { kind: 'spark', color: 0xfff2b0, color2: 0xffffff, rate: 3.6, rise: 0.22, drift: 0.05, life: 1.4, size: 0.3, size1: 0.05, swirl: 0 },
+  DARK: { kind: 'smoke', color: 0x7a3ae0, color2: 0x4a2a9a, rate: 3.0, rise: 0.16, drift: 0.06, life: 2.6, size: 0.26, size1: 0.6, swirl: 0 },
+  DIVINE: { kind: 'divine', color: 0xffd65a, color2: 0xfff4c0, rate: 5.0, rise: 0.34, drift: 0.07, life: 1.7, size: 0.32, size1: 0.06, swirl: 0.5 },
 };
+
+/** The shape each kind of mote is drawn in (stage.ts M_FRAG). */
+export const MOTE_SHAPE: Record<MoteKind, number> = { ember: 0, bubble: 1, leaf: 2, dust: 3, spark: 4, smoke: 5, divine: 6 };
 
 /** The motes around a monster, from its Attribute (none for an unknown one). */
 export function moteStyleFor(attribute: string | undefined): MoteStyle | null {
@@ -232,8 +235,10 @@ export function idlePoseInto(out: IdlePose, s: IdleStyle, m: IdleMood, t: number
   out.sy = 1 + breath;
   // hover (standing only), bobbing
   const hov = s.hover * stand * (1 - 0.5 * m.worn);
-  const bob = (s.bobAmp * (hov > 0 ? 1 : 0.6)) * Math.sin(t * s.bobRate + ph * 1.3) * stand;
-  out.lift = Math.max(0, hov + bob + (hov > 0 ? s.bobAmp : 0));
+  // (a hovering monster bobs round its hover height; one standing on its card rises off it and back)
+  const wave = Math.sin(t * s.bobRate + ph * 1.3);
+  const bob = hov > 0 ? s.bobAmp * (1 + wave) : s.bobAmp * 0.3 * (1 + wave);
+  out.lift = Math.max(0, hov + bob * stand);
   out.float = s.hover > 0 ? clamp01(out.lift / (s.hover + s.bobAmp * 2)) * stand : 0;
   // turning: smooth, or in servo steps
   let turnT = t * s.swayRate + ph;
@@ -245,19 +250,20 @@ export function idlePoseInto(out: IdlePose, s: IdleStyle, m: IdleMood, t: number
   }
   out.turn = Math.sin(turnT) * s.swayAmp * (1 - 0.5 * m.kneel) * (m.braced ? 0.3 : 1) + m.glance * 0.42;
   out.roll = Math.sin(t * s.rollRate + ph * 2.1) * s.rollAmp * (1 - 0.6 * m.kneel);
-  if (s.hum > 0) out.roll += Math.sin(t * 47 + ph) * s.hum;
+  // (every motion here stays under ~2 Hz: the settled field draws at 10-20 fps, a faster shiver only strobes)
+  if (s.hum > 0) out.roll += Math.sin(t * 9 + ph) * s.hum;
   // a twitch: a quick shudder now and then (Insects, Plants)
   if (s.twitch > 0) {
     const slot = Math.floor(t / 1.7 + ph);
     const f = t / 1.7 + ph - slot;
-    if (hash(slot + seed) < 0.35 * s.twitch && f < 0.12) out.roll += Math.sin((f / 0.12) * Math.PI * 3) * 0.05;
+    if (hash(slot + seed) < 0.35 * s.twitch && f < 0.4) out.roll += Math.sin((f / 0.4) * Math.PI * 2) * 0.05;
   }
   out.lean = 0.1 * m.worn * stand;
   // braced: leans back and shivers while something is aimed at it
   if (m.braced) {
     out.lean -= 0.07;
-    out.roll += Math.sin(t * 38 + ph) * 0.018;
-    out.turn += Math.sin(t * 29 + ph) * 0.02;
+    out.roll += Math.sin(t * 12 + ph) * 0.022;
+    out.turn += Math.sin(t * 9 + ph) * 0.025;
   }
   out.dark = 0.14 * m.worn;
   // aura: a slow swell (a boss), stronger for an Ace

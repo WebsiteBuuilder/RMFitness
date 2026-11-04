@@ -14,13 +14,22 @@
     translate: 0 -2.5px;
   }
 }
-.idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked) {
+.idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus) {
   animation: idl-float 4.2s ease-in-out infinite;
   animation-delay: calc(var(--arc, 0) * -0.55s);
 }
-/* the opponent's hand too, a beat slower */
+/* the opponent's hand too, a beat slower (downward: their hand sits against the top edge) */
+@keyframes idl-float-down {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 2px;
+  }
+}
 .idle-on .duel.touch .topp-hand .thc:not(.anim-draw) {
-  animation: idl-float 5.2s ease-in-out infinite;
+  animation: idl-float-down 5.2s ease-in-out infinite;
   animation-delay: calc(var(--arc, 0) * -0.7s - 1s);
 }
 
@@ -56,28 +65,29 @@
     scale: 1.022;
   }
 }
-.idle-on:not(.art3d-on) .duel.touch .tz-m .fcard:not(.fd) {
+.idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd) {
   animation: idl-breathe 3.6s ease-in-out infinite;
 }
-.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(2) .fcard:not(.fd) {
+.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(2):not([class*='anim-']) .fcard:not(.fd) {
   animation-delay: -1.2s;
 }
-.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(3) .fcard:not(.fd) {
+.idle-on:not(.art3d-on) .duel.touch .tz-m:nth-child(3):not([class*='anim-']) .fcard:not(.fd) {
   animation-delay: -2.4s;
 }
 
-/* a cinematic on screen: the table holds still under it */
-body.art-on .duel.touch .thcard,
-body.art-on .duel.touch .thc,
-body.art-on .duel.touch .tz-m .fcard,
-body.art-on .duel.touch .fcard.fd .tshine::before {
+/* a cinematic on screen: the table holds still under it (only idle life's own motions: a card
+   being drawn or picked keeps its animation) */
+body.art-on.idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus),
+body.art-on.idle-on .duel.touch .topp-hand .thc:not(.anim-draw),
+body.art-on.idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd),
+body.art-on.idle-on .duel.touch .fcard.fd .tshine::before {
   animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
-  .idle-on .duel.touch .thand .thcard,
-  .idle-on .duel.touch .topp-hand .thc,
-  .idle-on .duel.touch .tz-m .fcard {
-    animation: none !important;
+  .idle-on .duel.touch .thand .thcard:not(.sel):not(.lifted):not(.anim-draw):not(.pick):not(.picked):not(.pad-focus),
+  .idle-on .duel.touch .topp-hand .thc:not(.anim-draw),
+  .idle-on:not(.art3d-on) .duel.touch .tz-m:not([class*='anim-']) .fcard:not(.fd) {
+    animation: none;
   }
   .idle-on .duel.touch .fcard.fd .tshine {
     display: none;
