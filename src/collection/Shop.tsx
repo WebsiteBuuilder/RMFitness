@@ -5,7 +5,7 @@ import { card, speedCards, skillCards } from '../eds/db';
 import { CHIP_CAP, COPIES, owned, unplayableReason, type SpeedSave } from '../eds/speedSave';
 import { CardImg, CardInfoPanel } from '../ui/CardImg';
 import { Menu, Overlay, Win } from '../ui/Window';
-import { playBlip, playHit, playSummon, playWin } from '../ui/sound';
+import { playBlip, playSummon, playWin } from '../ui/sound';
 import { RarityChip, chipText } from '../level/CardLevels';
 import { OF_TIER, TIERS, cardLevels, tierIndex } from '../level/leveling';
 import {
@@ -38,11 +38,11 @@ import { RARITIES, RARITY_SHORT, VAULT_CODE, WINS_PER_SET, boosterSets, rarityIn
 
 const setCards = (name: string): [string, Rarity][] => setByName(name)?.cards ?? [];
 import './shop.css';
+import { PackBatch, PackCeremony } from '../packopen/Ceremony';
 
 type Tab = 'packs' | 'binder' | 'craft';
 const PAGE = 60;
 const RCLASS: Record<string, string> = { Common: 'rc', Rare: 'rr', 'Super Rare': 'rsr', 'Ultra Rare': 'rur', 'Secret Rare': 'rscr' };
-const isHit = (r: Rarity) => r !== 'Common' && r !== 'Rare';
 const buzz = (ms: number | number[]) => {
   try {
     navigator.vibrate?.(ms);
@@ -104,6 +104,8 @@ export function CardShop({ save, onSave, onBack, start }: { save: SpeedSave; onS
   const [sel, setSel] = useState<string | null>(null);
   const [n, setN] = useState(0);
   const [busy, setBusy] = useState(0);
+  /** the batch whose top pulls were shown (its results grid is up) */
+  const [batchSeen, setBatchSeen] = useState(-1);
   const show = (o: Opened[]) => (setN(n + 1), setOpened(o));
 
   /** Opens up to `count` packs of a set in a row (no set: gift packs spread over every set in turn, from a random start). */
@@ -160,13 +162,16 @@ export function CardShop({ save, onSave, onBack, start }: { save: SpeedSave; onS
       )}
       {opened &&
         (opened.length === 1 ? (
-          <PackReveal
+          <PackCeremony
             key={n}
             opened={opened[0]}
+            cover={coverOf(setCards(opened[0].set ?? ''))}
             left={oneSetMax(opened[0].save, opened[0].set!)}
             onAgain={(all) => openSome(opened[0].save, opened[0].set!, all ? oneSetMax(opened[0].save, opened[0].set!) : 1)}
             onDone={() => setOpened(null)}
           />
+        ) : batchSeen !== n ? (
+          <PackBatch key={n} opened={opened} cover={opened.every((o) => o.set === opened[0].set) ? coverOf(setCards(opened[0].set ?? '')) : undefined} onFinish={() => setBatchSeen(n)} />
         ) : (
           <PackSummary key={n} opened={opened} onDone={() => setOpened(null)} />
         ))}
@@ -329,132 +334,6 @@ export function DropOdds() {
 
 /** Finishes worth a fanfare: Glossy, Royal, Overframe. */
 const BIG_FINISH = 4;
-
-function PackReveal({ opened, left, onAgain, onDone }: { opened: Opened; left: number; onAgain: (all: boolean) => void; onDone: () => void }) {
-  const [torn, setTorn] = useState(false);
-  const [flipped, setFlipped] = useState<boolean[]>(() => opened.cards.map(() => false));
-  const [flash, setFlash] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const rar = opened.cards.map((n) => rarityIn(opened.set, n));
-  const fin = opened.cards.map((_, i) => opened.finishes?.[i] ?? 0);
-  const special = (i: number) => isHit(rar[i]) || fin[i] >= 3;
-  const all = flipped.every(Boolean);
-  const flipOne = (i: number, cur: boolean[]) => {
-    const r = rar[i];
-    const f = fin[i];
-    if (f >= BIG_FINISH) {
-      setFlash(`fin-${TIERS[f].id}`);
-      window.setTimeout(() => setFlash(null), f === OF_TIER ? 1600 : 1100);
-      buzz(f === OF_TIER ? [80, 40, 80, 40, 200] : [60, 40, 120]);
-      playWin();
-      window.setTimeout(playSummon, 250);
-    } else if (isHit(r) || f === 3) {
-      setFlash(RCLASS[r]);
-      window.setTimeout(() => setFlash(null), 900);
-      buzz(r === 'Secret Rare' ? [60, 40, 120] : r === 'Ultra Rare' ? [50, 30, 80] : 40);
-      if (r === 'Super Rare') playHit();
-      else (playWin(), r === 'Secret Rare' && window.setTimeout(playSummon, 250));
-    } else playBlip();
-    return cur.map((f, j) => f || j === i);
-  };
-  const flip = (i: number) => {
-    if (flipped[i]) return setInfo(opened.cards[i]);
-    setFlipped(flipOne(i, flipped));
-  };
-  // Flip all: the Commons first, then a beat, then the hit.
-  const flipAll = () => {
-    const commons = flipped.map((f, i) => f || !special(i));
-    playBlip();
-    setFlipped(commons);
-    // The hits flip last, best finish last.
-    const hits = rar
-      .map((_, i) => (special(i) && !flipped[i] ? i : -1))
-      .filter((i) => i >= 0)
-      .sort((a, b) => fin[a] - fin[b]);
-    if (hits.length) window.setTimeout(() => setFlipped((cur) => hits.reduce((c, i) => flipOne(i, c), cur)), 700);
-  };
-  const tear = () => {
-    playSummon();
-    buzz(30);
-    setTorn(true);
-  };
-  return (
-    <Overlay>
-      <div class={`reveal ${flash ? `flash ${flash}` : ''}`}>
-        {!torn ? (
-          <button class="pack big tearable" onClick={tear}>
-            {opened.set && coverOf(setCards(opened.set)) && (
-              <span class="pack-art">
-                <CardImg name={coverOf(setCards(opened.set))!} />
-              </span>
-            )}
-            <span class="pack-logo">SPEED DUEL</span>
-            <span class="pack-name">{shortSetName(opened.set ?? '')}</span>
-            <span class="pack-note">
-              <span class="touch-txt">tap to tear it open</span>
-              <span class="pad-txt">A to tear it open</span>
-            </span>
-          </button>
-        ) : (
-          <>
-            <div class="reveal-row">
-              {opened.cards.map((n, i) => {
-                const r = rar[i];
-                return (
-                  <button key={i} class={`rv ${flipped[i] ? 'up' : ''} ${RCLASS[r]} ${special(i) ? 'hit' : ''} ${fin[i] >= BIG_FINISH ? `fin fin-${TIERS[fin[i]].id}` : ''}`} style={{ animationDelay: `${i * 90}ms` }} onClick={() => flip(i)}>
-                    <span class="rv-in">
-                      <span class="rv-back">
-                        <i class="sd-back" />
-                      </span>
-                      <span class="rv-face">
-                        <CardImg name={n} />
-                        {/* one mark per card: the rarity it was pulled at (never below the printed one) */}
-                        {fin[i] > 0 ? <span class={`rv-fin lv-chip lv-${TIERS[fin[i]].id}`}>{chipText(TIERS[fin[i]].id)}</span> : <span class="rv-r">{RARITY_SHORT[r]}</span>}
-                        {opened.fresh.includes(n) && <span class="rv-new">NEW</span>}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {all && best(fin) >= 3 && <p class="rv-best">Best pull: {TIERS[best(fin)].name}!</p>}
-            {all && opened.shards > 0 && <p class="hint">Copies past 3 broke into {opened.shards} shards.</p>}
-            <div class="rv-actions">
-              {all ? (
-                <>
-                  {left > 0 && (
-                    <button class="rv-btn main" onClick={() => onAgain(false)}>
-                      Open another <small>{left} left</small>
-                    </button>
-                  )}
-                  {left > 1 && (
-                    <button class="rv-btn" onClick={() => onAgain(true)}>
-                      Open all {left}
-                    </button>
-                  )}
-                  <button class={`rv-btn ${left > 0 ? 'quiet' : 'main'}`} onClick={onDone}>
-                    Done
-                  </button>
-                </>
-              ) : (
-                <button class="rv-btn main" onClick={flipAll}>
-                  Flip all
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      {info && (
-        <Overlay onClose={() => setInfo(null)}>
-          <Win title="Card Info" onClose={() => setInfo(null)}>
-            <CardInfoPanel name={info} />
-          </Win>
-        </Overlay>
-      )}
-    </Overlay>
-  );
-}
 
 /** Several packs opened at once: every card in one grid, best first. */
 function PackSummary({ opened, onDone }: { opened: Opened[]; onDone: () => void }) {
