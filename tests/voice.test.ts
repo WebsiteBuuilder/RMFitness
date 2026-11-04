@@ -306,13 +306,35 @@ t('an engine that ignores cancel() never builds a backlog', () => {
 t('at 4x the deadline is shorter', () => {
   const r = rig();
   speakShout('White Lightning!', 1, 1.7, 4);
-  r.advance(500);
+  r.advance(700);
   r.engineStarts();
   assert.equal(r.heard.length, 0);
   speakShout('White Lightning!', 1, 1.7, 4);
   r.advance(200);
   r.engineStarts();
   assert.equal(r.heard.length, 1);
+});
+
+t('a shout assumed started (Chrome says speaking while a cold engine wakes) is cut if it really starts late', () => {
+  const r = rig();
+  speakShout('Dark Magic Attack!', 1);
+  r.advance(100);
+  r.engineStartsSilently(); // speaking=true, no onstart yet
+  r.advance(MAX_LATE_MS + 50); // assumed started
+  const c = r.cancels();
+  r.strayStart(r.lastAsked()); // the real start, 1 s late
+  assert.ok(r.cancels() > c);
+});
+
+t('a warm-up the engine never answers is retried after a moment', () => {
+  const r = rig();
+  warmVoice();
+  const u = r.lastAsked();
+  warmVoice();
+  assert.equal(r.lastAsked(), u);
+  r.advance(1600);
+  warmVoice();
+  assert.notEqual(r.lastAsked(), u);
 });
 
 setVoiceEnv(null);

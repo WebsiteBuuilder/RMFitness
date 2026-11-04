@@ -71,6 +71,7 @@ export function setVoiceEnv(e: VoiceEnv | null) {
   pick = undefined;
   warmed = false;
   warming = false;
+  warmU = null;
 }
 
 interface Live {
@@ -78,6 +79,8 @@ interface Live {
   u: Utter;
   asked: number;
   started: boolean;
+  /** started only by the engine's word (no onstart yet) */
+  assumed: boolean;
   late: unknown;
   long: unknown;
 }
@@ -155,12 +158,12 @@ export function speakShout(text: string, pitch: number, rate = 1.12, speed = 1):
     if (ss.pending === true) return;
     if (jams >= 2 && ss.speaking === true) return;
     // (the deadline follows the duel's speed: at 4x an attack is gone in well under a second)
-    const maxLate = Math.max(400, MAX_LATE_MS / Math.max(1, speed));
+    const maxLate = Math.max(600, MAX_LATE_MS / Math.max(1, speed));
     // Chrome can leave the engine paused (a call, the tab in the background): it would hold the shout
     if (ss.paused) ss.resume?.();
     const u = utter(text, pitch, rate, 1);
     if (!u) return;
-    const me: Live = { u, asked: e.now(), started: false, late: null, long: null };
+    const me: Live = { u, asked: e.now(), started: false, assumed: false, late: null, long: null };
     const cutLong = () => {
       e.stop(me.long);
       me.long = e.later(() => {
@@ -171,7 +174,16 @@ export function speakShout(text: string, pitch: number, rate = 1.12, speed = 1):
       const late = e.now() - me.asked > maxLate;
       if (live === me && !late) {
         me.started = true;
+        me.assumed = false;
+        if (jams > 0) jams--; // (on-time starts win back trust after a call or a cold start)
         cutLong(); // (a shout gets its full length from when it starts)
+        return;
+      }
+      // (a shout only assumed started, because the engine said it was speaking, that really
+      // starts late now: Chrome reports speaking while a cold engine is still waking)
+      if (live === me && me.assumed) {
+        jams++;
+        drop();
         return;
       }
       // An old shout really being said now, long after its attack: cut it (and anything behind
@@ -187,6 +199,7 @@ export function speakShout(text: string, pitch: number, rate = 1.12, speed = 1):
       // an engine that never sends onstart but is plainly saying this (nothing else queued) keeps it
       if (ss.speaking === true && ss.pending === false) {
         me.started = true;
+        me.assumed = true;
         return;
       }
       drop();
@@ -206,6 +219,8 @@ export function stopShout(): void {
 
 let warmed = false;
 let warming = false;
+/** held so it is not garbage-collected before its events */
+let warmU: Utter | null = null;
 /** The engine has been woken (a warm-up utterance actually ran). */
 export const voiceWarm = () => warmed;
 /**
@@ -221,11 +236,24 @@ export function warmVoice(): void {
     const u = utter(' ', 1, 1, 0);
     if (!u) return;
     warming = true;
+    warmU = u;
     u.onstart = u.onend = () => {
       warmed = true;
       warming = false;
+      warmU = null;
     };
-    u.onerror = () => (warming = false);
+    u.onerror = () => {
+      warming = false;
+      warmU = null;
+    };
+    // an engine that sends nothing at all for a blank: the next tap tries again
+    const e = E();
+    e.later(() => {
+      if (warmU === u) {
+        warming = false;
+        warmU = null;
+      }
+    }, 1500);
     ss.speak(u);
   } catch {
     /* no speech on this phone */
