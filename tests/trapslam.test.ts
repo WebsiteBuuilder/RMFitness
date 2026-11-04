@@ -218,7 +218,7 @@ const ref = (uid: number, name: string, controller: Pid): CardRef => ({ uid, nam
     { kind: 'win', winner: 0, shadow: null },
   ];
   const r = finishingReplay(chain);
-  check(r.map((c) => c.kind).join() === 'hit,destroy' && r.every((c) => c.replay), `the replay: the blow from its swing and what it destroyed, all marked replay (${r.map((c) => c.kind)})`);
+  check(r.map((c) => c.kind).join() === 'finale,hit,destroy' && r.every((c) => c.replay), `the replay: (an iconic card's cutscene,) the blow from its swing and what it destroyed, all marked replay (${r.map((c) => c.kind)})`);
   check(!chain.some((c) => c.replay) && !atk.replay, 'the original cues are left as they were');
   check(finishingReplay([{ kind: 'win', winner: 'draw', shadow: null }]).length === 0, 'a draw has no replay');
   check(finishingReplay([{ kind: 'damage', player: 1, amount: 500 }, { kind: 'win', winner: 0, shadow: null }]).length === 1, 'damage alone replays itself');
