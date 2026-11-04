@@ -2,7 +2,7 @@
 // (run: npx tsx tests/finishers.test.ts).
 import { readFileSync } from 'node:fs';
 import { finisherFor, FINISHER_TITLE, RACE_FINISHER, type FinisherKind } from '../src/art/finishers';
-import { FINISHER_CHARGE, FINISHER_KINDS, shadowSeen, SHADOW_REPEAT_RATE } from '../src/art/runtime';
+import { FINISHER_CHARGE, FINISHER_KINDS, markShadowSeen, shadowSeen, SHADOW_REPEAT_RATE } from '../src/art/runtime';
 
 let fails = 0;
 const check = (ok: unknown, what: string) => {
@@ -45,7 +45,9 @@ check(FINISHER_CHARGE > 0.3 && FINISHER_CHARGE < 0.9, `the finisher's wind-up is
 
 // the Shadow Realm finish: full length the first time, faster after that
 check(shadowSeen() === false, 'the first Shadow Realm finish plays at full length');
-check(shadowSeen() === true && shadowSeen() === true, 'later ones play faster');
+check(shadowSeen() === false, 'starting one (or skipping it) does not count as having seen it');
+markShadowSeen();
+check(shadowSeen() === true, 'once watched through, later ones play faster');
 check(SHADOW_REPEAT_RATE > 1.2 && SHADOW_REPEAT_RATE < 2, `a repeat is ${Math.round((1 - 1 / SHADOW_REPEAT_RATE) * 100)}% shorter`);
 
 console.log(fails ? `\n${fails} FAILED` : '\nall finisher checks passed');
