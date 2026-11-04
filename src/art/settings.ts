@@ -4,6 +4,7 @@
 // The old single "3D Animations: Full / Fast / Off" option (eds.art3d) carries over:
 // Off stays off, Fast becomes 1.5×.
 import { useEffect, useState } from 'preact/hooks';
+import type { MangaMode } from './mangaRules';
 
 export type Cinematics = 'big' | 'all' | 'mine' | 'off';
 export type AnimSpeed = 1 | 1.5 | 2;
@@ -78,6 +79,17 @@ const IDLE_KEY = 'eds.idle';
 export const getIdle = (): boolean => read(IDLE_KEY) !== 'off';
 export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
 
+const MANGA_KEY = 'eds.manga';
+const MANGA_ORDER: MangaMode[] = ['big', 'all', 'off'];
+export const MANGA_NAMES: Record<MangaMode, string> = { big: 'Big hits', all: 'Every hit', off: 'Off' };
+/** Manga attack panels (mangaRules.ts): on big hits unless changed. */
+export function getManga(): MangaMode {
+  const v = read(MANGA_KEY);
+  return v && (MANGA_ORDER as string[]).includes(v) ? (v as MangaMode) : 'big';
+}
+export const setManga = (v: MangaMode) => write(MANGA_KEY, v);
+export const nextManga = (v: MangaMode): MangaMode => MANGA_ORDER[(MANGA_ORDER.indexOf(v) + 1) % MANGA_ORDER.length];
+
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
 export const nextCinematics = (v: Cinematics): Cinematics => CINE_ORDER[(CINE_ORDER.indexOf(v) + 1) % CINE_ORDER.length];
@@ -99,6 +111,7 @@ export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
 export const useDuelCam = () => useStored(getDuelCam);
 export const useIdle = () => useStored(getIdle);
+export const useManga = () => useStored(getManga);
 /** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
 export function onArtSettings(cb: () => void): () => void {
   window.addEventListener(EVT, cb);
@@ -113,11 +126,13 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const holo = useHolo();
   const cam = useDuelCam();
   const idle = useIdle();
+  const manga = useManga();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
     { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: 'tap to change', onPick: () => setDuelCam(nextDuelCam(cam)) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
+    { label: `Manga: ${MANGA_NAMES[manga]}`, note: 'tap to change', onPick: () => setManga(nextManga(manga)) },
   ];
 }
