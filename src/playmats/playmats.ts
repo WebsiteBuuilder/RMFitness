@@ -109,17 +109,26 @@ const NAMED: [RegExp, PlaymatId][] = [
   [/\bbakura\b/i, 'dark'],
   [/\bmai\b/i, 'wind'],
   [/\b(tea|téa)\b/i, 'heart'],
-  [/\b(tristan|rex|bandit)\b/i, 'earth'],
-  [/\b(mako)\b/i, 'water'],
   [/\b(weevil|keith)\b/i, 'disk'],
+  [/\b(tristan|rex)\b/i, 'earth'],
+  [/\b(mako)\b/i, 'water'],
   [/\b(mokuba)\b/i, 'blue'],
 ];
-/** A computer duelist's mat: their own for the famous ones, else the same one every time for the same name. */
+/** Mats an unnamed computer duelist can bring: never one a player has to earn. */
+const EVERYDAY = PLAYMATS.filter((m) => 'free' in m.cost || 'chips' in m.cost);
+const forName = new Map<string, PlaymatId>();
+/** A computer duelist's mat: their own for the famous ones, else the same everyday mat every time for the same name. */
 export function playmatForName(name: string): PlaymatId {
-  for (const [re, id] of NAMED) if (re.test(name)) return id;
-  let h = 7;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return PLAYMATS[h % PLAYMATS.length].id;
+  let id = forName.get(name);
+  if (id) return id;
+  id = NAMED.find(([re]) => re.test(name))?.[1];
+  if (!id) {
+    let h = 7;
+    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    id = EVERYDAY[h % EVERYDAY.length].id;
+  }
+  forName.set(name, id);
+  return id;
 }
 
 /** A mat as it rides a room's JOIN from the other phone: a known id, else none. */

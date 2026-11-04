@@ -6,7 +6,6 @@
 // plus a red shade that rises with that duelist's danger state. Nothing here takes a tap.
 import type { Pid } from '../eds/types';
 import { duelPlaymatOf, playmatClass, useDuelPlaymats } from './duel';
-import { playmatDef } from './roster';
 
 function Half({ side, pos, fieldUp }: { side: Pid; pos: 'me' | 'opp'; fieldUp: boolean }) {
   const id = duelPlaymatOf(side);
@@ -34,5 +33,6 @@ export function PlaymatHalves({ me, opp, field }: { me: Pid; opp: Pid; field: { 
 /** The class a field row takes for its side's mat (its zone frames take the mat's colour). */
 export function rowMatClass(side: Pid): string {
   const id = duelPlaymatOf(side);
-  return id ? ` pm-row pm-id-${id}${playmatDef(id)?.bright ? ' pm-bright' : ''}` : '';
+  // (playmatClass writes the mat's rule too, so the row's colours never wait on the halves)
+  return id ? ` pm-row${playmatClass(id).replace(/ pm-fx-\w+/, '')}` : '';
 }

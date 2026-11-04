@@ -30,6 +30,11 @@ function Row({ back, opp, sleeve }: { back: boolean; opp?: boolean; sleeve: Retu
   return <div class="pmp-row">{opp ? z.reverse() : z}</div>;
 }
 
+const priceOf = (id: PlaymatId) => {
+  const c = playmatDef(id)?.cost;
+  return c && 'chips' in c ? c.chips : 0;
+};
+
 export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave; solo: SoloSave | null; onSave: (s: SpeedSave) => void; onBack: () => void }) {
   const current = chosenPlaymat(save, solo);
   const [look, setLook] = useState<PlaymatId>(current);
@@ -160,7 +165,7 @@ export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave
         <p class="mt-foot">Playmats are just for looks: they never change a duel.</p>
       </Win>
       {buying && (
-        <ConfirmSheet look="md" title={`Get ${playmatDef(buying)!.name}?`} confirmLabel={`Spend ${price} Duel Chips`} onConfirm={buy} onCancel={() => setBuying(null)}>
+        <ConfirmSheet look="md" title={`Get ${playmatDef(buying)!.name}?`} confirmLabel={`Spend ${priceOf(buying)} Duel Chips`} onConfirm={buy} onCancel={() => setBuying(null)}>
           You have {chipsOf(save)} Duel Chips. {playmatDef(buying)!.name} joins your playmats for good.
         </ConfirmSheet>
       )}

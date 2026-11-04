@@ -158,154 +158,273 @@ const CHROME: [string, string, string] = ['#e6fbff', '#3c6a7a', '#9fe6ff'];
 
 // ---------- the mats ----------
 
-/** Tournament Blue: the classic duel-ring seal on deep blue, fine grid and a sheen. */
-const blue = svg(
-  rad('bg', [[0, '#2a48b8'], [0.5, '#132466'], [1, '#060c2c']], '50%', '45%', '75%') +
-    `<pattern id='gr' width='19' height='19' patternUnits='userSpaceOnUse'><path d='M19 0H0V19' fill='none' stroke='#9fb8ff' stroke-opacity='.09' stroke-width='.7'/></pattern>` +
-    lin('sh', [[0, '#fff', 0.14], [0.3, '#fff', 0], [1, '#000', 0.3]], 0.3, 1),
+// ---------- shared depth: grain, light from the far left, haze, floor seals ----------
+
+/** A faint mottled grain (stone, sand, felt). One filter per picture, rendered once when decoded. */
+const GRAIN_DEF = `<filter id='gn' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='4' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 0 0 0 -.62'/></filter>`;
+const grain = (op = 0.5) => `<rect width='${W}' height='${H}' filter='url(#gn)' opacity='${op}'/>`;
+/** Light from the far left corner, falling off toward you. */
+const LIGHT_DEF = lin('lt', [[0, '#fff', 0.16], [0.45, '#fff', 0], [1, '#000', 0.25]], 0.6, 1);
+const light = fill('lt');
+/** Something drawn round the half's middle, laid flat on the floor (seen at the field's angle). */
+const onFloor = (cy: number, k: number, body: string, r = 0) => `<g transform='translate(${CX} ${cy}) scale(1 ${k}) rotate(${r}) translate(${-CX} ${-CY})'>${body}</g>`;
+/** A glow spot. */
+const glowDef = (id: string, c: string, a = 0.6) => rad(id, [[0, c, a], [1, c, 0]]);
+const spot = (id: string, cx: number, cy: number, rx: number, ry = rx) => `<ellipse cx='${cx}' cy='${cy}' rx='${rx}' ry='${ry}' fill='url(#${id})'/>`;
+
+function scene(defs: string, body: string, opts: { grain?: number; light?: boolean } = {}): string {
+  return svg(
+    defs + (opts.grain ? GRAIN_DEF : '') + (opts.light === false ? '' : LIGHT_DEF),
+    body + (opts.grain ? grain(opts.grain) : '') + (opts.light === false ? '' : light),
+  );
+}
+/** Inner glow along a path (drawn twice: a wide soft stroke, then a bright core). */
+const glowLine = (d: string, c: string, w: number, core = '#fff') =>
+  `<path d='${d}' fill='none' stroke='${c}' stroke-opacity='.35' stroke-width='${w * 3}' stroke-linecap='round' stroke-linejoin='round'/><path d='${d}' fill='none' stroke='${c}' stroke-width='${w}' stroke-linecap='round' stroke-linejoin='round'/><path d='${d}' fill='none' stroke='${core}' stroke-opacity='.7' stroke-width='${f(w * 0.35)}' stroke-linecap='round' stroke-linejoin='round'/>`;
+
+// ---------- the mats ----------
+
+/** Tournament Blue: the tournament felt, its duel ring laid on the floor, a lit grid running to the middle. */
+const blue = scene(
+  lin('bg', [[0, '#0a1440'], [0.35, '#1a3490'], [1, '#081236']]) +
+    glowDef('g1', '#6c94ff', 0.55) +
+    `<pattern id='gr' width='19' height='19' patternUnits='userSpaceOnUse'><path d='M19 0H0V19' fill='none' stroke='#9fb8ff' stroke-opacity='.1' stroke-width='.7'/></pattern>`,
   fill('bg') +
     fill('gr') +
-    rays(24, 84, 260, '#8fb0ff', 0.6, 0.12) +
-    seal('#cfe0ff', 0.32, 80) +
-    `<circle cx='${CX}' cy='${CY}' r='30' fill='#6c94ff' fill-opacity='.12'/>` +
-    `<path d='M0 150H380M0 154H380' stroke='#a9c0ff' stroke-opacity='.12'/>` +
-    fill('sh'),
+    // a perspective grid toward the middle, and the light where the halves meet
+    `<g stroke='#8fb0ff' stroke-opacity='.14'>${Array.from({ length: 15 }, (_, i) => `<path d='M${CX} -40L${i * 30 - 20} 220'/>`).join('')}</g>` +
+    spot('g1', CX, 0, 240, 60) +
+    onFloor(140, 0.55, seal('#dbe7ff', 0.5, 96) + `<circle cx='${CX}' cy='${CY}' r='40' fill='#6c94ff' fill-opacity='.18'/>`) +
+    onFloor(140, 0.55, `<circle cx='${CX}' cy='${CY}' r='104' fill='none' stroke='#9fc4ff' stroke-opacity='.25' stroke-width='6'/>`) +
+    `<path d='M0 70H380' stroke='#cfe0ff' stroke-opacity='.18'/><path d='M0 74H380' stroke='#cfe0ff' stroke-opacity='.08'/>`,
+  { grain: 0.15 },
 );
 const blueTrim = trim(SILVER, '#6cc4ff', 'diamond', '#cfe0ff');
 
-/** Crimson Arena: dark red stone, gold pinstripes and a gold eight-point star. */
-const crimson = svg(
-  rad('bg', [[0, '#8a1424'], [0.55, '#3c0812'], [1, '#120206']], '50%', '42%', '78%') +
-    `<pattern id='ps' width='14' height='14' patternUnits='userSpaceOnUse' patternTransform='rotate(35)'><path d='M0 0V14' stroke='#ffcf6a' stroke-opacity='.08' stroke-width='1'/></pattern>` +
-    rad('gl', [[0, '#ffb04a', 0.35], [1, '#ffb04a', 0]]),
+/** Crimson Arena: a red stone arena floor under banners, the gold star set into it. */
+const crimson = scene(
+  lin('bg', [[0, '#1a0206'], [0.3, '#5a0a16'], [1, '#2a040a']]) +
+    glowDef('g1', '#ffb04a', 0.45) +
+    lin('ban', [[0, '#8a1424'], [1, '#4a0610']]) +
+    `<pattern id='fl' width='38' height='20' patternUnits='userSpaceOnUse'><path d='M0 20H38M19 0V20' fill='none' stroke='#000' stroke-opacity='.35'/></pattern>`,
   fill('bg') +
-    fill('ps') +
-    `<circle cx='${CX}' cy='${CY}' r='90' fill='url(#gl)'/>` +
-    `<g fill='none' stroke='#f0cf7a' stroke-opacity='.45'><circle cx='${CX}' cy='${CY}' r='78' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='72' stroke-width='.8'/><circle cx='${CX}' cy='${CY}' r='40' stroke-width='1.2'/></g>` +
-    `<polygon points='${star(8, 66, 30)}' fill='#f0cf7a' fill-opacity='.14' stroke='#f6dc96' stroke-opacity='.55' stroke-width='1.2' stroke-linejoin='round'/>` +
-    `<polygon points='${star(8, 36, 16, CX, CY, -67.5)}' fill='#ff5a5a' fill-opacity='.3' stroke='#f6dc96' stroke-opacity='.5'/>` +
-    `<circle cx='${CX}' cy='${CY}' r='9' fill='#ff3b4f' stroke='#fbe7a8' stroke-width='1.4' stroke-opacity='.8'/>` +
-    `<g stroke='#f0cf7a' stroke-opacity='.25'><path d='M14 32H120M260 32H366M14 186H130M250 186H366'/></g>` +
-    scatter(10, 4, [20, 20, 340, 180], (x, y) => `<path d='M${x} ${y}l3 3l-3 3l-3 -3z' fill='#f6dc96' fill-opacity='.2'/>`),
+    // banners hanging on the far wall
+    [40, 110, 270, 340].map((x) => `<path d='M${x - 14} 0V40L${x} 50L${x + 14} 40V0Z' fill='url(#ban)' stroke='#f0cf7a' stroke-opacity='.6'/><polygon points='${star(8, 6, 3, x, 22)}' fill='#f0cf7a' fill-opacity='.8'/>`).join('') +
+    `<path d='M0 58H380' stroke='#f0cf7a' stroke-opacity='.5' stroke-width='1.4'/>` +
+    `<rect y='58' width='${W}' height='162' fill='url(#fl)'/>` +
+    spot('g1', CX, 140, 170, 70) +
+    onFloor(142, 0.55, `<g fill='none' stroke='#f0cf7a' stroke-opacity='.6'><circle cx='${CX}' cy='${CY}' r='96' stroke-width='3'/><circle cx='${CX}' cy='${CY}' r='88'/><circle cx='${CX}' cy='${CY}' r='46' stroke-width='1.6'/></g>` +
+      `<polygon points='${star(8, 82, 36)}' fill='#f0cf7a' fill-opacity='.18' stroke='#f6dc96' stroke-opacity='.7' stroke-width='1.6' stroke-linejoin='round'/>` +
+      `<polygon points='${star(8, 42, 18, CX, CY, -67.5)}' fill='#ff3b4f' fill-opacity='.45' stroke='#f6dc96' stroke-opacity='.6'/>` +
+      `<circle cx='${CX}' cy='${CY}' r='11' fill='#ff3b4f' stroke='#fbe7a8' stroke-width='2'/>` +
+      `<g fill='#f6dc96'>${around(16, 92).map(([x, y]) => `<circle cx='${x}' cy='${y}' r='2'/>`).join('')}</g>`) +
+    `<g fill='#ffcf6a'>${[[16, 90], [364, 90]].map(([x, y]) => flame(x, y, 16, '#ffcf6a', 0.9)).join('')}</g>`,
+  { grain: 0.24 },
 );
 const crimsonTrim = trim(GOLD, '#ff3b4f', 'gem');
 
-/** Duelist Kingdom: the island at sunset, the castle on its cliff, the sea between. */
-const kingdom = svg(
-  lin('sky', [[0, '#3a1e5c'], [0.18, '#c2506a'], [0.32, '#ffb36a'], [0.42, '#ffd9a0']]) +
-    lin('sea', [[0, '#3a5a8a'], [1, '#0c1a3a']]) +
-    lin('rock', [[0, '#7a6450'], [1, '#2a1e18']]) +
-    lin('grass', [[0, '#5a7a3a'], [1, '#2a3a1a']]) +
-    rad('sun', [[0, '#fff6d0'], [0.4, '#ffd27a', 0.9], [1, '#ff8a4a', 0]]),
+/** Duelist Kingdom: the island at sunset, the castle lit on its cliff, the sea below your ledge. */
+const kingdom = scene(
+  lin('sky', [[0, '#2a1650'], [0.4, '#b0486a'], [0.75, '#ffa060'], [1, '#ffd9a0']]) +
+    lin('sea', [[0, '#5a6a9a'], [0.3, '#2a3a6a'], [1, '#0a1430']]) +
+    lin('rock', [[0, '#8a6a50'], [0.5, '#4a3424'], [1, '#1a120c']], 1, 1) +
+    lin('cast', [[0, '#5a3a5a'], [1, '#2a1a34']], 1, 0) +
+    lin('grass', [[0, '#7a9a4a'], [1, '#2a3a1a']]) +
+    rad('sun', [[0, '#fffbe0'], [0.3, '#ffe0a0', 0.9], [1, '#ff8a4a', 0]]),
   `<rect width='${W}' height='${H}' fill='url(#sea)'/>` +
     `<rect width='${W}' height='96' fill='url(#sky)'/>` +
-    `<circle cx='250' cy='80' r='46' fill='url(#sun)'/>` +
-    // far island and the castle on it
-    `<path d='M60 92 Q90 70 120 74 L150 60 L176 66 L200 52 L232 70 L270 72 Q300 80 320 92 Z' fill='#4a3050'/>` +
-    `<g fill='#2a1a34'><rect x='170' y='34' width='8' height='34'/><rect x='184' y='22' width='12' height='46'/><rect x='202' y='30' width='8' height='38'/><rect x='160' y='46' width='60' height='22'/>` +
-    `<path d='M168 34l6 -9l6 9zM182 22l8 -12l8 12zM200 30l6 -9l6 9z'/></g>` +
-    `<g fill='#ffd27a' fill-opacity='.7'><rect x='188' y='36' width='2' height='4'/><rect x='172' y='50' width='2' height='3'/><rect x='206' y='44' width='2' height='3'/></g>` +
-    // the sea: light on the water and lines of swell
-    `<path d='M0 96H380' stroke='#ffe2b0' stroke-opacity='.6'/>` +
-    `<path d='M216 100h70M226 106h48M236 112h30' stroke='#ffd9a0' stroke-opacity='.45' stroke-width='1.4' stroke-linecap='round'/>` +
-    scatter(26, 7, [0, 100, 380, 70], (x, y, r) => `<path d='M${x} ${y}q${f(6 + r * 8)} -3 ${f(14 + r * 14)} 0' fill='none' stroke='#cfe6ff' stroke-opacity='${f(0.12 + r * 0.2)}' stroke-width='1'/>`) +
-    // the near cliffs on each side, grass on top, and the stone ledge in front
-    `<path d='M0 118 Q34 110 62 124 L90 150 Q70 186 96 220 H0 Z' fill='url(#rock)'/>` +
-    `<path d='M0 118 Q34 110 62 124 L70 132 Q36 122 0 128 Z' fill='url(#grass)'/>` +
-    `<path d='M380 112 Q344 108 314 124 L290 152 Q312 186 284 220 H380 Z' fill='url(#rock)'/>` +
-    `<path d='M380 112 Q344 108 314 124 L308 132 Q344 120 380 124 Z' fill='url(#grass)'/>` +
-    `<path d='M60 196 Q190 168 320 196 L340 220 H40 Z' fill='#4a3a2c'/>` +
-    `<path d='M60 196 Q190 168 320 196' fill='none' stroke='#c8a070' stroke-opacity='.5' stroke-width='1.2'/>` +
-    scatter(16, 9, [70, 192, 240, 24], (x, y, r) => `<ellipse cx='${x}' cy='${y}' rx='${f(4 + r * 7)}' ry='${f(2 + r * 2)}' fill='#6a5440' fill-opacity='.8'/>`) +
-    `<g stroke='#2a1e18' stroke-opacity='.5' fill='none'><path d='M20 150l14 10l-4 14M40 140l10 16M330 146l-12 12l6 12M350 160l-10 14'/></g>` +
-    seal('#ffe2b0', 0.14, 70),
+    // clouds lit from below
+    `<g fill='#ffc0a0' fill-opacity='.35'><ellipse cx='70' cy='30' rx='60' ry='6'/><ellipse cx='120' cy='22' rx='40' ry='4'/><ellipse cx='320' cy='40' rx='70' ry='5'/></g>` +
+    `<circle cx='262' cy='84' r='54' fill='url(#sun)'/>` +
+    // far island, then the castle: lit faces toward the sun, shadow faces away
+    `<path d='M40 96 Q70 76 104 78 L140 62 L170 66 L196 50 L234 66 L276 70 Q308 80 336 96 Z' fill='#5a3a5a'/>` +
+    `<path d='M196 50 L234 66 L276 70 Q308 80 336 96 L250 96 Z' fill='#7a4a5a' opacity='.6'/>` +
+    `<g fill='url(#cast)'><rect x='166' y='32' width='9' height='36'/><rect x='182' y='18' width='14' height='50'/><rect x='204' y='28' width='9' height='40'/><rect x='156' y='44' width='66' height='24'/></g>` +
+    `<g fill='#2a1a34'><path d='M164 32l6.5 -10l6.5 10zM180 18l9 -14l9 14zM202 28l6.5 -10l6.5 10z'/></g>` +
+    `<g fill='#ffb070' fill-opacity='.55'><rect x='194' y='18' width='2' height='50'/><rect x='211' y='28' width='2' height='40'/><rect x='173' y='32' width='2' height='36'/></g>` +
+    `<g fill='#ffe2a0'><rect x='187' y='34' width='3' height='5'/><rect x='170' y='48' width='2' height='3'/><rect x='207' y='42' width='2' height='3'/><rect x='196' y='54' width='3' height='4'/></g>` +
+    `<path d='M190 4v-4' stroke='#2a1a34'/><path d='M190 2h7l-2 2h-5z' fill='#ff5a5a'/>` +
+    // the sea: a path of sunlight and the swell
+    `<path d='M0 96H380' stroke='#ffe2b0' stroke-opacity='.7'/>` +
+    `<path d='M226 100h72M234 106h56M244 112h36M252 118h20' stroke='#ffe9b8' stroke-opacity='.55' stroke-width='1.6' stroke-linecap='round'/>` +
+    scatter(30, 7, [0, 100, 380, 76], (x, y, r) => `<path d='M${x} ${y}q${f(6 + r * 8)} -3 ${f(14 + r * 14)} 0' fill='none' stroke='#cfe6ff' stroke-opacity='${f(0.1 + r * 0.2)}' stroke-width='1'/>`) +
+    // the near cliffs either side, lit on their sunward edges, and the stone ledge you stand on
+    `<path d='M0 116 Q34 108 64 122 L92 150 Q72 186 98 220 H0 Z' fill='url(#rock)'/>` +
+    `<path d='M64 122 L92 150 Q72 186 98 220' fill='none' stroke='#ffc890' stroke-opacity='.45' stroke-width='1.6'/>` +
+    `<path d='M0 116 Q34 108 64 122 L72 132 Q36 120 0 126 Z' fill='url(#grass)'/>` +
+    `<path d='M380 110 Q344 106 314 122 L288 152 Q310 186 282 220 H380 Z' fill='url(#rock)'/>` +
+    `<path d='M314 122 L288 152 Q310 186 282 220' fill='none' stroke='#ffc890' stroke-opacity='.3' stroke-width='1.2'/>` +
+    `<path d='M380 110 Q344 106 314 122 L306 130 Q344 118 380 122 Z' fill='url(#grass)'/>` +
+    `<g stroke='#1a120c' stroke-opacity='.55' fill='none'><path d='M20 150l14 10l-4 14M40 140l10 16M330 146l-12 12l6 12M350 160l-10 14'/></g>` +
+    `<path d='M56 194 Q190 166 324 194 L344 220 H36 Z' fill='#4a3a2c'/>` +
+    `<path d='M56 194 Q190 166 324 194' fill='none' stroke='#ffc890' stroke-opacity='.55' stroke-width='1.4'/>` +
+    scatter(18, 9, [70, 190, 240, 26], (x, y, r) => `<ellipse cx='${x}' cy='${y}' rx='${f(4 + r * 7)}' ry='${f(2 + r * 2)}' fill='#6a5440'/><ellipse cx='${x - 1}' cy='${y - 1}' rx='${f(2 + r * 4)}' ry='1' fill='#a08060' fill-opacity='.5'/>`),
+  { grain: 0.18 },
 );
 const kingdomTrim = trim(BRONZE, '#ffb36a', 'diamond');
 
-/** Duel Disk Grid: dark glass, a hex grid, circuits running in to a cyan core. */
-const disk = svg(
-  rad('bg', [[0, '#0e3a4a'], [0.55, '#06161e'], [1, '#020608']], '50%', '45%', '75%') +
-    `<pattern id='hx' width='24' height='41.6' patternUnits='userSpaceOnUse'><path d='M12 0L24 6.9V20.8L12 27.7L0 20.8V6.9ZM12 27.7V41.6' fill='none' stroke='#3ae0ff' stroke-opacity='.1' stroke-width='.8'/></pattern>` +
-    rad('core', [[0, '#bff6ff'], [0.25, '#3ae0ff', 0.7], [1, '#3ae0ff', 0]]),
+/** Duel Disk Grid: dark glass, a hex grid, circuits running in to a cyan core that sits on the floor. */
+const disk = scene(
+  rad('bg', [[0, '#0e3a4a'], [0.55, '#06161e'], [1, '#020608']], '50%', '60%', '80%') +
+    `<pattern id='hx' width='24' height='41.6' patternUnits='userSpaceOnUse'><path d='M12 0L24 6.9V20.8L12 27.7L0 20.8V6.9ZM12 27.7V41.6' fill='none' stroke='#3ae0ff' stroke-opacity='.12' stroke-width='.8'/></pattern>` +
+    glowDef('core', '#3ae0ff', 0.55),
   fill('bg') +
     fill('hx') +
-    // circuits from the edges toward the core
-    `<g fill='none' stroke='#3ae0ff' stroke-opacity='.4' stroke-width='1.2' stroke-linejoin='round'>` +
-    `<path d='M0 40H60L80 60H112'/><path d='M0 168H44L70 142H118'/><path d='M380 40H320L300 60H268'/><path d='M380 168H336L310 142H262'/>` +
-    `<path d='M120 220V190L140 170'/><path d='M260 220V190L240 170'/><path d='M190 220V184'/>` +
-    `</g>` +
-    `<g fill='#9ff2ff'>${[[112, 60], [118, 142], [268, 60], [262, 142], [140, 170], [240, 170], [190, 184]].map(([x, y]) => `<circle cx='${x}' cy='${y}' r='2.4'/>`).join('')}</g>` +
-    `<circle cx='${CX}' cy='${CY}' r='64' fill='url(#core)' fill-opacity='.35'/>` +
-    `<g fill='none' stroke='#3ae0ff'><circle cx='${CX}' cy='${CY}' r='70' stroke-opacity='.5' stroke-width='1.4' stroke-dasharray='30 6 4 6'/><circle cx='${CX}' cy='${CY}' r='56' stroke-opacity='.3' stroke-width='6' stroke-dasharray='2 4'/><circle cx='${CX}' cy='${CY}' r='38' stroke-opacity='.6' stroke-width='1.6'/><circle cx='${CX}' cy='${CY}' r='14' stroke-opacity='.9' stroke-width='2'/></g>` +
-    rays(8, 40, 54, '#9ff2ff', 1.6, 0.6) +
-    `<circle cx='${CX}' cy='${CY}' r='6' fill='#e6fbff'/>` +
-    `<path d='M0 104H110M270 104H380' stroke='#3ae0ff' stroke-opacity='.25' stroke-dasharray='6 4'/>`,
+    // lit hex cells here and there
+    scatter(10, 301, [10, 10, 360, 200], (x, y, r) => `<polygon points='${around(6, 10 + r * 4, x, y, 0).map((p) => p.join(',')).join(' ')}' fill='#3ae0ff' fill-opacity='${f(0.06 + r * 0.12)}'/>`) +
+    // the circuits, glowing
+    glowLine('M0 40H60L80 60H120', '#3ae0ff', 1.2) +
+    glowLine('M0 176H44L70 150H112', '#3ae0ff', 1.2) +
+    glowLine('M380 40H320L300 60H260', '#3ae0ff', 1.2) +
+    glowLine('M380 176H336L310 150H268', '#3ae0ff', 1.2) +
+    glowLine('M190 220V196', '#3ae0ff', 1.4) +
+    `<g fill='#e6fbff'>${[[120, 60], [112, 150], [260, 60], [268, 150], [190, 196]].map(([x, y]) => `<circle cx='${x}' cy='${y}' r='2.6'/>`).join('')}</g>` +
+    spot('core', CX, 140, 130, 60) +
+    onFloor(140, 0.55, `<g fill='none' stroke='#3ae0ff'><circle cx='${CX}' cy='${CY}' r='96' stroke-opacity='.6' stroke-width='2' stroke-dasharray='40 8 6 8'/><circle cx='${CX}' cy='${CY}' r='78' stroke-opacity='.35' stroke-width='10' stroke-dasharray='3 5'/><circle cx='${CX}' cy='${CY}' r='52' stroke-opacity='.8' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='20' stroke-opacity='1' stroke-width='3'/></g>` + rays(12, 56, 74, '#9ff2ff', 2.4, 0.7) + `<circle cx='${CX}' cy='${CY}' r='9' fill='#e6fbff'/>`) +
+    // the glass's reflection
+    `<path d='M0 0L120 0L20 220H0Z' fill='#fff' opacity='.03'/>`,
+  { grain: 0 },
 );
 const diskTrim = trim(CHROME, '#3ae0ff', 'diamond', '#9ff2ff');
 
-/** One of the six Attribute mats: a field of its colour, its sigil big in the middle. */
-function attribute(bg: [string, string, string], ink: string, glow: string, extra: string, sigil: string, defs = ''): string {
-  return svg(
-    rad('bg', [[0, bg[0]], [0.55, bg[1]], [1, bg[2]]], '50%', '45%', '78%') + rad('gl', [[0, glow, 0.55], [1, glow, 0]]) + defs,
-    fill('bg') +
-      extra +
-      `<circle cx='${CX}' cy='${CY}' r='96' fill='url(#gl)'/>` +
-      `<g fill='none' stroke='${ink}'><circle cx='${CX}' cy='${CY}' r='80' stroke-opacity='.5' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='74' stroke-opacity='.3' stroke-dasharray='1 4' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='50' stroke-opacity='.25'/></g>` +
-      `<g fill='${ink}' fill-opacity='.5'>${around(8, 80).map(([x, y]) => `<circle cx='${x}' cy='${y}' r='2.4'/>`).join('')}</g>` +
-      sigil,
-  );
-}
+/** LIGHT: a sky temple. Columns recede toward a gate of light; a marble floor with gold inlay. */
+const lightMat = scene(
+  lin('sky', [[0, '#fffbe8'], [0.5, '#e6c878'], [1, '#8a6a2a']]) +
+    lin('fl', [[0, '#b8984e'], [1, '#3a2a0e']]) +
+    lin('col', [[0, '#fff6d8'], [0.6, '#c8a860'], [1, '#6a4a1a']], 1, 0) +
+    glowDef('gate', '#fffbe8', 0.95),
+  `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
+    `<rect width='${W}' height='84' fill='url(#sky)'/>` +
+    spot('gate', CX, 40, 120, 70) +
+    rays(28, 20, 200, '#fff', 1.4, 0.25, CX, 40) +
+    // columns on both sides, smaller toward the middle
+    [[20, 26, 220], [70, 18, 170], [108, 12, 130], [380 - 46, 26, 220], [380 - 88, 18, 170], [380 - 120, 12, 130]]
+      .map(([x, w, h]) => `<rect x='${x}' y='${f(220 - h)}' width='${w}' height='${h}' fill='url(#col)'/><rect x='${x - 3}' y='${f(220 - h - 4)}' width='${w + 6}' height='5' fill='#fff6d8'/><rect x='${x + w * 0.3}' y='${f(220 - h)}' width='1.2' height='${h}' fill='#fff' fill-opacity='.5'/>`)
+      .join('') +
+    // the marble floor: inlaid gold lines toward the gate
+    `<g stroke='#fff2b0' stroke-opacity='.35'>${Array.from({ length: 9 }, (_, i) => `<path d='M${CX} 84L${i * 60 - 50} 220'/>`).join('')}${[110, 140, 178].map((y) => `<path d='M0 ${y}H380'/>`).join('')}</g>` +
+    `<path d='M0 84H380' stroke='#fff' stroke-opacity='.7' stroke-width='1.4'/>` +
+    onFloor(158, 0.5, `<polygon points='${star(12, 70, 34)}' fill='#fffbe8' fill-opacity='.35' stroke='#fff' stroke-opacity='.8' stroke-width='1.6'/><circle cx='${CX}' cy='${CY}' r='88' fill='none' stroke='#fff6c0' stroke-opacity='.7' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='20' fill='#fff' fill-opacity='.85'/>`) +
+    // and a dim pass over all of it, so the cards stay the brightest thing
+    `<rect width='${W}' height='${H}' fill='#2a1a04' opacity='.22'/>`,
+  { grain: 0.12 },
+);
 
-const light = attribute(
-  ['#fff6d0', '#c9a24a', '#3a2a0c'],
-  '#fffbe8',
-  '#fff2b0',
-  rays(36, 30, 300, '#fffbe8', 1.2, 0.2) + rays(12, 90, 300, '#fff6c0', 4, 0.12, CX, CY, -75) + `<path d='M0 168H380M0 172H380' stroke='#fff2b0' stroke-opacity='.25'/>`,
-  `<polygon points='${star(12, 44, 20)}' fill='#fffbe8' fill-opacity='.5' stroke='#fff' stroke-opacity='.8'/><circle cx='${CX}' cy='${CY}' r='16' fill='#fff' fill-opacity='.85'/>`,
+/** DARK: a ruined chapel at night under an eclipse, violet mist across the flagstones. */
+const darkMat = scene(
+  lin('sky', [[0, '#05020a'], [0.6, '#2a0e44'], [1, '#4a1a6a']]) +
+    lin('fl', [[0, '#1e1030'], [1, '#08040e']]) +
+    glowDef('cor', '#b36bff', 0.7) +
+    glowDef('mist', '#9a5aff', 0.35),
+  `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
+    `<rect width='${W}' height='90' fill='url(#sky)'/>` +
+    scatter(30, 401, [0, 0, 380, 70], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.3 + r * 0.9)}' fill='#e6d0ff' fill-opacity='${f(0.3 + r * 0.5)}'/>`) +
+    // the eclipse
+    spot('cor', CX, 36, 70) +
+    `<circle cx='${CX}' cy='36' r='22' fill='#05020a' stroke='#e6d0ff' stroke-width='1.2'/><path d='M${CX - 21} 30 A22 22 0 0 1 ${CX + 6} 14' fill='none' stroke='#fff' stroke-width='2' stroke-linecap='round'/>` +
+    // broken arches and spires
+    `<g fill='#0a0414'><path d='M0 90V30L14 10L28 30V90Z'/><path d='M40 90V44Q60 20 80 44V90H72V50Q60 36 48 50V90Z'/><path d='M300 90V44Q320 20 340 44V90H332V50Q320 36 308 50V90Z'/><path d='M352 90V26L366 6L380 26V90Z'/><path d='M100 90V64L108 56L116 64V90Z'/><path d='M264 90V60L272 50L280 60V90Z'/></g>` +
+    `<path d='M0 90H380' stroke='#b36bff' stroke-opacity='.45'/>` +
+    // flagstones, a rune circle, and mist
+    `<g stroke='#000' stroke-opacity='.5'>${[106, 128, 154, 186].map((y) => `<path d='M0 ${y}H380'/>`).join('')}${Array.from({ length: 11 }, (_, i) => `<path d='M${CX} 90L${i * 44 - 30} 220'/>`).join('')}</g>` +
+    onFloor(150, 0.5, `<g fill='none' stroke='#c49bff'><circle cx='${CX}' cy='${CY}' r='94' stroke-opacity='.6' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='80' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/></g><polygon points='${star(5, 78, 30)}' fill='none' stroke='#b36bff' stroke-opacity='.7' stroke-width='1.6'/><circle cx='${CX}' cy='${CY}' r='22' fill='#05020a' stroke='#c49bff' stroke-width='2'/>`) +
+    spot('mist', 80, 120, 150, 26) +
+    spot('mist', 300, 196, 150, 26),
+  { grain: 0.21 },
 );
-const dark = attribute(
-  ['#3a1a5c', '#170a2a', '#05020a'],
-  '#c49bff',
-  '#8a4aff',
-  `<g fill='none' stroke='#b36bff' stroke-opacity='.2'><ellipse cx='${CX}' cy='${CY}' rx='170' ry='60' transform='rotate(-14 ${CX} ${CY})'/><ellipse cx='${CX}' cy='${CY}' rx='150' ry='40' transform='rotate(18 ${CX} ${CY})'/></g>` +
-    scatter(40, 21, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.4 + r)}' fill='#e6d0ff' fill-opacity='${f(0.2 + r * 0.4)}'/>`),
-  `<circle cx='${CX}' cy='${CY}' r='34' fill='#05020a' stroke='#c49bff' stroke-opacity='.8' stroke-width='1.6'/><circle cx='${CX + 10}' cy='${CY - 8}' r='28' fill='#3a1a5c' fill-opacity='.6'/><circle cx='${CX}' cy='${CY}' r='34' fill='none' stroke='#8a4aff' stroke-width='6' stroke-opacity='.25'/>`,
+
+/** FIRE: a volcanic field. Volcanoes on the horizon, cracked basalt with lava in the seams. */
+const fireMat = scene(
+  lin('sky', [[0, '#1a0402'], [0.6, '#6a1406'], [1, '#d0501a']]) +
+    lin('fl', [[0, '#2a0e08'], [1, '#0e0402']]) +
+    glowDef('lava', '#ff7a1a', 0.7) +
+    lin('volc', [[0, '#2a0a06'], [1, '#120402']]),
+  `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
+    `<rect width='${W}' height='80' fill='url(#sky)'/>` +
+    // volcanoes, one erupting, with lava running down
+    `<path d='M-10 80L50 40L66 44L120 80Z' fill='url(#volc)'/><path d='M240 80L300 26L318 28L390 80Z' fill='url(#volc)'/><path d='M120 80L170 56L200 80Z' fill='#1a0604'/>` +
+    glowLine('M308 28Q312 46 300 60Q294 70 298 80', '#ff7a1a', 1.6, '#ffe0a0') +
+    glowLine('M56 42Q60 58 52 80', '#ff7a1a', 1.2, '#ffe0a0') +
+    spot('lava', 309, 22, 40, 26) +
+    `<g fill='#ffb04a' fill-opacity='.7'>${scatter(8, 501, [280, 0, 60, 24], (x, y) => `<circle cx='${x}' cy='${y}' r='1.4'/>`)}</g>` +
+    `<path d='M0 80H380' stroke='#ff9a4a' stroke-opacity='.5'/>` +
+    // cracked basalt plates with lava seams
+    glowLine('M0 110L60 100L110 118L170 104L220 116L280 102L340 114L380 106', '#ff5a1a', 1.4, '#ffd27a') +
+    glowLine('M20 160L70 146L96 170L150 156L190 176L240 154L300 170L360 150', '#ff5a1a', 1.6, '#ffd27a') +
+    glowLine('M60 100L70 146M170 104L150 156M280 102L300 170M110 118L96 170M220 116L240 154M340 114L360 150', '#ff5a1a', 1.1, '#ffd27a') +
+    spot('lava', CX, 160, 120, 40) +
+    onFloor(162, 0.5, `<circle cx='${CX}' cy='${CY}' r='70' fill='none' stroke='#ffd27a' stroke-opacity='.55' stroke-width='2'/>` + flame(CX, CY + 42, 96, '#ff7a1a', 0.55) + flame(CX, CY + 38, 62, '#ffd27a', 0.6) + flame(CX, CY + 34, 30, '#fff6d0', 0.8)) +
+    Array.from({ length: 14 }, (_, i) => flame(14 + i * 27.5, 224, 22 + ((i * 37) % 20), i % 2 ? '#ff7a1a' : '#ffb04a', 0.5)).join(''),
+  { grain: 0.27 },
 );
-const fire = attribute(
-  ['#ff7a1a', '#7a1606', '#1a0402'],
-  '#ffd27a',
-  '#ff5a1a',
-  // magma veins across the floor, flames along the near edge
-  `<g fill='none' stroke='#ffb04a' stroke-linecap='round' stroke-opacity='.5'><path d='M0 60l40 14l20 -10l34 22l16 -6' stroke-width='1.6'/><path d='M380 54l-36 20l-24 -6l-30 24' stroke-width='1.6'/><path d='M20 140l36 -6l18 18l30 -4' stroke-width='1.2'/><path d='M360 146l-30 -10l-24 16l-26 -2' stroke-width='1.2'/></g>` +
-    Array.from({ length: 14 }, (_, i) => flame(14 + i * 27.5, 222, 30 + ((i * 37) % 26), i % 2 ? '#ff7a1a' : '#ffb04a', 0.45)).join(''),
-  flame(CX, CY + 40, 82, '#ff7a1a', 0.6) + flame(CX, CY + 36, 54, '#ffd27a', 0.7) + flame(CX, CY + 32, 26, '#fff6d0', 0.8),
+
+/** WATER: the sea floor. Light from the surface, kelp either side, a sigil cut in the sand. */
+const waterMat = scene(
+  lin('bg', [[0, '#5fd0ff'], [0.25, '#1a6aa8'], [0.7, '#0a2a5a'], [1, '#04122a']]) +
+    lin('sand', [[0, '#2a4a6a'], [1, '#0a1a2e']]) +
+    lin('ray', [[0, '#e6f8ff', 0.4], [1, '#e6f8ff', 0]]) +
+    glowDef('gl', '#5fd0ff', 0.45) +
+    `<pattern id='cs' width='60' height='40' patternUnits='userSpaceOnUse'><path d='M0 20Q15 6 30 20T60 20M0 40Q15 26 30 40' fill='none' stroke='#cff0ff' stroke-opacity='.14' stroke-width='1.4'/></pattern>`,
+  fill('bg') +
+    // shafts of light from the surface
+    [[60, 30], [150, 22], [250, 34], [330, 18]].map(([x, w]) => `<path d='M${x - w / 2} 0L${x + w / 2} 0L${x + w * 1.6} 220L${x - w * 0.4} 220Z' fill='url(#ray)'/>`).join('') +
+    `<rect width='${W}' height='120' fill='url(#cs)'/>` +
+    // the sea floor, rocks and coral
+    `<path d='M0 120Q95 104 190 116T380 112V220H0Z' fill='url(#sand)'/>` +
+    `<path d='M0 120Q95 104 190 116T380 112' fill='none' stroke='#9fdcff' stroke-opacity='.4'/>` +
+    `<g fill='#08182a'><path d='M0 220V150Q20 136 34 150L40 220Z'/><path d='M348 220L352 140Q370 128 380 140V220Z'/><ellipse cx='110' cy='196' rx='26' ry='10'/><ellipse cx='280' cy='204' rx='30' ry='9'/></g>` +
+    `<g fill='#ff7a9a' fill-opacity='.55'><path d='M100 190q-4 -14 2 -22q2 10 6 4q0 10 -4 18z'/><path d='M286 198q-6 -12 0 -20q4 8 6 2q2 10 -2 18z'/></g>` +
+    // kelp
+    `<g fill='none' stroke='#2aa87a' stroke-opacity='.75' stroke-width='3' stroke-linecap='round'><path d='M14 220Q4 180 18 150T10 90'/><path d='M28 220Q38 186 26 160T34 112'/><path d='M366 220Q376 184 362 152T372 96'/><path d='M352 220Q344 190 356 166'/></g>` +
+    spot('gl', CX, 160, 120, 40) +
+    onFloor(160, 0.5, `<g fill='none' stroke='#cff0ff'><circle cx='${CX}' cy='${CY}' r='90' stroke-opacity='.55' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='76' stroke-opacity='.3' stroke-dasharray='2 4' stroke-width='3'/></g><path d='M${CX} ${CY - 54} C${CX + 12} ${CY - 30} ${CX + 36} ${CY - 10} ${CX + 36} ${CY + 12} A36 36 0 0 1 ${CX - 36} ${CY + 12} C${CX - 36} ${CY - 10} ${CX - 12} ${CY - 30} ${CX} ${CY - 54} Z' fill='#5fd0ff' fill-opacity='.4' stroke='#e6f8ff' stroke-opacity='.85' stroke-width='2'/>`) +
+    scatter(16, 33, [40, 0, 300, 200], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(1.2 + r * 2.6)}' fill='none' stroke='#e6f8ff' stroke-opacity='.35'/>`),
+  { grain: 0.12 },
 );
-const water = attribute(
-  ['#3ab0e0', '#0a3a6a', '#020a1a'],
-  '#cff0ff',
-  '#5fd0ff',
-  // caustic light and rings of swell
-  `<g fill='none' stroke='#cff0ff' stroke-opacity='.13' stroke-width='1.4'>${Array.from({ length: 7 }, (_, i) => `<path d='M0 ${24 + i * 30} Q47 ${12 + i * 30} 95 ${24 + i * 30} T190 ${24 + i * 30} T285 ${24 + i * 30} T380 ${24 + i * 30}'/>`).join('')}</g>` +
-    `<g fill='none' stroke='#cff0ff'><ellipse cx='${CX}' cy='${CY}' rx='120' ry='36' stroke-opacity='.18'/><ellipse cx='${CX}' cy='${CY}' rx='160' ry='52' stroke-opacity='.1'/></g>` +
-    scatter(18, 33, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(1.5 + r * 3)}' fill='none' stroke='#cff0ff' stroke-opacity='.3'/>`),
-  `<path d='M${CX} ${CY - 46} C${CX + 10} ${CY - 26} ${CX + 30} ${CY - 8} ${CX + 30} ${CY + 10} A30 30 0 0 1 ${CX - 30} ${CY + 10} C${CX - 30} ${CY - 8} ${CX - 10} ${CY - 26} ${CX} ${CY - 46} Z' fill='#5fd0ff' fill-opacity='.45' stroke='#e6f8ff' stroke-opacity='.8' stroke-width='1.6'/><path d='M${CX - 14} ${CY + 6} q2 14 16 18' fill='none' stroke='#fff' stroke-opacity='.7' stroke-width='2.4' stroke-linecap='round'/>`,
+
+/** EARTH: a canyon floor. Layered cliff walls either side, a mesa far off, cracked dry earth. */
+const earthMat = scene(
+  lin('sky', [[0, '#e6a060'], [1, '#ffd8a0']]) +
+    lin('fl', [[0, '#8a5a2a'], [1, '#2a1808']]) +
+    lin('wall', [[0, '#a06a34'], [0.25, '#7a4a20'], [0.5, '#b07a40'], [0.75, '#6a3e1a'], [1, '#3a2010']]) +
+    glowDef('gl', '#ffd8a0', 0.4),
+  `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
+    `<rect width='${W}' height='60' fill='url(#sky)'/>` +
+    `<path d='M130 60V40H150L156 34H226L232 40H250V60Z' fill='#8a5a3a'/><path d='M130 40H250' stroke='#ffd8a0' stroke-opacity='.5'/>` +
+    // the canyon walls, in strata, shadowed on their inner faces
+    `<path d='M0 0H70L90 60L100 120L80 220H0Z' fill='url(#wall)'/><path d='M70 0L90 60L100 120L80 220' fill='none' stroke='#2a1408' stroke-opacity='.6' stroke-width='3'/>` +
+    `<path d='M380 0H310L290 60L280 120L300 220H380Z' fill='url(#wall)'/><path d='M310 0L290 60L280 120L300 220' fill='none' stroke='#ffd8a0' stroke-opacity='.35' stroke-width='2'/>` +
+    `<g stroke='#2a1408' stroke-opacity='.4'>${[24, 52, 86, 130, 176].map((y) => `<path d='M0 ${y}H${f(76 + y * 0.1)}M${f(304 - y * 0.1)} ${y}H380'/>`).join('')}</g>` +
+    // cracked earth toward you
+    `<g fill='none' stroke='#1a0e04' stroke-opacity='.6' stroke-width='1.4'>${scatter(14, 601, [96, 70, 190, 140], (x, y, r) => `<path d='M${x} ${y}l${f(10 + r * 14)} ${f(4 - r * 8)}l${f(6 + r * 6)} ${f(10 + r * 6)}M${x} ${y}l${f(-4 - r * 6)} ${f(12 + r * 8)}'/>`)}</g>` +
+    spot('gl', CX, 150, 120, 46) +
+    onFloor(156, 0.5, `<g fill='none' stroke='#f2d8a8'><circle cx='${CX}' cy='${CY}' r='92' stroke-opacity='.6' stroke-width='3'/><polygon points='${around(6, 80).map((p) => p.join(',')).join(' ')}' stroke-opacity='.4' stroke-width='1.6'/></g>` +
+      `<path d='M${CX - 56} ${CY + 34} L${CX - 20} ${CY - 34} L${CX - 4} ${CY - 12} L${CX + 14} ${CY - 46} L${CX + 56} ${CY + 34} Z' fill='#6a4a22' fill-opacity='.75' stroke='#f2d8a8' stroke-width='2' stroke-linejoin='round'/><path d='M${CX + 14} ${CY - 46} L${CX + 4} ${CY - 26} L${CX + 22} ${CY - 30} Z M${CX - 20} ${CY - 34} L${CX - 27} ${CY - 20} L${CX - 13} ${CY - 22} Z' fill='#fff6e0' fill-opacity='.8'/>`) +
+    scatter(10, 602, [100, 170, 180, 46], (x, y, r) => `<ellipse cx='${x}' cy='${y}' rx='${f(3 + r * 5)}' ry='${f(1.6 + r * 2)}' fill='#4a2e14'/><path d='M${f(x - 2)} ${f(y - 1.2)}h${f(3 + r * 3)}' stroke='#d8a870' stroke-opacity='.5'/>`),
+  { grain: 0.3 },
 );
-const earth = attribute(
-  ['#b88a50', '#4a3016', '#140c04'],
-  '#f2d8a8',
-  '#c8a060',
-  `<pattern id='st' width='30' height='26' patternUnits='userSpaceOnUse'><path d='M0 13L7.5 0H22.5L30 13L22.5 26H7.5Z' fill='none' stroke='#2a1a08' stroke-opacity='.45' stroke-width='1.4'/><path d='M8 2H22' stroke='#f2d8a8' stroke-opacity='.12'/></pattern>` +
-    fill('st') +
-    `<g fill='none' stroke='#1a0e04' stroke-opacity='.55' stroke-width='1.4'><path d='M30 0l14 30l-10 24l16 30M350 220l-12 -30l14 -20l-8 -30M120 220l10 -20l-6 -16'/></g>`,
-  `<path d='M${CX - 52} ${CY + 30} L${CX - 18} ${CY - 30} L${CX - 4} ${CY - 10} L${CX + 12} ${CY - 40} L${CX + 52} ${CY + 30} Z' fill='#6a4a22' fill-opacity='.7' stroke='#f2d8a8' stroke-opacity='.8' stroke-width='1.6' stroke-linejoin='round'/><path d='M${CX + 12} ${CY - 40} L${CX + 4} ${CY - 22} L${CX + 20} ${CY - 26} Z M${CX - 18} ${CY - 30} L${CX - 24} ${CY - 18} L${CX - 12} ${CY - 20} Z' fill='#fff6e0' fill-opacity='.75'/>`,
-);
-const wind = attribute(
-  ['#8ae8b8', '#1e6a4a', '#04140c'],
-  '#e6fff2',
-  '#7ad8a4',
-  `<g fill='none' stroke='#e6fff2' stroke-linecap='round' stroke-opacity='.22' stroke-width='1.6'>${Array.from({ length: 6 }, (_, i) => `<path d='M${-20 + i * 14} ${30 + i * 32} q90 -26 180 0 t180 0'/>`).join('')}</g>` +
-    scatter(14, 51, [0, 0, 380, 220], (x, y, r) => `<path d='M${x} ${y}q5 -6 10 0q-5 6 -10 0z' fill='#b8f2d0' fill-opacity='.4' transform='rotate(${f(r * 360)} ${x} ${y})'/>`),
-  `<g fill='none' stroke='#e6fff2' stroke-linecap='round' stroke-opacity='.85'><path d='M${CX} ${CY} m-6 0 a6 6 0 1 1 12 0 a14 14 0 1 1 -28 0 a24 24 0 1 1 48 0 a36 36 0 1 1 -72 0' stroke-width='2.4'/></g>`,
+
+/** WIND: a stone platform above the clouds, banners streaming, the sky going on forever. */
+const windMat = scene(
+  lin('sky', [[0, '#3aa0d8'], [0.5, '#8ad8e8'], [1, '#d8f8f0']]) +
+    lin('stone', [[0, '#6a8a7a'], [1, '#1e3a30']]) +
+    glowDef('cl', '#ffffff', 0.85) +
+    glowDef('gl', '#b8f2d0', 0.45),
+  `<rect width='${W}' height='${H}' fill='url(#sky)'/>` +
+    // banks of cloud, back to front
+    [[40, 40, 90, 18], [180, 30, 120, 16], [330, 46, 100, 18], [100, 74, 160, 22], [300, 80, 140, 22]].map(([x, y, rx, ry]) => spot('cl', x, y, rx, ry)).join('') +
+    `<g fill='none' stroke='#fff' stroke-opacity='.6' stroke-width='1.6' stroke-linecap='round'><path d='M20 20q40 -10 80 0M250 60q40 -10 90 0M120 52q30 -8 60 0'/></g>` +
+    // the floating platform: a disc of stone with a lit rim
+    `<path d='M-20 110Q190 84 400 110V220H-20Z' fill='url(#stone)'/>` +
+    `<path d='M-20 110Q190 84 400 110' fill='none' stroke='#e6fff2' stroke-opacity='.7' stroke-width='2'/>` +
+    `<g stroke='#0e2018' stroke-opacity='.4'>${Array.from({ length: 11 }, (_, i) => `<path d='M${CX} 70L${i * 44 - 30} 220'/>`).join('')}${[126, 150, 182].map((y) => `<path d='M0 ${y}H380'/>`).join('')}</g>` +
+    // banners streaming on poles
+    [[24, 1], [356, -1]].map(([x, d]) => `<path d='M${x} 220V96' stroke='#d8e8e0' stroke-width='2.4'/><path d='M${x} 100q${d * 30} 4 ${d * 52} -2q${d * -10} 10 0 18q${d * -28} -2 ${d * -52} 4z' fill='#2aa87a' stroke='#e6fff2' stroke-opacity='.6'/>`).join('') +
+    spot('gl', CX, 160, 120, 40) +
+    onFloor(160, 0.5, `<circle cx='${CX}' cy='${CY}' r='92' fill='none' stroke='#e6fff2' stroke-opacity='.6' stroke-width='2.4'/><g fill='none' stroke='#e6fff2' stroke-linecap='round' stroke-opacity='.85'><path d='M${CX} ${CY} m-7 0 a7 7 0 1 1 14 0 a17 17 0 1 1 -34 0 a28 28 0 1 1 56 0 a42 42 0 1 1 -84 0' stroke-width='3'/></g>`) +
+    scatter(12, 51, [0, 0, 380, 220], (x, y, r) => `<path d='M${x} ${y}q5 -6 10 0q-5 6 -10 0z' fill='#2aa87a' fill-opacity='.7' transform='rotate(${f(r * 360)} ${x} ${y})'/>`) +
+    `<rect width='${W}' height='${H}' fill='#0a2a20' opacity='.18'/>`,
+  { grain: 0.09 },
 );
 const lightTrim = trim(GOLD, '#fffbe8', 'star');
 const darkTrim = trim(OBSIDIAN, '#b36bff', 'diamond', '#c49bff');
@@ -315,7 +434,7 @@ const earthTrim = trim(BRONZE, '#c8a060', 'diamond');
 const windTrim = trim(SILVER, '#7ad8a4', 'wing', '#e6fff2');
 
 /** Battle City: a rooftop at night, the skyline lit up across the middle, a helipad underfoot. */
-const city = svg(
+const city = scene(
   lin('sky', [[0, '#140a3a'], [0.35, '#3a1a6a'], [0.5, '#8a3a7a']]) + lin('roof', [[0, '#2a2a3e'], [1, '#0c0c16']]) + rad('glow', [[0, '#ff7ac0', 0.5], [1, '#ff7ac0', 0]], '50%', '0%', '70%'),
   `<rect width='${W}' height='${H}' fill='url(#roof)'/>` +
     `<rect width='${W}' height='100' fill='url(#sky)'/>` +
@@ -349,13 +468,17 @@ const city = svg(
     `<g stroke='#000' stroke-opacity='.35'>${Array.from({ length: 9 }, (_, i) => `<path d='M0 ${120 + i * 12}H380'/>`).join('')}${Array.from({ length: 13 }, (_, i) => `<path d='M${i * 32 - 10} 108L${i * 40 - 50} 220'/>`).join('')}</g>` +
     `<ellipse cx='${CX}' cy='162' rx='92' ry='40' fill='none' stroke='#ffd04a' stroke-opacity='.55' stroke-width='3'/>` +
     `<ellipse cx='${CX}' cy='162' rx='80' ry='34' fill='none' stroke='#ffd04a' stroke-opacity='.25' stroke-dasharray='6 6'/>` +
-    `<path d='M170 146V178M210 146V178M170 162H210' stroke='#ffd04a' stroke-opacity='.55' stroke-width='5'/>` +
+    `<path d='M174 150V174M206 150V174M174 162H206' stroke='#ffd04a' stroke-opacity='.75' stroke-width='6'/>` +
+    // rooftop props: a water tower, vents, a railing along the parapet
+    `<g fill='#1a1a2a'><rect x='22' y='118' width='34' height='26' rx='3'/><path d='M18 118L39 104L60 118Z'/><rect x='24' y='144' width='3' height='20'/><rect x='51' y='144' width='3' height='20'/><rect x='320' y='130' width='40' height='22'/><rect x='300' y='176' width='26' height='16'/></g>` +
+    `<g stroke='#8a8ab0' stroke-opacity='.45'><path d='M22 118H56M320 130H360'/></g>` +
+    `<g stroke='#6a6a90' stroke-opacity='.6'>${Array.from({ length: 20 }, (_, i) => `<path d='M${i * 20} 100V92'/>`).join('')}<path d='M0 92H380'/></g>` +
     `<g fill='#3ae0ff'>${around(10, 1, CX, 162).map((_, i) => { const a = (i / 10) * Math.PI * 2; return `<circle cx='${f(CX + Math.cos(a) * 92)}' cy='${f(162 + Math.sin(a) * 40)}' r='1.8'/>`; }).join('')}</g>`,
 );
 const cityTrim = trim(SILVER, '#ff7ac0', 'diamond', '#d8c8ff');
 
 /** Kaiba Dome: a stadium in the dark, its stands lit in rings, spotlights crossing the floor. */
-const dome = svg(
+const dome = scene(
   rad('bg', [[0, '#1e3a8a'], [0.6, '#08143a'], [1, '#020614']], '50%', '0%', '110%') +
     lin('beam', [[0, '#e6f2ff', 0.38], [1, '#e6f2ff', 0]]) +
     lin('floor', [[0, '#1a2a5a'], [1, '#0a1230']]),
@@ -377,7 +500,7 @@ const dome = svg(
 const domeTrim = trim(CHROME, '#6cc4ff', 'wing', '#cfe6ff');
 
 /** Pegasus's castle: the great hall, a rose window over the middle, the red carpet to your feet. */
-const castle = svg(
+const castle = scene(
   lin('bg', [[0, '#3a1e3a'], [1, '#120812']]) +
     rad('rose', [[0, '#fff2c0'], [0.3, '#ff9ae8', 0.8], [0.7, '#6a5aff', 0.6], [1, '#2a1a5a', 0]]) +
     lin('cp', [[0, '#a01a2a'], [1, '#5a0a14']]) +
@@ -404,48 +527,76 @@ const castle = svg(
 );
 const castleTrim = trim(GOLD, '#ff9ae8', 'gem');
 
-/** Duel Academy: the island school at dawn, the crest set into the courtyard. */
-const academy = svg(
-  lin('sky', [[0, '#6aa8ff'], [0.4, '#ffe2b0']]) + lin('sea', [[0, '#3a8ad0'], [1, '#0e3a6a']]) + lin('yard', [[0, '#c8b890'], [1, '#6a5a40']]),
+/** Duel Academy: the island school at dawn over the sea, the crest inlaid in the courtyard. */
+const academy = scene(
+  lin('sky', [[0, '#4a88e0'], [0.6, '#ffc8a0'], [1, '#ffe8c0']]) +
+    lin('sea', [[0, '#4a9ad8'], [1, '#0e3a6a']]) +
+    lin('yard', [[0, '#a89870'], [1, '#4a3e2a']]) +
+    lin('wallF', [[0, '#f4efe2'], [1, '#c8c0a8']]) +
+    lin('wallS', [[0, '#b8b0a0'], [1, '#8a8270']]) +
+    lin('roof', [[0, '#4a7ae0'], [1, '#1a3a8a']]) +
+    glowDef('sun', '#fff2c0', 0.9) +
+    glowDef('gl', '#ffe27a', 0.45),
   `<rect width='${W}' height='${H}' fill='url(#yard)'/>` +
-    `<rect width='${W}' height='70' fill='url(#sky)'/>` +
-    `<path d='M0 62H380V82H0Z' fill='url(#sea)'/>` +
-    // the volcano behind and the school's blue roofs
-    `<path d='M260 66 L300 30 L312 34 L350 66 Z' fill='#6a5a7a' fill-opacity='.8'/><path d='M300 30 q6 -10 12 4' fill='none' stroke='#fff' stroke-opacity='.6'/>` +
-    `<g fill='#e6e0d0'><rect x='120' y='40' width='140' height='28'/><rect x='170' y='22' width='40' height='46'/></g>` +
-    `<g fill='#2a5ab0'><path d='M114 42 L190 30 L266 42 Z'/><path d='M164 24 L190 8 L216 24 Z'/></g>` +
-    `<g fill='#3a6ad0' fill-opacity='.7'>${Array.from({ length: 12 }, (_, i) => `<rect x='${126 + i * 11}' y='50' width='5' height='8'/>`).join('')}</g>` +
-    `<circle cx='190' cy='34' r='4' fill='#ffd04a'/>` +
-    // the courtyard paving and the crest
-    `<g stroke='#4a3a24' stroke-opacity='.35'>${Array.from({ length: 6 }, (_, i) => `<path d='M0 ${100 + i * 22}H380'/>`).join('')}${Array.from({ length: 12 }, (_, i) => `<path d='M${i * 34 + (i % 2) * 8} 82V220'/>`).join('')}</g>` +
-    `<path d='M0 82H380' stroke='#fff' stroke-opacity='.5'/>` +
-    `<g transform='translate(${CX} 146)'><path d='M0 -52 L44 -36 V4 Q44 36 0 54 Q-44 36 -44 4 V-36 Z' fill='#2a5ab0' fill-opacity='.55' stroke='#ffd04a' stroke-width='2.4' stroke-opacity='.85'/>` +
-    `<polygon points='${star(5, 22, 9, 0, 0)}' fill='#ffd04a' fill-opacity='.85'/><path d='M-30 30 Q0 44 30 30' fill='none' stroke='#ffd04a' stroke-opacity='.7' stroke-width='1.6'/></g>`,
+    `<rect width='${W}' height='76' fill='url(#sky)'/>` +
+    spot('sun', 70, 64, 70, 40) +
+    `<g fill='#fff' fill-opacity='.5'><ellipse cx='300' cy='22' rx='50' ry='5'/><ellipse cx='110' cy='30' rx='40' ry='4'/></g>` +
+    // the volcano, the sea, the cliffs the school sits on
+    `<path d='M268 68L304 30Q310 26 316 30L356 68Z' fill='#7a6a8a'/><path d='M304 30Q310 26 316 30L326 44L312 40L300 46Z' fill='#e8e0f0' fill-opacity='.8'/><path d='M310 24q4 -10 -2 -16q8 2 6 14' fill='#fff' fill-opacity='.5'/>` +
+    `<rect y='64' width='${W}' height='18' fill='url(#sea)'/><path d='M40 70h60M150 74h40' stroke='#fff' stroke-opacity='.4'/>` +
+    // the school: lit front, shaded side, blue roofs, a gold-domed tower
+    `<rect x='118' y='42' width='136' height='30' fill='url(#wallF)'/><path d='M254 42L270 48V72H254Z' fill='url(#wallS)'/>` +
+    `<rect x='170' y='22' width='38' height='50' fill='url(#wallF)'/><path d='M208 22L218 27V72H208Z' fill='url(#wallS)'/>` +
+    `<path d='M112 44L190 32L268 44L274 48L254 42H118Z' fill='url(#roof)'/><path d='M164 24L189 10L214 24Z' fill='url(#roof)'/>` +
+    `<ellipse cx='189' cy='10' rx='6' ry='4' fill='#ffd04a'/><path d='M189 6V0' stroke='#ffd04a'/>` +
+    `<g fill='#2a5ab0'>${Array.from({ length: 11 }, (_, i) => `<rect x='${124 + i * 12}' y='50' width='5' height='9' fill-opacity='${i % 3 ? 0.8 : 0.5}'/>`).join('')}<rect x='182' y='34' width='14' height='18' rx='7'/></g>` +
+    `<rect x='182' y='56' width='14' height='16' fill='#6a4a2a'/>` +
+    `<path d='M0 82H380' stroke='#fff' stroke-opacity='.6'/>` +
+    // courtyard paving in perspective, and the crest
+    `<g stroke='#3a2e1a' stroke-opacity='.35'>${Array.from({ length: 13 }, (_, i) => `<path d='M${CX} 60L${i * 36 - 26} 220'/>`).join('')}${[98, 120, 150, 190].map((y) => `<path d='M0 ${y}H380'/>`).join('')}</g>` +
+    spot('gl', CX, 156, 120, 44) +
+    onFloor(156, 0.52, `<circle cx='${CX}' cy='${CY}' r='94' fill='none' stroke='#ffe27a' stroke-opacity='.7' stroke-width='3'/><circle cx='${CX}' cy='${CY}' r='84' fill='#1a3a8a' fill-opacity='.35'/>` +
+      `<path d='M${CX} ${CY - 60} L${CX + 48} ${CY - 42} V${CY + 4} Q${CX + 48} ${CY + 40} ${CX} ${CY + 60} Q${CX - 48} ${CY + 40} ${CX - 48} ${CY + 4} V${CY - 42} Z' fill='#2a5ab0' fill-opacity='.8' stroke='#ffd04a' stroke-width='3'/>` +
+      `<polygon points='${star(5, 26, 11)}' fill='#ffd04a'/><path d='M${CX - 34} ${CY + 30} Q${CX} ${CY + 46} ${CX + 34} ${CY + 30}' fill='none' stroke='#ffd04a' stroke-width='2.4'/>`),
+  { grain: 0.18 },
 );
 const academyTrim = trim(GOLD, '#2a5ab0', 'star');
 
-/** Starfall: an observatory roof under the night sky, constellations drawn in. */
-const starfall = svg(
-  rad('bg', [[0, '#2a3a8a'], [0.6, '#0c1240'], [1, '#03040e']], '50%', '0%', '110%') + rad('neb', [[0, '#b07aff', 0.35], [1, '#b07aff', 0]]),
+/** Starfall: the observatory under the night sky, a dragon drawn in the stars, the brass floor rings. */
+const starfall = scene(
+  rad('bg', [[0, '#2a3a8a'], [0.6, '#0c1240'], [1, '#03040e']], '50%', '0%', '110%') +
+    glowDef('neb', '#b07aff', 0.4) +
+    glowDef('neb2', '#4ad0ff', 0.25) +
+    lin('dome', [[0, '#5a6aa0'], [1, '#1a2040']], 1, 0) +
+    glowDef('gl', '#e6c27a', 0.4),
   fill('bg') +
-    `<ellipse cx='110' cy='40' rx='120' ry='40' fill='url(#neb)'/><ellipse cx='300' cy='70' rx='90' ry='30' fill='url(#neb)' opacity='.6'/>` +
-    scatter(90, 81, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.3 + r * 1.1)}' fill='#fff' fill-opacity='${f(0.25 + r * 0.7)}'/>`) +
-    // a dragon picked out in stars round the middle, and a couple of other constellations
+    spot('neb', 110, 40, 130, 42) +
+    spot('neb2', 290, 60, 100, 30) +
+    `<path d='M-10 70Q190 30 390 70' fill='none' stroke='#fff' stroke-opacity='.06' stroke-width='40'/>` +
+    scatter(80, 81, [0, 0, 380, 120], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.3 + r * 1)}' fill='#fff' fill-opacity='${f(0.25 + r * 0.7)}'/>`) +
     (() => {
-      const pts: [number, number][] = [[120, 70], [150, 54], [178, 62], [206, 48], [236, 58], [258, 82], [244, 112], [214, 124], [184, 116], [160, 134], [132, 128]];
-      const others: [number, number][][] = [[[30, 30], [54, 22], [70, 40], [52, 56]], [[312, 150], [336, 136], [358, 152], [340, 172]]];
-      const line = (p: [number, number][]) => `<polyline points='${p.map((q) => q.join(',')).join(' ')}' fill='none' stroke='#bcd0ff' stroke-opacity='.4' stroke-width='.9'/>`;
-      const dots = (p: [number, number][]) => p.map(([x, y], i) => `<circle cx='${x}' cy='${y}' r='${i % 3 ? 1.6 : 2.4}' fill='#fff'/><circle cx='${x}' cy='${y}' r='5' fill='#bcd0ff' fill-opacity='.18'/>`).join('');
-      return line(pts) + others.map(line).join('') + dots(pts) + others.map(dots).join('');
+      const pts: [number, number][] = [[70, 52], [100, 34], [130, 40], [158, 26], [190, 34], [214, 54], [204, 76], [176, 84], [150, 74]];
+      const line = `<polyline points='${pts.map((q) => q.join(',')).join(' ')}' fill='none' stroke='#bcd0ff' stroke-opacity='.55' stroke-width='1'/>`;
+      return line + pts.map(([x, y], i) => `<circle cx='${x}' cy='${y}' r='6' fill='#bcd0ff' fill-opacity='.2'/><circle cx='${x}' cy='${y}' r='${i % 3 ? 1.6 : 2.6}' fill='#fff'/>`).join('');
     })() +
-    // the observatory's brass rings across the near floor
-    `<g fill='none' stroke='#e6c27a'><ellipse cx='${CX}' cy='196' rx='170' ry='44' stroke-opacity='.4' stroke-width='2'/><ellipse cx='${CX}' cy='196' rx='140' ry='34' stroke-opacity='.2'/></g>` +
-    `<g fill='#e6c27a' fill-opacity='.6'>${Array.from({ length: 12 }, (_, i) => { const a = Math.PI + (i / 11) * Math.PI; return `<circle cx='${f(CX + Math.cos(a) * 170)}' cy='${f(196 + Math.sin(a) * 44)}' r='1.8'/>`; }).join('')}</g>`,
+    // the observatory: its dome open, the telescope pointing at the dragon's head
+    `<path d='M250 96V74A36 36 0 0 1 322 74V96Z' fill='url(#dome)'/><path d='M276 42L290 40L292 74H278Z' fill='#05060e'/>` +
+    `<path d='M286 66L246 26' stroke='#c8b080' stroke-width='6' stroke-linecap='round'/><path d='M286 66L246 26' stroke='#fff' stroke-opacity='.4' stroke-width='1.4'/>` +
+    `<rect x='244' y='94' width='84' height='6' fill='#2a3058'/>` +
+    `<g fill='#ffd88a'><rect x='262' y='80' width='4' height='6'/><rect x='306' y='80' width='4' height='6'/></g>` +
+    // the floor: dark wood and the brass rings of an orrery
+    `<rect y='100' width='${W}' height='120' fill='#120e1a'/>` +
+    `<g stroke='#000' stroke-opacity='.5'>${Array.from({ length: 11 }, (_, i) => `<path d='M${CX} 60L${i * 44 - 30} 220'/>`).join('')}</g>` +
+    `<path d='M0 100H380' stroke='#e6c27a' stroke-opacity='.4'/>` +
+    spot('gl', CX, 160, 140, 46) +
+    onFloor(160, 0.5, `<g fill='none' stroke='#e6c27a'><circle cx='${CX}' cy='${CY}' r='96' stroke-opacity='.75' stroke-width='3'/><circle cx='${CX}' cy='${CY}' r='70' stroke-opacity='.5' stroke-width='1.6'/><circle cx='${CX}' cy='${CY}' r='40' stroke-opacity='.5'/></g>` +
+      `<g fill='#e6c27a'>${around(12, 96).map(([x, y]) => `<circle cx='${x}' cy='${y}' r='2.4'/>`).join('')}</g><circle cx='${CX + 70}' cy='${CY}' r='7' fill='#bcd0ff'/><circle cx='${CX - 28}' cy='${CY - 28}' r='5' fill='#ff9a6a'/><circle cx='${CX}' cy='${CY}' r='12' fill='#ffd88a'/>`),
+  { grain: 0.15 },
 );
 const starfallTrim = trim(BRONZE, '#bcd0ff', 'star', '#e6c27a');
 
 /** The Millennium Stone: the tablet with the seven items' places, gold on sandstone. */
-const millennium = svg(
+const millennium = scene(
   rad('bg', [[0, '#d8b878'], [0.6, '#7a5a2c'], [1, '#2a1a08']], '50%', '45%', '80%') + rad('gl', [[0, '#fff2c0', 0.6], [1, '#fff2c0', 0]]),
   fill('bg') +
     `<g stroke='#3a2a10' stroke-opacity='.25'>${Array.from({ length: 8 }, (_, i) => `<path d='M0 ${i * 28 + 10}H380'/>`).join('')}${Array.from({ length: 40 }, (_, i) => `<path d='M${(i % 5) * 80 + (Math.floor(i / 5) % 2) * 40} ${Math.floor(i / 5) * 28 + 10}v28'/>`).join('')}</g>` +
@@ -464,7 +615,7 @@ const millennium = svg(
 const millenniumTrim = trim(GOLD, '#2aa0a0', 'ankh');
 
 /** The Shadow Realm: violet fog over broken stone, a great eye watching from the dark. */
-const shadowrealm = svg(
+const shadowrealm = scene(
   rad('bg', [[0, '#4a1a6a'], [0.5, '#1a0828'], [1, '#05020a']], '50%', '30%', '85%') +
     rad('fog', [[0, '#c070ff', 0.45], [1, '#c070ff', 0]]) +
     rad('eyeg', [[0, '#ff4ad0', 0.9], [0.4, '#a020ff', 0.5], [1, '#a020ff', 0]]),
@@ -472,8 +623,8 @@ const shadowrealm = svg(
     `<ellipse cx='${CX}' cy='40' rx='120' ry='40' fill='url(#eyeg)'/>` +
     eye(CX, 44, 70, '#f0c0ff', '#ff4ad0', 0.75) +
     // spires of rock rising through the fog
-    `<g fill='#0c0414'><path d='M10 220 L30 120 L44 160 L56 104 L72 220 Z'/><path d='M310 220 L326 110 L338 150 L352 96 L370 220 Z'/><path d='M120 220 L134 168 L146 220 Z'/><path d='M240 220 L252 160 L266 220 Z'/></g>` +
-    `<g fill='none' stroke='#c070ff' stroke-opacity='.3'><path d='M30 120 L44 160 L56 104M326 110 L338 150 L352 96'/></g>` +
+    `<g fill='#0c0414' stroke='#c070ff' stroke-opacity='.55' stroke-width='1.2'><path d='M10 220 L30 120 L44 160 L56 104 L72 220 Z'/><path d='M310 220 L326 110 L338 150 L352 96 L370 220 Z'/><path d='M120 220 L134 168 L146 220 Z'/><path d='M240 220 L252 160 L266 220 Z'/></g>` +
+    `<g fill='#ff4ad0' fill-opacity='.8'><circle cx='44' cy='150' r='1.6'/><circle cx='338' cy='140' r='1.6'/><circle cx='52' cy='130' r='1.2'/></g>` +
     // the floating stone the duel stands on, cracked, with a summoning circle cut in it
     `<ellipse cx='${CX}' cy='150' rx='150' ry='46' fill='#1e0c2e' stroke='#c070ff' stroke-opacity='.45'/>` +
     `<g fill='none' stroke='#e0a0ff' stroke-opacity='.5'><ellipse cx='${CX}' cy='150' rx='100' ry='30'/><ellipse cx='${CX}' cy='150' rx='84' ry='24' stroke-dasharray='3 4'/></g>` +
@@ -484,7 +635,7 @@ const shadowrealm = svg(
 const shadowrealmTrim = trim(OBSIDIAN, '#ff4ad0', 'diamond', '#e0a0ff');
 
 /** The Pharaoh's tomb: a gold-lit burial hall, pillars, wall paintings and the ankh. */
-const tomb = svg(
+const tomb = scene(
   lin('bg', [[0, '#1a1006'], [0.45, '#5a3a14'], [1, '#2a1a08']]) + rad('torch', [[0, '#ffcf6a', 0.55], [1, '#ffcf6a', 0]]) + lin('pil', [[0, '#3a2a10'], [0.5, '#a07a3a'], [1, '#3a2a10']], 1, 0),
   fill('bg') +
     // the far wall with its painted bands
@@ -506,32 +657,51 @@ const tomb = svg(
 );
 const tombTrim = trim(GOLD, '#2aa0a0', 'ankh');
 
-/** Holo Arena: rainbow foil in a fine diamond weave, stars of light. */
-const holo = svg(
-  lin('bg', [[0, '#ff7ad8'], [0.2, '#7ab8ff'], [0.4, '#7affd8'], [0.6, '#fff07a'], [0.8, '#ffaa7a'], [1, '#c07aff']], 1, 1) +
-    rad('dk', [[0, '#1a1040', 0.45], [1, '#05030e', 0.92]], '50%', '45%', '75%') +
-    `<pattern id='dm' width='16' height='16' patternUnits='userSpaceOnUse'><path d='M8 0L16 8L8 16L0 8Z' fill='none' stroke='#fff' stroke-opacity='.14' stroke-width='.8'/></pattern>`,
+/** Holo Arena: a mirrored foil stage, rainbow light washing across it, prism shards hanging over the horizon. */
+const holo = scene(
+  lin('bg', [[0, '#ff7ad8'], [0.2, '#7ab8ff'], [0.4, '#7affd8'], [0.6, '#fff07a'], [0.8, '#ffaa7a'], [1, '#c07aff']], 1, 0.4) +
+    lin('fl', [[0, '#1a1040', 0.55], [1, '#05030e', 0.95]]) +
+    lin('sky', [[0, '#05030e', 0.85], [1, '#1a1040', 0.4]]) +
+    glowDef('gl', '#ffffff', 0.5) +
+    `<pattern id='dm' width='16' height='16' patternUnits='userSpaceOnUse'><path d='M8 0L16 8L8 16L0 8Z' fill='none' stroke='#fff' stroke-opacity='.16' stroke-width='.8'/></pattern>`,
   fill('bg') +
-    fill('dk') +
-    fill('dm') +
-    rays(32, 20, 260, '#fff', 0.8, 0.12) +
-    `<g fill='none' stroke='#fff' stroke-opacity='.55'><circle cx='${CX}' cy='${CY}' r='78' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='60'/></g>` +
-    `<polygon points='${star(4, 56, 12)}' fill='#fff' fill-opacity='.4'/><polygon points='${star(4, 40, 9, CX, CY, -45)}' fill='#fff' fill-opacity='.3'/>` +
-    scatter(16, 91, [10, 10, 360, 200], (x, y, r) => `<polygon points='${star(4, 3 + r * 5, 0.8 + r, x, y)}' fill='#fff' fill-opacity='${f(0.3 + r * 0.5)}'/>`),
+    `<rect width='${W}' height='80' fill='url(#sky)'/>` +
+    `<rect y='80' width='${W}' height='140' fill='url(#fl)'/>` +
+    `<rect y='80' width='${W}' height='140' fill='url(#dm)'/>` +
+    // prism shards floating over the horizon, each splitting light
+    [[60, 40, 14, -12], [130, 26, 10, 18], [250, 34, 12, -20], [320, 46, 16, 10], [190, 18, 8, 0]]
+      .map(([x, y, r, a]) => `<g transform='rotate(${a} ${x} ${y})'><polygon points='${x},${y - r * 1.6} ${x + r},${y} ${x},${y + r * 1.6} ${x - r},${y}' fill='#fff' fill-opacity='.3' stroke='#fff' stroke-opacity='.85'/><path d='M${x} ${y - r * 1.6}V${y + r * 1.6}' stroke='#fff' stroke-opacity='.5'/></g>`)
+      .join('') +
+    `<path d='M0 80H380' stroke='#fff' stroke-opacity='.7' stroke-width='1.4'/>` +
+    `<g stroke='#fff' stroke-opacity='.12'>${Array.from({ length: 13 }, (_, i) => `<path d='M${CX} 40L${i * 36 - 26} 220'/>`).join('')}</g>` +
+    spot('gl', CX, 156, 150, 46) +
+    onFloor(156, 0.5, `<g fill='none' stroke='#fff'><circle cx='${CX}' cy='${CY}' r='96' stroke-opacity='.75' stroke-width='2.6'/><circle cx='${CX}' cy='${CY}' r='80' stroke-opacity='.4'/></g><polygon points='${star(4, 70, 14)}' fill='#fff' fill-opacity='.45'/><polygon points='${star(4, 50, 10, CX, CY, -45)}' fill='#fff' fill-opacity='.3'/>`) +
+    scatter(14, 91, [10, 90, 360, 120], (x, y, r) => `<polygon points='${star(4, 3 + r * 4, 0.8 + r, x, y)}' fill='#fff' fill-opacity='${f(0.3 + r * 0.5)}'/>`),
 );
 const holoTrim = trim(['#ffffff', '#b07ad8', '#7ad8ff'], '#ff9ae8', 'star', '#ffffff');
 
-/** Heart of the Cards: warm light from a heart made of five cards, rays of trust out to the edges. */
-const heart = svg(
-  rad('bg', [[0, '#ffcf8a'], [0.4, '#a0442a'], [1, '#1a0806']], '50%', '45%', '80%') + rad('gl', [[0, '#fff6d0', 0.8], [1, '#fff6d0', 0]]),
+/** Heart of the Cards: warm light pouring from a heart, five cards rising round it, the floor aglow. */
+const heart = scene(
+  rad('bg', [[0, '#ffcf8a'], [0.35, '#a0442a'], [1, '#1a0806']], '50%', '30%', '80%') +
+    glowDef('gl', '#fff6d0', 0.85) +
+    lin('card', [[0, '#5a2a1a'], [1, '#2a1008']]) +
+    glowDef('fl', '#ffb04a', 0.5),
   fill('bg') +
-    rays(20, 50, 260, '#ffe2b0', 2.2, 0.16) +
-    `<circle cx='${CX}' cy='${CY}' r='70' fill='url(#gl)'/>` +
-    // five cards fanned behind the heart
-    [-36, -18, 0, 18, 36].map((a) => `<rect x='${CX - 15}' y='${CY - 52}' width='30' height='44' rx='2.5' fill='#3a1a10' fill-opacity='.55' stroke='#ffe2b0' stroke-opacity='.7' transform='rotate(${a} ${CX} ${CY + 20})'/>`).join('') +
-    `<path d='M${CX} ${CY + 30} C${CX - 44} ${CY + 2} ${CX - 30} ${CY - 34} ${CX} ${CY - 16} C${CX + 30} ${CY - 34} ${CX + 44} ${CY + 2} ${CX} ${CY + 30} Z' fill='#ff6a4a' fill-opacity='.8' stroke='#fff6d0' stroke-width='2'/>` +
-    `<path d='M${CX - 14} ${CY - 12} q-8 8 -4 16' fill='none' stroke='#fff' stroke-opacity='.7' stroke-width='2.4' stroke-linecap='round'/>` +
-    scatter(20, 101, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.6 + r * 1.4)}' fill='#fff6d0' fill-opacity='${f(0.2 + r * 0.5)}'/>`),
+    rays(24, 30, 280, '#ffe2b0', 2.4, 0.18, CX, 60) +
+    spot('gl', CX, 60, 110, 70) +
+    // five cards rising in a fan, each with a lit edge
+    [-44, -22, 0, 22, 44]
+      .map((a, i) => `<g transform='rotate(${a} ${CX} 130)'><rect x='${CX - 17}' y='${36 - (i === 2 ? 6 : 0)}' width='34' height='50' rx='3' fill='url(#card)' stroke='#ffe2b0' stroke-width='1.4'/><rect x='${CX - 12}' y='${41 - (i === 2 ? 6 : 0)}' width='24' height='22' fill='#ffb04a' fill-opacity='.35'/><path d='M${CX - 17} ${36 - (i === 2 ? 6 : 0)}h34' stroke='#fff' stroke-opacity='.8'/></g>`)
+      .join('') +
+    `<path d='M${CX} 102 C${CX - 40} 78 ${CX - 28} 46 ${CX} 62 C${CX + 28} 46 ${CX + 40} 78 ${CX} 102 Z' fill='#ff5a3a' stroke='#fff6d0' stroke-width='2.4'/>` +
+    `<path d='M${CX - 14} 64 q-8 8 -4 16' fill='none' stroke='#fff' stroke-opacity='.8' stroke-width='2.6' stroke-linecap='round'/>` +
+    // the floor it lights
+    `<path d='M0 120H380V220H0Z' fill='#2a0e08' opacity='.6'/>` +
+    `<path d='M0 120H380' stroke='#ffe2b0' stroke-opacity='.45'/>` +
+    spot('fl', CX, 160, 160, 50) +
+    onFloor(160, 0.5, `<circle cx='${CX}' cy='${CY}' r='92' fill='none' stroke='#ffe2b0' stroke-opacity='.65' stroke-width='2.4'/><circle cx='${CX}' cy='${CY}' r='78' fill='none' stroke='#ffe2b0' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/>${rays(16, 30, 74, '#ffe2b0', 2, 0.4)}`) +
+    scatter(22, 101, [0, 0, 380, 220], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.6 + r * 1.4)}' fill='#fff6d0' fill-opacity='${f(0.2 + r * 0.5)}'/>`),
+  { grain: 0.12 },
 );
 const heartTrim = trim(GOLD, '#ff6a4a', 'gem');
 
@@ -540,12 +710,12 @@ export const PLAYMAT_SVG = {
   crimson,
   kingdom,
   disk,
-  light,
-  dark,
-  fire,
-  water,
-  earth,
-  wind,
+  light: lightMat,
+  dark: darkMat,
+  fire: fireMat,
+  water: waterMat,
+  earth: earthMat,
+  wind: windMat,
   city,
   castle,
   dome,

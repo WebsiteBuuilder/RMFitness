@@ -11,9 +11,8 @@
   height: calc(50% + 9px);
   z-index: -1;
   pointer-events: none;
+  /* (a plain rectangular clip: no rounded mask layer over the moving one) */
   overflow: hidden;
-  border-radius: 0 0 14px 14px;
-  contain: layout paint;
 }
 .pm-half.me {
   bottom: -9px;
@@ -42,9 +41,9 @@
   left: 0;
   right: 0;
   top: 0;
-  height: 10px;
+  height: 26px;
   z-index: 1;
-  background: linear-gradient(#000000a0, transparent);
+  background: linear-gradient(#02030ad0, #02030a70 40%, transparent);
 }
 /* danger: a red shade from the near edge of the duelist in trouble (no motion: it fades in once) */
 .pm-half::after {
@@ -63,121 +62,222 @@ body.danger-opp .pm-half.opp::after {
 body.danger-me-2 .pm-half.me::after {
   opacity: 1;
 }
+/* (the living field draws the cracked red ground under the board in danger: let it through) */
+body.lf-on.danger-me .pm-half.me .pm-art,
+body.lf-on.danger-opp .pm-half.opp .pm-art {
+  opacity: 0.6;
+}
 
-/* ---- ambient motion ---- */
+/* ---- ambient motion ----
+   Plays in bursts: from the start of each turn for about 20 s, then the mat rests until the next
+   turn (the animation name swaps with the turn, which restarts it). A resting mat has no running
+   animation at all, so nothing above it is kept on extra layers and nothing composites per frame.
+   Every moving layer is the half's own size or a narrow band, never a wide overscan. */
 .pm-fx {
-  will-change: transform;
+  --pm-n: 2;
+  animation-iteration-count: var(--pm-n);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
 }
 /* things that rise from your edge toward the middle: embers, bubbles, motes */
 .pm-fx-embers .pm-fx,
 .pm-fx-bubbles .pm-fx,
 .pm-fx-motes .pm-fx {
-  top: 0;
-  bottom: -120px;
-  inset-inline: 0;
+  inset: 0 0 -120px 0;
   background: var(--pm-fx) 0 0 / 120px 120px repeat;
-  animation: pm-rise 14s linear infinite;
+  animation-name: pm-rise-a;
+  animation-duration: 10s;
   opacity: 0.8;
 }
 .pm-fx-embers .pm-fx {
-  animation-duration: 9s;
+  animation-duration: 7s;
+  --pm-n: 3;
 }
 .pm-fx-motes .pm-fx {
   opacity: 0.55;
-  animation-duration: 22s;
-}
-@keyframes pm-rise {
-  to {
-    transform: translateY(-120px);
-  }
+  animation-duration: 20s;
+  --pm-n: 1;
 }
 /* things the wind carries across: leaves, fog */
 .pm-fx-leaves .pm-fx {
-  inset-block: 0;
-  left: 0;
-  right: -120px;
+  inset: 0 -120px 0 0;
   background: var(--pm-fx) 0 0 / 120px 120px repeat;
-  animation: pm-drift 16s linear infinite;
+  animation-name: pm-drift-a;
+  animation-duration: 10s;
   opacity: 0.85;
 }
 .pm-fx-fog .pm-fx {
-  inset-block: 0;
-  left: 0;
-  right: -240px;
+  inset: 0 -240px 0 0;
   background: var(--pm-fx) 0 0 / 240px 120px repeat;
-  animation: pm-drift-wide 34s linear infinite;
+  animation-name: pm-fog-a;
+  animation-duration: 22s;
+  --pm-n: 1;
 }
-@keyframes pm-drift {
-  to {
-    transform: translateX(-120px);
-  }
-}
-@keyframes pm-drift-wide {
-  to {
-    transform: translateX(-240px);
-  }
-}
-/* stars and sparkles twinkle in place */
+/* stars and sparkles twinkle in place (an even count: they settle back dim) */
 .pm-fx-stars .pm-fx,
 .pm-fx-sparkle .pm-fx {
   background: var(--pm-fx) 0 0 / 120px 120px repeat;
-  will-change: opacity;
   opacity: 0.15;
-  animation: pm-twinkle 3.4s ease-in-out infinite alternate;
+  animation-name: pm-twinkle-a;
+  animation-duration: 3.4s;
+  animation-timing-function: ease-in-out;
+  animation-direction: alternate;
+  --pm-n: 6;
 }
 .pm-fx-sparkle .pm-fx {
   background-position: 40px 30px;
   animation-duration: 2.6s;
+  --pm-n: 8;
 }
-@keyframes pm-twinkle {
-  to {
-    opacity: 0.9;
-  }
-}
-/* a scan line that runs from your edge to the middle now and then (Duel Disk Grid, Kaiba Dome) */
+/* a scan line that runs from your edge to the middle (Duel Disk Grid, Kaiba Dome) */
 .pm-fx-scan .pm-fx {
   inset: auto 0 0 0;
   height: 22%;
   background: linear-gradient(transparent, color-mix(in srgb, var(--pm-fx-c) 30%, transparent) 70%, color-mix(in srgb, var(--pm-fx-c) 85%, transparent) 92%, transparent);
-  transform: translateY(110%);
-  animation: pm-scan 5.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-name: pm-scan-a;
+  animation-duration: 5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  --pm-n: 4;
 }
-@keyframes pm-scan {
-  0%,
-  35% {
+/* a narrow band of light across the mat (Tournament Blue, the castle, the Millennium Stone) */
+.pm-fx-sweep .pm-fx {
+  inset: 0 auto 0 0;
+  width: 34%;
+  background: linear-gradient(105deg, transparent 10%, color-mix(in srgb, var(--pm-fx-c) 12%, transparent) 35%, color-mix(in srgb, var(--pm-fx-c) 40%, transparent) 50%, color-mix(in srgb, var(--pm-fx-c) 12%, transparent) 65%, transparent 90%);
+  animation-name: pm-sweep-a;
+  animation-duration: 6.5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --pm-n: 3;
+}
+/* a band of rainbow foil drifting under the cards (Holo Arena) */
+.pm-fx-holo .pm-fx {
+  inset: 0 auto 0 0;
+  width: 60%;
+  background: linear-gradient(115deg, transparent, #ff6ad540 15%, #94d0ff48 32%, #8cffd848 50%, #fff59a48 68%, #ffb37a40 85%, transparent);
+  animation-name: pm-holo-a;
+  animation-duration: 5s;
+  animation-timing-function: ease-in-out;
+  animation-direction: alternate;
+  --pm-n: 4;
+}
+/* the opponent's turn plays the same moves under another name, so each turn starts a new burst */
+.duel.turn-opp .pm-fx-embers .pm-fx,
+.duel.turn-opp .pm-fx-bubbles .pm-fx,
+.duel.turn-opp .pm-fx-motes .pm-fx {
+  animation-name: pm-rise-b;
+}
+.duel.turn-opp .pm-fx-leaves .pm-fx {
+  animation-name: pm-drift-b;
+}
+.duel.turn-opp .pm-fx-fog .pm-fx {
+  animation-name: pm-fog-b;
+}
+.duel.turn-opp .pm-fx-stars .pm-fx,
+.duel.turn-opp .pm-fx-sparkle .pm-fx {
+  animation-name: pm-twinkle-b;
+}
+.duel.turn-opp .pm-fx-scan .pm-fx {
+  animation-name: pm-scan-b;
+}
+.duel.turn-opp .pm-fx-sweep .pm-fx {
+  animation-name: pm-sweep-b;
+}
+.duel.turn-opp .pm-fx-holo .pm-fx {
+  animation-name: pm-holo-b;
+}
+@keyframes pm-rise-a {
+  to {
+    transform: translateY(-120px);
+  }
+}
+@keyframes pm-rise-b {
+  to {
+    transform: translateY(-120px);
+  }
+}
+@keyframes pm-drift-a {
+  to {
+    transform: translateX(-120px);
+  }
+}
+@keyframes pm-drift-b {
+  to {
+    transform: translateX(-120px);
+  }
+}
+@keyframes pm-fog-a {
+  to {
+    transform: translateX(-240px);
+  }
+}
+@keyframes pm-fog-b {
+  to {
+    transform: translateX(-240px);
+  }
+}
+@keyframes pm-twinkle-a {
+  to {
+    opacity: 0.9;
+  }
+}
+@keyframes pm-twinkle-b {
+  to {
+    opacity: 0.9;
+  }
+}
+@keyframes pm-scan-a {
+  0% {
     transform: translateY(110%);
   }
   100% {
     transform: translateY(-480%);
   }
 }
-/* a band of light across the mat now and then (Tournament Blue, the castle, the Millennium Stone) */
-.pm-fx-sweep .pm-fx {
-  inset: 0 -60%;
-  background: linear-gradient(105deg, transparent 40%, color-mix(in srgb, var(--pm-fx-c) 10%, transparent) 46%, color-mix(in srgb, var(--pm-fx-c) 38%, transparent) 50%, color-mix(in srgb, var(--pm-fx-c) 10%, transparent) 54%, transparent 60%);
-  transform: translateX(-60%);
-  animation: pm-sweep 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-@keyframes pm-sweep {
-  0%,
-  60% {
-    transform: translateX(-60%);
+@keyframes pm-scan-b {
+  0% {
+    transform: translateY(110%);
   }
   100% {
-    transform: translateX(60%);
+    transform: translateY(-480%);
   }
 }
-/* rainbow foil that drifts under the cards (Holo Arena) */
-.pm-fx-holo .pm-fx {
-  inset: 0 -50%;
-  background: linear-gradient(115deg, transparent 10%, #ff6ad540 22%, #94d0ff48 34%, #8cffd848 46%, #fff59a48 58%, #ffb37a40 70%, #c07aff40 82%, transparent 92%);
-  transform: translateX(-25%);
-  animation: pm-holo 6s ease-in-out infinite alternate;
+@keyframes pm-sweep-a {
+  0%,
+  45% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
 }
-@keyframes pm-holo {
+@keyframes pm-sweep-b {
+  0%,
+  45% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+@keyframes pm-holo-a {
+  from {
+    transform: translateX(-30%);
+  }
   to {
-    transform: translateX(25%);
+    transform: translateX(95%);
   }
+}
+@keyframes pm-holo-b {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(95%);
+  }
+}
+/* the picker plays its mat's motion on a loop */
+.pmp-mat .pm-fx {
+  --pm-n: infinite;
 }
 
 /* nothing moves while a 3D cinematic plays, once the duel is decided, or for reduced motion */
@@ -211,15 +311,22 @@ body.lf-on .pm-half.fieldup .pm-fx {
     linear-gradient(var(--pm-line) 0 0) bottom left / 1.5px 9px no-repeat,
     linear-gradient(var(--pm-line) 0 0) bottom right / 9px 1.5px no-repeat,
     linear-gradient(var(--pm-line) 0 0) bottom right / 1.5px 9px no-repeat,
-    radial-gradient(90% 70% at 50% 50%, #00000014, #00000066);
+    radial-gradient(90% 70% at 50% 50%, #0000001c, #00000070);
   box-shadow:
     inset 0 0 0 1px #00000070,
     inset 0 0 12px color-mix(in srgb, var(--pm-line) 16%, transparent),
     0 0 0 1px #0000002a;
 }
-.duel.touch .trow.pm-row.pm-bright .tz:not(.drop-ok):not(.drop-on),
 .duel.touch .trow.pm-row .tz.tz-s:not(.drop-ok):not(.drop-on) {
   background-color: #0000002e;
+}
+/* bright and busy mats: a deeper well under each zone, and frames with a dark edge so they still read */
+.duel.touch .trow.pm-row.pm-bright .tz:not(.drop-ok):not(.drop-on) {
+  background-color: #00000059;
+  box-shadow:
+    inset 0 0 0 1px #000000a0,
+    0 0 0 1px #00000060,
+    inset 0 0 12px #00000080;
 }
 .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) {
   background-color: #04071ca8;
@@ -250,7 +357,7 @@ body.lf-on .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) 
 }
 .pmp-mat {
   position: relative;
-  width: min(100%, 360px);
+  width: min(100%, 300px);
   margin: 0 auto;
   transform: rotateX(16deg);
   transform-origin: 50% 60%;
@@ -331,9 +438,17 @@ body.lf-on .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) 
 .pmp-info {
   padding: 10px 4px 2px;
 }
+@media (max-height: 700px) {
+  .pmp-mat {
+    width: min(100%, 230px);
+  }
+  .pmp-board {
+    padding: 8px 14px 12px;
+  }
+}
 .pmp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 8px;
   margin-top: 6px;
 }
@@ -360,13 +475,33 @@ body.lf-on .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) 
 .sdh-mat-pic {
   position: relative;
   flex: none;
-  width: 66px;
+  width: 76px;
   aspect-ratio: 380 / 220;
   border-radius: 6px;
-  background: center / cover no-repeat;
+  background: 50% 62% / 190% auto no-repeat;
   box-shadow:
     0 0 0 1px #ffffff30,
     0 2px 6px #000b,
     0 0 12px -2px var(--pm-glow, transparent);
   transform: perspective(200px) rotateX(18deg);
+}
+
+/* ---- Classic controls: the same halves under the rows ---- */
+.rows.pm-rows {
+  position: relative;
+  isolation: isolate;
+}
+.rows.pm-rows > .pm-half {
+  left: -3px;
+  right: -3px;
+  height: calc(50% + 3px);
+}
+.rows.pm-rows > .pm-half.me {
+  bottom: -3px;
+}
+.rows.pm-rows > .pm-half.opp {
+  top: -3px;
+}
+.rows.pm-rows .zone {
+  background-color: #04071c88;
 }
