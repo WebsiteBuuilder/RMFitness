@@ -76,12 +76,45 @@ const rank = (r: string) => Math.max(0, RARITIES.indexOf(r as Rarity));
 /** Products sold as packs: no ready-made decks or promos, and enough Commons to fill a pack (Tournament Packs 1-2 were all foils). */
 const isBooster = (s: SpeedSet) => !/Starter Deck|Demo Deck|Duelist Kit|participation|promotional|Event Pack/i.test(s.name) && s.cards.filter(([, r]) => r === 'Common').length >= 10;
 
-/** The booster sets, oldest first (a single mix set when the set file is missing). */
+export const VAULT_SET = 'Speed Duel: Starter Deck Vault';
+export const VAULT_CODE = 'SVLT';
+
+/** The Starter Deck Vault, then the booster sets oldest first (a single mix set when the set file is missing). */
 export function boosterSets(): SpeedSet[] {
   if (boosters) return boosters;
   const real = (raw ?? []).filter((s) => s.cards.some(([n]) => card(n))).filter(isBooster);
-  boosters = real.length ? real : [mixSet()];
+  const vault = vaultSet(real);
+  boosters = real.length ? (vault ? [vault, ...real] : real) : [mixSet()];
   return boosters;
+}
+
+/** Real booster sets only (no Vault): what the win ladder unlocks one by one and what rarityOf reads. */
+const ladderSets = () => boosterSets().filter((s) => s.code !== VAULT_CODE);
+
+/**
+ * Every card Konami only printed in Starter Decks, Demo Decks, Tournament Packs 1-2 or event
+ * packs, gathered into one always-open pack so every card in the game can be pulled. Each
+ * card shows the best rarity it was printed at there, and the decks' big monsters (Extra
+ * Deck, Ritual, Level 5+ or 1700+ ATK) show as Rare, so the hit slot has a wide spread
+ * instead of the same dozen foils. Skills stay out (they come with decks and crafting, like
+ * in every other pack). Its rarity for crafting and breaking stays the same (see rarityOf).
+ */
+function vaultSet(real: SpeedSet[]): SpeedSet | null {
+  if (!real.length || !raw) return null;
+  const inPacks = new Set(real.flatMap((s) => s.cards.map(([n]) => n)));
+  const best = new Map<string, Rarity>();
+  const codes = new Set(real.map((s) => s.name));
+  for (const st of raw) {
+    if (codes.has(st.name)) continue;
+    for (const [n, r] of st.cards) if (!inPacks.has(n) && card(n) && card(n)!.sub !== 'Skill' && (!best.has(n) || rank(r) > rank(best.get(n)!))) best.set(n, r);
+  }
+  if (!best.size) return null;
+  for (const [n, r] of best) {
+    const c = card(n)!;
+    if (r === 'Common' && c.kind === 'monster' && (!['Effect', 'Normal'].includes(c.sub) || (c.level ?? 0) >= 5 || (c.atk ?? 0) >= 1700)) best.set(n, 'Rare');
+  }
+  const cards = [...best].sort((a, b) => a[0].localeCompare(b[0]));
+  return { name: VAULT_SET, code: VAULT_CODE, date: '', cards };
 }
 
 function mixSet(): SpeedSet {
@@ -107,7 +140,7 @@ export function rarityOf(name: string): Rarity {
   if (!baseRarity) {
     baseRarity = new Map();
     const inPacks = new Map<string, Rarity>();
-    for (const s of boosterSets()) for (const [n, r] of s.cards) if (!inPacks.has(n) || rank(r) > rank(inPacks.get(n)!)) inPacks.set(n, r);
+    for (const s of ladderSets()) for (const [n, r] of s.cards) if (!inPacks.has(n) || rank(r) > rank(inPacks.get(n)!)) inPacks.set(n, r);
     for (const s of printed ?? []) for (const [n, r] of s.cards) if (!baseRarity.has(n) || rank(r) < rank(baseRarity.get(n)!)) baseRarity.set(n, r);
     for (const [n, r] of inPacks) baseRarity.set(n, r);
   }
@@ -118,8 +151,9 @@ export function rarityOf(name: string): Rarity {
 /** The booster sets this profile can buy packs of: one more for every WINS_PER_SET wins. */
 export const WINS_PER_SET = 4;
 export function unlockedSets(wins: number): SpeedSet[] {
-  const all = boosterSets();
-  return all.slice(0, Math.min(all.length, 1 + Math.floor(wins / WINS_PER_SET)));
+  const all = ladderSets();
+  const vault = boosterSets().filter((s) => s.code === VAULT_CODE);
+  return [...all.slice(0, Math.min(all.length, 1 + Math.floor(wins / WINS_PER_SET))), ...vault];
 }
 
 export function setByName(name: string | undefined): SpeedSet | undefined {
@@ -137,8 +171,8 @@ export const shortSetName = (name: string) => name.replace(/^Speed Duel( GX)?:\s
  */
 export function openPack(setName: string | undefined, pool: string[] = [], seed = Date.now(), minTop: Rarity = 'Rare'): string[] {
   const next = rng(seed);
-  const sets = boosterSets();
-  const set = setByName(setName) ?? sets[Math.floor(next() * sets.length)];
+  const ladder = ladderSets();
+  const set = setByName(setName) ?? ladder[Math.floor(next() * ladder.length)];
   if (!set || !set.cards.length) return pool.slice(0, PACK_SIZE);
   const byRarity = (r: Rarity) => {
     const all = set.cards.filter(([, x]) => x === r).map(([n]) => n);

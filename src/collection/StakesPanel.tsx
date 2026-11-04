@@ -180,6 +180,11 @@ function BetPicker({ who, save, ante, theirs, onBet }: { who: string; save: Spee
         <button class="chip" disabled={chips >= most} onClick={() => set({ card: cur, chips: chips + 1 })}>
           +
         </button>
+        {most >= 20 && (
+          <button class="chip" disabled={chips >= most} onClick={() => set({ card: cur, chips: Math.min(most, chips + 10) })}>
+            +10
+          </button>
+        )}
         <span class="hint">of {most}</span>
         {match > 0 && match !== chips && (
           <button class="chip" onClick={() => set({ card: cur, chips: match })}>
