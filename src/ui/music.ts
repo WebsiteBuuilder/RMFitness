@@ -195,7 +195,10 @@ export class DuelMusic {
       if (this.next < this.ctx.currentTime) this.next = this.ctx.currentTime + 0.02;
     }
     while (this.next < until) {
-      if (this.step === 0) this.barStart();
+      if (this.step === 0) {
+        this.barStart();
+        for (const f of barListeners) f(this.next - this.ctx.currentTime, this.bar, this.level);
+      }
       this.play(this.step, this.next);
       this.next += 60 / this.bpm / 4;
       this.step = (this.step + 1) % 16;
@@ -505,6 +508,17 @@ export class DuelMusic {
 }
 
 // ------------------------------------------------------------ duel hook-up
+
+/**
+ * Hears each bar line as the soundtrack schedules it: `inSec` from now (the music plans a
+ * little ahead), the bar number and the level. The weather lands its lightning on these.
+ */
+export type BarListener = (inSec: number, bar: number, level: Level) => void;
+const barListeners = new Set<BarListener>();
+export function onMusicBar(f: BarListener): () => void {
+  barListeners.add(f);
+  return () => void barListeners.delete(f);
+}
 
 /** The level the duel's Life Points call for. */
 export function levelFor(lps: number[]): Level {

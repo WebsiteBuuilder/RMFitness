@@ -20,6 +20,7 @@ import { Avatar } from './Profiles';
 import { Menu, Overlay, Win } from './Window';
 import { DeckMenu } from './DeckPick';
 import { playBlip, setMusicEnabled, setSoundEnabled, useMusicEnabled, useSoundEnabled } from './sound';
+import { setWeatherEnabled, useWeatherEnabled } from './Weather';
 import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
 import { stampsToClaim } from '../collection/stamps';
@@ -352,6 +353,7 @@ export function SpeedHome({
   const [settings, setSettings] = useState(false);
   const soundOn = useSoundEnabled();
   const musicOn = useMusicEnabled();
+  const weatherOn = useWeatherEnabled();
   const [rules, setRules] = useState(false);
   lastTab = tab;
   // Lift the floating Friends button above the tab bar while the home screen is up.
@@ -545,6 +547,7 @@ export function SpeedHome({
                 { label: `Controls: ${CONTROL_NAMES[controls]}`, note: controls === 'touch' ? 'tap and drag, like Master Duel' : 'menu window, like the GBA game', onPick: onControls },
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'duel sound effects', onPick: () => setSoundEnabled(!soundOn) },
                 { label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'the duel soundtrack', onPick: () => setMusicEnabled(!musicOn) },
+                { label: `Weather: ${weatherOn ? 'On' : 'Off'}`, note: 'rain, storms and the time of day in duels', onPick: () => setWeatherEnabled(!weatherOn) },
                 { label: 'Speed Duel rules', onPick: () => (setSettings(false), setRules(true)) },
                 { label: 'Back to Eternal Duelist Soul', onPick: onExit },
               ]}

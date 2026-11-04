@@ -466,3 +466,19 @@ export function chainNegate() {
   thud(0.4);
   tone(220, 0.35, 0.06, 0, { type: 'square', to: 90, lp: 1200 });
 }
+
+// ------------------------------------------------------------ weather
+
+/** Thunder: `near`, a crack right on the flash and a long roll; far off, a low roll only. */
+export function thunder(near: boolean) {
+  if (near) {
+    rumble(0.35, 0.15, 160);
+    hiss(0.18, 3800, 900, 0.16, 0, 'highpass', 0.002);
+    hiss(0.35, 1200, 200, 0.14, 0.02, 'bandpass', 0.004);
+    hiss(2.6, 260, 50, 0.2, 0.08, 'lowpass', 0.05);
+    tone(48, 1.6, 0.12, 0.06, { type: 'sine', to: 30, attack: 0.04 });
+  } else {
+    hiss(2.4, 180, 45, 0.11, 0.6, 'lowpass', 0.4);
+    tone(42, 1.8, 0.05, 0.7, { type: 'sine', to: 30, attack: 0.5 });
+  }
+}

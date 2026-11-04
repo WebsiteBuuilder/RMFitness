@@ -30,6 +30,7 @@ import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
 import { wearKey, ZoneWear } from './fieldWear';
+import { WeatherFront, WeatherSky } from './Weather';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -899,6 +900,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         <div class="tarena" aria-hidden="true">
           <i class="tarena-glow" />
           <i class="tarena-floor" />
+          {e.speed && <WeatherSky state={state} />}
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
@@ -934,6 +936,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           </div>
         </div>
 
+        {e.speed && <WeatherFront state={state} />}
         <div class="tphase" onClick={(ev) => ev.stopPropagation()}>
           {phaseOpen && phaseItems.length > 0 && (
             <div class="tphase-menu">

@@ -28,6 +28,7 @@ import { timeoutMove } from '../eds/turnClock';
 import { aiAction } from '../eds/ai';
 import { MateLayer, type MatePlan } from '../mates/MateLayer';
 import { DuelAtmosphere } from './Atmosphere';
+import { setWeatherEnabled, useWeatherEnabled } from './Weather';
 import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/settings';
 import { isMate } from '../mates/roster';
 import { AutoDrawPill, DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
@@ -106,6 +107,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   }, [idleOn]);
   const soundOn = useSoundEnabled();
   const musicOn = useMusicEnabled();
+  const weatherOn = useWeatherEnabled();
   // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
   useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
   const matesShown = useMatesShown();
@@ -684,6 +686,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 ...(e.speed ? [{ label: `Draw: ${DRAW_STYLE_NAMES[drawStyle]}`, note: drawStyle === 'swipe' ? 'switch to Automatic' : 'swipe up on your deck to draw', onPick: () => setDrawStyle(drawStyle === 'swipe' ? 'auto' : 'swipe') }] : []),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
+                ...(e.speed && style === 'touch' ? [{ label: `Weather: ${weatherOn ? 'On' : 'Off'}`, note: 'rain, storms and the time of day', onPick: () => setWeatherEnabled(!weatherOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
                 ...(e.speed ? [{ label: `Attack callouts: ${CALLOUT_LABEL[callouts]}`, note: 'tap to change', onPick: () => setCalloutMode(NEXT_CALLOUT[callouts]) }] : []),
                 { label: 'Duel Log', onPick: () => (setShowMenu(false), setShowLog(true)) },

@@ -1,7 +1,7 @@
 // The duel soundtrack: calm with no drums at the start, drums at 2000 LP or less, a harder
 // drive at 1000 or less, a swell for an ace, a cadence at the end, and the Music setting
 // (run: npx tsx tests/music.test.ts).
-import { DuelMusic, levelFor, isAceSummon, BPM } from '../src/ui/music';
+import { DuelMusic, levelFor, isAceSummon, BPM, onMusicBar } from '../src/ui/music';
 import { musicEnabled, setMusicEnabled, soundEnabled } from '../src/ui/sound';
 
 let fails = 0;
@@ -124,6 +124,24 @@ m2.stop();
 const b6 = log.length;
 m2.pump(210);
 ok(log.length === b6, 'stopped music stays stopped');
+
+// the weather hears each bar line ahead of time, in the music's tempo
+{
+  const bars: [number, number, number][] = [];
+  const stop = onMusicBar((inSec, bar, level) => bars.push([inSec, bar, level]));
+  const m4 = new DuelMusic(ctx as unknown as AudioContext, 11);
+  ctx.currentTime = 300;
+  m4.setMood({ level: 2, myTurn: true });
+  m4.pump(310);
+  stop();
+  m4.pump(320);
+  const barLen = (60 / BPM[2]) * 4;
+  const gaps = bars.slice(1).map((b, i) => b[0] - bars[i][0]);
+  ok(bars.length >= 4 && bars.every((b) => b[0] >= 0 && b[2] === 2), `bar lines heard ahead of time at the storm level (${bars.length})`);
+  ok(gaps.length > 2 && gaps.slice(1).every((g) => Math.abs(g - barLen) < 0.01), 'bar lines arrive one bar apart');
+  ok(bars.length < 10, 'a listener that left hears nothing more');
+  m4.stop();
+}
 
 // the Music setting
 ok(musicEnabled(), 'Music is on by default');
