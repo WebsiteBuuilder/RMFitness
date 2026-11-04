@@ -16,14 +16,14 @@ import { Object3D, PerspectiveCamera, Scene, type Vector3, type WebGLRenderer } 
 import { card } from "../eds/db";
 import { artFor, type ArtData } from "./depth";
 import { profileFor } from "./profile";
-import { ContactShadow, Figure, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
+import { ContactShadow, Figure, Glow, clamp01, dprCap, easeOut, figureFoot, lerp, makeRenderer, prewarmRenderer, rimColor, setRgb, stageTier, type Footprint } from "./stage";
 // (the duel screen waits on this before it makes the figures' WebGL context)
 export { whenQuiet } from "./stage";
 import { artBusy, artFocus, onArtChange } from "./cues";
 import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
-import { boardHolo, flickerAt, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
+import { boardHolo, flickerAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
 import { calmMotion, getHolo } from "./settings";
 import { holoHum, holoLock } from "./sfx";
 
@@ -182,6 +182,8 @@ interface Piece {
   holoStarted: boolean;
   /** silences its arrival hum (it leaves, or the field closes, mid-arrival) */
   stopHum: (() => void) | null;
+  /** a small projector beam out of its card while it arrives as a hologram */
+  beam: Glow | null;
   /** the phone asks for reduced motion: no flicker or tearing */
   calm: boolean;
 }
@@ -243,7 +245,7 @@ export class BoardLayer {
       this.ro = new ResizeObserver(this.markDirty);
       this.ro.observe(document.body);
     }
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow"], () => !this.dead && !this.lost);
     // a cinematic starting or ending: no polling, just a wake-up
     this.unsub = onArtChange(this.onArt);
   }
@@ -324,6 +326,7 @@ export class BoardLayer {
         holo: getHolo() && performance.now() - this.born > 1200,
         holoStarted: false,
         stopHum: null,
+        beam: null,
         calm: calmMotion(),
         finish: m.finish ?? 0,
       };
@@ -359,8 +362,15 @@ export class BoardLayer {
     this.start();
   }
 
+  private dropBeam(p: Piece) {
+    if (!p.beam) return;
+    p.beam.dispose();
+    p.beam = null;
+  }
+
   private drop(p: Piece) {
     p.stopHum?.();
+    this.dropBeam(p);
     p.fig?.dispose();
     p.disc?.dispose();
     p.pivot.removeFromParent();
@@ -402,7 +412,7 @@ export class BoardLayer {
   private onRestored = () => {
     // three.js rebuilds its GL state; textures and buffers re-upload on next draw.
     this.lost = false;
-    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow"], () => !this.dead && !this.lost);
+    void prewarmRenderer(this.renderer, this.camera, ["figure", "shadow", "glow"], () => !this.dead && !this.lost);
     this.dirty = true;
     this.start();
   };
@@ -568,6 +578,9 @@ export class BoardLayer {
           const hc = p.finish >= FIN.MI ? HOLO_GOLD_RGB : HOLO_RGB;
           (u.uHoloCol.value as Vector3).set(hc[0], hc[1], hc[2]);
           u.uHoloScroll.value = p.calm ? 0 : 1;
+          // a small projector beam out of its card (one quad, gone when it locks)
+          p.beam = new Glow(1, 1, "beam", p.finish >= FIN.MI ? HOLO_GOLD : HOLO_COLOR, HOLO_CORE);
+          this.scene.add(p.beam.mesh);
           // (a softer lock band at card size: full strength it reads as a white bar)
           u.uHoloEdge.value = 0.4;
           // one hum for monsters arriving together, none for one hidden under a cinematic
@@ -576,21 +589,34 @@ export class BoardLayer {
             p.stopHum = holoHum(0.6, 0);
           }
         }
+        if (p.beam) {
+          const b = p.beam;
+          const bw = p.cw * 1.15;
+          const bh = Math.max(pose.h * 1.15, p.cw * 1.2);
+          b.mesh.scale.set(bw, bh, 1);
+          b.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot + bh * 0.46, -2);
+          b.mesh.renderOrder = Math.round(pose.foot) - 1;
+          b.u.uTime.value = t;
+          b.u.uOpacity.value = 0.75 * clamp01(p.show * 6) * (1 - clamp01((hb.line - 0.6) / 0.5)) * p.vis;
+        }
         u.uHolo.value = hb.holo;
         u.uHoloLine.value = lerp(fig.foot.v - 0.04, Math.min(1.06, fig.foot.top + 0.05), clamp01((hb.line + 0.05) / 1.12));
         u.uFlick.value = p.calm || hb.line > 0 ? 0 : flickerAt(t, p.seed);
         // (no tearing at card size: it only reads as broken bars)
         u.uGlitch.value = 0;
-      } else if (u.uHolo.value > 0 && !p.leaving) {
-        // (one leaving mid-arrival fades out as it is, without snapping solid first)
-        u.uHolo.value = 0;
-        u.uFlick.value = 0;
-        u.uGlitch.value = 0;
-        // (its hum has run its course: let go of its nodes)
-        p.stopHum = null;
-        if (p.holoStarted && !p.leaving && p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
-          this.lastHum = now;
-          holoLock(0);
+      } else {
+        if (p.beam) this.dropBeam(p);
+        if (u.uHolo.value > 0 && !p.leaving) {
+          // (one leaving mid-arrival fades out as it is, without snapping solid first)
+          u.uHolo.value = 0;
+          u.uFlick.value = 0;
+          u.uGlitch.value = 0;
+          // (its hum has run its course: let go of its nodes)
+          p.stopHum = null;
+          if (p.holoStarted && p.vis > 0 && now - this.lastHum > HUM_GAP_MS) {
+            this.lastHum = now;
+            holoLock(0);
+          }
         }
       }
       u.uReveal.value = p.quick ? 1 : hb ? hb.reveal : k;
@@ -633,6 +659,7 @@ export class BoardLayer {
     this.ro?.disconnect();
     for (const p of this.pieces.values()) {
       p.stopHum?.();
+      this.dropBeam(p);
       p.fig?.dispose();
       p.disc?.dispose();
     }
