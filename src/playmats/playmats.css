@@ -170,28 +170,28 @@ body.lf-on.danger-opp .pm-half.opp .pm-art {
   --pm-n: 4;
 }
 /* the opponent's turn plays the same moves under another name, so each turn starts a new burst */
-.pm-half.pm-t-odd .pm-fx-embers .pm-fx,
-.pm-half.pm-t-odd .pm-fx-bubbles .pm-fx,
-.pm-half.pm-t-odd .pm-fx-motes .pm-fx {
+.pm-half.pm-t-odd.pm-fx-embers .pm-fx,
+.pm-half.pm-t-odd.pm-fx-bubbles .pm-fx,
+.pm-half.pm-t-odd.pm-fx-motes .pm-fx {
   animation-name: pm-rise-b;
 }
-.pm-half.pm-t-odd .pm-fx-leaves .pm-fx {
+.pm-half.pm-t-odd.pm-fx-leaves .pm-fx {
   animation-name: pm-drift-b;
 }
-.pm-half.pm-t-odd .pm-fx-fog .pm-fx {
+.pm-half.pm-t-odd.pm-fx-fog .pm-fx {
   animation-name: pm-fog-b;
 }
-.pm-half.pm-t-odd .pm-fx-stars .pm-fx,
-.pm-half.pm-t-odd .pm-fx-sparkle .pm-fx {
+.pm-half.pm-t-odd.pm-fx-stars .pm-fx,
+.pm-half.pm-t-odd.pm-fx-sparkle .pm-fx {
   animation-name: pm-twinkle-b;
 }
-.pm-half.pm-t-odd .pm-fx-scan .pm-fx {
+.pm-half.pm-t-odd.pm-fx-scan .pm-fx {
   animation-name: pm-scan-b;
 }
-.pm-half.pm-t-odd .pm-fx-sweep .pm-fx {
+.pm-half.pm-t-odd.pm-fx-sweep .pm-fx {
   animation-name: pm-sweep-b;
 }
-.pm-half.pm-t-odd .pm-fx-holo .pm-fx {
+.pm-half.pm-t-odd.pm-fx-holo .pm-fx {
   animation-name: pm-holo-b;
 }
 @keyframes pm-rise-a {
@@ -449,10 +449,14 @@ body.lf-on .duel.touch .trow.pm-row .tz:not(.empty):not(.drop-ok):not(.drop-on) 
 }
 @media (max-height: 700px) {
   .pmp-mat {
-    width: min(100%, 176px);
+    width: min(100%, 132px);
   }
   .pmp-board {
-    padding: 8px 14px 12px;
+    padding: 6px 14px 8px;
+  }
+  /* (iPhone SE: the grid comes up under the preview; the "lies on this mat" line is said by the badge) */
+  .pmp-hint {
+    display: none;
   }
 }
 .pmp-grid {

@@ -186,7 +186,18 @@ t('cheap on phones: one moving layer a half, transform/opacity only, held for ci
   assert.ok(Object.values(PLAYMAT_GRAIN).some((g) => g > 0) && Object.values(PLAYMAT_GRAIN).every((g) => g >= 0 && g < 0.5));
   // (the motion bursts restart from the turn number in both layouts, not from a turn-opp class)
   for (const f of ['src/ui/TouchDuel.tsx', 'src/ui/Duel.tsx']) assert.match(readFileSync(f, 'utf8'), /<PlaymatHalves [^\n]*turn=\{state\.turn\}/, f);
-  assert.ok(!/turn-opp/.test(css) && /\.pm-t-odd \.pm-fx/.test(css));
+  assert.ok(!/turn-opp/.test(css));
+  // (every odd-turn rule puts pm-t-odd and the motion class on the half itself, and swaps to a -b name)
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const odd = [...bare.matchAll(/([^{}]*pm-t-odd[^{}]*)\{([^}]*)\}/g)];
+  assert.ok(odd.length > 0);
+  for (const [, sel, body] of odd) {
+    for (const one of sel.split(',').map((x) => x.trim()).filter(Boolean)) assert.match(one, /^\.pm-half\.pm-t-odd\.pm-fx-\w+ \.pm-fx$/, one);
+    assert.match(body, /animation-name: pm-[\w-]+-b;/);
+  }
+  const fxKinds = new Set([...css.matchAll(/\.pm-fx-(\w+) \.pm-fx/g)].map((m) => m[1]));
+  const oddKinds = new Set([...odd.map((m) => m[1]).join(',').matchAll(/pm-fx-(\w+)/g)].map((m) => m[1]));
+  for (const k of fxKinds) assert.ok(oddKinds.has(k), `${k} restarts on odd turns`);
 });
 
 console.log(`\n${n} playmat tests passed`);

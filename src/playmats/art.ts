@@ -186,15 +186,17 @@ const glowLine = (d: string, c: string, w: number, core = '#fff') =>
 
 /** Tournament Blue: the tournament felt, its duel ring laid on the floor, a lit grid running to the middle. */
 const blue = scene(
-  lin('bg', [[0, '#0a1440'], [0.35, '#1a3490'], [1, '#081236']]) +
-    glowDef('g1', '#6c94ff', 0.55) +
+  lin('bg', [[0, '#0e1a52'], [0.35, '#2648b4'], [1, '#0e1c4c']]) +
+    glowDef('g1', '#7ea2ff', 0.8) +
+    glowDef('g2', '#9fc0ff', 0.45) +
     `<pattern id='gr' width='19' height='19' patternUnits='userSpaceOnUse'><path d='M19 0H0V19' fill='none' stroke='#9fb8ff' stroke-opacity='.1' stroke-width='.7'/></pattern>`,
   fill('bg') +
     fill('gr') +
     // a perspective grid toward the middle, and the light where the halves meet
     `<g stroke='#8fb0ff' stroke-opacity='.14'>${Array.from({ length: 15 }, (_, i) => `<path d='M${CX} -40L${i * 30 - 20} 220'/>`).join('')}</g>` +
     spot('g1', CX, 0, 240, 60) +
-    onFloor(140, 0.55, seal('#dbe7ff', 0.5, 96) + `<circle cx='${CX}' cy='${CY}' r='40' fill='#6c94ff' fill-opacity='.18'/>`) +
+    spot('g2', CX, 140, 150, 60) +
+    onFloor(140, 0.55, seal('#e6efff', 0.75, 96) + `<circle cx='${CX}' cy='${CY}' r='40' fill='#7ea2ff' fill-opacity='.3'/>`) +
     onFloor(140, 0.55, `<circle cx='${CX}' cy='${CY}' r='104' fill='none' stroke='#9fc4ff' stroke-opacity='.25' stroke-width='6'/>`) +
     `<path d='M0 70H380' stroke='#cfe0ff' stroke-opacity='.18'/><path d='M0 74H380' stroke='#cfe0ff' stroke-opacity='.08'/>`,
   { grain: 0.15 },
@@ -313,9 +315,10 @@ const lightMat = scene(
 /** DARK: a ruined chapel at night under an eclipse, violet mist across the flagstones. */
 const darkMat = scene(
   lin('sky', [[0, '#05020a'], [0.6, '#2a0e44'], [1, '#4a1a6a']]) +
-    lin('fl', [[0, '#1e1030'], [1, '#08040e']]) +
-    glowDef('cor', '#b36bff', 0.7) +
-    glowDef('mist', '#9a5aff', 0.35),
+    lin('fl', [[0, '#2e1a4c'], [1, '#120a20']]) +
+    glowDef('cor', '#c88aff', 0.85) +
+    glowDef('mist', '#a56aff', 0.5) +
+    glowDef('rune', '#b36bff', 0.5),
   `<rect width='${W}' height='${H}' fill='url(#fl)'/>` +
     `<rect width='${W}' height='90' fill='url(#sky)'/>` +
     scatter(30, 401, [0, 0, 380, 70], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.3 + r * 0.9)}' fill='#e6d0ff' fill-opacity='${f(0.3 + r * 0.5)}'/>`) +
@@ -327,7 +330,8 @@ const darkMat = scene(
     `<path d='M0 90H380' stroke='#b36bff' stroke-opacity='.45'/>` +
     // flagstones, a rune circle, and mist
     `<g stroke='#000' stroke-opacity='.5'>${[106, 128, 154, 186].map((y) => `<path d='M0 ${y}H380'/>`).join('')}${Array.from({ length: 11 }, (_, i) => `<path d='M${CX} 90L${i * 44 - 30} 220'/>`).join('')}</g>` +
-    onFloor(150, 0.5, `<g fill='none' stroke='#c49bff'><circle cx='${CX}' cy='${CY}' r='94' stroke-opacity='.6' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='80' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/></g><polygon points='${star(5, 78, 30)}' fill='none' stroke='#b36bff' stroke-opacity='.7' stroke-width='1.6'/><circle cx='${CX}' cy='${CY}' r='22' fill='#05020a' stroke='#c49bff' stroke-width='2'/>`) +
+    spot('rune', CX, 150, 130, 50) +
+    onFloor(150, 0.5, `<g fill='none' stroke='#d6b6ff'><circle cx='${CX}' cy='${CY}' r='94' stroke-opacity='.8' stroke-width='2'/><circle cx='${CX}' cy='${CY}' r='80' stroke-opacity='.35' stroke-dasharray='2 5' stroke-width='3'/></g><polygon points='${star(5, 78, 30)}' fill='none' stroke='#d0a0ff' stroke-opacity='.9' stroke-width='1.8'/><circle cx='${CX}' cy='${CY}' r='22' fill='#05020a' stroke='#c49bff' stroke-width='2'/>`) +
     spot('mist', 80, 120, 150, 26) +
     spot('mist', 300, 196, 150, 26),
   { grain: 0.21 },
@@ -363,10 +367,10 @@ const fireMat = scene(
 
 /** WATER: the sea floor. Light from the surface, kelp either side, a sigil cut in the sand. */
 const waterMat = scene(
-  lin('bg', [[0, '#5fd0ff'], [0.25, '#1a6aa8'], [0.7, '#0a2a5a'], [1, '#04122a']]) +
-    lin('sand', [[0, '#2a4a6a'], [1, '#0a1a2e']]) +
+  lin('bg', [[0, '#7adcff'], [0.25, '#2280c0'], [0.7, '#124680'], [1, '#081e40']]) +
+    lin('sand', [[0, '#3a6688'], [1, '#12284a']]) +
     lin('ray', [[0, '#e6f8ff', 0.4], [1, '#e6f8ff', 0]]) +
-    glowDef('gl', '#5fd0ff', 0.45) +
+    glowDef('gl', '#7adcff', 0.65) +
     `<pattern id='cs' width='60' height='40' patternUnits='userSpaceOnUse'><path d='M0 20Q15 6 30 20T60 20M0 40Q15 26 30 40' fill='none' stroke='#cff0ff' stroke-opacity='.14' stroke-width='1.4'/></pattern>`,
   fill('bg') +
     // shafts of light from the surface
@@ -482,9 +486,10 @@ const cityTrim = trim(SILVER, '#ff7ac0', 'diamond', '#d8c8ff');
 
 /** Kaiba Dome: a stadium in the dark, its stands lit in rings, spotlights crossing the floor. */
 const dome = scene(
-  rad('bg', [[0, '#1e3a8a'], [0.6, '#08143a'], [1, '#020614']], '50%', '0%', '110%') +
-    lin('beam', [[0, '#e6f2ff', 0.38], [1, '#e6f2ff', 0]]) +
-    lin('floor', [[0, '#1a2a5a'], [1, '#0a1230']]),
+  rad('bg', [[0, '#2a50b0'], [0.6, '#0e1e52'], [1, '#040a20']], '50%', '0%', '110%') +
+    lin('beam', [[0, '#e6f2ff', 0.5], [1, '#e6f2ff', 0.04]]) +
+    lin('floor', [[0, '#24407e'], [1, '#101c46']]) +
+    glowDef('em', '#8fd0ff', 0.55),
   fill('bg') +
     // the stands: arcs of seats and lights round the far side
     `<g fill='none'>${Array.from({ length: 5 }, (_, i) => `<path d='M-20 ${70 - i * 13} Q190 ${-10 - i * 13} 400 ${70 - i * 13}' stroke='#9fc4ff' stroke-opacity='${f(0.24 - i * 0.03)}' stroke-width='${6 - i}' stroke-dasharray='${3 + i} 2'/>`).join('')}</g>` +
@@ -496,6 +501,7 @@ const dome = scene(
     // spotlights from the roof
     `<path d='M60 0 L20 220 H110 Z' fill='url(#beam)'/><path d='M320 0 L270 220 H360 Z' fill='url(#beam)'/><path d='M190 0 L150 220 H230 Z' fill='url(#beam)' opacity='.6'/>` +
     // the emblem on the floor: a white dragon's wings round a blue core
+    spot('em', CX, 146, 120, 52) +
     `<g transform='translate(${CX} 146) scale(1 .5)'><circle r='70' fill='none' stroke='#cfe6ff' stroke-opacity='.55' stroke-width='3'/><circle r='58' fill='none' stroke='#6cc4ff' stroke-opacity='.35' stroke-width='8' stroke-dasharray='4 4'/>` +
     `<path d='M0 -44 L14 -10 L52 -26 L24 6 L44 40 L0 22 L-44 40 L-24 6 L-52 -26 L-14 -10 Z' fill='#cfe6ff' fill-opacity='.22' stroke='#e6f2ff' stroke-opacity='.75' stroke-width='2' stroke-linejoin='round'/>` +
     `<circle r='12' fill='#6cc4ff' fill-opacity='.8'/></g>`,
@@ -654,11 +660,9 @@ const shadowrealmTrim = trim(OBSIDIAN, '#ff4ad0', 'diamond', '#e0a0ff');
 const tomb = scene(
   lin('bg', [[0, '#1a1006'], [0.45, '#5a3a14'], [1, '#2a1a08']]) + rad('torch', [[0, '#ffcf6a', 0.55], [1, '#ffcf6a', 0]]) + lin('pil', [[0, '#3a2a10'], [0.5, '#a07a3a'], [1, '#3a2a10']], 1, 0),
   fill('bg') +
-    // the far wall with its painted bands
-    `<rect width='${W}' height='76' fill='#3a2610'/>` +
-    `<g fill='#2aa0a0' fill-opacity='.45'>${Array.from({ length: 19 }, (_, i) => `<rect x='${i * 20 + 2}' y='8' width='16' height='5'/>`).join('')}</g>` +
-    `<g fill='#d0a050' fill-opacity='.55'>${Array.from({ length: 12 }, (_, i) => { const x = 14 + i * 31; return i % 3 === 0 ? `<circle cx='${x}' cy='30' r='5'/><rect x='${x - 1.5}' y='35' width='3' height='12'/>` : i % 3 === 1 ? `<path d='M${x - 6} 46 L${x} 22 L${x + 6} 46 Z'/>` : `<path d='M${x - 7} 34 q7 -12 14 0 q-7 6 -14 0z'/><rect x='${x - 1}' y='36' width='2' height='10'/>`; }).join('')}</g>` +
-    `<g fill='#b02a2a' fill-opacity='.45'>${Array.from({ length: 19 }, (_, i) => `<rect x='${i * 20 + 2}' y='58' width='16' height='5'/>`).join('')}</g>` +
+    // the far wall: dark stone with one thin painted band (no frieze: the opponent's half turns it round at the seam)
+    `<rect width='${W}' height='76' fill='#24180a'/>` +
+    `<rect y='62' width='${W}' height='4' fill='#2aa0a0' fill-opacity='.45'/>` +
     `<path d='M0 76H380' stroke='#f6dc96' stroke-opacity='.6' stroke-width='1.4'/>` +
     // pillars and torchlight
     `<g fill='url(#pil)'><rect x='14' y='70' width='26' height='150'/><rect x='340' y='70' width='26' height='150'/></g>` +

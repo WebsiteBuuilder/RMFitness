@@ -141,7 +141,7 @@ export function PlaymatsScreen({ save, solo, onSave, onBack }: { save: SpeedSave
           )}
         </div>
         <div class="mt-act">
-          {look === current && <span class="mt-hint">Your half of the field lies on this mat in Speed Duels. Your opponent's half lies on theirs.</span>}
+          {look === current && <span class="mt-hint pmp-hint">Your half of the field lies on this mat in Speed Duels. Your opponent's half lies on theirs.</span>}
           {note && <span class="mt-note">{note}</span>}
         </div>
 
