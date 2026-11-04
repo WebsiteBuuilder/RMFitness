@@ -1327,8 +1327,8 @@ export class Director {
     // it locks solid: a flash of light, a ring, sparks in the finish's colors (or the hologram's)
     at(h.solidEnd, () => {
       const fk = calm ? 0.5 : 1;
-      st.pulse('flash', [0.14, 0.2, 0.3][pw] * fk);
-      this.flash(o.mill ? HOLO_GOLD : HOLO_CORE, [0.1, 0.16, 0.24][pw] * fk);
+      st.pulse('flash', [0.1, 0.14, 0.2][pw] * fk);
+      this.flash(o.mill ? HOLO_GOLD : HOLO_CORE, [0.07, 0.11, 0.17][pw] * fk);
       holoLock(pw / 2);
       const cols = o.finPal && o.fin >= FIN.GL ? o.finPal : [beamCol, HOLO_CORE];
       cols.forEach((fc, i) => P.emit({ x: 0, y: o.restY, z: 0.35, burst: (2.2 + pw * 0.6 + i * 0.3) * U, life: 0.6, size: 0.07 * U, color: fc, drag: 2.2 }, Math.round((10 + pw * 8) * q)));

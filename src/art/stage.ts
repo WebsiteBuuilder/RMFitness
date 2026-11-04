@@ -310,6 +310,8 @@ void main(){
   float subj = mix(smoothstep(0.22, 0.5, guess), smoothstep(0.35, 0.65, ma), uMatte);
   float a = edge * mix(1.0, subj, uCut);
   float n = vnoise(vMesh * 9.0 + uTime * 0.3) * 0.28;
+  // a hologram builds up in scanline rows, not a ragged burn
+  if (uHolo > 0.001) n = mix(n, fract(sin(floor(vMesh.y * 70.0) * 91.7) * 4375.85) * 0.16, uHolo);
   float r = uReveal * 1.35 - (vMesh.y * 0.95 + n);
   float vis = smoothstep(0.0, 0.03, r);
   float rim = (1.0 - smoothstep(0.0, 0.1, abs(r))) * step(0.001, uReveal) * step(uReveal, 0.999);
@@ -396,7 +398,7 @@ void main(){
   if (uWall < 0.5) c *= min(1.0, 0.9 / max(max(c.r, max(c.g, c.b)), 1e-3));
   c += uGlow * rim * 2.2 * (1.0 - 0.75 * holo);
   // the solidify front: a bright line of light climbing the body
-  if (uHolo > 0.001 && uWall < 0.5) c += uHoloCol * (1.0 - smoothstep(0.0, 0.03, abs(vMesh.y - uHoloLine))) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.8;
+  if (uHolo > 0.001 && uWall < 0.5) { float band = 1.0 - smoothstep(0.0, 0.07, abs(vMesh.y - uHoloLine)); c += (uHoloCol * band + vec3(1.0) * band * band * band * 0.6) * uHolo * step(-0.04, uHoloLine) * step(uHoloLine, 1.0) * 1.5; }
   float alpha = (a * vis + rim * a) * uOpacity * clamp(holoA, 0.0, 1.0);
   alpha *= 1.0 - smoothstep(0.55, 1.0, uShatter);
   // where the relief turns edge-on to the camera the art would stretch into streaks: let it go soft instead
@@ -1714,7 +1716,7 @@ void main(){
     float lines = 0.8 + 0.2 * sin(p.y * 70.0 - uTime * 22.0);
     float n = 0.75 + 0.5 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
     float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0)) + 0.35 * exp(-(p.x * p.x * 5.0 + (p.y + 0.95) * (p.y + 0.95) * 90.0));
-    c = (uColor * (inside * 0.5 * (1.0 - 0.5 * ax / max(w, 0.01)) * (1.0 - 0.6 * y01) + walls * 0.6) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
+    c = (uColor * (inside * 0.85 * (1.0 - 0.4 * ax / max(w, 0.01)) * (1.0 - 0.6 * y01) + walls * 0.6) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;

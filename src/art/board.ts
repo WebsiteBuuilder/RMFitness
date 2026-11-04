@@ -613,7 +613,7 @@ export class BoardLayer {
       d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
       d.u.uDark.value = 1.5;
       // the projector's light on the base while the hologram forms
-      if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line));
+      if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line)) + 2.4 * clamp01((hb.line - 0.8) / 0.25);
     }
   }
 
