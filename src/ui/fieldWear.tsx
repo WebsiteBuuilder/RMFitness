@@ -58,7 +58,7 @@ const crescent = (cx: number, cy: number, rx: number, ry: number, a: number, b: 
   return `M${pts.join('L')}Z`;
 };
 const DARK: [number, number][] = [[0, 0.03], [0.07, 0.33], [0.39, 0.48]];
-const SP = 5; // how far the soot reaches past the frame (zone units, about px)
+const SP = 3; // how far the soot reaches past the frame (zone units, about px)
 const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y}a${r} ${r} 0 1 0 ${(2 * r).toFixed(2)} 0a${r} ${r} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
 const merge = (h: WearHit): Drawn => ({
   h,
@@ -82,7 +82,7 @@ function embersOf(p: number, zone: number, lv: number, seed: number): string {
   let s = (p * 977 + zone * 131 + 7 + Math.imul(seed, 2246822519)) >>> 0;
   const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
   let d = '';
-  for (let i = 0; i < 5 + lv * 3; i++) {
+  for (let i = 0; i < 3 + lv * 2; i++) {
     // along the frame: pick an edge, a spot on it, just outside or on the line
     const e = Math.floor(r() * 4);
     const t = r();
@@ -106,7 +106,7 @@ function ashOf(p: number, zone: number, lv: number, seed: number, hx: number, hy
     const c = Math.cos(a), sn = Math.sin(a);
     const tx = c > 0 ? (W - hx) / c : c < 0 ? -hx / c : 1e9;
     const ty = sn > 0 ? (H - hy) / sn : sn < 0 ? -hy / sn : 1e9;
-    const t = Math.min(tx, ty) + 0.8 + r() * 3.4;
+    const t = Math.min(tx, ty) + 0.5 + r() * 2.2;
     const rr = 0.35 + r() * (0.5 + lv * 0.2);
     d += dot([+(hx + c * t).toFixed(1), +(hy + sn * t).toFixed(1), +rr.toFixed(2)]);
   }

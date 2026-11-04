@@ -10,12 +10,12 @@
   grid-area: 1 / 1;
 }
 .fwear-spill {
-  /* (5px past the frame on each side: into the gap between zones, short of the next zone) */
+  /* (3px past the frame on each side: into the gap between zones, short of the next zone) */
   align-self: stretch;
   justify-self: stretch;
-  width: calc(100% + 10px);
-  height: calc(100% + 10px);
-  margin: -5px;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  margin: -3px;
   overflow: visible;
   pointer-events: none;
 }
