@@ -88,11 +88,12 @@ export class WeatherFx {
   private seed(i: number, anywhere: boolean) {
     const d = this.drops;
     const o = i * 5;
-    const near = Math.random() < 0.28 ? 1 : 0;
+    const r = Math.random();
+    const near = r < 0.22 ? 2 : r < 0.55 ? 1 : 0;
     d[o] = Math.random() * this.w * 1.2 - this.w * 0.1;
     d[o + 1] = anywhere ? Math.random() * this.h : -Math.random() * this.h * 0.2;
-    d[o + 2] = (near ? 18 + Math.random() * 10 : 7 + Math.random() * 5) * this.dpr;
-    d[o + 3] = (near ? 1.0 : 0.65) * (0.85 + Math.random() * 0.3);
+    d[o + 2] = (near === 2 ? 18 + Math.random() * 14 : near ? 11 + Math.random() * 8 : 5 + Math.random() * 5) * this.dpr;
+    d[o + 3] = (near === 2 ? 1.05 : near ? 0.82 : 0.6) * (0.8 + Math.random() * 0.4);
     d[o + 4] = near;
   }
 
@@ -165,13 +166,16 @@ export class WeatherFx {
       return;
     }
     const since = this.last ? now - this.last : this.frameMs;
-    if (since < this.frameMs - 2) {
+    // (reduced motion: a slow 10 frames a second)
+    if (since < (this.reduced ? 100 : this.frameMs) - 2) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
     // a phone that keeps falling behind steps down to 20 frames a second
     // (and back up to 30 after a good stretch)
-    if (this.last && since > 60) {
+    if (this.reduced) {
+      /* (a slow pace by choice: not a slow phone) */
+    } else if (this.last && since > 60) {
       this.good = 0;
       if (++this.slow > 20) this.frameMs = 1000 / 20;
     } else {
@@ -232,8 +236,9 @@ export class WeatherFx {
     const d = this.drops;
     const { w, h, dpr } = this;
     const fall = h * (this.reduced ? 0.4 : 1.6) * dt;
-    const wind = this.wind;
-    for (let layer = 0; layer < 2; layer++) {
+    // (a storm's wind gusts: the slant leans and eases back)
+    const wind = this.wind + (this.target > 0.8 && !this.reduced ? Math.sin(performance.now() / 1700) * 0.12 + Math.sin(performance.now() / 610) * 0.04 : 0);
+    for (let layer = 0; layer < 3; layer++) {
       c.beginPath();
       for (let i = 0; i < this.count; i++) {
         const o = i * 5;
@@ -246,8 +251,8 @@ export class WeatherFx {
         c.moveTo(d[o], d[o + 1]);
         c.lineTo(d[o] - len * wind, d[o + 1] - len);
       }
-      c.lineWidth = (layer ? 1.7 : 0.75) * dpr;
-      c.strokeStyle = layer ? 'rgba(220,234,255,0.5)' : 'rgba(180,200,240,0.24)';
+      c.lineWidth = [0.7, 1.1, 1.8][layer] * dpr;
+      c.strokeStyle = ['rgba(170,190,235,0.2)', 'rgba(200,216,250,0.34)', 'rgba(228,238,255,0.55)'][layer];
       c.stroke();
     }
   }
@@ -334,6 +339,18 @@ export class WeatherFx {
         c.lineWidth = lw * dpr * 0.55;
         c.stroke();
       }
+      // where it strikes the field: a hot bloom
+      const ex = b.pts[b.pts.length - 2];
+      const ey = b.pts[b.pts.length - 1];
+      const R = 46 * dpr;
+      const g = c.createRadialGradient(ex, ey, 0, ex, ey, R);
+      g.addColorStop(0, `rgba(255,255,255,${(0.9 * a).toFixed(3)})`);
+      g.addColorStop(0.25, `rgba(200,215,255,${(0.45 * a).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(140,160,255,0)');
+      c.fillStyle = g;
+      c.beginPath();
+      c.ellipse(ex, ey, R, R * 0.5, 0, 0, Math.PI * 2);
+      c.fill();
     }
   }
 

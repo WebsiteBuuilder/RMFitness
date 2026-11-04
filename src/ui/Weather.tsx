@@ -77,6 +77,8 @@ export function WeatherSky({ state }: { state: DuelState }) {
 const AMOUNT: Record<Sky, number> = { clear: 0, rain: 0.5, storm: 1 };
 /** the shortest gap between two strikes (ms) */
 const STRIKE_GAP = 1800;
+/** the last strike (kept across a hotseat hand-over's remount, so the gap holds) */
+let lastStrike = 0;
 
 export function WeatherFront({ state }: { state: DuelState }) {
   const on = useWeatherEnabled();
@@ -86,16 +88,22 @@ export function WeatherFront({ state }: { state: DuelState }) {
   const fx = useRef<WeatherFx | null>(null);
   const sky = useRef<Sky>(w.sky);
   sky.current = w.sky;
-  const lastStrike = useRef(0);
+  /** a strike that came while a cinematic covered the screen: it lands when the cinematic ends */
+  const queued = useRef<boolean | null>(null);
+  /** when the music last called a bar line (ms) */
+  const heard = useRef(0);
   const minLp = Math.min(...state.players.map((p) => p.lp));
   const lastLp = useRef(minLp);
 
   /** a strike now: a bolt, the flash and thunder (near), or a far flash and a low roll */
   const strike = (near: boolean) => {
     const now = performance.now();
-    if (now - lastStrike.current < STRIKE_GAP) return;
-    if (document.hidden || document.body.classList.contains('art-on')) return;
-    lastStrike.current = now;
+    if (now - lastStrike < STRIKE_GAP || document.hidden) return;
+    if (document.body.classList.contains('art-on')) {
+      queued.current = (queued.current ?? false) || near;
+      return;
+    }
+    lastStrike = now;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (near) fx.current?.bolt();
     if (!reduced) {
@@ -107,6 +115,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
     }
     thunder(near);
   };
+  const onBarRef = useRef<((inSec: number, bar: number) => void) | null>(null);
   const strikeRef = useRef(strike);
   strikeRef.current = strike;
 
@@ -119,37 +128,37 @@ export function WeatherFront({ state }: { state: DuelState }) {
     }
     fx.current?.pause(document.body.classList.contains('art-on'));
     // hold still under a cinematic
-    const mo = new MutationObserver(() => fx.current?.pause(document.body.classList.contains('art-on')));
+    const mo = new MutationObserver(() => {
+      const art = document.body.classList.contains('art-on');
+      fx.current?.pause(art);
+      // (the big hit's strike, held back under its cinematic)
+      if (!art && queued.current !== null) {
+        const near = queued.current;
+        queued.current = null;
+        if (sky.current !== 'clear') later(250, () => strikeRef.current(near));
+      }
+    });
     mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    // the lightning keeps the soundtrack's time: on its bar lines when it plays...
-    let heard = 0;
+    // the lightning keeps the soundtrack's time: on its bar lines when it plays
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const later = (ms: number, f: () => void) => {
       const id = setTimeout(() => (timers.delete(id), f()), Math.max(0, ms));
       timers.add(id);
     };
     const onBar = (inSec: number, bar: number) => {
-      heard = performance.now();
+      heard.current = performance.now();
       const s = sky.current;
       // (the sky is asked again when the strike lands: it may have cleared in between)
       if (s === 'storm' && bar % 2 === 0 && Math.random() < 0.7) later(inSec * 1000, () => sky.current === 'storm' && strikeRef.current(true));
       else if (s === 'rain' && bar % 4 === 0 && Math.random() < 0.5) later(inSec * 1000, () => sky.current !== 'clear' && strikeRef.current(false));
     };
     const stop = onMusicBar((inSec, bar) => onBar(inSec, bar));
-    if (location.search.includes('debug')) (window as unknown as Record<string, unknown>).__wx = { fx: fx.current, strike: (near: boolean) => ((lastStrike.current = 0), strikeRef.current(near)) };
-    // ...and at the same tempo by itself when Music is off (or the music has not started yet)
-    let bar = 0;
-    let nextBar = performance.now() + 1500;
-    const own = setInterval(() => {
-      const now = performance.now();
-      if (now - heard < 4000 || now < nextBar) return;
-      const lv = sky.current === 'storm' ? 2 : sky.current === 'rain' ? 1 : 0;
-      nextBar = now + (60 / BPM[lv]) * 4 * 1000;
-      onBar(0, ++bar);
-    }, 250);
+    onBarRef.current = onBar;
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__wx = { fx: fx.current, strike: (near: boolean) => ((lastStrike = 0), strikeRef.current(near)) };
     return () => {
       stop();
-      clearInterval(own);
+      onBarRef.current = null;
+      queued.current = null;
       for (const id of timers) clearTimeout(id);
       mo.disconnect();
       delete (window as unknown as Record<string, unknown>).__wx;
@@ -157,6 +166,21 @@ export function WeatherFront({ state }: { state: DuelState }) {
       fx.current = null;
     };
   }, [on]);
+
+  // ...and at the same tempo by itself when Music is off or not started (only while it rains)
+  const wet = on && w.sky !== 'clear';
+  useEffect(() => {
+    if (!wet) return;
+    let bar = 0;
+    let id: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const lv = sky.current === 'storm' ? 2 : 1;
+      if (performance.now() - heard.current > 4000) onBarRef.current?.(0, ++bar);
+      id = setTimeout(tick, (60 / BPM[lv]) * 4 * 1000);
+    };
+    id = setTimeout(tick, 1500);
+    return () => clearTimeout(id);
+  }, [wet]);
 
   useEffect(() => {
     fx.current?.set(w.precip, AMOUNT[w.sky]);

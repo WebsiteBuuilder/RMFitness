@@ -7,6 +7,9 @@
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+  /* (soft top and bottom edges: no seam against the bars above and below the field) */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 7%, #000 90%, transparent 100%);
 }
 .wx-sky > i {
   position: absolute;
@@ -38,9 +41,11 @@
 /* night: deep blue and a moon */
 .wx-tod.night {
   background:
-    radial-gradient(circle at 16% 9%, #fbfcff 0 13px, #d6e0ff 14px, #b8c8ff55 16px, #a8b8ff22 30px, transparent 60px),
-    radial-gradient(circle at 16% 9%, #b8c8ff26, transparent 120px),
-    linear-gradient(180deg, #02041ad8, #050a26b0 50%, #02041ac0);
+    radial-gradient(circle at calc(16% + 4px) calc(9% - 3px), #c8d2ee 0 3px, transparent 4px),
+    radial-gradient(circle at calc(16% - 5px) calc(9% + 4px), #cdd6f0 0 2px, transparent 3px),
+    radial-gradient(circle at calc(16% - 4px) calc(9% - 4px), #ffffff 0 9px, #f2f5ff 12px, #d8e0f8 13px, #b8c8ff88 15px, #a8b8ff3a 26px, #98a8ff18 48px, transparent 80px),
+    radial-gradient(circle at 16% 9%, #b8c8ff30, transparent 160px),
+    linear-gradient(180deg, #01021ae0, #040826c0 45%, #0a1236b0 80%, #141c4a90);
 }
 /* (over a Field Spell's landscape the hour only tints it: the landscape stays the arena) */
 body.lf-on .wx-tod.on {
@@ -49,7 +54,11 @@ body.lf-on .wx-tod.on {
 /* stars come out at dusk and night while the sky is clear */
 .wx-stars {
   background:
-    radial-gradient(1px 1px at 12% 8%, #fff, transparent),
+    radial-gradient(2px 2px at 12% 8%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 33% 6%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 77% 11%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 92% 34%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 41% 38%, #fffc, transparent),
     radial-gradient(1px 1px at 28% 16%, #fffd, transparent),
     radial-gradient(1.5px 1.5px at 44% 5%, #fff, transparent),
     radial-gradient(1px 1px at 61% 13%, #fffc, transparent),
@@ -187,28 +196,29 @@ body.lf-on .wx-tod.on {
 .wx-front.tod-day .wx-light {
   opacity: 1;
   background:
-    radial-gradient(70% 40% at 80% 0%, #fff4d430, transparent 70%),
-    linear-gradient(180deg, #bcd8ff10, transparent 50%);
+    radial-gradient(70% 40% at 80% 0%, #fff4d43c, transparent 70%),
+    linear-gradient(200deg, #fff6e016, transparent 45%),
+    linear-gradient(180deg, #bcd8ff14, transparent 50%);
 }
 .wx-front.tod-golden .wx-light {
   opacity: 1;
   background:
-    radial-gradient(90% 50% at 85% 0%, #ffb45a48, transparent 70%),
-    linear-gradient(180deg, #ff9a3a2c, #ffb05a12 60%, #ff8a3a20),
-    linear-gradient(90deg, transparent 70%, #ffb05a1c);
+    radial-gradient(90% 50% at 85% 0%, #ffb45a58, transparent 70%),
+    linear-gradient(200deg, #ffa04a34, #ff9a3a1c 45%, #ff8a3a26),
+    linear-gradient(90deg, #2a10200c, transparent 40%, #ffb05a24);
 }
 .wx-front.tod-dusk .wx-light {
   opacity: 1;
   background:
-    radial-gradient(110% 45% at 50% -5%, #ff5a2a50, transparent 70%),
-    linear-gradient(180deg, #ff6a3a34, #9a2a7a2c 45%, #3a1a6a40);
+    radial-gradient(110% 45% at 50% -5%, #ff5a2a5c, transparent 70%),
+    linear-gradient(180deg, #ff6a3a3c, #9a2a7a36 45%, #3a1a6a50);
 }
 .wx-front.tod-night .wx-light {
   opacity: 1;
   background:
-    radial-gradient(40% 22% at 16% 4%, #d8e4ff2c, transparent 70%),
-    radial-gradient(130% 90% at 50% 50%, transparent 40%, #02061c80),
-    linear-gradient(180deg, #0a1a6a50, #0a123a48);
+    radial-gradient(40% 22% at 16% 4%, #d8e4ff34, transparent 70%),
+    radial-gradient(130% 90% at 50% 50%, transparent 36%, #02061c99),
+    linear-gradient(160deg, #0a1a6a5c, #0a123a58);
 }
 /* rain darkens the light a little; a storm, more */
 .wx-front.sky-rain .wx-light {
@@ -217,7 +227,7 @@ body.lf-on .wx-tod.on {
 }
 .wx-front.sky-storm .wx-light {
   opacity: 1;
-  background-color: #0a10201e;
+  background-color: #06081830;
 }
 body.danger-me .wx-front.sky-storm .wx-light,
 body.danger-opp .wx-front.sky-storm .wx-light {
