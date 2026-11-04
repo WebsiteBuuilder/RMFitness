@@ -32,7 +32,8 @@ import { NEXT_SHOWN, SHOWN_LABEL, setMatesShown, useMatesShown } from '../mates/
 import { isMate } from '../mates/roster';
 import { AutoDrawPill, DRAW_STYLE_NAMES, DrawGate, setDrawStyle, useDrawStyle, useHeartDraw } from './heartDraw';
 import { FaceOff, introDue, startIntro } from './faceoff';
-import { getCinematics } from '../art/settings';
+import { getCinematics, useIdle } from '../art/settings';
+import './idlelife.css';
 import { CALLOUT_EVT, CALLOUT_LABEL, NEXT_CALLOUT, calloutMode, setCalloutMode } from '../art/callouts';
 
 const PHASE_SHORT: Record<string, string> = { DP: 'DP', SP: 'SP', M1: 'M1', BP: 'BP', M2: 'M2', EP: 'EP' };
@@ -97,6 +98,12 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);
   const [pass, setPass] = useState(false);
   const artItems = useCinematicsMenu();
+  // Monster idle life: the hand, the Set cards and (figures off) the monsters' cards stir too (idlelife.css)
+  const idleOn = useIdle();
+  useEffect(() => {
+    document.body.classList.toggle('idle-on', idleOn);
+    return () => document.body.classList.remove('idle-on');
+  }, [idleOn]);
   const soundOn = useSoundEnabled();
   const musicOn = useMusicEnabled();
   // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace

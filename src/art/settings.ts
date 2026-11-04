@@ -61,6 +61,11 @@ export const calmMotion = (): boolean => {
   return !!calmQuery?.matches;
 };
 
+const IDLE_KEY = 'eds.idle';
+/** Monster idle life (breathing, hovering, Attribute motes, moods; the hand and Set cards stir): on unless turned off. */
+export const getIdle = (): boolean => read(IDLE_KEY) !== 'off';
+export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
+
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
 export const nextCinematics = (v: Cinematics): Cinematics => CINE_ORDER[(CINE_ORDER.indexOf(v) + 1) % CINE_ORDER.length];
@@ -80,15 +85,24 @@ function useStored<T>(get: () => T): T {
 export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
+export const useIdle = () => useStored(getIdle);
+/** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
+export function onArtSettings(cb: () => void): () => void {
+  window.addEventListener(EVT, cb);
+  window.addEventListener('storage', cb);
+  return () => (window.removeEventListener(EVT, cb), window.removeEventListener('storage', cb));
+}
 
 /** The duel-menu items (Speed Duel): tap to cycle each. */
 export function useCinematicsMenu(): { label: string; note: string; onPick: () => void }[] {
   const cine = useCinematics();
   const speed = useAnimSpeed();
   const holo = useHolo();
+  const idle = useIdle();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
+    { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
   ];
 }
