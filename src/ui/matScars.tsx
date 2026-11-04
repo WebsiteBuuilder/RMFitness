@@ -142,6 +142,14 @@ const HALO: Record<string, [string, number]> = {
   DARK: ['#2a0440', 0.85],
 };
 
+interface Drawn {
+  s: Scar;
+  g: ScarGeo;
+  halo: { cx: number; cy: number; rx: number; ry: number };
+  trail: Layer[];
+  hit: Layer[];
+}
+
 interface Props {
   state: DuelState;
   /** the player at the bottom of the board */
@@ -180,13 +188,27 @@ export function MatScars({ state, near }: Props) {
   }, [on, count > 0, zones]);
 
   const seed = state.seed | 0;
+  // each mark is drawn once and kept (a new blow draws only itself); a resize or the board turning round redraws all
+  const cache = useRef<{ key: unknown; seed: number; map: Map<number, Drawn | null> }>({ key: null, seed: 0, map: new Map() });
   const marks = useMemo(() => {
     if (!board) return [];
+    const c = cache.current;
+    // (a new board size or a new duel, such as a rematch on the same screen: start over)
+    if (c.key !== board || c.seed !== seed || c.map.size > 64) c.map = new Map();
+    c.key = board;
+    c.seed = seed;
+    const nearKey = near * 100000;
     return scars.map((s, i) => {
-      const g = geoOf(s, board, near);
-      if (!g) return null;
-      const m = scarMark(s, g, seed);
-      return { s, g, op: scarAge(i, scars.length), halo: m.halo, trail: merged(m.trail), hit: merged(m.hit) };
+      let d = c.map.get(nearKey + s.n);
+      if (d === undefined) {
+        const g = geoOf(s, board, near);
+        if (g) {
+          const m = scarMark(s, g, seed);
+          d = { s, g, halo: m.halo, trail: merged(m.trail), hit: merged(m.hit) };
+        } else d = null;
+        c.map.set(nearKey + s.n, d);
+      }
+      return d && { ...d, op: scarAge(i, scars.length) };
     });
     // (scars only grow, and each keeps its running number: the last number and the count say it all)
   }, [board, near, seed, lastN, count]);
