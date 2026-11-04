@@ -1148,6 +1148,13 @@ export class Engine {
     const fc = wasField ? (f.card as FieldCard) : null;
     if (f.loc.zone === 'mz') (this.state.fx.lostMonster ??= [-1, -1])[f.loc.player] = this.state.turn;
     const controller = f.loc.player;
+    // Speed Duel field wear: each Monster Zone counts the monsters destroyed in it (tokens too),
+    // and the board scorches there for the rest of the duel (src/ui/fieldWear.tsx). In the state,
+    // so both phones of an online duel, a rejoin and a replay all show the same marks.
+    if (this.speed && f.loc.zone === 'mz' && reason === 'destroyed') {
+      const w = (this.state.fx.wear ??= [[], []]) as number[][];
+      w[controller][f.loc.index] = (w[controller][f.loc.index] ?? 0) + 1;
+    }
     // Speed Duel: monsters destroyed on the field this turn (Blackwing - Brisote the Tailwind, Rise of the Snake Deity).
     if (this.speed && fc && f.loc.zone === 'mz' && reason === 'destroyed') {
       const turn = this.state.turn;
