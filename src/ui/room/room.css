@@ -230,7 +230,7 @@
 }
 /* narrow rooms (phones): a slightly smaller Ace, so it stands inside the room */
 @container (max-width: 450px) {
-  .sdr-cutw {
+  .sdr-acefig .sdr-cutw {
     width: 54cqh;
     height: 54cqh;
     margin-left: -27cqh;
