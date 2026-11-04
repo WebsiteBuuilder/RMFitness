@@ -32,6 +32,9 @@ import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
 import { wearKey, ZoneWear } from './fieldWear';
+import { fieldTerrain } from './atmosphereRules';
+import { PlaymatHalves, rowMatClass } from '../playmats/Halves';
+import { useDuelPlaymats } from '../playmats/duel';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -97,6 +100,8 @@ interface Drag {
 export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: ComponentChildren }) {
   const { state, e, acting, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, send, tap, commands, highlight, anim, selCard, canSeeSel } = ctl;
   const oppId = other(acting);
+  // (the field rows take their side's playmat colours; a mat that arrives late re-renders them)
+  useDuelPlaymats();
   /** the selected card when it is in play (its counters show in the preview) */
   const selField = selCard ? e.fieldCard(selCard.uid) : null;
   const [phaseOpen, setPhaseOpen] = useState(false);
@@ -183,7 +188,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     setTimeout(() => setBanner((b) => (b?.key === key ? null : b)), ms);
   };
   // (a tag duel: while your teammate is in, it's their turn, by name)
-  const turnWho = state.turnPlayer === acting && !ctl.locked ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
+  const turnWho = state.turnPlayer === acting && !ctl.locked && !ctl.spectator ? 'YOUR TURN' : `${state.players[state.turnPlayer].name.split(' ')[0].toUpperCase()}'S TURN`;
   useEffect(() => {
     if (state.winner !== null) return;
     if (state.turn === 1 && state.log.length < 6) {
@@ -461,7 +466,8 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
         {c && (
           <div class={`fcard ${c.pos === 'def' ? 'def' : ''} ${c.faceUp ? '' : 'fd'} ${!c.faceUp && visible ? `myset${sleeveClass(duelSleeveOf(c.owner))}` : ''}`}>
             <CardImg name={c.name} back={!visible} owner={c.owner} />
-            {c.faceUp && <i class="tshine" aria-hidden="true" />}
+            {/* (a face-down card's glint is idle life: idlelife.css) */}
+            <i class="tshine" aria-hidden="true" />
             {!c.faceUp && visible && <span class="setmark">SET</span>}
             {c.faceUp && named !== c.name && <span class="namechg">{named}</span>}
           </div>
@@ -566,7 +572,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       dots = true;
     }
     return (
-      <span class={`ttab ${top ? 'top' : 'bottom'} ${kind}`} key={`${kind}|${text}`}>
+      <span class={`ttab ${top ? 'top' : 'bottom'} ${kind}${mine ? ' me' : ''}`} key={`${kind}|${text}`}>
         <b>{text}</b>
         {dots && (
           <i class="tdots" aria-hidden="true">
@@ -812,7 +818,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   }, [handCount === 0, resized]);
   // Fan the hand: cards overlap more as the hand grows so it always fits the screen.
   // (the same sizes as layout.css: --th-w)
-  const { cardW, room } = handBox ?? { cardW: handCardW(), room: handRoom() };
+  const box = handBox ?? { cardW: handCardW(), room: handRoom() };
+  const cardW = box.cardW;
+  // (the outer cards of the 3D fan swing out by about 20px each: leave them that room)
+  const room = box.room - 40;
   const overlap = handCount > 1 ? Math.min(0.8, Math.max(0, (handCount * cardW - room) / ((handCount - 1) * cardW))) : 0;
 
   // the other player has a choice open: the middle row says so (never what: a prompt's title can name
@@ -820,9 +829,9 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const theirAsk = state.winner === null && !!state.prompt && state.prompt.player !== acting;
   const midText = (
     <>
-      <span class={`tturn ${state.turnPlayer === acting ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
+      <span class={`tturn ${state.turnPlayer === acting && !ctl.locked && !ctl.spectator ? 'mine' : ''}${theirAsk ? ' ask' : ''}`} key={`t${state.turn}${theirAsk ? 'a' : ''}`}>
         {(state.turnPlayer !== acting || theirAsk) && <i class="tturn-arrow up" aria-hidden="true" />}
-        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
+        <b>{theirAsk ? `${first(state.prompt!.player)} is choosing` : myTurn && !ctl.locked && !ctl.spectator ? 'Your turn' : `${first(state.turnPlayer)}'s turn`}</b>
         {theirAsk || decider !== acting ? (
           <i class="tdots" aria-hidden="true">
             <i />
@@ -904,9 +913,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <i class="tarena-floor" />
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
+          {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} turn={state.turn} />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
-          <div class="trow">
+          <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>
             {deck(oppId)}
             {opp.sz
               .map((c, i) => zone(c, oppId, 's', i))
@@ -914,7 +924,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               .reverse()}
             {fieldZone(oppId)}
           </div>
-          <div class="trow">
+          <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>
             {gy(oppId)}
             {opp.mz
               .map((c, i) => zone(c, oppId, 'm', i))
@@ -925,12 +935,12 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="tmid" ref={midRef}>
             {midText}
           </div>
-          <div class="trow">
+          <div class={`trow${e.speed ? rowMatClass(acting) : ''}`}>
             <div class="tz-spacer" />
             {me.mz.map((c, i) => zone(c, acting, 'm', i))}
             {gy(acting)}
           </div>
-          <div class="trow">
+          <div class={`trow${e.speed ? rowMatClass(acting) : ''}`}>
             {fieldZone(acting)}
             {me.sz.map((c, i) => zone(c, acting, 's', i))}
             {deck(acting)}
@@ -964,18 +974,17 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       </div>
 
       {/* a monster's counter badges, flat over the 3D field figures (see ctrBoxes) */}
-      {ctrBoxes.length > 0 && (
-        <div class="ctrfloat" aria-hidden="true">
-          {ctrBoxes.map((b) => {
-            const c = e.fieldCard(b.uid);
-            return c ? (
-              <div key={b.uid} class="ctrfloat-at" style={{ left: `${b.x}px`, top: `${b.y}px` }}>
-                <CounterMarks list={shownCounters(c)} uid={b.uid} />
-              </div>
-            ) : null;
-          })}
-        </div>
-      )}
+      {/* (the layer is always there, empty or not, so the Duel Disk camera carries a badge that appears mid-move) */}
+      <div class="ctrfloat" aria-hidden="true">
+        {ctrBoxes.map((b) => {
+          const c = e.fieldCard(b.uid);
+          return c ? (
+            <div key={b.uid} class="ctrfloat-at" style={{ left: `${b.x}px`, top: `${b.y}px` }}>
+              <CounterMarks list={shownCounters(c)} uid={b.uid} />
+            </div>
+          ) : null;
+        })}
+      </div>
       {/* the turn / phase row again, flat over the 3D field figures (the field's tilt keeps the
           row itself under the figures layer); only while the figures are on */}
       {midBox && (

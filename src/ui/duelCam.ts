@@ -26,6 +26,8 @@ const OPENING_MS = 1100;
 const BACK_MS = 180;
 /** A batch shown this soon after a cinematic was what it covered: a settle, not a second full move. */
 const SETTLE_WINDOW_MS = 700;
+/** More events than this at once is a jump ahead, not play. */
+const MAX_BATCH = 16;
 
 interface Live {
   anims: Animation[];
@@ -70,6 +72,8 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
   const pending = useRef<Moment | null>(null);
   /** when the last cinematic let go of the board */
   const artOffAt = useRef(-1e9);
+  /** the field sits inside a tilted parent (measured once, again after a resize) */
+  const tilted = useRef<boolean | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -142,10 +146,10 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if (!field || strength <= 0 || typeof field.animate !== 'function') return;
     // (a field already leaning in 3D inside a tilted parent, the Classic big-screen layout, keeps still:
     // the figures canvas could not follow a move inside that tilt)
-    if (tiltedAbove(field)) return;
+    if ((tilted.current ??= tiltedAbove(field))) return;
     // (one settle per hand-back: the batch arriving right after it does not start another;
     // an attack's move already lands its blow: the hit that follows does not cut it short)
-    if (live.current && (settle || (m.kind === 'impact' && (live.current.kind === 'attack' || live.current.kind === 'direct')))) return;
+    if (live.current && ((settle && live.current.kind !== 'rest') || (m.kind === 'impact' && (live.current.kind === 'attack' || live.current.kind === 'direct')))) return;
     const rest = restOf(field);
     const box = { cx: rest.left + rest.width / 2, cy: rest.top + rest.height / 2, w: rest.width, h: rest.height };
     // (a monster the blow destroyed has left its zone: the camera looks at what is still there)
@@ -189,6 +193,8 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     if (modeRef.current === 'off' || document.hidden) return;
     if (performance.now() - born.current < OPENING_MS) return;
     const fresh = evs.filter((e) => e.seq > last);
+    // a jump ahead (a replay seeking, a rejoined duel catching up) is not a moment to film
+    if (fresh.length > MAX_BATCH) return;
     const m = pickMoment(fresh, (uid) => !!zoneEl(uid)?.matches('.tz-m, .z-m'));
     if (!m) return;
     // the board catching up with a cinematic it waited behind: the camera settles out of it
@@ -213,6 +219,21 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
     });
     mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     return () => mo.disconnect();
+  }, []);
+
+  // the screen turned or resized: a shot's pivot and resting places are stale, so it stops where it is
+  useEffect(() => {
+    const on = () => {
+      tilted.current = null;
+      restBox.current = null;
+      const l = live.current;
+      if (l) {
+        for (const a of l.anims) a.cancel();
+        done(l);
+      }
+    };
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
   }, []);
 
   // the camera switched off, or the screen closes: back to rest

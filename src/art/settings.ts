@@ -73,6 +73,10 @@ export function getDuelCam(): DuelCam {
 }
 export const setDuelCam = (v: DuelCam) => write(CAM_KEY, v);
 const nextDuelCam = (v: DuelCam): DuelCam => CAM_ORDER[(CAM_ORDER.indexOf(v) + 1) % CAM_ORDER.length];
+const IDLE_KEY = 'eds.idle';
+/** Monster idle life (breathing, hovering, Attribute motes, moods; the hand and Set cards stir): on unless turned off. */
+export const getIdle = (): boolean => read(IDLE_KEY) !== 'off';
+export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
 
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
@@ -94,6 +98,13 @@ export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
 export const useDuelCam = () => useStored(getDuelCam);
+export const useIdle = () => useStored(getIdle);
+/** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
+export function onArtSettings(cb: () => void): () => void {
+  window.addEventListener(EVT, cb);
+  window.addEventListener('storage', cb);
+  return () => (window.removeEventListener(EVT, cb), window.removeEventListener('storage', cb));
+}
 
 /** The duel-menu items (Speed Duel): tap to cycle each. */
 export function useCinematicsMenu(): { label: string; note: string; onPick: () => void }[] {
@@ -101,10 +112,12 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const speed = useAnimSpeed();
   const holo = useHolo();
   const cam = useDuelCam();
+  const idle = useIdle();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
     { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: 'tap to change', onPick: () => setDuelCam(nextDuelCam(cam)) },
+    { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
   ];
 }

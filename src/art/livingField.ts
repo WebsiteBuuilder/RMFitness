@@ -299,6 +299,8 @@ export class LivingField {
   private t = Math.random() * 50;
   private late = 0;
   private fpsMs = 1000 / 30;
+  /** the picture can't change until something calls kick() (see still()), and that frame is drawn */
+  private stillDrawn = false;
   private reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   private disposed = false;
   private onLost = (ev: Event) => (ev.preventDefault(), (this.gl = null), this.stop());
@@ -317,6 +319,16 @@ export class LivingField {
     window.addEventListener('resize', this.onResize);
     this.init();
     this.size();
+    // Draw one hidden frame while the duel is quiet: some GPU drivers (and software GL) build
+    // the shader's machine code at its first draw, which would otherwise land on the frame
+    // the first Field Spell or low-LP danger shows (a long freeze right as the LP drops).
+    const warm = () => {
+      if (this.disposed || !this.gl || this.active || document.hidden) return;
+      this.draw(performance.now());
+      this.gl.flush();
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
+    else setTimeout(warm, 1000);
   }
 
   /** false when the phone has no WebGL: the duel keeps its painted background. */
@@ -424,6 +436,7 @@ export class LivingField {
 
   private kick() {
     if (this.disposed) return;
+    this.stillDrawn = false;
     this.canvas.classList.toggle('on', this.active && this.ok);
     document.body.classList.toggle('lf-on', this.active && this.ok);
     if (!this.raf && this.gl && this.active && !document.hidden) {
@@ -465,8 +478,10 @@ export class LivingField {
         if (this.drawnAt && gap > this.fpsMs * 1.6 && gap < 400) this.late++;
         else this.late = Math.max(0, this.late - 1);
         if (this.late > 30) this.fpsMs = 1000 / 20;
+        const still = this.still(now);
         this.draw(now);
         this.drawnAt = now;
+        this.stillDrawn = still;
       }
     }
     if (!this.active) {
@@ -474,8 +489,20 @@ export class LivingField {
       document.body.classList.remove('lf-on');
       return;
     }
+    // Danger with no landscape up holds still between heartbeats (nothing in it moves with
+    // time): once that frame is drawn the loop sleeps, and the next beat, LP change or
+    // Field Spell wakes it (kick). The canvas keeps showing the last frame meanwhile.
+    if (this.stillDrawn && !busy) return;
     this.raf = requestAnimationFrame(this.frame);
   };
+
+  /** Nothing on screen moves: no landscape up or fading, the danger glow at its level, no heartbeat flaring. */
+  private still(now: number) {
+    for (const s of this.sides) if (s.ter || s.shown || s.amt > 0 || s.on > 0) return false;
+    for (let i = 0; i < 2; i++) if (this.dangerAmt[i] !== Math.min(1, this.danger[i] * 0.6)) return false;
+    const since = now - this.beatAt;
+    return since < 0 || since > 700;
+  }
 
   private draw(now: number) {
     const gl = this.gl!;

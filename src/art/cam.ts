@@ -63,7 +63,8 @@ export function cssOf(m: Mat): string {
 export function camNow(): Mat {
   if (!live) return IDENTITY;
   const now = typeof performance !== 'undefined' ? performance.now() : 0;
-  if (now - cachedAt < 12 && cachedAt >= 0) return cached;
+  // (one read per frame even at 120 Hz)
+  if (now - cachedAt < 4 && cachedAt >= 0) return cached;
   cachedAt = now;
   if (!live.el.isConnected) return (cached = IDENTITY);
   cached = parseMatrix(getComputedStyle(live.el).transform);
@@ -93,26 +94,17 @@ export interface RectLike {
   bottom: number;
 }
 
-/** A rectangle seen on screen under pose m → where it rests (its corners mapped back). */
+/** A rectangle seen on screen under pose m → where it rests: its centre mapped back, its size by the map's local scale there (no growth under a tilt). */
 export function unmapWith(r: RectLike, m: Mat): RectLike {
   if (isIdentity(m)) return r;
   const inv = invert(m);
-  let x0 = Infinity;
-  let y0 = Infinity;
-  let x1 = -Infinity;
-  let y1 = -Infinity;
-  for (const [x, y] of [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]]) {
-    const [u, v] = apply(inv, x, y);
-    x0 = Math.min(x0, u);
-    y0 = Math.min(y0, v);
-    x1 = Math.max(x1, u);
-    y1 = Math.max(y1, v);
-  }
-  // the centre maps back on its own (a box of the mapped-back corners is a little wider than the
-  // card under a strong tilt, and lopsided); the size is that box's (a few percent large at the peak)
-  const [cx, cy] = apply(inv, r.left + r.width / 2, r.top + r.height / 2);
-  const w = x1 - x0;
-  const h = y1 - y0;
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const [cx, cy] = apply(inv, x, y);
+  const [ax, ay] = apply(inv, x + 1, y);
+  const [bx, by] = apply(inv, x, y + 1);
+  const w = r.width * Math.hypot(ax - cx, ay - cy);
+  const h = r.height * Math.hypot(bx - cx, by - cy);
   return { left: cx - w / 2, top: cy - h / 2, width: w, height: h, right: cx + w / 2, bottom: cy + h / 2 };
 }
 
