@@ -51,7 +51,7 @@
 .fw-s-g1 { stop-color: var(--fw-glow); stop-opacity: 0.9; }
 .fw-s-g2 { stop-color: var(--fw-glow); stop-opacity: 0.25; }
 .fw-s-pit0 { stop-color: var(--fw-pit0); stop-opacity: 0.95; }
-.fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.5; }
+.fw-s-pit1 { stop-color: var(--fw-pit1); stop-opacity: 0.8; }
 
 .fwear .fw-soot {
   opacity: 0.55;
@@ -87,14 +87,12 @@
 .fwear .fw-lip-lit {
   fill: none;
   /* (a broken rim catching the light on its far, upper-left side: not a ring) */
-  stroke-dasharray: 0 52 9 3 14 4 8 10;
   stroke: var(--fw-chip-edge);
-  stroke-opacity: 0.85;
-  stroke-width: 1.9px;
+  stroke-opacity: 0.95;
+  stroke-width: 2.3px;
 }
 .fwear .fw-lip-dark {
   fill: none;
-  stroke-dasharray: 3 4 26 6 9 52;
   stroke: #000;
   stroke-opacity: 0.85;
   stroke-width: 2.4px;
@@ -118,7 +116,16 @@
   stroke-width: 0.7px;
   stroke-linecap: round;
 }
-/* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */
+.fwear .fw-lip-lit,
+.fwear .fw-lip-dark {
+  stroke-linecap: round;
+}
+/* a worn empty zone keeps its marks at full strength on the Classic board */
+.zone.empty.worn,
+.ui-speed .duel.speed:not(.touch) .zone.empty.worn {
+  opacity: 1;
+}
+/* a monster standing on the damage: a soot band and embers show in the gap round the card */
 .fwear-held {
   overflow: hidden;
 }
@@ -397,8 +404,8 @@
   100% { opacity: 0; transform: scale(1.15); }
 }
 @keyframes fw-ring {
-  0% { opacity: 0.95; transform: scale(0.3); stroke-width: 3px; }
-  100% { opacity: 0; transform: scale(1.9); stroke-width: 0.4px; }
+  0% { opacity: 0.95; transform: scale(0.3); }
+  100% { opacity: 0; transform: scale(1.9); }
 }
 .fwear .fw-hit.fresh .fw-flash,
 .fwear .fw-hit.fresh .fw-ring {

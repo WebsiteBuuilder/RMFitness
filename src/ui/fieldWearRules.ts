@@ -109,11 +109,14 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
   let blot = '';
   const pts = 22;
   let wob = 1;
+  const dir = r() * Math.PI * 2;
   for (let i = 0; i < pts; i++) {
     wob = Math.max(0.5, Math.min(1.4, wob + (r() - 0.5) * 0.75)); // (ragged: a burn, not a soft oval)
     const a = (i / pts) * Math.PI * 2;
     // (taller than wide: the zone is a card's shape)
-    blot += `${i ? 'L' : 'M'}${f1(x + Math.cos(a) * rad * wob)} ${f1(y + Math.sin(a) * rad * wob * 1.25)} `;
+    // (lopsided: the blast threw the char further one way)
+    const lean = 1 + 0.38 * Math.cos(a - dir);
+    blot += `${i ? 'L' : 'M'}${f1(x + Math.cos(a) * rad * wob * lean)} ${f1(y + Math.sin(a) * rad * wob * lean * 1.25)} `;
   }
   blot += 'Z';
   const cracks: WearCrack[] = [];
@@ -198,9 +201,15 @@ export function wearHit(seed: number, k: number, grid = false): WearHit {
  * little out of place (raised and tilted).
  */
 function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
-  const n = 4 + Math.floor(r() * 2);
-  const a0 = r() * Math.PI * 2;
-  const angs = Array.from({ length: n }, (_, i) => a0 + (i / n) * Math.PI * 2 + (r() - 0.5) * (Math.PI / n) * 0.8);
+  // uneven seams: 3 to 5 at random angles (never a tidy X or +), at least 40 degrees apart
+  const n = 3 + Math.floor(r() * 3);
+  const angs: number[] = [];
+  for (let tries = 0; angs.length < n && tries < 60; tries++) {
+    const a = r() * Math.PI * 2;
+    if (angs.every((b) => Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI) > 0.7)) angs.push(a);
+  }
+  angs.sort((p, q) => p - q);
+  const nn = angs.length;
   // where a ray from the blow meets the frame
   const hit = (a: number): [number, number] => {
     const dx = Math.cos(a);
@@ -216,9 +225,9 @@ function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
   const angOf = ([px, py]: [number, number]) => Math.atan2(py - cy, px - cx);
   const norm = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   const out: WearChip[] = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < nn; i++) {
     const a = angs[i];
-    const b = angs[(i + 1) % n] + (i === n - 1 ? Math.PI * 2 : 0);
+    const b = angs[(i + 1) % nn] + (i === nn - 1 ? Math.PI * 2 : 0);
     const span = b - a;
     const pts: [number, number][] = [[cx, cy], hit(a)];
     corners
@@ -231,8 +240,13 @@ function platesOf(r: () => number, cx: number, cy: number): WearChip[] {
     const mx = pts.reduce((t, p) => t + p[0], 0) / pts.length;
     const my = pts.reduce((t, p) => t + p[1], 0) / pts.length;
     const k = 0.85;
-    const sx = (r() - 0.5) * 1.6;
-    const sy = (r() - 0.5) * 1.6;
+    // pushed away from the blow (the seams open wider outward), plus a little knock sideways
+    const ox = mx - cx;
+    const oy = my - cy;
+    const ol = Math.hypot(ox, oy) || 1;
+    const push = 0.8 + r() * 1.2;
+    const sx = (ox / ol) * push + (r() - 0.5) * 1;
+    const sy = (oy / ol) * push + (r() - 0.5) * 1;
     const q0 = pts.map(([px, py]): [number, number] => [mx + (px - mx) * k + sx, my + (py - my) * k + sy]);
     // chipped, uneven edges: each edge breaks into a few jagged steps (stone, not glass)
     const q: [number, number][] = [];

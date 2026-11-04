@@ -34,6 +34,15 @@ interface Drawn {
   chipFace: string;
   chipLit: string;
 }
+// broken arcs of an ellipse, as fractions of the way round (0 = right, clockwise on screen).
+// Drawn as real arcs, not dashes, so old WebViews that ignore pathLength still show them.
+const arcs = (cx: number, cy: number, rx: number, ry: number, segs: [number, number][]) =>
+  segs.map(([a, b]) => {
+    const pt = (f: number) => `${(cx + rx * Math.cos(f * 2 * Math.PI)).toFixed(2)} ${(cy + ry * Math.sin(f * 2 * Math.PI)).toFixed(2)}`;
+    return `M${pt(a)}A${rx.toFixed(2)} ${ry.toFixed(2)} 0 ${b - a > 0.5 ? 1 : 0} 1 ${pt(b)}`;
+  }).join('');
+const LIT: [number, number][] = [[0.52, 0.61], [0.64, 0.78], [0.82, 0.9]];
+const DARK: [number, number][] = [[0, 0.03], [0.07, 0.33], [0.39, 0.48]];
 const dot = ([x, y, r]: [number, number, number]) => `M${(x - r).toFixed(1)} ${y}a${r} ${r} 0 1 0 ${(2 * r).toFixed(2)} 0a${r} ${r} 0 1 0 ${(-2 * r).toFixed(2)} 0`;
 const merge = (h: WearHit): Drawn => ({
   h,
@@ -112,7 +121,7 @@ export function ZoneWear({ state, p, zone }: Props) {
   const id = `fw${uid.replace(/[^\w-]/g, '')}`;
   return (
     <>
-    {/* a monster standing on the damage: soot and embers bleed past the card and the zone's frame */}
+    {/* a monster standing on the damage: a soot band and embers show in the gap round the card */}
     {held && (
       <svg class={`fwear-held st-${style} lv-${lv}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         <rect class="fw-held-soot" x="1.5" y="1.5" width={W - 3} height={H - 3} rx="4" />
@@ -164,9 +173,9 @@ export function ZoneWear({ state, p, zone }: Props) {
             {k >= 2 && (
               // a crater: dark pit, a lit rim toward the light (up-left), a shadowed lip opposite
               <g class="fw-crater">
-                <ellipse class="fw-lip-lit" cx={h.x - 0.7} cy={h.y - 0.8} rx={h.r * 0.42} ry={h.r * 0.52} pathLength={100} />
-                <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.4} ry={h.r * 0.5} fill={`url(#${id}p)`} />
-                <ellipse class="fw-lip-dark" cx={h.x + 0.5} cy={h.y + 0.7} rx={h.r * 0.33} ry={h.r * 0.42} pathLength={100} />
+                <path class="fw-lip-lit" d={arcs(h.x - 0.7, h.y - 0.8, h.r * 0.48, h.r * 0.58, LIT)} />
+                <ellipse class="fw-pit" cx={h.x} cy={h.y} rx={h.r * 0.46} ry={h.r * 0.56} fill={`url(#${id}p)`} />
+                <path class="fw-lip-dark" d={arcs(h.x + 0.5, h.y + 0.7, h.r * 0.38, h.r * 0.47, DARK)} />
               </g>
             )}
             <path class="fw-speck" d={specks} />
