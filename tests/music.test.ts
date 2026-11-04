@@ -140,6 +140,17 @@ ok(log.length === b6, 'stopped music stays stopped');
   ok(bars.length >= 4 && bars.every((b) => b[0] >= 0 && b[2] === 2), `bar lines heard ahead of time at the storm level (${bars.length})`);
   ok(gaps.length > 2 && gaps.slice(1).every((g) => Math.abs(g - barLen) < 0.01), 'bar lines arrive one bar apart');
   ok(bars.length < 10, 'a listener that left hears nothing more');
+  const stop2 = onMusicBar(() => {
+    throw new Error('boom');
+  });
+  let threw = false;
+  try {
+    m4.pump(330);
+  } catch {
+    threw = true;
+  }
+  stop2();
+  ok(!threw && m4.position[0] > 0, "a listener's mistake never stops the music");
   m4.stop();
 }
 

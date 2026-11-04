@@ -58,11 +58,13 @@ export function WeatherSky({ state }: { state: DuelState }) {
   if (!on) return null;
   const w = weatherFor(state);
   return (
-    <div class={`wx-sky sky-${w.sky} pre-${w.precip}`} aria-hidden="true">
+    <div class={`wx-sky sky-${w.sky} pre-${w.precip} tod-${w.tod}`} aria-hidden="true">
       {TODS.map((t) => (
         <i key={t} class={`wx-tod ${t}${w.tod === t ? ' on' : ''}`} />
       ))}
       <i class="wx-stars" />
+      <i class="wx-twinkle" />
+      <i class="wx-fair" />
       <i class="wx-cloud a" />
       <i class="wx-cloud b" />
     </div>
@@ -72,7 +74,7 @@ export function WeatherSky({ state }: { state: DuelState }) {
 // ------------------------------------------------------------ over the field
 
 /** how hard it falls for each sky */
-const AMOUNT: Record<Sky, number> = { clear: 0, rain: 0.42, storm: 1 };
+const AMOUNT: Record<Sky, number> = { clear: 0, rain: 0.5, storm: 1 };
 /** the shortest gap between two strikes (ms) */
 const STRIKE_GAP = 1800;
 
@@ -97,7 +99,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (near) fx.current?.bolt();
     if (!reduced) {
-      const a = near ? 0.2 : 0.07;
+      const a = near ? 0.3 : 0.09;
       flash.current?.animate([{ opacity: 0 }, { opacity: a, offset: 0.08 }, { opacity: a * 0.2, offset: 0.25 }, { opacity: a * 0.75, offset: 0.4 }, { opacity: 0 }], {
         duration: near ? 520 : 700,
         easing: 'ease-out',
@@ -115,6 +117,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
     } catch {
       fx.current = null;
     }
+    fx.current?.pause(document.body.classList.contains('art-on'));
     // hold still under a cinematic
     const mo = new MutationObserver(() => fx.current?.pause(document.body.classList.contains('art-on')));
     mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -128,8 +131,9 @@ export function WeatherFront({ state }: { state: DuelState }) {
     const onBar = (inSec: number, bar: number) => {
       heard = performance.now();
       const s = sky.current;
-      if (s === 'storm' && bar % 2 === 0 && Math.random() < 0.7) later(inSec * 1000, () => strikeRef.current(true));
-      else if (s === 'rain' && bar % 4 === 0 && Math.random() < 0.5) later(inSec * 1000, () => strikeRef.current(false));
+      // (the sky is asked again when the strike lands: it may have cleared in between)
+      if (s === 'storm' && bar % 2 === 0 && Math.random() < 0.7) later(inSec * 1000, () => sky.current === 'storm' && strikeRef.current(true));
+      else if (s === 'rain' && bar % 4 === 0 && Math.random() < 0.5) later(inSec * 1000, () => sky.current !== 'clear' && strikeRef.current(false));
     };
     const stop = onMusicBar((inSec, bar) => onBar(inSec, bar));
     if (location.search.includes('debug')) (window as unknown as Record<string, unknown>).__wx = { fx: fx.current, strike: (near: boolean) => ((lastStrike.current = 0), strikeRef.current(near)) };
@@ -148,6 +152,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
       clearInterval(own);
       for (const id of timers) clearTimeout(id);
       mo.disconnect();
+      delete (window as unknown as Record<string, unknown>).__wx;
       fx.current?.dispose();
       fx.current = null;
     };
@@ -178,6 +183,7 @@ export function WeatherFront({ state }: { state: DuelState }) {
   return (
     <div class={`wx-front tod-${w.tod} sky-${w.sky}`} aria-hidden="true">
       <i class="wx-light" />
+      <i class="wx-mist" />
       <canvas ref={canvas} class="wx-fall" />
       <i ref={flash} class="wx-flash" />
     </div>

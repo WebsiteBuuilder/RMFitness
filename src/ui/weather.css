@@ -38,8 +38,8 @@
 /* night: deep blue and a moon */
 .wx-tod.night {
   background:
-    radial-gradient(9% 6% at 82% 6%, #f4f7ff, #dce6ff88 40%, transparent 72%),
-    radial-gradient(30% 18% at 82% 6%, #b8c8ff30, transparent 70%),
+    radial-gradient(circle at 16% 9%, #fbfcff 0 13px, #d6e0ff 14px, #b8c8ff55 16px, #a8b8ff22 30px, transparent 60px),
+    radial-gradient(circle at 16% 9%, #b8c8ff26, transparent 120px),
     linear-gradient(180deg, #02041ad8, #050a26b0 50%, #02041ac0);
 }
 /* (over a Field Spell's landscape the hour only tints it: the landscape stays the arena) */
@@ -59,13 +59,54 @@ body.lf-on .wx-tod.on {
     radial-gradient(1px 1px at 35% 30%, #fff9, transparent),
     radial-gradient(1px 1px at 52% 22%, #fffa, transparent),
     radial-gradient(1px 1px at 4% 12%, #fffc, transparent),
-    radial-gradient(1px 1px at 96% 6%, #fffa, transparent);
+    radial-gradient(1px 1px at 96% 6%, #fffa, transparent),
+    radial-gradient(1px 1px at 18% 34%, #fff9, transparent),
+    radial-gradient(1px 1px at 47% 14%, #fffb, transparent),
+    radial-gradient(1px 1px at 66% 4%, #fffc, transparent),
+    radial-gradient(1px 1px at 83% 30%, #fff9, transparent),
+    radial-gradient(1px 1px at 25% 2%, #fffb, transparent),
+    radial-gradient(1.5px 1.5px at 6% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 58% 33%, #fff9, transparent);
 }
-.wx-sky.sky-clear:has(.wx-tod.night.on) .wx-stars {
+.wx-sky.sky-clear.tod-night .wx-stars {
   opacity: 0.85;
 }
-.wx-sky.sky-clear:has(.wx-tod.dusk.on) .wx-stars {
+.wx-sky.sky-clear.tod-dusk .wx-stars {
   opacity: 0.35;
+}
+/* fair-weather clouds drift across an afternoon or golden sky */
+.wx-fair {
+  inset: -5% -20% 55% -20% !important;
+  background:
+    radial-gradient(18% 22% at 20% 40%, #ffffff40, transparent 70%),
+    radial-gradient(14% 16% at 30% 30%, #ffffff30, transparent 70%),
+    radial-gradient(20% 20% at 62% 50%, #ffffff34, transparent 70%),
+    radial-gradient(12% 14% at 72% 38%, #ffffff28, transparent 70%);
+  will-change: transform;
+  animation: wx-drift 70s linear infinite alternate;
+}
+.wx-sky.sky-clear.tod-day .wx-fair {
+  opacity: 0.9;
+}
+.wx-sky.sky-clear.tod-golden .wx-fair {
+  opacity: 0.55;
+  filter: sepia(0.8) saturate(1.6);
+}
+.wx-twinkle {
+  background:
+    radial-gradient(1.5px 1.5px at 22% 12%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 56% 9%, #fff, transparent),
+    radial-gradient(2px 2px at 80% 15%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 38% 22%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 68% 28%, #fff, transparent);
+}
+.wx-sky.sky-clear.tod-night .wx-twinkle {
+  opacity: 1;
+  animation: wx-twinkle 3.2s ease-in-out infinite alternate;
+}
+@keyframes wx-twinkle {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
 }
 /* clouds roll in with the rain (drifting slowly on the GPU; still when the sky is clear) */
 .wx-cloud {
@@ -141,30 +182,33 @@ body.lf-on .wx-tod.on {
 /* the hour's light on the cards: kept faint so every card still reads */
 .wx-light {
   opacity: 0;
-  transition: opacity 4s ease, background 4s ease;
+  transition: opacity 4s ease;
 }
 .wx-front.tod-day .wx-light {
   opacity: 1;
-  background: radial-gradient(70% 40% at 85% 0%, #fff4d424, transparent 70%);
+  background:
+    radial-gradient(70% 40% at 80% 0%, #fff4d430, transparent 70%),
+    linear-gradient(180deg, #bcd8ff10, transparent 50%);
 }
 .wx-front.tod-golden .wx-light {
   opacity: 1;
   background:
-    radial-gradient(90% 50% at 85% 0%, #ffb45a30, transparent 70%),
-    linear-gradient(180deg, #ff9a3a1c, #ffb05a0c 60%, #ff8a3a14);
+    radial-gradient(90% 50% at 85% 0%, #ffb45a48, transparent 70%),
+    linear-gradient(180deg, #ff9a3a2c, #ffb05a12 60%, #ff8a3a20),
+    linear-gradient(90deg, transparent 70%, #ffb05a1c);
 }
 .wx-front.tod-dusk .wx-light {
   opacity: 1;
   background:
-    radial-gradient(110% 45% at 50% -5%, #ff5a2a3a, transparent 70%),
-    linear-gradient(180deg, #ff6a3a24, #9a2a7a1c 45%, #2a145a2e);
+    radial-gradient(110% 45% at 50% -5%, #ff5a2a50, transparent 70%),
+    linear-gradient(180deg, #ff6a3a34, #9a2a7a2c 45%, #3a1a6a40);
 }
 .wx-front.tod-night .wx-light {
   opacity: 1;
   background:
-    radial-gradient(30% 18% at 84% 4%, #d8e4ff26, transparent 70%),
-    radial-gradient(130% 90% at 50% 50%, transparent 45%, #02061c55),
-    linear-gradient(180deg, #0a1a5a40, #0a123a36);
+    radial-gradient(40% 22% at 16% 4%, #d8e4ff2c, transparent 70%),
+    radial-gradient(130% 90% at 50% 50%, transparent 40%, #02061c80),
+    linear-gradient(180deg, #0a1a6a50, #0a123a48);
 }
 /* rain darkens the light a little; a storm, more */
 .wx-front.sky-rain .wx-light {
@@ -175,11 +219,37 @@ body.lf-on .wx-tod.on {
   opacity: 1;
   background-color: #0a10201e;
 }
+body.danger-me .wx-front.sky-storm .wx-light,
+body.danger-opp .wx-front.sky-storm .wx-light {
+  background-color: transparent;
+}
+body.danger-me .wx-sky.sky-storm .wx-cloud.a,
+body.danger-opp .wx-sky.sky-storm .wx-cloud.a {
+  opacity: 0.6;
+}
+/* a light mist along the far edge of the field while it rains */
+.wx-mist {
+  opacity: 0;
+  transition: opacity 3s ease;
+  background: linear-gradient(180deg, #c8d6ff26, #c8d6ff0c 18%, transparent 34%);
+}
+.wx-front.sky-rain .wx-mist {
+  opacity: 0.7;
+}
+.wx-front.sky-storm .wx-mist {
+  opacity: 1;
+}
 .wx-flash {
   opacity: 0;
   background: radial-gradient(120% 80% at 50% 0%, #eef2ff, #c8d4ff 60%, #a8b8ff);
 }
+/* (held under a cinematic) */
+body.art-on .wx-sky > i {
+  animation-play-state: paused !important;
+}
 @media (prefers-reduced-motion: reduce) {
+  .wx-fair,
+  .wx-sky .wx-twinkle,
   .wx-cloud {
     animation: none;
   }

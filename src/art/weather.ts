@@ -9,13 +9,13 @@ export type FxPrecip = 'rain' | 'ash' | 'sand';
 
 interface Bolt {
   pts: number[];
-  branch: number[];
+  branches: number[][];
   born: number;
   life: number;
 }
 
 /** how many drops a full storm keeps on a phone-sized field (scaled by the field's area) */
-const STORM_DROPS = 170;
+const STORM_DROPS = 240;
 const AREA_REF = 380 * 520;
 
 export class WeatherFx {
@@ -40,12 +40,28 @@ export class WeatherFx {
   private paused = false;
   private reduced = false;
   private ro: ResizeObserver | null = null;
+  private mq: MediaQueryList | null = null;
+  private good = 0;
+  private fresh = true;
+  private onMotion = () => {
+    this.reduced = !!this.mq?.matches;
+  };
+  /** (back from a hidden tab: the gap is not a slow frame) */
+  private onVisible = () => {
+    this.last = 0;
+    this.wake();
+  };
 
   constructor(private canvas: HTMLCanvasElement) {
     const c = canvas.getContext('2d', { alpha: true });
     if (!c) throw new Error('no 2d canvas');
     this.ctx = c;
-    this.reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof matchMedia !== 'undefined') {
+      this.mq = matchMedia('(prefers-reduced-motion: reduce)');
+      this.reduced = this.mq.matches;
+      this.mq.addEventListener?.('change', this.onMotion);
+    }
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
     this.resize();
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize());
@@ -72,10 +88,10 @@ export class WeatherFx {
   private seed(i: number, anywhere: boolean) {
     const d = this.drops;
     const o = i * 5;
-    const near = Math.random() < 0.35 ? 1 : 0;
+    const near = Math.random() < 0.28 ? 1 : 0;
     d[o] = Math.random() * this.w * 1.2 - this.w * 0.1;
     d[o + 1] = anywhere ? Math.random() * this.h : -Math.random() * this.h * 0.2;
-    d[o + 2] = (near ? 16 + Math.random() * 10 : 8 + Math.random() * 6) * this.dpr;
+    d[o + 2] = (near ? 18 + Math.random() * 10 : 7 + Math.random() * 5) * this.dpr;
     d[o + 3] = (near ? 1.0 : 0.65) * (0.85 + Math.random() * 0.3);
     d[o + 4] = near;
   }
@@ -87,6 +103,9 @@ export class WeatherFx {
       for (let i = 0; i < this.drops.length / 5; i++) this.seed(i, true);
     }
     this.target = Math.max(0, Math.min(1, amount));
+    // the first sky a board gets is already falling (a hotseat hand-over remounts the board)
+    if (this.fresh) this.amount = this.target;
+    this.fresh = false;
     this.wind = kind === 'sand' ? 2.4 : 0.12 + this.target * 0.22;
     this.wake();
   }
@@ -94,24 +113,31 @@ export class WeatherFx {
   /** A lightning bolt from the sky over the opponent's side (the flash itself is a DOM layer). */
   bolt() {
     if (this.reduced) return;
-    const x0 = this.w * (0.15 + Math.random() * 0.7);
-    const y1 = this.h * (0.28 + Math.random() * 0.2);
-    const pts = [x0, -4];
+    // (left of centre: the opponent's panel sits over the top right on wide screens)
+    const x0 = this.w * (0.14 + Math.random() * 0.46);
+    const y1 = this.h * (0.3 + Math.random() * 0.18);
+    const pts = [x0, -6];
     let x = x0;
-    const steps = 9;
+    const steps = 11;
     for (let i = 1; i <= steps; i++) {
-      x += (Math.random() - 0.5) * this.w * 0.07;
+      x += (Math.random() - 0.5) * this.w * 0.08;
       pts.push(x, (y1 * i) / steps);
     }
-    const k = 2 * (3 + Math.floor(Math.random() * 3));
-    const branch = [pts[k], pts[k + 1]];
-    let bx = pts[k];
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    for (let i = 1; i <= 4; i++) {
-      bx += dir * this.w * (0.02 + Math.random() * 0.03);
-      branch.push(bx, pts[k + 1] + (y1 * 0.12 * i) / 2);
+    const branches: number[][] = [];
+    for (const k0 of [3, 6]) {
+      const k = 2 * (k0 + Math.floor(Math.random() * 2));
+      const br = [pts[k], pts[k + 1]];
+      let bx = pts[k];
+      let by = pts[k + 1];
+      const dir = branches.length ? -1 : 1;
+      for (let i = 1; i <= 4; i++) {
+        bx += dir * this.w * (0.02 + Math.random() * 0.035);
+        by += y1 * (0.05 + Math.random() * 0.04);
+        br.push(bx, by);
+      }
+      branches.push(br);
     }
-    this.bolts.push({ pts, branch, born: performance.now(), life: 420 });
+    this.bolts.push({ pts, branches, born: performance.now(), life: 480 });
     this.wake();
   }
 
@@ -144,9 +170,14 @@ export class WeatherFx {
       return;
     }
     // a phone that keeps falling behind steps down to 20 frames a second
+    // (and back up to 30 after a good stretch)
     if (this.last && since > 60) {
+      this.good = 0;
       if (++this.slow > 20) this.frameMs = 1000 / 20;
-    } else this.slow = Math.max(0, this.slow - 1);
+    } else {
+      this.slow = Math.max(0, this.slow - 1);
+      if (++this.good > 90 && this.frameMs > 1000 / 30) ((this.frameMs = 1000 / 30), (this.slow = 0));
+    }
     this.last = now;
     this.draw(Math.min(0.1, since / 1000), now);
     if (this.busy) this.raf = requestAnimationFrame(this.frame);
@@ -161,7 +192,8 @@ export class WeatherFx {
     this.amount += Math.sign(this.target - this.amount) * Math.min(Math.abs(this.target - this.amount), rate * dt);
     c.clearRect(0, 0, w, h);
     const total = this.drops.length / 5;
-    this.count = Math.round(total * this.amount * (this.reduced ? 0.5 : 1));
+    // (reduced motion: a few slow drops only)
+    this.count = Math.round(total * this.amount * (this.reduced ? 0.15 : 1));
     if (this.count > 0) {
       if (this.kind === 'rain') this.rain(dt);
       else if (this.kind === 'ash') this.ash(dt, now);
@@ -199,7 +231,7 @@ export class WeatherFx {
     const c = this.ctx;
     const d = this.drops;
     const { w, h, dpr } = this;
-    const fall = h * 1.6 * dt;
+    const fall = h * (this.reduced ? 0.4 : 1.6) * dt;
     const wind = this.wind;
     for (let layer = 0; layer < 2; layer++) {
       c.beginPath();
@@ -214,8 +246,8 @@ export class WeatherFx {
         c.moveTo(d[o], d[o + 1]);
         c.lineTo(d[o] - len * wind, d[o + 1] - len);
       }
-      c.lineWidth = (layer ? 1.25 : 0.8) * dpr;
-      c.strokeStyle = layer ? 'rgba(215,230,255,0.42)' : 'rgba(180,200,240,0.26)';
+      c.lineWidth = (layer ? 1.7 : 0.75) * dpr;
+      c.strokeStyle = layer ? 'rgba(220,234,255,0.5)' : 'rgba(180,200,240,0.24)';
       c.stroke();
     }
   }
@@ -287,18 +319,19 @@ export class WeatherFx {
       c.lineCap = 'round';
       c.lineJoin = 'round';
       for (const [lw, col] of [
-        [9, `rgba(140,160,255,${(0.18 * a).toFixed(3)})`],
-        [4, `rgba(190,205,255,${(0.5 * a).toFixed(3)})`],
-        [1.6, `rgba(255,255,255,${(0.95 * a).toFixed(3)})`],
+        [16, `rgba(120,140,255,${(0.16 * a).toFixed(3)})`],
+        [8, `rgba(170,190,255,${(0.35 * a).toFixed(3)})`],
+        [3.6, `rgba(225,232,255,${(0.85 * a).toFixed(3)})`],
+        [1.6, `rgba(255,255,255,${a.toFixed(3)})`],
       ] as [number, string][]) {
+        c.strokeStyle = col;
         c.beginPath();
         path(b.pts);
         c.lineWidth = lw * dpr;
-        c.strokeStyle = col;
         c.stroke();
         c.beginPath();
-        path(b.branch);
-        c.lineWidth = lw * dpr * 0.6;
+        for (const br of b.branches) path(br);
+        c.lineWidth = lw * dpr * 0.55;
         c.stroke();
       }
     }
@@ -308,5 +341,7 @@ export class WeatherFx {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.ro?.disconnect();
+    this.mq?.removeEventListener?.('change', this.onMotion);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
   }
 }

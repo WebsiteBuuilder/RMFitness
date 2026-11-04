@@ -197,7 +197,13 @@ export class DuelMusic {
     while (this.next < until) {
       if (this.step === 0) {
         this.barStart();
-        for (const f of barListeners) f(this.next - this.ctx.currentTime, this.bar, this.level);
+        // (a listener's mistake never stops the music)
+        for (const f of barListeners)
+          try {
+            f(this.next - this.ctx.currentTime, this.bar, this.level);
+          } catch {
+            /* ignore */
+          }
       }
       this.play(this.step, this.next);
       this.next += 60 / this.bpm / 4;
