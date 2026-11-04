@@ -1,0 +1,404 @@
+/* ---------- Card sleeves (src/sleeves) ----------
+   A sleeve is just the --card-back-img picture graphics.css already paints every .cback with,
+   set inline per card back. Nothing here runs on hands or Set cards. The only motion is a light
+   over the deck pile (one element a side) and in the picker, on transform/opacity only. */
+
+.cback.slv-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.cback.slv-shine::after {
+  content: '';
+  position: absolute;
+  inset: -20% -60%;
+  pointer-events: none;
+  will-change: transform;
+}
+/* a band of light that crosses the back now and then (metal, gold, Egyptian) */
+.cback.slv-sweep::after {
+  background: linear-gradient(105deg, transparent 38%, #ffffff10 44%, #ffffff70 50%, #ffffff10 56%, transparent 62%);
+  transform: translateX(-70%);
+  animation: slv-sweep 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes slv-sweep {
+  0%,
+  55% {
+    transform: translateX(-70%);
+  }
+  100% {
+    transform: translateX(70%);
+  }
+}
+/* rainbow foil that drifts across (Holo Prism) */
+.cback.slv-holo::after {
+  background: linear-gradient(115deg, transparent 20%, #ff6ad540 30%, #94d0ff50 40%, #8cffd850 50%, #fff59a50 60%, #ffb37a40 70%, transparent 80%);
+  animation: slv-holo 3.6s ease-in-out infinite alternate;
+  transform: translateX(-35%);
+}
+@keyframes slv-holo {
+  to {
+    transform: translateX(35%);
+  }
+}
+/* a soft breathing glow from the middle (Shadow Realm, Starlight, Heart of the Cards) */
+.cback.slv-pulse::after {
+  inset: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sleeve-glow, #fff) 55%, transparent), transparent);
+  opacity: 0.15;
+  animation: slv-pulse 2.8s ease-in-out infinite alternate;
+}
+@keyframes slv-pulse {
+  to {
+    opacity: 0.7;
+  }
+}
+/* the deck pile wears a faint halo in its sleeve's colour */
+.duel .tpile.deck > .cback[class*='slv-id-'],
+.duel .pile-stack > .cback[class*='slv-id-'] {
+  box-shadow:
+    1px 1px 0 #00000080,
+    2px 2px 0 #1a1208,
+    3px 3px 0 #00000080,
+    4px 5px 8px #000000b0,
+    0 0 9px -2px var(--sleeve-glow, transparent);
+}
+/* nothing moves while a 3D cinematic plays, in the background, or for reduced motion */
+body.art-on .cback.slv-shine::after,
+.duel.ko .cback.slv-shine::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cback.slv-shine::after {
+    animation: none;
+  }
+}
+
+/* ---------- the Sleeves page ---------- */
+.slv-stage {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 6px 4px;
+}
+.slv-show {
+  position: relative;
+  flex: 0 0 auto;
+  width: 150px;
+  height: 150px;
+}
+.slv-floor {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 2px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sleeve-glow) 45%, transparent), transparent);
+}
+.slv-deck {
+  position: absolute;
+  left: 8px;
+  bottom: 12px;
+  width: 70px;
+  height: 102px;
+}
+.slv-deck .cimg {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  box-shadow: 0 3px 6px #000a;
+}
+.slv-deck .slv-d3 {
+  transform: translate(-4px, 5px);
+  filter: brightness(0.55);
+}
+.slv-deck .slv-d2 {
+  transform: translate(-2px, 2.5px);
+  filter: brightness(0.75);
+}
+.slv-deck .slv-d1 {
+  box-shadow:
+    0 3px 8px #000c,
+    0 0 14px -2px var(--sleeve-glow);
+}
+.slv-held {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  width: 78px;
+  height: 114px;
+  transform: rotate(9deg);
+  animation: slv-deal 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+/* drag over the preview: the held card leans toward the finger, a light band slides across it */
+.slv-tilt {
+  --tx: 0;
+  --ty: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: perspective(500px) rotateY(calc(var(--tx) * 16deg)) rotateX(calc(var(--ty) * -14deg));
+  transition: transform 0.35s ease-out;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow:
+    0 8px 16px #000c,
+    0 0 0 1px #0008,
+    0 0 18px -4px var(--sleeve-glow);
+}
+.slv-tilt.live {
+  transition: transform 0.06s linear;
+}
+.slv-sheen {
+  position: absolute;
+  inset: -30% -60%;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, #ffffff12 44%, #ffffff66 50%, #ffffff12 56%, transparent 62%);
+  transform: translateX(calc(var(--tx) * -32% - 8%));
+  transition: transform 0.35s ease-out;
+  mix-blend-mode: screen;
+}
+.slv-tilt.live .slv-sheen {
+  transition: none;
+}
+.slv-held .cimg {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+}
+@keyframes slv-deal {
+  from {
+    transform: translate(-46px, 30px) rotate(-6deg) scale(0.86);
+    opacity: 0.4;
+  }
+}
+.slv-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.slv-info b {
+  font-size: 17px;
+}
+.slv-info p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+.slv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.slv-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px 8px;
+  border-radius: 12px;
+  border: 1.5px solid #ffffff1f;
+  background: linear-gradient(180deg, #232e66, #141b40);
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.slv-card.on {
+  border-color: #9fd2ff;
+  box-shadow:
+    0 0 0 2px #9fd2ff40,
+    0 0 12px #6cc4ff40;
+}
+/* the sleeve your cards wear: a gold frame and a tag, whichever one you're looking at */
+.slv-card.using {
+  position: relative;
+  border-color: #e9c46a;
+  background: linear-gradient(180deg, #3a3466, #1c1a40);
+  box-shadow:
+    0 0 0 2px #e9c46a55,
+    0 0 16px #e9c46a55;
+}
+.slv-card.using.on {
+  box-shadow:
+    0 0 0 2px #e9c46a,
+    0 0 18px #e9c46a77;
+}
+.slv-card.locked {
+  background: linear-gradient(180deg, #1a2048, #10142e);
+}
+.slv-pic {
+  position: relative;
+  width: 52px;
+  height: 76px;
+}
+.slv-pic .cimg {
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  box-shadow: 0 2px 5px #000a;
+}
+.slv-card.locked .slv-pic .cimg {
+  filter: brightness(0.82);
+}
+.slv-lock {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  font-size: 15px;
+  font-style: normal;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.slv-card b {
+  font-size: 11.5px;
+  line-height: 1.15;
+  text-align: center;
+  min-height: 2.3em;
+  display: flex;
+  align-items: center;
+}
+.slv-go {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 8px 16px;
+}
+.slv-earn {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.slv-earn-t {
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #ffe9a8;
+}
+.slv-bar {
+  position: relative;
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: #ffffff14;
+  box-shadow: inset 0 0 0 1px #e9c46a55;
+  overflow: hidden;
+}
+/* one notch per step to go */
+.slv-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n, 1) - 1.5px), #0a0e24 calc(100% / var(--n, 1) - 1.5px) calc(100% / var(--n, 1)));
+}
+.slv-buy-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.slv-buy-wait .slv-go:disabled {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+.slv-buy-wait small {
+  font-size: 11.5px;
+  opacity: 0.75;
+}
+.slv-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #e9c46a, #ffe9a8);
+}
+.slv-card small {
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+.slv-card small.own {
+  color: #ffe36e;
+  opacity: 1;
+  font-weight: 700;
+}
+@media (max-width: 360px) {
+  .slv-show {
+    width: 126px;
+    height: 132px;
+  }
+  .slv-deck {
+    width: 60px;
+    height: 88px;
+  }
+  .slv-held {
+    width: 66px;
+    height: 96px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slv-held {
+    animation: none;
+  }
+}
+
+/* the Duelist tab's Sleeves tile */
+.sdh-sleeves {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 34px 8px 10px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sleeve-glow, #8fb4ff) 35%, transparent);
+  background: radial-gradient(circle at 12% 60%, color-mix(in srgb, var(--sleeve-glow, #8fb4ff) 38%, transparent), transparent 45%), linear-gradient(120deg, #1a2048, #121028);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sdh-sleeves-pic {
+  position: relative;
+  flex: none;
+  width: 44px;
+  aspect-ratio: 59 / 86;
+}
+.sdh-sleeves-pic .cimg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px #000b;
+}
+.sdh-sleeves-pic .cimg + .cimg {
+  transform: translate(7px, -3px) rotate(8deg);
+  box-shadow:
+    0 2px 6px #000b,
+    0 0 10px -2px var(--sleeve-glow, transparent);
+}
+.sdh-sleeves-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-left: 6px;
+}
+.sdh-sleeves-txt b {
+  font-size: 17px;
+}
+.sdh-sleeves-txt span {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* Touch duels: your own Set card's SET tag sits in a corner, so its sleeve stays in view */
+.duel.touch .fcard.myset .setmark {
+  left: auto;
+  top: auto;
+  right: 2px;
+  bottom: 2px;
+  transform: none;
+  font-size: 7.5px;
+  padding: 0 3px;
+}
+.duel.touch .fcard.def.myset .setmark {
+  transform: none;
+}

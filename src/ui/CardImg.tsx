@@ -6,6 +6,8 @@ import { TIERS, meterOf, tierIndex } from '../level/leveling';
 import { figUrl, useFigs } from '../level/figs';
 import { profileXpOf, rarityFor } from '../level/view';
 import { spellWord } from './gameUi';
+import { duelSleeveOf, sleeveClass, sleeveShineClass, useDuelSleeves } from '../sleeves/duel';
+import type { SleeveId } from '../sleeves/roster';
 
 /** The tier chip's text on a card (Glossy and Royal are Ultra Rares with a mark). */
 const CHIP: Record<string, string> = { GL: 'UR✦', RO: 'UR♛' };
@@ -34,14 +36,25 @@ const GLINTS = (
 // Memoized: a duel re-renders on every move, and an unchanged card needn't be diffed again.
 export const CardImg = memo(CardImgView);
 
-function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier, lazy = false }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number; /** long lists: the picture loads only when it scrolls near the screen */ lazy?: boolean }) {
+function CardImgView({ name, back = false, class: cls = '', owner, tier: forceTier, lazy = false, sleeve, shine = false }: { name: string; back?: boolean; class?: string; owner?: Pid; /** show this rarity tier (index into TIERS) instead of the owner's */ tier?: number; /** long lists: the picture loads only when it scrolls near the screen */ lazy?: boolean; /** a card back: this sleeve (else the owner's sleeve in the duel on screen) */ sleeve?: SleeveId | null; /** a card back: let the sleeve's light run over it (deck piles and the picker only) */ shine?: boolean }) {
+  if (back) return <CardBack cls={cls} owner={owner} sleeve={sleeve} shine={shine} />;
+  return <CardFace name={name} cls={cls} owner={owner} forceTier={forceTier} lazy={lazy} />;
+}
+
+/** A face-down card in its owner's sleeve (src/sleeves). */
+function CardBack({ cls, owner, sleeve, shine }: { cls: string; owner?: Pid; sleeve?: SleeveId | null; shine: boolean }) {
+  useDuelSleeves();
+  const id = sleeve !== undefined ? sleeve : duelSleeveOf(owner);
+  return <div class={`cimg cback ${cls}${sleeveClass(id)}${shine ? sleeveShineClass(id) : ''}`} />;
+}
+
+function CardFace({ name, cls, owner, forceTier, lazy }: { name: string; cls: string; owner?: Pid; forceTier?: number; lazy: boolean }) {
   // Remember which card's picture failed, so the next card shown in the same spot still gets its picture.
   const [broken, setBroken] = useState<string | null>(null);
   // Card leveling (Speed Duel): a frame on the picture, and a foil layer where the card sits in a slot.
-  const tier = TIERS[back ? 0 : (forceTier ?? rarityFor(name, owner))];
+  const tier = TIERS[forceTier ?? rarityFor(name, owner)];
   const full = tier.id === 'OF' || tier.id === 'MI';
   useFigs(full);
-  if (back) return <div class={`cimg cback ${cls}`} />;
   if (tier.id !== 'N') cls += ` lvr lvr-${tier.id}`;
   const fx = tier.id !== 'N' && (
     <i class={`lvr-fx lvr-fx-${tier.id}`} data-r={CHIP[tier.id] ?? tier.short}>
