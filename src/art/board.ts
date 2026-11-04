@@ -535,7 +535,8 @@ export class BoardLayer {
       if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
       return;
     }
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // (never negative: a frame stamped before the moment the loop was restarted would step everything backward)
+    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
     // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
     // (and 15 for the slow idle sway once every figure has settled: a quarter of the GPU work and heat;
@@ -837,9 +838,13 @@ export class BoardLayer {
       e.z = front ? 8 : -8;
       e.vx = (Math.random() - 0.5) * 2 * m.drift * cw;
       e.vy = rise;
-      e.life = m.life;
-      e.size = m.size * cw;
-      e.size1 = m.size1 * cw;
+      // (it fades before it drifts over the row beyond: a little above the figure's head at most)
+      const room = base + tall + cw * 0.45 - y;
+      e.life = rise > 1 ? Math.max(0.5, Math.min(m.life, room / (rise * 1.15))) : m.life;
+      // (a small phone's cards are small: the motes keep a readable size)
+      const big = cw < 60 ? 1.2 : 1;
+      e.size = m.size * cw * big;
+      e.size1 = m.size1 * cw * big;
       e.color = color;
       e.kind = gold ? MOTE_SHAPE.divine : MOTE_SHAPE[m.kind];
       // embers and gold dust speed up as they rise; dust settles

@@ -1043,8 +1043,11 @@ void main(){
     c = mix(vColor, vec3(1.0), soft(d, 0.07));
   } else {
     // smoke: a puff with a curling violet rim and a thinner middle (reads as smoke on the dark mat)
+    // (its rim wobbles and turns as it drifts: curling, not a ring)
+    float ang = atan(p.y, p.x);
+    float rim = 0.3 + 0.06 * sin(ang * 3.0 + vSpin * 2.0) + 0.035 * sin(ang * 5.0 - vSpin * 3.0);
     float body = soft(d, 0.5);
-    a = body * body * 0.45 + soft(abs(d - 0.32), 0.1) * 0.55;
+    a = body * body * 0.45 + soft(abs(d - rim), 0.09) * 0.55 * (0.6 + 0.4 * sin(ang * 2.0 + vSpin));
     c = mix(vColor * 0.6, vColor * 1.35, smoothstep(0.15, 0.38, d));
   }
   ${GLOW_OUT.replace('OUT', 'c * clamp(a, 0.0, 1.4) * vAlpha')}
