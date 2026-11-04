@@ -57,11 +57,14 @@ import { DEFAULT_FADE, tuneFor } from './overrides';
 
 export type Quality = 'full' | 'fast';
 
-/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. */
-export function dprCap(): number {
+/** Highest device pixel ratio worth drawing at: 1.5, or 1.25 on small devices. A big canvas
+    (tablet, desktop) also keeps to a pixel budget, so a full-screen layer on a 4K monitor or a
+    big iPad costs about what a phone's does (never under 1:1). */
+export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5);
+  const budget = Math.max(1, Math.sqrt((small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
+  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5, budget);
 }
 
 /** A WebGL renderer set up the same way everywhere (so compiled programs match). */
@@ -2765,7 +2768,8 @@ export class Stage {
     this.sizeDirty = false;
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const dpr = this.levels[this.level].dpr;
+    // (the quality level's ratio, held to the big-screen pixel budget)
+    const dpr = Math.min(this.levels[this.level].dpr, Math.max(1, dprCap(w, h)));
     if (this.levels[this.level].post && !this.post) this.post = new Post();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
