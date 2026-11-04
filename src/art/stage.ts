@@ -390,7 +390,7 @@ void main(){
       float det = clamp((lum - 0.12) * 1.6, 0.0, 1.0);
       vec3 h = uHoloCol * (0.18 + det * 1.45) * (0.72 + 0.28 * lines) + uHoloCol * (roll * 0.3 + sEdge * 1.1);
       // more than half of the painting's own color stays (under the tint): it reads as this monster
-      h = mix(h, c * 0.85 + uHoloCol * 0.3, 0.62);
+      h = mix(h, c * 0.9 + uHoloCol * 0.25, 0.72);
       c = mix(c, h, holo);
       holoA = 1.0 - holo * (0.3 - 0.12 * lines - roll * 0.1 + uFlick);
     }
@@ -1717,7 +1717,7 @@ void main(){
     float lines = 0.8 + 0.2 * sin(p.y * 70.0 - uTime * 22.0);
     float n = 0.75 + 0.5 * vnoise(vec2(p.x * 3.0 + uSeed, p.y * 2.0 - uTime * 2.5));
     float src = exp(-(p.x * p.x * 26.0 + (p.y + 0.95) * (p.y + 0.95) * 70.0)) + 0.35 * exp(-(p.x * p.x * 5.0 + (p.y + 0.95) * (p.y + 0.95) * 90.0));
-    c = (uColor * (inside * 0.85 * (1.0 - 0.4 * ax / max(w, 0.01)) * (1.0 - 0.6 * y01) + walls * 0.6) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
+    c = (uColor * (inside * 1.3 * (1.0 - 0.4 * ax / max(w, 0.01)) * (1.0 - 0.6 * y01) + walls * 0.6) * n + mix(uColor, uColor2, 0.6) * walls * 0.25) * fy + uColor2 * src * 1.4;
   }
   ${GLOW_OUT.replace('OUT', 'c * uOpacity')}
 }`;
