@@ -43,9 +43,9 @@
   position: fixed;
   left: 50%;
   top: 44%;
-  width: 170vmax;
-  height: 170vmax;
-  margin: -85vmax 0 0 -85vmax;
+  width: 120vmax;
+  height: 120vmax;
+  margin: -60vmax 0 0 -60vmax;
   pointer-events: none;
   opacity: 0.16;
   background: repeating-conic-gradient(from 0deg, var(--po-c) 0 6deg, transparent 6deg 18deg);
@@ -54,6 +54,10 @@
   animation: po-spin 48s linear infinite;
   transition: opacity 0.6s;
 }
+/* nothing turns behind the results sheet */
+.po.done .po-rays { animation-play-state: paused; }
+/* the spotlight has the screen: Skip steps away */
+.po:has(.po-spot:not(.pre)) .po-skip { display: none; }
 .po:not(.st-pack) .po-rays { opacity: 0.24; }
 .po.po-t-ur:not(.st-pack) .po-rays,
 .po.po-t-scr:not(.st-pack) .po-rays,

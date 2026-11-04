@@ -661,7 +661,7 @@ export function PackBatch({ opened, cover, onFinish }: { opened: Opened[]; cover
   }, [up, k, stage]);
   const g = cur ? gradeId(cur.g) : 'n';
   return (
-    <Stage tint={stage === 'pack' ? 0 : top} flash={flash} flashN={flashN} onSkip={finish} cls={`batch st-${stage} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset} onUp={held.lift}>
+    <Stage tint={stage === 'pack' ? 0 : up && cur ? cur.g : top} flash={flash} flashN={flashN} onSkip={finish} cls={`batch st-${stage} ${charge.at >= 0 ? 'holding' : ''}`} onDown={held.reset} onUp={held.lift}>
       {stage !== 'show' ? (
         <Foil cover={cover} title={`${opened.length} packs`} tear={tear} torn={stage === 'tear'} count={opened.length} sub="Swipe across the top to tear them all open" />
       ) : (
