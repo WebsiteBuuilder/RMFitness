@@ -1,0 +1,1052 @@
+/* The Duelist Room (DuelistRoom.tsx): the home hub at the top of the Duel tab.
+   Sizes are in container units of the room (cqh = 1% of its height), so the same room fits a
+   phone, a tablet and a desktop. Always-on motion: the Ace's float, the Mate's walk + turn + bob
+   and the light's breath (transform/opacity only), paused while the room is out of sight. */
+.sdr {
+  --sdr-h: clamp(236px, 40vh, 380px);
+  position: relative;
+  height: var(--sdr-h);
+  margin: 0 -12px 2px;
+  overflow: hidden;
+  container-type: size;
+  isolation: isolate;
+  background: #0a1028;
+  animation: sdr-in 0.45s ease-out both;
+  -webkit-tap-highlight-color: transparent;
+}
+@keyframes sdr-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+/* the room's bottom edge melts into the page */
+.sdr::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10cqh;
+  background: linear-gradient(180deg, transparent, var(--sd-bg, #0b1226));
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------- walls, window, light, floor ---------- */
+.sdr-walls,
+.sdr-walls > i {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sdr-walls {
+  z-index: 0;
+  background:
+    /* wall panels */
+    repeating-linear-gradient(90deg, #ffffff06 0 1px, transparent 1px 64px),
+    /* a gold dado rail */
+    linear-gradient(180deg, transparent 0 63.4%, #c9a24a66 63.4% 64%, #00000055 64% 65%, transparent 65%),
+    radial-gradient(120cqh 70cqh at 50% 30%, #2a3a7a 0, #17204c 45%, #0c1230 80%);
+}
+/* the arched window at the back, where the light comes from */
+.sdr-window {
+  left: 50% !important;
+  top: 4cqh !important;
+  bottom: auto !important;
+  right: auto !important;
+  width: 54cqh;
+  height: 62cqh;
+  transform: translateX(-50%);
+  border-radius: 27cqh 27cqh 2cqh 2cqh;
+  background:
+    linear-gradient(90deg, transparent 49.3%, #0c1230cc 49.3% 50.7%, transparent 50.7%),
+    linear-gradient(180deg, transparent 47%, #0c1230cc 47% 48.6%, transparent 48.6%),
+    radial-gradient(60% 55% at 50% 40%, #b8c8ff 0, #6f84d8 40%, #34428a 75%, #1b2558 100%);
+  box-shadow:
+    0 0 0 1.2cqh #0c1230,
+    0 0 0 1.8cqh #c9a24a88,
+    0 0 9cqh 3cqh #6f84d855;
+  opacity: 0.9;
+}
+.sdr-dust {
+  left: 50% !important;
+  right: auto !important;
+  top: 8cqh !important;
+  bottom: auto !important;
+  width: 50cqh;
+  height: 56cqh;
+  margin-left: -25cqh;
+  background:
+    radial-gradient(circle at 18% 30%, #fff 0 0.35cqh, transparent 0.5cqh),
+    radial-gradient(circle at 70% 18%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 42% 62%, #fff 0 0.4cqh, transparent 0.55cqh),
+    radial-gradient(circle at 84% 54%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 30% 84%, #fff 0 0.3cqh, transparent 0.45cqh),
+    radial-gradient(circle at 60% 40%, #fff 0 0.25cqh, transparent 0.4cqh);
+  opacity: 0;
+  animation: sdr-dust 9s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.sdr.lite .sdr-dust {
+  display: none;
+}
+@keyframes sdr-dust {
+  0% {
+    opacity: 0;
+    transform: translateY(2cqh);
+  }
+  40%,
+  60% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4cqh);
+  }
+}
+.sdr-light {
+  background: radial-gradient(48cqh 60cqh at 50% 46%, #9fb4ff40, transparent 70%);
+  animation: sdr-breath 5s ease-in-out infinite;
+  will-change: opacity;
+}
+@keyframes sdr-breath {
+  50% {
+    opacity: 0.55;
+  }
+}
+/* the floor: tiles going back into the room */
+.sdr-floor {
+  top: 64% !important;
+  background:
+    linear-gradient(180deg, #00000088, transparent 40%),
+    linear-gradient(180deg, #1a2150, #10163a);
+  overflow: hidden;
+}
+.sdr-floor::before {
+  content: '';
+  position: absolute;
+  left: -60%;
+  right: -60%;
+  top: 0;
+  height: 260%;
+  transform-origin: 50% 0;
+  transform: perspective(40cqh) rotateX(62deg);
+  background:
+    repeating-linear-gradient(90deg, #ffffff10 0 1px, transparent 1px 14cqh),
+    repeating-linear-gradient(0deg, #ffffff10 0 1px, transparent 1px 14cqh);
+}
+/* the round duel rug under the Ace */
+.sdr-rug {
+  top: auto !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 9cqh !important;
+  width: 120cqh;
+  height: 26cqh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, transparent 0 62%, #c9a24a77 63% 65%, transparent 66% 78%, #c9a24a44 79% 80%, transparent 81%),
+    radial-gradient(closest-side, #3b2a7a99, #1d1850aa 70%, transparent);
+}
+/* your playmat, laid on the floor as the rug */
+.sdr-rug::before {
+  content: '';
+  position: absolute;
+  inset: 8% 10%;
+  border-radius: 50%;
+  background: var(--sdr-mat, none) 50% 50% / cover no-repeat;
+  opacity: 0.75;
+  -webkit-mask: radial-gradient(closest-side, #000 55%, transparent);
+  mask: radial-gradient(closest-side, #000 55%, transparent);
+}
+
+/* ---------- the stage: everything you can tap ---------- */
+.sdr-stage {
+  position: absolute;
+  inset: 0;
+  left: 50%;
+  width: min(100%, 250cqh);
+  transform: translateX(-50%);
+  z-index: 1;
+}
+.sdr-spot {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.sdr-spot:focus-visible {
+  outline: 2px solid #ffd76a;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.sdr-spot:active > :not(.sdr-tag) {
+  filter: brightness(1.2);
+}
+/* tapped: a quick squash and spring before its screen opens */
+.sdr-spot.pop:not(.sdr-matezone) > :not(.sdr-tag) {
+  animation: sdr-pop 0.26s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes sdr-pop {
+  35% {
+    transform: scale(0.9);
+  }
+}
+/* the depth: wall things drift one way, floor things the other, as a mouse moves (computers) */
+.sdr-shelf,
+.sdr-board {
+  translate: calc(var(--sdr-px, 0) * -5px) 0;
+  transition: translate 0.25s ease-out;
+}
+.sdr-ace,
+/* tapped, the Ace flares: its halo flashes bright for a moment */
+.sdr-ace.pop .sdr-halo {
+  animation: sdr-flare 0.32s ease-out;
+}
+@keyframes sdr-flare {
+  30% {
+    opacity: 1;
+    transform: scale(1.25);
+    filter: brightness(1.8);
+  }
+}
+/* a dark contact shadow where its feet meet the floor */
+.sdr-pedestal::after {
+  content: '';
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 30%;
+  height: 40%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #0009, transparent);
+}
+/* narrow rooms (phones): a slightly smaller Ace, so it stands inside the room */
+@container (max-width: 450px) {
+  .sdr-acefig .sdr-cutw {
+    width: 54cqh;
+    height: 54cqh;
+    margin-left: -27cqh;
+    bottom: 6cqh;
+  }
+}
+.sdr-acetag {
+  translate: calc(var(--sdr-px, 0) * 3px) 0;
+  transition: translate 0.25s ease-out;
+}
+.sdr-deckbox,
+.sdr-packs,
+.sdr-table,
+.sdr-pass {
+  translate: calc(var(--sdr-px, 0) * 10px) 0;
+  transition: translate 0.25s ease-out;
+}
+/* the name tag under each thing */
+.sdr-tag {
+  position: absolute;
+  left: 50%;
+  bottom: -1.2cqh;
+  transform: translate(-50%, 100%);
+  max-width: 150%;
+  padding: 0.5cqh 2.6cqh;
+  border-radius: 99px;
+  background: #050a1ee0;
+  border: 1px solid #ffffff2a;
+  font-size: clamp(10px, 4.1cqh, 14px);
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e6ecff;
+  pointer-events: none;
+  z-index: 2;
+}
+.sdr-spot.hot .sdr-tag {
+  background: linear-gradient(180deg, #ffd76a, #d9a531);
+  border-color: #fff2;
+  color: #2a1a00;
+  box-shadow: 0 0 10px #ffc93a88;
+}
+
+/* ---------- trophy shelf (left wall) ---------- */
+.sdr-shelf {
+  left: 1.5%;
+  top: 8%;
+  width: 28%;
+  height: 42%;
+  z-index: 4;
+}
+.sdr-planks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  border-radius: 1.4cqh;
+  background: linear-gradient(180deg, #1b1430, #120d22);
+  box-shadow:
+    inset 0 0 0 0.7cqh #3b2a1f,
+    inset 0 0 4cqh #000a,
+    0 1.4cqh 3cqh #0008;
+  padding: 1.6cqh 2cqh 0;
+}
+.sdr-plank {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 1cqh;
+  padding-bottom: 2.2cqh;
+}
+.sdr-plank::after {
+  content: '';
+  position: absolute;
+  left: -2cqh;
+  right: -2cqh;
+  bottom: 0;
+  height: 2.2cqh;
+  background: linear-gradient(180deg, #8a5a32, #5a3820 60%, #2c1a10);
+  box-shadow: 0 1cqh 1.6cqh #000a;
+}
+/* a fresh shelf: the outline of the first cup to win */
+.sdr-tro.cup.ghost {
+  --m1: #ffffff40;
+  --m2: #ffffff22;
+  --m3: #ffffff10;
+  opacity: 0.6;
+  filter: none;
+}
+.sdr-plank em {
+  align-self: center;
+  font-style: normal;
+  font-size: clamp(9px, 3.6cqh, 12px);
+  line-height: 1.2;
+  text-align: center;
+  color: #ffffff70;
+}
+.sdr-tro {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  height: 13cqh;
+  min-width: 9cqh;
+  filter: drop-shadow(0 0.8cqh 0.8cqh #000c);
+}
+.sdr-tro.rank .rk-emblem.s {
+  width: 10cqh;
+  height: 11.5cqh;
+}
+.sdr-tro.rank .rk-emblem.s b {
+  font-size: 4.2cqh;
+}
+/* a cup drawn in CSS: bowl, stem and base, metal by wins */
+.sdr-tro.cup {
+  --m1: #ffe9a8;
+  --m2: #d9a531;
+  --m3: #7a5410;
+  width: 10cqh;
+}
+.sdr-tro.cup.silver {
+  --m1: #ffffff;
+  --m2: #b7c2d6;
+  --m3: #55607a;
+}
+.sdr-tro.cup.bronze {
+  --m1: #ffd2a8;
+  --m2: #c27a3e;
+  --m3: #5e3414;
+}
+.sdr-cup {
+  position: absolute;
+  inset: 0;
+  background:
+    /* base */
+    linear-gradient(90deg, var(--m3), var(--m2) 40%, var(--m1) 55%, var(--m3)) 50% 100% / 70% 16% no-repeat,
+    /* knot where the stem meets the base */
+    radial-gradient(closest-side, var(--m1), var(--m2) 60%, var(--m3) 95%, transparent) 50% 84% / 34% 14% no-repeat,
+    /* stem, running up into the bowl */
+    linear-gradient(90deg, var(--m3), var(--m1) 50%, var(--m3)) 50% 75% / 18% 40% no-repeat,
+    /* bowl */
+    radial-gradient(120% 92% at 50% 0, var(--m1) 0, var(--m2) 45%, var(--m3) 76%, transparent 77%) 50% 0 / 86% 66% no-repeat;
+}
+.sdr-tro.cup .sdr-cup {
+  bottom: 4.4cqh;
+}
+/* the wins, engraved on a plaque under the cup */
+.sdr-plaque {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  min-width: 9cqh;
+  padding: 0 1cqh;
+  height: 4.4cqh;
+  border-radius: 0.6cqh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #3a2414, #1e120a);
+  box-shadow: inset 0 0 0 0.3cqh var(--m2);
+  font-size: 3.2cqh;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--m1);
+}
+.sdr-tro.crown {
+  width: 11cqh;
+}
+/* a drawn crown: gold band and five points, with jewels */
+.sdr-crown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1cqh;
+  height: 8cqh;
+  clip-path: polygon(0 100%, 0 20%, 20% 55%, 32% 5%, 50% 45%, 68% 5%, 80% 55%, 100% 20%, 100% 100%);
+  background:
+    radial-gradient(circle at 50% 78%, #e0283a 0 0.9cqh, transparent 1cqh),
+    radial-gradient(circle at 22% 80%, #2a8cff 0 0.7cqh, transparent 0.8cqh),
+    radial-gradient(circle at 78% 80%, #2ad07a 0 0.7cqh, transparent 0.8cqh),
+    linear-gradient(180deg, transparent 62%, #7a5410 62% 66%, transparent 66%),
+    linear-gradient(100deg, #ffe9a8, #f0b425 45%, #b07a10 75%, #ffe08a);
+}
+.sdr-tro.bond {
+  width: 10cqh;
+}
+.sdr-tro.bond i {
+  display: grid;
+  place-items: center;
+  width: 10cqh;
+  height: 10cqh;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 6cqh;
+  color: #fff7d6;
+  background: radial-gradient(circle at 35% 30%, #ffb3f0, #a53fd0 55%, #4a1670);
+  box-shadow:
+    inset 0 0 0 0.6cqh #ffd76a,
+    0 0 2cqh #c86bff88;
+}
+.sdr-tro.bond.b5 i {
+  background: radial-gradient(circle at 35% 30%, #fff3b0, #f0b425 55%, #7a4c00);
+}
+/* the Duel School diploma: a scroll on a little stand, rolled ends and a ribbon seal */
+.sdr-tro.school {
+  width: 12cqh;
+}
+.sdr-scroll {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 1cqh;
+  height: 9cqh;
+  transform: rotate(-8deg);
+  background:
+    /* rolled ends */
+    linear-gradient(90deg, #b49a5c, #fff6dc 40%, #b49a5c) 0 0 / 100% 1.6cqh no-repeat,
+    linear-gradient(90deg, #b49a5c, #fff6dc 40%, #b49a5c) 0 100% / 100% 1.6cqh no-repeat,
+    /* writing */
+    repeating-linear-gradient(180deg, transparent 0 1.2cqh, #8a704055 1.2cqh 1.5cqh) 20% 2.6cqh / 60% 4cqh no-repeat,
+    linear-gradient(180deg, #fff8e4, #ead9a8);
+  border-radius: 0.4cqh;
+}
+.sdr-scroll::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  bottom: -0.8cqh;
+  width: 3.4cqh;
+  height: 3.4cqh;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff8a8a, #c41e2a 60%, #6a0d12);
+  box-shadow: 0 0.4cqh 0.6cqh #0008;
+}
+
+/* ---------- missions board (right wall) ---------- */
+.sdr-board {
+  right: 1.5%;
+  top: 6%;
+  width: 28%;
+  height: 42%;
+  z-index: 4;
+}
+.sdr-cork {
+  position: absolute;
+  inset: 0;
+  border-radius: 1.2cqh;
+  background:
+    radial-gradient(circle at 20% 30%, #0000001a 0 0.5cqh, transparent 0.6cqh) 0 0 / 4cqh 4cqh,
+    radial-gradient(circle at 70% 60%, #ffffff12 0 0.4cqh, transparent 0.5cqh) 0 0 / 5cqh 5cqh,
+    linear-gradient(160deg, #a77a4a, #8a5f36 60%, #6d4826);
+  box-shadow:
+    inset 0 0 0 1cqh #4a2e18,
+    inset 0 0 0 1.4cqh #c9a24a66,
+    0 1.4cqh 3cqh #0008;
+}
+.sdr-note {
+  position: absolute;
+  width: 47%;
+  height: 34%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.4cqh;
+  padding: 1cqh 0.3cqh;
+  background: linear-gradient(180deg, #fffbe9, #efe2b8);
+  color: #2a2010;
+  box-shadow: 0 0.8cqh 1.2cqh #0007;
+  text-align: center;
+  line-height: 1.05;
+}
+.sdr-note b {
+  font-size: clamp(8px, 3.2cqh, 13px);
+  letter-spacing: -0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdr-note small {
+  font-size: clamp(9px, 3.6cqh, 12px);
+  font-weight: 700;
+  color: #7a4a12;
+}
+.sdr-note.done {
+  background: linear-gradient(180deg, #e9ffe9, #bfe6c0);
+}
+.sdr-note.done small {
+  color: #1d6a2a;
+}
+.sdr-note.n0 {
+  left: 6%;
+  top: 9%;
+  transform: rotate(-4deg);
+}
+.sdr-note.n1 {
+  right: 6%;
+  top: 14%;
+  transform: rotate(3deg);
+}
+.sdr-note.n2 {
+  left: 27%;
+  bottom: 9%;
+  transform: rotate(-1.5deg);
+}
+.sdr-note.n1:only-child {
+  inset: 0;
+  margin: auto;
+}
+.sdr-pin {
+  position: absolute;
+  top: -1cqh;
+  left: 50%;
+  width: 2.6cqh;
+  height: 2.6cqh;
+  margin-left: -1.3cqh;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff9a9a, #d0262f 60%, #6a0d12);
+  box-shadow: 0 0.5cqh 0.6cqh #0008;
+}
+.sdr-note.done .sdr-pin {
+  background: radial-gradient(circle at 35% 30%, #a8ffb0, #23a03a 60%, #0d4a17);
+}
+
+/* ---------- Duel Pass poster (front left, when the pass exists) ---------- */
+.sdr-pass {
+  left: 2%;
+  bottom: 13cqh;
+  width: 15cqh;
+  height: 21cqh;
+  z-index: 6;
+}
+.sdr-poster {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1cqh;
+  border-radius: 1.2cqh;
+  background:
+    linear-gradient(135deg, #ffffff22, transparent 40%),
+    linear-gradient(180deg, #3d1a7a, #1d0c44);
+  box-shadow:
+    inset 0 0 0 0.6cqh #ffd76a,
+    0 1cqh 2cqh #000a;
+  transform: perspective(40cqh) rotateY(16deg);
+  text-align: center;
+}
+.sdr-poster b {
+  font-size: 3.4cqh;
+  font-weight: 900;
+  line-height: 1;
+  color: #ffd76a;
+  letter-spacing: 0.04em;
+}
+.sdr-poster small {
+  font-size: 3.4cqh;
+  color: #e6dcff;
+}
+.sdr-pass.hot .sdr-poster {
+  box-shadow:
+    inset 0 0 0 0.6cqh #ffd76a,
+    0 0 3cqh #ffc93a99,
+    0 1cqh 2cqh #000a;
+}
+
+/* ---------- the Ace ---------- */
+.sdr-ace {
+  left: 50%;
+  bottom: 18cqh;
+  width: 66cqh;
+  height: 74cqh;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+.sdr-acetag {
+  left: 50%;
+  bottom: 19cqh;
+  width: 0;
+  height: 6cqh;
+  z-index: 6;
+}
+.sdr-acetag .sdr-tag {
+  max-width: 40cqh;
+  bottom: 0;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.sdr-acefig {
+  position: absolute;
+  inset: 0;
+}
+/* a column of light behind it, brighter (and golden at bond 5) as the bond grows */
+.sdr-pillar {
+  position: absolute;
+  left: 50%;
+  bottom: 4cqh;
+  width: 48cqh;
+  height: 100%;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 100% at 50% 100%, rgba(159, 180, 255, 0.45), transparent 100%);
+  opacity: 0.6;
+}
+.b2 .sdr-pillar {
+  opacity: 0.8;
+}
+.b3 .sdr-pillar,
+.b4 .sdr-pillar {
+  background: radial-gradient(50% 100% at 50% 100%, rgba(200, 168, 255, 0.45), transparent 100%);
+  opacity: 0.9;
+}
+.b5 .sdr-pillar {
+  background: radial-gradient(50% 100% at 50% 100%, rgba(255, 215, 106, 0.5), transparent 100%);
+  opacity: 1;
+}
+.sdr-pedestal {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 44cqh;
+  height: 10cqh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #dfe7ff 0, #8fa3ff88 35%, #4a5cc055 65%, transparent);
+}
+.b5 .sdr-pedestal {
+  background: radial-gradient(closest-side, #fff6cf 0, #ffd76a99 35%, #c98a1a55 65%, transparent);
+}
+/* the cut-out monster: card art cropped to the art box, masked by the figure matte */
+/* (the glow sits on a wrapper: a filter on the masked element itself would be masked away.
+   The wrapper floats, so the glow is drawn once into its layer, not every frame) */
+.sdr-cutw {
+  position: absolute;
+  left: 50%;
+  bottom: 3cqh;
+  width: 66cqh;
+  height: 66cqh;
+  margin-left: -33cqh;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  animation: sdr-float 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+.sdr-cutw.in {
+  opacity: 1;
+}
+/* the glow is a still halo behind the figure (a moving drop-shadow is heavy on weak phones) */
+.sdr-halo {
+  position: absolute;
+  left: 50%;
+  bottom: 8cqh;
+  width: 62cqh;
+  height: 58cqh;
+  margin-left: -31cqh;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(159, 180, 255, 0.42), rgba(159, 180, 255, 0.12) 60%, transparent);
+}
+.b5 .sdr-halo {
+  background: radial-gradient(closest-side, rgba(255, 215, 106, 0.5), rgba(255, 201, 58, 0.14) 60%, transparent);
+}
+.sdr-cut {
+  position: absolute;
+  inset: 0;
+  background: var(--sdr-img) 50% 37.5% / 131.6% 190.5% no-repeat;
+  -webkit-mask: var(--sdr-fig) 50% 50% / 100% 100% no-repeat;
+  mask: var(--sdr-fig) 50% 50% / 100% 100% no-repeat;
+}
+@keyframes sdr-float {
+  50% {
+    transform: translateY(-2.4cqh) scale(1.015);
+  }
+}
+/* no matte for this monster: its card floats like a hologram instead */
+.sdr-holo {
+  position: absolute;
+  left: 50%;
+  bottom: 8cqh;
+  width: 34cqh;
+  margin-left: -17cqh;
+  aspect-ratio: 59 / 86;
+  transform: perspective(60cqh) rotateX(8deg);
+  animation: sdr-float 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+.sdr-holo .cimg {
+  width: 100%;
+  height: 100%;
+  border-radius: 1.2cqh;
+  box-shadow:
+    0 0 0 0.4cqh #9fb4ff88,
+    0 0 4cqh #9fb4ff88;
+}
+
+/* ---------- the Mate, wandering the floor ---------- */
+/* the patch of floor the Mate walks (the button: it keeps still), and the Mate walking it */
+.sdr-matezone {
+  left: 3%;
+  width: 48%;
+  bottom: 9cqh;
+  height: 24cqh;
+  z-index: 5;
+}
+.sdr.has-pass .sdr-matezone {
+  left: calc(4% + 15cqh);
+  width: calc(46% - 15cqh);
+}
+.sdr-walk {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: sdr-walk 26s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes sdr-walk {
+  0%,
+  6% {
+    transform: translateX(0);
+  }
+  42%,
+  52% {
+    transform: translateX(calc(100% - 22cqh));
+  }
+  88%,
+  100% {
+    transform: translateX(0);
+  }
+}
+.sdr-mate {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22cqh;
+  height: 22cqh;
+}
+/* held still under a finger or keyboard/controller focus */
+.sdr-matezone:active .sdr-walk,
+.sdr-matezone:active .sdr-turn,
+.sdr-matezone:focus-visible .sdr-walk,
+.sdr-matezone:focus-visible .sdr-turn {
+  animation-play-state: paused;
+}
+.sdr-turn {
+  position: absolute;
+  inset: 0;
+  animation: sdr-turn 26s step-end infinite;
+}
+/* faces where it walks (the drawings face the viewer, leaning left) */
+@keyframes sdr-turn {
+  0% {
+    transform: scaleX(-1);
+  }
+  47% {
+    transform: scaleX(1);
+  }
+  93% {
+    transform: scaleX(-1);
+  }
+}
+.sdr-mate-bob {
+  position: absolute;
+  inset: 0;
+  animation: sdr-bob 0.9s ease-in-out infinite;
+}
+.sdr-mate-hop {
+  position: absolute;
+  inset: 0;
+}
+.sdr-mate-hop.go {
+  animation: sdr-hop 0.45s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+@keyframes sdr-hop {
+  40% {
+    transform: translateY(-5cqh) scale(1.06, 0.96);
+  }
+}
+.sdr-mate-hop .mate-svg,
+.sdr-mate-bob .mate-svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0.6cqh 0.6cqh #0009);
+}
+@keyframes sdr-bob {
+  50% {
+    transform: translateY(-1.4cqh);
+  }
+}
+.sdr-shadow {
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  bottom: 0;
+  height: 3cqh;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #000a, transparent);
+}
+.sdr-mate .sdr-tag {
+  bottom: 0;
+}
+.sdr-matezone.pop .sdr-mate-bob {
+  animation: sdr-pop 0.26s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+/* ---------- table, deck box, pack crate (front right) ---------- */
+.sdr-table {
+  position: absolute;
+  right: 0;
+  bottom: 2cqh;
+  width: 44%;
+  max-width: 96cqh;
+  height: 14cqh;
+  border-radius: 2cqh 0 0 2cqh;
+  background:
+    linear-gradient(180deg, #6a4224 0 22%, #3a2414 22% 100%);
+  box-shadow:
+    inset 0 0.6cqh 0 #a2703f,
+    0 2cqh 3cqh #000b;
+  z-index: 5;
+  pointer-events: none;
+}
+.sdr-deckbox {
+  right: calc(min(20%, 46cqh) + 3cqh);
+  bottom: 12cqh;
+  width: 15cqh;
+  height: 21cqh;
+  z-index: 6;
+}
+.sdr-box {
+  position: absolute;
+  inset: 0;
+}
+.sdr-box .cimg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 1cqh;
+  box-shadow: 0 1cqh 1.4cqh #000c;
+}
+.sdr-box .cimg:first-child {
+  transform: translate(-1.4cqh, 0.6cqh) rotate(-7deg);
+  filter: brightness(0.75);
+}
+.sdr-box .cimg + .cimg {
+  transform: rotate(3deg);
+}
+.sdr-box b {
+  position: absolute;
+  right: -1.4cqh;
+  top: -1.4cqh;
+  min-width: 7cqh;
+  height: 7cqh;
+  padding: 0 1cqh;
+  border-radius: 99px;
+  display: grid;
+  place-items: center;
+  background: #050a1e;
+  border: 1px solid #c9a24a;
+  font-size: 3.8cqh;
+  color: #ffe9a8;
+  z-index: 1;
+}
+/* the deck's name sits on the table under its box; the chest's tag sits above the chest, so
+   the two never meet on a narrow phone */
+.sdr-deckbox .sdr-tag {
+  max-width: 40cqh;
+}
+.sdr-packs .sdr-tag {
+  bottom: auto;
+  top: -2.4cqh;
+  transform: translate(-50%, -100%);
+}
+.sdr-packs {
+  right: 5%;
+  bottom: 12cqh;
+  width: 19cqh;
+  height: 17cqh;
+  z-index: 6;
+}
+/* a treasure chest; packs stand up out of it when there are some to open */
+.sdr-crate {
+  position: absolute;
+  inset: 0;
+  top: 40%;
+  border-radius: 1.4cqh;
+  background:
+    linear-gradient(90deg, transparent 46%, #c9a24a 46% 54%, transparent 54%),
+    linear-gradient(180deg, #7a4a24, #4a2c14);
+  box-shadow:
+    inset 0 0 0 0.6cqh #c9a24a,
+    0 1cqh 1.6cqh #000c;
+}
+.sdr-crate::before {
+  content: '';
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  top: -34%;
+  height: 40%;
+  border-radius: 50% 50% 0.8cqh 0.8cqh / 100% 100% 0.8cqh 0.8cqh;
+  background: linear-gradient(180deg, #8a5630, #5a3418);
+  box-shadow: inset 0 0 0 0.6cqh #c9a24a;
+}
+.sdr-crate.full::before {
+  /* the lid tipped back, open */
+  top: -12%;
+  height: 16%;
+  border-radius: 0.8cqh;
+  transform: perspective(20cqh) rotateX(70deg);
+  transform-origin: 50% 100%;
+}
+.sdr-crate.full::after {
+  content: '';
+  position: absolute;
+  inset: -30% 0 40%;
+  background: radial-gradient(closest-side, #ffe38acc, transparent);
+  z-index: -1;
+}
+.sdr-pack {
+  position: absolute;
+  bottom: 70%;
+  width: 42%;
+  height: 90%;
+  border-radius: 0.6cqh;
+  background:
+    linear-gradient(180deg, #fff6 0 6%, transparent 6% 94%, #fff6 94%),
+    linear-gradient(160deg, #3b6bff, #1b2a8a 55%, #c9a24a);
+  box-shadow: 0 0 2cqh #ffd76a88;
+}
+.sdr-pack.p1 {
+  left: 30%;
+  z-index: 1;
+}
+.sdr-pack.p2 {
+  left: 10%;
+  transform: rotate(-12deg);
+  background:
+    linear-gradient(180deg, #fff6 0 6%, transparent 6% 94%, #fff6 94%),
+    linear-gradient(160deg, #ff5b8a, #7a1a4a 55%, #c9a24a);
+}
+.sdr-pack.p3 {
+  left: 50%;
+  transform: rotate(12deg);
+  background:
+    linear-gradient(180deg, #fff6 0 6%, transparent 6% 94%, #fff6 94%),
+    linear-gradient(160deg, #4ad48a, #145a3a 55%, #c9a24a);
+}
+
+/* ---------- out of sight, or motion turned down ---------- */
+.sdr.off *,
+.sdr.off *::before,
+.sdr.off *::after {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdr,
+  .sdr * {
+    animation: none !important;
+  }
+}
+
+/* short phones (iPhone SE): a shorter room, so Ranked still shows above the tab bar */
+@media (max-height: 700px) {
+  .sdr {
+    --sdr-h: max(220px, 35vh);
+  }
+}
+
+/* ---------- tablets and computers: a taller room ---------- */
+@media (min-width: 700px) and (min-height: 600px) {
+  .sdr {
+    --sdr-h: clamp(320px, 46vh, 520px);
+    margin: 0 0 4px;
+    border-radius: 18px;
+  }
+  /* velvet curtains drawn back at both ends, and two wall lamps between them and the stage */
+  .sdr-walls::before,
+  .sdr-walls::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: max(5%, 16cqh);
+    background:
+      repeating-linear-gradient(90deg, #00000044 0 1.4cqh, transparent 1.4cqh 3.4cqh, #ffffff10 3.4cqh 4cqh, transparent 4cqh 5cqh),
+      linear-gradient(180deg, #7a1424, #4a0a16 70%, #2a0610);
+    box-shadow: inset 0 -1.2cqh 0 #c9a24a88, 0 0 4cqh #000c;
+    z-index: 1;
+  }
+  .sdr-walls::before {
+    left: 0;
+    border-radius: 0 0 60% 0 / 0 0 12% 0;
+  }
+  .sdr-walls::after {
+    right: 0;
+    border-radius: 0 0 0 60% / 0 0 0 12%;
+  }
+  .sdr-walls {
+    background:
+      radial-gradient(14cqh 20cqh at 10% 26%, #ffd76a66, transparent 70%),
+      radial-gradient(14cqh 20cqh at 90% 26%, #ffd76a66, transparent 70%),
+      radial-gradient(2.2cqh 3.4cqh at 10% 26%, #fffbe6, #ffd76a 60%, transparent),
+      radial-gradient(2.2cqh 3.4cqh at 90% 26%, #fffbe6, #ffd76a 60%, transparent),
+      linear-gradient(#c9a24a, #7a5410) 10% 31% / 0.8cqh 6cqh no-repeat,
+      linear-gradient(#c9a24a, #7a5410) 90% 31% / 0.8cqh 6cqh no-repeat,
+      repeating-linear-gradient(90deg, #ffffff06 0 1px, transparent 1px 64px),
+      linear-gradient(180deg, transparent 0 63.4%, #c9a24a66 63.4% 64%, #00000055 64% 65%, transparent 65%),
+      radial-gradient(120cqh 70cqh at 50% 30%, #2a3a7a 0, #17204c 45%, #0c1230 80%);
+  }
+}
