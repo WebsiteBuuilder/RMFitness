@@ -18,6 +18,8 @@ import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
+import { aceFor } from "../ace/ace";
+import { dangerLevel } from "../ui/atmosphereRules";
 import "./art.css";
 import "./chainspot.css";
 
@@ -449,9 +451,12 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
             hit: state.battle?.target === c.uid || state.chain.some((l) => l.targetUid === c.uid),
             lp: state.players[p].lp,
             finish: finishOf({ name: c.name, owner: c.owner, controller: p }),
+            attacked: state.battle?.target === c.uid,
+            ace: !!aceFor(c.owner, c.name),
+            danger: dangerLevel(state.players[p].lp, state.rules?.mode === "speed") > 0,
           });
   const standKey = standing
-    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}:${m.finish}`)
+    .map((m) => `${m.uid}:${m.name}:${m.def ? 1 : 0}:${m.ready ? 1 : 0}:${m.hit ? 1 : 0}:${m.lp}:${m.finish}:${m.attacked ? 1 : 0}:${m.ace ? 1 : 0}:${m.danger ? 1 : 0}`)
     .join(",");
   useEffect(() => {
     if (board.current) return board.current.sync(standing);
