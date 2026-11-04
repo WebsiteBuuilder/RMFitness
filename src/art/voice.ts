@@ -34,6 +34,8 @@ interface Synth {
   cancel(): void;
   resume?(): void;
   paused?: boolean;
+  speaking?: boolean;
+  pending?: boolean;
   getVoices?(): SpeechSynthesisVoice[];
   addEventListener?(type: string, fn: () => void): void;
 }
@@ -65,8 +67,10 @@ const E = () => (env ??= browserEnv());
 export function setVoiceEnv(e: VoiceEnv | null) {
   env = e;
   live = null;
+  jams = 0;
   pick = undefined;
   warmed = false;
+  warming = false;
 }
 
 interface Live {
@@ -78,6 +82,8 @@ interface Live {
   long: unknown;
 }
 let live: Live | null = null;
+/** how many shouts this phone's engine has started late (a sign its cancel() is unreliable) */
+let jams = 0;
 
 /** Lets go of the current shout's timers (the utterance itself is done or cancelled). */
 function release(me: Live) {
@@ -90,9 +96,13 @@ function release(me: Live) {
 /** Cancels the shout being said and anything queued behind it. */
 function drop() {
   const e = E();
+  const had = !!live;
   if (live) release(live);
   try {
-    e.synth?.cancel();
+    const ss = e.synth;
+    // (an idle engine is left alone: on iOS and some Android builds a speak() right after a
+    // cancel() can be swallowed, so a needless cancel could cost the next shout)
+    if (ss && (had || ss.speaking !== false || ss.pending !== false)) ss.cancel();
   } catch {
     /* no speech on this phone */
   }
@@ -132,34 +142,56 @@ function utter(text: string, pitch: number, rate: number, volume: number): Utter
 }
 
 /** Says the shout now, or not at all (nothing when the phone has no speech engine). */
-export function speakShout(text: string, pitch: number, rate = 1.12): void {
+export function speakShout(text: string, pitch: number, rate = 1.12, speed = 1): void {
   try {
     const e = E();
     const ss = e.synth;
     if (!ss) return;
     drop();
     if (e.hidden()) return;
+    // An engine whose cancel() did nothing still holds old shouts: queueing more is how a backlog
+    // of minutes builds. Skip this one (the text still shows). And once shouts have started late
+    // on this phone, only speak into an engine that is idle.
+    if (ss.pending === true) return;
+    if (jams >= 2 && ss.speaking === true) return;
+    // (the deadline follows the duel's speed: at 4x an attack is gone in well under a second)
+    const maxLate = Math.max(400, MAX_LATE_MS / Math.max(1, speed));
     // Chrome can leave the engine paused (a call, the tab in the background): it would hold the shout
     if (ss.paused) ss.resume?.();
     const u = utter(text, pitch, rate, 1);
     if (!u) return;
     const me: Live = { u, asked: e.now(), started: false, late: null, long: null };
+    const cutLong = () => {
+      e.stop(me.long);
+      me.long = e.later(() => {
+        if (live === me) drop();
+      }, MAX_LEN_MS);
+    };
     u.onstart = () => {
-      // a shout from an attack already gone, or this one but too late: cut it, never play it late
-      if (live !== me || e.now() - me.asked > MAX_LATE_MS) {
-        // (a newer shout already being said is left alone: this was only a late event)
-        if (!live?.started) drop();
+      const late = e.now() - me.asked > maxLate;
+      if (live === me && !late) {
+        me.started = true;
+        cutLong(); // (a shout gets its full length from when it starts)
         return;
       }
-      me.started = true;
+      // An old shout really being said now, long after its attack: cut it (and anything behind
+      // it), never play it late; one stopped with nothing after it (the duel left) is cut too.
+      // A stray start event for a shout just replaced by a newer one (Chrome can send one after
+      // cancel) is not late audio: the new shout is left to its own deadline.
+      if (late) jams++;
+      if (!live || (late && !live.started)) drop();
     };
     u.onend = u.onerror = () => release(me);
     me.late = e.later(() => {
-      if (live === me && !me.started) drop();
-    }, MAX_LATE_MS);
-    me.long = e.later(() => {
-      if (live === me) drop();
-    }, MAX_LEN_MS);
+      if (live !== me || me.started) return;
+      // an engine that never sends onstart but is plainly saying this (nothing else queued) keeps it
+      if (ss.speaking === true && ss.pending === false) {
+        me.started = true;
+        return;
+      }
+      drop();
+    }, maxLate);
+    cutLong();
     live = me;
     ss.speak(u);
   } catch {
@@ -173,15 +205,27 @@ export function stopShout(): void {
 }
 
 let warmed = false;
-/** Wakes the speech engine silently (called on a tap, so the browser allows it), once. */
+let warming = false;
+/** The engine has been woken (a warm-up utterance actually ran). */
+export const voiceWarm = () => warmed;
+/**
+ * Wakes the speech engine silently (called on a tap, so the browser allows it). Only counts
+ * once the engine really ran it: a refused one (no user activation yet) is tried on the next tap.
+ * (A blank: an engine that ignores volume still has nothing to say.)
+ */
 export function warmVoice(): void {
-  if (warmed) return;
+  if (warmed || warming) return;
   try {
     const ss = E().synth;
     if (!ss || live) return;
     const u = utter(' ', 1, 1, 0);
     if (!u) return;
-    warmed = true;
+    warming = true;
+    u.onstart = u.onend = () => {
+      warmed = true;
+      warming = false;
+    };
+    u.onerror = () => (warming = false);
     ss.speak(u);
   } catch {
     /* no speech on this phone */

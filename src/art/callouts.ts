@@ -161,7 +161,7 @@ export function voicePitch(level: number, name: string): number {
 }
 
 // the voice itself (now or never, never late) lives in voice.ts
-export { speakShout, stopShout, warmVoice } from './voice';
+export { speakShout, stopShout, voiceWarm, warmVoice } from './voice';
 
 /** Fired on the window when a callout plays: the field Mate cheers it after the cinematic. */
 export const CALLOUT_SHOUT = 'eds-callout-shout';

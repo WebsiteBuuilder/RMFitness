@@ -85,7 +85,15 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/**
+ * The context only while it is really playing: a sound asked for while it is suspended (the
+ * phone locked, a call, before the first tap took) would be held and burst out with every other
+ * held sound when it resumes, long after its moment. Better skipped than late.
+ */
+const live = () => (ctx && ctx.state === 'running' ? ctx : null);
+
 function tone(freq: number, duration: number, type: OscillatorType, gain: number, when = 0) {
+  const ctx = live();
   if (!ctx || soundOff) return;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
@@ -177,7 +185,7 @@ export function buzz(pattern: number | number[]) {
 
 /** The shared audio context (null until the first tap), for the 3D art engine's sounds. */
 export function audioContext(): AudioContext | null {
-  return soundOff ? null : ctx;
+  return soundOff ? null : live();
 }
 
 /** A Mate's chirp: a little two-note call in its own voice, shaped by the reaction. */

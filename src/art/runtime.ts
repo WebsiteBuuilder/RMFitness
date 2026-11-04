@@ -3323,7 +3323,7 @@ export class Director {
     if (co) {
       tl.at(0.18, () => {
         this.ui.callout!({ text: co.text, card: a.name, seat: a.controller, side: this.side(a.controller), color: mill ? 0xffd56a : col.main, light: mill ? 0xfff6d8 : col.light, dur: 1.6, ace: ace ? { lv: ace.lv, title: bondTitle(ace.lv) } : null });
-        if (mode === 'voice' && soundEnabled()) speakShout(co.text, voicePitch(card(a.name)?.level ?? 4, a.name), Math.min(1.7, 1.08 * Math.max(1, this.timeScale)));
+        if (mode === 'voice' && soundEnabled()) speakShout(co.text, voicePitch(card(a.name)?.level ?? 4, a.name), Math.min(1.7, 1.08 * Math.max(1, this.timeScale)), this.timeScale);
         boom(0.32);
         whoosh(0.3, 700, 3600, 0.22);
         try {

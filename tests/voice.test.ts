@@ -53,6 +53,12 @@ function rig(opts: { cancelWorks?: boolean } = {}) {
       this.resumed++;
     },
     getVoices: () => [],
+    get speaking() {
+      return !!speaking;
+    },
+    get pending() {
+      return queue.length > 0;
+    },
   };
   let hidden = false;
   const env: VoiceEnv = {
@@ -97,7 +103,15 @@ function rig(opts: { cancelWorks?: boolean } = {}) {
     speaking = null;
     u?.onend?.();
   };
-  return { synth, advance, engineStarts, engineEnds, heard, queue: () => queue.length, setHidden: (h: boolean) => (hidden = h), cancels: () => cancels };
+  /** the engine says it without ever sending onstart (some Android engines) */
+  const engineStartsSilently = () => {
+    const u = queue.shift();
+    if (u) speaking = u;
+  };
+  /** the browser sends a start event for an utterance (even one already cancelled) */
+  const strayStart = (u: U) => u.onstart?.();
+  const lastAsked = () => [...asked.keys()].at(-1)!;
+  return { engineStartsSilently, strayStart, lastAsked, synth, advance, engineStarts, engineEnds, heard, queue: () => queue.length, setHidden: (h: boolean) => (hidden = h), cancels: () => cancels };
 }
 
 t('a shout the engine starts at once is heard, on time', () => {
@@ -216,6 +230,89 @@ t('a shout while the warm-up is still being said replaces it', () => {
   r.advance(50);
   r.engineStarts();
   assert.deepEqual(r.heard.map((h) => h.text), [' ', 'Neutron Blast!']);
+});
+
+t('an idle engine is not cancelled before a shout (iOS can swallow speak right after cancel)', () => {
+  const r = rig();
+  speakShout('White Lightning!', 1);
+  assert.equal(r.cancels(), 0);
+  r.engineStarts();
+  r.engineEnds();
+  speakShout('Lightning Strike!', 1);
+  assert.equal(r.cancels(), 0);
+});
+
+t('an engine that never sends onstart keeps a shout it is plainly saying', () => {
+  const r = rig();
+  speakShout('Chaos Blade!', 1);
+  r.advance(200);
+  r.engineStartsSilently();
+  const c = r.cancels();
+  r.advance(MAX_LATE_MS + 50);
+  assert.equal(r.cancels(), c);
+});
+
+t('a stray start event from a replaced shout does not cut the new one', () => {
+  const r = rig();
+  speakShout('Old!', 1);
+  const old = r.lastAsked();
+  r.advance(100);
+  speakShout('New!', 1);
+  const c = r.cancels();
+  r.strayStart(old);
+  assert.equal(r.cancels(), c);
+  r.advance(100);
+  r.engineStarts();
+  assert.deepEqual(r.heard.map((h) => h.text), ['New!']);
+});
+
+t('a shout gets its full length counted from when it starts', () => {
+  const r = rig();
+  speakShout('Super Strident Blaze!', 1);
+  r.advance(MAX_LATE_MS - 100);
+  r.engineStarts();
+  const c = r.cancels();
+  r.advance(MAX_LEN_MS - 200); // past MAX_LEN_MS from the ask, not from the start
+  assert.equal(r.cancels(), c);
+  r.advance(400);
+  assert.ok(r.cancels() > c);
+});
+
+t('a warm-up the browser refuses (no gesture yet) is tried again on the next tap', () => {
+  const r = rig();
+  warmVoice();
+  const u = r.lastAsked();
+  u.onerror?.(); // not-allowed
+  warmVoice();
+  assert.notEqual(r.lastAsked(), u);
+});
+
+t('an engine that ignores cancel() never builds a backlog', () => {
+  const r = rig({ cancelWorks: false });
+  for (let i = 0; i < 10; i++) {
+    speakShout(`Shout ${i}!`, 1, 1.5, 4);
+    r.advance(500);
+  }
+  // at most one shout ever waits in the engine
+  assert.ok(r.queue() <= 1, `queue ${r.queue()}`);
+  r.advance(60_000);
+  for (let i = 0; i < 12; i++) {
+    r.engineStarts();
+    r.engineEnds();
+  }
+  assert.ok(r.heard.length <= 1);
+});
+
+t('at 4x the deadline is shorter', () => {
+  const r = rig();
+  speakShout('White Lightning!', 1, 1.7, 4);
+  r.advance(500);
+  r.engineStarts();
+  assert.equal(r.heard.length, 0);
+  speakShout('White Lightning!', 1, 1.7, 4);
+  r.advance(200);
+  r.engineStarts();
+  assert.equal(r.heard.length, 1);
 });
 
 setVoiceEnv(null);
