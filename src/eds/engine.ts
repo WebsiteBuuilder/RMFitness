@@ -207,6 +207,25 @@ export class Engine {
     return out;
   }
 
+  /** A Skill's other way to pay the attack cost of `m` (the monster's own cost still applies when the Skill offers none). */
+  skillAttackCost(player: Pid, m: FieldCard): { label: string; pay: (e: Engine, p: Pid, m: FieldCard) => Step } | null {
+    if (!this.speed) return null;
+    for (const x of this.skillDefs()) {
+      const alt = x.p === player ? x.sk.altAttackCost : undefined;
+      if (alt && alt.can(this, player, m)) return alt;
+    }
+    return null;
+  }
+
+  /** The Type a card has in a Graveyard: the printed one, unless a Skill changes it (The Dragon Hunting Swordsman). */
+  graveRace(c: Card, owner: Pid): string {
+    if (this.speed) for (const x of this.skillFx()) {
+      const r = x.eff.graveRace?.(this, x.c, x.p, c, owner);
+      if (r) return r;
+    }
+    return this.info(c.name).race ?? '';
+  }
+
   /** The card whose chain link is resolving right now (null outside a chain). */
   resolvingCard(): Card | null {
     return this.resolving === 0 || this.levelSource === null ? null : this.find(this.levelSource)?.card ?? null;
@@ -397,6 +416,7 @@ export class Engine {
   monsterEffectsLocked(player: Pid, card: Card): boolean {
     if (!this.speed) return false;
     for (const q of [0, 1] as Pid[]) for (const m of this.monsters(q)) if (m.faceUp && m.uid !== card.uid && this.effectOn(m)?.locksMonsterEffects?.(this, m, q, player, card)) return true;
+    if (this.skillFx().some((x) => x.eff.locksMonsterEffects?.(this, x.c, x.p, player, card) === true)) return true; // 2023 Skills: A Bountiful Ocean
     return false;
   }
 
@@ -2449,6 +2469,7 @@ export class Engine {
       const drawn = this.player(s.turnPlayer).hand[this.player(s.turnPlayer).hand.length - 1];
       if (!replaced && drawn && this.speed) s.fx.normalDraw = { player: s.turnPlayer, uid: drawn.uid, turn: s.turn };
       if (!replaced && drawn) for (const x of this.liveST()) if (x.eff.onDrawPhase && x.p === s.turnPlayer && this.state.winner === null) yield* this.trig(x.c.uid, x.p, this.as(x.p, x.eff.onDrawPhase(this, x.c, x.p, [drawn])));
+      if (!replaced && drawn) for (const x of this.skillFx()) if (x.eff.onOpponentDrawPhase && x.p !== s.turnPlayer && this.state.winner === null) yield* this.as(x.p, x.eff.onOpponentDrawPhase(this, x.c, x.p, [drawn]));
       if (this.state.winner !== null) return;
     }
     s.fx.hurt = [0, 0];
@@ -2544,6 +2565,7 @@ export class Engine {
     if (m.faceUp && m.tags?.cannotTribute) return true; // audit-00: "It cannot be Tributed" (Archfiend's Roar)
     if (m.tags?.skillNoTribute) return true; // audit-skills: "cannot be Tributed" a Skill gave it (Forbidden Cyber Style Technique)
     if (m.faceUp && this.effectOn(m)?.cannotBeTributed?.(this, m)) return true;
+    if (this.skillFx().some((x) => x.eff.tributeLock?.(this, x.c, x.p, m, null) === true)) return true;
     return m.equips.some((u) => {
       const eq = this.fieldCard(u);
       return !!eq && !(this.info(eq.name).kind === 'spell' && this.spellsNegated()) && !!getEffect(eq.name)?.cannotBeTributed?.(this, m);
@@ -2553,6 +2575,7 @@ export class Engine {
   /** audit-07: a monster that can only be Tributed for the Tribute Summon of a monster whose name includes fx.tribFor[uid] (Jurrac Tokens). */
   tribLocked(m: FieldCard, card: Card): boolean {
     const t = (this.state.fx.tribFor as Record<number, string> | undefined)?.[m.uid];
+    if (this.speed && this.skillFx().some((x) => x.eff.tributeLock?.(this, x.c, x.p, m, card) === true)) return true;
     return this.speed && typeof t === 'string' && !this.nameHas(card, t);
   }
 
@@ -3608,7 +3631,7 @@ export class Engine {
     // b19: a face-up monster's blocksAttack stops other monsters attacking (Beelzeus of the Diabolic Dragons, Cloudcastle).
     if (this.speed) for (const p of [0, 1] as Pid[]) for (const src of this.monsters(p)) if (src.faceUp && src.uid !== m.uid && this.effectOn(src)?.blocksAttack?.(this, src, m, player)) return false;
     if (this.speed && this.skillFx().some((x) => x.eff.blocksAttack?.(this, x.c, m, player))) return false; // skills-2024b: Skills stopping either player's attacks (Mokey Mokey Madness)
-    if (eff?.attackCost && !eff.attackCost.can(this, m, player)) return false;
+    if (eff?.attackCost && !eff.attackCost.can(this, m, player) && !this.skillAttackCost(player, m)) return false;
     return true;
   }
 
@@ -3675,7 +3698,13 @@ export class Engine {
     if (targetUid !== null && !this.legalTargets(player, m).some((t) => t.uid === targetUid)) return;
     const eff0 = getEffect(m.name);
     const cost = eff0?.attackCost;
-    if (cost) yield* this.as(player, cost.pay(this, m, player));
+    if (cost) {
+      // A Skill may offer another way to pay (My Precious Queen!: Tribute an Insect from the hand for "Insect Queen").
+      const alt = this.skillAttackCost(player, m);
+      const own = cost.can(this, m, player);
+      if (alt && (!own || (yield* this.yesno(player, alt.label)))) yield* this.as(player, alt.pay(this, player, m));
+      else yield* this.as(player, cost.pay(this, m, player));
+    }
     for (const p of [0, 1] as Pid[]) {
       for (const c of this.activeSpells(p)) {
         const tax = getEffect(c.name)?.attackTax;
