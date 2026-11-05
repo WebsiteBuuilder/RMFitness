@@ -1,0 +1,30 @@
+/* Lite graphics (Performance: Lite, or Auto once the watchdog saw lag): the costliest CSS goes. */
+html.fx-lite *,
+html.fx-lite *::before,
+html.fx-lite *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.perf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 9999;
+  max-width: min(92vw, 420px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(8, 12, 32, 0.96);
+  border: 1px solid rgba(255, 210, 90, 0.5);
+  color: #fff;
+  font: 13px/1.4 system-ui, sans-serif;
+  text-align: center;
+  transform: translateX(-50%);
+  opacity: 1;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+.perf-toast.out {
+  opacity: 0;
+}

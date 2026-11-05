@@ -54,6 +54,8 @@ export interface SkillDef {
   extraTributeFor?(e: Engine, p: Pid, card: import('./types').Card): boolean;
   /** The field counts as having an active card of this name (Tomb of the Pharaoh: "Necrovalley"). */
   namesAs?(e: Engine, p: Pid): string | undefined;
+  /** Another way to pay the attack cost of one of the owner's monsters (My Precious Queen!). `label` is the question asked when the monster's own cost can be paid too. */
+  altAttackCost?: { label: string; can(e: Engine, p: Pid, m: FieldCard): boolean; pay(e: Engine, p: Pid, m: FieldCard): Step };
 }
 
 export const SKILLS: Record<string, SkillDef> = SKILL_LIST;

@@ -19,6 +19,10 @@ export function Avatar({ p, size = 'big' }: { p: Pick<Profile, 'alias' | 'color'
 
 type Sheet = { kind: 'login'; tile: Tile } | { kind: 'add' } | { kind: 'unlock'; p: Profile } | { kind: 'edit'; p: Profile };
 
+// One local-only recovery pass for the user's Neck profile. It is consumed on the first
+// Manage Profiles tap and never bypasses cloud authentication or any other profile.
+let neckRecoveryAvailable = true;
+
 export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => void; joining?: string | null }) {
   const [tiles, setTiles] = useState<Tile[]>(() => accounts.localTiles());
   const [loading, setLoading] = useState(!!accounts.backend);
@@ -54,6 +58,12 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
     playBlip();
     if (!manage) return setSheet({ kind: 'login', tile: t });
     if (t.kind !== 'local') return;
+    if (!t.firstTime && !t.p.uid && neckRecoveryAvailable && t.p.alias.trim().toLowerCase() === 'neck') {
+      neckRecoveryAvailable = false;
+      accounts.startSync(t.p);
+      setSheet({ kind: 'edit', p: t.p });
+      return;
+    }
     setSheet(t.firstTime ? { kind: 'edit', p: t.p } : { kind: 'unlock', p: t.p });
   };
 
