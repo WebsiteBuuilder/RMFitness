@@ -44,6 +44,8 @@ export const PLAYMATS: PlaymatDef[] = [
   { id: 'shadowrealm', name: 'Shadow Realm', blurb: 'Fog, broken stone, and something watching.', cost: { ranked: 'king' }, fx: 'fog', fxColor: '#c070ff', line: '#e0a0ff', glow: '#c070ff' },
   { id: 'tomb', name: 'Pharaoh’s Tomb', blurb: 'Torchlit gold, wall paintings, the winged ankh.', cost: { ranked: 'pharaoh' }, fx: 'embers', fxColor: '#ffcf6a', line: '#fbe7a8', glow: '#ffd56a' },
   { id: 'holo', name: 'Holo Arena', blurb: 'Rainbow foil that shifts under the cards.', cost: { stamps: 10 }, fx: 'holo', fxColor: '#ffffff', line: '#ffffff', glow: '#ff9ae8' },
+  { id: 'summit', name: 'Duel Tower Summit', blurb: 'The top of the finals tower at night, searchlights in the clouds. Duel Pass.', cost: { pass: true }, fx: 'stars', fxColor: '#ffffff', line: '#d8e6ff', glow: '#7ab0ff' },
+  { id: 'champion', name: 'Champion’s Stage', blurb: 'A gold arena, spotlights and confetti: the top of the Duel Pass.', cost: { pass: true }, fx: 'sparkle', fxColor: '#ffe08a', line: '#fff0b0', glow: '#ffd56a' },
   { id: 'heart', name: 'Heart of the Cards', blurb: 'Five cards round a heart of light.', cost: { bond: true }, fx: 'motes', fxColor: '#fff6d0', line: '#ffe2b0', glow: '#ffb04a' },
 ];
 

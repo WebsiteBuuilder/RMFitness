@@ -391,6 +391,88 @@ const starlight = sleeve(
   '#bcd0ff',
 );
 
+
+// ---------- Duel Pass sleeves (src/pass): only ever reached on the pass ----------
+
+/** A laurel branch round the middle (one side; mirrored for the other). */
+const laurel = (side: 1 | -1, color: string, r = 30, cy = 73) =>
+  `<g fill='${color}'>` +
+  Array.from({ length: 7 }, (_, i) => {
+    const a = ((110 + i * 22) * Math.PI) / 180;
+    const x = f(CX + side * r * Math.sin(a));
+    const y = f(cy - r * Math.cos(a));
+    return `<ellipse cx='${x}' cy='${y}' rx='2.2' ry='5' transform='rotate(${f(side * (i * 22 + 20))} ${x} ${y})'/>`;
+  }).join('') +
+  `</g>`;
+
+/** Season Crest: a silver shield with a star on midnight blue, laurels round it. */
+const seasoncrest = sleeve(
+  radialBg([[0, '#2a3e7a'], [0.6, '#121d48'], [1, '#060a1e']]) + `<linearGradient id='ag' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#ffffff'/><stop offset='.5' stop-color='#8a9ab8'/><stop offset='1' stop-color='#e8eef8'/></linearGradient>`,
+  BG +
+    rays(24, 20, 90, '#cfe0ff', 0.6, 0.18) +
+    laurel(1, '#cfe0ff') +
+    laurel(-1, '#cfe0ff') +
+    `<path d='M50 50 L66 55 V72 C66 85 57 92 50 96 C43 92 34 85 34 72 V55 Z' fill='#16224e' stroke='url(#ag)' stroke-width='2'/>` +
+    `<polygon points='${star(5, 10, 4.2, 50, 73)}' fill='url(#ag)'/>` +
+    `<path d='M22 120 h56 M30 26 h40' stroke='#cfe0ff' stroke-opacity='.5' stroke-width='.8'/>`,
+  SILVER,
+  '#cfe0ff',
+);
+
+/** Pyramid of Light: a glowing pyramid with an eye, rays behind it, on deep indigo. */
+const pyramid = sleeve(
+  radialBg([[0, '#4a2a8a'], [0.55, '#1a0e3e'], [1, '#07041a']], '50%', '55%') +
+    `<linearGradient id='py' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#fff6c8'/><stop offset='.6' stop-color='#f0b83a'/><stop offset='1' stop-color='#a8661a'/></linearGradient>` +
+    `<radialGradient id='pg' cx='50%' cy='50%' r='50%'><stop offset='0' stop-color='#ffe9a0' stop-opacity='.75'/><stop offset='1' stop-color='#ffe9a0' stop-opacity='0'/></radialGradient>`,
+  BG +
+    `<circle cx='50' cy='70' r='42' fill='url(#pg)'/>` +
+    rays(20, 22, 80, '#ffe9a0', 1.2, 0.35, 50, 70) +
+    `<path d='M50 40 L78 98 H22 Z' fill='url(#py)' stroke='#fff6c8' stroke-width='1.2' stroke-linejoin='round'/>` +
+    `<path d='M50 40 L56 98' stroke='#a8661a' stroke-opacity='.5' stroke-width='.8'/>` +
+    `<path d='M30 82 h40 M36 70 h28' stroke='#a8661a' stroke-opacity='.45' stroke-width='.8'/>` +
+    `<path d='M41 66 Q50 58 59 66 Q50 74 41 66 Z' fill='#2a1406'/><circle cx='50' cy='66' r='2.6' fill='#fff6c8'/>` +
+    `<path d='M18 112 h64' stroke='#ffe9a0' stroke-opacity='.6' stroke-width='.8'/>`,
+  GOLD,
+  '#ffe9a0',
+);
+
+/** Dragon Flare: black dragon wings spread over a rising flame. */
+const dragonflare = sleeve(
+  linearBg([[0, '#1a0204'], [0.55, '#5a0a0a'], [1, '#e2400e']]) +
+    `<linearGradient id='fl' x1='0' y1='1' x2='0' y2='0'><stop offset='0' stop-color='#fff2a0'/><stop offset='.4' stop-color='#ff9a1a'/><stop offset='1' stop-color='#c81a0a' stop-opacity='0'/></linearGradient>`,
+  BG +
+    `<path d='M50 132 C30 112 34 92 44 80 C42 94 48 98 50 88 C52 98 58 94 56 80 C66 92 70 112 50 132 Z' fill='url(#fl)'/>` +
+    `<g fill='#0a0204' stroke='#ff7a3a' stroke-opacity='.7' stroke-width='.8' stroke-linejoin='round'>` +
+    `<path d='M50 62 C40 48 24 40 10 40 C16 46 18 52 16 58 C22 56 26 58 28 62 C22 64 20 70 22 76 C30 70 40 70 50 76 Z'/>` +
+    `<path d='M50 62 C60 48 76 40 90 40 C84 46 82 52 84 58 C78 56 74 58 72 62 C78 64 80 70 78 76 C70 70 60 70 50 76 Z'/>` +
+    `<path d='M50 50 C46 54 45 60 46 66 L50 80 L54 66 C55 60 54 54 50 50 Z'/>` +
+    `</g>` +
+    `<circle cx='48' cy='57' r='.9' fill='#ffd04a'/><circle cx='52' cy='57' r='.9' fill='#ffd04a'/>` +
+    Array.from({ length: 12 }, (_, i) => `<circle cx='${f(20 + ((i * 47) % 60))}' cy='${f(140 - ((i * 31) % 70))}' r='${i % 3 ? 0.7 : 1.2}' fill='#ffd27a' fill-opacity='.8'/>`).join(''),
+  ['#ffd27a', '#7a1a0a', '#ff9a3a'],
+  '#ff7a3a',
+);
+
+/** Pass Champion: a gold crown in laurels on prism foil. The pass's top sleeve. */
+const champion = sleeve(
+  linearBg([[0, '#2a1640'], [0.3, '#1a2a5a'], [0.55, '#183a3a'], [0.8, '#3a2a10'], [1, '#2a1640']], 1, 1) +
+    `<linearGradient id='au' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#fff6c8'/><stop offset='.5' stop-color='#d49a2a'/><stop offset='1' stop-color='#fff0a0'/></linearGradient>` +
+    `<radialGradient id='cg' cx='50%' cy='50%' r='50%'><stop offset='0' stop-color='#fff2c0' stop-opacity='.55'/><stop offset='1' stop-color='#fff2c0' stop-opacity='0'/></radialGradient>`,
+  BG +
+    `<circle cx='50' cy='73' r='40' fill='url(#cg)'/>` +
+    rays(32, 18, 90, '#ffffff', 0.5, 0.25) +
+    laurel(1, 'url(#au)', 32) +
+    laurel(-1, 'url(#au)', 32) +
+    `<path d='M33 82 L35 62 L42 70 L50 56 L58 70 L65 62 L67 82 Z' fill='url(#au)' stroke='#fff6c8' stroke-width='.9' stroke-linejoin='round'/>` +
+    `<rect x='33' y='82' width='34' height='6' rx='1.5' fill='url(#au)' stroke='#fff6c8' stroke-width='.6'/>` +
+    `<circle cx='50' cy='85' r='1.8' fill='#ff4a7a'/><circle cx='41' cy='85' r='1.3' fill='#4ad0ff'/><circle cx='59' cy='85' r='1.3' fill='#4ad0ff'/>` +
+    [[35, 62], [50, 56], [65, 62]].map(([x, y]) => `<circle cx='${x}' cy='${y}' r='1.8' fill='#fff6c8'/>`).join('') +
+    `<polygon points='${star(4, 5, 1.2, 50, 30, 0)}' fill='#fff'/><polygon points='${star(4, 3.5, 0.9, 24, 118, 0)}' fill='#fff' fill-opacity='.8'/><polygon points='${star(4, 3.5, 0.9, 76, 118, 0)}' fill='#fff' fill-opacity='.8'/>`,
+  ['#fff6c8', '#a8781e', '#ffe27a'],
+  '#fff2c0',
+  '#ffffff',
+);
+
 /** The SVG source of each sleeve's picture. */
 export const SLEEVE_SVG = {
   vortex,
@@ -412,6 +494,10 @@ export const SLEEVE_SVG = {
   soul,
   academy,
   starlight,
+  seasoncrest,
+  pyramid,
+  dragonflare,
+  champion,
 } as const;
 
 export type SleeveId = keyof typeof SLEEVE_SVG;

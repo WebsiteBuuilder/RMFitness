@@ -62,6 +62,9 @@ import { showDuelRarity } from '../level/view';
 import type { Rival } from '../collection/economy';
 import { chipsOf, collectionProblems, cpuWinPrize, crownHolder, migrate, packsOf, retiredNotice, retiredPaid, rivalResult, rivalsOf, tooQuick, RIVAL_MIN_TURNS } from '../collection/economy';
 import { noteRequests, summaryOf } from '../collection/requests';
+import { earnPass, rewardName, tierAt, worn, type PassGain } from '../pass/pass';
+import { showDuelBadges } from '../pass/duel';
+import { PassFlash } from '../pass/PassFlash';
 import { loadSets, openPack } from '../collection/sets';
 import { registerPackOpener } from '../eds/speedCampaign/rewards';
 import { DuelPot } from '../collection/StakesPanel';
@@ -135,6 +138,12 @@ registerPackOpener(openPack);
 
 type NewsCards = { who: string; won: string[]; lost: string[] }[];
 
+/** The line for last season's Duel Pass rewards, handed over when a new season starts. */
+const carriedLine = (c: { reward: Parameters<typeof rewardName>[0]; dup: boolean; season: string }[]) => {
+  const fresh = c.filter((x) => !x.dup);
+  return `Duel Pass: a new season! ${fresh.length ? `Last season's ${fresh.length} unclaimed reward${fresh.length === 1 ? ' is' : 's are'} yours: ${fresh.map((x) => rewardName(x.reward, x.season).name).slice(0, 4).join(', ')}${fresh.length > 4 ? '…' : ''}` : 'Your track starts again from tier 0.'}`;
+};
+
 /** A profile's sleeve (its Ranked sleeves need the solo save: read at most every few seconds, not every render). */
 const sleeveMemo = new WeakMap<object, { id: SleeveId; at: number }>();
 function mySleeveOf(s: SpeedSave | null | undefined, profileId: string): SleeveId | undefined {
@@ -143,6 +152,11 @@ function mySleeveOf(s: SpeedSave | null | undefined, profileId: string): SleeveI
   let m = sleeveMemo.get(s);
   if (!m || now - m.at > 3000) sleeveMemo.set(s, (m = { id: chosenSleeve(s, loadSolo(profileId)), at: now }));
   return m.id;
+}
+/** The Duel Pass title and name plate a profile wears, as it rides the JOIN (undefined: none). */
+function badgeOf(s: SpeedSave | null | undefined): { t?: string; p?: string } | undefined {
+  const w = worn(s);
+  return w.title || w.plate ? { ...(w.title ? { t: w.title } : {}), ...(w.plate ? { p: w.plate } : {}) } : undefined;
 }
 /** A profile's entrance jingle (memoized like the sleeve: its Ranked ones need the solo save). */
 const jingleMemo = new WeakMap<object, { id: JingleId; at: number }>();
@@ -195,7 +209,9 @@ export function App() {
   /** Duel School is open ('first': a new duelist said "Teach me", straight into lesson one) */
   const [school, setSchool] = useState<'open' | 'first' | null>(null);
   /** a Speed Duel screen to open on the way back from Duel School */
-  const hubGo = useRef<'decks' | 'shop' | null>(null);
+  const hubGo = useRef<'decks' | 'shop' | 'pass' | null>(null);
+  /** bumped to open the hub again on a screen (the Duel Pass from its tier-up moment) */
+  const [hubNonce, setHubNonce] = useState(0);
   const soloDuel = useRef<{ ctx: DuelContext; startLp: number; spec: CpuDuelSpec } | null>(null);
   /** stops keeping the Ranked Duel on screen's moves */
   const keepRanked = useRef<(() => void) | null>(null);
@@ -218,6 +234,8 @@ export function App() {
   const [newsCards, setNewsCards] = useState<NewsCards>([]);
   /** the Speed Duel result screen (VICTORY / DEFEAT and rewards), shown after a duel against the computer or a Link Battle */
   const [speedResult, setSpeedResult] = useState<SpeedResultData | null>(null);
+  /** the Duel Pass XP the last duel earned: its tier-up moment shows once the result is closed */
+  const [passGain, setPassGain] = useState<PassGain | null>(null);
   /** the duel just finished, to watch again from the result screen; and the replay playing */
   const [lastReplay, setLastReplay] = useState<Replay | null>(null);
   const [replaying, setReplaying] = useState<Replay | null>(null);
@@ -572,7 +590,7 @@ export function App() {
     o = { ...o, main: unsealedCpuMain(speedSave, o.name, o.main) };
     session?.close();
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? ''), jingle: myJingleOf(speedSave, profile?.id ?? ''), playmat: myMatOf(speedSave, profile?.id ?? '') });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: deck.main, fusion: deck.extra, mode: 'speed', skill: deck.skill, rarity: rarityMap(speedSave, [...deck.main, ...deck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? ''), jingle: myJingleOf(speedSave, profile?.id ?? ''), playmat: myMatOf(speedSave, profile?.id ?? ''), badge: badgeOf(speedSave) });
     ses.send({ type: 'JOIN', player: 1, name: o.name, deck: o.main, fusion: o.extra, mode: 'speed', skill: o.skill, sleeve: sleeveForName(o.name), jingle: jingleForName(o.name), playmat: playmatForName(o.name) });
     tossThenStart(ses, (first) => ({ type: 'START', first, seed: randomSeed(), names: [save.name, o.name], decks: [deck.main, o.main], fusions: [deck.extra, o.extra], mode: 'speed', skills: [deck.skill, o.skill] }), o.name, () => fresh.current.startSpeedCpu?.(o));
     setHotseat(false);
@@ -634,7 +652,7 @@ export function App() {
     // Rock-paper-scissors decides who goes first, unless the duel says (or watching the computer duel itself).
     const fixed = spec.first === 'me' || spec.first === 'cpu' || spec.seed !== undefined || !!spec.watch;
     const first = spec.first === 'me' ? 0 : spec.first === 'cpu' ? 1 : spec.seed !== undefined ? (spec.seed % 2) as Pid : Math.random() < 0.5 ? 0 : 1;
-    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)), sleeve: spec.watch ? sleeveForName(spec.me.name) : mySleeveOf(speedSave, profile?.id ?? ''), jingle: spec.watch ? jingleForName(spec.me.name) : myJingleOf(speedSave, profile?.id ?? ''), playmat: spec.watch ? playmatForName(spec.me.name) : myMatOf(speedSave, profile?.id ?? '') });
+    ses.send({ type: 'JOIN', player: 0, name: spec.me.name, deck: spec.me.main, fusion: spec.me.extra, mode: 'speed', skill: spec.me.skill, ace: spec.watch ? undefined : aceToWire(aceOf(speedSave)), sleeve: spec.watch ? sleeveForName(spec.me.name) : mySleeveOf(speedSave, profile?.id ?? ''), jingle: spec.watch ? jingleForName(spec.me.name) : myJingleOf(speedSave, profile?.id ?? ''), playmat: spec.watch ? playmatForName(spec.me.name) : myMatOf(speedSave, profile?.id ?? ''), badge: spec.watch ? undefined : badgeOf(speedSave) });
     ses.send({ type: 'JOIN', player: 1, name: spec.cpu.name, deck: spec.cpu.main, fusion: spec.cpu.extra, mode: 'speed', skill: spec.cpu.skill, sleeve: sleeveForName(spec.cpu.name), jingle: jingleForName(spec.cpu.name), playmat: playmatForName(spec.cpu.name) });
     const startAs = (f: Pid): Action => ({ type: 'START', first: f, seed, names: [spec.me.name, spec.cpu.name], decks: [spec.me.main, spec.cpu.main], fusions: [spec.me.extra, spec.cpu.extra], mode: 'speed', skills: [spec.me.skill, spec.cpu.skill], setup: [spec.me.setup ?? null, spec.cpu.setup ?? null] });
     if (fixed) ses.send(startAs(first));
@@ -690,7 +708,12 @@ export function App() {
       setSpeedNews([...(req?.lines ?? []), aw.line]);
       if (!req?.lines.length) setNewsCards([]);
     }
-    const speedOut = aw.save;
+    // Duel Pass: the same duels as Requests earn Pass XP (a duel left or given up straight away earns none).
+    const reqDone = req ? req.lines.filter((l) => l.startsWith('Request done')).length : 0;
+    const pg = earnPass(aw.save, { counts: !left && !!st && sd.ctx.kind !== 'practice' && !sd.spec.watch && !anyGoes, result: o.result, quick: false, turns: st?.turn ?? 0, surrendered: !!st && /surrendered$/.test(st.winReason), requests: reqDone });
+    if (pg.gain && pg.gain.to > pg.gain.from) setPassGain(pg.gain);
+    if (pg.carried.length) setSpeedNews([...(req?.lines ?? []), ...(aw.line ? [aw.line] : []), carriedLine(pg.carried)]);
+    const speedOut = pg.save;
     if (speedOut !== speedNow) setSpeedSave(speedOut);
     setSoloReport(left && sd.ctx.kind !== 'labyrinth' && sd.ctx.kind !== 'ranked' ? null : r.report);
     lastSoloSpec.current = sd.spec;
@@ -747,7 +770,7 @@ export function App() {
     session?.close();
     tagHost.current = null;
     const ses = new DuelSession(new MemoryAdapter());
-    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? ''), jingle: myJingleOf(speedSave, profile?.id ?? ''), playmat: myMatOf(speedSave, profile?.id ?? '') });
+    ses.send({ type: 'JOIN', player: 0, name: save.name, deck: d.main, fusion: d.extra, mode: 'speed', skill: d.skill, ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile?.id ?? ''), jingle: myJingleOf(speedSave, profile?.id ?? ''), playmat: myMatOf(speedSave, profile?.id ?? ''), badge: badgeOf(speedSave) });
     ses.send({ type: 'JOIN', player: 1, name: plan.foes[0].name, deck: deckOf(plan.foes[0]).main, fusion: deckOf(plan.foes[0]).extra, mode: 'speed', skill: plan.foes[0].skill });
     ses.send(tagStart(tagTeams(plan, [{ name: save.name, deck: d.main, fusion: d.extra, skill: d.skill }]), Math.random() < 0.5 ? 0 : 1, randomSeed(), plan.ctx));
     setHotseat(false);
@@ -1044,6 +1067,7 @@ export function App() {
         news.push(...(seat === mySeat ? [...bet.lines, ...rv.lines.map(named)] : rv.lines.map(named)));
         return rv.save;
       };
+      let myPass = null as PassGain | null;
       // Duelist Requests: duels that pay prizes move today's requests on.
       const reqs = (s: SpeedSave, seat: Pid): SpeedSave => {
         if (!st) return s;
@@ -1052,7 +1076,14 @@ export function App() {
         const who = seats?.[seat].name ?? '';
         news.push(...(hotseat && !cpu ? r.lines.map((l) => `${who}: ${l}`) : r.lines));
         if (r.cards.length) cards.push({ who, won: r.cards, lost: [] });
-        return r.save;
+        // Duel Pass: the duels that move Requests earn Pass XP too (a duel given up before it got going: none).
+        const res = winner === 'draw' ? 'd' : winner === seat ? 'w' : 'l';
+        const surrendered = /surrendered$/.test(st.winReason);
+        const quick = tooQuick({ surrender: surrendered, turns: st.turn, damage: lpLostIn(st) });
+        const pg = earnPass(r.save, { counts, result: res, quick, turns: st.turn, surrendered, requests: r.lines.filter((l) => l.startsWith('Request done')).length });
+        if (seat === mySeat && pg.gain) myPass = pg.gain;
+        if (pg.carried.length) news.push(hotseat && !cpu ? `${who}: ${carriedLine(pg.carried)}` : carriedLine(pg.carried));
+        return pg.save;
       };
       // Ace bond: a won duel that counts, with the Ace in the deck played, grows its entrance (nothing else).
       const ace = (s: SpeedSave, seat: Pid, result: 'w' | 'l' | 'd'): SpeedSave => {
@@ -1068,6 +1099,8 @@ export function App() {
       const first = (s: SpeedSave, seat: Pid) => (!cpu && st && seats ? rescueFirst(s, seat, st, [seats[0], seats[1]], winner) : s);
       const mineAfter = speedSave ? ace(withTicket(reqs(lv(prizes(withShadow(first(withSpeedResult(speedSave, mine, oppName), mySeat), mine, sr, mySeat, oppName, cpu).save, mySeat, mine, oppName), mySeat), mySeat), null), mySeat, mine) : null;
       if (mineAfter) setSpeedSave(mineAfter);
+      // (the result screen shows the XP; a new tier also gets its moment after it)
+      if (myPass && tierAt(myPass.to) > tierAt(myPass.from)) setPassGain(myPass);
       if (hotseat && p2Profile && p2Profile !== profile?.id) {
         const theirs = mine === 'w' ? 'l' : mine === 'l' ? 'w' : 'd';
         const seat2 = other(mySeat);
@@ -1082,6 +1115,7 @@ export function App() {
         // a duel with another player: the head-to-head so far
         const rv = !cpu && !hotseat && mineAfter ? rivalsOf(mineAfter)[oppName] : undefined;
         if (rv && rv.w + rv.l + rv.d > 0) data.rival = { opp: oppName, ...rv };
+        if (myPass) data.pass = myPass;
         setSpeedResult(data);
       }
       if (cpu) {
@@ -1290,14 +1324,14 @@ export function App() {
       .map((p) => {
         const ss = speedSaveOf(p.id);
         const d = activeDeck(ss);
-        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, ace: aceToWire(aceOf(ss)), sleeve: mySleeveOf(ss, p.id), jingle: myJingleOf(ss, p.id), playmat: myMatOf(ss, p.id), stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
+        return { profile: p, save: loadSave(p.id), speed: { deck: d, play: d && unsealedDeck(ss, d), rarity: d ? rarityMap(ss, [...d.main, ...d.extra]) : undefined, ace: aceToWire(aceOf(ss)), sleeve: mySleeveOf(ss, p.id), jingle: myJingleOf(ss, p.id), playmat: myMatOf(ss, p.id), badge: badgeOf(ss), stakes: d ? stakesFor(ss, !!d.open) : undefined, problems: d ? collectionProblems(ss, d) : [] } };
       });
 
   const myFullDeck = speedSave ? activeDeck(speedSave) : null;
   const myDeck = speedSave && myFullDeck ? unsealedDeck(speedSave, myFullDeck) : null;
   const entries: Partial<Record<GameMode, SeatEntry>> = {
     eds: { name: save.name, deck: save.main, fusion: save.fusion, problems: deckProblems(save) },
-    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile.id), jingle: myJingleOf(speedSave, profile.id), playmat: myMatOf(speedSave, profile.id), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
+    ...(myDeck && speedReady ? { speed: { name: save.name, deck: myDeck.main, fusion: myDeck.extra, skill: myDeck.skill, rarity: rarityMap(speedSave!, [...myDeck.main, ...myDeck.extra]), ace: aceToWire(aceOf(speedSave)), sleeve: mySleeveOf(speedSave, profile.id), jingle: myJingleOf(speedSave, profile.id), playmat: myMatOf(speedSave, profile.id), badge: badgeOf(speedSave), stakes: stakesFor(speedSave!, !!myFullDeck!.open), problems: [...speedDeckProblems(myFullDeck!), ...collectionProblems(speedSave!, myFullDeck!)] } } : {}),
   };
 
   // what kind of duel is on, for the soundtrack's theme ("By the moment")
@@ -1332,6 +1366,18 @@ export function App() {
         ) : (
           <div class="loading">Loading Speed Duel cards…</div>
         );
+      // The Duel Pass moment after a duel: once the prize news and the result screens are out of the way.
+      const passFlash = passGain && !speedNews.length && !soloReport && !tagReport && !raidReport && (
+        <PassFlash
+          key={`${passGain.from}:${passGain.to}`}
+          gain={passGain}
+          save={speedSave ?? speedSaveOf(profile.id)}
+          who={profile.alias}
+          onSave={setSpeedSave}
+          onClose={() => setPassGain(null)}
+          onOpen={!soloMode && !tagOpen && !raidOpen && !school ? () => ((hubGo.current = 'pass'), setHubNonce((n) => n + 1)) : undefined}
+        />
+      );
       const newsOverlay = speedNews.length > 0 && (
             <Overlay onClose={() => setSpeedNews([])}>
               <Win title="After the duel" onClose={() => setSpeedNews([])}>
@@ -1423,11 +1469,12 @@ export function App() {
               onExit={() => (setSoloReport(null), setSoloMode(null))}
             />
             {!soloReport && newsOverlay}
+            {passFlash}
           </>
         );
       return (
         <>
-          <SpeedHub key={profile.id} open={hubGo.current} onOpened={() => (hubGo.current = null)} onSchool={(first) => setSchool(first ? 'first' : 'open')} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
+          <SpeedHub key={`${profile.id}:${hubNonce}`} open={hubGo.current} onOpened={() => (hubGo.current = null)} onSchool={(first) => setSchool(first ? 'first' : 'open')} onTag={() => setTagOpen(true)} onRaid={() => setRaidOpen(true)} controls={controlsOf(save, 'speed')} onControls={() => setSave(withControls(save, 'speed', controlsOf(save, 'speed') === 'touch' ? 'classic' : 'touch'))} onSolo={setSoloMode} profile={profile} save={speedSave ?? speedSaveOf(profile.id)} onSave={setSpeedSave} onExit={() => setScreen('menu')} onCpu={startSpeedCpu} onLink={(c) => openSession(c, 'speed')} />
           {unfinished && (
             <Overlay>
               <Win title="Unfinished duel">
@@ -1439,6 +1486,7 @@ export function App() {
             </Overlay>
           )}
           {newsOverlay}
+          {!unfinished && passFlash}
           {cutOff && !speedNews.length && !unfinished && (
             <Overlay onClose={() => setCutOff(null)}>
               <Win title="Ranked Duel cut off" onClose={() => setCutOff(null)}>
@@ -1766,7 +1814,7 @@ function Running({
     return Object.assign({}, ...c.filter((x): x is Pid => x !== 'cpu').map((x) => view.seats[x].rarity ?? {}));
   };
   showDuelRarity(view.state.started && view.state.rules?.mode === 'speed' ? [sideRarity(0), sideRarity(1)] : null);
-  useEffect(() => () => (showDuelRarity(null), showDuelAces(null), showDuelSleeves(null), showDuelJingles(null), setMusicScene(null), showDuelPlaymats(null), showDuelFaces(null)), []);
+  useEffect(() => () => (showDuelRarity(null), showDuelAces(null), showDuelSleeves(null), showDuelJingles(null), setMusicScene(null), showDuelPlaymats(null), showDuelBadges(null), showDuelFaces(null)), []);
   // Ace bond: each seat's Ace gets its own entrance (a tag duel's sides have none), only a card in that seat's deck.
   const seatAce = (p: Pid) => {
     const a = aceFromWire(view.seats[p].ace);
@@ -1809,6 +1857,13 @@ function Running({
     return playmatFromWire(view.seats[seat as Pid]?.playmat) ?? DEFAULT_PLAYMAT;
   };
   showDuelPlaymats(view.state.started && view.state.rules?.mode === 'speed' ? [seatMat(0), seatMat(1)] : null);
+  // Duel Pass badges: each side's first phone's title and name plate on the face-off (computers wear none).
+  const seatBadge = (side: Pid) => {
+    const c = view.state.tag?.ctl?.[side];
+    const seat = c ? c[0] : side;
+    return seat === 'cpu' ? null : (view.seats[seat as Pid]?.badge ?? null);
+  };
+  showDuelBadges(view.state.started && view.state.rules?.mode === 'speed' ? [seatBadge(0), seatBadge(1)] : null);
   // A Boss Raid: the host started it in the room; both phones play it from the room's log.
   // Online rooms between two phones: a chat over every screen of the room (not tag duels or raids).
   // It is always the first child below, so it stays the same chat (open, typed text) as the screens change.

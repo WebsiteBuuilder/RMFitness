@@ -14,7 +14,9 @@ export type SleeveCost =
   /** take an Ace to the top bond */
   | { bond: true }
   /** finish Duel School */
-  | { school: true };
+  | { school: true }
+  /** a Duel Pass reward (src/pass): never sold, only reached on the pass */
+  | { pass: true };
 
 export interface SleeveDef {
   id: SleeveId;
@@ -46,6 +48,10 @@ export const SLEEVES: SleeveDef[] = [
   { id: 'pharaoh', name: 'Pharaoh’s Tomb', blurb: 'The ankh in a royal cartouche.', cost: { ranked: 'pharaoh' }, shine: 'sweep', glow: '#ffd56a' },
   { id: 'starlight', name: 'Starlight', blurb: 'A dragon drawn in stars.', cost: { stamps: 6 }, shine: 'pulse', glow: '#bcd0ff' },
   { id: 'holo', name: 'Holo Prism', blurb: 'A full rainbow foil that shifts as it catches the light.', cost: { stamps: 15 }, shine: 'holo', glow: '#ff9ae8' },
+  { id: 'seasoncrest', name: 'Season Crest', blurb: 'A silver shield in laurels. Duel Pass, free lane.', cost: { pass: true }, glow: '#cfe0ff' },
+  { id: 'pyramid', name: 'Pyramid of Light', blurb: 'A golden pyramid that watches back. Duel Pass, Chips lane.', cost: { pass: true }, shine: 'pulse', glow: '#ffe9a0' },
+  { id: 'dragonflare', name: 'Dragon Flare', blurb: 'Black wings over a rising flame. Duel Pass, Chips lane.', cost: { pass: true }, shine: 'sweep', glow: '#ff7a3a' },
+  { id: 'champion', name: 'Pass Champion', blurb: 'A gold crown on prism foil: the top of the Duel Pass.', cost: { pass: true }, shine: 'holo', glow: '#fff2c0' },
   { id: 'soul', name: 'Heart of the Cards', blurb: 'Believe in your deck.', cost: { bond: true }, shine: 'pulse', glow: '#ffb04a' },
 ];
 
