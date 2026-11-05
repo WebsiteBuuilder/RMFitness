@@ -23,6 +23,8 @@ import { LpCracks, LpPops, useLpShake } from './lpHits';
 import { lpCountMs } from './lpHitRules';
 import { spellWord } from './gameUi';
 import { useFlights } from './flights';
+import { useDuelCam } from './duelCam';
+import { unmapRect } from '../art/cam';
 import { AutoDrawPill } from './heartDraw';
 import { introLeft, whenIntroAt } from './immersionState';
 import { CounterLines, CounterMarks, countersKey, noteCounterless, primeCounters, shownCounters } from './counters';
@@ -127,12 +129,14 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
   const figuresOn = typeof document !== 'undefined' && document.body.classList.contains('art3d-on');
   useLayoutEffect(() => {
     const el = midRef.current;
-    const b = el && figuresOn ? el.getBoundingClientRect() : null;
+    const b = el && figuresOn ? unmapRect(el.getBoundingClientRect()) : null;
     const box = b && b.width > 0 ? { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) } : null;
     if (box?.top !== midBox?.top || box?.left !== midBox?.left || box?.width !== midBox?.width) setMidBox(box);
   }, [resized, figuresOn, state.winner]);
 
   useFlights(root, state, acting);
+  // the Duel Disk camera: the field pushes in and tilts on summons, attacks and blows (duelCam.ts)
+  useDuelCam(root, state, '.tboard');
   // Life Points dropping shake the board, scaled to the hit (lpHits.tsx)
   useLpShake(root, ctl.hotseat ? null : acting, !!e.speed, '.tmat, .tbar, .thand', !!ctl.spectator);
 
@@ -275,7 +279,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
     if (el)
       for (const c of ctrHolders) {
         const z = el.querySelector(`.tz-m[data-uid="${c.uid}"]`);
-        const r = z?.getBoundingClientRect();
+        const r = z ? unmapRect(z.getBoundingClientRect()) : null;
         if (r && r.width > 0) boxes.push({ uid: c.uid, x: Math.round(r.left - r.width * 0.1), y: Math.round(r.bottom - r.height * 0.2) });
       }
     setCtrBoxes((b) => (b.length === boxes.length && b.every((x, i) => x.uid === boxes[i].uid && x.x === boxes[i].x && x.y === boxes[i].y) ? b : boxes));
@@ -970,18 +974,17 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
       </div>
 
       {/* a monster's counter badges, flat over the 3D field figures (see ctrBoxes) */}
-      {ctrBoxes.length > 0 && (
-        <div class="ctrfloat" aria-hidden="true">
-          {ctrBoxes.map((b) => {
-            const c = e.fieldCard(b.uid);
-            return c ? (
-              <div key={b.uid} class="ctrfloat-at" style={{ left: `${b.x}px`, top: `${b.y}px` }}>
-                <CounterMarks list={shownCounters(c)} uid={b.uid} />
-              </div>
-            ) : null;
-          })}
-        </div>
-      )}
+      {/* (the layer is always there, empty or not, so the Duel Disk camera carries a badge that appears mid-move) */}
+      <div class="ctrfloat" aria-hidden="true">
+        {ctrBoxes.map((b) => {
+          const c = e.fieldCard(b.uid);
+          return c ? (
+            <div key={b.uid} class="ctrfloat-at" style={{ left: `${b.x}px`, top: `${b.y}px` }}>
+              <CounterMarks list={shownCounters(c)} uid={b.uid} />
+            </div>
+          ) : null;
+        })}
+      </div>
       {/* the turn / phase row again, flat over the 3D field figures (the field's tilt keeps the
           row itself under the figures layer); only while the figures are on */}
       {midBox && (

@@ -113,6 +113,18 @@ export const calmMotion = (): boolean => {
   return !!calmQuery?.matches;
 };
 
+const CAM_KEY = 'eds.duelCam';
+export type DuelCam = 'full' | 'soft' | 'off';
+const CAM_ORDER: DuelCam[] = ['full', 'soft', 'off'];
+const CAM_NAMES: Record<DuelCam, string> = { full: 'Full', soft: 'Soft', off: 'Off' };
+/** The Duel Disk camera (the field pushes in and tilts on summons and attacks): Full unless changed; Soft under the phone's Reduce motion. */
+export function getDuelCam(): DuelCam {
+  const v = read(CAM_KEY);
+  if (v && (CAM_ORDER as string[]).includes(v)) return v as DuelCam;
+  return calmMotion() ? 'soft' : 'full';
+}
+export const setDuelCam = (v: DuelCam) => write(CAM_KEY, v);
+const nextDuelCam = (v: DuelCam): DuelCam => CAM_ORDER[(CAM_ORDER.indexOf(v) + 1) % CAM_ORDER.length];
 const IDLE_KEY = 'eds.idle';
 /** Monster idle life is opt-in because it continuously animates the board and costs frames. */
 export const getIdle = (): boolean => !liteNow && read(IDLE_KEY) === 'on';
@@ -153,6 +165,7 @@ function useStored<T>(get: () => T): T {
 export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
+export const useDuelCam = () => useStored(getDuelCam);
 export const useIdle = () => useStored(getIdle);
 export const useManga = () => useStored(getManga);
 export const usePerf = () => useStored(getPerf);
@@ -170,6 +183,7 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const cine = useCinematics();
   const speed = useAnimSpeed();
   const holo = useHolo();
+  const cam = useDuelCam();
   const idle = useIdle();
   const manga = useManga();
   const perf = usePerf();
@@ -181,6 +195,7 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: held, onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: held, onPick: () => setHolo(!holo) },
+    { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: lite ? 'Lite mode keeps it to Soft' : 'tap to change', onPick: () => setDuelCam(nextDuelCam(cam)) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: held, onPick: () => setIdle(!idle) },
     { label: `Manga: ${MANGA_NAMES[manga]}`, note: held, onPick: () => setManga(nextManga(manga)) },
     { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: held, onPick: () => setCutins(!cut) },
