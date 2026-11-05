@@ -114,8 +114,8 @@ export const calmMotion = (): boolean => {
 };
 
 const IDLE_KEY = 'eds.idle';
-/** Monster idle life (breathing, hovering, Attribute motes, moods; the hand and Set cards stir): on unless turned off. */
-export const getIdle = (): boolean => !liteNow && read(IDLE_KEY) !== 'off';
+/** Monster idle life is opt-in because it continuously animates the board and costs frames. */
+export const getIdle = (): boolean => !liteNow && read(IDLE_KEY) === 'on';
 export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
 
 const MANGA_KEY = 'eds.manga';
