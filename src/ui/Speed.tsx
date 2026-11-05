@@ -5,6 +5,7 @@ import { AceScreen } from '../ace/AceScreen';
 import { SleevesScreen } from '../sleeves/SleevesScreen';
 import { PassScreen } from '../pass/PassScreen';
 import { shownTrack, tierAt, toClaim } from '../pass/pass';
+import { MusicScreen } from '../jingles/MusicScreen';
 import { PlaymatsScreen } from '../playmats/PlaymatsScreen';
 import { loadSolo as loadSoloSave } from '../eds/speedCampaign/save';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -115,7 +116,7 @@ export function speedHubBack(): boolean {
   return hubBack ? hubBack() : false;
 }
 
-type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'playmats' | 'pass';
+type Sub = 'menu' | 'decks' | 'edit' | 'cpu' | 'record' | 'replays' | 'rankings' | 'link' | 'shadow' | 'art' | 'levels' | 'shop' | 'requests' | 'stamps' | 'mates' | 'ace' | 'sleeves' | 'music' | 'playmats' | 'pass';
 
 /** profiles whose presents were put off with "Not now": none show again until the game is next opened */
 const notNow = new Set<string>();
@@ -227,6 +228,7 @@ export function SpeedHub({
   if (sub === 'stamps') return <StampsScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'mates') return <MatesScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'ace') return <AceScreen save={save} onSave={onSave} onBack={() => setSub('menu')} />;
+  if (sub === 'music') return <MusicScreen save={save} solo={loadSoloSave(profile.id)} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'sleeves') return <SleevesScreen save={save} solo={loadSoloSave(profile.id)} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'pass') return <PassScreen save={save} profile={profile} onSave={onSave} onBack={() => setSub('menu')} />;
   if (sub === 'playmats') return <PlaymatsScreen save={save} solo={loadSoloSave(profile.id)} onSave={onSave} onBack={() => setSub('menu')} />;

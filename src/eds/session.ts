@@ -31,6 +31,8 @@ export interface Seat {
   ace?: { name: string; lv: number };
   /** Speed Duel: the sleeve their card backs wear (src/sleeves), for the other player to see */
   sleeve?: string;
+  /** Speed Duel: their entrance jingle (src/jingles), played on both phones as the duel begins */
+  jingle?: string;
   /** Speed Duel: the playmat under their half of the field (src/playmats), for the other player to see */
   playmat?: string;
   /** Speed Duel: the Duel Pass title and name plate they wear (src/pass), for the duel's face-off */
@@ -42,7 +44,7 @@ export interface Seat {
 }
 
 export type LobbyAction =
-  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; sleeve?: string; playmat?: string; badge?: { t?: string; p?: string }; stakes?: Stakes }
+  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; sleeve?: string; jingle?: string; playmat?: string; badge?: { t?: string; p?: string }; stakes?: Stakes }
   /** changes a seat's bet; both players have to Accept again */
   | { type: 'STAKE'; player: Pid; ante: Ante | null }
   | { type: 'ACCEPT'; player: Pid }
@@ -345,7 +347,7 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, ace: a.ace, sleeve: typeof a.sleeve === 'string' && a.sleeve.length <= 24 ? a.sleeve : undefined, playmat: typeof a.playmat === 'string' && a.playmat.length <= 24 ? a.playmat : undefined, badge: wireBadge(a.badge), stakes: a.stakes };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, ace: a.ace, sleeve: typeof a.sleeve === 'string' && a.sleeve.length <= 24 ? a.sleeve : undefined, jingle: typeof a.jingle === 'string' && a.jingle.length <= 24 ? a.jingle : undefined, playmat: typeof a.playmat === 'string' && a.playmat.length <= 24 ? a.playmat : undefined, badge: wireBadge(a.badge), stakes: a.stakes };
       this.seats[a.player === 0 ? 1 : 0].accepted = false;
       return;
     }
