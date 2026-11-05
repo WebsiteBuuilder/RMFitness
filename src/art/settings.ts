@@ -41,8 +41,8 @@ const write = (k: string, v: string) => {
 
 // ---------- Performance: Auto / Lite / Full ----------
 // Lite switches off the costly extras (3D cinematics, holograms, idle life, manga panels, blurred
-// glass) and draws the 3D stage smaller. Auto turns it on by itself once the frame watchdog
-// (perfGuard.ts) sees a phone struggling, and remembers that for this device; Full never does.
+// glass) and draws the 3D stage smaller. Auto can turn it on after sustained trouble; Full
+// keeps the complete presentation and is the default so the game never silently loses its identity.
 export type PerfMode = 'auto' | 'lite' | 'full';
 const PERF_KEY = 'eds.perf';
 const PERF_AUTO_KEY = 'eds.perfAuto';
@@ -51,7 +51,7 @@ export const PERF_NAMES: Record<PerfMode, string> = { auto: 'Auto', lite: 'Lite'
 
 export function getPerf(): PerfMode {
   const v = read(PERF_KEY);
-  return v && (PERF_ORDER as string[]).includes(v) ? (v as PerfMode) : 'auto';
+  return v && (PERF_ORDER as string[]).includes(v) ? (v as PerfMode) : 'full';
 }
 const computeLite = () => {
   const m = getPerf();
