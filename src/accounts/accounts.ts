@@ -451,7 +451,8 @@ export class Accounts {
 
   async changePassword(p: Profile, pw: string): Promise<LoginResult> {
     if (this.backend && p.uid) {
-      if (this.backend.current() !== p.uid) return { ok: false, why: 'offline', message: MESSAGES.offline };
+      if (this.backend.current() !== p.uid)
+        return { ok: false, why: 'other', message: 'Log in with the current password before changing a shared account password.' };
       try {
         await withTimeout(this.backend.changePassword(cloudPassword(pw)));
       } catch (e) {
