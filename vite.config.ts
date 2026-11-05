@@ -27,7 +27,20 @@ function pwa(): Plugin {
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [preact(), pwa()],
-  build: { target: 'es2020' },
+  build: {
+    target: 'es2020',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/database'],
+          'vendor-three': ['three'],
+        },
+      },
+    },
+  },
+  // The v0 preview reaches the dev server through a sandbox hostname.
+  server: { allowedHosts: true },
+  preview: { allowedHosts: true },
   // Stamped into the app so each deploy asks for fresh card data.
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
 });

@@ -273,6 +273,12 @@ export interface EffectDef {
   summonRule?(e: Engine, card: Card, summoner: Pid, how: SummonHow, from: string | null): boolean;
   /** This face-up card (monster or active Spell/Trap) stops `player` from activating the Spell/Trap Card `card` right now. */
   locksCardActivation?(e: Engine, src: FieldCard, srcController: Pid, player: Pid, card: Card): boolean;
+  /** Skills (2023 boxes): `m` cannot be Tributed for `forCard`'s Tribute Summon, or at all for an effect when `forCard` is null (Insect Infestation, My Precious Queen!). */
+  tributeLock?(e: Engine, src: FieldCard, srcController: Pid, m: FieldCard, forCard: Card | null): boolean;
+  /** Skills: the opponent of the Skill's owner drew these cards for their normal draw in their Draw Phase (Intel from the "Cosmos"). */
+  onOpponentDrawPhase?(e: Engine, src: FieldCard, srcController: Pid, drawn: Card[]): Step;
+  /** Skills: the Type `card` has in the Graveyard of `owner`, when it is not the printed one (The Dragon Hunting Swordsman). */
+  graveRace?(e: Engine, src: FieldCard, srcController: Pid, card: Card, owner: Pid): string | undefined;
   /** An Equip Spell: the equipped Jinzo no longer stops its controller's Traps (Amplifier). */
   freesOwnTraps?: boolean;
   /** This face-up card (monster or active Spell/Trap) stops `attacker` from choosing `target` as an attack target (Prickle Fairy, Hero Ring). */
@@ -1204,7 +1210,7 @@ E['Shadow Ghoul'] = { selfBonus: (e, m) => ({ atk: 100 * e.player(ctrl(e, m)).gy
 E['Buster Blader'] = {
   selfBonus: (e, m) => {
     const opp = e.player(other(ctrl(e, m)));
-    const n = e.monsters(other(ctrl(e, m))).filter((x) => x.faceUp && e.raceOf(x) === 'Dragon').length + opp.gy.filter((c) => e.info(c.name).race === 'Dragon').length; // audit-eds: face-up Dragons only
+    const n = e.monsters(other(ctrl(e, m))).filter((x) => x.faceUp && e.raceOf(x) === 'Dragon').length + opp.gy.filter((c) => e.graveRace(c, other(ctrl(e, m))) === 'Dragon').length; // audit-eds: face-up Dragons only
     return { atk: 500 * n, def: 0 };
   },
 };
