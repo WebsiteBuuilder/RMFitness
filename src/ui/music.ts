@@ -3,10 +3,13 @@
 // 2000 LP or less, drives harder at 1000 or less, and swells when an ace hits the field
 // (heroic for your ace, ominous for your opponent's). The win or loss gets its own cadence.
 // Silent until the first tap (phones) and while Music is Off.
-import { useEffect, useRef } from 'preact/hooks';
-import { rawAudioContext, useMusicEnabled } from './sound';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { musicEnabled, rawAudioContext, useMusicEnabled } from './sound';
 import { artBusy } from '../art/cues';
 import { aceFor } from '../ace/ace';
+import { duelJingleOf, jingleDef } from '../jingles/jingles';
+import { playJingle, stopAllJingles } from '../jingles/play';
+import { clearJingleToasts, showJingleToast } from '../jingles/toast';
 import type { CardInfo, DuelState, EngineEvent, Pid } from '../eds/types';
 
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -63,6 +66,39 @@ function rng(seed: number) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
+// ------------------------------------------------------------ themes
+
+export type ThemeId = 'classic' | 'kingdom' | 'shadow' | 'battle';
+export interface Theme {
+  id: ThemeId;
+  name: string;
+  blurb: string;
+  /** semitones from D minor */
+  key: number;
+  /** tempo multiplier */
+  tempo: number;
+  /** which chord loops it leans on: indexes into CALM and DRIVE */
+  calm: number[];
+  drive: number[];
+  arpWaves: OscillatorType[];
+  lead: OscillatorType;
+  /** the pad's filter when calm / driving */
+  padCut: [number, number];
+  /** chance of a bell note where one may ring */
+  bells: number;
+  /** a soft pulse (hats and a kick) even while it's calm */
+  calmBeat?: boolean;
+  /** a low held drone under every bar */
+  drone?: boolean;
+}
+export const THEMES: Theme[] = [
+  { id: 'classic', name: 'Duelist', blurb: 'The original: a calm start that builds.', key: 0, tempo: 1, calm: [0, 1, 2, 3, 4], drive: [0, 1, 2, 3, 4], arpWaves: ['triangle', 'triangle', 'sine', 'square'], lead: 'sawtooth', padCut: [900, 1500], bells: 0.45 },
+  { id: 'kingdom', name: 'Kingdom', blurb: 'Bright and heroic, a tournament on an island.', key: 3, tempo: 1.06, calm: [1, 3, 4], drive: [3, 4, 1], arpWaves: ['square', 'triangle'], lead: 'square', padCut: [1300, 2000], bells: 0.3 },
+  { id: 'shadow', name: 'Shadow Game', blurb: 'Slow, dark and a little haunted.', key: -2, tempo: 0.9, calm: [0, 2], drive: [0, 2], arpWaves: ['sine'], lead: 'triangle', padCut: [650, 1100], bells: 0.65, drone: true },
+  { id: 'battle', name: 'Battle City', blurb: 'Fast streets: a beat from the first turn.', key: 4, tempo: 1.1, calm: [0, 4, 2], drive: [1, 0, 3], arpWaves: ['square', 'sawtooth'], lead: 'sawtooth', padCut: [1300, 1900], bells: 0.2, calmBeat: true },
+];
+export const themeDef = (id: string | null | undefined): Theme => THEMES.find((t) => t.id === id) ?? THEMES[0];
+
 export interface Mood {
   level: Level;
   /** it's the listener's turn (the arpeggio sits higher and brighter) */
@@ -100,8 +136,13 @@ export class DuelMusic {
   private swellUntil = 0;
   readonly volume = 0.5;
 
-  constructor(ctx: AudioContext, seed = Date.now()) {
+  readonly theme: Theme;
+
+  constructor(ctx: AudioContext, seed = Date.now(), theme: Theme = THEMES[0]) {
     this.ctx = ctx;
+    this.theme = theme;
+    this.key = theme.key;
+    this.bpm = BPM[0] * theme.tempo;
     this.rand = rng(seed);
     const comp = (this.comp = ctx.createDynamicsCompressor());
     comp.threshold.value = -16;
@@ -219,10 +260,12 @@ export class DuelMusic {
 
   private newLoop() {
     const set = this.level === 0 ? CALM : DRIVE;
-    this.prog = set[Math.floor(this.rand() * set.length)];
+    const pool = (this.level === 0 ? this.theme.calm : this.theme.drive).filter((i) => i < set.length);
+    this.prog = set[pool.length ? pool[Math.floor(this.rand() * pool.length)] : Math.floor(this.rand() * set.length)];
     this.arp = ARPS[Math.floor(this.rand() * ARPS.length)];
     this.groove = GROOVES[Math.floor(this.rand() * GROOVES.length)];
-    this.arpWave = (['triangle', 'triangle', 'sine', 'square'] as OscillatorType[])[Math.floor(this.rand() * 4)];
+    const waves = this.theme.arpWaves;
+    this.arpWave = waves[Math.floor(this.rand() * waves.length)];
     // a lead motif in chord tones; bars 1 and 3 repeat it, bar 2 answers, bar 4 breathes
     const rhythm = RHYTHMS[Math.floor(this.rand() * RHYTHMS.length)];
     let at = 2 + Math.floor(this.rand() * 2);
@@ -236,8 +279,8 @@ export class DuelMusic {
       this.level = this.mood.level;
       this.bar = 1; // a fresh loop for the new mood
     }
-    this.bpm = BPM[this.level];
-    this.key = this.level === 2 ? 2 : 0;
+    this.bpm = BPM[this.level] * this.theme.tempo;
+    this.key = this.theme.key + (this.level === 2 ? 2 : 0);
     if (this.bar % 4 === 1) this.newLoop();
   }
 
@@ -249,7 +292,8 @@ export class DuelMusic {
     const lv = this.level;
     const swelling = t < this.swellUntil;
     // pad: a held chord each bar (darker until someone is in danger)
-    if (step === 0 && !swelling) this.pad(voiced(chord, 57), t, beat * 4, lv === 0 ? 900 : 1500);
+    if (step === 0 && !swelling) this.pad(voiced(chord, 57), t, beat * 4, this.theme.padCut[lv === 0 ? 0 : 1]);
+    if (step === 0 && this.theme.drone) this.bass(38 + this.key, t, beat * 4.2, 'sine', 0.14);
     // bass
     if (lv === 0 && step === 0) this.bass(chord[0], t, beat * 3.6, 'sine', 0.32);
     if (lv > 0 && step % 2 === 0) this.bass(chord[0] + (step % 8 === 4 ? 12 : 0), t, beat * 0.45, 'sawtooth', 0.2);
@@ -262,7 +306,7 @@ export class DuelMusic {
       this.pluck(n, t, beat * (lv === 2 ? 0.3 : 0.6), lv === 0 ? 0.07 : 0.06, this.mood.myTurn ? 2400 : 1300);
     }
     // a sparse bell melody when it's calm (and answering the lead in the drums level's quiet bar)
-    if (((lv === 0 && (step === 0 || step === 8)) || (lv === 1 && inPhrase === 3 && step % 4 === 0)) && this.rand() < 0.45) {
+    if (((lv === 0 && (step === 0 || step === 8)) || (lv === 1 && inPhrase === 3 && step % 4 === 0)) && this.rand() < this.theme.bells) {
       const ns = voiced(chord, 74);
       this.bell(ns[Math.floor(this.rand() * 3)], t);
     }
@@ -274,6 +318,10 @@ export class DuelMusic {
         const tone = this.motif.tones[i] + (inPhrase === 1 && i === this.motif.rhythm.length - 1 ? 1 : 0);
         this.lead(toneAt(notes, tone), t, (60 / this.bpm / 4) * this.motif.rhythm[i][1]);
       }
+    }
+    if (lv === 0 && this.theme.calmBeat && !swelling) {
+      if (step === 0 || step === 8) this.kick(t, 0.6);
+      if (step % 4 === 2) this.hat(t, 0.035);
     }
     if (lv === 0) {
       if (this.fill && step >= 12) this.snare(t, 0.05 + (step - 12) * 0.03);
@@ -438,7 +486,7 @@ export class DuelMusic {
     const g = this.env(t, 0.045, 0.02, dur + 0.12, 0.5);
     const f = this.lp(2400, t, 1200, dur);
     f.connect(g);
-    this.osc('sawtooth', mtof(n), t, dur + 0.12, f, -5);
+    this.osc(this.theme.lead, mtof(n), t, dur + 0.12, f, -5);
     this.osc('square', mtof(n), t, dur + 0.12, f, 5);
   }
 
@@ -539,6 +587,149 @@ export function isAceSummon(c: Pick<CardInfo, 'kind' | 'level' | 'atk'> | undefi
   return (c.level ?? 0) >= 7 || (c.atk ?? 0) >= 2500;
 }
 
+// ------------------------------------------------------------ which theme plays
+
+/** The Theme setting: one theme always, a different one each duel, or picked by the moment. */
+export type ThemePref = 'moment' | 'rotate' | ThemeId;
+export const THEME_PREFS: { id: ThemePref; name: string; note: string }[] = [
+  { id: 'moment', name: 'By the moment', note: 'Battle City online, in Ranked and against rivals; Kingdom in Boss Raids and against heroes; Shadow Game against villains and late at night' },
+  { id: 'rotate', name: 'Take turns', note: 'a different theme every duel' },
+  ...THEMES.map((t) => ({ id: t.id as ThemePref, name: t.name, note: t.blurb })),
+];
+const THEME_KEY = 'eds.musicTheme';
+const THEME_EVT = 'eds-music-theme';
+const ROT_KEY = 'eds.musicRot';
+const store = {
+  get(k: string): string | null {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set(k: string, v: string) {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* storage blocked */
+    }
+  },
+};
+export function musicThemePref(): ThemePref {
+  const v = store.get(THEME_KEY);
+  return THEME_PREFS.some((p) => p.id === v) ? (v as ThemePref) : 'moment';
+}
+export function setMusicThemePref(v: ThemePref) {
+  store.set(THEME_KEY, v);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(THEME_EVT));
+}
+export function useMusicThemePref(): ThemePref {
+  const [v, setV] = useState(musicThemePref);
+  useEffect(() => {
+    const fn = () => setV(musicThemePref());
+    window.addEventListener(THEME_EVT, fn);
+    return () => window.removeEventListener(THEME_EVT, fn);
+  }, []);
+  return v;
+}
+
+/** What kind of duel is on (set by the app as a duel runs). */
+export interface MusicScene {
+  ranked?: boolean;
+  online?: boolean;
+  raid?: boolean;
+}
+let scene: MusicScene = {};
+export function setMusicScene(s: MusicScene | null) {
+  scene = s ?? {};
+}
+
+const VILLAINS = /\b(marik|malik|bakura|dartz|paradox|shadi|noa|gozaburo)\b/i;
+const HEROES = /\b(yugi|atem|pharaoh|joey|wheeler|tea|téa)\b/i;
+const RIVALS = /\b(kaiba|mokuba|rex|weevil|bandit|keith)\b/i;
+
+/** The theme for a new duel. `turn` counts duels for "Take turns"; `hour` is the local hour. */
+export function pickTheme(pref: ThemePref, sc: MusicScene, oppName: string, hour: number, turn: number): ThemeId {
+  if (pref !== 'moment' && pref !== 'rotate') return themeDef(pref).id;
+  const rotating = THEMES[((turn % THEMES.length) + THEMES.length) % THEMES.length].id;
+  if (pref === 'rotate') return rotating;
+  if (sc.raid) return 'kingdom';
+  if (VILLAINS.test(oppName)) return 'shadow';
+  if (sc.ranked || sc.online || RIVALS.test(oppName)) return 'battle';
+  if (HEROES.test(oppName)) return 'kingdom';
+  if (hour >= 22 || hour < 5) return 'shadow';
+  return rotating;
+}
+function nextTurn(): number {
+  const n = (Number(store.get(ROT_KEY)) || 0) + 1;
+  store.set(ROT_KEY, String(n));
+  return n;
+}
+
+// ------------------------------------------------------------ entrances
+
+/** Duels whose entrance jingles already played (by seed), and when their music may begin. */
+const intros = new Map<number, number>();
+/** The theme each duel got (by seed): a remount or Music Off and On keeps it, and "Take turns" counts each duel once. */
+const themes = new Map<number, ThemeId>();
+const INTRO_KEY = 'eds.introsDone';
+/** Seeds whose entrances played, kept on the phone too: a reload and rejoin never plays them again. */
+function introsDone(): number[] {
+  try {
+    const v = JSON.parse(store.get(INTRO_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+function markIntro(seed: number) {
+  const done = introsDone().filter((x) => x !== seed);
+  store.set(INTRO_KEY, JSON.stringify([...done.slice(-29), seed]));
+}
+/** Will this duel open with the listener's entrance? (the face-off then lets the jingle be its music) */
+export function entranceComing(seed: number, side: Pid, turn: number): boolean {
+  const ctx = rawAudioContext();
+  return turn <= 1 && !(typeof document !== 'undefined' && document.hidden) && musicEnabled() && !!ctx && ctx.state === 'running' && !!duelJingleOf(side) && !intros.has(seed) && !introsDone().includes(seed);
+}
+/** Cuts the entrances short (the duel was left, Music went Off, the phone locked). */
+function cutEntrances() {
+  stopAllJingles();
+  clearJingleToasts();
+}
+let entranceBye: ReturnType<typeof setTimeout> | null = null;
+// The phone locked (or the tab went away) mid-entrance: cut it now, before the audio is put to
+// sleep, so it never finishes late on wake; the duel's music then starts straight away.
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    const ctx = rawAudioContext();
+    let cut = false;
+    for (const [seed, until] of intros) if (until && (!ctx || ctx.currentTime < until)) (intros.set(seed, 0), (cut = true));
+    if (cut) cutEntrances();
+  });
+let entranceSeed = 0;
+
+/**
+ * Plays each side's entrance jingle as a duel begins (the listener's first), with a name tag
+ * on screen. Returns the audio time the soundtrack may start (0: no entrances).
+ */
+function playEntrances(ctx: AudioContext, s: DuelState, order: Pid[], me: Pid): number {
+  markIntro(s.seed);
+  let t = 0.25;
+  for (const p of order) {
+    const id = duelJingleOf(p);
+    const d = jingleDef(id);
+    if (!d) continue;
+    const at = t;
+    const len = playJingle(id, at, ctx);
+    if (!len) continue;
+    showJingleToast(s.players[p]?.name ?? '', d.name, d.hue, at * 1000, Math.min(len, 3) * 1000, p === me);
+    t += len + 0.25;
+  }
+  // the soundtrack comes in under the last jingle's ring-out
+  return t > 0.25 ? ctx.currentTime + t - 0.75 : 0;
+}
+
 // One track per duel. A replay jump remounts the board, so letting go waits a moment and a
 // remount of the same duel (same seed) picks the same track back up instead of restarting it.
 let current: { m: DuelMusic; seed: number; bye: ReturnType<typeof setTimeout> | null } | null = null;
@@ -548,7 +739,7 @@ export function musicAce(mine: boolean) {
   current?.m.ace(mine);
 }
 
-function take(ctx: AudioContext, seed: number, over: boolean): DuelMusic | null {
+function take(ctx: AudioContext, seed: number, over: boolean, theme: () => Theme): DuelMusic | null {
   if (current && current.seed === seed && !current.m.isStopped && !(current.m.isEnded && !over)) {
     if (current.bye) clearTimeout(current.bye);
     current.bye = null;
@@ -559,7 +750,7 @@ function take(ctx: AudioContext, seed: number, over: boolean): DuelMusic | null 
     if (current.bye) clearTimeout(current.bye);
     current.m.stop();
   }
-  current = { m: new DuelMusic(ctx, seed), seed, bye: null };
+  current = { m: new DuelMusic(ctx, seed, theme()), seed, bye: null };
   return current.m;
 }
 
@@ -595,6 +786,14 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
     if (!active) return;
     let m: DuelMusic | null = null;
     let endSeen = 0;
+    const mountedAt = Date.now();
+    // the same duel came back within a moment (a replay jump remounts the board): its entrances go on
+    if (entranceBye) {
+      clearTimeout(entranceBye);
+      entranceBye = null;
+      if (entranceSeed !== seed) cutEntrances(); // (a different duel: the last one's go now)
+    }
+    entranceSeed = seed;
     const tick = () => {
       const { state: s, seat: me, table: tb, watching: w, engine: e } = live.current;
       if (!s) return;
@@ -602,7 +801,36 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
       if (!m) {
         const ctx = rawAudioContext();
         if (!ctx || ctx.state !== 'running') return; // waits for the first tap
-        m = take(ctx, s.seed, s.winner !== null);
+        // the entrances first: only at the very start of a duel (not a rejoin, a replay jump or a late tap)
+        if (!intros.has(s.seed)) {
+          const fresh = s.winner === null && s.turn <= 1 && Date.now() - mountedAt < 5000 && !(typeof document !== 'undefined' && document.hidden) && !introsDone().includes(s.seed);
+          let until = 0;
+          try {
+            until = fresh ? playEntrances(ctx, s, tb ? [0, 1] : [me, me === 0 ? 1 : 0], me) : 0;
+          } catch {
+            cutEntrances(); // (out of audio nodes, say): straight to the music
+          }
+          intros.set(s.seed, until);
+          if (intros.size > 40) intros.delete(intros.keys().next().value as number);
+        }
+        if (ctx.currentTime < (intros.get(s.seed) ?? 0)) {
+          // the phone locked mid-entrance: cut it rather than let it finish late
+          if (typeof document !== 'undefined' && document.hidden) {
+            cutEntrances();
+            intros.set(s.seed, 0);
+          }
+          return;
+        }
+        const opp = s.players[me === 0 ? 1 : 0]?.name ?? '';
+        m = take(ctx, s.seed, s.winner !== null, () => {
+          let id = themes.get(s.seed);
+          if (!id) {
+            id = pickTheme(musicThemePref(), scene, tb ? '' : opp, new Date().getHours(), nextTurn());
+            themes.set(s.seed, id);
+            if (themes.size > 40) themes.delete(themes.keys().next().value as number);
+          }
+          return themeDef(id);
+        });
         if (!m) return;
         seen.current = (s.events ?? []).reduce((x, ev) => Math.max(x, ev.seq), s.lastEvent?.seq ?? 0);
       }
@@ -631,6 +859,9 @@ export function useDuelMusic(state: DuelState | null, engine: Engine, seat: Pid,
     return () => {
       clearInterval(id);
       if (m) release(m);
+      // left the duel or turned Music Off: the entrances stop too (a quick remount keeps them)
+      if (entranceBye) clearTimeout(entranceBye);
+      entranceBye = setTimeout(() => ((entranceBye = null), cutEntrances()), 400);
     };
   }, [active, seed]);
 }

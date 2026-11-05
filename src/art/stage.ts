@@ -55,6 +55,7 @@ import {
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
 import { DEFAULT_FADE, tuneFor } from './overrides';
 import { pressQuiet } from './hold';
+import { isLite } from './settings';
 
 export type Quality = 'full' | 'fast';
 
@@ -63,9 +64,10 @@ export type Quality = 'full' | 'fast';
     big iPad costs about what a phone's does (never under 1:1). */
 export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const nav = navigator as Navigator & { deviceMemory?: number };
-  const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-  const budget = Math.max(1, Math.sqrt((small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
-  return Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5, budget);
+  const lite = isLite();
+  const small = lite || (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+  const budget = Math.max(1, Math.sqrt((lite ? 1.1e6 : small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
+  return Math.min(window.devicePixelRatio || 1, lite ? 1 : small ? 1.25 : 1.5, budget);
 }
 
 /** A WebGL renderer set up the same way everywhere (so compiled programs match). */
@@ -2667,6 +2669,8 @@ export class Stage {
   warp = 1;
   /** a chain card is being read (chain spotlight): everything on stage holds still */
   pause = false;
+  /** held still for a manga panel (its own flag: a chain card read meanwhile keeps `pause`) */
+  freeze = false;
   private pauseDrawn = false;
   private q: Quality;
   onFrame: ((dt: number) => void) | null = null;
@@ -2779,15 +2783,17 @@ export class Stage {
    */
   private startTier() {
     const top = this.levels.length - 1;
+    // Lite starts two tiers down (the governor can still go lower).
+    const cap = isLite() ? Math.max(0, top - 2) : top;
     try {
       const v = JSON.parse(localStorage.getItem(AUTO_KEY) ?? 'null') as { t?: number; n?: number; q?: string } | null;
-      if (v && v.n === top && v.q === this.q && Number.isInteger(v.t)) return Math.max(0, Math.min(top, v.t!));
+      if (v && v.n === top && v.q === this.q && Number.isInteger(v.t)) return Math.max(0, Math.min(cap, v.t!));
     } catch {
       /* storage blocked or garbled */
     }
     const nav = (typeof navigator !== 'undefined' ? navigator : {}) as Navigator & { deviceMemory?: number };
     const small = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-    return small ? Math.max(0, top - 1) : top;
+    return Math.min(cap, small ? Math.max(0, top - 1) : top);
   }
 
   /** Remembers the tier the governor settled on (when it changed, and only while it governs). */
@@ -2985,16 +2991,17 @@ export class Stage {
     this.raf = 0;
     if (!this.running) return;
     // paused (a chain card being read): the frame already drawn stays; nothing is drawn or measured
-    if (this.pause && this.pauseDrawn) {
+    const still = this.pause || this.freeze;
+    if (still && this.pauseDrawn) {
       this.last = now;
       this.raf = requestAnimationFrame(this.loop);
       return;
     }
-    this.pauseDrawn = this.pause;
+    this.pauseDrawn = still;
     const ms = now - this.last;
     // Cinematics keep real time down to 5 fps (a slow or busy phone sees fewer frames,
     // not slow motion); physics and particles step at most 50 ms at a time.
-    let dt = this.pause ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
+    let dt = still ? 0 : Math.min(0.2, ms / 1000) * this.speed * this.warp;
     if (this.holdFor > 0) {
       this.holdFor -= Math.min(0.05, ms / 1000);
       dt *= this.holdScale;

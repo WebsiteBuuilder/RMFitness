@@ -8,6 +8,7 @@ import type { FirebaseApp, FirebaseOptions } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Database } from 'firebase/database';
 import { CloudFail, type BackupEntry, type CloudBackend, type CloudDuelist, type CloudSave, type DuelistMeta } from './backend';
+import { phoneApp, phoneUid } from '../sync/cloud';
 
 function fail(e: unknown): CloudFail {
   const code = (e as { code?: string })?.code ?? '';
@@ -153,7 +154,6 @@ export class FirebaseBackend implements CloudBackend {
   /** Backups sign in as this phone (an anonymous account in a second app), apart from the duelist. */
   private backupInit() {
     this.backupReady ??= (async () => {
-      const { phoneApp, phoneUid } = await import('../sync/cloud');
       const { db } = await phoneApp();
       return { db, uid: await phoneUid() };
     })().catch((e) => {
