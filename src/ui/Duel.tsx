@@ -24,6 +24,7 @@ import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
 import { LpCount, useShownState } from '../art/flow';
 import { LpCracks, LpPops, useLpShake } from './lpHits';
+import { useDuelCam } from './duelCam';
 import { artBusy, onArtChange } from '../art/cues';
 import { ClaimWin, ClockPill, useClockRunner } from './TurnClock';
 import { timeoutMove } from '../eds/turnClock';
@@ -95,6 +96,8 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
   // Classic controls: Life Points dropping shake the board (Touch does its own, TouchDuel.tsx)
   const classicRoot = useRef<HTMLDivElement>(null);
   useLpShake(classicRoot, hotseat ? null : acting, !!e.speed, '.pbar, .field, .hand', !!spectator);
+  // the Duel Disk camera on the Classic field too (duelCam.ts)
+  useDuelCam(classicRoot, state, '.field .rows');
   const [askSurrender, setAskSurrender] = useState(false);
   const [skillOf, setSkillOf] = useState<Pid | null>(null);
   const [pile, setPile] = useState<{ title: string; cards: Card[] } | null>(null);

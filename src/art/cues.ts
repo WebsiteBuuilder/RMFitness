@@ -5,6 +5,7 @@ import { card } from '../eds/db';
 import type { Card, DuelState, EngineEvent, FieldCard, Pid } from '../eds/types';
 import { shadowRealmOf, type ShadowResult } from './shadow';
 import { classify, type FxFamily } from './families';
+import { unmapRect } from './cam';
 
 export interface Rect {
   x: number;
@@ -99,7 +100,8 @@ export function rectOf(uid: number, host: HTMLElement | null): Rect | null {
   if (!host) return null;
   const el = zoneEl(uid);
   if (!el) return null;
-  const r = el.getBoundingClientRect();
+  // (where the card rests, if the Duel Disk camera is mid-move: cinematics keep it still)
+  const r = unmapRect(el.getBoundingClientRect());
   const h = hostRect(host, performance.now());
   if (r.width === 0) return null;
   return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2, w: r.width, h: r.height };
@@ -151,7 +153,7 @@ function live(c: CardRef, host: HTMLElement | null): CardRef {
       if (!el?.isConnected || el.dataset.uid !== String(c.uid)) el = zoneEl(c.uid);
       const h = host ?? stageHost();
       if (!el || !h) return last;
-      const r = el.getBoundingClientRect();
+      const r = unmapRect(el.getBoundingClientRect());
       if (r.width === 0) return last;
       const hr = hostRect(h, now);
       return (last = { x: r.left - hr.left + r.width / 2, y: r.top - hr.top + r.height / 2, w: r.width, h: r.height });
