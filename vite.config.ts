@@ -28,6 +28,9 @@ export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [preact(), pwa()],
   build: { target: 'es2020' },
+  // The v0 preview reaches the dev server through a sandbox hostname.
+  server: { allowedHosts: true },
+  preview: { allowedHosts: true },
   // Stamped into the app so each deploy asks for fresh card data.
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
 });

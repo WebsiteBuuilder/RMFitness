@@ -113,8 +113,10 @@ def speed_sets(cards: list[dict], products: list[dict] = (), extra: list[dict] =
         for raw in p["cards"]:
             nm = ALIASES.get(raw, raw)
             st["cards"][nm] = rar.get(raw, "Common")
-        for s in extra:
-            if p["code"] in s.get("sets", []):
+    # Skills YGOPRODeck lacks join every set they were printed in, including sets it does list.
+    for s in extra:
+        for st in sets.values():
+            if st["code"] in s.get("sets", []):
                 st["cards"][s["name"] + " (Skill Card)"] = "Common"
     out = []
     for st in sets.values():

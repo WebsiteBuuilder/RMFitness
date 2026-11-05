@@ -17,6 +17,7 @@
 // cinematic plays (it covers the duel), or while the tab is hidden. Time wraps every
 // half hour so phones' 16-bit floats never make the motion step.
 import { TERRAINS, type Terrain } from './families';
+import { isLite } from './settings';
 
 const VERT = `attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
@@ -437,9 +438,11 @@ export class LivingField {
   private kick() {
     if (this.disposed) return;
     this.stillDrawn = false;
-    this.canvas.classList.toggle('on', this.active && this.ok);
-    document.body.classList.toggle('lf-on', this.active && this.ok);
-    if (!this.raf && this.gl && this.active && !document.hidden) {
+    // Lite graphics leave the animated Field Spell landscape out
+    const show = this.active && this.ok && !isLite();
+    this.canvas.classList.toggle('on', show);
+    document.body.classList.toggle('lf-on', show);
+    if (!this.raf && this.gl && show && !document.hidden) {
       this.last = performance.now();
       this.raf = requestAnimationFrame(this.frame);
     }
@@ -484,7 +487,7 @@ export class LivingField {
         this.stillDrawn = still;
       }
     }
-    if (!this.active) {
+    if (!this.active || isLite()) {
       this.canvas.classList.remove('on');
       document.body.classList.remove('lf-on');
       return;
