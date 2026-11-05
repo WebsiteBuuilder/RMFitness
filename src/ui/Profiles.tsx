@@ -58,7 +58,7 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
     playBlip();
     if (!manage) return setSheet({ kind: 'login', tile: t });
     if (t.kind !== 'local') return;
-    if (!t.firstTime && neckRecoveryAvailable && t.p.alias.trim().toLowerCase() === 'neck') {
+    if (!t.firstTime && !t.p.uid && neckRecoveryAvailable && t.p.alias.trim().toLowerCase() === 'neck') {
       neckRecoveryAvailable = false;
       accounts.startSync(t.p);
       setSheet({ kind: 'edit', p: t.p });
