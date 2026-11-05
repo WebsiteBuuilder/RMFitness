@@ -277,7 +277,7 @@ export function DuelistRoom({ profile, save, deck, deckAce, pass, go, onDeck }: 
 
         {/* the Duel Pass poster (when the pass exists) */}
         {pass && (
-          <Spot cls="sdr-pass" label={`Duel Pass, ${pass.note}${pass.ready ? `, ${pass.ready} to claim` : ''}`} tag={pass.ready ? `Pass · ${pass.ready}!` : 'Duel Pass'} hot={!!pass.ready} onPick={pass.onOpen}>
+          <Spot cls="sdr-pass" label={`Duel Pass, ${pass.note}${pass.ready ? `, ${pass.ready} to claim` : ''}`} tag={pass.ready ? `Claim ${pass.ready}` : 'Duel Pass'} hot={!!pass.ready} onPick={pass.onOpen}>
             <span class="sdr-poster">
               <b>DUEL PASS</b>
               <small>{pass.note}</small>

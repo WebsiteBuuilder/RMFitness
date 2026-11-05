@@ -3,6 +3,8 @@
 // settled; nothing here changes a save.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CardImg } from './CardImg';
+import type { PassGain } from '../pass/pass';
+import { PassStrip } from '../pass/PassStrip';
 import { buzz, playLose, playWin } from './sound';
 import './result.css';
 
@@ -27,6 +29,8 @@ export interface SpeedResultData {
   stats?: { dealt: number; kills: number; plays: number; mvp?: string };
   /** a duel with another player: your all-time record with them, this duel included */
   rival?: { opp: string; w: number; l: number; d: number; streak: number };
+  /** the Duel Pass XP this duel earned */
+  pass?: PassGain;
 }
 
 /** When the first reward appears, and the longest wait before Continue can be tapped (ms). */
@@ -113,6 +117,7 @@ export function SpeedResult({ data, onContinue, onRematch, onReplay }: { data: S
           </div>
         </div>
       )}
+      {data.pass && <PassStrip gain={data.pass} delay={skipped ? 0 : 700} />}
       <div class="mdres-rewards">
         {n > 0 && <div class="mdres-rhead">Rewards</div>}
         <ul>

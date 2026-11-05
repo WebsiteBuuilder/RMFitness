@@ -13,6 +13,7 @@ import { stampCards } from '../collection/stamps';
 import { lessonsDone, LESSONS } from '../eds/tutorial';
 import { RANKED_TIERS, tierIndexOf } from '../eds/speedCampaign/ranked';
 import { bondLevel, MAX_BOND } from '../ace/ace';
+import { passOwns } from '../pass/owned';
 import { SLEEVES, isSleeve, DEFAULT_SLEEVE, type SleeveDef, type SleeveId } from './roster';
 
 export * from './roster';
@@ -46,10 +47,12 @@ export function hasSleeve(s: SpeedSave, id: SleeveId, solo?: SoloSave | null): b
   if (!d) return false;
   const c = d.cost;
   if ('free' in c) return true;
+  // (a Duel Pass can hand out a Duel Chip sleeve too: it lands on the same list as a bought one)
   if ('chips' in c) return !!(s as SleeveSave).sleeves?.includes(id);
   if ('ranked' in c) return bestRankedTier(solo) >= RANKED_TIERS.findIndex((t) => t.id === c.ranked);
   if ('stamps' in c) return stampsClaimed(s) >= c.stamps;
   if ('bond' in c) return bestBond(s) >= MAX_BOND;
+  if ('pass' in c) return passOwns(s, `sleeve:${id}`);
   return lessonsDone(s).length >= LESSONS.length;
 }
 
@@ -67,6 +70,7 @@ export function sleeveCostNote(s: SpeedSave, d: SleeveDef, solo?: SoloSave | nul
   if ('ranked' in c) return `Reach ${RANKED_TIERS.find((t) => t.id === c.ranked)?.name ?? c.ranked} in Ranked${bestRankedTier(solo) >= 0 ? ` (best: ${RANKED_TIERS[bestRankedTier(solo)].name})` : ''}`;
   if ('stamps' in c) return `Claim ${c.stamps} Set Stamps (${Math.min(stampsClaimed(s), c.stamps)}/${c.stamps})`;
   if ('bond' in c) return `Take an Ace to bond ${MAX_BOND} (best: ${bestBond(s)})`;
+  if ('pass' in c) return 'A Duel Pass reward: reach its tier on the pass';
   return `Finish Duel School (${lessonsDone(s).length}/${LESSONS.length})`;
 }
 /** How far along an earned sleeve is ([have, need]; null for free and Duel Chip ones). */
@@ -90,6 +94,7 @@ export function sleeveCostShort(d: SleeveDef): string {
   if ('ranked' in c) return `Ranked ${RANKED_TIERS.find((t) => t.id === c.ranked)?.name ?? ''}`;
   if ('stamps' in c) return `${c.stamps} Stamps`;
   if ('bond' in c) return `Ace bond ${MAX_BOND}`;
+  if ('pass' in c) return 'Duel Pass';
   return 'Duel School';
 }
 
@@ -130,12 +135,14 @@ const NAMED: [RegExp, SleeveId][] = [
   [/\b(mako)\b/i, 'water'],
   [/\b(weevil|keith)\b/i, 'chrome'],
 ];
+/** Sleeves a computer can wear (never a Duel Pass one: those stay the pass's own). */
+const CPU_SLEEVES = SLEEVES.filter((s) => !('pass' in s.cost));
 /** A computer duelist's sleeve: their own for the famous ones, else the same one every time for the same name. */
 export function sleeveForName(name: string): SleeveId {
   for (const [re, id] of NAMED) if (re.test(name)) return id;
   let h = 11;
   for (const ch of name) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
-  return SLEEVES[h % SLEEVES.length].id;
+  return CPU_SLEEVES[h % CPU_SLEEVES.length].id;
 }
 
 /** A sleeve as it rides a room's JOIN from the other phone: a known id, else none. */

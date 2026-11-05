@@ -12,6 +12,7 @@ import { lessonsDone, LESSONS } from '../eds/tutorial';
 import { RANKED_TIERS } from '../eds/speedCampaign/ranked';
 import { MAX_BOND } from '../ace/ace';
 import { bestBond, bestRankedTier, stampsClaimed } from '../sleeves/sleeves';
+import { passOwns } from '../pass/owned';
 import { PLAYMATS, isPlaymat, DEFAULT_PLAYMAT, type PlaymatDef, type PlaymatId } from './roster';
 
 export * from './roster';
@@ -36,6 +37,7 @@ export function hasPlaymat(s: SpeedSave, id: PlaymatId, solo?: SoloSave | null):
   if ('ranked' in c) return bestRankedTier(solo) >= RANKED_TIERS.findIndex((t) => t.id === c.ranked);
   if ('stamps' in c) return stampsClaimed(s) >= c.stamps;
   if ('bond' in c) return bestBond(s) >= MAX_BOND;
+  if ('pass' in c) return passOwns(s, `mat:${id}`);
   return lessonsDone(s).length >= LESSONS.length;
 }
 
@@ -53,6 +55,7 @@ export function playmatCostNote(s: SpeedSave, d: PlaymatDef, solo?: SoloSave | n
   if ('ranked' in c) return `Reach ${RANKED_TIERS.find((t) => t.id === c.ranked)?.name ?? c.ranked} in Ranked${bestRankedTier(solo) >= 0 ? ` (best: ${RANKED_TIERS[bestRankedTier(solo)].name})` : ''}`;
   if ('stamps' in c) return `Claim ${c.stamps} Set Stamps (${Math.min(stampsClaimed(s), c.stamps)}/${c.stamps})`;
   if ('bond' in c) return `Take an Ace to bond ${MAX_BOND} (best: ${bestBond(s)})`;
+  if ('pass' in c) return 'A Duel Pass reward: reach its tier on the pass';
   return `Finish Duel School (${lessonsDone(s).length}/${LESSONS.length})`;
 }
 /** How far along an earned mat is ([have, need]; null for free and Duel Chip ones). */
@@ -75,6 +78,7 @@ export function playmatCostShort(d: PlaymatDef): string {
   if ('ranked' in c) return `Ranked ${RANKED_TIERS.find((t) => t.id === c.ranked)?.name ?? ''}`;
   if ('stamps' in c) return `${c.stamps} Stamps`;
   if ('bond' in c) return `Ace bond ${MAX_BOND}`;
+  if ('pass' in c) return 'Duel Pass';
   return 'Duel School';
 }
 

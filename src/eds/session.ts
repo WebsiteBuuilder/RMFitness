@@ -8,6 +8,14 @@ import type { Action, DuelState, GameMode, LoggedAction, Pid } from './types';
 import { betsLocked, type Ante, type Stakes } from '../collection/stakes';
 import { applyToss, isTossAction, type Toss, type TossAction } from './toss';
 
+/** A Duel Pass badge from the other phone: short strings only (the face-off checks they're real). */
+const wireBadge = (b: unknown): { t?: string; p?: string } | undefined => {
+  if (!b || typeof b !== 'object') return undefined;
+  const { t, p } = b as { t?: unknown; p?: unknown };
+  const ok = (v: unknown) => (typeof v === 'string' && v.length <= 32 ? v : undefined);
+  return ok(t) || ok(p) ? { t: ok(t), p: ok(p) } : undefined;
+};
+
 export interface Seat {
   name: string;
   deck: string[];
@@ -27,6 +35,8 @@ export interface Seat {
   jingle?: string;
   /** Speed Duel: the playmat under their half of the field (src/playmats), for the other player to see */
   playmat?: string;
+  /** Speed Duel: the Duel Pass title and name plate they wear (src/pass), for the duel's face-off */
+  badge?: { t?: string; p?: string };
   /** Speed Duel: bets, Shadow Realm rescues and whether the duel pays prizes */
   stakes?: Stakes;
   /** pressed Accept on both players' bets */
@@ -34,7 +44,7 @@ export interface Seat {
 }
 
 export type LobbyAction =
-  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; sleeve?: string; jingle?: string; playmat?: string; stakes?: Stakes }
+  | { type: 'JOIN'; player: Pid; name: string; deck: string[]; fusion: string[]; mode?: GameMode; skill?: string | null; rarity?: Record<string, number>; ace?: { name: string; lv: number }; sleeve?: string; jingle?: string; playmat?: string; badge?: { t?: string; p?: string }; stakes?: Stakes }
   /** changes a seat's bet; both players have to Accept again */
   | { type: 'STAKE'; player: Pid; ante: Ante | null }
   | { type: 'ACCEPT'; player: Pid }
@@ -337,7 +347,7 @@ export class DuelSession {
 
   private applyOne(a: AnyAction) {
     if (a.type === 'JOIN') {
-      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, ace: a.ace, sleeve: typeof a.sleeve === 'string' && a.sleeve.length <= 24 ? a.sleeve : undefined, jingle: typeof a.jingle === 'string' && a.jingle.length <= 24 ? a.jingle : undefined, playmat: typeof a.playmat === 'string' && a.playmat.length <= 24 ? a.playmat : undefined, stakes: a.stakes };
+      this.seats[a.player] = { name: a.name, deck: a.deck, fusion: a.fusion, ready: true, mode: a.mode ?? 'eds', skill: a.skill ?? null, rarity: a.rarity, ace: a.ace, sleeve: typeof a.sleeve === 'string' && a.sleeve.length <= 24 ? a.sleeve : undefined, jingle: typeof a.jingle === 'string' && a.jingle.length <= 24 ? a.jingle : undefined, playmat: typeof a.playmat === 'string' && a.playmat.length <= 24 ? a.playmat : undefined, badge: wireBadge(a.badge), stakes: a.stakes };
       this.seats[a.player === 0 ? 1 : 0].accepted = false;
       return;
     }
