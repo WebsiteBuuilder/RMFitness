@@ -16,6 +16,7 @@ import type { BoardLayer, BoardMonster } from "./board";
 import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
+import { prepManga } from "./mangaPanel";
 import { hideCutIn, showCutIn } from "./cutinDom";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
@@ -89,6 +90,7 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
       add("art-flash", "", 0.35, { "--c": hex(c), "--s": String(s) }),
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
+    manga: (o) => prepManga(layer, o),
     cutin: (o) => void showCutIn(layer, o),
     cutinOff: () => hideCutIn(),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
@@ -270,7 +272,9 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (board.current || boardLoading.current || broken.current) return;
     boardLoading.current = true;
     import("./board")
-      .then(({ BoardLayer }) => {
+      .then(async ({ BoardLayer, whenQuiet }) => {
+        // making a WebGL context holds the main thread: not in the frames right after a tap
+        await whenQuiet();
         if (!boardCanvas.current || board.current) return;
         board.current = new BoardLayer(boardCanvas.current);
         // under a cinematic's full dim only the stage draws
@@ -298,6 +302,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   /** Tap: skip the chain on stage (after the duel is won: straight to the result). */
   const skipChain = () => {
     if (stateRef.current.winner !== null) return skipAll(false);
+    // a manga panel holding the frame: the tap only sends the panel away (the blow plays on)
+    if (dir.current?.dismissManga()) return;
     // a portrait cut-in on screen: the tap skips just it (the spotlight and the cue it announces stay)
     if (dir.current?.cutinOnScreen) return dir.current.skip();
     tapToResult();

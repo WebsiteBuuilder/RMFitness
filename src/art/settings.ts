@@ -4,6 +4,7 @@
 // The old single "3D Animations: Full / Fast / Off" option (eds.art3d) carries over:
 // Off stays off, Fast becomes 1.5×.
 import { useEffect, useState } from 'preact/hooks';
+import type { MangaMode } from './mangaRules';
 
 export type Cinematics = 'big' | 'all' | 'mine' | 'off';
 export type AnimSpeed = 1 | 1.5 | 2;
@@ -66,6 +67,16 @@ const IDLE_KEY = 'eds.idle';
 export const getIdle = (): boolean => read(IDLE_KEY) !== 'off';
 export const setIdle = (on: boolean) => write(IDLE_KEY, on ? 'on' : 'off');
 
+const MANGA_KEY = 'eds.manga';
+const MANGA_ORDER: MangaMode[] = ['big', 'all', 'off'];
+export const MANGA_NAMES: Record<MangaMode, string> = { big: 'Big hits', all: 'Every hit', off: 'Off' };
+/** Manga attack panels (mangaRules.ts): on big hits unless changed. */
+export function getManga(): MangaMode {
+  const v = read(MANGA_KEY);
+  return v && (MANGA_ORDER as string[]).includes(v) ? (v as MangaMode) : 'big';
+}
+export const setManga = (v: MangaMode) => write(MANGA_KEY, v);
+export const nextManga = (v: MangaMode): MangaMode => MANGA_ORDER[(MANGA_ORDER.indexOf(v) + 1) % MANGA_ORDER.length];
 const CUTIN_KEY = 'eds.cutins';
 /** Anime portrait cut-ins (the duelists' faces on attacks, chains and the final blow): on unless turned off. */
 export const getCutins = (): boolean => read(CUTIN_KEY) !== 'off';
@@ -91,6 +102,7 @@ export const useCinematics = () => useStored(getCinematics);
 export const useAnimSpeed = () => useStored(getAnimSpeed);
 export const useHolo = () => useStored(getHolo);
 export const useIdle = () => useStored(getIdle);
+export const useManga = () => useStored(getManga);
 export const useCutins = () => useStored(getCutins);
 /** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
 export function onArtSettings(cb: () => void): () => void {
@@ -105,12 +117,14 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const speed = useAnimSpeed();
   const holo = useHolo();
   const idle = useIdle();
+  const manga = useManga();
   const cut = useCutins();
   return [
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: 'tap to change', onPick: () => setCinematics(nextCinematics(cine)) },
     { label: `Animation speed: ${speed}×`, note: 'tap to change', onPick: () => setAnimSpeed(nextAnimSpeed(speed)) },
     { label: `Hologram summons: ${holo ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setHolo(!holo) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setIdle(!idle) },
+    { label: `Manga: ${MANGA_NAMES[manga]}`, note: 'tap to change', onPick: () => setManga(nextManga(manga)) },
     { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setCutins(!cut) },
   ];
 }

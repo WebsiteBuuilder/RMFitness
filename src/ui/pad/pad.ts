@@ -252,8 +252,11 @@ function drawRing() {
   if (!ring) return;
   if (!on || !focused || !focused.isConnected) {
     ring.style.opacity = '0';
+    // a hidden ring doesn't pulse: its box-shadow pulse would redraw the page 60 times a second on every screen
+    ring.style.animationPlayState = 'paused';
     return;
   }
+  ring.style.animationPlayState = '';
   // (a screen redraw may have rewritten its class list)
   if (!focused.classList.contains('pad-focus')) focused.classList.add('pad-focus');
   const r = focused.getBoundingClientRect();
@@ -573,9 +576,10 @@ function press() {
       if (next) setFocus(next);
     }, 90);
   }
-  if (el.matches('.rv:not(.up)')) {
+  if (el.matches('.rv:not(.up), .po-card:not(.up)')) {
     return void setTimeout(() => {
-      const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up)')][0];
+      // (a pack opening's glowing best card charges by itself after A: let it, the ring stays on it)
+      const next = [...document.querySelectorAll<HTMLElement>('.rv:not(.up), .po-card:not(.up)')].find((c) => !c.matches('.charging'));
       if (next) setFocus(next);
       else validate(true);
     }, 80);
@@ -977,11 +981,16 @@ function connected() {
   return pads().length;
 }
 
+/** the ring following sliding things while no controller loop runs (set up by installPad) */
+let follow: () => void = () => {};
+let followId = 0;
+
 function wake() {
   if (!on) {
     on = true;
     document.documentElement.classList.add('pad-on');
   }
+  follow();
 }
 
 function frame(now: number) {
@@ -1047,6 +1056,7 @@ export function installPad() {
   installed = true;
   ring = document.createElement('div');
   ring.className = 'pad-ring pad-ui';
+  ring.style.animationPlayState = 'paused'; // (pulses only while shown: see drawRing)
   hints = document.createElement('div');
   hints.className = 'pad-hints pad-ui';
   toast = document.createElement('div');
@@ -1133,12 +1143,18 @@ export function installPad() {
   addEventListener('resize', () => drawRing());
   addEventListener('scroll', () => drawRing(), true);
   // the ring follows things that slide (sheets, the hand fan) even without a controller loop
-  setInterval(() => {
-    if (!on || loop) return;
-    validate();
-    drawRing();
-    renderHints();
-  }, 120);
+  // (only while a controller drives the screen: a touch player's phone gets no timer at all)
+  follow = () => {
+    if (followId) return;
+    followId = window.setInterval(() => {
+      if (!on) return void (clearInterval(followId), (followId = 0));
+      if (loop) return;
+      validate();
+      drawRing();
+      renderHints();
+    }, 120);
+  };
+  if (on) follow();
 }
 
 /** For tests in the browser: how long since a controller button was pressed. */

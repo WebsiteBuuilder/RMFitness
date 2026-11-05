@@ -30,6 +30,9 @@ import './arena.css';
 import './turnhud.css';
 import { dangerLevel, FieldCracks } from './Atmosphere';
 import { wearKey, ZoneWear } from './fieldWear';
+import { fieldTerrain } from './atmosphereRules';
+import { PlaymatHalves, rowMatClass } from '../playmats/Halves';
+import { useDuelPlaymats } from '../playmats/duel';
 
 type Action = Parameters<DuelSession['send']>[0];
 type SelectPrompt = Extract<Prompt, { kind: 'select' }>;
@@ -95,6 +98,8 @@ interface Drag {
 export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: ComponentChildren }) {
   const { state, e, acting, me, opp, canAct, myTurn, prompt, sel, setSel, mode, setMode, send, tap, commands, highlight, anim, selCard, canSeeSel } = ctl;
   const oppId = other(acting);
+  // (the field rows take their side's playmat colours; a mat that arrives late re-renders them)
+  useDuelPlaymats();
   /** the selected card when it is in play (its counters show in the preview) */
   const selField = selCard ? e.fieldCard(selCard.uid) : null;
   const [phaseOpen, setPhaseOpen] = useState(false);
@@ -904,9 +909,10 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <i class="tarena-floor" />
         </div>
         <div class="tmat" style={{ '--cols': String(me.mz.length + 2) } as Record<string, string>}>
+          {e.speed && <PlaymatHalves me={acting} opp={oppId} field={{ me: !!fieldTerrain(state, acting), opp: !!fieldTerrain(state, oppId) }} turn={state.turn} />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(opp.lp, true) : 0} side="opp" />}
           {e.speed && <FieldCracks level={state.winner == null ? dangerLevel(me.lp, true) : 0} side="me" />}
-          <div class="trow opp">
+          <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>
             {deck(oppId)}
             {opp.sz
               .map((c, i) => zone(c, oppId, 's', i))
@@ -914,7 +920,7 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
               .reverse()}
             {fieldZone(oppId)}
           </div>
-          <div class="trow opp">
+          <div class={`trow opp${e.speed ? rowMatClass(oppId) : ''}`}>
             {gy(oppId)}
             {opp.mz
               .map((c, i) => zone(c, oppId, 'm', i))
@@ -925,12 +931,12 @@ export function TouchDuel({ ctl, overlays }: { ctl: TouchCtl; overlays: Componen
           <div class="tmid" ref={midRef}>
             {midText}
           </div>
-          <div class="trow">
+          <div class={`trow${e.speed ? rowMatClass(acting) : ''}`}>
             <div class="tz-spacer" />
             {me.mz.map((c, i) => zone(c, acting, 'm', i))}
             {gy(acting)}
           </div>
-          <div class="trow">
+          <div class={`trow${e.speed ? rowMatClass(acting) : ''}`}>
             {fieldZone(acting)}
             {me.sz.map((c, i) => zone(c, acting, 's', i))}
             {deck(acting)}
