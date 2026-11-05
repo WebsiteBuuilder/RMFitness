@@ -16,7 +16,9 @@ import './jingles/jingles.css';
 import './playmats/playmats.css';
 // (last: tablets, laptops and desktops get the whole screen)
 import './ui/fitscreen.css';
+import './art/lite.css';
 import { lockPhonePortrait } from './ui/fit';
+import { startPerfGuard } from './art/perfGuard';
 
 render(
   <>
@@ -29,3 +31,4 @@ render(
 registerServiceWorker();
 installPad();
 lockPhonePortrait();
+startPerfGuard();

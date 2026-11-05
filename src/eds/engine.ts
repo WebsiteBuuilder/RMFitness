@@ -79,6 +79,9 @@ export function emptyState(): DuelState {
 
 export const other = (p: Pid): Pid => (p === 0 ? 1 : 0);
 
+/** The order find() looks through a player's zones. */
+const FIND_ZONES = ['hand', 'mz', 'sz', 'gy', 'deck', 'removed', 'fusion'] as const;
+
 export class Engine {
   state: DuelState = emptyState();
   /**
@@ -609,22 +612,18 @@ export class Engine {
 
   /** Finds a card anywhere by uid. */
   find(uid: number): { card: Card; loc: Loc } | null {
-    for (const p of [0, 1] as Pid[]) {
-      const ps = this.player(p);
-      const zones: [string, (Card | null)[]][] = [
-        ['hand', ps.hand],
-        ['mz', ps.mz],
-        ['sz', ps.sz],
-        ['gy', ps.gy],
-        ['deck', ps.deck],
-        ['removed', ps.removed],
-        ['fusion', ps.fusion],
-      ];
-      for (const [zone, arr] of zones) {
-        const i = arr.findIndex((c) => c?.uid === uid);
-        if (i >= 0) return { card: arr[i]!, loc: { player: p, zone: zone as Loc['zone'], index: i } };
+    // Called thousands of times per turn: plain loops, nothing allocated until a card is found.
+    for (let p = 0; p < 2; p++) {
+      const ps = this.state.players[p];
+      for (let z = 0; z < FIND_ZONES.length; z++) {
+        const zone = FIND_ZONES[z];
+        const arr = ps[zone] as (Card | null)[];
+        for (let i = 0; i < arr.length; i++) {
+          const c = arr[i];
+          if (c && c.uid === uid) return { card: c, loc: { player: p as Pid, zone, index: i } };
+        }
       }
-      if (ps.field?.uid === uid) return { card: ps.field, loc: { player: p, zone: 'field', index: 0 } };
+      if (ps.field?.uid === uid) return { card: ps.field, loc: { player: p as Pid, zone: 'field', index: 0 } };
     }
     return null;
   }
@@ -683,7 +682,8 @@ export class Engine {
       if (fx.dnaRace && fx.dnaSource && this.fieldCard(fx.dnaSource)?.active && m.faceUp && !this.trapsNegated('DNA Surgery')) return fx.dnaRace;
       if (fx.declRace?.[m.uid] && this.find(m.uid)?.loc.zone === 'mz') return fx.declRace[m.uid];
       const ctl = this.controller(m.uid);
-      if (ctl !== null && this.monsters(ctl).some((x) => x.faceUp && this.isNamed(x, 'Parasite Paracide') && x.owner !== ctl)) return 'Insect';
+      // (a monster its controller doesn't own is rare: checking that first skips the name lookups)
+      if (ctl !== null && this.monsters(ctl).some((x) => x.owner !== ctl && x.faceUp && this.isNamed(x, 'Parasite Paracide'))) return 'Insect';
       // A Trap Card Special Summoned as a monster (Quantum Cat, Zoma the Spirit) has the Type its script gave it.
       const trap = (this.state.fx.trapMonster as Record<number, { race?: string }> | undefined)?.[m.uid];
       if (trap?.race && this.find(m.uid)?.loc.zone === 'mz') return trap.race;
@@ -753,7 +753,8 @@ export class Engine {
     }
     if (!out.length || !out.some((n) => n !== base && !rule.also.includes(n))) out.unshift(base);
     for (const n of rule.also) if (!out.includes(n)) out.push(n);
-    return [...new Set(out)];
+    if (out.length < 2) return out;
+    return out.filter((n, i) => out.indexOf(n) === i);
   }
 
   private naming = 0;
@@ -802,9 +803,11 @@ export class Engine {
     for (const q of p === undefined ? ([0, 1] as Pid[]) : [p]) {
       for (const c of this.activeSpells(q)) if (this.isNamed(c, name)) return c;
       for (const m of this.monsters(q)) if (m.faceUp && this.isNamed(m, name)) return m;
-      if (this.speed && this.skillDefs().some((x) => x.p === q && x.sk.namesAs?.(this, q) === name)) return this.skillCard(q); // audit-skills
-      if (this.speed) for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
-      if (this.speed) for (const c of this.activeSpells(q)) if (getEffect(c.name)?.countsAs?.(this, c) === name) return c; // audit-00: A Legendary Ocean is "Umi"
+      if (!this.speed) continue;
+      const skill = this.player(q).skill;
+      if (skill && getSkill(skill)?.namesAs?.(this, q) === name) return this.skillCard(q); // audit-skills
+      for (const m of this.monsters(q)) if (m.faceUp && this.effectOn(m)?.countsAs?.(this, m) === name) return m;
+      for (const c of this.activeSpells(q)) if (getEffect(c.name)?.countsAs?.(this, c) === name) return c; // audit-00: A Legendary Ocean is "Umi"
     }
     return null;
   }
@@ -904,19 +907,25 @@ export class Engine {
       const b = self(this, m);
       (atk += b.atk), (def += b.def);
     }
-    for (const p of [0, 1] as Pid[]) {
-      const sources = [...this.monsters(p), ...this.spells(p).filter((c) => c.active), ...(this.player(p).field ? [this.player(p).field!] : [])];
-      for (const src of sources) {
-        if (!src.faceUp) continue;
-        const srcKind = this.info(src.name).kind;
-        if (srcKind === 'spell' && this.spellsNegated()) continue;
-        if (srcKind === 'trap' && this.trapsNegated(src.name)) continue;
-        if (this.state.fx.fieldOff === this.state.turn && src === this.player(p).field) continue;
+    // Most cards have no aura, so that is checked first: the negation checks scan the whole field.
+    let spellsOff: boolean | undefined;
+    for (let p = 0; p < 2; p++) {
+      const ps = this.state.players[p];
+      const field = ps.field;
+      const give = (src: FieldCard) => {
+        if (!src.faceUp) return;
         const aura = this.effectOn(src)?.aura;
-        if (!aura) continue;
-        const b = aura(this, src, m, p);
+        if (!aura) return;
+        const srcKind = this.info(src.name).kind;
+        if (srcKind === 'spell' && (spellsOff ??= this.spellsNegated())) return;
+        if (srcKind === 'trap' && this.trapsNegated(src.name)) return;
+        if (this.state.fx.fieldOff === this.state.turn && src === field) return;
+        const b = aura(this, src, m, p as Pid);
         if (b) (atk += b.atk), (def += b.def);
-      }
+      };
+      for (const src of ps.mz) if (src) give(src);
+      for (const src of ps.sz) if (src && src.active) give(src);
+      if (field) give(field);
     }
     return { atk, def };
   }
