@@ -141,6 +141,10 @@ export function getManga(): MangaMode {
 }
 export const setManga = (v: MangaMode) => write(MANGA_KEY, v);
 export const nextManga = (v: MangaMode): MangaMode => MANGA_ORDER[(MANGA_ORDER.indexOf(v) + 1) % MANGA_ORDER.length];
+const CUTIN_KEY = 'eds.cutins';
+/** Anime portrait cut-ins (the duelists' faces on attacks, chains and the final blow): on unless turned off. */
+export const getCutins = (): boolean => !liteNow && read(CUTIN_KEY) !== 'off';
+export const setCutins = (on: boolean) => write(CUTIN_KEY, on ? 'on' : 'off');
 
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
 export const setAnimSpeed = (v: AnimSpeed) => write(SPEED_KEY, String(v));
@@ -166,6 +170,7 @@ export const useIdle = () => useStored(getIdle);
 export const useManga = () => useStored(getManga);
 export const usePerf = () => useStored(getPerf);
 export const useLite = () => useStored(isLite);
+export const useCutins = () => useStored(getCutins);
 /** Calls back whenever a cinematic setting changes on this phone (or in another tab); returns the unsubscribe. */
 export function onArtSettings(cb: () => void): () => void {
   window.addEventListener(EVT, cb);
@@ -184,6 +189,7 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const perf = usePerf();
   const lite = useLite();
   const held = lite ? 'Lite mode is holding this off' : 'tap to change';
+  const cut = useCutins();
   return [
     { label: `Performance: ${PERF_NAMES[perf]}${perf === 'auto' && lite ? ' (Lite is on)' : ''}`, note: perf === 'auto' ? 'Auto drops to Lite when the game lags' : perf === 'lite' ? 'cut-down graphics for a smoother game' : 'every effect, however it runs', onPick: () => setPerf(nextPerf(perf)) },
     { label: `Cinematics: ${CINEMATICS_NAMES[cine]}`, note: held, onPick: () => setCinematics(nextCinematics(cine)) },
@@ -192,5 +198,6 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
     { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: lite ? 'Lite mode keeps it to Soft' : 'tap to change', onPick: () => setDuelCam(nextDuelCam(cam)) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: held, onPick: () => setIdle(!idle) },
     { label: `Manga: ${MANGA_NAMES[manga]}`, note: held, onPick: () => setManga(nextManga(manga)) },
+    { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: held, onPick: () => setCutins(!cut) },
   ];
 }

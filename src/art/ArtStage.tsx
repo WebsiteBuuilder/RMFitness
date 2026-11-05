@@ -17,12 +17,14 @@ import type { ArtData } from "./depth";
 import { skipSpot } from "./skipspot";
 import { showCallout } from "./calloutDom";
 import { prepManga } from "./mangaPanel";
+import { hideCutIn, showCutIn } from "./cutinDom";
 import { calloutMode, stopShout, voiceWarm, warmVoice } from "./callouts";
 import { soundEnabled } from "../ui/sound";
 import { aceFor } from "../ace/ace";
 import { dangerLevel } from "../ui/atmosphereRules";
 import "./art.css";
 import "./chainspot.css";
+import "./cutin.css";
 
 export { CINEMATICS_NAMES, useCinematicsMenu } from "./settings";
 
@@ -89,8 +91,10 @@ function makeUi(layer: HTMLDivElement, speed: () => number, chain?: ChainSpot): 
     caption: (t, dur, cls = "") => add(`art-caption ${cls}`, esc(t), dur),
     callout: (o) => void showCallout(layer, o, speed()),
     manga: (o) => prepManga(layer, o),
+    cutin: (o) => void showCutIn(layer, o),
+    cutinOff: () => hideCutIn(),
     // (a shout still on screen rides through: the blow is the next chain after the declaration)
-    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), stopShout(), chain?.hide())),
+    clear: (keep) => (keep ? layer.querySelectorAll(":scope > :not(.art-callout)").forEach((x) => x.remove()) : (layer.replaceChildren(), hideCutIn(), stopShout(), chain?.hide())),
     chain,
     replay: (on) => {
       // the replay's letterbox and tag live beside the layer (a new chain clears the layer, not them)
@@ -139,7 +143,7 @@ const idle = (f: () => void) => {
 
 export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
   // (a shout still being said stops when the duel screen goes)
-  useEffect(() => () => stopShout(), []);
+  useEffect(() => () => (stopShout(), hideCutIn()), []);
   // (the phone's speech engine wakes, silently, on the first tap of the duel: waking it on the
   // first attack is what made that shout late)
   // (pointerup/click: a touch only counts as a gesture that may start speech once the finger lifts;
@@ -300,6 +304,8 @@ export function ArtStage({ state, viewer }: { state: DuelState; viewer: Pid }) {
     if (stateRef.current.winner !== null) return skipAll(false);
     // a manga panel holding the frame: the tap only sends the panel away (the blow plays on)
     if (dir.current?.dismissManga()) return;
+    // a portrait cut-in on screen: the tap skips just it (the spotlight and the cue it announces stay)
+    if (dir.current?.cutinOnScreen) return dir.current.skip();
     tapToResult();
     clearLayer();
     chainSpot.current?.hide();

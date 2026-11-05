@@ -28,6 +28,7 @@ import { calloutFor, calloutMode, CALLOUT_SHOUT, speakShout, voicePitch } from '
 import { aceFor, bondTitle } from '../ace/ace';
 import { finisherFor, type FinisherKind } from './finishers';
 import { soundEnabled } from '../ui/sound';
+import { CUTIN_DUR, CUTIN_OVERLAP, duelFace, type Face } from './cutins';
 
 /** DOM text and flashes drawn over the canvas (crisper than text in WebGL). */
 export interface Ui {
@@ -50,6 +51,21 @@ export interface Ui {
   chain?: ChainSpotUi;
   /** a manga attack panel (mangaPanel.ts), built now and shown when the blow lands */
   manga?(o: MangaPanelOpts): MangaHandle;
+  /** an anime portrait cut-in (cutinDom.ts): `me` acts (on the `lead` side of the screen), `foe` takes it; `dur` real seconds */
+  cutin?(o: CutInShow): void;
+  /** the cut-in on screen goes at once (tapped away, or the stage cleared) */
+  cutinOff?(): void;
+}
+
+/** What a portrait cut-in draws. */
+export interface CutInShow {
+  why: 'attack' | 'chain' | 'final';
+  line: string;
+  about: string;
+  lead: 'near' | 'far';
+  me: Face;
+  foe: Face;
+  dur: number;
 }
 
 /** What the director asks of the chain spotlight (chainSpot.ts ChainSpot). */
@@ -228,6 +244,9 @@ interface Colors {
   light: number;
 }
 
+/** the portrait cut-ins that are on screen (drawn, not still waiting on shaders): a tap on one skips just it */
+export const CUTINS_SHOWN = new WeakSet<Timeline>();
+
 const SLOW_KINDS = new Set(['summon', 'attack', 'hit', 'win']);
 
 /** A cue waiting to play: `batch` groups the cues of one engine update (one chain), `scale` speeds up a repeat. */
@@ -264,6 +283,8 @@ export function cueOwner(c: Cue): Pid | null {
       return c.trap.controller;
     case 'finale':
       return c.card.controller;
+    case 'cutin':
+      return c.seat;
     case 'attack':
       return c.attacker.controller;
     case 'hit':
@@ -460,6 +481,11 @@ export class Director {
     return this.stage.prewarm();
   }
 
+  /** A portrait cut-in is on screen (a tap skips just it). */
+  get cutinOnScreen(): boolean {
+    return (this.curKind === 'cutin' && this.current !== null && CUTINS_SHOWN.has(this.current)) || this.trailing.some((t) => CUTINS_SHOWN.has(t));
+  }
+
   /** The WebGL context is gone: cinematics are skipped until the browser restores it. */
   get broken() {
     return this.stage.lost;
@@ -584,6 +610,21 @@ export class Director {
   /** Tap: skip the whole current chain (every cue of the same event batch). */
   skip() {
     this.dropManga();
+    this.ui.cutinOff?.();
+    // a tap on a portrait cut-in skips just the cut-in: what it announces plays on
+    // (also in its last moments, when what it announces has already started under it)
+    // (only one that is really drawn: a cut-in still waiting on its shaders was never seen)
+    if (this.curKind === 'cutin' && this.current && CUTINS_SHOWN.has(this.current)) {
+      this.endCurrent(true);
+      return;
+    }
+    const tail = this.trailing.find((t) => CUTINS_SHOWN.has(t));
+    if (tail) {
+      tail.finish();
+      tail.dispose();
+      this.trailing = this.trailing.filter((t) => t !== tail);
+      return;
+    }
     this.fastFade = true;
     this.finaleUid = -1;
     const b = this.curBatch;
@@ -597,6 +638,7 @@ export class Director {
   /** Long press / double tap: skip everything queued, and whatever arrives until the queue has drained. */
   skipEverything() {
     this.dropManga();
+    this.ui.cutinOff?.();
     this.skipAll = true;
     this.finaleUid = -1;
     this.fastFade = true;
@@ -1769,7 +1811,33 @@ export class Director {
         return this.chainLink(cue.stack, cue.n, cue.negated);
       case 'chainEnd':
         return this.chainFold();
+      case 'cutin':
+        return this.cutIn(cue);
     }
+  }
+
+  // ------------------------------------------------------------ portrait cut-ins
+  /**
+   * The duelists' faces split the screen on a slant (cutinDom.ts draws it): a light dim, a
+   * whoosh and a sting, then what it announces starts underneath as it wipes away.
+   */
+  private cutIn(c: Extract<Cue, { kind: 'cutin' }>): Timeline | null {
+    const show = this.ui.cutin;
+    const me = duelFace(c.seat);
+    const foe = duelFace(c.foe);
+    if (!show || !me || !foe) return null;
+    const D = CUTIN_DUR[c.why];
+    const tl = new Timeline(D, this.stage);
+    // a light dim (never lighter than what is already on screen: no dip between darker cues)
+    this.dimTarget = Math.max(0.5, this.dimTarget);
+    tl.at(0, () => {
+      CUTINS_SHOWN.add(tl);
+      show({ why: c.why, line: c.line, about: c.about, lead: this.side(c.seat), me, foe, dur: D / Math.max(0.25, tl.rate) });
+      whoosh(0.32, 380, 3400, 0.2);
+    });
+    tl.at(0.1, () => (c.why === 'final' ? boom(0.45) : zap(0.16)));
+    tl.handoff = D - CUTIN_OVERLAP;
+    return tl;
   }
 
   // ------------------------------------------------------------ chain spotlight
@@ -7647,5 +7715,5 @@ export const FAMILY_FX_IDS = Object.keys(FAMILY_FX) as FxFamily[];
 /** The summon methods with their own shot ('normal' keeps the plain summon). */
 export const SUMMON_METHODS_DRAWN = (Object.keys(SUMMON_LABEL) as SummonHow[]).filter((h) => h !== 'normal');
 /** The cue kinds the director draws. */
-export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd', 'finale'];
+export const CUE_KINDS_DRAWN: Cue['kind'][] = ['summon', 'set', 'flip', 'activate', 'target', 'skill', 'attack', 'hit', 'damage', 'destroy', 'win', 'leave', 'heal', 'draw', 'slam', 'chain', 'resolve', 'chainEnd', 'finale', 'cutin'];
 export { css };

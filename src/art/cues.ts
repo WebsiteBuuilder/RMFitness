@@ -64,7 +64,15 @@ type CueBody =
   /** ...link `n` resolves: it comes forward, bigger, with its effect text and its own flash */
   | { kind: 'resolve'; stack: ChainCard[]; n: number; negated: boolean }
   /** ...the chain has resolved: the stack folds away */
-  | { kind: 'chainEnd' };
+  | { kind: 'chainEnd' }
+  /**
+   * An anime portrait cut-in (cutins.ts): the duelists' faces split the screen on a slant, `seat`'s
+   * lit and shouting `line`, `foe`'s dimmed. On an attack declaration, a chain answered by the other
+   * duelist, and the final blow (`why`). `about`: the card it is about ('' when none).
+   */
+  | { kind: 'cutin'; why: CutInWhy; seat: Pid; foe: Pid; line: string; about: string };
+
+export type CutInWhy = 'attack' | 'chain' | 'final';
 
 /** One link of a chain, as the chain spotlight shows it. */
 export interface ChainCard {
@@ -445,6 +453,8 @@ export function weight(c: Cue): number {
       return 4;
     case 'finale':
       return 6;
+    case 'cutin':
+      return 3;
     case 'activate':
     case 'target':
     case 'leave':
