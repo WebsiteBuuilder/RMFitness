@@ -67,7 +67,7 @@ export function Legends(p: Ctx) {
     const first = !legendDuelWon(solo, d.id);
     const notes = [
       ...(d.condition ? [d.condition.text] : []),
-      ...(open ? [ANY_GOES_NOTE] : first ? [`First win: ${LEGEND_DUEL_CHIPS} Duel Chip${found.index === found.legend.duels.length - 1 ? `, plus ${found.legend.card}, ${LEGEND_FINISH_CHIPS} more chips, a pack and a title` : ''}.`] : isRematch && pays ? [`Legend Rematch: a win pays ${REMATCH_CHIPS} Duel Chip today.`] : ['Already won: this replay pays nothing.']),
+      ...(open ? [ANY_GOES_NOTE] : first ? [`First win: ${LEGEND_DUEL_CHIPS} Duel Chip and a pack${found.index === found.legend.duels.length - 1 ? `, plus ${found.legend.card}, ${LEGEND_FINISH_CHIPS} more chips, another pack and a title` : ''}.`] : isRematch && pays ? [`Legend Rematch: a win pays ${REMATCH_CHIPS} Duel Chip today.`] : ['Already won: this replay pays nothing.']),
     ];
     p.onDuel({
       me: { name: mine.name, main: mine.main, extra: mine.extra, skill: mine.skill, setup: d.condition?.player },
@@ -177,8 +177,8 @@ export function Legends(p: Ctx) {
       )}
       {help && (
         <Sheet title="What Card Legends pays" onClose={() => setHelp(false)}>
-          <div class="so-reward">First win of every duel: {LEGEND_DUEL_CHIPS} Duel Chip</div>
-          <div class="so-reward">Finish a legend: the legend card, {LEGEND_FINISH_CHIPS} more Duel Chips, a pack and a title</div>
+          <div class="so-reward">First win of every duel: {LEGEND_DUEL_CHIPS} Duel Chip and a booster pack</div>
+          <div class="so-reward">Finish a legend: the legend card, {LEGEND_FINISH_CHIPS} more Duel Chips, another pack and a title</div>
           <div class="so-reward">Today's Legend Rematch: {REMATCH_CHIPS} Duel Chip a day</div>
           <p class="so-dim">
             That's {LEGEND_CHIPS_TOTAL} chips across the 8 legends, plus one a day from the rematch. Chips stop at 30, so spend them in the Card Shop. Replays and losses pay nothing.

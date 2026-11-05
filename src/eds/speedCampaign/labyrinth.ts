@@ -99,6 +99,8 @@ export interface RunSummary {
   fragments: number;
   /** played with an Anything goes deck (paid nothing) */
   open?: boolean;
+  /** cards from the booster pack a clear paid (shown on the run-end screen, not kept in history) */
+  pack?: string[];
 }
 
 // ---------- who you meet on each floor ----------
