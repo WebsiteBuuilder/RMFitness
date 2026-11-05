@@ -730,6 +730,59 @@ const heart = scene(
 );
 const heartTrim = trim(GOLD, '#ff6a4a', 'gem');
 
+
+// ---------- Duel Pass mats (src/pass): only ever reached on the pass ----------
+
+/** Duel Tower Summit: the top of the finals tower over the sea at night, searchlights crossing the clouds. */
+const summit = scene(
+  lin('sky', [[0, '#050a1e'], [0.6, '#16244a'], [1, '#3a4a7a']]) +
+    lin('deck', [[0, '#3a4256'], [1, '#0e121c']]) +
+    lin('beam', [[0, '#e8f0ff', 0.4], [1, '#e8f0ff', 0]]) +
+    glowDef('moon', '#f2f6ff', 0.55) +
+    glowDef('pad', '#7ab0ff', 0.4),
+  `<rect width='${W}' height='${H}' fill='url(#deck)'/>` +
+    `<rect width='${W}' height='96' fill='url(#sky)'/>` +
+    scatter(34, 811, [0, 0, 380, 60], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(0.3 + r * 0.8)}' fill='#fff' fill-opacity='${f(0.3 + r * 0.6)}'/>`) +
+    spot('moon', 300, 26, 34) +
+    `<circle cx='300' cy='26' r='11' fill='#eef3ff'/><circle cx='305' cy='23' r='9' fill='#c8d2ea' fill-opacity='.35'/>` +
+    // two searchlights crossing
+    `<path d='M60 96 L10 0 H52 Z' fill='url(#beam)'/><path d='M320 96 L340 0 H382 Z' fill='url(#beam)'/>` +
+    // the sea and clouds far below
+    `<g fill='#2a3a66' fill-opacity='.8'><path d='M0 86 Q40 74 90 82 T190 78 T290 84 T380 76 V96 H0Z'/></g>` +
+    `<g stroke='#9ab8ff' stroke-opacity='.25'><path d='M0 92 H380 M20 89 H120 M220 90 H340'/></g>` +
+    // the tower's edge: rails, then the steel deck plates
+    `<rect y='96' width='${W}' height='7' fill='#5a6680'/><path d='M0 96 H380' stroke='#c8d8ff' stroke-opacity='.7'/>` +
+    `<g stroke='#c8d8ff' stroke-opacity='.4'>${Array.from({ length: 20 }, (_, i) => `<path d='M${i * 20 + 6} 96 V88'/>`).join('')}<path d='M0 88 H380'/></g>` +
+    `<g stroke='#000' stroke-opacity='.35'>${Array.from({ length: 9 }, (_, i) => `<path d='M${CX} 103 L${i * 54 - 26} 220'/>`).join('')}<path d='M0 140 H380 M0 182 H380'/></g>` +
+    spot('pad', CX, CY + 12, 150, 70) +
+    onFloor(CY + 12, 0.55, seal('#9ac0ff', 0.55, 86) + `<circle cx='${CX}' cy='${CY}' r='100' fill='none' stroke='#9ac0ff' stroke-opacity='.4' stroke-width='3' stroke-dasharray='14 10'/>`) +
+    `<g fill='#ffcf4a'>${[18, 362].map((x) => `<path d='M${x} 103 l6 0 l-3 117 z' fill-opacity='.35'/>`).join('')}</g>`,
+  { grain: 0.12 },
+);
+const summitTrim = trim(SILVER, '#7ab0ff', 'star', '#d8e6ff');
+
+/** Champion's Stage: a gold arena under spotlights, confetti in the air, the laurel seal on the floor. */
+const championStage = scene(
+  lin('bk', [[0, '#120a1e'], [0.5, '#2a1a10'], [1, '#0a0604']]) +
+    lin('sp', [[0, '#fff6d0', 0.45], [1, '#fff6d0', 0]]) +
+    glowDef('gl', '#ffd56a', 0.55) +
+    lin('rim', [[0, '#fff0b0'], [0.5, '#a8701e'], [1, '#ffe08a']], 1, 0),
+  `<rect width='${W}' height='${H}' fill='url(#bk)'/>` +
+    // the crowd in the dark, a ring of lights above them
+    `<g fill='#2a1e3a'>${scatter(60, 901, [0, 40, 380, 44], (x, y, r) => `<circle cx='${x}' cy='${y}' r='${f(3 + r * 3)}'/>`)}</g>` +
+    `<g fill='#ffe9a0'>${Array.from({ length: 19 }, (_, i) => `<circle cx='${i * 21 + 1}' cy='18' r='1.6' fill-opacity='${i % 2 ? 0.6 : 1}'/>`).join('')}</g>` +
+    `<path d='M0 18 H380' stroke='#ffe9a0' stroke-opacity='.4'/>` +
+    // three spotlights onto the floor
+    [70, CX, 310].map((x) => `<path d='M${x} 0 L${x - 50} 200 H${x + 50} Z' fill='url(#sp)'/>`).join('') +
+    `<rect y='88' width='${W}' height='5' fill='url(#rim)'/>` +
+    spot('gl', CX, CY + 16, 170, 80) +
+    onFloor(CY + 16, 0.55, `<circle cx='${CX}' cy='${CY}' r='104' fill='none' stroke='#ffe08a' stroke-opacity='.75' stroke-width='3'/><circle cx='${CX}' cy='${CY}' r='90' fill='none' stroke='#ffe08a' stroke-opacity='.4' stroke-dasharray='3 6' stroke-width='3'/>` + rays(24, 34, 84, '#ffe08a', 1.6, 0.35) + `<polygon points='${star(5, 30, 12)}' fill='#ffd56a' fill-opacity='.3' stroke='#fff0b0' stroke-opacity='.8' stroke-width='1.6'/>`) +
+    // confetti
+    scatter(40, 907, [0, 0, 380, 220], (x, y, r, i) => `<rect x='${x}' y='${y}' width='${f(1.6 + r * 2)}' height='${f(3 + r * 2)}' fill='${['#ffd56a', '#ff6a9a', '#6ad0ff', '#ffffff'][i % 4]}' fill-opacity='${f(0.45 + r * 0.45)}' transform='rotate(${f(r * 180)} ${x} ${y})'/>`),
+  { grain: 0.1 },
+);
+const championTrim = trim(GOLD, '#ff4a7a', 'star', '#fff0b0');
+
 export const PLAYMAT_SVG = {
   blue,
   crimson,
@@ -751,6 +804,8 @@ export const PLAYMAT_SVG = {
   tomb,
   holo,
   heart,
+  summit,
+  champion: championStage,
 };
 export type PlaymatId = keyof typeof PLAYMAT_SVG;
 /** How strong each mat's grain lies over its scene (0: none). */
@@ -782,6 +837,8 @@ export const PLAYMAT_TRIM: Record<PlaymatId, string> = {
   tomb: tombTrim,
   holo: holoTrim,
   heart: heartTrim,
+  summit: summitTrim,
+  champion: championTrim,
 };
 
 // ---------- ambient motion: one small repeating tile a half, moved by CSS (transform / opacity only) ----------

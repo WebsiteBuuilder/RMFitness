@@ -564,7 +564,7 @@
 
 /* ---------- Duel Pass poster (front left, when the pass exists) ---------- */
 .sdr-pass {
-  left: 2%;
+  left: 4%;
   bottom: 13cqh;
   width: 15cqh;
   height: 21cqh;
@@ -744,8 +744,8 @@
   z-index: 5;
 }
 .sdr.has-pass .sdr-matezone {
-  left: calc(4% + 15cqh);
-  width: calc(46% - 15cqh);
+  left: calc(9% + 15cqh);
+  width: calc(41% - 15cqh);
 }
 .sdr-walk {
   position: absolute;
@@ -1049,4 +1049,9 @@
       linear-gradient(180deg, transparent 0 63.4%, #c9a24a66 63.4% 64%, #00000055 64% 65%, transparent 65%),
       radial-gradient(120cqh 70cqh at 50% 30%, #2a3a7a 0, #17204c 45%, #0c1230 80%);
   }
+}
+
+/* the poster's tag says "Claim 6" in full, even on the smallest phones */
+.sdr-pass .sdr-tag {
+  max-width: none;
 }
