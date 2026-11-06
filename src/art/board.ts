@@ -343,8 +343,10 @@ export class BoardLayer {
   private onIdleSetting = () => {
     this.idleOn = getIdle() && !calmMotion();
     if (!this.idleOn) (this.motesBack?.clear(), this.motesFront?.clear());
-    // (a new quality level: the figures layer takes its resolution, and a sleeping board draws again)
-    this.resize();
+    // (a new quality level: the figures layer takes its resolution, and a sleeping board draws again;
+    // only a real change of size re-sizes it, because re-sizing clears the canvas)
+    if (dprCap() !== this.renderer.getPixelRatio() || window.innerWidth !== this.w || window.innerHeight !== this.h) this.resize();
+    this.dirty = true;
     this.start();
   };
 
@@ -596,16 +598,17 @@ export class BoardLayer {
     }
     // (never negative: a frame stamped before the moment the loop was restarted would step everything backward)
     const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
-    // (30 fps on the frame clock: this vsync is skipped)
-    if (this.every > 17 && this.every <= 34 && !this.dirty && now - this.last < this.every - 6) {
+    // (on the frame clock: a vsync that comes too soon is skipped, so 30 fps stays 30 and a 120 Hz
+    // screen draws the figures at 60, not 120)
+    if (this.every <= 34 && !this.dirty && now - this.last < this.every - 6) {
       this.raf = requestAnimationFrame(this.tick);
       return;
     }
     const settling = this.dirty || now < this.settleUntil;
     // a finger just went down: the tap's answer paints first, the figures wait a beat
     const hush = !this.dirty && pressQuiet(now);
-    // summons and hits drawn at 60 fps tell the Auto watchdog how this device keeps up
-    if (this.every <= 17 && !hush && !artBusy()) {
+    // summons, hits and holograms drawn on the frame clock tell the Auto watchdog how this device keeps up
+    if (this.every <= 34 && !hush && !artBusy()) {
       if (this.fastAt) noteFrame(now, "board");
       this.fastAt = now;
     } else this.fastAt = 0;
