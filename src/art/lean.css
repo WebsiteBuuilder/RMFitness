@@ -47,9 +47,8 @@ html.fx-lean .art-banner.fin-MI b::after {
 }
 
 /* Glass blur and blend modes are the costliest thing a phone browser draws: flat panels instead */
-html.fx-lean *,
-html.fx-lean *::before,
-html.fx-lean *::after {
+html.fx-lean .csheet-back.md,
+html.fx-lean .tagbar {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }

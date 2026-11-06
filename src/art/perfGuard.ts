@@ -19,12 +19,13 @@ const AWAY_MS = 1000;
 
 let started = false;
 let winStart = 0;
-let last = 0;
+/** the last frame each source reported (the stage and the board never interleave their gaps) */
+const lastBy: Record<string, number> = {};
 let frames = 0;
 let missed = 0;
 let strikes = 0;
 const reset = () => {
-  last = 0;
+  for (const k in lastBy) lastBy[k] = 0;
   winStart = 0;
   frames = 0;
   missed = 0;
@@ -49,15 +50,16 @@ function judge(now: number, bad: boolean) {
  * vsync). The watchdog has no frame loop of its own: a loop that never stops would make the
  * browser run style for every CSS animation on every frame, even on a still screen.
  */
-export function noteFrame(now: number) {
+export function noteFrame(now: number, source: 'stage' | 'board' = 'stage') {
   if (!watching()) return reset();
+  const last = lastBy[source] ?? 0;
   if (last) {
     const dt = now - last;
-    if (dt > AWAY_MS) return void ((last = now), (winStart = now), (frames = 0), (missed = 0));
+    if (dt > AWAY_MS) return void ((lastBy[source] = now), (winStart = now), (frames = 0), (missed = 0));
     frames++;
     if (dt > MISSED_MS) missed += dt;
   }
-  last = now;
+  lastBy[source] = now;
   if (!winStart) winStart = now;
   if (now - winStart >= WINDOW_MS) judge(now, frames >= 2 && missed / (now - winStart) >= BAD_SHARE);
 }

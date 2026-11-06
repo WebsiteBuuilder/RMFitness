@@ -2998,6 +2998,8 @@ export class Stage {
 
   private schedule() {
     if (this.raf || !this.running || document.hidden) return;
+    clearTimeout(this.pausedWait);
+    this.pausedWait = 0;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -3013,7 +3015,7 @@ export class Stage {
       this.pausedWait = window.setTimeout(() => {
         this.pausedWait = 0;
         if (this.running && !this.raf) this.raf = requestAnimationFrame(this.loop);
-      }, 90);
+      }, 50);
       return;
     }
     this.pauseDrawn = still;

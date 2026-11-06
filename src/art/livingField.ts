@@ -17,7 +17,7 @@
 // cinematic plays (it covers the duel), or while the tab is hidden. Time wraps every
 // half hour so phones' 16-bit floats never make the motion step.
 import { TERRAINS, type Terrain } from './families';
-import { isLean, isLite } from './settings';
+import { isLean, isLite, onArtSettings } from './settings';
 
 const VERT = `attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
@@ -308,6 +308,7 @@ export class LivingField {
   private onRestored = () => (this.init(), this.kick());
   private onVis = () => this.kick();
   private onResize = () => this.size();
+  private unsubLevel: () => void;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -318,6 +319,8 @@ export class LivingField {
     document.body.appendChild(this.canvas);
     document.addEventListener('visibilitychange', this.onVis);
     window.addEventListener('resize', this.onResize);
+    // (a new quality level: Balanced holds the landscape still, Full animates it again)
+    this.unsubLevel = onArtSettings(() => this.kick());
     this.init();
     this.size();
     // Draw one hidden frame while the duel is quiet: some GPU drivers (and software GL) build
@@ -551,6 +554,7 @@ export class LivingField {
 
   dispose() {
     this.disposed = true;
+    this.unsubLevel();
     this.stop();
     document.removeEventListener('visibilitychange', this.onVis);
     window.removeEventListener('resize', this.onResize);

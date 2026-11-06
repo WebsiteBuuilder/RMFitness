@@ -28,6 +28,7 @@ import { calmMotion, getHolo, getIdle, isLean, onArtSettings } from "./settings"
 import { GLANCE_S, glanceEnvelope, idlePoseInto, idleStyleFor, moteStyleFor, newIdlePose, presenceMotes, presenceOf, wornAmount, MOTE_SHAPE, type IdleMood, type IdlePose, type IdleStyle, type MoteStyle, type Presence } from "./idleLife";
 import { holoHum, holoLock } from "./sfx";
 import { unmapRect } from "./cam";
+import { noteFrame } from "./perfGuard";
 
 export interface BoardMonster {
   uid: number;
@@ -301,6 +302,8 @@ export class BoardLayer {
     this.resize();
     window.addEventListener("resize", this.onResize);
     window.addEventListener("scroll", this.markDirty, { capture: true, passive: true });
+    document.addEventListener("animationend", this.onFieldAnim, true);
+    document.addEventListener("transitionend", this.onFieldAnim, true);
     document.addEventListener("visibilitychange", this.onVisibility);
     canvas.addEventListener("webglcontextlost", this.onLost, false);
     canvas.addEventListener("webglcontextrestored", this.onRestored, false);
@@ -319,6 +322,7 @@ export class BoardLayer {
 
   private onArt = () => {
     this.dirty = true;
+    this.lastLook = false;
     this.start();
   };
 
@@ -339,6 +343,9 @@ export class BoardLayer {
   private onIdleSetting = () => {
     this.idleOn = getIdle() && !calmMotion();
     if (!this.idleOn) (this.motesBack?.clear(), this.motesFront?.clear());
+    // (a new quality level: the figures layer takes its resolution, and a sleeping board draws again)
+    this.resize();
+    this.start();
   };
 
   /** Mote sizes are in CSS px on the card plane. */
@@ -361,6 +368,7 @@ export class BoardLayer {
   /** The face-up monsters now on the field. */
   sync(list: BoardMonster[]) {
     this.dirty = true;
+    this.lastLook = false;
     this.settleUntil = performance.now() + SETTLE_MS;
     const want = new Map(list.map((m) => [m.uid, m]));
     for (const p of this.pieces.values()) {
@@ -500,9 +508,24 @@ export class BoardLayer {
    * screen on every one of them, even the frames the board skips.
    */
   private later(ms: number) {
-    if (ms <= 17) this.raf = requestAnimationFrame(this.tick);
+    this.every = ms;
+    // (30 fps and up stays on the frame clock, skipping vsyncs, so its frames land evenly)
+    if (ms <= 34) this.raf = requestAnimationFrame(this.tick);
     else this.timer = window.setTimeout(this.onTimer, ms - 10);
   }
+  /** the gap the board asked for before this frame (ms) */
+  private every = 16;
+  /** the last frame drawn at the full 60 fps (for the Auto watchdog) */
+  private fastAt = 0;
+
+  /** the board went to sleep and has had (or scheduled) its one last look */
+  private lastLook = false;
+  private lookTimer = 0;
+  private onLastLook = () => {
+    this.lookTimer = 0;
+    this.dirty = true;
+    this.start();
+  };
 
   private onTimer = () => {
     this.timer = 0;
@@ -512,8 +535,10 @@ export class BoardLayer {
   private halt() {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
+    clearTimeout(this.lookTimer);
     this.raf = 0;
     this.timer = 0;
+    this.lookTimer = 0;
   }
 
   private markDirty = () => {
@@ -521,7 +546,16 @@ export class BoardLayer {
     this.start();
   };
 
-  private onResize = () => this.resize();
+  private onResize = () => {
+    this.resize();
+    this.start();
+  };
+
+  /** A card in the field finished moving (entrance, flip, zone shift): measure and draw once more. */
+  private onFieldAnim = (e: Event) => {
+    const t = e.target as Element | null;
+    if (t && t.closest?.("[data-uid]")) this.markDirty();
+  };
 
   private onVisibility = () => {
     if (document.hidden) this.halt();
@@ -562,9 +596,19 @@ export class BoardLayer {
     }
     // (never negative: a frame stamped before the moment the loop was restarted would step everything backward)
     const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+    // (30 fps on the frame clock: this vsync is skipped)
+    if (this.every > 17 && this.every <= 34 && !this.dirty && now - this.last < this.every - 6) {
+      this.raf = requestAnimationFrame(this.tick);
+      return;
+    }
     const settling = this.dirty || now < this.settleUntil;
     // a finger just went down: the tap's answer paints first, the figures wait a beat
     const hush = !this.dirty && pressQuiet(now);
+    // summons and hits drawn at 60 fps tell the Auto watchdog how this device keeps up
+    if (this.every <= 17 && !hush && !artBusy()) {
+      if (this.fastAt) noteFrame(now, "board");
+      this.fastAt = now;
+    } else this.fastAt = 0;
     if (!hush) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);
@@ -576,7 +620,13 @@ export class BoardLayer {
     // Balanced and Lite: once nothing moves (every figure has arrived and stands still, no hit,
     // no hologram, no fade), the last frame stays on screen and the board sleeps until the field
     // changes, a cinematic starts or ends, or the layout moves. Full keeps the slow sway.
-    if (!hush && !settling && !this.busy && !this.idleOn && isLean()) return;
+    if (!hush && !settling && !this.busy && !this.idleOn && isLean()) {
+      // one last look a moment later: a card still easing into place gets its figure moved with it
+      // (only once per wake-up: the last look itself does not earn another)
+      if (!this.lastLook) this.lookTimer = window.setTimeout(this.onLastLook, 400);
+      this.lastLook = true;
+      return;
+    }
     // 60 fps while things arrive; 20 under a cinematic (the stage needs the GPU); 30/10 on the
     // stage governor's lowest tier; then 20 fps for idle life and 15 for the slow sway
     const lean = isLean();
@@ -912,6 +962,8 @@ export class BoardLayer {
     this.unsub();
     this.unsubIdle();
     this.calmQ?.removeEventListener?.("change", this.onIdleSetting);
+    document.removeEventListener("animationend", this.onFieldAnim, true);
+    document.removeEventListener("transitionend", this.onFieldAnim, true);
     if (import.meta.env.DEV && (window as unknown as { __board?: BoardLayer }).__board === this) delete (window as unknown as { __board?: BoardLayer }).__board;
     this.motesBack?.dispose();
     this.motesFront?.dispose();

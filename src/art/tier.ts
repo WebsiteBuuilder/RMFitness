@@ -19,11 +19,11 @@ export interface DeviceInfo {
 }
 
 /** GPUs that struggle with a full-screen 3D layer over a busy page. */
-const WEAK_GPU = /Mali-(4\d\d|T\d+|G31|G51|G52|G57)|Adreno \(TM\) ([1-5]\d\d|60\d|61\d)|PowerVR|SwiftShader|llvmpipe|Software|Microsoft Basic/i;
+const WEAK_GPU = /Mali-(4\d\d|T\d+|G31|G51|G52|G57)|Adreno \(TM\) ([1-5]\d\d|60\d|61[0-7])|PowerVR|SwiftShader|llvmpipe|Software|Microsoft Basic/i;
 /** Older laptop graphics: fine for most things, not for everything at once. */
-const OLD_LAPTOP_GPU = /Intel.*\bHD Graphics\b/i;
+const OLD_LAPTOP_GPU = /Intel.*\bU?HD Graphics\b/i;
 /** GPUs a phone can draw everything on. */
-const STRONG_GPU = /Adreno \(TM\) (7\d\d|6[5-9]\d|8\d\d)|Mali-G7[1-9]|Mali-G[6-9]1\d|Immortalis|Xclipse/i;
+const STRONG_GPU = /Adreno \(TM\) (7\d\d|6[5-9]\d|8\d\d)|Mali-G7[1-9]|Mali-G[6-9]1\d|Immortalis/i;
 
 export function deviceTier(d: DeviceInfo): Tier {
   const ua = d.ua;
@@ -41,19 +41,22 @@ export function deviceTier(d: DeviceInfo): Tier {
   return 2;
 }
 
-const CACHE_KEY = 'eds.devTier';
+/** (bumped when the rules change, so every device is judged again) */
+const CACHE_KEY = 'eds.devTier2';
 
 /** Reads this browser once (a throwaway WebGL context for the GPU name) and caches the answer per browser version. */
 export function probeDevice(): Tier {
   if (typeof navigator === 'undefined') return 2;
   const ua = navigator.userAgent;
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  // (the user agent alone is frozen on new Chrome: memory and cores go into the key too)
+  const sig = `${ua}|${nav.deviceMemory ?? ''}|${nav.hardwareConcurrency ?? ''}`;
   try {
     const hit = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null') as { ua?: string; t?: number } | null;
-    if (hit && hit.ua === ua && (hit.t === 0 || hit.t === 1 || hit.t === 2)) return hit.t;
+    if (hit && hit.ua === sig && (hit.t === 0 || hit.t === 1 || hit.t === 2)) return hit.t;
   } catch {
     /* storage blocked or garbled */
   }
-  const nav = navigator as Navigator & { deviceMemory?: number };
   let gpu = '';
   try {
     const c = document.createElement('canvas');
@@ -69,7 +72,7 @@ export function probeDevice(): Tier {
   }
   const t = deviceTier({ ua, mem: nav.deviceMemory, cores: nav.hardwareConcurrency || undefined, gpu, touch: navigator.maxTouchPoints });
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ua, t, gpu }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ua: sig, t, gpu }));
   } catch {
     /* storage blocked */
   }

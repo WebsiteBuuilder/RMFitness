@@ -16,6 +16,8 @@ assert.equal(deviceTier({ ua: android, mem: 4, cores: 4, gpu: "Adreno (TM) 640" 
 // mid-range phones: Balanced
 assert.equal(deviceTier({ ua: android, mem: 8, cores: 8, gpu: "Adreno (TM) 642L" }), 1, "Adreno 642L is Balanced");
 assert.equal(deviceTier({ ua: android, mem: 4, cores: 8, gpu: "Mali-G68 MC4" }), 1, "4 GB mid-range is Balanced");
+assert.equal(deviceTier({ ua: android, mem: 6, cores: 8, gpu: "Adreno (TM) 618" }), 1, "Adreno 618 (Pixel 4a, Galaxy A52) is Balanced");
+assert.equal(deviceTier({ ua: android, mem: 8, cores: 8, gpu: "Samsung Xclipse 530" }), 1, "Xclipse 530 (Galaxy A55) is Balanced");
 // strong phones: Full
 assert.equal(deviceTier({ ua: android, mem: 8, cores: 8, gpu: "Adreno (TM) 740" }), 2, "flagship Adreno is Full");
 assert.equal(deviceTier({ ua: android, mem: 8, cores: 8, gpu: "Mali-G715-Immortalis MC11" }), 2, "Immortalis is Full");
@@ -26,6 +28,7 @@ assert.equal(deviceTier({ ua: ipadAsMac, cores: 8, gpu: "Apple GPU", touch: 5 })
 assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 12, gpu: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)" }), 2, "gaming PC is Full");
 assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 4, gpu: "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)" }), 1, "4-core laptop is Balanced");
 assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 8, gpu: "ANGLE (Intel, Intel(R) HD Graphics 520 Direct3D11 vs_5_0 ps_5_0, D3D11)" }), 1, "old Intel HD is Balanced");
+assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 8, gpu: "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)" }), 1, "8-thread laptop on UHD 620 is Balanced");
 assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 8, gpu: "Google SwiftShader" }), 0, "software rendering is Lite");
 assert.equal(deviceTier({ ua: desktop, mem: 8, cores: 8, gpu: "Apple M2" }), 2, "Mac is Full");
 
@@ -36,7 +39,9 @@ for (const cue of ["tdots", ".pick", "tphase-btn", "tclock"]) assert.ok(!lean.in
 // the board, the stage's paused wait and the Field Spell scenery wait on timers, not a frame callback every vsync
 const board = readFileSync(new URL("../src/art/board.ts", import.meta.url), "utf8");
 assert.ok(/private later\(ms: number\)/.test(board) && /setTimeout\(this\.onTimer/.test(board), "board paces frames with a timer");
-assert.ok(/!this\.busy && !this\.idleOn && isLean\(\)\) return;/.test(board), "board sleeps on Balanced/Lite once nothing moves");
+assert.ok(board.includes("!this.busy && !this.idleOn && isLean()) {"), "board sleeps on Balanced/Lite once nothing moves");
+assert.ok(board.includes("onLastLook") && board.includes('"animationend", this.onFieldAnim'), "a sleeping board takes one last look and wakes when a field card finishes moving");
+assert.ok(/private onIdleSetting = \(\) => \{[\s\S]*?this\.resize\(\);\s*this\.start\(\);/.test(board), "a quality change re-sizes and wakes the board");
 const guard = readFileSync(new URL("../src/art/perfGuard.ts", import.meta.url), "utf8");
 assert.ok(!/requestAnimationFrame\(/.test(guard), "the watchdog never runs a frame loop of its own");
 const settings = readFileSync(new URL("../src/art/settings.ts", import.meta.url), "utf8");
