@@ -14,7 +14,7 @@
 // as it starts), nothing at all with the camera Off.
 import { useEffect, useRef } from 'preact/hooks';
 import type { DuelState } from '../eds/types';
-import { getAnimSpeed, isLite, useDuelCam as useCamMode } from '../art/settings';
+import { getAnimSpeed, useDuelCam as useCamMode } from '../art/settings';
 import { IDENTITY, camLive, setCamLive, unmapRect, type Mat } from '../art/cam';
 import { STRENGTH, blowFrom, cssMatrix, fitPose, type Pose, pickMoment, type Bounds, stronger, poseMatrix, shotFor, type Moment, type Pt, type Shot } from './duelCamRules';
 
@@ -152,8 +152,8 @@ export function useDuelCam(root: { current: HTMLElement | null }, state: DuelSta
 
   const play = (m: Moment, settle: boolean) => {
     const field = fieldEl();
-    // (Lite mode, for a phone that lags: the camera keeps to Soft)
-    const strength = isLite() ? Math.min(STRENGTH[modeRef.current], STRENGTH.soft) : STRENGTH[modeRef.current];
+    // (the quality level already holds the mode down: Soft on Balanced, Off on Lite; settings.ts)
+    const strength = STRENGTH[modeRef.current];
     if (!field || strength <= 0 || typeof field.animate !== 'function') return;
     // (a field already leaning in 3D inside a tilted parent, the Classic big-screen layout, keeps still:
     // the figures canvas could not follow a move inside that tilt)

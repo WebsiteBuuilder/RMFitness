@@ -55,7 +55,8 @@ import {
 import { DEPTH_SIZE, type ArtData, cardBack } from './depth';
 import { DEFAULT_FADE, tuneFor } from './overrides';
 import { pressQuiet } from './hold';
-import { isLite } from './settings';
+import { isLite, onArtSettings, quality as level } from './settings';
+import { noteFrame } from './perfGuard';
 
 export type Quality = 'full' | 'fast';
 
@@ -65,7 +66,8 @@ export type Quality = 'full' | 'fast';
 export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const lite = isLite();
-  const small = lite || (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+  // (Balanced draws like a small device: 1.25 at most)
+  const small = lite || level() < 2 || (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
   const budget = Math.max(1, Math.sqrt((lite ? 1.1e6 : small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
   return Math.min(window.devicePixelRatio || 1, lite ? 1 : small ? 1.25 : 1.5, budget);
 }
@@ -2705,6 +2707,11 @@ export class Stage {
   private sizeDirty = false;
   /** the tier last saved to AUTO_KEY */
   private savedTier = -1;
+  /** the timer that checks a paused stage again */
+  private pausedWait = 0;
+  /** the quality level (settings.ts) the tiers were built for */
+  private builtFor = -1;
+  private unsubLevel: () => void = () => {};
 
   constructor(
     public canvas: HTMLCanvasElement,
@@ -2716,6 +2723,12 @@ export class Stage {
     this.scene.add(this.backdrop.mesh, this.particles.points);
     this.buildLevels();
     this.pinFromStorage();
+    // Performance changed in the duel menu: the tiers are built again for the new level
+    this.unsubLevel = onArtSettings(() => {
+      if (level() === this.builtFor || this.disposed) return;
+      this.buildLevels();
+      this.pinFromStorage();
+    });
     canvas.addEventListener('webglcontextlost', this.handleLost, false);
     canvas.addEventListener('webglcontextrestored', this.handleRestore, false);
     document.addEventListener('visibilitychange', this.handleVisibility);
@@ -2763,9 +2776,11 @@ export class Stage {
   }
 
   private buildLevels() {
+    this.builtFor = level();
     const cap = this.q === 'full' ? dprCap() : Math.min(dprCap(), 1.25);
     const low = Math.min(1, cap);
-    const post = POST_ENABLED && this.q === 'full';
+    // (the bloom pass is four or five extra full-screen passes a frame: Full only)
+    const post = POST_ENABLED && this.q === 'full' && level() === 2;
     const top: Level[] = [];
     for (let d = cap; d > 1.001; d = Math.max(1, d - 0.25)) top.push({ dpr: d, emit: 1, post });
     top.push({ dpr: low, emit: 1, post });
@@ -2783,8 +2798,8 @@ export class Stage {
    */
   private startTier() {
     const top = this.levels.length - 1;
-    // Lite starts two tiers down (the governor can still go lower).
-    const cap = isLite() ? Math.max(0, top - 2) : top;
+    // Lite starts two tiers down, Balanced one (the governor can still go lower).
+    const cap = isLite() ? Math.max(0, top - 2) : level() < 2 ? Math.max(0, top - 1) : top;
     try {
       const v = JSON.parse(localStorage.getItem(AUTO_KEY) ?? 'null') as { t?: number; n?: number; q?: string } | null;
       if (v && v.n === top && v.q === this.q && Number.isInteger(v.t)) return Math.max(0, Math.min(cap, v.t!));
@@ -2983,6 +2998,8 @@ export class Stage {
 
   private schedule() {
     if (this.raf || !this.running || document.hidden) return;
+    clearTimeout(this.pausedWait);
+    this.pausedWait = 0;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -2994,7 +3011,11 @@ export class Stage {
     const still = this.pause || this.freeze;
     if (still && this.pauseDrawn) {
       this.last = now;
-      this.raf = requestAnimationFrame(this.loop);
+      // (checked on a timer, not every vsync: a frame callback per vsync costs a style pass each time)
+      this.pausedWait = window.setTimeout(() => {
+        this.pausedWait = 0;
+        if (this.running && !this.raf) this.raf = requestAnimationFrame(this.loop);
+      }, 50);
       return;
     }
     this.pauseDrawn = still;
@@ -3016,6 +3037,7 @@ export class Stage {
       this.canvas.style.visibility = '';
     }
     this.raf = requestAnimationFrame(this.loop);
+    noteFrame(now);
     if (this.governor) this.govern(ms, performance.now() - t0);
   };
 
@@ -3027,6 +3049,8 @@ export class Stage {
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    clearTimeout(this.pausedWait);
+    this.pausedWait = 0;
     this.raf = 0;
     if (this.disposed) return;
     if (this.lost) return void this.saveTier();
@@ -3187,6 +3211,7 @@ export class Stage {
     this.cancelPark();
     this.clear();
     this.disposed = true;
+    this.unsubLevel();
     clearTimeout(this.uploadWait);
     cancelAnimationFrame(this.uploadRaf);
     (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.uploadRaf);
