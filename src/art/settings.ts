@@ -181,7 +181,7 @@ export const setManga = (v: MangaMode) => write(MANGA_KEY, v);
 export const nextManga = (v: MangaMode): MangaMode => MANGA_ORDER[(MANGA_ORDER.indexOf(v) + 1) % MANGA_ORDER.length];
 const CUTIN_KEY = 'eds.cutins';
 /** Anime portrait cut-ins (the duelists' faces on attacks, chains and the final blow): on unless turned off. */
-export const getCutins = (): boolean => !liteNow && read(CUTIN_KEY) !== 'off';
+export const getCutins = (): boolean => read(CUTIN_KEY) !== 'off';
 export const setCutins = (on: boolean) => write(CUTIN_KEY, on ? 'on' : 'off');
 
 export const setCinematics = (v: Cinematics) => write(CINE_KEY, v);
@@ -233,7 +233,6 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
   const manga = useManga();
   const perf = usePerf();
   const level = useStored(quality);
-  const lite = level === 0;
   const held = (by: Tier) => (level <= by ? `${LEVEL_NAMES[level]} graphics hold this down` : 'tap to change');
   const cut = useCutins();
   const perfNote =
@@ -252,6 +251,6 @@ export function useCinematicsMenu(): { label: string; note: string; onPick: () =
     { label: `Duel Disk camera: ${CAM_NAMES[cam]}`, note: held(1), onPick: () => setDuelCam(nextDuelCam(rawOf(CAM_KEY, CAM_ORDER, cam))) },
     { label: `Monster idle life: ${idle ? 'On' : 'Off'}`, note: held(1), onPick: () => setIdle(!(read(IDLE_KEY) === 'on')) },
     { label: `Manga: ${MANGA_NAMES[manga]}`, note: held(1), onPick: () => setManga(nextManga(rawOf(MANGA_KEY, MANGA_ORDER, manga))) },
-    { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: lite ? held(0) : 'tap to change', onPick: () => setCutins(!(read(CUTIN_KEY) !== 'off')) },
+    { label: `Portrait cut-ins: ${cut ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setCutins(!cut) },
   ];
 }

@@ -19,7 +19,7 @@ export interface DeviceInfo {
 }
 
 /** GPUs that struggle with a full-screen 3D layer over a busy page. */
-const WEAK_GPU = /Mali-(4\d\d|T\d+|G31|G51|G52|G57)|Adreno \(TM\) ([1-5]\d\d|60\d|61[0-7])|PowerVR|SwiftShader|llvmpipe|Software|Microsoft Basic/i;
+const WEAK_GPU = /Mali-(4\d\d|T\d+|G31|G51|G52)|Adreno \(TM\) ([1-5]\d\d|60\d|61[02])|PowerVR|SwiftShader|llvmpipe|Software|Microsoft Basic/i;
 /** Older laptop graphics: fine for most things, not for everything at once. */
 const OLD_LAPTOP_GPU = /Intel.*\bU?HD Graphics\b/i;
 /** GPUs a phone can draw everything on. */

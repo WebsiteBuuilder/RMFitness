@@ -741,10 +741,15 @@ export class BoardLayer {
           squash = f < 0.15 ? Math.sin((f / 0.15) * Math.PI) : f > 0.85 ? Math.sin(((f - 0.85) / 0.15) * Math.PI) : -hop * 0.4;
         } else lean = Math.sin(f * Math.PI) ** 2 * (p.flourishKind === 1 ? 1 : -1);
       }
-      p.pulse += ((p.ready && !p.def ? 1 : 0) - p.pulse) * Math.min(1, dt * 4);
-      if (p.pulse < 0.002) p.pulse = 0;
+      const pulseTo = p.ready && !p.def ? 1 : 0;
+      p.pulse += (pulseTo - p.pulse) * Math.min(1, dt * 4);
+      if (Math.abs(pulseTo - p.pulse) < 0.002) p.pulse = pulseTo;
+      // (Balanced and Lite: the may-attack glow eases in and then holds steady, so a Battle Phase
+      // field the player is thinking over can stop drawing; Full keeps it breathing)
+      const leanQ = isLean();
+      const beat = leanQ ? 0.5 : 0.5 + 0.5 * Math.sin(t * 4.2);
       // (a hit, a flourish, the may-attack pulse and a glance all move)
-      if (p.hitPending || p.hitT >= 0 || p.flourishT >= 0 || p.pulse > 0 || (this.idleOn && p.glanceAt >= 0)) this.busy = true;
+      if (p.hitPending || p.hitT >= 0 || p.flourishT >= 0 || p.pulse !== pulseTo || (!leanQ && p.pulse > 0) || (this.idleOn && p.glanceAt >= 0)) this.busy = true;
       // idle life: its Type's breathing, hover and sway, and its moods (idleLife.ts)
       const mood = p.mood;
       const live = this.idleOn;
@@ -857,7 +862,7 @@ export class BoardLayer {
         else rimColor(p.glow, p.disc.u.uRing.value as Vector3);
       }
       u.uDark.value = p.kneel * 0.2 + idle.dark;
-      u.uPulse.value = p.pulse * (0.3 + 0.25 * Math.sin(t * 4.2));
+      u.uPulse.value = p.pulse * (0.05 + 0.5 * beat);
       setRgb(u.uFlash.value as Vector3, HIT_FLASH);
       (u.uFlash.value as Vector3).multiplyScalar(recoil * 0.9);
       // the base disc + shadow lies on the card under the feet (it stays put while the figure hops)
@@ -868,7 +873,7 @@ export class BoardLayer {
       d.mesh.position.set(pose.cx - this.w / 2, this.h / 2 - pose.foot - p.cw * 0.02, 1);
       d.mesh.scale.set(dsz * lift, dsz * 0.42 * lift, 1);
       d.u.uOpacity.value = clamp01(p.leaving ? p.show : k) * p.vis * (1 - 0.3 * idle.float);
-      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * (0.6 + 0.6 * Math.sin(t * 4.2)) + recoil * 1.2;
+      d.u.uRingAmt.value = (p.def ? 0.8 : 1.3) + (p.finish >= FIN.MI ? 1.9 + 0.4 * Math.sin(t * 2.6 + p.seed) : p.finish >= FIN.OF ? 1.6 : p.finish >= FIN.GL ? 0.9 : 0) + p.pulse * 1.2 * beat + recoil * 1.2;
       d.u.uDark.value = 1.5;
       // the projector's light on the base while the hologram forms
       if (hb && hb.holo > 0) d.u.uRingAmt.value += 1.6 * (1 - clamp01(hb.line)) + 2.4 * clamp01((hb.line - 0.8) / 0.25);
