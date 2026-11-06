@@ -110,7 +110,7 @@ ok(Math.abs(idlePoseInto(newIdlePose(), idleStyleFor('Warrior'), calm, 4, 1).sy 
 // the board, the settings and the stylesheet are wired up
 const board = readFileSync(new URL('../src/art/board.ts', import.meta.url), 'utf8');
 ok(board.includes('idlePoseInto(') && board.includes('emitMotes('), 'the field figures use idle life');
-ok(/every = .*this\.idleOn \? 3 : 4/.test(board), 'settled figures draw at 20 fps with idle life (15 without)');
+ok(board.includes('settling ? 16 : this.idleOn ? 50 : lean ? 33 : 66'), 'settled figures draw at 20 fps with idle life (15 without)');
 ok(board.includes('calmMotion()') && board.includes('getIdle()'), 'idle life follows the menu switch and Reduce motion');
 const settings = readFileSync(new URL('../src/art/settings.ts', import.meta.url), 'utf8');
 ok(settings.includes('Monster idle life:'), 'the duel menu has the Monster idle life switch');

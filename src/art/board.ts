@@ -24,7 +24,7 @@ import { tuneFor } from "./overrides";
 import { FIN, finishGlow } from "./finish";
 import { figureHeld, pressQuiet } from "./hold";
 import { boardHolo, flickerAt, HOLO_COLOR, HOLO_CORE, HOLO_GOLD, HOLO_GOLD_RGB, HOLO_RGB, HUM_GAP_MS, type BoardHolo } from "./holo";
-import { calmMotion, getHolo, getIdle, onArtSettings } from "./settings";
+import { calmMotion, getHolo, getIdle, isLean, onArtSettings } from "./settings";
 import { GLANCE_S, glanceEnvelope, idlePoseInto, idleStyleFor, moteStyleFor, newIdlePose, presenceMotes, presenceOf, wornAmount, MOTE_SHAPE, type IdleMood, type IdlePose, type IdleStyle, type MoteStyle, type Presence } from "./idleLife";
 import { holoHum, holoLock } from "./sfx";
 import { unmapRect } from "./cam";
@@ -274,9 +274,12 @@ export class BoardLayer {
   private emittedFront = false;
   private calmQ: MediaQueryList | null = typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
   private raf = 0;
+  /** the timer that asks for the next frame when the board draws below 60 fps */
+  private timer = 0;
   private last = 0;
   private unsub: () => void;
-  private frame = 0;
+  /** something on the board moved in the frame just drawn (Balanced and Lite stop drawing once nothing does) */
+  private busy = true;
   private w = 0;
   private h = 0;
   private dead = false;
@@ -485,19 +488,37 @@ export class BoardLayer {
   }
 
   private start() {
-    if (this.raf || this.dead || this.lost || document.hidden) return;
+    if (this.raf || this.timer || this.dead || this.lost || document.hidden) return;
     if (!this.pieces.size) return;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.tick);
   }
 
+  /**
+   * The next frame in `ms`. Below 60 fps the wait is a timer, not a frame callback per vsync:
+   * a frame callback every vsync makes the browser run style and layout for the whole duel
+   * screen on every one of them, even the frames the board skips.
+   */
+  private later(ms: number) {
+    if (ms <= 17) this.raf = requestAnimationFrame(this.tick);
+    else this.timer = window.setTimeout(this.onTimer, ms - 10);
+  }
+
+  private onTimer = () => {
+    this.timer = 0;
+    if (!this.raf && !this.dead && !this.lost && !document.hidden) this.raf = requestAnimationFrame(this.tick);
+  };
+
   private halt() {
     cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer);
     this.raf = 0;
+    this.timer = 0;
   }
 
   private markDirty = () => {
     this.dirty = true;
+    this.start();
   };
 
   private onResize = () => this.resize();
@@ -533,29 +554,34 @@ export class BoardLayer {
   private tick = (now: number) => {
     this.raf = 0;
     if (this.dead || this.lost) return;
-    // Under a full dim: draw nothing once the figures the cinematic is about have stepped aside.
+    // Under a full dim: draw nothing once the figures the cinematic is about have stepped aside
+    // (the cinematic's end wakes the board through onArt; a slow check backs that up).
     if (this.covered() && this.asideDone()) {
-      if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
+      if (this.pieces.size) this.later(250);
       return;
     }
     // (never negative: a frame stamped before the moment the loop was restarted would step everything backward)
     const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
-    // 60 fps; 20 while a cinematic plays (the stage needs the GPU, and the bystanders
-    // sway slowly under its dim); 30 on a phone the stage's governor put on its lowest tier
-    // (and 15 for the slow idle sway once every figure has settled: a quarter of the GPU work and heat;
-    // the sway is slow enough that it still reads as smooth)
     const settling = this.dirty || now < this.settleUntil;
-    // (idle life moves more than the old sway: 20 fps once settled instead of 15)
-    const every = artBusy() ? 3 : stageTier() === 0 ? (settling ? 2 : 6) : settling ? 1 : this.idleOn ? 3 : 4;
     // a finger just went down: the tap's answer paints first, the figures wait a beat
     const hush = !this.dirty && pressQuiet(now);
-    if (!hush && (++this.frame % every === 0 || dt > 0.055)) {
+    if (!hush) {
       this.last = now;
       if (this.dirty || now < this.settleUntil || now - this.measuredAt > REMEASURE_MS) this.measure(now);
+      this.busy = false;
       this.step(dt, now);
       this.renderer.render(this.scene, this.camera);
     }
-    if (this.pieces.size) this.raf = requestAnimationFrame(this.tick);
+    if (!this.pieces.size) return;
+    // Balanced and Lite: once nothing moves (every figure has arrived and stands still, no hit,
+    // no hologram, no fade), the last frame stays on screen and the board sleeps until the field
+    // changes, a cinematic starts or ends, or the layout moves. Full keeps the slow sway.
+    if (!hush && !settling && !this.busy && !this.idleOn && isLean()) return;
+    // 60 fps while things arrive; 20 under a cinematic (the stage needs the GPU); 30/10 on the
+    // stage governor's lowest tier; then 20 fps for idle life and 15 for the slow sway
+    const lean = isLean();
+    const ms = hush ? 50 : artBusy() ? 50 : stageTier() === 0 ? (settling ? 33 : 100) : settling ? 16 : this.idleOn ? 50 : lean ? 33 : 66;
+    this.later(ms);
   };
 
   /** Every figure a cinematic is about has finished stepping aside (none is left half drawn under the dim). */
@@ -594,6 +620,8 @@ export class BoardLayer {
       const fig = p.fig;
       // the monster a cinematic is about steps aside for it, and cross-fades back after
       p.vis = focus.has(p.uid) ? Math.max(0, p.vis - dt * ASIDE_RATE) : Math.min(1, p.vis + dt * BACK_RATE);
+      // (anything still on its way somewhere keeps the board drawing)
+      if (p.leaving || (p.vis > 0 && p.vis < 1)) this.busy = true;
       if (p.leaving) {
         p.show -= dt * 4;
         if (p.show <= 0 || !fig) {
@@ -607,6 +635,7 @@ export class BoardLayer {
           if (p.quick) landed.delete(p.uid);
         }
         p.show = Math.min(1, p.show + dt * (p.quick ? 1000 / QUICK_MS : 1.4));
+        if (p.show < 1) this.busy = true;
       }
       if (!fig || !p.disc) continue;
       fig.update(dt);
@@ -623,6 +652,8 @@ export class BoardLayer {
       const t = fig.time;
       // kneeling eases in and out instead of snapping
       p.kneel += ((p.def ? 1 : 0) - p.kneel) * Math.min(1, dt * 6);
+      if (Math.abs((p.def ? 1 : 0) - p.kneel) > 0.004) this.busy = true;
+      else p.kneel = p.def ? 1 : 0;
       // reactions: a recoil when hit, an idle flourish now and then, a pulse when it may attack
       if (p.hitPending && p.show >= 1) {
         p.hitPending = false;
@@ -639,7 +670,8 @@ export class BoardLayer {
           shake = Math.sin(h * 46) * (1 - h) * (1 - h);
         }
       }
-      if (p.flourishT < 0 && p.hitT < 0 && !p.leaving && p.show >= 1 && now >= p.flourishAt) {
+      // (Balanced and Lite: no idle flourishes, so a still field can stop drawing)
+      if (p.flourishT < 0 && p.hitT < 0 && !p.leaving && p.show >= 1 && now >= p.flourishAt && !isLean()) {
         p.flourishT = 0;
         p.flourishKind = (p.flourishKind + 1 + (p.seed & 1)) % 3;
         if (p.def && p.flourishKind === 0) p.flourishKind = 1;
@@ -660,6 +692,9 @@ export class BoardLayer {
         } else lean = Math.sin(f * Math.PI) ** 2 * (p.flourishKind === 1 ? 1 : -1);
       }
       p.pulse += ((p.ready && !p.def ? 1 : 0) - p.pulse) * Math.min(1, dt * 4);
+      if (p.pulse < 0.002) p.pulse = 0;
+      // (a hit, a flourish, the may-attack pulse and a glance all move)
+      if (p.hitPending || p.hitT >= 0 || p.flourishT >= 0 || p.pulse > 0 || (this.idleOn && p.glanceAt >= 0)) this.busy = true;
       // idle life: its Type's breathing, hover and sway, and its moods (idleLife.ts)
       const mood = p.mood;
       const live = this.idleOn;
@@ -707,6 +742,7 @@ export class BoardLayer {
       // summon): projected light first, then a line of light climbs it and it locks solid
             const hb = !p.quick && !p.leaving && p.holo ? boardHolo(p.show, this.hb) : null;
       if (hb && hb.holo > 0) {
+        this.busy = true;
         if (!p.holoStarted) {
           p.holoStarted = true;
           const hc = p.finish >= FIN.MI ? HOLO_GOLD_RGB : HOLO_RGB;
@@ -797,6 +833,7 @@ export class BoardLayer {
       // nothing in the air and nothing new: no stepping, no upload, no draw
       this.stepPool(this.motesBack, this.emittedBack, dt);
       this.stepPool(this.motesFront!, this.emittedFront, dt);
+      if (this.motesBack.active > 0 || this.motesFront!.active > 0) this.busy = true;
       this.emittedBack = this.emittedFront = false;
     }
   }
