@@ -600,7 +600,7 @@ export class BoardLayer {
     const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     // (on the frame clock: a vsync that comes too soon is skipped, so 30 fps stays 30 and a 120 Hz
     // screen draws the figures at 60, not 120)
-    if (this.every <= 34 && !this.dirty && now - this.last < this.every - 6) {
+    if (this.every <= 34 && !this.dirty && now - this.last < this.every * 0.85) {
       this.raf = requestAnimationFrame(this.tick);
       return;
     }
@@ -626,6 +626,7 @@ export class BoardLayer {
     if (!hush && !settling && !this.busy && !this.idleOn && isLean()) {
       // one last look a moment later: a card still easing into place gets its figure moved with it
       // (only once per wake-up: the last look itself does not earn another)
+      this.fastAt = 0;
       if (!this.lastLook) this.lookTimer = window.setTimeout(this.onLastLook, 400);
       this.lastLook = true;
       return;
