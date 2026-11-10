@@ -17,6 +17,7 @@ import './playmats/playmats.css';
 // (last: tablets, laptops and desktops get the whole screen)
 import './ui/fitscreen.css';
 import './art/lite.css';
+import './art/lean.css';
 import { lockPhonePortrait } from './ui/fit';
 import { startPerfGuard } from './art/perfGuard';
 

@@ -1,12 +1,4 @@
-/* Lite graphics (Performance: Lite, or Auto once the watchdog saw lag): the costliest CSS goes. */
-html.fx-lite *,
-html.fx-lite *::before,
-html.fx-lite *::after {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-  mix-blend-mode: normal !important;
-}
-
+/* The watchdog's note when Auto drops a quality level (perfGuard.ts). The quality rules themselves are in lean.css. */
 .perf-toast {
   position: fixed;
   left: 50%;

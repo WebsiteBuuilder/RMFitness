@@ -1,0 +1,61 @@
+/* Balanced and Lite graphics (html.fx-lean, set by perfGuard.ts from settings.ts).
+   One rule: on the duel screen nothing decorative loops forever. A loop that never ends makes the
+   phone redraw the whole screen 60 times a second even while nobody moves, under two 3D layers.
+   Every one-off animation (summons, draws, hits, entrances) stays; the loops that tell the player
+   something (thinking dots, pick and aim pulses, the live phase button, the urgent clock) stay too. */
+
+/* Mates: they still react (cheer, slump, flinch), then rest still instead of idling forever */
+html.fx-lean .duel .mate-act.r-idle,
+html.fx-lean .duel .r-idle .mt-eyes,
+html.fx-lean .duel .mt-flame,
+html.fx-lean .duel .mt-wing,
+html.fx-lean .duel .mt-twinkle,
+html.fx-lean .duel .mt-glow,
+html.fx-lean .duel .mt-wisp,
+html.fx-lean .duel .mt-gloop,
+html.fx-lean .duel .mt-tear {
+  animation-iteration-count: 1 !important;
+}
+html.fx-lean .duel .mate-act.r-win,
+html.fx-lean .duel .mate-act.r-lose,
+html.fx-lean .duel .r-win .mt-lid {
+  animation-iteration-count: 3 !important;
+}
+html.fx-lean .duel .mate-emote.em-gg {
+  animation-iteration-count: 1, 3 !important;
+}
+
+/* Sleeve shimmer on face-down cards: one pass when the card lands */
+html.fx-lean .cback.slv-sweep::after,
+html.fx-lean .cback.slv-holo::after,
+html.fx-lean .cback.slv-pulse::after {
+  animation-iteration-count: 1 !important;
+}
+
+/* The low-LP gauge flicker and the field's slow tilt sway: a few beats, then still */
+html.fx-lean .duel.touch .tgauge.low {
+  animation-iteration-count: 3 !important;
+}
+html.fx-lean .tilt-sway {
+  animation: none !important;
+}
+
+/* Finish rolls on the cinematic banner (on screen for a moment anyway) */
+html.fx-lean .art-banner.fin-GL b::after,
+html.fx-lean .art-banner.fin-MI b::after {
+  animation-iteration-count: 2 !important;
+}
+
+/* Glass blur and blend modes are the costliest thing a phone browser draws: flat panels instead */
+html.fx-lean .csheet-back.md,
+html.fx-lean .tagbar {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Lite: blend modes go too (each one makes the browser draw what is under it again) */
+html.fx-lite *,
+html.fx-lite *::before,
+html.fx-lite *::after {
+  mix-blend-mode: normal !important;
+}

@@ -17,7 +17,7 @@
 // cinematic plays (it covers the duel), or while the tab is hidden. Time wraps every
 // half hour so phones' 16-bit floats never make the motion step.
 import { TERRAINS, type Terrain } from './families';
-import { isLite } from './settings';
+import { isLean, isLite, onArtSettings } from './settings';
 
 const VERT = `attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
@@ -308,6 +308,7 @@ export class LivingField {
   private onRestored = () => (this.init(), this.kick());
   private onVis = () => this.kick();
   private onResize = () => this.size();
+  private unsubLevel: () => void;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -318,6 +319,8 @@ export class LivingField {
     document.body.appendChild(this.canvas);
     document.addEventListener('visibilitychange', this.onVis);
     window.addEventListener('resize', this.onResize);
+    // (a new quality level: Balanced holds the landscape still, Full animates it again)
+    this.unsubLevel = onArtSettings(() => this.kick());
     this.init();
     this.size();
     // Draw one hidden frame while the duel is quiet: some GPU drivers (and software GL) build
@@ -443,6 +446,8 @@ export class LivingField {
     this.canvas.classList.toggle('on', show);
     document.body.classList.toggle('lf-on', show);
     if (!this.raf && this.gl && show && !document.hidden) {
+      clearTimeout(this.timer);
+      this.timer = 0;
       this.last = performance.now();
       this.raf = requestAnimationFrame(this.frame);
     }
@@ -450,8 +455,16 @@ export class LivingField {
 
   private stop() {
     if (this.raf) cancelAnimationFrame(this.raf);
+    clearTimeout(this.timer);
     this.raf = 0;
+    this.timer = 0;
   }
+
+  private timer = 0;
+  private onTimer = () => {
+    this.timer = 0;
+    if (!this.raf && !this.disposed && !document.hidden) this.raf = requestAnimationFrame(this.frame);
+  };
 
   private frame = (now: number) => {
     this.raf = 0;
@@ -496,12 +509,22 @@ export class LivingField {
     // time): once that frame is drawn the loop sleeps, and the next beat, LP change or
     // Field Spell wakes it (kick). The canvas keeps showing the last frame meanwhile.
     if (this.stillDrawn && !busy) return;
-    this.raf = requestAnimationFrame(this.frame);
+    // (under a cinematic nothing is drawn: check back in a moment instead of every vsync;
+    // between drawn frames, wait on a timer, not a frame callback per vsync)
+    const wait = busy ? 200 : this.fpsMs - (now - this.drawnAt);
+    if (wait > 17) this.timer = window.setTimeout(this.onTimer, wait - 8);
+    else this.raf = requestAnimationFrame(this.frame);
   };
 
   /** Nothing on screen moves: no landscape up or fading, the danger glow at its level, no heartbeat flaring. */
   private still(now: number) {
-    for (const s of this.sides) if (s.ter || s.shown || s.amt > 0 || s.on > 0) return false;
+    // Balanced: a landscape that has finished rising holds still (its fire, water and wind are
+    // drawn once, not 30 times a second); only its fades and the danger beats move.
+    const lean = isLean();
+    for (const s of this.sides) {
+      if (!lean && (s.ter || s.shown || s.amt > 0 || s.on > 0)) return false;
+      if (lean && (s.amt !== (s.ter && s.ter === s.shown ? 1 : 0) || s.on !== (s.shown ? 1 : 0) || s.ter !== s.shown)) return false;
+    }
     for (let i = 0; i < 2; i++) if (this.dangerAmt[i] !== Math.min(1, this.danger[i] * 0.6)) return false;
     const since = now - this.beatAt;
     return since < 0 || since > 700;
@@ -531,6 +554,7 @@ export class LivingField {
 
   dispose() {
     this.disposed = true;
+    this.unsubLevel();
     this.stop();
     document.removeEventListener('visibilitychange', this.onVis);
     window.removeEventListener('resize', this.onResize);
