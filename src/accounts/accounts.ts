@@ -49,7 +49,7 @@ function withTimeout<T>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T> {
 const failCode = (e: unknown) => (e instanceof CloudFail ? e.code : 'other');
 
 const MESSAGES = {
-  wrong: 'Wrong password. Try again.',
+  wrong: 'Wrong password. Capitals count, so tap Show and check them.',
   busy: 'Too many tries. Wait a minute, then try again.',
   offline: "Can't reach the shared accounts right now. Check your internet and try again.",
   other: 'Something went wrong. Try again.',
