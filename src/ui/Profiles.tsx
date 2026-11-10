@@ -161,24 +161,34 @@ export function ProfilePicker({ onPick, joining }: { onPick: (p: Profile) => voi
   );
 }
 
-function PwField({ label, value, onInput, autoFocus, fresh }: { label: string; value: string; onInput: (v: string) => void; autoFocus?: boolean; fresh?: boolean }) {
+function PwField({ label, value, onInput, autoFocus, fresh, again }: { label: string; value: string; onInput: (v: string) => void; autoFocus?: boolean; fresh?: boolean; again?: boolean }) {
   const [show, setShow] = useState(false);
+  const [caps, setCaps] = useState(false);
+  // a keyboard event knows whether Caps Lock is on (computers); phones have no Caps Lock key
+  const capsFrom = (ev: KeyboardEvent) => typeof ev.getModifierState === 'function' && setCaps(ev.getModifierState('CapsLock'));
   return (
     <label class="pfield">
       <span>{label}</span>
       <span class="pw-row">
         <input
+          class="pw-input"
           type={show ? 'text' : 'password'}
           value={value}
           maxLength={PASSWORD_MAX}
           autoComplete={fresh ? 'new-password' : 'current-password'}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellcheck={false}
           autoFocus={autoFocus}
+          onKeyDown={capsFrom}
+          onKeyUp={capsFrom}
           onInput={(ev) => onInput((ev.target as HTMLInputElement).value)}
         />
         <button type="button" class="pw-eye" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>
           {show ? 'Hide' : 'Show'}
         </button>
       </span>
+      {caps ? <span class="pw-case caps">Caps Lock is on. Capitals count.</span> : !again && <span class="pw-case">Capitals count: A and a are different. Tap Show to check.</span>}
     </label>
   );
 }
@@ -238,7 +248,7 @@ function LoginSheet({ tile, title, onClose, onDone }: { tile: Tile; title?: stri
             </label>
           )}
           <PwField label={firstTime ? 'New password (4 or more characters)' : 'Password'} value={pw} onInput={(v) => (setPw(v), setErr(null))} autoFocus fresh={firstTime} />
-          {firstTime && <PwField label="Type it again" value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />}
+          {firstTime && <PwField label="Type it again" again value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />}
           {err && <p class="err">{err}</p>}
           <div class="pbtns">
             <button type="submit" class="gbtn" disabled={busy || !pw}>
@@ -286,7 +296,7 @@ function AddSheet({ canClose, onClose, onDone }: { canClose: boolean; onClose: (
             <input value={alias} maxLength={ALIAS_MAX} placeholder="Yugi" autoComplete="off" onInput={(ev) => (setAlias((ev.target as HTMLInputElement).value), setErr(null))} />
           </label>
           <PwField label="Password (4 or more characters)" value={pw} onInput={(v) => (setPw(v), setErr(null))} fresh />
-          <PwField label="Type it again" value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />
+          <PwField label="Type it again" again value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />
           {err && <p class="err">{err}</p>}
           <div class="pbtns">
             <button type="submit" class="gbtn" disabled={busy || !alias.trim() || !pw}>
@@ -381,7 +391,7 @@ function EditSheet({ p, onClose, onRemoved }: { p: Profile; onClose: () => void;
             <input value={alias} maxLength={ALIAS_MAX} autoComplete="off" onInput={(ev) => (setAlias((ev.target as HTMLInputElement).value), setErr(null))} />
           </label>
           <PwField label="New password (leave empty to keep it)" value={pw} onInput={(v) => (setPw(v), setErr(null))} fresh />
-          {pw && <PwField label="Type it again" value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />}
+          {pw && <PwField label="Type it again" again value={pw2} onInput={(v) => (setPw2(v), setErr(null))} fresh />}
           {err && <p class="err">{err}</p>}
           <div class="pbtns">
             <button type="button" class="gbtn end" onClick={() => setConfirmDel(true)}>

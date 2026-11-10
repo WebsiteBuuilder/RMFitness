@@ -2510,3 +2510,25 @@ p {
 .msgwin .tdetail-ctr {
   margin: 2px 0 6px;
 }
+
+/* Login fields: the pixel font draws small letters as small capitals, so typed names and passwords
+   use plain phone fonts where upper and lower case look different. Passwords use a fixed-width
+   font so I l 1 and O 0 are easy to tell apart. */
+.pfield input {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-transform: none;
+  font-variant: normal;
+  letter-spacing: 0;
+}
+.pfield input.pw-input {
+  font-family: ui-monospace, Menlo, 'Roboto Mono', 'Droid Sans Mono', 'Courier New', monospace;
+}
+.pfield .pw-case {
+  margin: 3px 0 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  color: var(--dim);
+}
+.pfield .pw-case.caps {
+  color: #ffd166;
+}
