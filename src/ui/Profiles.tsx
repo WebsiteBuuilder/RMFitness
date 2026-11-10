@@ -182,13 +182,14 @@ function PwField({ label, value, onInput, autoFocus, fresh, again }: { label: st
           autoFocus={autoFocus}
           onKeyDown={capsFrom}
           onKeyUp={capsFrom}
+          onBlur={() => setCaps(false)}
           onInput={(ev) => onInput((ev.target as HTMLInputElement).value)}
         />
         <button type="button" class="pw-eye" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>
           {show ? 'Hide' : 'Show'}
         </button>
       </span>
-      {caps ? <span class="pw-case caps">Caps Lock is on. Capitals count.</span> : !again && <span class="pw-case">Capitals count: A and a are different. Tap Show to check.</span>}
+      {caps ? <span class="pw-case caps">Caps Lock is on. Capitals count.</span> : !again && <span class="pw-case">{show ? 'Capitals count: check each letter above.' : 'Capitals count (A ≠ a). Tap Show to check.'}</span>}
     </label>
   );
 }
