@@ -6,15 +6,18 @@ import { DB as KIT } from './speedkit';
 import { DB } from '../src/eds/db';
 import { newSpeedSave } from '../src/eds/speedSave';
 import { newSoloSave, type SoloSave } from '../src/eds/speedCampaign/save';
-import { endRun, settleSolo } from '../src/eds/speedCampaign/settle';
+import { endRun, endRunPaid, settleSolo } from '../src/eds/speedCampaign/settle';
 import { CHAPTERS } from '../src/eds/speedCampaign/roster';
 import { chapterOpen, nodeOpen, nodePassed, soloDeckProblems, startRoad } from '../src/eds/speedCampaign/campaign';
 import { LEGENDS, legendDuelOpen, legendDuelPassed, legendDuelWon, legendOpen, nextLegendDuel } from '../src/eds/speedCampaign/legends';
 import { fragmentsFor, newRun, summaryOf } from '../src/eds/speedCampaign/labyrinth';
 import { TAG_CHAPTERS, nextTagNode, settleTagRoad, tagNodeOpen } from '../src/eds/speedCampaign/tagRoad';
+import { openPack } from '../src/collection/sets';
+import { registerPackOpener } from '../src/eds/speedCampaign/rewards';
 import type { DuelOutcome } from '../src/eds/speedCampaign/types';
 
 for (const [k, v] of KIT) DB.set(k, v);
+registerPackOpener(openPack);
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -80,6 +83,35 @@ ok(own.ownDeck === true && !own.open && fragmentsFor({ ...own, wins: 5, floor: 2
   const ended = endRun(s0, { ...run, over: 'won', wins: 9 });
   ok(ended.solo.labyrinth.best === null && ended.solo.labyrinth.fragments === 0, 'labyrinth: an Anything goes run never sets the best run or pays fragments');
   ok(ended.solo.labyrinth.history[0]?.open === true, 'labyrinth: the run history marks it Anything goes');
+}
+
+// ---------- Packs for your own deck ----------
+{
+  const sp = newSpeedSave();
+  const cards = (x: typeof sp) => Object.values(x.collection ?? {}).reduce((a, b) => a + b, 0);
+  const won = { ...own, over: 'won' as const, wins: 9 };
+  const a = endRunPaid(sp, newSoloSave(), won, '2026-10-27');
+  ok(cards(a.speed) > cards(sp) && (a.summary.pack?.length ?? 0) > 0, 'labyrinth: a clear with your own deck pays a booster pack');
+  const b = endRunPaid(a.speed, a.solo, won, '2026-10-27');
+  ok(cards(b.speed) === cards(a.speed), 'labyrinth: a second clear at the same Curse on the same day pays no pack');
+  const c = endRunPaid(a.speed, a.solo, won, '2026-10-28');
+  ok(cards(c.speed) > cards(a.speed) && c.solo.labyrinth.packDay === '2026-10-28', 'labyrinth: the next day a clear pays the daily pack');
+  const c2 = endRunPaid(c.speed, c.solo, won, '2026-10-28');
+  ok(cards(c2.speed) === cards(c.speed), 'labyrinth: only one daily clear pack a day');
+  const d = endRunPaid(a.speed, a.solo, { ...won, curse: 1 }, '2026-10-27');
+  ok(cards(d.speed) > cards(a.speed), 'labyrinth: the first clear at a new Curse pays a pack');
+  const e = endRunPaid(sp, newSoloSave(), { ...run, over: 'won', wins: 9 }, '2026-10-27');
+  ok(e.speed === sp, 'labyrinth: an Anything goes clear pays no pack');
+  const dly = endRunPaid(sp, newSoloSave(), { ...won, daily: '2026-10-27' }, '2026-10-27');
+  ok(dly.speed === sp, 'labyrinth: the Daily pays no pack');
+  const f = endRunPaid(sp, newSoloSave(), { ...own, over: 'lost', wins: 2 }, '2026-10-27');
+  ok(f.speed === sp, 'labyrinth: a lost run pays no pack');
+  const lg = settleSolo({ kind: 'legend', duelId: LEGENDS[0].duels[0].id }, WIN, sp, newSoloSave());
+  ok(cards(lg.speed) > cards(sp), 'legends: a first win with your own deck pays a pack');
+  const lg2 = settleSolo({ kind: 'legend', duelId: LEGENDS[0].duels[0].id }, WIN, lg.speed, lg.solo);
+  ok(cards(lg2.speed) === cards(lg.speed), 'legends: a replay pays no pack');
+  const lg3 = settleSolo({ kind: 'legend', duelId: LEGENDS[0].duels[1].id, open: true }, WIN, sp, newSoloSave());
+  ok(lg3.speed === sp, 'legends: an Anything goes win pays no pack');
 }
 
 // ---------- Tag Road ----------
