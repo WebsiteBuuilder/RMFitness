@@ -23,6 +23,7 @@ import { CardImg } from './CardImg';
 import { Avatar } from './Profiles';
 import { Menu, Overlay, Win } from './Window';
 import { DeckMenu } from './DeckPick';
+import { fullscreenItem, installedApp, toggleFullscreen, useFullscreen } from './fullscreen';
 import { playBlip, setMusicEnabled, setSoundEnabled, useMusicEnabled, useSoundEnabled } from './sound';
 import { ChipBar } from '../collection/Shop';
 import { chipsOf, packsOf, type Rival } from '../collection/economy';
@@ -430,6 +431,7 @@ export function SpeedHome({
 }) {
   const [deckMenu, setDeckMenu] = useState(false);
   const [settings, setSettings] = useState(false);
+  const fullOn = useFullscreen();
   const soundOn = useSoundEnabled();
   const musicOn = useMusicEnabled();
   const [rules, setRules] = useState(false);
@@ -482,6 +484,13 @@ export function SpeedHome({
           <ChipBar save={save} cpus={cpus} compact />
         </div>
         <ChatTop />
+        {!installedApp() && (
+          <button class={`sdh-gear sdh-fs ${fullOn ? 'on' : ''}`} onClick={() => (playBlip(), void toggleFullscreen())} aria-label="Full screen" title={fullOn ? 'Leave full screen' : 'Full screen'} aria-pressed={fullOn}>
+            <svg viewBox="0 0 24 24">
+              <path d={fullOn ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5'} />
+            </svg>
+          </button>
+        )}
         <button class="sdh-gear" onClick={() => (playBlip(), setSettings(true))} aria-label="Settings">
           <svg viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="3" />
@@ -641,6 +650,7 @@ export function SpeedHome({
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'duel sound effects', onPick: () => setSoundEnabled(!soundOn) },
                 { label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'the duel soundtrack', onPick: () => setMusicEnabled(!musicOn) },
                 ...(canRoom ? [{ label: `Home: ${room ? 'Duelist Room' : 'Plain menu'}`, note: room ? 'your Ace, Mate, trophies and deck in a room' : 'just the tiles, no room', onPick: () => setHomeLook(room ? 'plain' : 'room') }] : []),
+                ...fullscreenItem(fullOn),
                 { label: 'Speed Duel rules', onPick: () => (setSettings(false), setRules(true)) },
                 { label: 'Back to Eternal Duelist Soul', onPick: onExit },
               ]}

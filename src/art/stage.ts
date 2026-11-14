@@ -68,7 +68,10 @@ export function dprCap(w = window.innerWidth, h = window.innerHeight): number {
   const lite = isLite();
   // (Balanced draws like a small device: 1.25 at most)
   const small = lite || level() < 2 || (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
-  const budget = Math.max(1, Math.sqrt((lite ? 1.1e6 : small ? 1.6e6 : 2.6e6) / Math.max(1, w * h)));
+  // Balanced keeps to about a megapixel per layer: a phone still gets its full 1.25, but a
+  // tablet (about 1M CSS pixels) draws 1:1 instead of 1.25, so its several full-screen 3D layers
+  // fill about 1.5x fewer pixels; that fill was what made tablets lag where phones didn't.
+  const budget = Math.max(1, Math.sqrt((lite ? 1.1e6 : small ? 1.0e6 : 2.6e6) / Math.max(1, w * h)));
   return Math.min(window.devicePixelRatio || 1, lite ? 1 : small ? 1.25 : 1.5, budget);
 }
 

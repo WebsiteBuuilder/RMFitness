@@ -13,6 +13,7 @@ import { RandomDeckSheet } from './RandomDeck';
 import { edsThemes, randomEdsDeck, withEdsDeck } from '../eds/edsRandom';
 import { Menu, Overlay, Win } from './Window';
 import { playBlip, playWin, unlockAudio } from './sound';
+import { fullscreenItem, useFullscreen } from './fullscreen';
 
 /** The Egyptian Gods come in packs but cannot be used, as in EDS. */
 const GODS = new Set(['Obelisk the Tormentor', 'Slifer the Sky Dragon', 'The Winged Dragon of Ra']);
@@ -102,6 +103,7 @@ export type MenuChoice = 'campaign' | 'link' | 'deck' | 'record' | 'calendar' | 
 
 export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: Profile | null; onPick: (c: MenuChoice) => void }) {
   const d = calendarDate(save.day);
+  const fullOn = useFullscreen();
   return (
     <div class="screen mainmenu">
       <div class="menu-head">
@@ -128,6 +130,7 @@ export function MainMenu({ save, profile, onPick }: { save: SaveFile; profile?: 
             { label: 'Calendar', onPick: () => onPick('calendar') },
             { label: 'Password', onPick: () => onPick('password') },
             { label: `Controls: ${CONTROL_NAMES[controlsOf(save, 'eds')]}`, note: controlsOf(save, 'eds') === 'touch' ? 'tap and drag, like Master Duel' : 'the original game menus', onPick: () => onPick('controls') },
+            ...fullscreenItem(fullOn),
             { label: 'Switch Profile', note: "who's dueling?", onPick: () => onPick('switch') },
           ]}
         />

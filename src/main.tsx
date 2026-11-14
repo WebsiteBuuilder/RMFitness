@@ -4,6 +4,7 @@ import { render } from 'preact';
 import { App } from './ui/App';
 import { OnlineLayer } from './online/OnlineLayer';
 import { RematchLayer } from './ui/Rematch';
+import { FullscreenHelp } from './ui/fullscreen';
 import { registerServiceWorker } from './ui/pwa';
 import { installPad } from './ui/pad/pad';
 import './ui/styles.css';
@@ -26,6 +27,7 @@ render(
     <App />
     <OnlineLayer />
     <RematchLayer />
+    <FullscreenHelp />
   </>,
   document.getElementById('app')!,
 );

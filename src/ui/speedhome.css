@@ -503,3 +503,28 @@ html.sd-home .ol-pill {
 html.sd-home .ol-toast {
   bottom: calc(76px + env(safe-area-inset-bottom));
 }
+
+/* Full screen, beside Settings: lit while the game fills the screen */
+.sdh-fs.on {
+  border-color: var(--sd-gold, #e8c46a);
+}
+.fs-help {
+  margin: 8px 12px 12px;
+  line-height: 1.45;
+  max-width: 34em;
+}
+/* the narrowest phones (320px): three round buttons still leave room for the name and pills */
+@media (max-width: 359px) {
+  .sdh-top {
+    gap: 4px;
+  }
+  .sdh-gear {
+    width: 32px;
+    height: 32px;
+  }
+  .sdh-who-txt small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
