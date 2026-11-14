@@ -688,6 +688,15 @@ img.cimg.lvr-MI {
   mix-blend-mode: soft-light;
   opacity: 0.55;
 }
+/* Lite graphics turn blend modes off (src/art/lean.css), and unblended the rainbow veils the whole
+   card: keep only the fine lines there, and no sweeping prism band */
+html.fx-lite .lvr-fx-OF {
+  background: repeating-linear-gradient(125deg, #ffffff30 0 1px, transparent 1px 4px);
+}
+html.fx-lite .lvr-fx-OF::before,
+html.fx-lite .lvr-fx-MI::before {
+  display: none;
+}
 .lvr-fx-OF::before,
 .lvr-fx-MI::before {
   content: '';
