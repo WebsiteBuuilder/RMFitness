@@ -19,6 +19,7 @@ import { useDuelMusic } from './music';
 import * as sfx from './duelSfx';
 import { CONTROL_NAMES, type ControlStyle } from '../eds/save';
 import { TouchDuel } from './TouchDuel';
+import { fullscreenItem, useFullscreen } from './fullscreen';
 import { wearOf, ZoneWear } from './fieldWear';
 import { spellWord } from './gameUi';
 import { ArtStage, useCinematicsMenu } from '../art/ArtStage';
@@ -110,6 +111,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
     return () => document.body.classList.remove('idle-on');
   }, [idleOn]);
   const soundOn = useSoundEnabled();
+  const fullOn = useFullscreen();
   const musicOn = useMusicEnabled();
   // the soundtrack (Speed Duels): calm, drums under 2000 LP, a swell for an ace
   useDuelMusic(e.speed ? state : null, e, hotseat ? acting : mySeat, !!hotseat, !!spectator);
@@ -694,6 +696,7 @@ export function Duel({ session, view, mySeat, hotseat, controlsFor, onControls, 
                 { label: `Controls: ${CONTROL_NAMES[style]}`, note: style === 'touch' ? 'switch to Classic' : 'switch to Touch', onPick: () => (setShowMenu(false), switchStyle()) },
                 ...(e.speed ? artItems : []),
                 ...(e.speed ? [{ label: `Draw: ${DRAW_STYLE_NAMES[drawStyle]}`, note: drawStyle === 'swipe' ? 'switch to Automatic' : 'swipe up on your deck to draw', onPick: () => setDrawStyle(drawStyle === 'swipe' ? 'auto' : 'swipe') }] : []),
+                ...fullscreenItem(fullOn),
                 { label: `Sound: ${soundOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setSoundEnabled(!soundOn) },
                 ...(e.speed ? [{ label: `Music: ${musicOn ? 'On' : 'Off'}`, note: 'tap to change', onPick: () => setMusicEnabled(!musicOn) }] : []),
                 ...(mates && e.speed ? [{ label: `Mates: ${SHOWN_LABEL[matesShown]}`, note: 'tap to change', onPick: () => setMatesShown(NEXT_SHOWN[matesShown]) }] : []),
